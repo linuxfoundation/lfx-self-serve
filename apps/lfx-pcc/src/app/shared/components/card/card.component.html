@@ -1,3 +1,6 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
 <p-card [header]="header()" [subheader]="subheader()" [styleClass]="styleClass()" [style]="style()">
   <ng-template #header *ngIf="headerTemplate">
     <ng-container *ngTemplateOutlet="headerTemplate || null"></ng-container>

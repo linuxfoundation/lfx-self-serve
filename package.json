@@ -1,5 +1,7 @@
 {
   "name": "lfx-pcc-v3",
+  "license": "MIT",
+  "author": "The Linux Foundation",
   "private": true,
   "scripts": {
     "build": "turbo run build",

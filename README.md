@@ -31,6 +31,10 @@ This Turborepo has comprehensive development tooling:
 - **[Turborepo](https://turborepo.com/)** for efficient monorepo builds and caching
 - **[PM2](https://pm2.keymetrics.io/)** for production process management
 
+## Contributing
+
+Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct, development process, and how to submit pull requests.
+
 ## Development
 
 ### Getting Started
@@ -197,11 +201,14 @@ Comprehensive documentation organized by domain:
 Always run these commands before committing code:
 
 ```bash
+./check-headers.sh  # Verify license headers
 yarn lint           # Fix linting issues
 yarn format         # Format code consistently
 yarn test           # Ensure all tests pass
 yarn build          # Verify build succeeds
 ```
+
+**Note**: All source files must include the proper license header. See the [Contributing Guide](CONTRIBUTING.md#license-headers) for details.
 
 ### Component Development
 

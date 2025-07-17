@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 import { CommonModule } from '@angular/common';
 import { Component, input } from '@angular/core';
 import { BadgeProps } from '@lfx-pcc/shared/interfaces';

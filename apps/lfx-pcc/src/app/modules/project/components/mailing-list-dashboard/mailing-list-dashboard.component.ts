@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 import { Component, inject } from '@angular/core';
 import { ProjectLayoutComponent } from '@app/layouts/project-layout/project-layout.component';
 import { CardComponent } from '@app/shared/components/card/card.component';

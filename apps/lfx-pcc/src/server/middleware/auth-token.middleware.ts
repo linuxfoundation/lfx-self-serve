@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 import { NextFunction, Request, Response } from 'express';
 
 export function extractBearerToken(req: Request, _res: Response, next: NextFunction): void {

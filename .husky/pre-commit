@@ -1,3 +1,11 @@
+# Check license headers
+./check-headers.sh
+if [ $? -ne 0 ]; then
+  echo "❌ License header check failed. Please add missing headers."
+  echo "Run ./check-headers.sh to see which files are missing headers."
+  exit 1
+fi
+
 # Run lint-staged for formatting and linting
 npx lint-staged
 yarn format:check

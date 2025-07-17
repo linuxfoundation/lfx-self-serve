@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 import PrimeUI from 'tailwindcss-primeui';
 import { lfxColors, lfxFontSizes } from '@lfx-pcc/shared';
 

@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 import { Injectable, signal, WritableSignal } from '@angular/core';
 import { User } from '@lfx-pcc/shared/interfaces';
 

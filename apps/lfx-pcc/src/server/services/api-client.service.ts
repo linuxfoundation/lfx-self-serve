@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 import { ApiClientConfig, ApiResponse } from '@lfx-pcc/shared/interfaces';
 
 import { createHttpError, createNetworkError, createTimeoutError } from '../utils/api-error';

@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 import { ApiError, ApiErrorOptions } from '@lfx-pcc/shared/interfaces';
 
 export function createApiError(options: ApiErrorOptions): ApiError {

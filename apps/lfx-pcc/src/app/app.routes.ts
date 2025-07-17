@@ -1,3 +1,6 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
 import { Routes } from '@angular/router';
 
 import { HomeComponent } from './modules/pages/home/home.component';
