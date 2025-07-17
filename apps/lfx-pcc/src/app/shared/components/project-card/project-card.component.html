@@ -1,0 +1,51 @@
+<div
+  class="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer h-full"
+  [routerLink]="url()">
+  <div class="p-6">
+    <!-- Logo and Title Section -->
+    <div class="flex flex-col gap-6 mb-6">
+      <div class="flex flex-col items-start gap-0">
+        <!-- Logo Container -->
+        <div class="flex items-start">
+          <img [src]="logoUrl()" [alt]="title() + ' logo'" class="w-full h-16 object-contain">
+        </div>
+
+        <!-- Title and Description -->
+        <div class="flex flex-col gap-2 mt-4">
+          <h3 class="text-base font-display font-semibold text-gray-900">
+            {{ title() }}
+          </h3>
+          <p class="text-sm text-gray-600 leading-relaxed line-clamp-2">
+            {{ description() }}
+          </p>
+        </div>
+      </div>
+    </div>
+
+    <!-- Metrics Section -->
+    @if (metrics().length > 0) {
+    <div class="flex flex-col gap-3">
+      @for (metric of metrics(); track metric.label) {
+      <div class="flex items-center justify-between py-0.5">
+        <div class="flex items-center gap-2">
+          <i [class]="metric.icon" class="text-base w-5"></i>
+          <span class="text-sm text-gray-600">{{ metric.label }}</span>
+        </div>
+        <div class="flex items-center gap-2">
+          @if (metric.badge) {
+          <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-semibold" [class]="metric.badge.severity === 'success' ? 'bg-emerald-500 text-white' :
+                         metric.badge.severity === 'info' ? 'bg-blue-500 text-white' :
+                         metric.badge.severity === 'warning' ? 'bg-amber-500 text-white' :
+                         'bg-red-500 text-white'">
+            {{ metric.badge.label }}
+          </span>
+          } @else {
+          <span class="text-sm text-gray-900 font-normal font-display">{{ metric.value }}</span>
+          }
+        </div>
+      </div>
+      }
+    </div>
+    }
+  </div>
+</div>

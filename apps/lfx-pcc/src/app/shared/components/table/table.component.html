@@ -1,0 +1,159 @@
+<p-table
+  [value]="value()"
+  [columns]="columns()"
+  [dataKey]="dataKey()"
+  [style]="style()"
+  [styleClass]="styleClass()"
+  [tableStyle]="tableStyle()"
+  [tableStyleClass]="tableStyleClass()"
+  [paginator]="paginator()"
+  [rows]="rows()"
+  [first]="first()"
+  [totalRecords]="totalRecords()"
+  [pageLinks]="pageLinks()"
+  [rowsPerPageOptions]="rowsPerPageOptions()"
+  [alwaysShowPaginator]="alwaysShowPaginator()"
+  [paginatorPosition]="paginatorPosition()"
+  [paginatorStyleClass]="paginatorStyleClass()"
+  [paginatorDropdownAppendTo]="paginatorDropdownAppendTo()"
+  [paginatorDropdownScrollHeight]="paginatorDropdownScrollHeight()"
+  [currentPageReportTemplate]="currentPageReportTemplate()"
+  [showCurrentPageReport]="showCurrentPageReport()"
+  [showJumpToPageDropdown]="showJumpToPageDropdown()"
+  [showJumpToPageInput]="showJumpToPageInput()"
+  [showFirstLastIcon]="showFirstLastIcon()"
+  [showPageLinks]="showPageLinks()"
+  [sortField]="sortField()"
+  [sortOrder]="sortOrder()"
+  [sortMode]="sortMode()"
+  [defaultSortOrder]="defaultSortOrder()"
+  [multiSortMeta]="multiSortMeta()"
+  [globalFilterFields]="globalFilterFields()"
+  [filterDelay]="filterDelay()"
+  [filterLocale]="filterLocale()"
+  [selection]="selection()"
+  [selectionMode]="selectionMode()"
+  [compareSelectionBy]="compareSelectionBy()"
+  [metaKeySelection]="metaKeySelection()"
+  [contextMenuSelection]="contextMenuSelection()"
+  [contextMenuSelectionMode]="contextMenuSelectionMode()"
+  [lazy]="lazy()"
+  [lazyLoadOnInit]="lazyLoadOnInit()"
+  [scrollable]="scrollable()"
+  [scrollDirection]="scrollDirection()"
+  [scrollHeight]="scrollHeight()"
+  [virtualScroll]="virtualScroll()"
+  [virtualScrollItemSize]="virtualScrollItemSize()"
+  [virtualScrollOptions]="virtualScrollOptions()"
+  [virtualScrollDelay]="virtualScrollDelay()"
+  [loading]="loading()"
+  [loadingIcon]="loadingIcon()"
+  [resizableColumns]="resizableColumns()"
+  [columnResizeMode]="columnResizeMode()"
+  [reorderableColumns]="reorderableColumns()"
+  [rowGroupMode]="rowGroupMode()"
+  [exportFilename]="exportFilename()"
+  [exportFunction]="exportFunction()"
+  [expandedRowKeys]="expandedRowKeys()"
+  [rowExpandMode]="rowExpandMode()"
+  [stateKey]="stateKey()"
+  [stateStorage]="stateStorage()"
+  [id]="id()"
+  [ariaLabel]="ariaLabel()"
+  [breakpoint]="breakpoint()"
+  [showGridlines]="showGridlines()"
+  [stripedRows]="stripedRows()"
+  [customSort]="customSort()"
+  [autoLayout]="autoLayout()"
+  [size]="size()"
+  (onLazyLoad)="handleLazyLoad($event)"
+  (onPage)="handlePage($event)"
+  (onSort)="handleSort($event)"
+  (onFilter)="handleFilter($event)"
+  (onRowSelect)="handleRowSelect($event)"
+  (onRowUnselect)="handleRowUnselect($event)"
+  (onRowExpand)="handleRowExpand($event)"
+  (onRowCollapse)="handleRowCollapse($event)"
+  (onContextMenuSelect)="handleContextMenuSelect($event)"
+  (onColResize)="handleColResize($event)"
+  (onColReorder)="handleColReorder($event)"
+  (onRowReorder)="handleRowReorder($event)"
+  (onEditInit)="handleEditInit($event)"
+  (onEditComplete)="handleEditComplete($event)"
+  (onEditCancel)="handleEditCancel($event)"
+  (onHeaderCheckboxToggle)="handleHeaderCheckboxToggle($event)"
+  (onStateSave)="handleStateSave($event)"
+  (onStateRestore)="handleStateRestore($event)">
+  
+  <!-- Caption template -->
+  <ng-template pTemplate="caption" *ngIf="captionTemplate">
+    <ng-container *ngTemplateOutlet="captionTemplate || null"></ng-container>
+  </ng-template>
+
+  <!-- Header template -->
+  <ng-template pTemplate="header" *ngIf="headerTemplate">
+    <ng-container *ngTemplateOutlet="headerTemplate || null"></ng-container>
+  </ng-template>
+
+  <!-- Body template -->
+  <ng-template pTemplate="body" let-rowData let-columns="columns" let-rowIndex="rowIndex" *ngIf="bodyTemplate">
+    <ng-container *ngTemplateOutlet="bodyTemplate || null; context: { $implicit: rowData, columns: columns, rowIndex: rowIndex }">
+    </ng-container>
+  </ng-template>
+
+  <!-- Footer template -->
+  <ng-template pTemplate="footer" *ngIf="footerTemplate">
+    <ng-container *ngTemplateOutlet="footerTemplate || null"></ng-container>
+  </ng-template>
+
+  <!-- Summary template -->
+  <ng-template pTemplate="summary" *ngIf="summaryTemplate">
+    <ng-container *ngTemplateOutlet="summaryTemplate || null"></ng-container>
+  </ng-template>
+
+  <!-- Empty message template -->
+  <ng-template pTemplate="emptymessage" *ngIf="emptyMessageTemplate">
+    <ng-container *ngTemplateOutlet="emptyMessageTemplate || null"></ng-container>
+  </ng-template>
+
+  <!-- Loading template -->
+  <ng-template pTemplate="loading" *ngIf="loadingTemplate">
+    <ng-container *ngTemplateOutlet="loadingTemplate || null"></ng-container>
+  </ng-template>
+
+  <!-- Loading body template -->
+  <ng-template pTemplate="loadingbody" *ngIf="loadingBodyTemplate">
+    <ng-container *ngTemplateOutlet="loadingBodyTemplate || null"></ng-container>
+  </ng-template>
+
+  <!-- Group header template -->
+  <ng-template pTemplate="groupheader" let-rowData let-rowIndex="rowIndex" *ngIf="groupHeaderTemplate">
+    <ng-container *ngTemplateOutlet="groupHeaderTemplate || null; context: { $implicit: rowData, rowIndex: rowIndex }">
+    </ng-container>
+  </ng-template>
+
+  <!-- Group footer template -->
+  <ng-template pTemplate="groupfooter" let-rowData let-rowIndex="rowIndex" *ngIf="groupFooterTemplate">
+    <ng-container *ngTemplateOutlet="groupFooterTemplate || null; context: { $implicit: rowData, rowIndex: rowIndex }">
+    </ng-container>
+  </ng-template>
+
+  <!-- Paginator left template -->
+  <ng-template pTemplate="paginatorleft" let-state *ngIf="paginatorLeftTemplate">
+    <ng-container *ngTemplateOutlet="paginatorLeftTemplate || null; context: { $implicit: state }">
+    </ng-container>
+  </ng-template>
+
+  <!-- Paginator right template -->
+  <ng-template pTemplate="paginatorright" let-state *ngIf="paginatorRightTemplate">
+    <ng-container *ngTemplateOutlet="paginatorRightTemplate || null; context: { $implicit: state }">
+    </ng-container>
+  </ng-template>
+
+  <!-- Paginator dropdown item template -->
+  <ng-template pTemplate="paginatordropdownitem" let-option *ngIf="paginatorDropdownItemTemplate">
+    <ng-container *ngTemplateOutlet="paginatorDropdownItemTemplate || null; context: { $implicit: option }">
+    </ng-container>
+  </ng-template>
+
+</p-table>

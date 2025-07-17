@@ -1,0 +1,33 @@
+<p-menu 
+  #menuComponent 
+  [model]="model()"
+  [style]="style()"
+  [styleClass]="styleClass()"
+  [popup]="popup()"
+  [appendTo]="appendTo()"
+  [autoZIndex]="autoZIndex()"
+  [baseZIndex]="baseZIndex()"
+  [showTransitionOptions]="showTransitionOptions()"
+  [hideTransitionOptions]="hideTransitionOptions()"
+  [id]="id()"
+  [ariaLabel]="ariaLabel()"
+  [ariaLabelledBy]="ariaLabelledBy()"
+  (onFocus)="handleFocus($event)"
+  (onBlur)="handleBlur($event)"
+  (onShow)="handleShow($event)"
+  (onHide)="handleHide($event)">
+  <ng-template #start>
+    <ng-container *ngTemplateOutlet="startTemplate || null"></ng-container>
+  </ng-template>
+  <ng-template #end>
+    <ng-container *ngTemplateOutlet="endTemplate || null"></ng-container>
+  </ng-template>
+  <ng-template #item let-item let-index="index" *ngIf="itemTemplate">
+    <ng-container *ngTemplateOutlet="itemTemplate || null; context: { $implicit: item, index: index }">
+    </ng-container>
+  </ng-template>
+  <ng-template #submenuheader let-item *ngIf="submenuHeaderTemplate">
+    <ng-container *ngTemplateOutlet="submenuHeaderTemplate || null; context: { $implicit: item }">
+    </ng-container>
+  </ng-template>
+</p-menu>

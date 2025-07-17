@@ -1,0 +1,32 @@
+{
+  "name": "lfx-pcc-v3",
+  "private": true,
+  "scripts": {
+    "build": "turbo run build",
+    "start": "turbo run start",
+    "lint": "turbo run lint",
+    "test": "turbo run test",
+    "watch": "turbo run watch",
+    "serve:ssr": "turbo run serve:ssr:lfx-pcc",
+    "start:prod": "pm2 start ecosystem.config.js",
+    "stop:prod": "pm2 stop lfx-pcc",
+    "restart:prod": "pm2 restart lfx-pcc",
+    "reload:prod": "pm2 reload lfx-pcc",
+    "logs:prod": "pm2 logs lfx-pcc",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "check-types": "turbo run check-types"
+  },
+  "devDependencies": {
+    "prettier": "^3.6.2",
+    "turbo": "^2.5.4",
+    "typescript": "5.8.3"
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "packageManager": "yarn@4.6.0",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ]
+}

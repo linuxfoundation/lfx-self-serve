@@ -1,0 +1,40 @@
+/* Google Fonts - Must be at the very top */
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Roboto+Slab:wght@100..900&display=swap');
+
+@layer tailwind-base, primeng, tailwind-utilities;
+
+@layer tailwind-base {
+  @tailwind base;
+}
+
+@layer tailwind-utilities {
+  @tailwind components;
+  @tailwind utilities;
+}
+/* Custom font family theme variables */
+@theme {
+  /* Open Sans as the primary sans-serif font */
+  --font-sans: 'Open Sans', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+
+  /* Roboto Slab for headings and display text */
+  --font-display: 'Roboto Slab', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+
+  /* Keep Roboto Slab as serif option too */
+  --font-serif: 'Roboto Slab', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+
+  --p-datatable-body-cell-padding: 0;
+}
+
+:root {
+  --p-datatable-body-cell-padding: 0.25rem 0;
+  --p-datatable-header-cell-padding: 0;
+}
+
+html {
+  font-size: 16px;
+  background-color: #f9fafb;
+}
+
+a {
+  @apply font-sans text-primary-700 hover:text-primary-900;
+}

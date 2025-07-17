@@ -1,0 +1,11 @@
+::ng-deep {
+  .p-card {
+    .p-card-title {
+      @apply font-display;
+    }
+  }
+
+  .p-avatar {
+    @apply flex;
+  }
+}

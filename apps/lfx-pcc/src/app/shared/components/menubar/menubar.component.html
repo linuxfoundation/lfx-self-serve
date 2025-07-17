@@ -1,0 +1,26 @@
+<p-menubar 
+  [model]="model()"
+  [style]="style()"
+  [styleClass]="styleClass()"
+  [autoZIndex]="autoZIndex()"
+  [baseZIndex]="baseZIndex()"
+  [autoDisplay]="autoDisplay()"
+  [autoHide]="autoHide()"
+  [autoHideDelay]="autoHideDelay()"
+  [breakpoint]="breakpoint()"
+  [id]="id()"
+  [ariaLabel]="ariaLabel()"
+  [ariaLabelledBy]="ariaLabelledBy()"
+  (onFocus)="handleFocus($event)"
+  (onBlur)="handleBlur($event)">
+  <ng-template #start>
+    <ng-container *ngTemplateOutlet="startTemplate || null"></ng-container>
+  </ng-template>
+  <ng-template #end>
+    <ng-container *ngTemplateOutlet="endTemplate || null"></ng-container>
+  </ng-template>
+  <ng-template #item let-item let-root="root" *ngIf="itemTemplate">
+    <ng-container *ngTemplateOutlet="itemTemplate || null; context: { $implicit: item, root: root }">
+    </ng-container>
+  </ng-template>
+</p-menubar>

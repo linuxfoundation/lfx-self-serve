@@ -1,0 +1,33 @@
+// Remove PrimeNG menubar default styling
+:host ::ng-deep {
+
+  .p-menubar {
+    @apply bg-transparent border-none rounded-none px-8 py-4;
+
+    .p-menubar-root-list {
+      @apply gap-8;
+
+      .p-menubar-item {
+          .p-menubar-item-content {
+          .p-menubar-item-link {
+            @apply px-0 py-2 text-gray-600 text-sm font-medium;
+
+            &:hover {
+              @apply text-gray-900 bg-white;
+            }
+          }
+        }
+      }
+    }
+  }
+}
+::ng-deep {
+  .profile-menu {
+    @apply text-sm w-auto mt-1 min-w-44;
+
+    .p-menu-item-link {
+      @apply text-black;
+    }
+  }
+}
+
