@@ -47,11 +47,11 @@ When testing is implemented, the application will use Angular's recommended test
 
 ```typescript
 // Example: project-card.component.spec.ts
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { signal } from "@angular/core";
-import { ProjectCardComponent } from "./project-card.component";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { signal } from '@angular/core';
+import { ProjectCardComponent } from './project-card.component';
 
-describe("ProjectCardComponent", () => {
+describe('ProjectCardComponent', () => {
   let component: ProjectCardComponent;
   let fixture: ComponentFixture<ProjectCardComponent>;
 
@@ -64,21 +64,21 @@ describe("ProjectCardComponent", () => {
     component = fixture.componentInstance;
   });
 
-  it("should display project title", () => {
+  it('should display project title', () => {
     // Set input signals
-    fixture.componentRef.setInput("title", "Test Project");
-    fixture.componentRef.setInput("description", "Test Description");
+    fixture.componentRef.setInput('title', 'Test Project');
+    fixture.componentRef.setInput('description', 'Test Description');
 
     fixture.detectChanges();
 
-    const titleElement = fixture.nativeElement.querySelector("h3");
-    expect(titleElement.textContent).toBe("Test Project");
+    const titleElement = fixture.nativeElement.querySelector('h3');
+    expect(titleElement.textContent).toBe('Test Project');
   });
 
-  it("should emit click events", () => {
-    spyOn(component.onClick, "emit");
+  it('should emit click events', () => {
+    spyOn(component.onClick, 'emit');
 
-    const cardElement = fixture.nativeElement.querySelector(".project-card");
+    const cardElement = fixture.nativeElement.querySelector('.project-card');
     cardElement.click();
 
     expect(component.onClick.emit).toHaveBeenCalled();
@@ -90,11 +90,11 @@ describe("ProjectCardComponent", () => {
 
 ```typescript
 // Example: avatar.component.spec.ts
-import { ComponentFixture, TestBed } from "@angular/core/testing";
-import { AvatarComponent } from "./avatar.component";
-import { AvatarModule } from "primeng/avatar";
+import { ComponentFixture, TestBed } from '@angular/core/testing';
+import { AvatarComponent } from './avatar.component';
+import { AvatarModule } from 'primeng/avatar';
 
-describe("AvatarComponent", () => {
+describe('AvatarComponent', () => {
   let component: AvatarComponent;
   let fixture: ComponentFixture<AvatarComponent>;
 
@@ -107,34 +107,34 @@ describe("AvatarComponent", () => {
     component = fixture.componentInstance;
   });
 
-  it("should display image when provided", () => {
-    fixture.componentRef.setInput("image", "test-image.jpg");
+  it('should display image when provided', () => {
+    fixture.componentRef.setInput('image', 'test-image.jpg');
     fixture.detectChanges();
 
-    expect(component.displayImage()).toBe("test-image.jpg");
-    expect(component.displayIcon()).toBe("");
-    expect(component.displayLabel()).toBe("");
+    expect(component.displayImage()).toBe('test-image.jpg');
+    expect(component.displayIcon()).toBe('');
+    expect(component.displayLabel()).toBe('');
   });
 
-  it("should fallback to icon when image fails", () => {
-    fixture.componentRef.setInput("image", "broken-image.jpg");
-    fixture.componentRef.setInput("icon", "fa-user");
+  it('should fallback to icon when image fails', () => {
+    fixture.componentRef.setInput('image', 'broken-image.jpg');
+    fixture.componentRef.setInput('icon', 'fa-user');
 
     // Simulate image error
     component.handleImageError();
     fixture.detectChanges();
 
-    expect(component.displayImage()).toBe("");
-    expect(component.displayIcon()).toBe("fa-user");
+    expect(component.displayImage()).toBe('');
+    expect(component.displayIcon()).toBe('fa-user');
   });
 
-  it("should fallback to label when no image or icon", () => {
-    fixture.componentRef.setInput("label", "John Doe");
+  it('should fallback to label when no image or icon', () => {
+    fixture.componentRef.setInput('label', 'John Doe');
     fixture.detectChanges();
 
-    expect(component.displayImage()).toBe("");
-    expect(component.displayIcon()).toBe("");
-    expect(component.displayLabel()).toBe("J");
+    expect(component.displayImage()).toBe('');
+    expect(component.displayIcon()).toBe('');
+    expect(component.displayLabel()).toBe('J');
   });
 });
 ```
@@ -145,10 +145,10 @@ describe("AvatarComponent", () => {
 
 ```typescript
 // Example: user.service.spec.ts
-import { TestBed } from "@angular/core/testing";
-import { UserService } from "./user.service";
+import { TestBed } from '@angular/core/testing';
+import { UserService } from './user.service';
 
-describe("UserService", () => {
+describe('UserService', () => {
   let service: UserService;
 
   beforeEach(() => {
@@ -156,16 +156,16 @@ describe("UserService", () => {
     service = TestBed.inject(UserService);
   });
 
-  it("should initialize with unauthenticated state", () => {
+  it('should initialize with unauthenticated state', () => {
     expect(service.authenticated()).toBe(false);
     expect(service.user()).toBeNull();
   });
 
-  it("should update authentication state", () => {
+  it('should update authentication state', () => {
     const mockUser = {
-      sub: "123",
-      name: "John Doe",
-      email: "john@example.com",
+      sub: '123',
+      name: 'John Doe',
+      email: 'john@example.com',
       // ... other user properties
     };
 
@@ -182,14 +182,11 @@ describe("UserService", () => {
 
 ```typescript
 // Example: project.service.spec.ts
-import { TestBed } from "@angular/core/testing";
-import {
-  HttpClientTestingModule,
-  HttpTestingController,
-} from "@angular/common/http/testing";
-import { ProjectService } from "./project.service";
+import { TestBed } from '@angular/core/testing';
+import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { ProjectService } from './project.service';
 
-describe("ProjectService", () => {
+describe('ProjectService', () => {
   let service: ProjectService;
   let httpMock: HttpTestingController;
 
@@ -207,27 +204,27 @@ describe("ProjectService", () => {
     httpMock.verify();
   });
 
-  it("should fetch projects", () => {
+  it('should fetch projects', () => {
     const mockProjects = [
-      { id: "1", name: "Project 1", description: "Description 1" },
-      { id: "2", name: "Project 2", description: "Description 2" },
+      { id: '1', name: 'Project 1', description: 'Description 1' },
+      { id: '2', name: 'Project 2', description: 'Description 2' },
     ];
 
     service.loadProjects();
 
-    const req = httpMock.expectOne("/api/projects");
-    expect(req.request.method).toBe("GET");
+    const req = httpMock.expectOne('/api/projects');
+    expect(req.request.method).toBe('GET');
     req.flush(mockProjects);
 
     expect(service.projects()).toEqual(mockProjects);
     expect(service.loading()).toBe(false);
   });
 
-  it("should handle errors", () => {
+  it('should handle errors', () => {
     service.loadProjects();
 
-    const req = httpMock.expectOne("/api/projects");
-    req.error(new ErrorEvent("Network error"), { status: 500 });
+    const req = httpMock.expectOne('/api/projects');
+    req.error(new ErrorEvent('Network error'), { status: 500 });
 
     expect(service.error()).toBeTruthy();
     expect(service.loading()).toBe(false);
@@ -241,27 +238,22 @@ describe("ProjectService", () => {
 
 ```typescript
 // jest.config.ts
-import type { Config } from "jest";
+import type { Config } from 'jest';
 
 const config: Config = {
-  preset: "jest-preset-angular",
-  setupFilesAfterEnv: ["<rootDir>/setup-jest.ts"],
-  globalSetup: "jest-preset-angular/global-setup",
-  testMatch: ["<rootDir>/src/**/*.spec.ts"],
-  collectCoverageFrom: [
-    "<rootDir>/src/**/*.ts",
-    "!<rootDir>/src/**/*.spec.ts",
-    "!<rootDir>/src/main.ts",
-    "!<rootDir>/src/polyfills.ts",
-  ],
-  coverageDirectory: "coverage",
-  coverageReporters: ["html", "text-summary", "lcov"],
+  preset: 'jest-preset-angular',
+  setupFilesAfterEnv: ['<rootDir>/setup-jest.ts'],
+  globalSetup: 'jest-preset-angular/global-setup',
+  testMatch: ['<rootDir>/src/**/*.spec.ts'],
+  collectCoverageFrom: ['<rootDir>/src/**/*.ts', '!<rootDir>/src/**/*.spec.ts', '!<rootDir>/src/main.ts', '!<rootDir>/src/polyfills.ts'],
+  coverageDirectory: 'coverage',
+  coverageReporters: ['html', 'text-summary', 'lcov'],
   transform: {
-    "^.+\\.(ts|mjs|js|html)$": [
-      "jest-preset-angular",
+    '^.+\\.(ts|mjs|js|html)$': [
+      'jest-preset-angular',
       {
-        tsconfig: "tsconfig.spec.json",
-        stringifyContentPathRegex: "\\.(html|svg)$",
+        tsconfig: 'tsconfig.spec.json',
+        stringifyContentPathRegex: '\\.(html|svg)$',
       },
     ],
   },
@@ -274,15 +266,15 @@ export default config;
 
 ```typescript
 // setup-jest.ts
-import "jest-preset-angular/setup-jest";
-import "@testing-library/jest-dom";
+import 'jest-preset-angular/setup-jest';
+import '@testing-library/jest-dom';
 
 // Mock global objects
-Object.defineProperty(window, "CSS", { value: null });
-Object.defineProperty(window, "getComputedStyle", {
+Object.defineProperty(window, 'CSS', { value: null });
+Object.defineProperty(window, 'getComputedStyle', {
   value: () => ({
-    appearance: ["textfield"],
-    getPropertyValue: () => "",
+    appearance: ['textfield'],
+    getPropertyValue: () => '',
   }),
 });
 
@@ -300,9 +292,9 @@ global.ResizeObserver = class ResizeObserver {
 
 ```typescript
 // testing/component-helpers.ts
-import { ComponentFixture } from "@angular/core/testing";
-import { DebugElement } from "@angular/core";
-import { By } from "@angular/platform-browser";
+import { ComponentFixture } from '@angular/core/testing';
+import { DebugElement } from '@angular/core';
+import { By } from '@angular/platform-browser';
 
 export class ComponentHelper<T> {
   constructor(private fixture: ComponentFixture<T>) {}
@@ -343,16 +335,14 @@ export class ComponentHelper<T> {
     const input = this.querySelector(selector) as HTMLInputElement;
     if (input) {
       input.value = value;
-      input.dispatchEvent(new Event("input"));
+      input.dispatchEvent(new Event('input'));
       this.detectChanges();
     }
   }
 }
 
 // Usage in tests
-export function createComponentHelper<T>(
-  fixture: ComponentFixture<T>,
-): ComponentHelper<T> {
+export function createComponentHelper<T>(fixture: ComponentFixture<T>): ComponentHelper<T> {
   return new ComponentHelper(fixture);
 }
 ```
@@ -379,7 +369,7 @@ export function createComponentHelper<T>(
 
 ```typescript
 // Testing computed signals
-it("should compute filtered data", () => {
+it('should compute filtered data', () => {
   service.data.set([
     { id: 1, active: true },
     { id: 2, active: false },
@@ -393,8 +383,8 @@ it("should compute filtered data", () => {
 });
 
 // Testing signal effects
-it("should trigger effect on signal change", () => {
-  const effectSpy = jasmine.createSpy("effect");
+it('should trigger effect on signal change', () => {
+  const effectSpy = jasmine.createSpy('effect');
 
   effect(() => {
     service.data();

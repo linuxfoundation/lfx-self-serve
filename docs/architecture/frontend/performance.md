@@ -8,12 +8,7 @@ The application uses Angular Universal with AngularNodeAppEngine for optimal per
 
 ```typescript
 // server.ts - Express SSR server
-import {
-  AngularNodeAppEngine,
-  createNodeRequestHandler,
-  isMainModule,
-  writeResponseToNodeResponse,
-} from "@angular/ssr/node";
+import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
 
 const angularApp = new AngularNodeAppEngine();
 
@@ -21,7 +16,7 @@ export function app(): express.Express {
   const server = express();
 
   // SSR route handler
-  server.get("**", (req, res, next) => {
+  server.get('**', (req, res, next) => {
     angularApp
       .handle(req)
       .then((response) => {
@@ -79,7 +74,7 @@ export const appConfig: ApplicationConfig = {
 
 ```typescript
 // Efficient signal updates
-@Injectable({ providedIn: "root" })
+@Injectable({ providedIn: 'root' })
 export class PerformantService {
   private readonly dataSignal = signal<Data[]>([]);
 
@@ -165,11 +160,10 @@ runtime.[hash].js       ~12KB (gzipped)
 
 ```typescript
 @Component({
-  selector: "lfx-optimized-list",
+  selector: 'lfx-optimized-list',
   template: `
     @for (item of items(); track trackByFn) {
-      <lfx-project-card [title]="item.name" [description]="item.description">
-      </lfx-project-card>
+      <lfx-project-card [title]="item.name" [description]="item.description"> </lfx-project-card>
     }
   `,
 })
@@ -177,8 +171,7 @@ export class OptimizedListComponent {
   protected readonly items = inject(ProjectService).projects;
 
   // TrackBy function for efficient list updates
-  protected readonly trackByFn = (index: number, item: Project): string =>
-    item.id;
+  protected readonly trackByFn = (index: number, item: Project): string => item.id;
 }
 ```
 
@@ -187,13 +180,7 @@ export class OptimizedListComponent {
 For large datasets, implement virtual scrolling:
 
 ```html
-<lfx-table
-  [value]="largeDataset()"
-  [virtualScroll]="true"
-  [virtualScrollItemSize]="48"
-  [virtualScrollOptions]="{ lazy: true }"
->
-</lfx-table>
+<lfx-table [value]="largeDataset()" [virtualScroll]="true" [virtualScrollItemSize]="48" [virtualScrollOptions]="{ lazy: true }"> </lfx-table>
 ```
 
 ## 🔧 Development Performance

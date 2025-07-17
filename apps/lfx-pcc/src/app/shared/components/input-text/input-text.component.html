@@ -1,14 +1,30 @@
 <ng-container [formGroup]="form()">
   @if (icon()) {
-  <p-iconfield>
-    <p-inputicon [class]="icon()" />
-    <input pInputText [id]="id()" [formControlName]="control()" [pSize]="size()!" [type]="type()"
-      [placeholder]="placeholder()" [class]="styleClass()" class="w-full" [autocomplete]="autocomplete()"
-      [attr.data-test]="dataTest()" />
-  </p-iconfield>
+    <p-iconfield>
+      <p-inputicon [class]="icon()" />
+      <input
+        pInputText
+        [id]="id()"
+        [formControlName]="control()"
+        [pSize]="size()!"
+        [type]="type()"
+        [placeholder]="placeholder()"
+        [class]="styleClass()"
+        class="w-full"
+        [autocomplete]="autocomplete()"
+        [attr.data-test]="dataTest()" />
+    </p-iconfield>
   } @else {
-  <input pInputText [id]="id()" [formControlName]="control()" [pSize]="size()!" [type]="type()"
-    [placeholder]="placeholder()" [class]="styleClass()" class="w-full" [autocomplete]="autocomplete()"
-    [attr.data-test]="dataTest()" />
+    <input
+      pInputText
+      [id]="id()"
+      [formControlName]="control()"
+      [pSize]="size()!"
+      [type]="type()"
+      [placeholder]="placeholder()"
+      [class]="styleClass()"
+      class="w-full"
+      [autocomplete]="autocomplete()"
+      [attr.data-test]="dataTest()" />
   }
 </ng-container>

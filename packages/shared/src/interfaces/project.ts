@@ -7,7 +7,7 @@ export interface ProjectCardMetric {
   value: number;
   badge?: {
     label: string;
-    severity: "success" | "info" | "warning" | "danger";
+    severity: 'success' | 'info' | 'warning' | 'danger';
   };
 }
 
@@ -36,7 +36,7 @@ export interface Project {
 }
 
 export interface ProjectQueryItem {
-  type: "project";
+  type: 'project';
   id: string;
   data: Project;
 }

@@ -1,12 +1,7 @@
 import { Request, Response, NextFunction } from 'express';
 import { ApiError } from '@lfx-pcc/shared/interfaces';
 
-export function apiErrorHandler(
-  error: ApiError,
-  req: Request,
-  res: Response,
-  next: NextFunction
-): void {
+export function apiErrorHandler(error: ApiError, req: Request, res: Response, next: NextFunction): void {
   // If response already sent, delegate to default Express error handler
   if (res.headersSent) {
     return next(error);

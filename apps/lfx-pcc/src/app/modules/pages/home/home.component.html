@@ -1,13 +1,14 @@
 <div class="container mx-auto pt-24 px-8">
   <div class="flex flex-col items-center text-center">
-    <h1 class="text-3xl font-display font-light text-gray-900 mb-3 px-96">
-      Your personalized control panel for managing projects, committees, and meetings.
-    </h1>
+    <h1 class="text-3xl font-display font-light text-gray-900 mb-3 px-96">Your personalized control panel for managing projects, committees, and meetings.</h1>
     <p>Get a comprehensive overview of all your active initiatives and upcoming events in one centralized dashboard.</p>
 
     <div class="mt-12 w-full max-w-2xl">
-      <lfx-input-text placeholder="Search projects, committees, meetings, or mailing lists..."
-        icon="fa-light fa-magnifying-glass" [form]="form" control="search"
+      <lfx-input-text
+        placeholder="Search projects, committees, meetings, or mailing lists..."
+        icon="fa-light fa-magnifying-glass"
+        [form]="form"
+        control="search"
         styleClass="w-full text-base py-2 bg-white border-gray-200 rounded-full">
       </lfx-input-text>
     </div>
@@ -16,12 +17,18 @@
 <div class="container mx-auto py-24 px-8">
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
     @for (project of filteredProjects(); track project.id; let i = $index) {
-    <div pAnimateOnScroll class="animate-delay-2000"
-      enterClass="animate-enter fade-in-10 slide-in-from-b-8 animate-duration-1000"
-      leaveClass="animate-leave fade-out-0">
-      <lfx-project-card [title]="project.title" [description]="project.description" [logoUrl]="project.logoUrl"
-        [url]="project.url" [metrics]="project.metrics"></lfx-project-card>
-    </div>
+      <div
+        pAnimateOnScroll
+        class="animate-delay-2000"
+        enterClass="animate-enter fade-in-10 slide-in-from-b-8 animate-duration-1000"
+        leaveClass="animate-leave fade-out-0">
+        <lfx-project-card
+          [title]="project.title"
+          [description]="project.description"
+          [logoUrl]="project.logoUrl"
+          [url]="project.url"
+          [metrics]="project.metrics"></lfx-project-card>
+      </div>
     }
   </div>
 </div>

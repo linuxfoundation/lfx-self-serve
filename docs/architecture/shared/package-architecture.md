@@ -63,11 +63,11 @@ The package supports multiple import patterns for flexibility:
 
 ```typescript
 // Main export (all interfaces)
-import { User, AuthContext, AvatarProps } from "@lfx-pcc/shared";
+import { User, AuthContext, AvatarProps } from '@lfx-pcc/shared';
 
 // Specific exports
-import { User, AuthContext } from "@lfx-pcc/shared/interfaces";
-import { lfxColors } from "@lfx-pcc/shared/constants";
+import { User, AuthContext } from '@lfx-pcc/shared/interfaces';
+import { lfxColors } from '@lfx-pcc/shared/constants';
 ```
 
 ## 🔧 Interface Architecture
@@ -78,7 +78,7 @@ import { lfxColors } from "@lfx-pcc/shared/constants";
 // packages/shared/src/interfaces/auth.ts
 export interface User {
   sid: string;
-  "https://sso.linuxfoundation.org/claims/username": string;
+  'https://sso.linuxfoundation.org/claims/username': string;
   given_name: string;
   family_name: string;
   nickname: string;
@@ -101,19 +101,19 @@ export interface AuthContext {
 ```typescript
 // packages/shared/src/interfaces/components.ts
 export interface AvatarSizeOptions {
-  size: "large" | "xlarge" | "normal";
+  size: 'large' | 'xlarge' | 'normal';
 }
 
 export interface AvatarShapeOptions {
-  shape: "square" | "circle";
+  shape: 'square' | 'circle';
 }
 
 export interface AvatarProps {
   label?: string;
   icon?: string;
   image?: string;
-  size?: AvatarSizeOptions["size"];
-  shape?: AvatarShapeOptions["shape"];
+  size?: AvatarSizeOptions['size'];
+  shape?: AvatarShapeOptions['shape'];
   style?: Record<string, string | number> | null;
   styleClass?: string;
   ariaLabel?: string;
@@ -140,10 +140,10 @@ export interface Project {
 // packages/shared/src/constants/colors.ts
 export const lfxColors = {
   primary: {
-    50: "#eff6ff",
-    100: "#dbeafe",
+    50: '#eff6ff',
+    100: '#dbeafe',
     // ... full color scale
-    900: "#1e3a8a",
+    900: '#1e3a8a',
   },
   // Additional color scales
 };
@@ -154,8 +154,8 @@ export const lfxColors = {
 ```typescript
 // packages/shared/src/constants/font-sizes.ts
 export const lfxFontSizes = {
-  "2xs": ["0.625rem", { lineHeight: "0.75rem" }],
-  xs: ["0.75rem", { lineHeight: "1rem" }],
+  '2xs': ['0.625rem', { lineHeight: '0.75rem' }],
+  xs: ['0.75rem', { lineHeight: '1rem' }],
   // ... additional font sizes
 };
 ```
@@ -167,22 +167,22 @@ export const lfxFontSizes = {
 ```typescript
 // packages/shared/src/index.ts
 // Export all interfaces
-export * from "./interfaces";
+export * from './interfaces';
 
 // Export all constants
-export * from "./constants";
+export * from './constants';
 
 // Export all enums
-export * from "./enums";
+export * from './enums';
 ```
 
 ### Category-Specific Exports
 
 ```typescript
 // packages/shared/src/interfaces/index.ts
-export * from "./project";
-export * from "./components";
-export * from "./auth";
+export * from './project';
+export * from './components';
+export * from './auth';
 ```
 
 ## 🔄 Build Process
@@ -223,11 +223,11 @@ npm run check-types
 
 ```typescript
 // Angular component
-import { User, AvatarProps } from "@lfx-pcc/shared/interfaces";
-import { lfxColors } from "@lfx-pcc/shared/constants";
+import { User, AvatarProps } from '@lfx-pcc/shared/interfaces';
+import { lfxColors } from '@lfx-pcc/shared/constants';
 
 @Component({
-  selector: "lfx-user-card",
+  selector: 'lfx-user-card',
   template: `...`,
 })
 export class UserCardComponent {
@@ -240,9 +240,9 @@ export class UserCardComponent {
 
 ```typescript
 // Express server
-import { User, AuthContext } from "@lfx-pcc/shared/interfaces";
+import { User, AuthContext } from '@lfx-pcc/shared/interfaces';
 
-app.use("/**", (req: Request, res: Response, next: NextFunction) => {
+app.use('/**', (req: Request, res: Response, next: NextFunction) => {
   const auth: AuthContext = {
     authenticated: false,
     user: null,

@@ -220,14 +220,14 @@ ng generate guard my-guard
 
 ```typescript
 // Import PrimeNG modules directly in your components
-import { ButtonModule } from "primeng/button";
-import { CardModule } from "primeng/card";
+import { ButtonModule } from 'primeng/button';
+import { CardModule } from 'primeng/card';
 
 @Component({
-  selector: "lfx-example",
+  selector: 'lfx-example',
   imports: [ButtonModule, CardModule],
-  templateUrl: "./example.component.html",
-  styleUrl: "./example.component.scss",
+  templateUrl: './example.component.html',
+  styleUrl: './example.component.scss',
 })
 export class ExampleComponent {}
 ```
@@ -271,14 +271,6 @@ yarn dlx turbo link
 - **Auth0** authentication with express-openid-connect
 - **Pino** high-performance structured logging
 - **PM2** for production process management and clustering
-
-### Development Tools
-
-- **Turborepo** for monorepo management
-- **ESLint** with Angular-specific rules
-- **Prettier** with Tailwind integration
-- **TypeScript** with strict configuration
-- **Angular CLI** for code generation
 
 ## Useful Links
 

@@ -10,51 +10,49 @@ Integration tests verify that different parts of the application work correctly 
 
 ```typescript
 // Example: server.integration.spec.ts
-import request from "supertest";
-import { app } from "../src/server/server";
+import request from 'supertest';
+import { app } from '../src/server/server';
 
-describe("Server Integration", () => {
+describe('Server Integration', () => {
   let server: any;
 
   beforeAll(() => {
     server = app();
   });
 
-  describe("Health Endpoint", () => {
-    it("should return OK", async () => {
-      const response = await request(server).get("/health").expect(200);
+  describe('Health Endpoint', () => {
+    it('should return OK', async () => {
+      const response = await request(server).get('/health').expect(200);
 
-      expect(response.text).toBe("OK");
+      expect(response.text).toBe('OK');
     });
 
-    it("should not log health checks", async () => {
+    it('should not log health checks', async () => {
       // Verify health endpoint is excluded from logging
-      const logSpy = jest.spyOn(console, "log");
+      const logSpy = jest.spyOn(console, 'log');
 
-      await request(server).get("/health");
+      await request(server).get('/health');
 
-      expect(logSpy).not.toHaveBeenCalledWith(
-        expect.stringContaining("/health"),
-      );
+      expect(logSpy).not.toHaveBeenCalledWith(expect.stringContaining('/health'));
     });
   });
 
-  describe("Authentication", () => {
-    it("should redirect unauthenticated requests to Auth0", async () => {
-      const response = await request(server).get("/dashboard").expect(302);
+  describe('Authentication', () => {
+    it('should redirect unauthenticated requests to Auth0', async () => {
+      const response = await request(server).get('/dashboard').expect(302);
 
-      expect(response.headers.location).toContain("auth0.com");
+      expect(response.headers.location).toContain('auth0.com');
     });
 
-    it("should serve protected content for authenticated users", async () => {
+    it('should serve protected content for authenticated users', async () => {
       // Mock authentication middleware
       const mockAuth = jest.fn((req, res, next) => {
         req.oidc = {
           isAuthenticated: () => true,
           user: {
-            sub: "test-user-123",
-            name: "Test User",
-            email: "test@example.com",
+            sub: 'test-user-123',
+            name: 'Test User',
+            email: 'test@example.com',
           },
         };
         next();
@@ -71,23 +69,20 @@ describe("Server Integration", () => {
 
 ```typescript
 // Example: api.integration.spec.ts
-import request from "supertest";
-import { app } from "../src/server/server";
+import request from 'supertest';
+import { app } from '../src/server/server';
 
-describe("API Integration", () => {
+describe('API Integration', () => {
   let server: any;
 
   beforeAll(() => {
     server = app();
   });
 
-  describe("Project API", () => {
-    it("should return projects list", async () => {
+  describe('Project API', () => {
+    it('should return projects list', async () => {
       // This assumes API endpoints are implemented
-      const response = await request(server)
-        .get("/api/projects")
-        .set("Authorization", "Bearer valid-token")
-        .expect(200);
+      const response = await request(server).get('/api/projects').set('Authorization', 'Bearer valid-token').expect(200);
 
       expect(response.body).toEqual(
         expect.arrayContaining([
@@ -96,20 +91,16 @@ describe("API Integration", () => {
             name: expect.any(String),
             description: expect.any(String),
           }),
-        ]),
+        ])
       );
     });
 
-    it("should handle authentication errors", async () => {
-      await request(server).get("/api/projects").expect(401);
+    it('should handle authentication errors', async () => {
+      await request(server).get('/api/projects').expect(401);
     });
 
-    it("should validate request parameters", async () => {
-      await request(server)
-        .post("/api/projects")
-        .send({ invalidData: true })
-        .set("Authorization", "Bearer valid-token")
-        .expect(400);
+    it('should validate request parameters', async () => {
+      await request(server).post('/api/projects').send({ invalidData: true }).set('Authorization', 'Bearer valid-token').expect(400);
     });
   });
 });
@@ -121,16 +112,13 @@ describe("API Integration", () => {
 
 ```typescript
 // Example: project-list.integration.spec.ts
-import { TestBed } from "@angular/core/testing";
-import {
-  HttpClientTestingModule,
-  HttpTestingController,
-} from "@angular/common/http/testing";
-import { ComponentFixture } from "@angular/core/testing";
-import { ProjectListComponent } from "./project-list.component";
-import { ProjectService } from "../services/project.service";
+import { TestBed } from '@angular/core/testing';
+import { HttpClientTestingModule, HttpTestingController } from '@angular/common/http/testing';
+import { ComponentFixture } from '@angular/core/testing';
+import { ProjectListComponent } from './project-list.component';
+import { ProjectService } from '../services/project.service';
 
-describe("ProjectListComponent Integration", () => {
+describe('ProjectListComponent Integration', () => {
   let component: ProjectListComponent;
   let fixture: ComponentFixture<ProjectListComponent>;
   let httpMock: HttpTestingController;
@@ -152,18 +140,18 @@ describe("ProjectListComponent Integration", () => {
     httpMock.verify();
   });
 
-  it("should load and display projects", async () => {
+  it('should load and display projects', async () => {
     const mockProjects = [
-      { id: "1", name: "Kubernetes", description: "Container orchestration" },
-      { id: "2", name: "Prometheus", description: "Monitoring system" },
+      { id: '1', name: 'Kubernetes', description: 'Container orchestration' },
+      { id: '2', name: 'Prometheus', description: 'Monitoring system' },
     ];
 
     // Trigger component initialization
     fixture.detectChanges();
 
     // Expect HTTP request
-    const req = httpMock.expectOne("/api/projects");
-    expect(req.request.method).toBe("GET");
+    const req = httpMock.expectOne('/api/projects');
+    expect(req.request.method).toBe('GET');
     req.flush(mockProjects);
 
     // Wait for async operations
@@ -171,45 +159,44 @@ describe("ProjectListComponent Integration", () => {
     await fixture.whenStable();
 
     // Verify UI updates
-    const projectCards =
-      fixture.nativeElement.querySelectorAll("lfx-project-card");
+    const projectCards = fixture.nativeElement.querySelectorAll('lfx-project-card');
     expect(projectCards.length).toBe(2);
-    expect(projectCards[0].textContent).toContain("Kubernetes");
-    expect(projectCards[1].textContent).toContain("Prometheus");
+    expect(projectCards[0].textContent).toContain('Kubernetes');
+    expect(projectCards[1].textContent).toContain('Prometheus');
   });
 
-  it("should handle loading states", () => {
+  it('should handle loading states', () => {
     fixture.detectChanges();
 
     // Should show loading state
     expect(component.loading()).toBe(true);
-    const loadingElement = fixture.nativeElement.querySelector(".loading");
+    const loadingElement = fixture.nativeElement.querySelector('.loading');
     expect(loadingElement).toBeTruthy();
 
     // Complete the request
-    const req = httpMock.expectOne("/api/projects");
+    const req = httpMock.expectOne('/api/projects');
     req.flush([]);
 
     fixture.detectChanges();
 
     // Should hide loading state
     expect(component.loading()).toBe(false);
-    const loadingElementAfter = fixture.nativeElement.querySelector(".loading");
+    const loadingElementAfter = fixture.nativeElement.querySelector('.loading');
     expect(loadingElementAfter).toBeFalsy();
   });
 
-  it("should handle errors gracefully", () => {
+  it('should handle errors gracefully', () => {
     fixture.detectChanges();
 
-    const req = httpMock.expectOne("/api/projects");
-    req.error(new ErrorEvent("Network error"), { status: 500 });
+    const req = httpMock.expectOne('/api/projects');
+    req.error(new ErrorEvent('Network error'), { status: 500 });
 
     fixture.detectChanges();
 
     expect(component.error()).toBeTruthy();
-    const errorElement = fixture.nativeElement.querySelector(".error");
+    const errorElement = fixture.nativeElement.querySelector('.error');
     expect(errorElement).toBeTruthy();
-    expect(errorElement.textContent).toContain("error");
+    expect(errorElement.textContent).toContain('error');
   });
 });
 ```
@@ -218,16 +205,16 @@ describe("ProjectListComponent Integration", () => {
 
 ```typescript
 // Example: routing.integration.spec.ts
-import { TestBed } from "@angular/core/testing";
-import { Router } from "@angular/router";
-import { Location } from "@angular/common";
-import { Component } from "@angular/core";
-import { routes } from "../app.routes";
+import { TestBed } from '@angular/core/testing';
+import { Router } from '@angular/router';
+import { Location } from '@angular/common';
+import { Component } from '@angular/core';
+import { routes } from '../app.routes';
 
-@Component({ template: "" })
+@Component({ template: '' })
 class TestComponent {}
 
-describe("Routing Integration", () => {
+describe('Routing Integration', () => {
   let router: Router;
   let location: Location;
   let fixture: any;
@@ -236,9 +223,9 @@ describe("Routing Integration", () => {
     await TestBed.configureTestingModule({
       imports: [
         RouterTestingModule.withRoutes([
-          { path: "", component: TestComponent },
-          { path: "project/:id", component: TestComponent },
-          { path: "project/:id/meetings", component: TestComponent },
+          { path: '', component: TestComponent },
+          { path: 'project/:id', component: TestComponent },
+          { path: 'project/:id/meetings', component: TestComponent },
         ]),
       ],
       declarations: [TestComponent],
@@ -249,19 +236,19 @@ describe("Routing Integration", () => {
     fixture = TestBed.createComponent(TestComponent);
   });
 
-  it("should navigate to home", async () => {
-    await router.navigate([""]);
-    expect(location.path()).toBe("");
+  it('should navigate to home', async () => {
+    await router.navigate(['']);
+    expect(location.path()).toBe('');
   });
 
-  it("should navigate to project page", async () => {
-    await router.navigate(["/project", "kubernetes"]);
-    expect(location.path()).toBe("/project/kubernetes");
+  it('should navigate to project page', async () => {
+    await router.navigate(['/project', 'kubernetes']);
+    expect(location.path()).toBe('/project/kubernetes');
   });
 
-  it("should navigate to project meetings", async () => {
-    await router.navigate(["/project", "kubernetes", "meetings"]);
-    expect(location.path()).toBe("/project/kubernetes/meetings");
+  it('should navigate to project meetings', async () => {
+    await router.navigate(['/project', 'kubernetes', 'meetings']);
+    expect(location.path()).toBe('/project/kubernetes/meetings');
   });
 });
 ```
@@ -272,46 +259,38 @@ describe("Routing Integration", () => {
 
 ```typescript
 // Example: ssr.integration.spec.ts
-import request from "supertest";
-import { app } from "../src/server/server";
+import request from 'supertest';
+import { app } from '../src/server/server';
 
-describe("SSR Integration", () => {
+describe('SSR Integration', () => {
   let server: any;
 
   beforeAll(() => {
     server = app();
   });
 
-  it("should serve server-rendered HTML", async () => {
-    const response = await request(server)
-      .get("/")
-      .expect(200)
-      .expect("Content-Type", /html/);
+  it('should serve server-rendered HTML', async () => {
+    const response = await request(server).get('/').expect(200).expect('Content-Type', /html/);
 
     // Verify SSR content
-    expect(response.text).toContain("<!DOCTYPE html>");
-    expect(response.text).toContain("<app-root");
-    expect(response.text).toContain("LFX Project Control Center");
+    expect(response.text).toContain('<!DOCTYPE html>');
+    expect(response.text).toContain('<app-root');
+    expect(response.text).toContain('LFX Project Control Center');
   });
 
-  it("should inject auth context into SSR", async () => {
+  it('should inject auth context into SSR', async () => {
     // Mock authenticated request
-    const response = await request(server)
-      .get("/dashboard")
-      .set("Cookie", "mock-auth-cookie=value")
-      .expect(200);
+    const response = await request(server).get('/dashboard').set('Cookie', 'mock-auth-cookie=value').expect(200);
 
     // Verify auth context is injected
-    expect(response.text).toContain("authenticated: true");
+    expect(response.text).toContain('authenticated: true');
   });
 
-  it("should handle SSR errors gracefully", async () => {
+  it('should handle SSR errors gracefully', async () => {
     // Request non-existent route
-    const response = await request(server)
-      .get("/non-existent-route")
-      .expect(404);
+    const response = await request(server).get('/non-existent-route').expect(404);
 
-    expect(response.text).toContain("Not Found");
+    expect(response.text).toContain('Not Found');
   });
 });
 ```
@@ -322,18 +301,15 @@ describe("SSR Integration", () => {
 
 ```typescript
 // Example: database.integration.spec.ts
-import { TestContainer, StartedTestContainer } from "testcontainers";
+import { TestContainer, StartedTestContainer } from 'testcontainers';
 
-describe("Database Integration", () => {
+describe('Database Integration', () => {
   let container: StartedTestContainer;
   let databaseUrl: string;
 
   beforeAll(async () => {
     // Start test database container
-    container = await new TestContainer("postgres:15")
-      .withEnvironment({ POSTGRES_PASSWORD: "test" })
-      .withExposedPorts(5432)
-      .start();
+    container = await new TestContainer('postgres:15').withEnvironment({ POSTGRES_PASSWORD: 'test' }).withExposedPorts(5432).start();
 
     const port = container.getMappedPort(5432);
     databaseUrl = `postgresql://postgres:test@localhost:${port}/postgres`;
@@ -343,7 +319,7 @@ describe("Database Integration", () => {
     await container.stop();
   });
 
-  it("should connect to database", async () => {
+  it('should connect to database', async () => {
     // This would test actual database operations
     // Currently not implemented as we use direct API calls
     expect(databaseUrl).toBeDefined();
@@ -357,29 +333,29 @@ describe("Database Integration", () => {
 
 ```typescript
 // Example: auth.integration.spec.ts
-import request from "supertest";
-import { app } from "../src/server/server";
+import request from 'supertest';
+import { app } from '../src/server/server';
 
-describe("Authentication Integration", () => {
+describe('Authentication Integration', () => {
   let server: any;
 
   beforeAll(() => {
     server = app();
   });
 
-  it("should redirect to Auth0 for login", async () => {
-    const response = await request(server).get("/login").expect(302);
+  it('should redirect to Auth0 for login', async () => {
+    const response = await request(server).get('/login').expect(302);
 
     expect(response.headers.location).toMatch(/auth0\.com/);
   });
 
-  it("should handle Auth0 callback", async () => {
+  it('should handle Auth0 callback', async () => {
     // Mock Auth0 callback with authorization code
     const response = await request(server)
-      .get("/callback")
+      .get('/callback')
       .query({
-        code: "mock-auth-code",
-        state: "mock-state",
+        code: 'mock-auth-code',
+        state: 'mock-state',
       })
       .expect(302);
 
@@ -387,7 +363,7 @@ describe("Authentication Integration", () => {
     expect(response.headers.location).not.toMatch(/auth0\.com/);
   });
 
-  it("should maintain session after authentication", async () => {
+  it('should maintain session after authentication', async () => {
     // This would require session management testing
     // Implementation depends on session storage
   });
@@ -400,25 +376,20 @@ describe("Authentication Integration", () => {
 
 ```typescript
 // testing/integration-helpers.ts
-import { TestBed } from "@angular/core/testing";
-import { HttpClientTestingModule } from "@angular/common/http/testing";
-import { RouterTestingModule } from "@angular/router/testing";
-import { NoopAnimationsModule } from "@angular/platform-browser/animations";
+import { TestBed } from '@angular/core/testing';
+import { HttpClientTestingModule } from '@angular/common/http/testing';
+import { RouterTestingModule } from '@angular/router/testing';
+import { NoopAnimationsModule } from '@angular/platform-browser/animations';
 
 export function setupIntegrationTest(
   options: {
     imports?: any[];
     providers?: any[];
     declarations?: any[];
-  } = {},
+  } = {}
 ) {
   return TestBed.configureTestingModule({
-    imports: [
-      HttpClientTestingModule,
-      RouterTestingModule,
-      NoopAnimationsModule,
-      ...(options.imports || []),
-    ],
+    imports: [HttpClientTestingModule, RouterTestingModule, NoopAnimationsModule, ...(options.imports || [])],
     providers: options.providers || [],
     declarations: options.declarations || [],
   });
@@ -426,17 +397,17 @@ export function setupIntegrationTest(
 
 export function createMockUser() {
   return {
-    sub: "test-user-123",
-    name: "Test User",
-    email: "test@example.com",
-    given_name: "Test",
-    family_name: "User",
-    nickname: "testuser",
-    picture: "https://example.com/avatar.jpg",
-    updated_at: "2023-01-01T00:00:00.000Z",
+    sub: 'test-user-123',
+    name: 'Test User',
+    email: 'test@example.com',
+    given_name: 'Test',
+    family_name: 'User',
+    nickname: 'testuser',
+    picture: 'https://example.com/avatar.jpg',
+    updated_at: '2023-01-01T00:00:00.000Z',
     email_verified: true,
-    sid: "test-session-123",
-    "https://sso.linuxfoundation.org/claims/username": "testuser",
+    sid: 'test-session-123',
+    'https://sso.linuxfoundation.org/claims/username': 'testuser',
   };
 }
 
@@ -452,13 +423,9 @@ export function mockAuthContext(authenticated: boolean = true) {
 
 ```typescript
 // testing/api-mocks.ts
-import {
-  HttpInterceptor,
-  HttpRequest,
-  HttpHandler,
-} from "@angular/common/http";
-import { Injectable } from "@angular/core";
-import { of } from "rxjs";
+import { HttpInterceptor, HttpRequest, HttpHandler } from '@angular/common/http';
+import { Injectable } from '@angular/core';
+import { of } from 'rxjs';
 
 @Injectable()
 export class MockApiInterceptor implements HttpInterceptor {
@@ -486,9 +453,7 @@ export class MockApiInterceptor implements HttpInterceptor {
 // Usage in tests
 beforeEach(() => {
   const mockInterceptor = TestBed.inject(MockApiInterceptor);
-  mockInterceptor.mockEndpoint("/api/projects", [
-    { id: "1", name: "Test Project" },
-  ]);
+  mockInterceptor.mockEndpoint('/api/projects', [{ id: '1', name: 'Test Project' }]);
 });
 ```
 
@@ -527,7 +492,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "18"
+          node-version: '18'
 
       - name: Install dependencies
         run: yarn install

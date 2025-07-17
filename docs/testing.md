@@ -46,15 +46,15 @@ Tests use Cypress intercepts to mock API responses:
 
 ```typescript
 // Example API mocking setup
-cy.fixture("managers").then((managers) => {
-  cy.intercept("GET", "/api/managers*", managers).as("getManagers");
+cy.fixture('managers').then((managers) => {
+  cy.intercept('GET', '/api/managers*', managers).as('getManagers');
 });
 
 // Override for empty state testing
-cy.intercept("GET", "/api/managers", {
+cy.intercept('GET', '/api/managers', {
   statusCode: 200,
   body: [],
-}).as("getEmptyManagers");
+}).as('getEmptyManagers');
 ```
 
 ## Testing Components
@@ -97,13 +97,13 @@ cy.dataTest('cancel-btn').click();
 Empty states are properly tested with dedicated fixtures:
 
 ```typescript
-it("should show empty state when no managers exist", () => {
-  cy.intercept("GET", "/api/managers", { statusCode: 200, body: [] });
-  cy.visit("/dashboard/managers");
+it('should show empty state when no managers exist', () => {
+  cy.intercept('GET', '/api/managers', { statusCode: 200, body: [] });
+  cy.visit('/dashboard/managers');
 
-  cy.dataTest("managers-table").within(() => {
-    cy.get('[data-test="empty-state"]').should("be.visible");
-    cy.get("span").should("contain", "No managers found");
+  cy.dataTest('managers-table').within(() => {
+    cy.get('[data-test="empty-state"]').should('be.visible');
+    cy.get('span').should('contain', 'No managers found');
   });
 });
 ```
@@ -118,12 +118,12 @@ This section lists all the `data-test` attributes that have been added to the v1
 
 ```typescript
 // Static selectors
-cy.dataTest("login-btn").click();
-cy.dataTest("entry-title-input").type("Test Entry");
+cy.dataTest('login-btn').click();
+cy.dataTest('entry-title-input').type('Test Entry');
 
 // Dynamic selectors
-cy.dataTest("nav-changelog").click();
-cy.dataTest("entry-type-feature").should("be.visible");
+cy.dataTest('nav-changelog').click();
+cy.dataTest('entry-type-feature').should('be.visible');
 ```
 
 #### Custom Command
@@ -131,7 +131,7 @@ cy.dataTest("entry-type-feature").should("be.visible");
 The `dataTest()` command is available:
 
 ```typescript
-Cypress.Commands.add("dataTest", (value: string) => {
+Cypress.Commands.add('dataTest', (value: string) => {
   return cy.get(`[data-test="${value}"]`);
 });
 ```

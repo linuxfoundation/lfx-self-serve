@@ -13,11 +13,11 @@ The application uses PM2 for production process management with cluster mode and
 module.exports = {
   apps: [
     {
-      name: "lfx-pcc",
-      script: "apps/lfx-pcc/dist/lfx-pcc/server/server.mjs",
+      name: 'lfx-pcc',
+      script: 'apps/lfx-pcc/dist/lfx-pcc/server/server.mjs',
       env: {
-        PM2: "true",
-        NODE_ENV: "production",
+        PM2: 'true',
+        NODE_ENV: 'production',
         PORT: 4200,
       },
       max_restarts: 10, // Restart limit for unstable apps
@@ -25,7 +25,7 @@ module.exports = {
       watch: false, // Disable file watching in production
       autorestart: true, // Auto restart on crashes
       instances: 1, // Number of instances to run
-      exec_mode: "cluster", // Enable cluster mode for load balancing
+      exec_mode: 'cluster', // Enable cluster mode for load balancing
     },
   ],
 };
@@ -76,7 +76,7 @@ ls -la apps/lfx-pcc/dist/lfx-pcc/
 // apps/lfx-pcc/src/server/server.ts
 const metaUrl = import.meta.url;
 const isMain = isMainModule(metaUrl);
-const isPM2 = process.env["PM2"] === "true";
+const isPM2 = process.env['PM2'] === 'true';
 
 if (isMain || isPM2) {
   startServer();
@@ -135,11 +135,9 @@ pm2 status
 ```typescript
 // Server listens on configured port
 export function startServer() {
-  const port = process.env["PORT"] || 4000;
+  const port = process.env['PORT'] || 4000;
   app.listen(port, () => {
-    logger.logger.info(
-      `Node Express server listening on http://localhost:${port}`,
-    );
+    logger.logger.info(`Node Express server listening on http://localhost:${port}`);
   });
 }
 ```
@@ -192,8 +190,8 @@ PCC_AUTH0_AUDIENCE='https://api.lfx.dev'
 
 ```typescript
 // Health endpoint excludes PM2 monitoring noise
-app.get("/health", (_req: Request, res: Response) => {
-  res.send("OK");
+app.get('/health', (_req: Request, res: Response) => {
+  res.send('OK');
 });
 ```
 

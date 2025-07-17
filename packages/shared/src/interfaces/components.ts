@@ -3,43 +3,43 @@
 
 // Badge interfaces
 export interface BadgeSeverityOptions {
-  severity: "info" | "success" | "warn" | "danger" | "secondary" | "contrast";
+  severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
 }
 
 export interface BadgeSizeOptions {
-  size: "small" | "large" | "xlarge";
+  size: 'small' | 'large' | 'xlarge';
 }
 
 export interface BadgeProps {
   value: string | number;
-  severity: BadgeSeverityOptions["severity"];
-  size: BadgeSizeOptions["size"];
+  severity: BadgeSeverityOptions['severity'];
+  size: BadgeSizeOptions['size'];
   styleClass: string;
   badgeDisabled: boolean;
 }
 
 // Button interfaces
 export interface ButtonSeverityOptions {
-  severity: "success" | "info" | "warn" | "danger" | "help" | "primary" | "secondary" | "contrast" | null | undefined;
+  severity: 'success' | 'info' | 'warn' | 'danger' | 'help' | 'primary' | 'secondary' | 'contrast' | null | undefined;
 }
 
 export interface ButtonIconPositionOptions {
-  iconPos: "left" | "right" | "top" | "bottom";
+  iconPos: 'left' | 'right' | 'top' | 'bottom';
 }
 
 export interface ButtonSizeOptions {
-  size: "small" | "large" | undefined;
+  size: 'small' | 'large' | undefined;
 }
 
 export interface ButtonVariantOptions {
-  variant: "outlined" | "text" | undefined;
+  variant: 'outlined' | 'text' | undefined;
 }
 
 export interface ButtonProps {
-  severity?: ButtonSeverityOptions["severity"];
-  iconPos?: ButtonIconPositionOptions["iconPos"];
-  size?: ButtonSizeOptions["size"];
-  variant?: ButtonVariantOptions["variant"];
+  severity?: ButtonSeverityOptions['severity'];
+  iconPos?: ButtonIconPositionOptions['iconPos'];
+  size?: ButtonSizeOptions['size'];
+  variant?: ButtonVariantOptions['variant'];
   label?: string;
   icon?: string;
   type?: string;
@@ -59,25 +59,25 @@ export interface ButtonProps {
   styleClass?: string;
   badge?: string;
   badgeClass?: string;
-  badgeSeverity?: BadgeSeverityOptions["severity"];
+  badgeSeverity?: BadgeSeverityOptions['severity'];
   ariaLabel?: string;
 }
 
 // Avatar interfaces
 export interface AvatarSizeOptions {
-  size: "normal" | "large" | "xlarge";
+  size: 'normal' | 'large' | 'xlarge';
 }
 
 export interface AvatarShapeOptions {
-  shape: "square" | "circle";
+  shape: 'square' | 'circle';
 }
 
 export interface AvatarProps {
   label?: string;
   icon?: string;
   image?: string;
-  size?: AvatarSizeOptions["size"];
-  shape?: AvatarShapeOptions["shape"];
+  size?: AvatarSizeOptions['size'];
+  shape?: AvatarShapeOptions['shape'];
   style?: Record<string, string | number> | null;
   styleClass?: string;
   ariaLabel?: string;

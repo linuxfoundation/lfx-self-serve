@@ -42,7 +42,7 @@ Angular Signals are the preferred way to manage state in this application.
 
 ```typescript
 @Component({
-  selector: "lfx-example",
+  selector: 'lfx-example',
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule],
   template: `
@@ -70,7 +70,7 @@ export class ExampleComponent {
 ### Service Patterns
 
 ```typescript
-@Injectable({ providedIn: "root" })
+@Injectable({ providedIn: 'root' })
 export class DataService {
   // Private state signals
   private readonly dataSignal = signal<Data[]>([]);
@@ -83,9 +83,7 @@ export class DataService {
   public readonly error = this.errorSignal.asReadonly();
 
   // Computed signals for derived state
-  public readonly activeData = computed(() =>
-    this.dataSignal().filter((item) => item.is_active),
-  );
+  public readonly activeData = computed(() => this.dataSignal().filter((item) => item.is_active));
 }
 ```
 
@@ -106,7 +104,7 @@ export const config = mergeApplicationConfig(appConfig, {
 // app.routes.server.ts
 export const serverRoutes: ServerRoute[] = [
   {
-    path: "**",
+    path: '**',
     renderMode: RenderMode.Server,
   },
 ];
@@ -125,7 +123,7 @@ All components use Angular's standalone component pattern:
 
 ```typescript
 @Component({
-  selector: "lfx-example",
+  selector: 'lfx-example',
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, ButtonModule],
   template: `<!-- template here -->`,
@@ -175,7 +173,7 @@ export class ExampleComponent {
 
   // Optional inputs with defaults
   public readonly isActive = input<boolean>(false);
-  public readonly size = input<"small" | "large">("small");
+  public readonly size = input<'small' | 'large'>('small');
 }
 ```
 

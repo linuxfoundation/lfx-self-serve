@@ -29,45 +29,45 @@ End-to-end tests verify complete user workflows from browser interaction to back
 
 ```typescript
 // playwright.config.ts
-import { defineConfig, devices } from "@playwright/test";
+import { defineConfig, devices } from '@playwright/test';
 
 export default defineConfig({
-  testDir: "./e2e",
+  testDir: './e2e',
   fullyParallel: true,
-  forbidOnly: !!process.env["CI"],
-  retries: process.env["CI"] ? 2 : 0,
-  workers: process.env["CI"] ? 1 : undefined,
-  reporter: "html",
+  forbidOnly: !!process.env['CI'],
+  retries: process.env['CI'] ? 2 : 0,
+  workers: process.env['CI'] ? 1 : undefined,
+  reporter: 'html',
   use: {
-    baseURL: "http://localhost:4000",
-    trace: "on-first-retry",
-    video: "retain-on-failure",
-    screenshot: "only-on-failure",
+    baseURL: 'http://localhost:4000',
+    trace: 'on-first-retry',
+    video: 'retain-on-failure',
+    screenshot: 'only-on-failure',
   },
 
   projects: [
     {
-      name: "chromium",
-      use: { ...devices["Desktop Chrome"] },
+      name: 'chromium',
+      use: { ...devices['Desktop Chrome'] },
     },
     {
-      name: "firefox",
-      use: { ...devices["Desktop Firefox"] },
+      name: 'firefox',
+      use: { ...devices['Desktop Firefox'] },
     },
     {
-      name: "webkit",
-      use: { ...devices["Desktop Safari"] },
+      name: 'webkit',
+      use: { ...devices['Desktop Safari'] },
     },
     {
-      name: "mobile-chrome",
-      use: { ...devices["Pixel 5"] },
+      name: 'mobile-chrome',
+      use: { ...devices['Pixel 5'] },
     },
   ],
 
   webServer: {
-    command: "yarn start",
-    url: "http://localhost:4000",
-    reuseExistingServer: !process.env["CI"],
+    command: 'yarn start',
+    url: 'http://localhost:4000',
+    reuseExistingServer: !process.env['CI'],
     timeout: 120000,
   },
 });
@@ -79,11 +79,11 @@ export default defineConfig({
 
 ```typescript
 // e2e/auth.spec.ts
-import { test, expect } from "@playwright/test";
+import { test, expect } from '@playwright/test';
 
-test.describe("Authentication", () => {
-  test("should redirect unauthenticated users to Auth0", async ({ page }) => {
-    await page.goto("/");
+test.describe('Authentication', () => {
+  test('should redirect unauthenticated users to Auth0', async ({ page }) => {
+    await page.goto('/');
 
     // Should redirect to Auth0
     await expect(page).toHaveURL(/auth0\.com/);
@@ -92,37 +92,37 @@ test.describe("Authentication", () => {
     await expect(page.locator('[data-testid="login-form"]')).toBeVisible();
   });
 
-  test("should complete login flow", async ({ page }) => {
-    await page.goto("/");
+  test('should complete login flow', async ({ page }) => {
+    await page.goto('/');
 
     // Wait for Auth0 redirect
     await page.waitForURL(/auth0\.com/);
 
     // Fill login form
-    await page.fill('[data-testid="email-input"]', "test@example.com");
-    await page.fill('[data-testid="password-input"]', "test-password");
+    await page.fill('[data-testid="email-input"]', 'test@example.com');
+    await page.fill('[data-testid="password-input"]', 'test-password');
     await page.click('[data-testid="login-button"]');
 
     // Should redirect back to application
-    await page.waitForURL("http://localhost:4000/");
+    await page.waitForURL('http://localhost:4000/');
 
     // Should see authenticated state
     await expect(page.locator('[data-testid="user-avatar"]')).toBeVisible();
     await expect(page.locator('[data-testid="user-menu"]')).toBeVisible();
   });
 
-  test("should handle logout", async ({ page, context }) => {
+  test('should handle logout', async ({ page, context }) => {
     // Assume authenticated state
     await context.addCookies([
       {
-        name: "appSession",
-        value: "mock-session-token",
-        domain: "localhost",
-        path: "/",
+        name: 'appSession',
+        value: 'mock-session-token',
+        domain: 'localhost',
+        path: '/',
       },
     ]);
 
-    await page.goto("/");
+    await page.goto('/');
 
     // Click user menu
     await page.click('[data-testid="user-avatar"]');
@@ -138,83 +138,67 @@ test.describe("Authentication", () => {
 
 ```typescript
 // e2e/navigation.spec.ts
-import { test, expect } from "@playwright/test";
+import { test, expect } from '@playwright/test';
 
-test.describe("Project Navigation", () => {
+test.describe('Project Navigation', () => {
   test.beforeEach(async ({ page, context }) => {
     // Mock authenticated state
     await context.addCookies([
       {
-        name: "appSession",
-        value: "mock-session-token",
-        domain: "localhost",
-        path: "/",
+        name: 'appSession',
+        value: 'mock-session-token',
+        domain: 'localhost',
+        path: '/',
       },
     ]);
   });
 
-  test("should navigate from home to project page", async ({ page }) => {
-    await page.goto("/");
+  test('should navigate from home to project page', async ({ page }) => {
+    await page.goto('/');
 
     // Wait for projects to load
-    await expect(
-      page.locator('[data-testid="project-card"]').first(),
-    ).toBeVisible();
+    await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible();
 
     // Click on first project
     const firstProject = page.locator('[data-testid="project-card"]').first();
-    const projectTitle = await firstProject.locator("h3").textContent();
+    const projectTitle = await firstProject.locator('h3').textContent();
     await firstProject.click();
 
     // Should navigate to project page
     await expect(page).toHaveURL(/\/project\/[^\/]+$/);
 
     // Should show project details
-    await expect(page.locator('[data-testid="project-title"]')).toHaveText(
-      projectTitle || "",
-    );
-    await expect(
-      page.locator('[data-testid="project-navigation"]'),
-    ).toBeVisible();
+    await expect(page.locator('[data-testid="project-title"]')).toHaveText(projectTitle || '');
+    await expect(page.locator('[data-testid="project-navigation"]')).toBeVisible();
   });
 
-  test("should navigate between project tabs", async ({ page }) => {
-    await page.goto("/project/kubernetes");
+  test('should navigate between project tabs', async ({ page }) => {
+    await page.goto('/project/kubernetes');
 
     // Should show meetings tab by default
-    await expect(
-      page.locator('[data-testid="meetings-content"]'),
-    ).toBeVisible();
+    await expect(page.locator('[data-testid="meetings-content"]')).toBeVisible();
 
     // Click committees tab
     await page.click('[data-testid="committees-tab"]');
-    await expect(page).toHaveURL("/project/kubernetes/committees");
-    await expect(
-      page.locator('[data-testid="committees-content"]'),
-    ).toBeVisible();
+    await expect(page).toHaveURL('/project/kubernetes/committees');
+    await expect(page.locator('[data-testid="committees-content"]')).toBeVisible();
 
     // Click mailing lists tab
     await page.click('[data-testid="mailing-lists-tab"]');
-    await expect(page).toHaveURL("/project/kubernetes/mailing-lists");
-    await expect(
-      page.locator('[data-testid="mailing-lists-content"]'),
-    ).toBeVisible();
+    await expect(page).toHaveURL('/project/kubernetes/mailing-lists');
+    await expect(page.locator('[data-testid="mailing-lists-content"]')).toBeVisible();
   });
 
-  test("should maintain navigation state on page reload", async ({ page }) => {
-    await page.goto("/project/kubernetes/committees");
+  test('should maintain navigation state on page reload', async ({ page }) => {
+    await page.goto('/project/kubernetes/committees');
 
     // Reload page
     await page.reload();
 
     // Should maintain state
-    await expect(page).toHaveURL("/project/kubernetes/committees");
-    await expect(page.locator('[data-testid="committees-tab"]')).toHaveClass(
-      /active/,
-    );
-    await expect(
-      page.locator('[data-testid="committees-content"]'),
-    ).toBeVisible();
+    await expect(page).toHaveURL('/project/kubernetes/committees');
+    await expect(page.locator('[data-testid="committees-tab"]')).toHaveClass(/active/);
+    await expect(page.locator('[data-testid="committees-content"]')).toBeVisible();
   });
 });
 ```
@@ -223,69 +207,57 @@ test.describe("Project Navigation", () => {
 
 ```typescript
 // e2e/search.spec.ts
-import { test, expect } from "@playwright/test";
+import { test, expect } from '@playwright/test';
 
-test.describe("Search and Filtering", () => {
+test.describe('Search and Filtering', () => {
   test.beforeEach(async ({ page, context }) => {
     // Mock authenticated state
     await context.addCookies([
       {
-        name: "appSession",
-        value: "mock-session-token",
-        domain: "localhost",
-        path: "/",
+        name: 'appSession',
+        value: 'mock-session-token',
+        domain: 'localhost',
+        path: '/',
       },
     ]);
 
-    await page.goto("/");
+    await page.goto('/');
   });
 
-  test("should filter projects by search term", async ({ page }) => {
+  test('should filter projects by search term', async ({ page }) => {
     // Wait for projects to load
-    await expect(page.locator('[data-testid="project-card"]')).toHaveCount(
-      expect.any(Number),
-    );
-    const initialCount = await page
-      .locator('[data-testid="project-card"]')
-      .count();
+    await expect(page.locator('[data-testid="project-card"]')).toHaveCount(expect.any(Number));
+    const initialCount = await page.locator('[data-testid="project-card"]').count();
 
     // Enter search term
-    await page.fill('[data-testid="search-input"]', "kubernetes");
+    await page.fill('[data-testid="search-input"]', 'kubernetes');
 
     // Should filter results
-    await expect(page.locator('[data-testid="project-card"]')).toHaveCount(
-      expect.any(Number),
-    );
-    const filteredCount = await page
-      .locator('[data-testid="project-card"]')
-      .count();
+    await expect(page.locator('[data-testid="project-card"]')).toHaveCount(expect.any(Number));
+    const filteredCount = await page.locator('[data-testid="project-card"]').count();
 
     // Filtered count should be less than or equal to initial
     expect(filteredCount).toBeLessThanOrEqual(initialCount);
 
     // All visible projects should match search term
-    const projectTitles = await page
-      .locator('[data-testid="project-card"] h3')
-      .allTextContents();
+    const projectTitles = await page.locator('[data-testid="project-card"] h3').allTextContents();
     projectTitles.forEach((title) => {
-      expect(title.toLowerCase()).toContain("kubernetes");
+      expect(title.toLowerCase()).toContain('kubernetes');
     });
   });
 
-  test("should clear search filter", async ({ page }) => {
+  test('should clear search filter', async ({ page }) => {
     // Enter search term
-    await page.fill('[data-testid="search-input"]', "nonexistent");
+    await page.fill('[data-testid="search-input"]', 'nonexistent');
 
     // Should show no results
     await expect(page.locator('[data-testid="no-results"]')).toBeVisible();
 
     // Clear search
-    await page.fill('[data-testid="search-input"]', "");
+    await page.fill('[data-testid="search-input"]', '');
 
     // Should show all projects again
-    await expect(page.locator('[data-testid="project-card"]')).toHaveCount(
-      expect.any(Number),
-    );
+    await expect(page.locator('[data-testid="project-card"]')).toHaveCount(expect.any(Number));
     await expect(page.locator('[data-testid="no-results"]')).not.toBeVisible();
   });
 });
@@ -297,12 +269,12 @@ test.describe("Search and Filtering", () => {
 
 ```typescript
 // e2e/responsive.spec.ts
-import { test, expect } from "@playwright/test";
+import { test, expect } from '@playwright/test';
 
-test.describe("Responsive Design", () => {
-  test("should display mobile navigation", async ({ page }) => {
+test.describe('Responsive Design', () => {
+  test('should display mobile navigation', async ({ page }) => {
     await page.setViewportSize({ width: 375, height: 667 }); // iPhone SE
-    await page.goto("/");
+    await page.goto('/');
 
     // Mobile menu should be hidden initially
     await expect(page.locator('[data-testid="mobile-menu"]')).not.toBeVisible();
@@ -314,40 +286,30 @@ test.describe("Responsive Design", () => {
     await expect(page.locator('[data-testid="mobile-menu"]')).toBeVisible();
 
     // Navigation items should be stacked vertically
-    const menuItems = page.locator(
-      '[data-testid="mobile-menu"] [data-testid="nav-item"]',
-    );
+    const menuItems = page.locator('[data-testid="mobile-menu"] [data-testid="nav-item"]');
     await expect(menuItems).toHaveCount(expect.any(Number));
   });
 
-  test("should adapt project grid for different screen sizes", async ({
-    page,
-  }) => {
-    await page.goto("/");
+  test('should adapt project grid for different screen sizes', async ({ page }) => {
+    await page.goto('/');
 
     // Desktop: Should show multiple columns
     await page.setViewportSize({ width: 1200, height: 800 });
-    const desktopColumns = await page
-      .locator('[data-testid="project-grid"]')
-      .evaluate((el) => {
-        return getComputedStyle(el).gridTemplateColumns.split(" ").length;
-      });
+    const desktopColumns = await page.locator('[data-testid="project-grid"]').evaluate((el) => {
+      return getComputedStyle(el).gridTemplateColumns.split(' ').length;
+    });
 
     // Tablet: Should show fewer columns
     await page.setViewportSize({ width: 768, height: 1024 });
-    const tabletColumns = await page
-      .locator('[data-testid="project-grid"]')
-      .evaluate((el) => {
-        return getComputedStyle(el).gridTemplateColumns.split(" ").length;
-      });
+    const tabletColumns = await page.locator('[data-testid="project-grid"]').evaluate((el) => {
+      return getComputedStyle(el).gridTemplateColumns.split(' ').length;
+    });
 
     // Mobile: Should show single column
     await page.setViewportSize({ width: 375, height: 667 });
-    const mobileColumns = await page
-      .locator('[data-testid="project-grid"]')
-      .evaluate((el) => {
-        return getComputedStyle(el).gridTemplateColumns.split(" ").length;
-      });
+    const mobileColumns = await page.locator('[data-testid="project-grid"]').evaluate((el) => {
+      return getComputedStyle(el).gridTemplateColumns.split(' ').length;
+    });
 
     expect(desktopColumns).toBeGreaterThan(tabletColumns);
     expect(tabletColumns).toBeGreaterThan(mobileColumns);
@@ -362,22 +324,20 @@ test.describe("Responsive Design", () => {
 
 ```typescript
 // e2e/performance.spec.ts
-import { test, expect } from "@playwright/test";
+import { test, expect } from '@playwright/test';
 
-test.describe("Performance", () => {
-  test("should meet Core Web Vitals thresholds", async ({ page }) => {
-    await page.goto("/");
+test.describe('Performance', () => {
+  test('should meet Core Web Vitals thresholds', async ({ page }) => {
+    await page.goto('/');
 
     // Measure First Contentful Paint
     const fcpMetric = await page.evaluate(() => {
       return new Promise((resolve) => {
         new PerformanceObserver((list) => {
           const entries = list.getEntries();
-          const fcp = entries.find(
-            (entry) => entry.name === "first-contentful-paint",
-          );
+          const fcp = entries.find((entry) => entry.name === 'first-contentful-paint');
           if (fcp) resolve(fcp.startTime);
-        }).observe({ entryTypes: ["paint"] });
+        }).observe({ entryTypes: ['paint'] });
       });
     });
 
@@ -391,7 +351,7 @@ test.describe("Performance", () => {
           const entries = list.getEntries();
           const lastEntry = entries[entries.length - 1];
           resolve(lastEntry.startTime);
-        }).observe({ entryTypes: ["largest-contentful-paint"] });
+        }).observe({ entryTypes: ['largest-contentful-paint'] });
 
         // Fallback timeout
         setTimeout(() => resolve(0), 5000);
@@ -402,15 +362,13 @@ test.describe("Performance", () => {
     expect(lcpMetric).toBeLessThan(2500);
   });
 
-  test("should load projects within acceptable time", async ({ page }) => {
+  test('should load projects within acceptable time', async ({ page }) => {
     const startTime = Date.now();
 
-    await page.goto("/");
+    await page.goto('/');
 
     // Wait for projects to load
-    await expect(
-      page.locator('[data-testid="project-card"]').first(),
-    ).toBeVisible();
+    await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible();
 
     const loadTime = Date.now() - startTime;
 
@@ -426,7 +384,7 @@ test.describe("Performance", () => {
 
 ```typescript
 // e2e/pages/project-page.ts
-import { Page, Locator } from "@playwright/test";
+import { Page, Locator } from '@playwright/test';
 
 export class ProjectPage {
   readonly page: Page;
@@ -440,9 +398,7 @@ export class ProjectPage {
   constructor(page: Page) {
     this.page = page;
     this.projectTitle = page.locator('[data-testid="project-title"]');
-    this.projectDescription = page.locator(
-      '[data-testid="project-description"]',
-    );
+    this.projectDescription = page.locator('[data-testid="project-description"]');
     this.navigationTabs = page.locator('[data-testid="project-navigation"]');
     this.meetingsTab = page.locator('[data-testid="meetings-tab"]');
     this.committeesTab = page.locator('[data-testid="committees-tab"]');
@@ -471,12 +427,12 @@ export class ProjectPage {
 }
 
 // Usage in tests
-test("should navigate project tabs", async ({ page }) => {
+test('should navigate project tabs', async ({ page }) => {
   const projectPage = new ProjectPage(page);
-  await projectPage.goto("kubernetes");
+  await projectPage.goto('kubernetes');
 
   await projectPage.navigateToCommittees();
-  await expect(page).toHaveURL("/project/kubernetes/committees");
+  await expect(page).toHaveURL('/project/kubernetes/committees');
 });
 ```
 
@@ -484,23 +440,23 @@ test("should navigate project tabs", async ({ page }) => {
 
 ```typescript
 // e2e/helpers/auth.ts
-import { Page, BrowserContext } from "@playwright/test";
+import { Page, BrowserContext } from '@playwright/test';
 
 export async function loginUser(page: Page, context: BrowserContext) {
   // Add authentication cookie
   await context.addCookies([
     {
-      name: "appSession",
-      value: "mock-authenticated-session",
-      domain: "localhost",
-      path: "/",
+      name: 'appSession',
+      value: 'mock-authenticated-session',
+      domain: 'localhost',
+      path: '/',
       httpOnly: true,
       secure: false,
     },
   ]);
 
   // Navigate to authenticated page
-  await page.goto("/");
+  await page.goto('/');
 
   // Verify authentication
   await page.waitForSelector('[data-testid="user-avatar"]');
@@ -521,10 +477,10 @@ export async function logoutUser(page: Page) {
 // e2e/fixtures/test-data.ts
 export const testProjects = [
   {
-    id: "kubernetes",
-    name: "Kubernetes",
-    description: "Container orchestration platform",
-    category: "CNCF",
+    id: 'kubernetes',
+    name: 'Kubernetes',
+    description: 'Container orchestration platform',
+    category: 'CNCF',
     metrics: {
       meetings: 12,
       committees: 8,
@@ -532,10 +488,10 @@ export const testProjects = [
     },
   },
   {
-    id: "prometheus",
-    name: "Prometheus",
-    description: "Monitoring and alerting toolkit",
-    category: "CNCF",
+    id: 'prometheus',
+    name: 'Prometheus',
+    description: 'Monitoring and alerting toolkit',
+    category: 'CNCF',
     metrics: {
       meetings: 8,
       committees: 4,
@@ -546,10 +502,10 @@ export const testProjects = [
 
 export async function seedTestData(page: Page) {
   // Mock API responses
-  await page.route("/api/projects", (route) => {
+  await page.route('/api/projects', (route) => {
     route.fulfill({
       status: 200,
-      contentType: "application/json",
+      contentType: 'application/json',
       body: JSON.stringify(testProjects),
     });
   });
@@ -580,7 +536,7 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v3
         with:
-          node-version: "18"
+          node-version: '18'
 
       - name: Install dependencies
         run: yarn install

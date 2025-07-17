@@ -1,5 +1,5 @@
-<p-menu 
-  #menuComponent 
+<p-menu
+  #menuComponent
   [model]="model()"
   [style]="style()"
   [styleClass]="styleClass()"
@@ -23,11 +23,9 @@
     <ng-container *ngTemplateOutlet="endTemplate || null"></ng-container>
   </ng-template>
   <ng-template #item let-item let-index="index" *ngIf="itemTemplate">
-    <ng-container *ngTemplateOutlet="itemTemplate || null; context: { $implicit: item, index: index }">
-    </ng-container>
+    <ng-container *ngTemplateOutlet="itemTemplate || null; context: { $implicit: item, index: index }"> </ng-container>
   </ng-template>
   <ng-template #submenuheader let-item *ngIf="submenuHeaderTemplate">
-    <ng-container *ngTemplateOutlet="submenuHeaderTemplate || null; context: { $implicit: item }">
-    </ng-container>
+    <ng-container *ngTemplateOutlet="submenuHeaderTemplate || null; context: { $implicit: item }"> </ng-container>
   </ng-template>
 </p-menu>

@@ -1,0 +1,5 @@
+# Run lint-staged for formatting and linting
+npx lint-staged
+yarn format:check
+yarn lint:check
+yarn check-types

@@ -28,10 +28,10 @@ yarn start:server
 module.exports = {
   apps: [
     {
-      name: "lfx-pcc",
-      script: "dist/lfx-pcc/server/server.mjs",
+      name: 'lfx-pcc',
+      script: 'dist/lfx-pcc/server/server.mjs',
       env: {
-        PM2: "true",
+        PM2: 'true',
       },
       max_restarts: 10, // Restart limit for unstable apps
       exp_backoff_restart_delay: 100, // Exponential backoff restart delay

@@ -34,11 +34,11 @@ providePrimeNG({
   theme: {
     preset: customPreset,
     options: {
-      prefix: "p",
-      darkModeSelector: ".dark-mode",
+      prefix: 'p',
+      darkModeSelector: '.dark-mode',
       cssLayer: {
-        name: "primeng",
-        order: "tailwind-base, primeng, tailwind-utilities",
+        name: 'primeng',
+        order: 'tailwind-base, primeng, tailwind-utilities',
       },
     },
   },
@@ -82,10 +82,10 @@ const customPreset = definePreset(Aura, {
 // src/app/config/styles/colors.ts
 export const lfxColors = {
   primary: {
-    50: "#eff6ff",
-    100: "#dbeafe",
+    50: '#eff6ff',
+    100: '#dbeafe',
     // ... full color scale
-    900: "#1e3a8a",
+    900: '#1e3a8a',
   },
   secondary: {
     // ... secondary color scale
@@ -114,9 +114,9 @@ module.exports = {
 ```scss
 // Custom font theme variables
 @theme {
-  --font-sans: "Open Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-display: "Roboto Slab", ui-serif, Georgia, serif;
-  --font-serif: "Roboto Slab", ui-serif, Georgia, serif;
+  --font-sans: 'Open Sans', ui-sans-serif, system-ui, sans-serif;
+  --font-display: 'Roboto Slab', ui-serif, Georgia, serif;
+  --font-serif: 'Roboto Slab', ui-serif, Georgia, serif;
 }
 ```
 
@@ -132,8 +132,8 @@ Fonts are loaded via Google Fonts for optimal performance:
 ```typescript
 // src/app/config/styles/font-size.ts
 export const lfxFontSizes = {
-  "2xs": ["0.625rem", { lineHeight: "0.75rem" }],
-  xs: ["0.75rem", { lineHeight: "1rem" }],
+  '2xs': ['0.625rem', { lineHeight: '0.75rem' }],
+  xs: ['0.75rem', { lineHeight: '1rem' }],
   // ... additional sizes
 };
 ```
@@ -145,18 +145,18 @@ export const lfxFontSizes = {
 ```javascript
 // tailwind.config.js
 module.exports = {
-  content: ["./src/**/*.{html,ts}"],
+  content: ['./src/**/*.{html,ts}'],
   theme: {
     extend: {
       colors: lfxColors,
       fontSize: lfxFontSizes,
       fontFamily: {
-        sans: ["Open Sans", "sans-serif"],
-        display: ["Roboto Slab", "serif"],
+        sans: ['Open Sans', 'sans-serif'],
+        display: ['Roboto Slab', 'serif'],
       },
     },
   },
-  plugins: [require("@primeuix/tailwind-plugin")],
+  plugins: [require('@primeuix/tailwind-plugin')],
 };
 ```
 
@@ -199,11 +199,7 @@ When utilities aren't sufficient, use component-specific styles:
   }
 
   .special-element {
-    background: linear-gradient(
-      45deg,
-      theme("colors.primary.500"),
-      theme("colors.secondary.500")
-    );
+    background: linear-gradient(45deg, theme('colors.primary.500'), theme('colors.secondary.500'));
   }
 }
 ```
@@ -244,10 +240,7 @@ options: {
 
 ```html
 <!-- Dark mode toggle -->
-<button
-  (click)="toggleDarkMode()"
-  class="p-2 rounded-md dark:bg-gray-800 dark:text-white"
->
+<button (click)="toggleDarkMode()" class="p-2 rounded-md dark:bg-gray-800 dark:text-white">
   <i class="fa-light fa-moon dark:fa-sun"></i>
 </button>
 ```
@@ -259,11 +252,11 @@ options: {
 ```typescript
 // Tailwind breakpoints
 const breakpoints = {
-  sm: "640px",
-  md: "768px",
-  lg: "1024px",
-  xl: "1280px",
-  "2xl": "1536px",
+  sm: '640px',
+  md: '768px',
+  lg: '1024px',
+  xl: '1280px',
+  '2xl': '1536px',
 };
 ```
 
@@ -272,12 +265,7 @@ const breakpoints = {
 ```html
 <!-- Mobile-first responsive design -->
 <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-  <lfx-project-card
-    class="w-full"
-    [title]="project.name"
-    [description]="project.description"
-  >
-  </lfx-project-card>
+  <lfx-project-card class="w-full" [title]="project.name" [description]="project.description"> </lfx-project-card>
 </div>
 ```
 
@@ -290,7 +278,7 @@ Unused CSS is automatically removed in production builds:
 ```javascript
 // tailwind.config.js
 module.exports = {
-  content: ["./src/**/*.{html,ts}"],
+  content: ['./src/**/*.{html,ts}'],
   // Only CSS used in these files is included
 };
 ```
@@ -310,11 +298,11 @@ Critical CSS is inlined for faster initial renders:
 ```typescript
 // Consistent spacing throughout the application
 const spacing = {
-  0: "0px",
-  1: "0.25rem",
-  2: "0.5rem",
-  3: "0.75rem",
-  4: "1rem",
+  0: '0px',
+  1: '0.25rem',
+  2: '0.5rem',
+  3: '0.75rem',
+  4: '1rem',
   // ... standard Tailwind scale
 };
 ```
@@ -325,14 +313,14 @@ const spacing = {
 // Component-specific design tokens
 const tokens = {
   borderRadius: {
-    sm: "0.125rem",
-    DEFAULT: "0.25rem",
-    md: "0.375rem",
-    lg: "0.5rem",
+    sm: '0.125rem',
+    DEFAULT: '0.25rem',
+    md: '0.375rem',
+    lg: '0.5rem',
   },
   boxShadow: {
-    sm: "0 1px 2px 0 rgb(0 0 0 / 0.05)",
-    DEFAULT: "0 1px 3px 0 rgb(0 0 0 / 0.1)",
+    sm: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
+    DEFAULT: '0 1px 3px 0 rgb(0 0 0 / 0.1)',
     // ... elevation scale
   },
 };

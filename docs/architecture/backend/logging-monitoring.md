@@ -10,23 +10,19 @@ The application uses Pino for high-performance structured logging with automatic
 
 ```typescript
 // apps/lfx-pcc/src/server/server.ts
-import pinoHttp from "pino-http";
+import pinoHttp from 'pino-http';
 
 const logger = pinoHttp({
   autoLogging: {
     ignore: (req: Request) => {
-      return req.url === "/health" || req.url === "/api/health";
+      return req.url === '/health' || req.url === '/api/health';
     },
   },
   redact: {
-    paths: [
-      "req.headers.authorization",
-      "req.headers.cookie",
-      'res.headers["set-cookie"]',
-    ],
+    paths: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
     remove: true,
   },
-  level: "info",
+  level: 'info',
 });
 
 // Add logger middleware after health endpoint to avoid logging health checks
@@ -149,8 +145,8 @@ Pino-http automatically logs:
 
 ```typescript
 // Simple health check endpoint
-app.get("/health", (_req: Request, res: Response) => {
-  res.send("OK");
+app.get('/health', (_req: Request, res: Response) => {
+  res.send('OK');
 });
 ```
 
@@ -169,7 +165,7 @@ Body: OK
 ```typescript
 // Development vs Production logging
 const logger = pinoHttp({
-  level: process.env["NODE_ENV"] === "production" ? "info" : "debug",
+  level: process.env['NODE_ENV'] === 'production' ? 'info' : 'debug',
   // ... other config
 });
 ```
@@ -215,9 +211,9 @@ Pino-http automatically generates request IDs for correlation:
 
 ```typescript
 // Access the request logger in handlers
-app.use("/**", (req: Request, res: Response, next: NextFunction) => {
+app.use('/**', (req: Request, res: Response, next: NextFunction) => {
   // req.log is available for custom logging
-  req.log.info({ customData: "value" }, "Custom log message");
+  req.log.info({ customData: 'value' }, 'Custom log message');
 
   // ... rest of handler
 });

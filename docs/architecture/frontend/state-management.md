@@ -9,7 +9,7 @@ The application uses Angular Signals as the primary state management solution, p
 ### Core Pattern
 
 ```typescript
-@Injectable({ providedIn: "root" })
+@Injectable({ providedIn: 'root' })
 export class DataService {
   // Private state signals
   private readonly dataSignal = signal<Data[]>([]);
@@ -22,9 +22,7 @@ export class DataService {
   public readonly error = this.errorSignal.asReadonly();
 
   // Computed signals for derived state
-  public readonly activeData = computed(() =>
-    this.dataSignal().filter((item) => item.is_active),
-  );
+  public readonly activeData = computed(() => this.dataSignal().filter((item) => item.is_active));
 
   public readonly dataCount = computed(() => this.dataSignal().length);
 
@@ -56,7 +54,7 @@ export class DataService {
 ### UserService Pattern
 
 ```typescript
-@Injectable({ providedIn: "root" })
+@Injectable({ providedIn: 'root' })
 export class UserService {
   // Authentication state
   private readonly authenticatedSignal = signal<boolean>(false);
@@ -69,15 +67,15 @@ export class UserService {
   // Computed user information
   public readonly userDisplayName = computed(() => {
     const user = this.userSignal();
-    return user ? `${user.given_name} ${user.family_name}` : "";
+    return user ? `${user.given_name} ${user.family_name}` : '';
   });
 
   public readonly userInitials = computed(() => {
     const user = this.userSignal();
-    if (!user) return "";
+    if (!user) return '';
 
-    const firstInitial = user.given_name?.charAt(0) || "";
-    const lastInitial = user.family_name?.charAt(0) || "";
+    const firstInitial = user.given_name?.charAt(0) || '';
+    const lastInitial = user.family_name?.charAt(0) || '';
     return `${firstInitial}${lastInitial}`.toUpperCase();
   });
 
@@ -103,16 +101,11 @@ export class UserService {
 
 ```typescript
 @Component({
-  selector: "lfx-user-profile",
+  selector: 'lfx-user-profile',
   template: `
     @if (userService.authenticated()) {
       <div class="user-profile">
-        <lfx-avatar
-          [image]="userService.user()?.picture"
-          [label]="userService.userDisplayName()"
-          [shape]="'circle'"
-        >
-        </lfx-avatar>
+        <lfx-avatar [image]="userService.user()?.picture" [label]="userService.userDisplayName()" [shape]="'circle'"> </lfx-avatar>
 
         <div class="user-info">
           <h3>{{ userService.user()?.name }}</h3>
@@ -133,7 +126,7 @@ export class UserProfileComponent {
 
 ```typescript
 @Component({
-  selector: "lfx-project-list",
+  selector: 'lfx-project-list',
   template: `
     @if (loading()) {
       <div>Loading projects...</div>
@@ -142,28 +135,19 @@ export class UserProfileComponent {
     } @else {
       <div class="project-grid">
         @for (project of filteredProjects(); track project.id) {
-          <lfx-project-card
-            [title]="project.name"
-            [description]="project.description"
-          >
-          </lfx-project-card>
+          <lfx-project-card [title]="project.name" [description]="project.description"> </lfx-project-card>
         }
       </div>
     }
 
-    <lfx-button
-      [label]="'Load More'"
-      [loading]="loading()"
-      (onClick)="loadMoreProjects()"
-    >
-    </lfx-button>
+    <lfx-button [label]="'Load More'" [loading]="loading()" (onClick)="loadMoreProjects()"> </lfx-button>
   `,
 })
 export class ProjectListComponent {
   private readonly projectService = inject(ProjectService);
 
   // Local state
-  private readonly filterSignal = signal<string>("");
+  private readonly filterSignal = signal<string>('');
 
   // Service state
   protected readonly projects = this.projectService.projects;
@@ -177,11 +161,7 @@ export class ProjectListComponent {
 
     if (!filter) return projects;
 
-    return projects.filter(
-      (project) =>
-        project.name.toLowerCase().includes(filter) ||
-        project.description.toLowerCase().includes(filter),
-    );
+    return projects.filter((project) => project.name.toLowerCase().includes(filter) || project.description.toLowerCase().includes(filter));
   });
 
   // Actions
@@ -218,7 +198,7 @@ User Action → Component Method → Service Action → Signal Update → UI Upd
 ### HTTP Requests with Signals
 
 ```typescript
-@Injectable({ providedIn: "root" })
+@Injectable({ providedIn: 'root' })
 export class ProjectService {
   private readonly http = inject(HttpClient);
 
@@ -235,13 +215,11 @@ export class ProjectService {
     this.errorSignal.set(null);
 
     try {
-      const projects = await firstValueFrom(
-        this.http.get<Project[]>("/api/projects"),
-      );
+      const projects = await firstValueFrom(this.http.get<Project[]>('/api/projects'));
       this.projectsSignal.set(projects);
     } catch (error) {
-      this.errorSignal.set("Failed to load projects");
-      console.error("Error loading projects:", error);
+      this.errorSignal.set('Failed to load projects');
+      console.error('Error loading projects:', error);
     } finally {
       this.loadingSignal.set(false);
     }
@@ -252,7 +230,7 @@ export class ProjectService {
 ### Signal + RxJS Integration (when needed)
 
 ```typescript
-@Injectable({ providedIn: "root" })
+@Injectable({ providedIn: 'root' })
 export class RealtimeService {
   private readonly dataSignal = signal<RealtimeData[]>([]);
 
@@ -264,11 +242,11 @@ export class RealtimeService {
   }
 
   private setupRealtimeConnection(): void {
-    const websocket$ = webSocket<RealtimeData>("ws://localhost:8080");
+    const websocket$ = webSocket<RealtimeData>('ws://localhost:8080');
 
     websocket$
       .pipe(
-        takeUntilDestroyed(), // Angular 16+ pattern
+        takeUntilDestroyed() // Angular 16+ pattern
       )
       .subscribe({
         next: (data) => {
@@ -276,7 +254,7 @@ export class RealtimeService {
           this.dataSignal.update((current) => [...current, data]);
         },
         error: (error) => {
-          console.error("WebSocket error:", error);
+          console.error('WebSocket error:', error);
         },
       });
   }
@@ -289,7 +267,7 @@ export class RealtimeService {
 
 ```typescript
 @Component({
-  selector: "lfx-dashboard",
+  selector: 'lfx-dashboard',
   template: `
     <div class="dashboard">
       @if (userService.authenticated()) {
@@ -300,9 +278,7 @@ export class RealtimeService {
         } @else {
           <div class="stats">
             <div>Total Projects: {{ projectService.projectCount() }}</div>
-            <div>
-              Active Projects: {{ projectService.activeProjectCount() }}
-            </div>
+            <div>Active Projects: {{ projectService.activeProjectCount() }}</div>
           </div>
         }
       }
@@ -328,7 +304,7 @@ export class DashboardComponent {
 
 ```typescript
 export class ComponentWithEffects {
-  private readonly filterSignal = signal<string>("");
+  private readonly filterSignal = signal<string>('');
   private readonly projectService = inject(ProjectService);
 
   constructor() {
@@ -348,7 +324,7 @@ export class ComponentWithEffects {
 
 ```typescript
 // Event bus service for complex component communication
-@Injectable({ providedIn: "root" })
+@Injectable({ providedIn: 'root' })
 export class EventBusService {
   private readonly eventsSignal = signal<AppEvent[]>([]);
 

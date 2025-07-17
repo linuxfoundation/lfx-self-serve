@@ -1,0 +1,14 @@
+# Ignore everything
+*.*
+
+# Don't ignore these file types
+!*.html
+!*.tsx
+!*.ts
+!*.js
+!*.jsx
+!*.json
+!*.css
+!*.scss
+!*.md
+!*.mdx

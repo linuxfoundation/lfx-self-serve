@@ -1,0 +1,3 @@
+# Ensure the build works before pushing
+echo "Running build to ensure everything works..."
+yarn build

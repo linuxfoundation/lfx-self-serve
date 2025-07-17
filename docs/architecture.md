@@ -85,11 +85,11 @@ providePrimeNG({
   theme: {
     preset: customPreset,
     options: {
-      prefix: "p",
-      darkModeSelector: ".dark-mode",
+      prefix: 'p',
+      darkModeSelector: '.dark-mode',
       cssLayer: {
-        name: "primeng",
-        order: "tailwind-base, primeng, tailwind-utilities",
+        name: 'primeng',
+        order: 'tailwind-base, primeng, tailwind-utilities',
       },
     },
   },
@@ -111,9 +111,9 @@ The application integrates the Linux Foundation's design system through LFX UI C
 
 ```typescript
 // app.config.ts
-import { lfxPreset } from "@linuxfoundation/lfx-ui-core";
-import { definePreset } from "@primeng/themes";
-import Aura from "@primeng/themes/aura";
+import { lfxPreset } from '@linuxfoundation/lfx-ui-core';
+import { definePreset } from '@primeng/themes';
+import Aura from '@primeng/themes/aura';
 
 const customPreset = definePreset(Aura, {
   primitive: lfxPreset.primitive,
@@ -134,7 +134,7 @@ const customPreset = definePreset(Aura, {
 All services use **Angular Signals** for state management:
 
 ```typescript
-@Injectable({ providedIn: "root" })
+@Injectable({ providedIn: 'root' })
 export class DataService {
   // Private state signals
   private readonly dataSignal = signal<Data[]>([]);
@@ -147,9 +147,7 @@ export class DataService {
   public readonly error = this.errorSignal.asReadonly();
 
   // Computed signals for derived state
-  public readonly activeData = computed(() =>
-    this.dataSignal().filter((item) => item.is_active),
-  );
+  public readonly activeData = computed(() => this.dataSignal().filter((item) => item.is_active));
 
   // Methods that update signals
   public updateData(newData: Data[]): void {
@@ -183,18 +181,18 @@ export class DataService {
 ### Example Component Structure
 
 ```typescript
-import { CommonModule } from "@angular/common";
-import { Component, inject } from "@angular/core";
-import { FormBuilder, ReactiveFormsModule, Validators } from "@angular/forms";
-import { ButtonModule } from "primeng/button";
-import { CardModule } from "primeng/card";
+import { CommonModule } from '@angular/common';
+import { Component, inject } from '@angular/core';
+import { FormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ButtonModule } from 'primeng/button';
+import { CardModule } from 'primeng/card';
 
 @Component({
-  selector: "lfx-example",
+  selector: 'lfx-example',
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, ButtonModule, CardModule],
-  templateUrl: "./example.component.html",
-  styleUrl: "./example.component.scss",
+  templateUrl: './example.component.html',
+  styleUrl: './example.component.scss',
 })
 export class ExampleComponent {
   private readonly fb = inject(FormBuilder);
@@ -206,8 +204,8 @@ export class ExampleComponent {
 
   // Reactive form
   public readonly form = this.fb.group({
-    name: ["", [Validators.required, Validators.minLength(2)]],
-    email: ["", [Validators.required, Validators.email]],
+    name: ['', [Validators.required, Validators.minLength(2)]],
+    email: ['', [Validators.required, Validators.email]],
   });
 
   // TrackBy function for loops
@@ -220,25 +218,9 @@ export class ExampleComponent {
 <p-card header="Example Component" class="mb-4">
   <div class="flex flex-col gap-4">
     <form [formGroup]="form" class="flex flex-col gap-3">
-      <input
-        type="text"
-        formControlName="name"
-        placeholder="Name"
-        class="p-2 border rounded"
-      />
-      <input
-        type="email"
-        formControlName="email"
-        placeholder="Email"
-        class="p-2 border rounded"
-      />
-      <p-button
-        label="Submit"
-        severity="primary"
-        [disabled]="form.invalid"
-        [loading]="loading()"
-      >
-      </p-button>
+      <input type="text" formControlName="name" placeholder="Name" class="p-2 border rounded" />
+      <input type="email" formControlName="email" placeholder="Email" class="p-2 border rounded" />
+      <p-button label="Submit" severity="primary" [disabled]="form.invalid" [loading]="loading()"> </p-button>
     </form>
 
     @if (data().length > 0) {
@@ -328,15 +310,15 @@ The application uses Google Fonts with CSS custom properties:
 
 ```scss
 // styles.scss - Font configuration
-@import url("https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Roboto+Slab:wght@100..900&display=swap");
+@import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Roboto+Slab:wght@100..900&display=swap');
 
 @theme {
   /* Open Sans as the primary sans-serif font */
-  --font-sans: "Open Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-sans: 'Open Sans', ui-sans-serif, system-ui, sans-serif;
 
   /* Roboto Slab for headings and display text */
-  --font-display: "Roboto Slab", ui-serif, Georgia, serif;
-  --font-serif: "Roboto Slab", ui-serif, Georgia, serif;
+  --font-display: 'Roboto Slab', ui-serif, Georgia, serif;
+  --font-serif: 'Roboto Slab', ui-serif, Georgia, serif;
 }
 ```
 
@@ -346,21 +328,21 @@ Custom configurations extend the default Tailwind theme:
 
 ```typescript
 // tailwind.config.js
-import PrimeUI from "tailwindcss-primeui";
-import { lfxColors } from "./src/app/config/styles/colors";
-import { lfxFontSizes } from "./src/app/config/styles/font-size";
+import PrimeUI from 'tailwindcss-primeui';
+import { lfxColors } from './src/app/config/styles/colors';
+import { lfxFontSizes } from './src/app/config/styles/font-size';
 
 export default {
-  content: ["./src/**/*.{html,ts}"],
+  content: ['./src/**/*.{html,ts}'],
   theme: {
     extend: {
       colors: lfxColors,
     },
     fontSize: lfxFontSizes,
     fontFamily: {
-      sans: ["Open Sans", "sans-serif"],
-      display: ["Roboto Slab", "serif"],
-      serif: ["Roboto Slab", "serif"],
+      sans: ['Open Sans', 'sans-serif'],
+      display: ['Roboto Slab', 'serif'],
+      serif: ['Roboto Slab', 'serif'],
     },
   },
   plugins: [PrimeUI],
@@ -375,10 +357,10 @@ LFX brand colors with full Tailwind scales:
 // src/app/config/styles/colors.ts
 export const lfxColors = {
   primary: {
-    50: "#eff6ff",
-    100: "#dbeafe",
+    50: '#eff6ff',
+    100: '#dbeafe',
     // ... complete scale
-    900: "#1e3a8a",
+    900: '#1e3a8a',
   },
   secondary: {
     // ... complete scale
@@ -398,22 +380,22 @@ Angular-specific rules with comprehensive linting:
 export default [
   // TypeScript files
   {
-    files: ["**/*.ts"],
+    files: ['**/*.ts'],
     rules: {
-      "@angular-eslint/component-selector": [
-        "error",
+      '@angular-eslint/component-selector': [
+        'error',
         {
-          type: "element",
-          prefix: "lfx",
-          style: "kebab-case",
+          type: 'element',
+          prefix: 'lfx',
+          style: 'kebab-case',
         },
       ],
-      "@angular-eslint/directive-selector": [
-        "error",
+      '@angular-eslint/directive-selector': [
+        'error',
         {
-          type: "attribute",
-          prefix: "lfx",
-          style: "camelCase",
+          type: 'attribute',
+          prefix: 'lfx',
+          style: 'camelCase',
         },
       ],
       // ... more Angular-specific rules
@@ -421,8 +403,8 @@ export default [
   },
   // Template files
   {
-    files: ["**/*.html"],
-    extends: ["plugin:@angular-eslint/template/recommended"],
+    files: ['**/*.html'],
+    extends: ['plugin:@angular-eslint/template/recommended'],
   },
 ];
 ```
@@ -434,10 +416,7 @@ Code formatting with Tailwind class sorting:
 ```json
 // .prettierrc.js
 {
-  "plugins": [
-    "prettier-plugin-organize-imports",
-    "prettier-plugin-tailwindcss"
-  ],
+  "plugins": ["prettier-plugin-organize-imports", "prettier-plugin-tailwindcss"],
   "tailwindFunctions": ["clsx", "cn", "tw"],
   "organizeImportsSkipDestructiveCodeActions": true
 }
@@ -494,7 +473,7 @@ export const config = mergeApplicationConfig(appConfig, {
 // app.routes.server.ts
 export const serverRoutes: ServerRoute[] = [
   {
-    path: "**",
+    path: '**',
     renderMode: RenderMode.Server,
   },
 ];
@@ -550,14 +529,13 @@ Home (/) → Project Overview (/project/:id) → Dashboard Views
 ```typescript
 // Usage in dashboard components
 @Component({
-  selector: "lfx-meeting-dashboard",
+  selector: 'lfx-meeting-dashboard',
   template: `
     <lfx-project-layout
       [projectTitle]="'Kubernetes'"
       [projectDescription]="'Driving innovation with open-source projects'"
       [categoryLabel]="'CNCF'"
-      [projectSlug]="'kubernetes'"
-    >
+      [projectSlug]="'kubernetes'">
       <!-- Dashboard-specific content -->
       <div class="p-8">
         <h2>Meeting Dashboard Content</h2>
@@ -733,7 +711,7 @@ Modern Angular component input handling:
 
 ```typescript
 @Component({
-  selector: "lfx-project-card",
+  selector: 'lfx-project-card',
   template: `
     <div class="project-card">
       <h3>{{ displayTitle() }}</h3>
@@ -755,7 +733,7 @@ export class ProjectCardComponent {
 
   // Optional inputs with defaults
   public readonly metrics = input<ProjectMetric[]>([]);
-  public readonly logoUrl = input<string>("");
+  public readonly logoUrl = input<string>('');
 
   // Computed signals for derived state
   public readonly displayTitle = computed(() => this.title().toUpperCase());
@@ -769,7 +747,7 @@ Components integrate with services using signal-based state:
 
 ```typescript
 @Component({
-  selector: "lfx-project-dashboard",
+  selector: 'lfx-project-dashboard',
   template: `
     @if (loading()) {
       <div class="loading">Loading...</div>
@@ -778,12 +756,7 @@ Components integrate with services using signal-based state:
     } @else {
       <div class="content">
         @for (project of projects(); track project.id) {
-          <lfx-project-card
-            [title]="project.name"
-            [description]="project.description"
-            [metrics]="project.metrics"
-          >
-          </lfx-project-card>
+          <lfx-project-card [title]="project.name" [description]="project.description" [metrics]="project.metrics"> </lfx-project-card>
         }
       </div>
     }
@@ -809,7 +782,7 @@ export class ProjectDashboardComponent {
 ### Service-Based State Pattern
 
 ```typescript
-@Injectable({ providedIn: "root" })
+@Injectable({ providedIn: 'root' })
 export class ProjectService {
   private readonly http = inject(HttpClient);
 
@@ -824,9 +797,7 @@ export class ProjectService {
   public readonly error = this.errorSignal.asReadonly();
 
   // Computed signals
-  public readonly activeProjects = computed(() =>
-    this.projectsSignal().filter((p) => p.status === "active"),
-  );
+  public readonly activeProjects = computed(() => this.projectsSignal().filter((p) => p.status === 'active'));
 
   public readonly projectCount = computed(() => this.projectsSignal().length);
 
@@ -836,12 +807,10 @@ export class ProjectService {
     this.errorSignal.set(null);
 
     try {
-      const projects = await this.http
-        .get<Project[]>("/api/projects")
-        .toPromise();
+      const projects = await this.http.get<Project[]>('/api/projects').toPromise();
       this.projectsSignal.set(projects || []);
     } catch (error) {
-      this.errorSignal.set("Failed to load projects");
+      this.errorSignal.set('Failed to load projects');
     } finally {
       this.loadingSignal.set(false);
     }
@@ -867,17 +836,13 @@ export class ProjectService {
 ```typescript
 // Good: Explicit imports, signals, proper typing
 @Component({
-  selector: "lfx-example",
+  selector: 'lfx-example',
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, ButtonModule],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()">
       @for (field of fields(); track field.id) {
-        <input
-          [type]="field.type"
-          [formControlName]="field.name"
-          [attr.aria-label]="field.label"
-        />
+        <input [type]="field.type" [formControlName]="field.name" [attr.aria-label]="field.label" />
       }
       <button type="submit" [disabled]="form.invalid">Submit</button>
     </form>
@@ -947,18 +912,17 @@ The application uses Auth0 for authentication via `express-openid-connect`:
 const authConfig: ConfigParams = {
   authRequired: true,
   auth0Logout: true,
-  baseURL: process.env["PCC_BASE_URL"] || "http://localhost:4000",
-  clientID: process.env["PCC_AUTH0_CLIENT_ID"] || "1234",
-  issuerBaseURL:
-    process.env["PCC_AUTH0_ISSUER_BASE_URL"] || "https://example.com",
-  secret: process.env["PCC_AUTH0_SECRET"] || "sufficiently-long-string",
-  idTokenSigningAlg: "HS256",
+  baseURL: process.env['PCC_BASE_URL'] || 'http://localhost:4000',
+  clientID: process.env['PCC_AUTH0_CLIENT_ID'] || '1234',
+  issuerBaseURL: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || 'https://example.com',
+  secret: process.env['PCC_AUTH0_SECRET'] || 'sufficiently-long-string',
+  idTokenSigningAlg: 'HS256',
   authorizationParams: {
-    response_type: "code",
-    audience: process.env["PCC_AUTH0_AUDIENCE"] || "https://example.com",
-    scope: "openid email profile api offline_access",
+    response_type: 'code',
+    audience: process.env['PCC_AUTH0_AUDIENCE'] || 'https://example.com',
+    scope: 'openid email profile api offline_access',
   },
-  clientSecret: process.env["PCC_AUTH0_CLIENT_SECRET"] || "bar",
+  clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || 'bar',
 };
 
 app.use(auth(authConfig));
@@ -976,8 +940,8 @@ app.use(auth(authConfig));
 
 ```typescript
 // Component or service
-import { inject } from "@angular/core";
-import { UserService } from "@app/shared/services/user.service";
+import { inject } from '@angular/core';
+import { UserService } from '@app/shared/services/user.service';
 
 export class MyComponent {
   private readonly userService = inject(UserService);
@@ -999,7 +963,7 @@ The header component demonstrates full user authentication integration:
 ```typescript
 // HeaderComponent implementation
 @Component({
-  selector: "lfx-header",
+  selector: 'lfx-header',
   standalone: true,
   imports: [AvatarComponent, MenuComponent],
   schemas: [CUSTOM_ELEMENTS_SCHEMA], // For LFX Tools
@@ -1010,25 +974,25 @@ export class HeaderComponent {
   // User menu with environment-based URLs
   protected readonly userMenuItems: MenuItem[] = [
     {
-      label: "Profile",
-      icon: "fa-light fa-user",
+      label: 'Profile',
+      icon: 'fa-light fa-user',
       url: environment.urls.profile,
-      target: "_blank",
+      target: '_blank',
     },
     {
-      label: "Developer Settings",
-      icon: "fa-light fa-cog",
-      url: environment.urls.profile + "/developer-settings",
-      target: "_blank",
+      label: 'Developer Settings',
+      icon: 'fa-light fa-cog',
+      url: environment.urls.profile + '/developer-settings',
+      target: '_blank',
     },
     {
       separator: true,
     },
     {
-      label: "Logout",
-      icon: "fa-light fa-sign-out",
-      url: "/logout",
-      target: "_self",
+      label: 'Logout',
+      icon: 'fa-light fa-sign-out',
+      url: '/logout',
+      target: '_self',
     },
   ];
 }
@@ -1053,19 +1017,15 @@ const logger = pinoHttp({
   autoLogging: {
     ignore: (req: Request) => {
       // Ignore health check endpoints to reduce noise
-      return req.url === "/health" || req.url === "/api/health";
+      return req.url === '/health' || req.url === '/api/health';
     },
   },
   redact: {
     // Remove sensitive data from logs
-    paths: [
-      "req.headers.authorization",
-      "req.headers.cookie",
-      'res.headers["set-cookie"]',
-    ],
+    paths: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
     remove: true,
   },
-  level: "info",
+  level: 'info',
 });
 ```
 
@@ -1081,8 +1041,8 @@ const logger = pinoHttp({
 
 ```typescript
 // In request handlers
-req.log.info({ userId: user.id }, "User action performed");
-req.log.error({ error }, "Error rendering Angular application");
+req.log.info({ userId: user.id }, 'User action performed');
+req.log.error({ error }, 'Error rendering Angular application');
 
 // Direct logger usage
 logger.logger.info(`Server listening on port ${port}`);
@@ -1097,13 +1057,13 @@ The application uses Angular's new `AngularNodeAppEngine` for improved SSR perfo
 ```typescript
 const angularApp = new AngularNodeAppEngine();
 
-app.use("/**", (req: Request, res: Response, next: NextFunction) => {
+app.use('/**', (req: Request, res: Response, next: NextFunction) => {
   angularApp
     .handle(req, {
       providers: [
-        { provide: APP_BASE_HREF, useValue: process.env["PCC_BASE_URL"] },
+        { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
         { provide: REQUEST, useValue: req },
-        { provide: "RESPONSE", useValue: res },
+        { provide: 'RESPONSE', useValue: res },
       ],
     })
     .then((response) => {
@@ -1113,7 +1073,7 @@ app.use("/**", (req: Request, res: Response, next: NextFunction) => {
       return next();
     })
     .catch((error) => {
-      req.log.error({ error }, "Error rendering Angular application");
+      req.log.error({ error }, 'Error rendering Angular application');
       // Proper error handling with status codes
     });
 });
@@ -1132,8 +1092,8 @@ app.use("/**", (req: Request, res: Response, next: NextFunction) => {
 
 ```typescript
 // Health check endpoint (no auth, no logging)
-app.get("/health", (_req: Request, res: Response) => {
-  res.send("OK");
+app.get('/health', (_req: Request, res: Response) => {
+  res.send('OK');
 });
 ```
 
@@ -1192,14 +1152,14 @@ export interface ProjectCardMetric {
   value: string;
   badge?: {
     label: string;
-    severity: "success" | "info" | "warning" | "danger";
+    severity: 'success' | 'info' | 'warning' | 'danger';
   };
 }
 
 export interface BadgeProps {
   value: string | number;
-  severity: "info" | "success" | "warn" | "danger" | "secondary" | "contrast";
-  size: "small" | "large" | "xlarge";
+  severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+  size: 'small' | 'large' | 'xlarge';
   styleClass: string;
   badgeDisabled: boolean;
 }
@@ -1216,17 +1176,17 @@ export interface AuthContext {
 
 ```typescript
 // Component implementation
-import { Component, input } from "@angular/core";
-import { BadgeProps } from "@lfx-pcc/shared/interfaces";
-import { lfxColors } from "@lfx-pcc/shared/constants";
+import { Component, input } from '@angular/core';
+import { BadgeProps } from '@lfx-pcc/shared/interfaces';
+import { lfxColors } from '@lfx-pcc/shared/constants';
 
 @Component({
-  selector: "lfx-badge",
+  selector: 'lfx-badge',
   template: `<p-badge [value]="value()" [severity]="severity()"></p-badge>`,
 })
 export class BadgeComponent {
-  public readonly value = input<BadgeProps["value"]>("");
-  public readonly severity = input<BadgeProps["severity"]>("info");
+  public readonly value = input<BadgeProps['value']>('');
+  public readonly severity = input<BadgeProps['severity']>('info');
 }
 ```
 

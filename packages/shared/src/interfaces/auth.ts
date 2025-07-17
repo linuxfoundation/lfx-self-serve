@@ -3,7 +3,7 @@
 
 export interface User {
   sid: string;
-  "https://sso.linuxfoundation.org/claims/username": string;
+  'https://sso.linuxfoundation.org/claims/username': string;
   given_name: string;
   family_name: string;
   nickname: string;

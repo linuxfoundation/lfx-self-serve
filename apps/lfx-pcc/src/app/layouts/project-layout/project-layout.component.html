@@ -4,10 +4,9 @@
     <div class="mb-4">
       <lfx-breadcrumb [model]="breadcrumbItems()">
         <ng-template #item let-item>
-          <a [routerLink]="item.routerLink"
-            class="flex items-center gap-2 text-sm font-medium text-gray-900 hover:text-gray-600 transition-colors">
+          <a [routerLink]="item.routerLink" class="flex items-center gap-2 text-sm font-medium text-gray-900 hover:text-gray-600 transition-colors">
             @if (item.icon) {
-            <i [class]="item.icon" class="text-gray-500"></i>
+              <i [class]="item.icon" class="text-gray-500"></i>
             }
             {{ item.label }}
           </a>
@@ -19,9 +18,9 @@
       <div class="flex flex-col items-start gap-3">
         <!-- Category Badge -->
         @if (categoryLabel(); as category) {
-        <div class="flex justify-start">
-          <img src="https://lf-master-project-logos-prod.s3.us-east-2.amazonaws.com/cncf.svg" class="h-10 w-full">
-        </div>
+          <div class="flex justify-start">
+            <img src="https://lf-master-project-logos-prod.s3.us-east-2.amazonaws.com/cncf.svg" class="h-10 w-full" />
+          </div>
         }
 
         <!-- Project Title -->
@@ -31,44 +30,45 @@
 
         <!-- Project Description -->
         @if (projectDescription(); as description) {
-        <p class="text-gray-600 text-sm mb-6 max-w-2xl leading-relaxed">
-          {{ description }}
-        </p>
+          <p class="text-gray-600 text-sm mb-6 max-w-2xl leading-relaxed">
+            {{ description }}
+          </p>
         }
       </div>
       <!-- Metrics Section -->
       @if (metrics().length > 0) {
-      <div class="flex items-center gap-8 mb-8">
-        @for (metric of metrics(); track metric.label) {
-        <div class="flex flex-col">
-          <div class="flex items-center gap-2 mb-1">
-            <i [class]="metric.icon" class="text-sm"></i>
-            <span class="text-sm text-gray-600">{{ metric.label }}</span>
-          </div>
-          <div class="text-2xl font-normal text-gray-900 font-display">{{ metric.value }}</div>
+        <div class="flex items-center gap-8 mb-8">
+          @for (metric of metrics(); track metric.label) {
+            <div class="flex flex-col">
+              <div class="flex items-center gap-2 mb-1">
+                <i [class]="metric.icon" class="text-sm"></i>
+                <span class="text-sm text-gray-600">{{ metric.label }}</span>
+              </div>
+              <div class="text-2xl font-normal text-gray-900 font-display">{{ metric.value }}</div>
+            </div>
+          }
         </div>
-        }
-      </div>
       }
-
     </div>
 
     <!-- Menu Items Section -->
     <div class="flex items-center justify-between">
       <div class="flex items-center gap-3">
         @for (filter of menuItems(); track filter.label) {
-        <a [routerLink]="filter.routerLink" class="pill" routerLinkActive="bg-blue-50 text-blue-600 border-0"
-          [routerLinkActiveOptions]="{ exact: true }">
-          @if (filter.icon) {
-          <i [class]="filter.icon"></i>
-          }
-          {{ filter.label }}
-        </a>
+          <a [routerLink]="filter.routerLink" class="pill" routerLinkActive="bg-blue-50 text-blue-600 border-0" [routerLinkActiveOptions]="{ exact: true }">
+            @if (filter.icon) {
+              <i [class]="filter.icon"></i>
+            }
+            {{ filter.label }}
+          </a>
         }
       </div>
       <div class="flex items-center gap-3">
-        <a routerLink="/project/{{ projectSlug() }}/settings" class="pill"
-          routerLinkActive="bg-blue-50 text-blue-600 border-0" [routerLinkActiveOptions]="{ exact: true }">
+        <a
+          routerLink="/project/{{ projectSlug() }}/settings"
+          class="pill"
+          routerLinkActive="bg-blue-50 text-blue-600 border-0"
+          [routerLinkActiveOptions]="{ exact: true }">
           <i class="fa-light fa-gear"></i>
           Settings
         </a>

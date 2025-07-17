@@ -22,23 +22,22 @@ PCC_AUTH0_AUDIENCE='https://your-api-audience'
 
 ```typescript
 // apps/lfx-pcc/src/server/server.ts
-import { auth, ConfigParams } from "express-openid-connect";
+import { auth, ConfigParams } from 'express-openid-connect';
 
 const authConfig: ConfigParams = {
   authRequired: true,
   auth0Logout: true,
-  baseURL: process.env["PCC_BASE_URL"] || "http://localhost:4000",
-  clientID: process.env["PCC_AUTH0_CLIENT_ID"] || "1234",
-  issuerBaseURL:
-    process.env["PCC_AUTH0_ISSUER_BASE_URL"] || "https://example.com",
-  secret: process.env["PCC_AUTH0_SECRET"] || "sufficiently-long-string",
-  idTokenSigningAlg: "HS256",
+  baseURL: process.env['PCC_BASE_URL'] || 'http://localhost:4000',
+  clientID: process.env['PCC_AUTH0_CLIENT_ID'] || '1234',
+  issuerBaseURL: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || 'https://example.com',
+  secret: process.env['PCC_AUTH0_SECRET'] || 'sufficiently-long-string',
+  idTokenSigningAlg: 'HS256',
   authorizationParams: {
-    response_type: "code",
-    audience: process.env["PCC_AUTH0_AUDIENCE"] || "https://example.com",
-    scope: "openid email profile api offline_access",
+    response_type: 'code',
+    audience: process.env['PCC_AUTH0_AUDIENCE'] || 'https://example.com',
+    scope: 'openid email profile api offline_access',
   },
-  clientSecret: process.env["PCC_AUTH0_CLIENT_SECRET"] || "bar",
+  clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || 'bar',
 };
 
 app.use(auth(authConfig));
@@ -52,7 +51,7 @@ app.use(auth(authConfig));
 // packages/shared/src/interfaces/auth.ts
 export interface User {
   sid: string;
-  "https://sso.linuxfoundation.org/claims/username": string;
+  'https://sso.linuxfoundation.org/claims/username': string;
   given_name: string;
   family_name: string;
   nickname: string;
@@ -78,7 +77,7 @@ The server creates an authentication context for each request and injects it int
 
 ```typescript
 // apps/lfx-pcc/src/server/server.ts
-app.use("/**", (req: Request, res: Response, next: NextFunction) => {
+app.use('/**', (req: Request, res: Response, next: NextFunction) => {
   const auth: AuthContext = {
     authenticated: false,
     user: null,
@@ -93,9 +92,9 @@ app.use("/**", (req: Request, res: Response, next: NextFunction) => {
     .handle(req, {
       auth,
       providers: [
-        { provide: APP_BASE_HREF, useValue: process.env["PCC_BASE_URL"] },
+        { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
         { provide: REQUEST, useValue: req },
-        { provide: "RESPONSE", useValue: res },
+        { provide: 'RESPONSE', useValue: res },
       ],
     })
     .then((response) => {
@@ -105,13 +104,13 @@ app.use("/**", (req: Request, res: Response, next: NextFunction) => {
       return next();
     })
     .catch((error) => {
-      req.log.error({ error }, "Error rendering Angular application");
-      if (error.code === "NOT_FOUND") {
-        res.status(404).send("Not Found");
-      } else if (error.code === "UNAUTHORIZED") {
-        res.status(401).send("Unauthorized");
+      req.log.error({ error }, 'Error rendering Angular application');
+      if (error.code === 'NOT_FOUND') {
+        res.status(404).send('Not Found');
+      } else if (error.code === 'UNAUTHORIZED') {
+        res.status(401).send('Unauthorized');
       } else {
-        res.status(500).send("Internal Server Error");
+        res.status(500).send('Internal Server Error');
       }
     });
 });
@@ -123,11 +122,11 @@ app.use("/**", (req: Request, res: Response, next: NextFunction) => {
 
 ```typescript
 // apps/lfx-pcc/src/app/shared/services/user.service.ts
-import { Injectable, signal, WritableSignal } from "@angular/core";
-import { User } from "@lfx-pcc/shared/interfaces";
+import { Injectable, signal, WritableSignal } from '@angular/core';
+import { User } from '@lfx-pcc/shared/interfaces';
 
 @Injectable({
-  providedIn: "root",
+  providedIn: 'root',
 })
 export class UserService {
   public authenticated: WritableSignal<boolean> = signal<boolean>(false);

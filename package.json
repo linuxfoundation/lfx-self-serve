@@ -14,19 +14,42 @@
     "reload:prod": "pm2 reload lfx-pcc",
     "logs:prod": "pm2 logs lfx-pcc",
     "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "check-types": "turbo run check-types"
+    "format:check": "prettier --check \"**/*.{ts,tsx,md}\"",
+    "lint:check": "turbo run lint:check",
+    "check-types": "turbo run check-types",
+    "prepare": "husky"
   },
   "devDependencies": {
+    "@linuxfoundation/lfx-ui-core": "^0.0.19",
+    "@types/node": "^24.0.14",
+    "@typescript-eslint/eslint-plugin": "^8.37.0",
+    "@typescript-eslint/parser": "^8.37.0",
+    "@typescript-eslint/type-utils": "^8.37.0",
+    "@typescript-eslint/types": "^8.37.0",
+    "@typescript-eslint/utils": "^8.37.0",
+    "husky": "^9.1.7",
+    "lint-staged": "^16.1.2",
     "prettier": "^3.6.2",
+    "pretty-quick": "^4.2.2",
+    "tslib": "^2.8.1",
     "turbo": "^2.5.4",
     "typescript": "5.8.3"
   },
   "engines": {
-    "node": ">=18"
+    "node": ">=22"
   },
-  "packageManager": "yarn@4.6.0",
+  "packageManager": "yarn@4.9.2",
   "workspaces": [
     "apps/*",
     "packages/*"
-  ]
+  ],
+  "lint-staged": {
+    "**/*.{ts,tsx,js,jsx}": [
+      "prettier --write",
+      "turbo run lint --"
+    ],
+    "**/*.{html,css,scss,md,json}": [
+      "prettier --write"
+    ]
+  }
 }

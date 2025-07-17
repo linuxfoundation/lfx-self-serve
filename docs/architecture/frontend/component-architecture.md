@@ -104,6 +104,7 @@ public hide(): void
 ```
 
 **Properties**:
+
 - `value: string` - Badge text content
 - `severity: 'success' | 'info' | 'warning' | 'danger' | 'help' | 'primary' | 'secondary' | 'contrast'`
 - `size: 'small' | 'large' | 'xlarge'`
@@ -114,14 +115,7 @@ public hide(): void
 
 ```html
 <!-- Using properties for standard buttons -->
-<lfx-button
-  [label]="'Save'"
-  [icon]="'fa-light fa-save'"
-  [severity]="'primary'"
-  [loading]="isLoading()"
-  (onClick)="handleSave($event)"
->
-</lfx-button>
+<lfx-button [label]="'Save'" [icon]="'fa-light fa-save'" [severity]="'primary'" [loading]="isLoading()" (onClick)="handleSave($event)"> </lfx-button>
 
 <!-- Using content projection for custom button content -->
 <lfx-button [outlined]="true">
@@ -133,6 +127,7 @@ public hide(): void
 ```
 
 **Key Properties**:
+
 - `label`, `icon`, `iconPos`
 - `severity`, `raised`, `rounded`, `text`, `outlined`, `link`, `plain`
 - `size`, `disabled`, `loading`, `loadingIcon`
@@ -198,18 +193,14 @@ public hide(): void
 **Template Support**: `header`, `body`, `footer`, `caption`, `summary`, `emptymessage`, `loading`, `loadingbody`, `groupheader`, `groupfooter`, `paginatorleft`, `paginatorright`, `paginatordropdownitem`
 
 **Features**:
+
 - **Full Template Support**: All PrimeNG Table templates are supported
 - **Comprehensive Properties**: Pagination, sorting, filtering, selection, lazy loading
 - **Event Handling**: Complete event coverage for table interactions
 - **Performance**: Virtual scrolling and lazy loading support
 
 ```html
-<lfx-table
-  [value]="projects()"
-  [paginator]="true"
-  [rows]="10"
-  [globalFilterFields]="['name', 'description']"
->
+<lfx-table [value]="projects()" [paginator]="true" [rows]="10" [globalFilterFields]="['name', 'description']">
   <ng-template #header>
     <tr>
       <th>Name</th>
@@ -223,11 +214,7 @@ public hide(): void
       <td>{{ project.name }}</td>
       <td>{{ project.description }}</td>
       <td>
-        <lfx-badge
-          [value]="project.status"
-          [severity]="project.status === 'active' ? 'success' : 'warning'"
-        >
-        </lfx-badge>
+        <lfx-badge [value]="project.status" [severity]="project.status === 'active' ? 'success' : 'warning'"> </lfx-badge>
       </td>
     </tr>
   </ng-template>
@@ -242,18 +229,11 @@ public hide(): void
   </ng-template>
 
   <ng-template #paginatorleft let-state>
-    <lfx-button
-      [icon]="'fa-light fa-refresh'"
-      [text]="true"
-      (onClick)="refresh()"
-    >
-    </lfx-button>
+    <lfx-button [icon]="'fa-light fa-refresh'" [text]="true" (onClick)="refresh()"> </lfx-button>
   </ng-template>
 
   <ng-template #paginatorright let-state>
-    <span class="text-sm text-gray-600">
-      Showing {{ state.first + 1 }} to {{ state.first + state.rows }} of {{ state.totalRecords }}
-    </span>
+    <span class="text-sm text-gray-600"> Showing {{ state.first + 1 }} to {{ state.first + state.rows }} of {{ state.totalRecords }} </span>
   </ng-template>
 </lfx-table>
 ```
@@ -266,7 +246,7 @@ Provides consistent layout wrapper for project-related pages:
 
 ```typescript
 @Component({
-  selector: "lfx-project-layout",
+  selector: 'lfx-project-layout',
   template: `
     <div class="project-layout">
       <div class="project-header">
@@ -298,15 +278,15 @@ export class ProjectLayoutComponent {
   // Computed navigation items
   public readonly menuItems = computed(() => [
     {
-      label: "Meetings",
+      label: 'Meetings',
       routerLink: `/project/${this.projectSlug()}/meetings`,
     },
     {
-      label: "Committees",
+      label: 'Committees',
       routerLink: `/project/${this.projectSlug()}/committees`,
     },
     {
-      label: "Mailing Lists",
+      label: 'Mailing Lists',
       routerLink: `/project/${this.projectSlug()}/mailing-lists`,
     },
   ]);
@@ -352,8 +332,7 @@ export class [ComponentName]Component {
   <ng-template #[templateName] let-[contextVar]="[contextVar]">
     <ng-container
       *ngTemplateOutlet="[templateName]Template || null; 
-                         context: { $implicit: [contextVar] }"
-    >
+                         context: { $implicit: [contextVar] }">
     </ng-container>
   </ng-template>
 
@@ -462,22 +441,14 @@ protected handleSelectionChange(event: SelectionChangeEvent): void {
 #### Step 5: Create Template with Proper Context
 
 ```html
-<p-[component]
-  [property1]="property1()"
-  [property2]="property2()"
-  (onClick)="handleClick($event)"
-  (onSelectionChange)="handleSelectionChange($event)"
->
+<p-[component] [property1]="property1()" [property2]="property2()" (onClick)="handleClick($event)" (onSelectionChange)="handleSelectionChange($event)">
   <!-- Template outlets for each supported template -->
   <ng-template #header *ngIf="headerTemplate">
     <ng-container *ngTemplateOutlet="headerTemplate"></ng-container>
   </ng-template>
 
   <ng-template #item let-item let-index="index">
-    <ng-container
-      *ngTemplateOutlet="itemTemplate || null; context: { $implicit: item, index: index }"
-    >
-    </ng-container>
+    <ng-container *ngTemplateOutlet="itemTemplate || null; context: { $implicit: item, index: index }"> </ng-container>
   </ng-template>
 
   <!-- Default content projection -->
@@ -496,11 +467,13 @@ protected handleSelectionChange(event: SelectionChangeEvent): void {
 ## 📝 Development Checklist
 
 ### Research & Planning
+
 - [ ] **Research**: Check PrimeNG documentation for all properties, events, and templates
 - [ ] **Dependencies**: Identify required PrimeNG modules and imports
 - [ ] **Context**: Understand template context structure from PrimeNG source
 
 ### Component Implementation
+
 - [ ] **Component Selector**: Use `lfx-` prefix (enforced by ESLint)
 - [ ] **Standalone Component**: Import dependencies explicitly
 - [ ] **Input Signals**: Use `input()` and `input.required()` for properties with proper types
@@ -511,12 +484,14 @@ protected handleSelectionChange(event: SelectionChangeEvent): void {
 - [ ] **Fallbacks**: Use `|| null` for template outlets to handle undefined cases
 
 ### Code Quality
+
 - [ ] **Type Safety**: Import and use interfaces from `@lfx-pcc/shared` package
 - [ ] **Event Handling**: Proper event emission and parameter passing
 - [ ] **Error Handling**: Graceful handling of edge cases
 - [ ] **Accessibility**: Include ARIA labels and roles where applicable
 
 ### Testing & Documentation
+
 - [ ] **Component Import**: Import wrapper component directly, not through barrel exports
 - [ ] **Usage Examples**: Create comprehensive usage examples
 - [ ] **Template Testing**: Verify all templates work correctly
@@ -525,6 +500,7 @@ protected handleSelectionChange(event: SelectionChangeEvent): void {
 - [ ] **Documentation**: Update this documentation with usage examples
 
 ### Integration
+
 - [ ] **Shared Interfaces**: Add any new interfaces to `@lfx-pcc/shared/interfaces`
 - [ ] **Export Path**: Ensure component is exported correctly
 - [ ] **Usage Guidelines**: Update project documentation
