@@ -33,7 +33,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - [Authentication & Authorization](#authentication--authorization) - Auth0 integration
 - [Logging](#logging) - Pino structured logging
-- [Server-Side Rendering (SSR)](#server-side-rendering-ssr) - Angular Universal
+- [Server-Side Rendering (SSR)](#server-side-rendering-ssr) - Angular 19 built-in SSR
 - [Production Deployment](#production-deployment) - PM2, health checks
 - [Testing](#testing) - Test framework and commands
 - [Environment Configuration](#environment-configuration) - Dev/prod setup

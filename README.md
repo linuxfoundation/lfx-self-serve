@@ -18,7 +18,7 @@ The app is 100% [TypeScript](https://www.typescriptlang.org/).
 - **UI Framework**: PrimeNG 19 with custom LFX UI Core preset and Tailwind CSS integration
 - **Styling**: Tailwind CSS v3 with PrimeUI plugin, CSS layers architecture, Google Fonts (Open Sans + Roboto Slab)
 - **Icons**: Font Awesome Pro via kits (no npm packages)
-- **Backend**: Express.js server with Angular Universal SSR, Auth0 authentication, Pino logging
+- **Backend**: Express.js server with Angular 19 SSR, Auth0 authentication, Pino logging
 - **Infrastructure**: PM2 process management for production deployment
 
 ### Development Tools
@@ -169,7 +169,7 @@ Comprehensive documentation organized by domain:
 
 #### 🖥 [Backend Architecture](docs/architecture/backend/)
 
-- **[SSR Server](docs/architecture/backend/ssr-server.md)** - Express.js configuration and Angular Universal integration
+- **[SSR Server](docs/architecture/backend/ssr-server.md)** - Express.js configuration and Angular 19 SSR integration
 - **[Authentication](docs/architecture/backend/authentication.md)** - Auth0 integration with express-openid-connect
 - **[Logging & Monitoring](docs/architecture/backend/logging-monitoring.md)** - Pino logging, structured logs, and health monitoring
 - **[Deployment](docs/architecture/backend/deployment.md)** - PM2 configuration and production deployment
@@ -267,7 +267,7 @@ yarn dlx turbo link
 
 ### Backend & Infrastructure
 
-- **Express.js** server with Angular Universal SSR
+- **Express.js** server with Angular 19 SSR
 - **Auth0** authentication with express-openid-connect
 - **Pino** high-performance structured logging
 - **PM2** for production process management and clustering
