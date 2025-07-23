@@ -43,11 +43,13 @@ export class ProjectLayoutComponent {
   public readonly projectDescription = computed(() => this.project()?.description || '');
   public readonly categoryLabel = computed(() => this.project()?.slug || '');
   public readonly projectSlug = computed(() => this.project()?.slug || '');
+  public readonly projectLogo = computed(() => this.project()?.logo || '');
   public readonly breadcrumbItems = input<MenuItem[]>([
     {
       label: 'All Projects',
       routerLink: '/',
       icon: 'fa-light fa-chevron-left',
+      routerLinkActiveOptions: { exact: false },
     },
   ]);
 
@@ -56,10 +58,25 @@ export class ProjectLayoutComponent {
 
   // Filter buttons with computed active state
   public readonly menuItems: Signal<MenuItem[]> = computed(() => [
-    { label: 'Dashboard', icon: 'fa-light fa-house text-blue-500', routerLink: `/project/${this.projectSlug()}` },
-    { label: 'Meetings', icon: 'fa-light fa-calendar-days text-blue-500', routerLink: `/project/${this.projectSlug()}/meetings` },
-    { label: 'Committees', icon: 'fa-light fa-people-group text-green-500', routerLink: `/project/${this.projectSlug()}/committees` },
-    { label: 'Mailing Lists', icon: 'fa-light fa-envelope text-amber-500', routerLink: `/project/${this.projectSlug()}/mailing-lists` },
+    { label: 'Dashboard', icon: 'fa-light fa-house text-blue-500', routerLink: `/project/${this.projectSlug()}`, routerLinkActiveOptions: { exact: true } },
+    {
+      label: 'Meetings',
+      icon: 'fa-light fa-calendar-days text-blue-500',
+      routerLink: `/project/${this.projectSlug()}/meetings`,
+      routerLinkActiveOptions: { exact: false },
+    },
+    {
+      label: 'Committees',
+      icon: 'fa-light fa-people-group text-green-500',
+      routerLink: `/project/${this.projectSlug()}/committees`,
+      routerLinkActiveOptions: { exact: false },
+    },
+    {
+      label: 'Mailing Lists',
+      icon: 'fa-light fa-envelope text-amber-500',
+      routerLink: `/project/${this.projectSlug()}/mailing-lists`,
+      routerLinkActiveOptions: { exact: false },
+    },
   ]);
 
   public readonly metrics = computed(() => [

@@ -142,6 +142,7 @@ yarn logs:prod
 4. **Make Changes and Test**
    ```bash
    # In separate terminal
+   ./check-headers.sh  # Verify license headers
    yarn lint
    yarn check-types
    ```
@@ -292,15 +293,57 @@ Projects inherit from shared configuration:
 4. Commit and tag
 5. Deploy applications
 
+## 🔐 Code Quality and Compliance
+
+### License Header Requirements
+
+All source code files must include the appropriate license header:
+
+```bash
+# Check license headers
+./check-headers.sh
+```
+
+**Required Format:**
+
+```typescript
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+```
+
+### Pre-commit Hooks
+
+The repository uses Husky for pre-commit hooks that automatically run:
+
+1. **License Header Check** - Ensures all files have proper headers
+2. **Linting** - Runs ESLint and Prettier
+3. **Type Checking** - Verifies TypeScript types
+4. **Format Check** - Ensures consistent code formatting
+
+```bash
+# Pre-commit hooks run automatically on commit
+git commit -m "your changes"
+
+# To bypass pre-commit hooks (not recommended)
+git commit -m "your changes" --no-verify
+```
+
+### CI/CD Integration
+
+- **License Header Check**: Automated workflow validates headers on PRs
+- **Quality Checks**: Separate workflow for linting, testing, and building
+- **Automated Enforcement**: PRs cannot be merged without passing all checks
+
 ## 🎯 Best Practices
 
 ### Development Guidelines
 
-1. **Shared Package First**: Build shared packages before applications
-2. **Type Safety**: Always run type checking before commits
-3. **Linting**: Maintain consistent code style
-4. **Testing**: Run tests in affected packages
-5. **Incremental Builds**: Leverage Turborepo caching
+1. **License Headers**: Ensure all new files have proper license headers
+2. **Shared Package First**: Build shared packages before applications
+3. **Type Safety**: Always run type checking before commits
+4. **Linting**: Maintain consistent code style
+5. **Testing**: Run tests in affected packages
+6. **Incremental Builds**: Leverage Turborepo caching
 
 ### Performance Optimization
 

@@ -16,9 +16,9 @@ import { CardModule } from 'primeng/card';
   styleUrl: './project-card.component.scss',
 })
 export class ProjectCardComponent {
-  public readonly title = input.required<string>();
-  public readonly description = input.required<string>();
-  public readonly logoUrl = input.required<string>();
+  public readonly name = input.required<string | undefined>();
+  public readonly description = input.required<string | undefined>();
+  public readonly logo = input.required<string | undefined>();
   public readonly metrics = input<ProjectCardMetric[]>([]);
-  public readonly url = input<string>('');
+  public readonly url = input<string | undefined>('');
 }

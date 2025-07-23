@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, inject } from '@angular/core';
-import { ProjectLayoutComponent } from '@app/layouts/project-layout/project-layout.component';
 import { CardComponent } from '@app/shared/components/card/card.component';
 import { MenuComponent } from '@app/shared/components/menu/menu.component';
 import { ProjectService } from '@app/shared/services/project.service';
@@ -10,7 +9,7 @@ import { MenuItem } from 'primeng/api';
 
 @Component({
   selector: 'lfx-meeting-dashboard',
-  imports: [ProjectLayoutComponent, CardComponent, MenuComponent],
+  imports: [CardComponent, MenuComponent],
   templateUrl: './meeting-dashboard.component.html',
   styleUrl: './meeting-dashboard.component.scss',
 })

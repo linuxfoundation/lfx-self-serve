@@ -13,6 +13,11 @@ export interface User {
   email: string;
   email_verified: boolean;
   sub: string;
+  first_name?: string;
+  last_name?: string;
+  username?: string;
+  id?: string;
+  created_at?: string;
 }
 
 export interface AuthContext {

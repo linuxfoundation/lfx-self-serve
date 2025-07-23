@@ -15,6 +15,8 @@ import pinoHttp from 'pino-http';
 import { extractBearerToken } from './middleware/auth-token.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { tokenRefreshMiddleware } from './middleware/token-refresh.middleware';
+import committeesRouter from './routes/committees';
+import permissionsRouter from './routes/permissions';
 import projectsRouter from './routes/projects';
 
 dotenv.config();
@@ -24,6 +26,9 @@ const browserDistFolder = resolve(serverDistFolder, '../browser');
 
 const angularApp = new AngularNodeAppEngine();
 const app = express();
+
+app.use(express.json({ limit: '1mb' }));
+app.use(express.urlencoded({ extended: true, limit: '1mb' }));
 
 /**
  * Serve static files from /browser
@@ -82,6 +87,8 @@ app.use('/api', extractBearerToken);
 
 // Mount API routes before Angular SSR
 app.use('/api/projects', projectsRouter);
+app.use('/api/projects', permissionsRouter);
+app.use('/api/committees', committeesRouter);
 
 // Add API error handler middleware
 app.use('/api/*', apiErrorHandler);

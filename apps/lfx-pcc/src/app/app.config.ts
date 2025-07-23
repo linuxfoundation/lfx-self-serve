@@ -5,12 +5,14 @@ import { provideHttpClient, withFetch, withInterceptors } from '@angular/common/
 import { ApplicationConfig, provideExperimentalZonelessChangeDetection } from '@angular/core';
 import { provideClientHydration, withEventReplay, withHttpTransferCacheOptions, withIncrementalHydration } from '@angular/platform-browser';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
-import { provideRouter } from '@angular/router';
+import { provideRouter, withRouterConfig } from '@angular/router';
 import { lfxPreset } from '@linuxfoundation/lfx-ui-core';
 import { definePreset } from '@primeng/themes';
 import Aura from '@primeng/themes/aura';
 import { authenticationInterceptor } from '@shared/interceptors/authentication.interceptor';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { providePrimeNG } from 'primeng/config';
+import { DialogService } from 'primeng/dynamicdialog';
 
 import { routes } from './app.routes';
 
@@ -25,7 +27,12 @@ const customPreset = definePreset(Aura, {
 export const appConfig: ApplicationConfig = {
   providers: [
     provideExperimentalZonelessChangeDetection(),
-    provideRouter(routes),
+    provideRouter(
+      routes,
+      withRouterConfig({
+        onSameUrlNavigation: 'reload',
+      })
+    ),
     provideClientHydration(withEventReplay(), withIncrementalHydration(), withHttpTransferCacheOptions({ includeHeaders: ['Authorization'] })),
     provideHttpClient(withFetch(), withInterceptors([authenticationInterceptor])),
     provideAnimationsAsync(),
@@ -42,5 +49,8 @@ export const appConfig: ApplicationConfig = {
         },
       },
     }),
+    ConfirmationService,
+    DialogService,
+    MessageService,
   ],
 };

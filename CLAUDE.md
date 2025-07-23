@@ -14,6 +14,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 🚀 Development Patterns
 
 - [Angular 19 Development Patterns](#angular-19-development-patterns) - Zoneless change detection, signals, components
+- [Component Organization Pattern](#component-organization-pattern) - Standardized component structure
 - [Shared Package (@lfx-pcc/shared)](#shared-package-lfx-pccshared) - Types, interfaces, constants
 - [PrimeNG Component Wrappers](#primeng-component-wrappers) - UI library abstraction
 - [Path Mappings](#path-mappings) - Import aliases and conventions
@@ -82,6 +83,84 @@ lfx-pcc-v3/
 
 [... rest of the existing content remains unchanged ...]
 
+## Component Organization Pattern
+
+All Angular components should follow this standardized organization pattern for consistency and maintainability:
+
+### Structure Overview
+
+```typescript
+export class ComponentName {
+  // 1. Injected services (readonly)
+  private readonly serviceOne = inject(ServiceOne);
+  private readonly serviceTwo = inject(ServiceTwo);
+
+  // 2. Class variables with explicit types
+  private dialogRef: DialogRef | undefined;
+  public someSignal: WritableSignal<Type>;
+  public someComputed: Signal<Type>;
+  public someForm: FormGroup;
+  public someArray: Type[];
+
+  constructor() {
+    // 3. Initialize all class variables by calling private methods
+    this.someSignal = signal<Type>(initialValue);
+    this.someComputed = this.initializeSomeComputed();
+    this.someForm = this.initializeSomeForm();
+    this.someArray = this.initializeSomeArray();
+  }
+
+  // 4. Public methods (lifecycle, event handlers, etc.)
+  public onSomeEvent(): void {}
+  public somePublicMethod(): void {}
+
+  // 5. Private methods (business logic)
+  private somePrivateMethod(): void {}
+  private handleSomeAction(): void {}
+
+  // 6. Private initialization methods (at the end of class)
+  private initializeSomeComputed(): Signal<Type> {
+    return computed(() => {
+      /* logic */
+    });
+  }
+
+  private initializeSomeForm(): FormGroup {
+    return new FormGroup({
+      /* controls */
+    });
+  }
+
+  private initializeSomeArray(): Type[] {
+    return [
+      /* initial values */
+    ];
+  }
+}
+```
+
+### Key Benefits
+
+- **Clear variable declarations** with types at the top
+- **Organized constructor** that only handles initialization calls
+- **Separation of concerns** between declaration and initialization
+- **Improved readability** and maintainability
+- **Better testability** with isolated initialization methods
+- **Consistent code structure** across the entire application
+
+### Implementation Rules
+
+1. **Always declare variables with explicit types** before constructor
+2. **Use constructor only for initialization** - no complex logic
+3. **Create private initialization methods** for complex setup
+4. **Group related variables together** (signals, forms, arrays, etc.)
+5. **Place initialization methods at the end** of the class
+6. **Use descriptive method names** like `initializeSearchForm()`
+
+### Example: Committee Dashboard
+
+See `apps/lfx-pcc/src/app/modules/project/components/committee-dashboard/committee-dashboard.component.ts` for a complete implementation following this pattern.
+
 ## Development Memories
 
 - Always reference PrimeNG's component interface when trying to define types
@@ -96,3 +175,7 @@ lfx-pcc-v3/
 - Use TypeScript interfaces instead of union types for better maintainability
 - Shared package uses direct source imports during development for hot reloading
 - **Interfaces go into the shared packages**
+- **License headers are required on all source files** - run `./check-headers.sh` to verify
+- **Pre-commit hooks enforce license headers** - commits will fail without proper headers
+- Always run yarn format from the root of the project to ensure formatting is done after you have made all your changes
+- Always preprend "Generated with [Claude Code](https://claude.ai/code)" if you assisted with the code

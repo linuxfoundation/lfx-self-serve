@@ -26,7 +26,7 @@ LFX PCC is a modern Angular 19 SSR application with Auth0 authentication, built 
 - [Authentication](./backend/authentication.md) - Auth0 integration, user management
 - [SSR Server](./backend/ssr-server.md) - Express.js server, Angular engine
 - [Logging & Monitoring](./backend/logging-monitoring.md) - Pino logging, health checks
-- [Deployment](./backend/deployment.md) - PM2, environment configuration
+- [Deployment](../deployment.md) - PM2, environment configuration
 
 ### 📦 [Shared Architecture](./shared/)
 

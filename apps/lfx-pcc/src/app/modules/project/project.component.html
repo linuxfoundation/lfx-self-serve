@@ -1,8 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<lfx-project-layout>
-  <div class="container mx-auto py-6 px-8">
+<div class="container mx-auto py-6 px-8">
+  @if (project()?.id) {
     <div class="grid grid-cols-3 gap-6 items-stretch">
       <div class="items-stretch h-full">
         <lfx-card header="Meetings" styleClass="h-full" class="h-full">
@@ -38,37 +38,55 @@
         </lfx-card>
       </div>
       <div class="items-stretch">
-        <lfx-card header="Committees" styleClass="h-full" class="h-full">
-          <div class="flex flex-col gap-2">
-            <h3 class="text-sm font-display text-gray-500">Recently Updated Committees</h3>
-            <lfx-table [value]="committeeTableData()" [scrollable]="false">
-              <ng-template #header let-columns>
-                <tr>
-                  <th>
-                    <span class="text-sm font-sans text-gray-500">Committee</span>
-                  </th>
-                  <th>
-                    <div class="flex justify-end">
-                      <span class="text-sm font-sans text-gray-500">Last Updated</span>
-                    </div>
-                  </th>
-                </tr>
-              </ng-template>
-              <ng-template #body let-row>
-                <tr>
-                  <td class="w-1/2 max-w-0">
-                    <a class="block truncate text-sm" [title]="row.title" [routerLink]="[row.url]" [relativeTo]="activatedRoute">{{ row.title }}</a>
-                  </td>
-                  <td class="w-1/2">
-                    <div class="flex justify-end whitespace-nowrap">
-                      <span class="text-sm font-sans"> {{ row.date | date: 'MMM d, yyyy @ h:mm a' }}</span>
-                    </div>
-                  </td>
-                </tr>
-              </ng-template>
-            </lfx-table>
+        @if (committeesLoading()) {
+          <div>
+            <p-skeleton width="100%" height="215px"></p-skeleton>
           </div>
-        </lfx-card>
+        } @else {
+          <lfx-card header="Committees" styleClass="h-full" class="h-full">
+            <div class="flex flex-col gap-2">
+              @if (recentCommittees().length > 0) {
+                <h3 class="text-sm font-display text-gray-500">Recently Updated Committees</h3>
+                <lfx-table [value]="committeeTableData()" [scrollable]="false">
+                  <ng-template #header let-columns>
+                    <tr>
+                      <th>
+                        <span class="text-sm font-sans text-gray-500">Committee</span>
+                      </th>
+                      <th>
+                        <div class="flex justify-end">
+                          <span class="text-sm font-sans text-gray-500">Last Updated</span>
+                        </div>
+                      </th>
+                    </tr>
+                  </ng-template>
+                  <ng-template #body let-row>
+                    <tr>
+                      <td class="w-1/2 max-w-0">
+                        <a class="block truncate text-sm" [title]="row.title" [routerLink]="row.url">{{ row.title }}</a>
+                      </td>
+                      <td class="w-1/2">
+                        <div class="flex justify-end whitespace-nowrap">
+                          <span class="text-sm font-sans"> {{ row.date | date: 'MMM d, yyyy @ h:mm a' }}</span>
+                        </div>
+                      </td>
+                    </tr>
+                  </ng-template>
+                </lfx-table>
+              } @else {
+                <div class="flex justify-center items-center h-full">
+                  <div class="text-center">
+                    <i class="fa-light fa-people-group text-4xl text-gray-400 mb-4"></i>
+                    <h3 class="text-lg font-medium text-gray-900 mb-2">No Committees</h3>
+                    <p class="text-gray-600 mb-4 text-sm">This project doesn't have any committees yet.</p>
+                    <lfx-button label="Add Committee" icon="fa-light fa-people-group" severity="secondary" size="small" (onClick)="openCreateDialog()">
+                    </lfx-button>
+                  </div>
+                </div>
+              }
+            </div>
+          </lfx-card>
+        }
       </div>
       <div class="items-stretch">
         <lfx-card header="Mailing Lists" styleClass="h-full" class="h-full">
@@ -104,5 +122,9 @@
         </lfx-card>
       </div>
     </div>
-  </div>
-</lfx-project-layout>
+  } @else {
+    <div class="flex justify-center items-center h-full">
+      <p-skeleton width="100%" height="246px"></p-skeleton>
+    </div>
+  }
+</div>

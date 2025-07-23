@@ -1,20 +1,20 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer h-full" [routerLink]="url()">
+<div class="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer h-full" [routerLink]="['/project', url()]">
   <div class="p-6">
     <!-- Logo and Title Section -->
     <div class="flex flex-col gap-6 mb-6">
       <div class="flex flex-col items-start gap-0">
         <!-- Logo Container -->
         <div class="flex items-start">
-          <img [src]="logoUrl()" [alt]="title() + ' logo'" class="w-full h-16 object-contain" />
+          <img [src]="logo()" [alt]="name() + ' logo'" class="w-full h-16 object-contain" />
         </div>
 
         <!-- Title and Description -->
         <div class="flex flex-col gap-2 mt-4">
           <h3 class="text-base font-display font-semibold text-gray-900">
-            {{ title() }}
+            {{ name() }}
           </h3>
           <p class="text-sm text-gray-600 leading-relaxed line-clamp-2">
             {{ description() }}

@@ -8,8 +8,15 @@
 # Build SSR application
 yarn build
 
-# Start with PM2 process manager
-yarn start:server
+# Expected output structure
+dist/lfx-pcc/
+├── browser/          # Client-side assets
+│   ├── index.html
+│   ├── main.[hash].js
+│   ├── styles.[hash].css
+│   └── assets/
+└── server/           # Server-side bundle
+    └── server.mjs    # Main server entry point
 ```
 
 ### PM2 Process Manager
@@ -22,6 +29,8 @@ yarn start:server
 - **Monitoring**: Built-in monitoring dashboard and metrics collection
 - **Load Balancing**: Built-in cluster mode for multi-core utilization
 
+#### PM2 Configuration
+
 **Configuration**: `ecosystem.config.js`
 
 ```javascript
@@ -29,29 +38,82 @@ module.exports = {
   apps: [
     {
       name: 'lfx-pcc',
-      script: 'dist/lfx-pcc/server/server.mjs',
+      script: 'apps/lfx-pcc/dist/lfx-pcc/server/server.mjs',
       env: {
         PM2: 'true',
+        NODE_ENV: 'production',
+        PORT: 4200,
       },
       max_restarts: 10, // Restart limit for unstable apps
       exp_backoff_restart_delay: 100, // Exponential backoff restart delay
       watch: false, // Disable file watching in production
       autorestart: true, // Auto restart on crashes
+      instances: 1, // Number of instances to run
+      exec_mode: 'cluster', // Enable cluster mode for load balancing
     },
   ],
 };
 ```
 
-**PM2 Commands**:
+#### Key Configuration Features
+
+- **Cluster Mode**: Enables load balancing across CPU cores
+- **Auto Restart**: Automatically restarts on crashes
+- **Restart Limits**: Prevents infinite restart loops
+- **Exponential Backoff**: Delays restarts to allow recovery
+- **Environment Variables**: Production-specific configuration
+
+#### PM2 Commands
 
 ```bash
-pm2 start ecosystem.config.js    # Start application
-pm2 restart lfx-pcc         # Restart gracefully
-pm2 reload lfx-pcc          # Zero-downtime reload
-pm2 stop lfx-pcc            # Stop application
-pm2 logs lfx-pcc            # View logs
-pm2 monit                        # Real-time monitoring
+# Start the application
+yarn start:server
+# Equivalent to: pm2 start ecosystem.config.js
+
+# Reload with zero downtime
+yarn reload:prod
+# Equivalent to: pm2 reload lfx-pcc
+
+# View logs
+yarn logs:prod
+# Equivalent to: pm2 logs lfx-pcc
+
+# Stop the application
+pm2 stop lfx-pcc
+
+# Delete the process
+pm2 delete lfx-pcc
+
+# Monitor processes
+pm2 monit
+
+# Check process status
+pm2 status
 ```
+
+#### Server Detection and Startup
+
+```typescript
+// apps/lfx-pcc/src/server/server.ts
+const metaUrl = import.meta.url;
+const isMain = isMainModule(metaUrl);
+const isPM2 = process.env['PM2'] === 'true';
+
+if (isMain || isPM2) {
+  startServer();
+}
+
+export function startServer() {
+  const port = process.env['PORT'] || 4000;
+  app.listen(port, () => {
+    logger.logger.info(`Node Express server listening on http://localhost:${port}`);
+  });
+}
+```
+
+- **Development**: Starts when run directly (`node server.mjs`)
+- **Production**: Starts when PM2 environment detected
+- **CLI Integration**: Compatible with Angular CLI dev server
 
 ## 🐳 Deployment Options
 
@@ -125,15 +187,26 @@ The application uses GitHub Actions for automated deployment to AWS ECS:
 ### Required Production Variables
 
 ```bash
-# Database Configuration
-# Auth0 Configuration
-AUTH0_DOMAIN=your-auth0-domain
-AUTH0_CLIENT_ID=your-auth0-client-id
-AUTH0_CLIENT_SECRET=your-auth0-client-secret
-
 # Application Configuration
 NODE_ENV=production
 PORT=4200
+PM2=true
+PCC_BASE_URL=https://pcc.lfx.dev
+
+# Auth0 Authentication
+PCC_AUTH0_CLIENT_ID=production-client-id
+PCC_AUTH0_CLIENT_SECRET=production-client-secret
+PCC_AUTH0_ISSUER_BASE_URL=https://linuxfoundation.auth0.com
+PCC_AUTH0_AUDIENCE=https://api.lfx.dev
+PCC_AUTH0_SECRET=production-secret
+
+# Microservice Configuration
+QUERY_SERVICE_URL=https://api.lfx.dev/query/resources
+QUERY_SERVICE_TOKEN=production-jwt-token
+
+# Database Configuration (Supabase)
+SUPABASE_URL=https://your-project.supabase.co
+POSTGRES_API_KEY=production-supabase-key
 ```
 
 ## 🔧 Production Setup Steps

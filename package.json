@@ -9,7 +9,7 @@
     "lint": "turbo run lint",
     "test": "turbo run test",
     "watch": "turbo run watch",
-    "serve:ssr": "turbo run serve:ssr:lfx-pcc",
+    "start:server": "turbo run start:server",
     "start:prod": "pm2 start ecosystem.config.js",
     "stop:prod": "pm2 stop lfx-pcc",
     "restart:prod": "pm2 restart lfx-pcc",

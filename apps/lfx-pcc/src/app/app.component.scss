@@ -11,4 +11,40 @@
   .p-avatar {
     @apply flex;
   }
+
+  .p-table {
+    .p-datatable-tbody {
+      tr {
+        td {
+          @apply text-sm;
+        }
+      }
+    }
+  }
+
+  .p-toggleswitch {
+    @apply flex;
+
+    .p-toggleswitch-handle {
+      @apply rounded-full;
+    }
+  }
+
+  .p-select-overlay {
+    .p-select-list-container {
+      .p-select-option {
+        @apply text-sm;
+      }
+    }
+  }
+
+  .p-tooltip {
+    .p-tooltip-text {
+      @apply text-sm;
+    }
+  }
+
+  .pill {
+    @apply inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full transition-colors text-gray-600 border border-gray-200 hover:bg-gray-50;
+  }
 }

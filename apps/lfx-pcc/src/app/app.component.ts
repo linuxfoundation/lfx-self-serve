@@ -1,16 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CommonModule } from '@angular/common';
 import { Component, inject, makeStateKey, REQUEST_CONTEXT, TransferState } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { AuthContext } from '@lfx-pcc/shared/interfaces';
+import { ToastModule } from 'primeng/toast';
 
 import { HeaderComponent } from './shared/components/header/header.component';
 import { UserService } from './shared/services/user.service';
 
 @Component({
   selector: 'lfx-root',
-  imports: [RouterOutlet, HeaderComponent],
+  imports: [RouterOutlet, HeaderComponent, CommonModule, ToastModule],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })

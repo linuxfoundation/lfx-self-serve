@@ -1,0 +1,156 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form()" (ngSubmit)="onSubmit()" class="space-y-6">
+  <!-- Basic Information Section -->
+  <div class="flex flex-col gap-3">
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+      <!-- First Name -->
+      <div>
+        <label for="first-name" class="block text-sm font-medium text-gray-700 mb-1"> First Name <span class="text-red-500">*</span> </label>
+        <lfx-input-text size="small" [form]="form()" control="first_name" id="first-name" placeholder="Enter first name" styleClass="w-full"></lfx-input-text>
+        <p class="mt-1 text-sm text-red-600" *ngIf="form().get('first_name')?.errors?.['required'] && form().get('first_name')?.touched">
+          First name is required
+        </p>
+      </div>
+
+      <!-- Last Name -->
+      <div>
+        <label for="last-name" class="block text-sm font-medium text-gray-700 mb-1"> Last Name <span class="text-red-500">*</span> </label>
+        <lfx-input-text size="small" [form]="form()" control="last_name" id="last-name" placeholder="Enter last name" styleClass="w-full"></lfx-input-text>
+        <p class="mt-1 text-sm text-red-600" *ngIf="form().get('last_name')?.errors?.['required'] && form().get('last_name')?.touched">Last name is required</p>
+      </div>
+    </div>
+
+    <!-- Email Address -->
+    <div>
+      <label for="email" class="block text-sm font-medium text-gray-700 mb-1"> Email Address <span class="text-red-500">*</span> </label>
+      <lfx-input-text size="small" [form]="form()" control="email" id="email" placeholder="Enter email address" styleClass="w-full"></lfx-input-text>
+      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('email')?.errors?.['required'] && form().get('email')?.touched">Email address is required</p>
+      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('email')?.errors?.['email'] && form().get('email')?.touched">Please enter a valid email address</p>
+    </div>
+  </div>
+
+  <!-- Organization Details Section -->
+  <div class="flex flex-col gap-3">
+    <!-- Job Title -->
+    <div>
+      <label for="job-title" class="block text-sm font-medium text-gray-700 mb-1"> Job Title </label>
+      <lfx-input-text size="small" [form]="form()" control="job_title" id="job-title" placeholder="Enter job title" styleClass="w-full"></lfx-input-text>
+    </div>
+
+    <!-- Organization -->
+    <div>
+      <label for="organization" class="block text-sm font-medium text-gray-700 mb-1"> Organization </label>
+      <lfx-input-text
+        size="small"
+        [form]="form()"
+        control="organization"
+        id="organization"
+        placeholder="Enter organization name"
+        styleClass="w-full"></lfx-input-text>
+    </div>
+
+    <!-- Organization URL -->
+    <div>
+      <label for="organization-url" class="block text-sm font-medium text-gray-700 mb-1"> Organization URL </label>
+      <lfx-input-text
+        size="small"
+        [form]="form()"
+        control="organization_url"
+        id="organization-url"
+        placeholder="https://example.com"
+        styleClass="w-full"></lfx-input-text>
+      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('organization_url')?.errors?.['pattern'] && form().get('organization_url')?.touched">
+        Please enter a valid URL
+      </p>
+    </div>
+  </div>
+
+  @if (committee()?.enable_voting) {
+    <!-- Committee Role Section -->
+    <div class="flex flex-col gap-3">
+      <div class="grid grid-cols-2 gap-4">
+        <!-- Role -->
+        <div>
+          <label for="role" class="block text-sm font-medium text-gray-700 mb-1"> Role </label>
+          <lfx-dropdown
+            size="small"
+            [form]="form()"
+            control="role"
+            [options]="roleOptions"
+            placeholder="Select role"
+            styleClass="w-full"
+            id="role"></lfx-dropdown>
+        </div>
+
+        <!-- Role Start and End Dates -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Role Start Date -->
+          <div>
+            <label for="role-start" class="block text-sm font-medium text-gray-700 mb-1"> Role Start Date </label>
+            <lfx-calendar [form]="form()" control="role_start" placeholder="Select start date" [showButtonBar]="true" [showIcon]="true"></lfx-calendar>
+          </div>
+
+          <!-- Role End Date -->
+          <div>
+            <label for="role-end" class="block text-sm font-medium text-gray-700 mb-1"> Role End Date </label>
+            <lfx-calendar [form]="form()" control="role_end" placeholder="Select end date" [showButtonBar]="true" [showIcon]="true"></lfx-calendar>
+          </div>
+        </div>
+
+        <!-- Voting Status -->
+        <div>
+          <label for="voting-status" class="block text-sm font-medium text-gray-700 mb-1"> Voting Status </label>
+          <lfx-dropdown
+            size="small"
+            [form]="form()"
+            control="voting_status"
+            [options]="votingStatusOptions"
+            placeholder="Select voting status"
+            styleClass="w-full"
+            id="voting-status"></lfx-dropdown>
+        </div>
+
+        <!-- Voting Status Start and End Dates -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Voting Status Start Date -->
+          <div>
+            <label for="voting-status-start" class="block text-sm font-medium text-gray-700 mb-1"> Voting Status Start Date </label>
+            <lfx-calendar [form]="form()" control="voting_status_start" placeholder="Select start date" [showButtonBar]="true" [showIcon]="true"></lfx-calendar>
+          </div>
+
+          <!-- Voting Status End Date -->
+          <div>
+            <label for="voting-status-end" class="block text-sm font-medium text-gray-700 mb-1"> Voting Status End Date </label>
+            <lfx-calendar [form]="form()" control="voting_status_end" placeholder="Select end date" [showButtonBar]="true" [showIcon]="true"></lfx-calendar>
+          </div>
+        </div>
+      </div>
+
+      <!-- Appointed By -->
+      <div>
+        <label for="appointed-by" class="block text-sm font-medium text-gray-700 mb-1"> Appointed By </label>
+        <lfx-input-text
+          size="small"
+          [form]="form()"
+          control="appointed_by"
+          id="appointed-by"
+          placeholder="Enter who appointed this member"
+          styleClass="w-full"></lfx-input-text>
+      </div>
+    </div>
+  }
+
+  <!-- Form Actions -->
+  <div class="flex justify-end gap-3 pt-6 border-t">
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" (onClick)="onCancel()" size="small" type="button"></lfx-button>
+    <lfx-button
+      [label]="isEditing() ? 'Update Member' : 'Add Member'"
+      [loading]="submitting()"
+      [disabled]="submitting()"
+      type="submit"
+      size="small"
+      (onClick)="onSubmit()"></lfx-button>
+  </div>
+</form>

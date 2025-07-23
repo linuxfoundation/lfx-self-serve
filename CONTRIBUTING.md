@@ -1,8 +1,6 @@
-# Copyright The Linux Foundation and each contributor to LFX.
+# Contributing to LFX Project Control Center
 
-# SPDX-License-Identifier: MIT
-
-# Contributing to LFX PCC
+Contributions are what make the open-source community such an amazing place to learn, inspire, and create.
 
 Thank you for your interest in contributing to LFX PCC! This document provides guidelines and instructions for contributing to the project.
 
@@ -42,7 +40,7 @@ Please refer to the [README.md](README.md) for detailed setup instructions.
 
 The license header must appear in the first 4 lines of every source file and must contain the exact text:
 
-```
+```text
 Copyright The Linux Foundation and each contributor to LFX.
 SPDX-License-Identifier: MIT
 ```
@@ -147,7 +145,7 @@ yarn format
 
 Follow the conventional commit format:
 
-```
+```text
 type(scope): subject
 
 body
@@ -167,7 +165,7 @@ footer
 
 ### Examples
 
-```
+```text
 feat(auth): add Auth0 integration
 
 Implemented Auth0 authentication using express-openid-connect
@@ -199,7 +197,7 @@ This adds a `Signed-off-by` line to your commit message.
 
 Use the same conventional commit format for PR titles:
 
-```
+```text
 feat(component): add new table component
 ```
 

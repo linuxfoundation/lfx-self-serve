@@ -6,6 +6,7 @@
     "PostgreSQL",
     "PostgREST",
     "primeng",
+    "supabase",
     "Turborepo"
   ],
   "editor.formatOnSave": true,

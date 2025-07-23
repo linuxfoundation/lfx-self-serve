@@ -1,10 +1,8 @@
 # LFX PCC
 
-This is a Turborepo monorepo for the LFX PCC (Linux Foundation Experience Platform Community Contribution) application, built with Angular 19 and experimental zoneless change detection.
+This is a monorepo for the LFX PCC (Project Control Center) application, built with Angular 19 and experimental zoneless change detection.
 
 ## What's inside?
-
-This Turborepo includes the following app:
 
 ### Apps and Packages
 
@@ -23,7 +21,7 @@ The app is 100% [TypeScript](https://www.typescriptlang.org/).
 
 ### Development Tools
 
-This Turborepo has comprehensive development tooling:
+This has comprehensive development tooling:
 
 - **[TypeScript](https://www.typescriptlang.org/)** for static type checking with strict configuration
 - **[ESLint](https://eslint.org/)** for code linting with Angular 19 specific rules
@@ -38,6 +36,40 @@ Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of
 ## Development
 
 ### Getting Started
+
+#### Prerequisites
+
+- **Node.js** v22+ (specified in package.json)
+- **Yarn** v4.9.2+ package manager
+- **Auth0 Account** for authentication setup
+- **Supabase Project (Temporary Mock)** for database operations
+
+#### Environment Setup
+
+1. **Copy the environment template:**
+
+   ```bash
+   cp apps/lfx-pcc/.env.example apps/lfx-pcc/.env
+   ```
+
+2. **Configure required environment variables:**
+
+   **Auth0 Configuration:**
+   - Get the Auth0 Application values from 1Password
+   - Set `PCC_AUTH0_CLIENT_ID` and `PCC_AUTH0_CLIENT_SECRET`
+   - Update `PCC_AUTH0_ISSUER_BASE_URL` with your Auth0 domain
+   - Configure `PCC_AUTH0_AUDIENCE` for your API
+
+   **Supabase Configuration:**
+   - Create a project in [Supabase](https://supabase.com)
+   - Get your project URL and anon key from Project Settings → API
+   - Set `SUPABASE_URL` and `POSTGRES_API_KEY`
+
+   **Microservice Configuration:**
+   - Set `QUERY_SERVICE_URL` to your query service endpoint
+   - Provide a valid JWT token in `QUERY_SERVICE_TOKEN`
+
+#### Install and Run
 
 ```bash
 # Install dependencies
@@ -244,20 +276,6 @@ export class ExampleComponent {}
 <p-card header="Example Card">
   <p-button label="Click me" severity="primary"></p-button>
 </p-card>
-```
-
-## Remote Caching
-
-Turborepo can use [Remote Caching](https://turborepo.com/docs/core-concepts/remote-caching) to share cache artifacts across machines, speeding up builds for your team.
-
-To enable Remote Caching:
-
-```bash
-# Authenticate with Vercel
-yarn dlx turbo login
-
-# Link your Turborepo to your Remote Cache
-yarn dlx turbo link
 ```
 
 ## Technology Stack

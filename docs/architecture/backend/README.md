@@ -34,7 +34,7 @@ Understand Auth0 integration, JWT handling, and user session management.
 
 Explore Winston logging configuration, structured logging, and monitoring strategies.
 
-### [Deployment](./deployment.md)
+### [Deployment](../../deployment.md)
 
 Discover PM2 configuration, production deployment, and server management.
 

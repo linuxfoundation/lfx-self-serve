@@ -1,0 +1,120 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+@if (loading()) {
+  <div class="flex justify-center items-center min-h-96">
+    <div class="text-center">
+      <i class="fa-light fa-spinner-third fa-spin text-3xl text-blue-600 mb-4"></i>
+      <p class="text-gray-600">Loading user permissions...</p>
+    </div>
+  </div>
+}
+
+@if (!loading()) {
+  <lfx-card header="Users" styleClass="h-full" class="h-full">
+    @if (userPermissions().length > 0) {
+      <lfx-table
+        [value]="userPermissions()"
+        size="small"
+        styleClass="p-datatable-sm animate-fade-in-up"
+        [paginator]="true"
+        [rows]="10"
+        [rowsPerPageOptions]="[10, 25, 50]"
+        [showCurrentPageReport]="true"
+        currentPageReportTemplate="Showing {first} to {last} of {totalRecords} users">
+        <ng-template #header>
+          <tr>
+            <th><span class="text-sm font-sans text-gray-500">User</span></th>
+            <th><span class="text-sm font-sans text-gray-500">Meetings</span></th>
+            <th><span class="text-sm font-sans text-gray-500">Committees</span></th>
+            <th><span class="text-sm font-sans text-gray-500">Mailing Lists</span></th>
+            <th class="text-center">
+              <div class="flex justify-center">
+                <span class="text-sm font-sans text-gray-500">Actions</span>
+              </div>
+            </th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-userPermission>
+          <tr>
+            <!-- User Info Column -->
+            <td>
+              <div class="flex items-center gap-3">
+                <div>
+                  <div class="text-sm font-sans text-gray-900 font-medium">{{ userPermission.user.first_name }} {{ userPermission.user.last_name }}</div>
+                  <div class="text-sm font-sans text-gray-500">{{ userPermission.user.email }}</div>
+                </div>
+              </div>
+            </td>
+
+            <!-- Meetings Column -->
+            <td>
+              @if (userPermission.permissions.meetings.manageAll) {
+                <span class="text-sm font-sans text-green-700 font-medium">Full Access</span>
+              } @else if (userPermission.permissions.meetings.specific.length > 0) {
+                <span class="text-sm font-sans text-gray-500"> {{ userPermission.permissions.meetings.specific.length }} specific </span>
+              } @else {
+                <span class="text-sm font-sans text-gray-400">No Access</span>
+              }
+            </td>
+
+            <!-- Committees Column -->
+            <td>
+              @if (userPermission.permissions.committees.manageAll) {
+                <span class="text-sm font-sans text-green-700 font-medium">Full Access</span>
+              } @else if (userPermission.permissions.committees.specific.length > 0) {
+                <span
+                  class="text-sm font-sans text-gray-500"
+                  [pTooltip]="userPermission.permissions.committees.specific | committeeNames"
+                  tooltipPosition="top">
+                  {{ userPermission.permissions.committees.specific.length }} Committee(s)
+                </span>
+              } @else {
+                <span class="text-sm font-sans text-gray-400">No Access</span>
+              }
+            </td>
+
+            <!-- Mailing Lists Column -->
+            <td>
+              @if (userPermission.permissions.mailingLists.manageAll) {
+                <span class="text-sm font-sans text-green-700 font-medium">Full Access</span>
+              } @else if (userPermission.permissions.mailingLists.specific.length > 0) {
+                <span class="text-sm font-sans text-gray-500"> {{ userPermission.permissions.mailingLists.specific.length }} specific </span>
+              } @else {
+                <span class="text-sm font-sans text-gray-400">No Access</span>
+              }
+            </td>
+
+            <!-- Actions Column -->
+            <td class="text-center">
+              <div class="flex justify-center gap-2">
+                <button class="text-blue-600 hover:text-blue-800 text-sm font-sans" (click)="onEditUser(userPermission)">Edit</button>
+                <button class="text-red-600 hover:text-red-800 text-sm font-sans" (click)="onRemoveUser(userPermission)">Remove</button>
+              </div>
+            </td>
+          </tr>
+        </ng-template>
+
+        <ng-template #emptymessage>
+          <tr>
+            <td colspan="6" class="text-center py-8">
+              <div class="text-center py-8 text-gray-500">
+                <i class="fa-light fa-users text-4xl text-gray-400 mb-4"></i>
+                <h3 class="text-lg font-medium text-gray-900 mb-2">No User Permissions</h3>
+                <p class="text-gray-600">No users have been assigned permissions to this project yet.</p>
+              </div>
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+    } @else {
+      <div class="flex justify-center items-center h-full">
+        <div class="text-center py-8">
+          <i class="fa-light fa-users text-4xl text-gray-400 mb-4"></i>
+          <h3 class="text-lg font-medium text-gray-900 mb-2">No User Permissions</h3>
+          <p class="text-gray-600">No users have been assigned permissions to this project yet.</p>
+        </div>
+      </div>
+    }
+  </lfx-card>
+}

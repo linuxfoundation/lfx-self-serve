@@ -1,52 +1,45 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { ProjectCardComponent } from '@components/project-card/project-card.component';
-import { Project, ProjectCardMetric } from '@lfx-pcc/shared/interfaces';
+import { Project, ProjectCard, ProjectCardMetric } from '@lfx-pcc/shared/interfaces';
 import { ProjectService } from '@shared/services/project.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
+import { SkeletonModule } from 'primeng/skeleton';
 
 @Component({
   selector: 'lfx-home',
-  imports: [InputTextComponent, ProjectCardComponent, AnimateOnScrollModule],
+  imports: [InputTextComponent, ProjectCardComponent, AnimateOnScrollModule, SkeletonModule],
   templateUrl: './home.component.html',
   styleUrl: './home.component.scss',
 })
 export class HomeComponent {
+  // 1. Injected services (readonly)
   private readonly projectService = inject(ProjectService);
 
-  public readonly form = new FormGroup({
-    search: new FormControl(''),
-  });
+  // 2. Class variables with explicit types
+  public form: FormGroup;
+  public projects: Signal<Project[]>;
+  public projectCards: Signal<ProjectCard[]>;
+  public filteredProjects: Signal<ProjectCard[]>;
 
-  // Convert Observable to Signal
-  public readonly projects = toSignal(this.projectService.getProjects(), {
-    initialValue: [],
-  });
+  public constructor() {
+    // 3. Initialize all class variables by calling private methods
+    this.form = this.initializeSearchForm();
+    this.projects = this.initializeProjects();
+    this.projectCards = this.initializeProjectCards();
+    this.filteredProjects = this.initializeFilteredProjects();
+  }
 
-  // Transform API projects to card format
-  public readonly projectCards = computed(() => {
-    const apiProjects = this.projects();
-    return apiProjects.map(this.transformProjectToCard);
-  });
+  // 4. Public methods (lifecycle, event handlers, etc.)
+  // No public methods in this component
 
-  // Computed signal for filtered projects based on search
-  public readonly filteredProjects = computed(() => {
-    const searchTerm = this.form.get('search')?.value?.toLowerCase() || '';
-    const allProjects = this.projectCards();
-
-    if (!searchTerm) {
-      return allProjects;
-    }
-
-    return allProjects.filter((project) => project.title.toLowerCase().includes(searchTerm) || project.description.toLowerCase().includes(searchTerm));
-  });
-
-  private transformProjectToCard = (project: Project) => {
+  // 5. Private methods (business logic)
+  private transformProjectToCard(project: Project): ProjectCard {
     const metrics: ProjectCardMetric[] = [
       {
         label: 'Meetings',
@@ -67,11 +60,44 @@ export class HomeComponent {
 
     return {
       id: project.slug,
-      title: project.name,
+      name: project.name,
       description: project.description,
-      logoUrl: project.logo,
-      url: `/project/${project.slug}`,
+      logo: project.logo,
+      slug: project.slug,
       metrics,
     };
-  };
+  }
+
+  // 6. Private initialization methods (at the end of class)
+  private initializeSearchForm(): FormGroup {
+    return new FormGroup({
+      search: new FormControl(''),
+    });
+  }
+
+  private initializeProjects(): Signal<Project[]> {
+    return toSignal(this.projectService.getProjects(), {
+      initialValue: [],
+    });
+  }
+
+  private initializeProjectCards(): Signal<ProjectCard[]> {
+    return computed(() => {
+      const apiProjects = this.projects();
+      return apiProjects.map((project) => this.transformProjectToCard(project));
+    });
+  }
+
+  private initializeFilteredProjects(): Signal<ProjectCard[]> {
+    return computed(() => {
+      const searchTerm = this.form.get('search')?.value?.toLowerCase() || '';
+      const allProjects = this.projectCards();
+
+      if (!searchTerm) {
+        return allProjects;
+      }
+
+      return allProjects.filter((project) => project.name?.toLowerCase().includes(searchTerm) || project.description?.toLowerCase().includes(searchTerm));
+    });
+  }
 }

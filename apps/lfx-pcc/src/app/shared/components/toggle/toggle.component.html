@@ -1,0 +1,20 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<ng-container [formGroup]="form()">
+  <div class="flex items-center gap-2">
+    <p-toggleSwitch
+      [formControlName]="control()"
+      [id]="id()"
+      [readonly]="readonly()"
+      [styleClass]="styleClass()"
+      [trueValue]="trueValue()"
+      [falseValue]="falseValue()"
+      [attr.data-test]="dataTest()"></p-toggleSwitch>
+    @if (label()) {
+      <label [for]="id()" class="text-sm font-medium text-gray-700 cursor-pointer">
+        {{ label() }}
+      </label>
+    }
+  </div>
+</ng-container>

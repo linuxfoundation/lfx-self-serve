@@ -3,22 +3,15 @@
 
 import { NextFunction, Request, Response, Router } from 'express';
 
-import { ApiClientService } from '../services/api-client.service';
-import { MicroserviceProxyService } from '../services/microservice-proxy.service';
+import { SupabaseService } from '../services/supabase.service';
 
 const router = Router();
 
-const apiClient = new ApiClientService({
-  timeout: 30000,
-  retryAttempts: 3,
-  retryDelay: 1000,
-});
-
-const proxyService = new MicroserviceProxyService(apiClient);
+const supabaseService = new SupabaseService();
 
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const projects = await proxyService.proxyRequest(req, 'QUERY_SERVICE', '', 'GET', undefined, req.query as Record<string, any>);
+    const projects = await supabaseService.getProjects(req.query as Record<string, any>);
 
     return res.json(projects);
   } catch (error) {
@@ -38,13 +31,14 @@ router.get('/:slug', async (req: Request, res: Response, next: NextFunction) => 
       });
     }
 
-    // Pass slug as a query parameter along with any existing query params
-    const params = {
-      ...req.query,
-      slug: projectSlug,
-    };
+    const project = await supabaseService.getProjectBySlug(projectSlug);
 
-    const project = await proxyService.proxyRequest(req, 'QUERY_SERVICE', '', 'GET', undefined, params);
+    if (!project) {
+      return res.status(404).json({
+        error: 'Project not found',
+        code: 'PROJECT_NOT_FOUND',
+      });
+    }
 
     return res.json(project);
   } catch (error) {

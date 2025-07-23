@@ -1,0 +1,9 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<ng-container [formGroup]="form()">
+  <div class="flex items-center gap-2">
+    <p-checkbox [formControlName]="control()" [binary]="binary()" [disabled]="disabled()" [inputId]="control()" />
+    <label [for]="control()" class="text-sm font-medium text-gray-700">{{ label() }}</label>
+  </div>
+</ng-container>

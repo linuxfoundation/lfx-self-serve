@@ -1,24 +1,179 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<lfx-project-layout
-  projectTitle="Cloud Native Computing Foundation"
-  projectDescription="The Cloud Native Computing Foundation (CNCF) hosts critical components of the global technology infrastructure. CNCF brings together the world’s top developers, end users, and vendors and runs the largest open source developer conferences.
-  "
-  categoryLabel="Open Source"
-  projectSlug="cncf">
-  <div class="container mx-auto py-6 px-8">
+<div class="container mx-auto py-6 px-8">
+  @if (committeesLoading()) {
+    <div class="flex justify-center items-center min-h-96 col-span-4">
+      <div class="text-center">
+        <i class="fa-light fa-spinner-third fa-spin text-3xl text-blue-600 mb-4"></i>
+        <p class="text-gray-600">Loading committee details...</p>
+      </div>
+    </div>
+  }
+
+  @if (!committeesLoading()) {
     <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 items-stretch">
       <div class="lg:col-span-3 items-stretch h-full">
         <lfx-card header="Committees" styleClass="h-full" class="h-full">
-          <p>Lorem ipsum dolor sit amet consectetur adipisicing elit. Quisquam, quos.</p>
+          <!-- Search and Filter Controls -->
+          <div class="flex flex-col sm:flex-row gap-4 mb-6">
+            <!-- Search Input -->
+            <div class="flex-1">
+              <lfx-input-text
+                [form]="searchForm"
+                control="search"
+                placeholder="Search committees..."
+                icon="fa-light fa-search"
+                styleClass="w-full"
+                size="small"></lfx-input-text>
+            </div>
+
+            <!-- Category Filter Dropdown -->
+            <div class="w-full sm:w-64">
+              <lfx-dropdown
+                [form]="searchForm"
+                control="category"
+                size="small"
+                [options]="categories()"
+                placeholder="Select Category"
+                [showClear]="true"
+                styleClass="w-full"
+                (onChange)="onCategoryChange($event.value)"></lfx-dropdown>
+            </div>
+          </div>
+
+          @if (committees().length > 0) {
+            <!-- Committees Table -->
+            <lfx-table
+              [value]="filteredCommittees()"
+              [paginator]="true"
+              [totalRecords]="totalRecords()"
+              [rowsPerPageOptions]="[10, 25, 50]"
+              [showCurrentPageReport]="true"
+              currentPageReportTemplate="Showing {first} to {last} of {totalRecords} committees"
+              (onPage)="onPageChange($event)"
+              styleClass="p-datatable-sm animate-fade-in-up">
+              <!-- Header Template -->
+              <ng-template #header>
+                <tr>
+                  <th>
+                    <span class="text-sm font-sans text-gray-500">Name</span>
+                  </th>
+                  <th>
+                    <span class="text-sm font-sans text-gray-500">Type</span>
+                  </th>
+                  <th>
+                    <div class="flex justify-center">
+                      <span class="text-sm font-sans text-gray-500">Members</span>
+                    </div>
+                  </th>
+                  <th>
+                    <div class="flex justify-center">
+                      <span class="text-sm font-sans text-gray-500">Voting</span>
+                    </div>
+                  </th>
+                  <th>
+                    <div class="flex justify-center">
+                      <span class="text-sm font-sans text-gray-500">Public</span>
+                    </div>
+                  </th>
+                  <th>
+                    <div class="flex justify-end">
+                      <span class="text-sm font-sans text-gray-500">Last Updated</span>
+                    </div>
+                  </th>
+                  <th style="width: 80px">
+                    <div class="flex justify-center">
+                      <span class="text-sm font-sans text-gray-500">Actions</span>
+                    </div>
+                  </th>
+                </tr>
+              </ng-template>
+
+              <!-- Body Template -->
+              <ng-template #body let-committee>
+                <tr>
+                  <td>
+                    <a [routerLink]="['/project', project()?.slug, 'committees', committee.id]" class="text-primary hover:text-primary-600 font-medium text-sm">
+                      {{ committee.name }}
+                    </a>
+                  </td>
+                  <td>
+                    <span class="text-sm font-sans text-gray-500">{{ committee.category || 'Uncategorized' }}</span>
+                  </td>
+                  <td class="text-center">
+                    <span class="text-sm font-sans text-gray-500"> {{ committee.total_members || 0 }} </span>
+                  </td>
+                  <td class="text-center">
+                    <span class="text-sm font-sans text-gray-500"> {{ committee.enable_voting ? 'Yes' : 'No' }} </span>
+                  </td>
+                  <td class="text-center">
+                    <i class="fa-light fa-circle-check text-green-500" *ngIf="committee.public_enabled"></i>
+                    <i class="fa-light fa-circle-xmark text-red-500" *ngIf="!committee.public_enabled"></i>
+                  </td>
+                  <td class="text-right">
+                    <span class="text-sm font-sans text-gray-500"> {{ formatDate(committee.updated_at) }} </span>
+                  </td>
+                  <td class="text-center relative">
+                    <lfx-button
+                      icon="fa-light fa-ellipsis-vertical"
+                      [text]="true"
+                      [rounded]="true"
+                      size="small"
+                      severity="secondary"
+                      (click)="toggleActionMenu($event, committee, actionMenu)"></lfx-button>
+                  </td>
+                </tr>
+              </ng-template>
+
+              <!-- Empty Message Template -->
+              <ng-template #emptymessage>
+                <tr>
+                  <td colspan="7" class="text-center py-8">
+                    <div class="flex flex-col items-center gap-2">
+                      <i class="fa-light fa-users text-4xl text-gray-400"></i>
+                      <p class="text-gray-600">No committees found</p>
+                      <p class="text-sm text-gray-500">Try adjusting your search or filters</p>
+                    </div>
+                  </td>
+                </tr>
+              </ng-template>
+            </lfx-table>
+
+            <!-- Single action menu for all committees -->
+            <lfx-menu #actionMenu [model]="actionMenuItems" [popup]="true"></lfx-menu>
+
+            <!-- Confirmation dialog -->
+            <p-confirmDialog></p-confirmDialog>
+          } @else {
+            <div class="flex justify-center items-center h-full">
+              <div class="text-center py-8">
+                <i class="fa-light fa-people-group text-4xl text-gray-400 mb-4"></i>
+                <h3 class="text-lg font-medium text-gray-900 mb-2">No Committees Yet</h3>
+                <p class="text-gray-600 mb-4">This project doesn't have any committees yet.</p>
+                <lfx-button label="Add First Committee" icon="fa-light fa-people-group" severity="secondary" (onClick)="openCreateDialog()"></lfx-button>
+              </div>
+            </div>
+          }
         </lfx-card>
       </div>
       <div class="lg:col-span-1 items-stretch flex flex-col gap-6">
-        <lfx-card header="Quick Actions" styleClass="h-full" class="h-full">
+        <lfx-card header="Quick Actions">
           <lfx-menu [model]="menuItems" styleClass="border-none"></lfx-menu>
         </lfx-card>
+
+        <div class="flex flex-col gap-4">
+          <lfx-card header="Upcoming Meeting" styleClass="h-full" class="h-full">
+            <div class="flex flex-col gap-2">
+              <a class="text-sm font-sans text-gray-500 hover:text-blue-600 cursor-pointer">Board Meeting</a>
+              <span class="text-sm font-sans text-gray-500">Monday, July 30, 2025 at 10:00 AM</span>
+              <div class="flex justify-start mt-2">
+                <lfx-button label="Join Meeting" icon="fa-light fa-video" severity="secondary" size="small"></lfx-button>
+              </div>
+            </div>
+          </lfx-card>
+        </div>
       </div>
     </div>
-  </div>
-</lfx-project-layout>
+  }
+</div>

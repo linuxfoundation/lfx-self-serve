@@ -18,20 +18,26 @@
   </div>
 </div>
 <div class="container mx-auto py-24 px-8">
-  <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-    @for (project of filteredProjects(); track project.id; let i = $index) {
-      <div
-        pAnimateOnScroll
-        class="animate-delay-2000"
-        enterClass="animate-enter fade-in-10 slide-in-from-b-8 animate-duration-1000"
-        leaveClass="animate-leave fade-out-0">
-        <lfx-project-card
-          [title]="project.title"
-          [description]="project.description"
-          [logoUrl]="project.logoUrl"
-          [url]="project.url"
-          [metrics]="project.metrics"></lfx-project-card>
-      </div>
-    }
-  </div>
+  @if (projects().length > 0) {
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+      @for (project of filteredProjects(); track project.id; let i = $index) {
+        <div
+          pAnimateOnScroll
+          class="animate-delay-2000"
+          enterClass="animate-enter fade-in-10 slide-in-from-b-8 animate-duration-1000"
+          leaveClass="animate-leave fade-out-0">
+          <lfx-project-card
+            [name]="project.name"
+            [description]="project.description"
+            [logo]="project.logo"
+            [url]="project.slug"
+            [metrics]="project.metrics"></lfx-project-card>
+        </div>
+      }
+    </div>
+  } @else {
+    <div class="flex justify-center items-center h-full">
+      <p-skeleton width="100%" height="246px"></p-skeleton>
+    </div>
+  }
 </div>

@@ -1,0 +1,127 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form()" (ngSubmit)="handleSubmit()" class="space-y-6">
+  <!-- Basic Information Section -->
+  <div class="flex flex-col gap-3">
+    <h3 class="text-lg font-medium text-gray-900">Basic Information</h3>
+
+    <!-- Committee Name -->
+    <div>
+      <label for="committee-name" class="block text-sm font-medium text-gray-700 mb-1"> Committee Name <span class="text-red-500">*</span> </label>
+      <lfx-input-text size="small" [form]="form()" control="name" id="committee-name" placeholder="Enter committee name" styleClass="w-full"></lfx-input-text>
+      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('name')?.errors?.['required'] && form().get('name')?.touched">Committee name is required</p>
+    </div>
+
+    <!-- Category -->
+    <div>
+      <label for="committee-category" class="block text-sm font-medium text-gray-700 mb-1"> Category <span class="text-red-500">*</span> </label>
+      <lfx-dropdown
+        size="small"
+        [form]="form()"
+        control="category"
+        [options]="categoryOptions"
+        placeholder="Select a category"
+        styleClass="w-full"
+        id="committee-category"></lfx-dropdown>
+      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('category')?.errors?.['required'] && form().get('category')?.touched">Category is required</p>
+    </div>
+
+    <!-- Description -->
+    <div>
+      <label for="committee-description" class="block text-sm font-medium text-gray-700 mb-1"> Description </label>
+      <lfx-textarea
+        [form]="form()"
+        control="description"
+        id="committee-description"
+        placeholder="Enter committee description"
+        [rows]="4"
+        styleClass="w-full"></lfx-textarea>
+    </div>
+  </div>
+
+  <!-- Settings Section -->
+  <div class="flex flex-col gap-3">
+    <h3 class="text-lg font-medium text-gray-900">Settings</h3>
+
+    <div class="flex flex-col gap-2">
+      <lfx-toggle size="small" [form]="form()" control="business_email_required" label="Business Email Required" id="business-email-toggle"></lfx-toggle>
+
+      <lfx-toggle size="small" [form]="form()" control="enable_voting" label="Enable Voting" id="voting-toggle"></lfx-toggle>
+
+      <lfx-toggle size="small" [form]="form()" control="is_audit_enabled" label="Enable Audit" id="audit-toggle"></lfx-toggle>
+    </div>
+  </div>
+
+  <!-- Public Settings Section -->
+  <div class="flex flex-col gap-3">
+    <h3 class="text-lg font-medium text-gray-900">Public Settings</h3>
+
+    <lfx-toggle size="small" [form]="form()" control="public_enabled" label="Make Committee Public" id="public-toggle"></lfx-toggle>
+
+    <!-- Conditional Public Name Field -->
+    <div *ngIf="form().get('public_enabled')?.value === true">
+      <label for="public-name" class="block text-sm font-medium text-gray-700 mb-1"> Public Name </label>
+      <lfx-input-text
+        size="small"
+        [form]="form()"
+        control="public_name"
+        id="public-name"
+        placeholder="Enter public display name"
+        styleClass="w-full"></lfx-input-text>
+    </div>
+  </div>
+
+  <!-- SSO Settings Section -->
+  <div class="flex flex-col gap-3">
+    <h3 class="text-lg font-medium text-gray-900">SSO Settings</h3>
+
+    <lfx-toggle [form]="form()" control="sso_group_enabled" label="Enable SSO Group" id="sso-toggle"></lfx-toggle>
+
+    <!-- Conditional SSO Group Name Field -->
+    @if (form().get('sso_group_enabled')?.value === true) {
+      <div>
+        <label for="sso-group-name" class="block text-sm font-medium text-gray-700 mb-1"> SSO Group Name </label>
+        <lfx-input-text
+          size="small"
+          [form]="form()"
+          control="sso_group_name"
+          id="sso-group-name"
+          placeholder="Enter SSO group name"
+          styleClass="w-full"></lfx-input-text>
+      </div>
+    }
+  </div>
+
+  <!-- Additional Information Section -->
+  <div class="flex flex-col gap-3">
+    <h3 class="text-lg font-medium text-gray-900">Additional Information</h3>
+
+    <div>
+      <label for="committee-website" class="block text-sm font-medium text-gray-700 mb-1"> Committee Website </label>
+      <lfx-input-text
+        size="small"
+        [form]="form()"
+        control="committee_website"
+        id="committee-website"
+        type="url"
+        placeholder="https://example.com"
+        styleClass="w-full"></lfx-input-text>
+      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('committee_website')?.errors?.['pattern'] && form().get('committee_website')?.touched">
+        Please enter a valid URL
+      </p>
+    </div>
+  </div>
+
+  <!-- Form Actions -->
+  <div class="flex justify-end gap-3 pt-6 border-t">
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" (click)="handleCancel()" size="small" type="button"></lfx-button>
+    <lfx-button
+      [label]="isEditing() ? 'Update Committee' : 'Create Committee'"
+      [loading]="loading()"
+      [disabled]="loading()"
+      type="submit"
+      size="small"
+      (onClick)="handleSubmit()"></lfx-button>
+  </div>
+</form>

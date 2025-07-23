@@ -7,7 +7,7 @@
     "build": "ng build",
     "watch": "ng build --watch --configuration development",
     "test": "ng test",
-    "serve:ssr:lfx-pcc": "node dist/lfx-pcc/server/server.mjs",
+    "start:server": "node dist/lfx-pcc/server/server.mjs",
     "lint": "eslint \"src/**/*.{ts,html}\" --fix",
     "lint:check": "eslint \"src/**/*.{ts,html}\"",
     "format": "prettier --write \"src/**/*.{ts,html,scss,css,json}\"",

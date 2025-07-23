@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_QUERY_PARAMS, MICROSERVICE_URLS } from '@lfx-pcc/shared/constants';
+import { DEFAULT_QUERY_PARAMS } from '@lfx-pcc/shared/constants';
 import { MicroserviceUrls } from '@lfx-pcc/shared/interfaces';
 import { Request } from 'express';
 
@@ -26,6 +26,10 @@ export class MicroserviceProxyService {
       if (!req.bearerToken) {
         throw new Error('Bearer token not available on request');
       }
+
+      const MICROSERVICE_URLS: MicroserviceUrls = {
+        QUERY_SERVICE: process.env['QUERY_SERVICE_URL'] || 'http://localhost:8080/query/resources',
+      };
 
       const baseUrl = MICROSERVICE_URLS[service];
       const endpoint = `${baseUrl}${path}`;

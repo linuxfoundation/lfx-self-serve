@@ -1,0 +1,23 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Member Form Component Styles
+// Minimal styles as we're using Tailwind CSS for most styling
+
+:host {
+  display: block;
+}
+
+// Form section styling
+.form-section {
+  @apply space-y-4;
+
+  h3 {
+    @apply text-lg font-medium text-gray-900 border-b border-gray-200 pb-2;
+  }
+}
+
+// Ensure proper spacing in grid layouts
+.grid-cols-1.md\\:grid-cols-2 {
+  @apply gap-4;
+}

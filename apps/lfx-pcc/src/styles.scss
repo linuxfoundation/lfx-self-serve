@@ -31,10 +31,22 @@
 :root {
   --p-datatable-body-cell-padding: 0.25rem 0;
   --p-datatable-header-cell-padding: 0;
+
+  --p-form-field-sm-font-size: 0.875rem;
+  --p-inputtext-sm-font-size: 0.875rem;
+  --p-select-sm-font-size: 0.875rem;
+  --p-form-field-md-font-size: 1rem;
+  --p-form-field-lg-font-size: 1.125rem;
+  --p-select-md-font-size: 1rem;
+  --p-inputtext-md-font-size: 1rem;
+  --p-textarea-sm-font-size: 0.875rem;
+  --p-textarea-md-font-size: 1rem;
+  --p-textarea-lg-font-size: 1.125rem;
+  --p-toggle-sm-font-size: 0.875rem;
 }
 
 html {
-  font-size: 16px;
+  font-size: 14px;
   background-color: #f9fafb;
 }
 

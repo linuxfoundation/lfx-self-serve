@@ -4,6 +4,12 @@
 // Project interfaces
 export * from './project';
 
+// Committee interfaces
+export * from './committee.interface';
+
+// Member interfaces
+export * from './member.interface';
+
 // Component interfaces
 export * from './components';
 
@@ -12,3 +18,6 @@ export * from './auth';
 
 // API interfaces
 export * from './api';
+
+// Permissions interfaces
+export * from './permissions.interface';

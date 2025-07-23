@@ -1,0 +1,113 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Committee Members Section -->
+<lfx-card>
+  <div class="flex justify-between gap-4 mb-8">
+    <h3 class="text-lg font-medium text-gray-900">Committee Members</h3>
+    <!-- Add Member Button -->
+    <lfx-button label="Add Member" icon="fa-light fa-user-plus" size="small" severity="secondary" (onClick)="openAddMemberDialog()"> </lfx-button>
+  </div>
+
+  @if (members().length > 0) {
+    <lfx-table
+      [value]="members()"
+      [paginator]="true"
+      [rows]="10"
+      [rowsPerPageOptions]="[10, 25, 50]"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords} members"
+      styleClass="p-datatable-sm"
+      sortField="first_name"
+      [sortOrder]="1">
+      <ng-template #header>
+        <tr>
+          <th>
+            <span class="text-sm font-sans text-gray-500">Name</span>
+          </th>
+          <th>
+            <span class="text-sm font-sans text-gray-500">Email</span>
+          </th>
+          <th>
+            <span class="text-sm font-sans text-gray-500">Organization</span>
+          </th>
+          <th>
+            <span class="text-sm font-sans text-gray-500">Role</span>
+          </th>
+          <th>
+            <div class="flex justify-center">
+              <span class="text-sm font-sans text-gray-500">Voting Status</span>
+            </div>
+          </th>
+          <th style="width: 80px">
+            <div class="flex justify-center">
+              <span class="text-sm font-sans text-gray-500">Actions</span>
+            </div>
+          </th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-member>
+        <tr>
+          <td>
+            <span class="text-sm font-sans text-gray-900 font-medium">
+              {{ (member.first_name || '') + ' ' + (member.last_name || '') | titlecase }}
+            </span>
+          </td>
+          <td>
+            <span class="text-sm font-sans text-gray-500">{{ member.email || '-' }}</span>
+          </td>
+          <td>
+            @if (member.organization_url) {
+              <a [href]="member.organization_url" target="_blank" class="text-primary hover:text-primary-600 text-sm font-sans">
+                {{ member.organization }}
+              </a>
+            } @else {
+              <span class="text-sm font-sans text-gray-500">{{ member.organization || '-' }}</span>
+            }
+          </td>
+          <td>
+            <span class="text-sm font-sans text-gray-500">{{ member.role || 'Member' }}</span>
+          </td>
+          <td class="text-center">
+            @if (member.voting_status) {
+              <span class="text-sm font-sans text-gray-500">{{ member.voting_status }}</span>
+            } @else {
+              <span class="text-sm font-sans text-gray-400">-</span>
+            }
+          </td>
+          <td class="text-center relative">
+            <lfx-menu #memberActionMenu [model]="memberActionMenuItems" [popup]="true" appendTo="body"> </lfx-menu>
+            <lfx-button
+              icon="fa-light fa-ellipsis-vertical"
+              [text]="true"
+              [rounded]="true"
+              size="small"
+              severity="secondary"
+              (onClick)="toggleMemberActionMenu($event, member, memberActionMenu)"></lfx-button>
+          </td>
+        </tr>
+      </ng-template>
+
+      <!-- Empty Message Template -->
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="6" class="text-center py-8">
+            <div class="text-center">
+              <i class="fa-light fa-users text-4xl text-gray-400 mb-4"></i>
+              <h3 class="text-lg font-medium text-gray-900 mb-2">No Members Yet</h3>
+              <p class="text-gray-600">This committee doesn't have any members yet.</p>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  } @else {
+    <div class="text-center py-8">
+      <i class="fa-light fa-users text-4xl text-gray-400 mb-4"></i>
+      <h3 class="text-lg font-medium text-gray-900 mb-2">No Members Yet</h3>
+      <p class="text-gray-600 mb-4">This committee doesn't have any members yet.</p>
+      <lfx-button label="Add First Member" icon="fa-light fa-user-plus" severity="secondary" (onClick)="openAddMemberDialog()"> </lfx-button>
+    </div>
+  }
+</lfx-card>
