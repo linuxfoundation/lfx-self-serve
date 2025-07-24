@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal } from '@angular/core';
+import { Component, computed, inject, Signal, signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -10,6 +10,7 @@ import { Project, ProjectCard, ProjectCardMetric } from '@lfx-pcc/shared/interfa
 import { ProjectService } from '@shared/services/project.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { SkeletonModule } from 'primeng/skeleton';
+import { debounceTime, distinctUntilChanged, startWith, switchMap, tap } from 'rxjs/operators';
 
 @Component({
   selector: 'lfx-home',
@@ -21,24 +22,22 @@ export class HomeComponent {
   // 1. Injected services (readonly)
   private readonly projectService = inject(ProjectService);
 
-  // 2. Class variables with explicit types
   public form: FormGroup;
+  public projectsLoading: WritableSignal<boolean>;
   public projects: Signal<Project[]>;
   public projectCards: Signal<ProjectCard[]>;
   public filteredProjects: Signal<ProjectCard[]>;
+  public isSearching: WritableSignal<boolean>;
 
   public constructor() {
-    // 3. Initialize all class variables by calling private methods
     this.form = this.initializeSearchForm();
+    this.isSearching = signal(false);
+    this.projectsLoading = signal(true);
     this.projects = this.initializeProjects();
     this.projectCards = this.initializeProjectCards();
     this.filteredProjects = this.initializeFilteredProjects();
   }
 
-  // 4. Public methods (lifecycle, event handlers, etc.)
-  // No public methods in this component
-
-  // 5. Private methods (business logic)
   private transformProjectToCard(project: Project): ProjectCard {
     const metrics: ProjectCardMetric[] = [
       {
@@ -76,7 +75,28 @@ export class HomeComponent {
   }
 
   private initializeProjects(): Signal<Project[]> {
-    return toSignal(this.projectService.getProjects(), {
+    // Create search stream that responds to form changes
+    const searchResults$ = this.form.get('search')!.valueChanges.pipe(
+      startWith(''), // Start with empty search to load all projects initially
+      debounceTime(300),
+      distinctUntilChanged(),
+      switchMap((searchTerm: string) => {
+        const trimmedTerm = searchTerm?.trim() || '';
+
+        if (!trimmedTerm || trimmedTerm.length < 3) {
+          // If search is empty or too short, return all projects
+          this.isSearching.set(false);
+          return this.projectService.getProjects();
+        }
+
+        // Otherwise, search for projects
+        this.isSearching.set(true);
+        return this.projectService.searchProjects(trimmedTerm).pipe(tap(() => this.isSearching.set(false)));
+      }),
+      tap(() => this.projectsLoading.set(false))
+    );
+
+    return toSignal(searchResults$, {
       initialValue: [],
     });
   }
@@ -89,15 +109,6 @@ export class HomeComponent {
   }
 
   private initializeFilteredProjects(): Signal<ProjectCard[]> {
-    return computed(() => {
-      const searchTerm = this.form.get('search')?.value?.toLowerCase() || '';
-      const allProjects = this.projectCards();
-
-      if (!searchTerm) {
-        return allProjects;
-      }
-
-      return allProjects.filter((project) => project.name?.toLowerCase().includes(searchTerm) || project.description?.toLowerCase().includes(searchTerm));
-    });
+    return this.projectCards;
   }
 }

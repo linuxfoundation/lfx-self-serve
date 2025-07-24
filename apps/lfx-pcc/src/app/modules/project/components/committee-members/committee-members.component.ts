@@ -2,22 +2,43 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, inject, Injector, input, OnInit, output, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, Injector, input, OnInit, output, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
 import { CardComponent } from '@app/shared/components/card/card.component';
+import { InputTextComponent } from '@app/shared/components/input-text/input-text.component';
+import { MemberCardComponent } from '@app/shared/components/member-card/member-card.component';
 import { MemberFormComponent } from '@app/shared/components/member-form/member-form.component';
 import { MenuComponent } from '@app/shared/components/menu/menu.component';
+import { SelectButtonComponent } from '@app/shared/components/select-button/select-button.component';
+import { SelectComponent } from '@app/shared/components/select/select.component';
 import { TableComponent } from '@app/shared/components/table/table.component';
 import { CommitteeService } from '@app/shared/services/committee.service';
 import { Committee, CommitteeMember } from '@lfx-pcc/shared/interfaces';
+import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { debounceTime, distinctUntilChanged, finalize, startWith } from 'rxjs/operators';
 
 @Component({
   selector: 'lfx-committee-members',
-  imports: [CommonModule, CardComponent, MenuComponent, TableComponent, ButtonComponent, ConfirmDialogModule, DynamicDialogModule],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    CardComponent,
+    MemberCardComponent,
+    MenuComponent,
+    ButtonComponent,
+    InputTextComponent,
+    SelectComponent,
+    SelectButtonComponent,
+    TableComponent,
+    ConfirmDialogModule,
+    DynamicDialogModule,
+    AnimateOnScrollModule,
+  ],
   providers: [DialogService],
   templateUrl: './committee-members.component.html',
   styleUrl: './committee-members.component.scss',
@@ -37,15 +58,48 @@ export class CommitteeMembersComponent implements OnInit {
 
   // Class variables with types
   private dialogRef: DynamicDialogRef | undefined;
+  public membersLoading: WritableSignal<boolean>;
   public members: Signal<CommitteeMember[]> = signal<CommitteeMember[]>([]);
   public selectedMember: WritableSignal<CommitteeMember | null>;
   public isDeleting: WritableSignal<boolean>;
   public memberActionMenuItems: MenuItem[] = [];
 
+  // Filter-related variables
+  public filterForm: FormGroup;
+  public searchTerm: Signal<string>;
+  public roleFilter: Signal<string | null>;
+  public votingStatusFilter: Signal<string | null>;
+  public organizationFilter: Signal<string | null>;
+  public filteredMembers: Signal<CommitteeMember[]>;
+  public roleOptions: Signal<{ label: string; value: string | null }[]>;
+  public votingStatusOptions: Signal<{ label: string; value: string | null }[]>;
+  public organizationOptions: Signal<{ label: string; value: string | null }[]>;
+
+  // View toggle variables
+  public viewForm: FormGroup;
+  public currentView: WritableSignal<'cards' | 'table'>;
+  public viewOptions: { label: string; value: 'cards' | 'table' }[];
+
   public constructor() {
     // Initialize all class variables
     this.selectedMember = signal<CommitteeMember | null>(null);
     this.isDeleting = signal<boolean>(false);
+    this.membersLoading = signal<boolean>(true);
+    // Initialize filter form
+    this.filterForm = this.initializeFilterForm();
+    this.searchTerm = this.initializeSearchTerm();
+    this.roleFilter = this.initializeRoleFilter();
+    this.votingStatusFilter = this.initializeVotingStatusFilter();
+    this.organizationFilter = this.initializeOrganizationFilter();
+    this.roleOptions = this.initializeRoleOptions();
+    this.votingStatusOptions = this.initializeVotingStatusOptions();
+    this.organizationOptions = this.initializeOrganizationOptions();
+    this.filteredMembers = this.initializeFilteredMembers();
+
+    // Initialize view toggle
+    this.currentView = signal<'cards' | 'table'>('table');
+    this.viewForm = this.initializeViewForm();
+    this.viewOptions = this.initializeViewOptions();
   }
 
   public ngOnInit(): void {
@@ -55,10 +109,20 @@ export class CommitteeMembersComponent implements OnInit {
     });
   }
 
+  public onMemberMenuToggle(data: { event: Event; member: CommitteeMember; menu: MenuComponent }): void {
+    data.event.stopPropagation();
+    this.selectedMember.set(data.member);
+    data.menu.toggle(data.event);
+  }
+
   public toggleMemberActionMenu(event: Event, member: CommitteeMember, menuComponent: MenuComponent): void {
     event.stopPropagation();
     this.selectedMember.set(member);
     menuComponent.toggle(event);
+  }
+
+  public onViewChange(view: 'cards' | 'table'): void {
+    this.currentView.set(view);
   }
 
   public openAddMemberDialog(): void {
@@ -179,12 +243,36 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   // Private initialization methods
+  private initializeFilterForm(): FormGroup {
+    return new FormGroup({
+      search: new FormControl(''),
+      role: new FormControl(null),
+      votingStatus: new FormControl(null),
+      organization: new FormControl(null),
+    });
+  }
+
+  private initializeSearchTerm(): Signal<string> {
+    return toSignal(this.filterForm.get('search')!.valueChanges.pipe(startWith(''), debounceTime(300), distinctUntilChanged()), { initialValue: '' });
+  }
+
+  private initializeRoleFilter(): Signal<string | null> {
+    return toSignal(this.filterForm.get('role')!.valueChanges.pipe(startWith(null), distinctUntilChanged()), { initialValue: null });
+  }
+
+  private initializeVotingStatusFilter(): Signal<string | null> {
+    return toSignal(this.filterForm.get('votingStatus')!.valueChanges.pipe(startWith(null), distinctUntilChanged()), { initialValue: null });
+  }
+
+  private initializeOrganizationFilter(): Signal<string | null> {
+    return toSignal(this.filterForm.get('organization')!.valueChanges.pipe(startWith(null), distinctUntilChanged()), { initialValue: null });
+  }
   private initializeMembers(): Signal<CommitteeMember[]> {
     const committee = this.committee();
     if (!committee || !committee.id) {
       return signal<CommitteeMember[]>([]);
     }
-    return toSignal(this.committeeService.getCommitteeMembers(committee.id), { initialValue: [] });
+    return toSignal(this.committeeService.getCommitteeMembers(committee.id).pipe(finalize(() => this.membersLoading.set(false))), { initialValue: [] });
   }
 
   private initializeMemberActionMenuItems(): MenuItem[] {
@@ -212,6 +300,124 @@ export class CommitteeMembersComponent implements OnInit {
         disabled: this.isDeleting(),
         command: () => this.deleteMember(),
       },
+    ];
+  }
+
+  private initializeRoleOptions(): Signal<{ label: string; value: string | null }[]> {
+    return computed(() => {
+      const members = this.members();
+      const roleSet = new Set<string>();
+
+      members.forEach((member) => {
+        if (member.role) {
+          roleSet.add(member.role);
+        }
+      });
+
+      const options: { label: string; value: string | null }[] = [{ label: 'All Roles', value: null }];
+      Array.from(roleSet)
+        .sort()
+        .forEach((role) => {
+          options.push({ label: role, value: role });
+        });
+
+      return options;
+    });
+  }
+
+  private initializeVotingStatusOptions(): Signal<{ label: string; value: string | null }[]> {
+    return computed(() => {
+      const members = this.members();
+      const statusSet = new Set<string>();
+
+      members.forEach((member) => {
+        if (member.voting_status) {
+          statusSet.add(member.voting_status);
+        }
+      });
+
+      const options: { label: string; value: string | null }[] = [{ label: 'All Voting Status', value: null }];
+      Array.from(statusSet)
+        .sort()
+        .forEach((status) => {
+          options.push({ label: status, value: status });
+        });
+
+      return options;
+    });
+  }
+
+  private initializeOrganizationOptions(): Signal<{ label: string; value: string | null }[]> {
+    return computed(() => {
+      const members = this.members();
+      const orgSet = new Set<string>();
+
+      members.forEach((member) => {
+        if (member.organization) {
+          orgSet.add(member.organization);
+        }
+      });
+
+      const options: { label: string; value: string | null }[] = [{ label: 'All Organizations', value: null }];
+      Array.from(orgSet)
+        .sort()
+        .forEach((org) => {
+          options.push({ label: org, value: org });
+        });
+
+      return options;
+    });
+  }
+
+  private initializeFilteredMembers(): Signal<CommitteeMember[]> {
+    return computed(() => {
+      let filtered = this.members();
+
+      // Apply search filter
+      const searchTerm = this.searchTerm().toLowerCase();
+      if (searchTerm) {
+        filtered = filtered.filter(
+          (member) =>
+            member.first_name?.toLowerCase().includes(searchTerm) ||
+            member.last_name?.toLowerCase().includes(searchTerm) ||
+            member.email?.toLowerCase().includes(searchTerm) ||
+            member.organization?.toLowerCase().includes(searchTerm) ||
+            member.job_title?.toLowerCase().includes(searchTerm)
+        );
+      }
+
+      // Apply role filter
+      const roleFilter = this.roleFilter();
+      if (roleFilter) {
+        filtered = filtered.filter((member) => member.role === roleFilter);
+      }
+
+      // Apply voting status filter
+      const votingStatusFilter = this.votingStatusFilter();
+      if (votingStatusFilter) {
+        filtered = filtered.filter((member) => member.voting_status === votingStatusFilter);
+      }
+
+      // Apply organization filter
+      const organizationFilter = this.organizationFilter();
+      if (organizationFilter) {
+        filtered = filtered.filter((member) => member.organization === organizationFilter);
+      }
+
+      return filtered;
+    });
+  }
+
+  private initializeViewForm(): FormGroup {
+    return new FormGroup({
+      view: new FormControl('table'),
+    });
+  }
+
+  private initializeViewOptions(): { label: string; value: 'cards' | 'table' }[] {
+    return [
+      { label: 'Table', value: 'table' },
+      { label: 'Cards', value: 'cards' },
     ];
   }
 }

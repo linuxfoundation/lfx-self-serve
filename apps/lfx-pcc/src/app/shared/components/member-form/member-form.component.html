@@ -74,14 +74,7 @@
         <!-- Role -->
         <div>
           <label for="role" class="block text-sm font-medium text-gray-700 mb-1"> Role </label>
-          <lfx-dropdown
-            size="small"
-            [form]="form()"
-            control="role"
-            [options]="roleOptions"
-            placeholder="Select role"
-            styleClass="w-full"
-            id="role"></lfx-dropdown>
+          <lfx-select size="small" [form]="form()" control="role" [options]="roleOptions" placeholder="Select role" styleClass="w-full" id="role"></lfx-select>
         </div>
 
         <!-- Role Start and End Dates -->
@@ -102,14 +95,14 @@
         <!-- Voting Status -->
         <div>
           <label for="voting-status" class="block text-sm font-medium text-gray-700 mb-1"> Voting Status </label>
-          <lfx-dropdown
+          <lfx-select
             size="small"
             [form]="form()"
             control="voting_status"
             [options]="votingStatusOptions"
             placeholder="Select voting status"
             styleClass="w-full"
-            id="voting-status"></lfx-dropdown>
+            id="voting-status"></lfx-select>
         </div>
 
         <!-- Voting Status Start and End Dates -->

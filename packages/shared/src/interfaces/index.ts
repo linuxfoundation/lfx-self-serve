@@ -21,3 +21,15 @@ export * from './api';
 
 // Permissions interfaces
 export * from './permissions.interface';
+
+// Meeting interfaces
+export * from './meeting.interface';
+
+// Calendar interfaces
+export * from './calendar.interface';
+
+// Search interfaces
+export * from './search.interface';
+
+// Activity interfaces
+export * from './activity.interface';

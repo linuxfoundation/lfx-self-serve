@@ -1,0 +1,111 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// FullCalendar custom styling to match LFX design system using Tailwind classes
+:host {
+  ::ng-deep {
+    .fc {
+      // Overall calendar styling
+      @apply font-sans;
+
+      .fc-col-header-cell-cushion {
+        @apply text-black font-serif font-semibold text-sm uppercase tracking-wider;
+      }
+
+      .fc-daygrid-day-number {
+        @apply text-black font-sans font-semibold text-sm uppercase tracking-wider;
+      }
+
+      .fc-dayGridMonth-button {
+        @apply mr-2;
+      }
+
+      .fc-timegrid {
+        .fc-timegrid-col-events {
+          .fc-timegrid-event {
+            &:not(.fc-event-future) {
+              background-color: #f0f0f0 !important;
+            }
+
+            &.fc-event-future {
+              background-color: rgb(239 246 255 / var(--tw-bg-opacity, 1)) !important;
+            }
+          }
+        }
+      }
+
+      // Header toolbar styling
+      .fc-toolbar {
+        @apply mb-6;
+
+        .fc-toolbar-title {
+          @apply text-2xl font-serif font-semibold text-gray-900 m-0;
+        }
+
+        .fc-button-group {
+          .fc-button {
+            @apply inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full transition-colors border bg-white border-gray-200 text-black cursor-pointer;
+
+            &:hover {
+              @apply bg-blue-50 border-gray-400;
+            }
+
+            &.fc-button-active {
+              @apply bg-blue-50 border-gray-400 text-black;
+
+              &:hover {
+                @apply bg-blue-50 border-gray-400;
+              }
+            }
+
+            &.fc-prev-button {
+              @apply mr-3;
+            }
+          }
+        }
+
+        .fc-today-button,
+        .fc-dayGridMonth-button {
+          @apply inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full transition-colors border bg-white border-gray-200 text-black cursor-pointer;
+
+          &:hover {
+            @apply bg-blue-50 border-gray-400;
+          }
+        }
+      }
+
+      .fc-timegrid-col-events {
+        @apply bg-gray-400;
+      }
+
+      // Event styling
+      .fc-event {
+        @apply border-0 rounded-md text-xs font-medium my-0.5 px-2 py-1 cursor-pointer transition-all duration-150;
+
+        &:hover {
+          @apply -translate-y-0.5 shadow-md;
+        }
+
+        &.meeting-event {
+          .fc-event-title {
+            @apply font-medium leading-tight overflow-hidden line-clamp-2 text-gray-400;
+          }
+
+          .fc-event-time {
+            @apply font-semibold mr-1 block mb-0.5 text-[11px] text-gray-400;
+          }
+
+          &.fc-event-future {
+            .fc-event-title {
+              @apply font-medium leading-tight overflow-hidden line-clamp-2 text-blue-700;
+            }
+
+            .fc-event-time {
+              @apply font-semibold mr-1 block mb-0.5 text-[11px] text-blue-900;
+            }
+          }
+        }
+      }
+    }
+  }
+}

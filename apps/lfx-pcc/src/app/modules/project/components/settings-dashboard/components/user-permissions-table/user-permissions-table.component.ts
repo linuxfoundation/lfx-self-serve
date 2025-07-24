@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, inject, Signal } from '@angular/core';
+import { Component, inject, Signal, signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { CardComponent } from '@app/shared/components/card/card.component';
 import { TableComponent } from '@app/shared/components/table/table.component';
@@ -11,7 +11,7 @@ import { PermissionsService } from '@app/shared/services/permissions.service';
 import { ProjectService } from '@app/shared/services/project.service';
 import { UserPermissions } from '@lfx-pcc/shared/interfaces';
 import { TooltipModule } from 'primeng/tooltip';
-import { of } from 'rxjs';
+import { of, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-user-permissions-table',
@@ -25,17 +25,17 @@ export class UserPermissionsTableComponent {
 
   // State signals
   public userPermissions: Signal<UserPermissions[]>;
-  public loading: Signal<boolean>;
+  public loading: WritableSignal<boolean> = signal(false);
   public project = this.projectService.project;
 
   public constructor() {
     // Initialize userPermissions signal from service
-    this.userPermissions = toSignal(this.project()?.id ? this.permissionsService.getProjectPermissions(this.project()?.id as string) : of([]), {
-      initialValue: [],
-    });
-
-    // For now, we'll handle loading state simply
-    this.loading = toSignal(of(false), { initialValue: false });
+    this.userPermissions = toSignal(
+      this.project()?.id ? this.permissionsService.getProjectPermissions(this.project()?.id as string).pipe(tap(() => this.loading.set(false))) : of([]),
+      {
+        initialValue: [],
+      }
+    );
   }
 
   // Event handlers

@@ -16,14 +16,14 @@
     <!-- Category -->
     <div>
       <label for="committee-category" class="block text-sm font-medium text-gray-700 mb-1"> Category <span class="text-red-500">*</span> </label>
-      <lfx-dropdown
+      <lfx-select
         size="small"
         [form]="form()"
         control="category"
         [options]="categoryOptions"
         placeholder="Select a category"
         styleClass="w-full"
-        id="committee-category"></lfx-dropdown>
+        id="committee-category"></lfx-select>
       <p class="mt-1 text-sm text-red-600" *ngIf="form().get('category')?.errors?.['required'] && form().get('category')?.touched">Category is required</p>
     </div>
 

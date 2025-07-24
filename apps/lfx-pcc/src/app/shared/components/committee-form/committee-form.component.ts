@@ -6,7 +6,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
-import { DropdownComponent } from '@app/shared/components/dropdown/dropdown.component';
+import { SelectComponent } from '@app/shared/components/select/select.component';
 import { InputTextComponent } from '@app/shared/components/input-text/input-text.component';
 import { TextareaComponent } from '@app/shared/components/textarea/textarea.component';
 import { ToggleComponent } from '@app/shared/components/toggle/toggle.component';
@@ -19,7 +19,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 @Component({
   selector: 'lfx-committee-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, DropdownComponent, InputTextComponent, TextareaComponent, ToggleComponent],
+  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, SelectComponent, InputTextComponent, TextareaComponent, ToggleComponent],
   templateUrl: './committee-form.component.html',
   styleUrl: './committee-form.component.scss',
 })

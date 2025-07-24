@@ -101,6 +101,13 @@
 
         <!-- Right Column - Settings & Stats -->
         <div class="flex flex-col gap-6">
+          <!-- Upcoming Meeting -->
+          <lfx-card title="Next Meeting">
+            @if (committee()?.id) {
+              <lfx-upcoming-committee-meeting [committeeId]="committee()!.id"></lfx-upcoming-committee-meeting>
+            }
+          </lfx-card>
+
           <!-- Committee Information & Statistics -->
           <lfx-card title="Committee Details">
             <div class="">

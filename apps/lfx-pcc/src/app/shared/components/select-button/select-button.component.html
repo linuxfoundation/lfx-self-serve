@@ -1,0 +1,14 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<ng-container [formGroup]="form()">
+  <p-selectbutton
+    [formControlName]="control()"
+    [options]="options()"
+    [optionLabel]="optionLabel()"
+    [optionValue]="optionValue()"
+    (onChange)="handleChange($event)"
+    [size]="size()"
+    [unselectable]="unselectable()"
+    [required]="required()"></p-selectbutton>
+</ng-container>

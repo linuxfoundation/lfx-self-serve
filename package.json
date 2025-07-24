@@ -15,8 +15,8 @@
     "restart:prod": "pm2 restart lfx-pcc",
     "reload:prod": "pm2 reload lfx-pcc",
     "logs:prod": "pm2 logs lfx-pcc",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "format:check": "prettier --check \"**/*.{ts,tsx,md}\"",
+    "format": "prettier --write \"**/*.{ts,tsx,js,jsx,html,css,scss,md,mdx,json}\"",
+    "format:check": "prettier --check \"**/*.{ts,tsx,js,jsx,html,css,scss,md,mdx,json}\"",
     "lint:check": "turbo run lint:check",
     "check-types": "turbo run check-types",
     "prepare": "husky"
@@ -53,5 +53,8 @@
     "**/*.{html,css,scss,md,json}": [
       "prettier --write"
     ]
+  },
+  "dependencies": {
+    "chart.js": "^4.5.0"
   }
 }

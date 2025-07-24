@@ -9,10 +9,11 @@ import { Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
 import { CardComponent } from '@app/shared/components/card/card.component';
 import { CommitteeFormComponent } from '@app/shared/components/committee-form/committee-form.component';
-import { DropdownComponent } from '@app/shared/components/dropdown/dropdown.component';
+import { SelectComponent } from '@app/shared/components/select/select.component';
 import { InputTextComponent } from '@app/shared/components/input-text/input-text.component';
 import { MenuComponent } from '@app/shared/components/menu/menu.component';
 import { TableComponent } from '@app/shared/components/table/table.component';
+import { UpcomingCommitteeMeetingComponent } from '@app/shared/components/upcoming-committee-meeting/upcoming-committee-meeting.component';
 import { CommitteeService } from '@app/shared/services/committee.service';
 import { ProjectService } from '@app/shared/services/project.service';
 import { Committee } from '@lfx-pcc/shared/interfaces';
@@ -33,11 +34,12 @@ import { debounceTime, distinctUntilChanged, startWith, tap } from 'rxjs/operato
     MenuComponent,
     TableComponent,
     InputTextComponent,
-    DropdownComponent,
+    SelectComponent,
     ButtonComponent,
     ConfirmDialogModule,
     DynamicDialogModule,
     AnimateOnScrollModule,
+    UpcomingCommitteeMeetingComponent,
   ],
   providers: [DialogService],
   templateUrl: './committee-dashboard.component.html',
@@ -61,8 +63,8 @@ export class CommitteeDashboardComponent {
   public searchForm: FormGroup;
   public categoryFilter: WritableSignal<string | null>;
   private searchTerm: Signal<string>;
-  public committees: Signal<Committee[]>;
   public committeesLoading: WritableSignal<boolean>;
+  public committees: Signal<Committee[]>;
   public categories: Signal<{ label: string; value: string | null }[]>;
   public filteredCommittees: Signal<Committee[]>;
   public totalRecords: Signal<number>;
@@ -76,8 +78,8 @@ export class CommitteeDashboardComponent {
     this.isDeleting = signal<boolean>(false);
     this.first = signal<number>(0);
     this.rows = 10;
-    this.committees = this.initializeCommittees();
     this.committeesLoading = signal<boolean>(true);
+    this.committees = this.initializeCommittees();
     this.searchForm = this.initializeSearchForm();
     this.categoryFilter = signal<string | null>(null);
     this.searchTerm = this.initializeSearchTerm();

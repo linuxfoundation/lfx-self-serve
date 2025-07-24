@@ -6,7 +6,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
 import { CalendarComponent } from '@app/shared/components/calendar/calendar.component';
-import { DropdownComponent } from '@app/shared/components/dropdown/dropdown.component';
+import { SelectComponent } from '@app/shared/components/select/select.component';
 import { InputTextComponent } from '@app/shared/components/input-text/input-text.component';
 import { CommitteeService } from '@app/shared/services/committee.service';
 import { MEMBER_ROLES, VOTING_STATUSES } from '@lfx-pcc/shared/constants';
@@ -18,7 +18,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 @Component({
   selector: 'lfx-member-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, DropdownComponent, InputTextComponent, CalendarComponent],
+  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, SelectComponent, InputTextComponent, CalendarComponent],
   templateUrl: './member-form.component.html',
   styleUrl: './member-form.component.scss',
 })

@@ -1,0 +1,199 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Header with visibility badge and action menu -->
+<div class="flex items-center justify-between mb-4 transition-all duration-300">
+  <div class="flex gap-3">
+    <div class="flex items-center gap-3">
+      @switch (meeting().visibility) {
+        @case ('public') {
+          <lfx-badge value="Public" severity="success" icon="fa-light fa-globe"></lfx-badge>
+        }
+        @case ('private') {
+          <lfx-badge value="Private" severity="danger" icon="fa-light fa-lock"></lfx-badge>
+        }
+        @case ('restricted') {
+          <lfx-badge value="Restricted" severity="warn" icon="fa-light fa-shield"></lfx-badge>
+        }
+      }
+    </div>
+    <!-- Recurrence Info -->
+    @if (meeting().recurrence) {
+      <div class="flex items-center gap-2">
+        <i class="fa-light fa-repeat text-gray-400"></i>
+        <span class="text-sm text-gray-600">Recurring Meeting</span>
+      </div>
+    }
+  </div>
+  <lfx-button
+    icon="fa-light fa-ellipsis-vertical"
+    [text]="true"
+    [rounded]="true"
+    size="small"
+    severity="secondary"
+    (click)="onMenuToggle($event, actionMenu)"></lfx-button>
+</div>
+<!-- Action Menu -->
+<lfx-menu #actionMenu [model]="actionMenuItems()" [popup]="true" appendTo="body"></lfx-menu>
+
+<!-- Meeting Topic -->
+<div class="flex justify-between gap-x-4 flex-wrap">
+  @if (meeting().topic) {
+    <h3 class="text-xl font-display font-semibold text-gray-900 mb-3">
+      {{ meeting().topic }}
+    </h3>
+  }
+  <!-- Meeting Time -->
+  @if (meeting().start_time) {
+    <div class="flex items-start gap-3 mb-4">
+      <div class="flex gap-2 items-center">
+        <div class="text-sm font-medium text-gray-900 flex items-center gap-2">
+          <i class="fa-light fa-calendar-days text-blue-400 text-lg"></i>
+          {{ meeting().start_time | meetingTime: meeting().duration : 'date' }}
+        </div>
+        <div class="text-sm text-gray-600 flex items-center gap-2">
+          &#64;
+          {{ meeting().start_time | meetingTime: meeting().duration : 'time' }}
+        </div>
+      </div>
+    </div>
+  }
+</div>
+
+@if (meeting().meeting_type) {
+  <div class="flex items-center gap-2 mb-4">
+    <lfx-badge [value]="meeting().meeting_type!" severity="secondary" icon="fa-light fa-calendar-days"></lfx-badge>
+  </div>
+}
+
+@if (meeting().agenda) {
+  <div class="text-base text-gray-600 pb-3" [innerHTML]="meeting().agenda"></div>
+}
+
+<!-- Meeting Settings -->
+<div class="flex flex-wrap gap-3 mb-4">
+  <div class="flex items-center gap-2">
+    <i [class]="meeting().recording_enabled ? 'fa-light fa-check-circle text-green-500' : 'fa-light fa-times-circle text-gray-400'" class="text-base"></i>
+    <span class="text-sm text-gray-600">Recording</span>
+  </div>
+  @if (meeting().recording_enabled) {
+    <div class="flex items-center gap-2">
+      <i [class]="meeting().youtube_enabled ? 'fa-light fa-check-circle text-green-500' : 'fa-light fa-times-circle text-gray-400'" class="text-base"></i>
+      <span class="text-sm text-gray-600">YouTube</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <i [class]="meeting().zoom_ai_enabled ? 'fa-light fa-check-circle text-green-500' : 'fa-light fa-times-circle text-gray-400'" class="text-base"></i>
+      <span class="text-sm text-gray-600">Zoom AI</span>
+    </div>
+    <div class="flex items-center gap-2">
+      <i [class]="meeting().transcripts_enabled ? 'fa-light fa-check-circle text-green-500' : 'fa-light fa-times-circle text-gray-400'" class="text-base"></i>
+      <span class="text-sm text-gray-600">Transcripts</span>
+    </div>
+    @if (meeting().recording_access) {
+      <div class="flex items-center gap-2">
+        <i class="fa-light fa-video text-gray-400"></i>
+        <span class="text-sm text-gray-600">{{ meeting().recording_access }}</span>
+      </div>
+    }
+  }
+</div>
+
+<!-- Associated Committees -->
+@if (meeting().meeting_committees && meeting().meeting_committees!.length > 0) {
+  <div class="flex items-start gap-2 mb-4">
+    <i class="fa-light fa-people-group text-gray-400 mt-0.5"></i>
+    <div class="flex flex-wrap gap-1">
+      <div class="text-sm text-gray-600">
+        @for (committee of meeting().meeting_committees!; track committee.id; let isLast = $last) {
+          <a
+            [routerLink]="['/project', project()?.slug, 'committees', committee.id]"
+            class="text-primary hover:text-primary-600 hover:underline"
+            [title]="committee.committee_total_members + ' members'">
+            {{ committee.name }}
+          </a>
+          @if (!isLast) {
+            <span>, </span>
+          }
+        }
+      </div>
+    </div>
+  </div>
+}
+
+<div class="flex justify-between items-end gap-x-4">
+  <!-- Meeting Participants Expander -->
+  <div class="flex-1">
+    <lfx-button
+      icon="fa-light fa-users"
+      size="small"
+      severity="secondary"
+      class="w-full"
+      [label]="participantsLabel()"
+      class="cursor-pointer"
+      (click)="onParticipantsToggle($event)">
+    </lfx-button>
+  </div>
+
+  <!-- Created Date -->
+  <div class="mt-4 text-xs text-gray-500">Last Updated {{ meeting().created_at | date: 'MMM d, y' }}</div>
+</div>
+
+<!-- Meeting Participants -->
+@if (showParticipants()) {
+  <div class="border-b border-gray-200 pt-4 w-full"></div>
+  @if (participantsLoading()) {
+    <div class="flex items-center justify-center mt-4">
+      <i class="fa-light fa-circle-notch fa-spin text-3xl text-blue-600 mb-4"></i>
+    </div>
+  }
+
+  @if (!participantsLoading()) {
+    <div class="grid grid-cols-3 gap-2 mt-4">
+      @for (participant of participants(); track participant.id) {
+        <div
+          pAnimateOnScroll
+          class="animate-delay-2000"
+          enterClass="animate-enter fade-in-10 slide-in-from-b-8 animate-duration-1000"
+          leaveClass="animate-leave fade-out-0">
+          <div class="flex items-center gap-2" [ngClass]="{ 'gap-3': !pastMeeting() }">
+            @if (pastMeeting()) {
+              @if (participant.attended) {
+                <i class="fa-light fa-check-circle text-green-500" pTooltip="Attended"></i>
+              } @else if (participant.invite_accepted && !participant.attended) {
+                <i class="fa-light fa-times-circle text-amber-400" pTooltip="Accepted & Not Attended"></i>
+              } @else if (participant.invite_accepted === false) {
+                <i class="fa-light fa-times-circle text-red-500" pTooltip="Declined Attendance"></i>
+              } @else {
+                <i class="fa-light fa-circle-question text-gray-400" pTooltip="No Response"></i>
+              }
+            } @else {
+              <div class="relative">
+                <lfx-avatar [label]="participant.first_name" styleClass="bg-blue-50 border border-gray-200" shape="circle"></lfx-avatar>
+                <div class="absolute -top-2 -right-1.5">
+                  @if (participant.invite_accepted === false) {
+                    <i class="fa-solid text-xs fa-times-circle text-red-500" pTooltip="Declined Invite"></i>
+                  } @else if (participant.invite_accepted === null) {
+                    <i class="fa-solid text-xs fa-circle-question text-gray-400" pTooltip="Pending Response"></i>
+                  } @else {
+                    <i class="fa-solid text-xs fa-check-circle text-green-500" pTooltip="Invite Accepted"></i>
+                  }
+                </div>
+              </div>
+            }
+            <div class="flex flex-col">
+              <div class="flex items-center gap-1 text-xs">
+                @if (participant.type === 'committee') {
+                  <i class="flex items-center fa-light fa-people-group text-green-500" pTooltip="Committee"></i>
+                } @else {
+                  <i class="flex items-center fa-light fa-user text-blue-500" pTooltip="Individual"></i>
+                }
+                <span class="text-sm text-gray-600">{{ participant.first_name }} {{ participant.last_name }}</span>
+              </div>
+              <span class="text-xs text-gray-500">{{ participant.email }}</span>
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  }
+}

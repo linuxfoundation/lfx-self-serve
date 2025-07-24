@@ -30,7 +30,6 @@ export interface Project {
   description: string;
   status: string;
   logo: string;
-  tags: string[];
   committees_count: number;
   meetings_count: number;
   mailing_list_count: number;

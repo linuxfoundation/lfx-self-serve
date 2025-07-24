@@ -10,6 +10,7 @@ import { CardComponent } from '@app/shared/components/card/card.component';
 import { CommitteeFormComponent } from '@app/shared/components/committee-form/committee-form.component';
 import { MenuComponent } from '@app/shared/components/menu/menu.component';
 import { TableComponent } from '@app/shared/components/table/table.component';
+import { UpcomingCommitteeMeetingComponent } from '@app/shared/components/upcoming-committee-meeting/upcoming-committee-meeting.component';
 import { CommitteeService } from '@app/shared/services/committee.service';
 import { ProjectService } from '@app/shared/services/project.service';
 import { Committee } from '@lfx-pcc/shared/interfaces';
@@ -22,7 +23,17 @@ import { CommitteeMembersComponent } from '../committee-members/committee-member
 
 @Component({
   selector: 'lfx-committee-view',
-  imports: [CommonModule, CardComponent, MenuComponent, TableComponent, ButtonComponent, CommitteeMembersComponent, ConfirmDialogModule, DynamicDialogModule],
+  imports: [
+    CommonModule,
+    CardComponent,
+    MenuComponent,
+    TableComponent,
+    ButtonComponent,
+    CommitteeMembersComponent,
+    UpcomingCommitteeMeetingComponent,
+    ConfirmDialogModule,
+    DynamicDialogModule,
+  ],
   providers: [DialogService],
   templateUrl: './committee-view.component.html',
   styleUrl: './committee-view.component.scss',

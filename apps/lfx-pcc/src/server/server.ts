@@ -16,6 +16,7 @@ import { extractBearerToken } from './middleware/auth-token.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { tokenRefreshMiddleware } from './middleware/token-refresh.middleware';
 import committeesRouter from './routes/committees';
+import meetingsRouter from './routes/meetings';
 import permissionsRouter from './routes/permissions';
 import projectsRouter from './routes/projects';
 
@@ -89,6 +90,7 @@ app.use('/api', extractBearerToken);
 app.use('/api/projects', projectsRouter);
 app.use('/api/projects', permissionsRouter);
 app.use('/api/committees', committeesRouter);
+app.use('/api/meetings', meetingsRouter);
 
 // Add API error handler middleware
 app.use('/api/*', apiErrorHandler);

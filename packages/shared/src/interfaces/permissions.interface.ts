@@ -26,7 +26,7 @@ export interface ObjectPermission {
   committee_name?: string;
 }
 
-export interface Meeting {
+export interface MeetingPermissionObject {
   id: number;
   name: string;
   description?: string;

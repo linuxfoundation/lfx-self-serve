@@ -17,6 +17,13 @@
     </div>
   </div>
 </div>
+
+@if (projectsLoading()) {
+  <div class="container mx-auto py-24 px-8 flex flex-col justify-center items-center gap-4">
+    <i class="fa-light fa-circle-notch fa-spin text-4xl text-gray-400"></i>
+  </div>
+}
+
 <div class="container mx-auto py-24 px-8">
   @if (projects().length > 0) {
     <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
@@ -28,8 +35,8 @@
           leaveClass="animate-leave fade-out-0">
           <lfx-project-card
             [name]="project.name"
-            [description]="project.description"
-            [logo]="project.logo"
+            [description]="project.description ?? ''"
+            [logo]="project.logo ?? ''"
             [url]="project.slug"
             [metrics]="project.metrics"></lfx-project-card>
         </div>
