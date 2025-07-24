@@ -8,7 +8,7 @@ End-to-end tests verify complete user workflows from browser interaction to back
 
 ### Primary E2E Framework
 
-**Playwright** (Recommended)
+#### Playwright (Recommended)
 
 - Cross-browser testing (Chromium, Firefox, Safari)
 - Modern async/await API
@@ -16,7 +16,7 @@ End-to-end tests verify complete user workflows from browser interaction to back
 - Parallel test execution
 - Great developer experience
 
-**Alternative: Cypress**
+#### Alternative: Cypress
 
 - Developer-friendly debugging
 - Time-travel debugging

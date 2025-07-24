@@ -1,20 +1,24 @@
 # LFX PCC
 
-This is a monorepo for the LFX PCC (Project Control Center) application, built with Angular 19 and experimental zoneless change detection.
+This is a monorepo for the LFX PCC (Project Control Center) application, built
+with Angular 19 and experimental zoneless change detection.
 
 ## What's inside?
 
 ### Apps and Packages
 
-- `apps/lfx-pcc`: Angular 19 SSR application with zoneless change detection and direct PrimeNG UI components
+- `apps/lfx-pcc`: Angular 19 SSR application with zoneless change detection and
+  direct PrimeNG UI components
 
 The app is 100% [TypeScript](https://www.typescriptlang.org/).
 
 ### Architecture
 
-- **Frontend**: Angular 19 with experimental zoneless change detection, Angular Signals, PrimeNG components, Tailwind CSS
+- **Frontend**: Angular 19 with experimental zoneless change detection, Angular
+  Signals, PrimeNG components, Tailwind CSS
 - **UI Framework**: PrimeNG 19 with custom LFX UI Core preset and Tailwind CSS integration
-- **Styling**: Tailwind CSS v3 with PrimeUI plugin, CSS layers architecture, Google Fonts (Open Sans + Roboto Slab)
+- **Styling**: Tailwind CSS v3 with PrimeUI plugin, CSS layers architecture,
+  Google Fonts (Open Sans + Roboto Slab)
 - **Icons**: Font Awesome Pro via kits (no npm packages)
 - **Backend**: Express.js server with Angular 19 SSR, Auth0 authentication, Pino logging
 - **Infrastructure**: PM2 process management for production deployment
@@ -31,7 +35,8 @@ This has comprehensive development tooling:
 
 ## Contributing
 
-Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code of conduct, development process, and how to submit pull requests.
+Please read our [Contributing Guide](CONTRIBUTING.md) for details on our code
+of conduct, development process, and how to submit pull requests.
 
 ## Development
 
@@ -185,7 +190,8 @@ lfx-pcc-v3/
 
 The application supports deployment with PM2:
 
-1. **Node.js with PM2**: Production process management with clustering and zero-downtime deployments
+1. **Node.js with PM2**: Production process management with clustering and
+   zero-downtime deployments
 
 See the [deployment documentation](docs/architecture/backend/deployment.md) for detailed instructions.
 
@@ -233,11 +239,16 @@ Comprehensive documentation organized by domain:
 Always run these commands before committing code:
 
 ```bash
-./check-headers.sh  # Verify license headers
-yarn lint           # Fix linting issues
+yarn lint           # Fix code linting issues
 yarn format         # Format code consistently
 yarn test           # Ensure all tests pass
 yarn build          # Verify build succeeds
+
+# Use the GitHub CI job to check license headers
+act -W .github/workflows/license-header-check.yml  # Verify license headers, requires container runtime
+
+# Use the GitHub CI job to check markdown formatting
+act -W .github/workflows/markdown-lint.yml # Check markdown formatting
 ```
 
 **Note**: All source files must include the proper license header. See the [Contributing Guide](CONTRIBUTING.md#license-headers) for details.
@@ -308,3 +319,14 @@ Learn more about the technologies used:
 - **[Tailwind CSS](https://tailwindcss.com/)** - Utility-first CSS framework
 - **[LFX UI Core](https://github.com/linuxfoundation/lfx-ui-core)** - Linux Foundation design system
 - **[PM2 Documentation](https://pm2.keymetrics.io/docs/)** - Process manager for Node.js
+
+## License
+
+Copyright The Linux Foundation and each contributor to LFX.
+
+This project’s source code is licensed under the MIT License. A copy of the
+license is available in LICENSE.
+
+This project’s documentation is licensed under the Creative Commons Attribution
+4.0 International License \(CC-BY-4.0\). A copy of the license is available in
+LICENSE-docs.

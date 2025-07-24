@@ -2,7 +2,10 @@
 
 ## Overview
 
-This document provides a comprehensive guide to testing the v1-changelog application, including setup, execution, and maintenance of both unit and end-to-end tests. The testing suite is built with Cypress for E2E testing and uses Angular's built-in testing tools for unit tests.
+This document provides a comprehensive guide to testing the v1-changelog
+application, including setup, execution, and maintenance of both unit and
+end-to-end tests. The testing suite is built with Cypress for E2E testing and
+uses Angular's built-in testing tools for unit tests.
 
 ## Table of Contents
 
@@ -110,7 +113,8 @@ it('should show empty state when no managers exist', () => {
 
 ## Data-Test Attributes Reference
 
-This section lists all the `data-test` attributes that have been added to the v1-changelog application for Cypress testing.
+This section lists all the `data-test` attributes that have been added to the
+v1-changelog application for Cypress testing.
 
 ### Usage in Cypress Tests
 
@@ -207,9 +211,12 @@ When modifying existing components:
    - `CHANGELOG_AUTH_NAME`: Display name for the manager user
    - `CHANGELOG_MANAGER_EMAIL`: Email address for manager-specific tests
    - `CHANGELOG_PROJECT_NAME`: Project name used in test scenarios
-   - `CHANGELOG_BASE_URL`: Base URL for the application (default: http://localhost:4200)
+   - `CHANGELOG_BASE_URL`: Base URL for the application - [default is localhost:4200](http://localhost:4200)
 
-   **Security Note**: The `cypress.env.json` file contains test credentials and should never be committed to version control. It's included in `.gitignore` to prevent accidental commits. Use test-specific Auth0 users, not production accounts.
+   **Security Note**: The `cypress.env.json` file contains test credentials and
+   should never be committed to version control. It's included in `.gitignore`
+   to prevent accidental commits. Use test-specific Auth0 users, not production
+   accounts.
 
 ### Test Execution
 
@@ -229,7 +236,10 @@ yarn cypress:run --headed --no-exit
 
 ### Custom Commands Philosophy
 
-The v1-changelog Cypress test suite follows a **strict duplication principle**: custom commands are ONLY created for patterns that appear 2+ times in the codebase. Single-use patterns remain inline to avoid over-engineering and maintain test clarity.
+The v1-changelog Cypress test suite follows a **strict duplication principle**:
+custom commands are ONLY created for patterns that appear 2+ times in the
+codebase. Single-use patterns remain inline to avoid over-engineering and
+maintain test clarity.
 
 #### Core Reusable Commands (2+ uses)
 
@@ -252,9 +262,11 @@ cy.cleanupTestData(); // Reset test data
 
 #### Single-Use Patterns (Kept Inline)
 
-The following patterns were intentionally kept inline to avoid over-engineering:
+The following patterns were intentionally kept inline to avoid
+over-engineering:
 
-- **Complex API Setup**: Dashboard-specific API intercepts are inline as they're only used once
+- **Complex API Setup**: Dashboard-specific API intercepts are inline as
+  they're only used once
 - **Product Form Filling**: Product creation form is only used in one test
 - **Empty State Validation**: Context-specific empty states vary by component
 - **Loading State Checks**: Component-specific loading patterns differ
@@ -274,9 +286,12 @@ The following patterns were intentionally kept inline to avoid over-engineering:
 
 1. **Duplication Threshold**: Only create commands for patterns used 2+ times
 2. **Avoid Over-Engineering**: Keep single-use logic inline for clarity
-3. **Context Matters**: Similar-looking code with different contexts should remain separate
-4. **Maintenance Balance**: Commands should reduce maintenance, not increase complexity
-5. **Readability First**: Prefer explicit inline code over unnecessary abstraction
+3. **Context Matters**: Similar-looking code with different contexts should
+   remain separate
+4. **Maintenance Balance**: Commands should reduce maintenance, not increase
+   complexity
+5. **Readability First**: Prefer explicit inline code over unnecessary
+   abstraction
 
 ### Code Organization
 
@@ -309,7 +324,9 @@ The following patterns were intentionally kept inline to avoid over-engineering:
 Error: Login failed or timed out
 ```
 
-**Solution**: Check Auth0 configuration and test credentials in `cypress.env.json`. Verify both `CHANGELOG_AUTH_USERNAME/PASSWORD` (manager) and `CHANGELOG_PUBLIC_USERNAME/PASSWORD` (regular user) are valid.
+**Solution**: Check Auth0 configuration and test credentials in
+`cypress.env.json`. Verify both `CHANGELOG_AUTH_USERNAME/PASSWORD` (manager)
+and `CHANGELOG_PUBLIC_USERNAME/PASSWORD` (regular user) are valid.
 
 #### Element Not Found
 
@@ -333,7 +350,8 @@ Error: cy.wait() timed out waiting for alias "@getManagers"
 Error: Expected to find empty state elements
 ```
 
-**Solution**: Ensure API intercept returns empty array and component handles empty data
+**Solution**: Ensure API intercept returns empty array and component handles
+empty data
 
 ### Debug Strategies
 
@@ -393,7 +411,8 @@ Verify Auth0 tenant and application settings match test environment.
 
 ## Summary
 
-This testing framework provides comprehensive coverage of the v1-changelog application with:
+This testing framework provides comprehensive coverage of the v1-changelog
+application with:
 
 - **Reliable Authentication**: Auth0 integration with session management
 - **Complete Coverage**: Public features, manager dashboard, and admin functions
@@ -403,4 +422,7 @@ This testing framework provides comprehensive coverage of the v1-changelog appli
 - **Balanced Abstraction**: Single-use patterns kept inline to maintain clarity
 - **Best Practices**: Modern testing patterns with anti-over-engineering principles
 
-The test suite ensures application reliability while maintaining code readability and avoiding unnecessary complexity. The strict duplication principle for custom commands ensures that abstractions provide genuine value rather than premature optimization.
+The test suite ensures application reliability while maintaining code
+readability and avoiding unnecessary complexity. The strict duplication
+principle for custom commands ensures that abstractions provide genuine value
+rather than premature optimization.

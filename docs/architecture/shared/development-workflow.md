@@ -140,6 +140,7 @@ yarn logs:prod
    ```
 
 4. **Make Changes and Test**
+
    ```bash
    # In separate terminal
    ./check-headers.sh  # Verify license headers
