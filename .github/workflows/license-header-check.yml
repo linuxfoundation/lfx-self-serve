@@ -5,21 +5,12 @@
 name: License Header Check
 
 on:
-  push:
-    branches:
-      - main
   pull_request:
+    types: [opened, synchronize, reopened]
+  push:
     branches:
       - main
 
 jobs:
   license-header-check:
-    name: License Header Check
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout
-        uses: actions/checkout@v4
-      - name: Check License Headers
-        run: |
-          ./check-headers.sh
+    uses: linuxfoundation/lfx-public-workflows/.github/workflows/license-header-check.yml@main
