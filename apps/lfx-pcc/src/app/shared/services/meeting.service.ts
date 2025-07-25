@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { Meeting, MeetingParticipant } from '@lfx-pcc/shared/interfaces';
+import { CreateMeetingRequest, Meeting, MeetingParticipant } from '@lfx-pcc/shared/interfaces';
 import { catchError, Observable, of, tap } from 'rxjs';
 
 @Injectable({
@@ -78,6 +78,24 @@ export class MeetingService {
       catchError((error) => {
         console.error(`Failed to load participants for meeting ${meetingId}:`, error);
         return of([]);
+      })
+    );
+  }
+
+  public createMeeting(meeting: CreateMeetingRequest): Observable<Meeting> {
+    return this.http.post<Meeting>('/api/meetings', meeting).pipe(
+      catchError((error) => {
+        console.error('Failed to create meeting:', error);
+        throw error;
+      })
+    );
+  }
+
+  public updateMeeting(id: string, meeting: Partial<CreateMeetingRequest>): Observable<Meeting> {
+    return this.http.put<Meeting>(`/api/meetings/${id}`, meeting).pipe(
+      catchError((error) => {
+        console.error(`Failed to update meeting ${id}:`, error);
+        throw error;
       })
     );
   }

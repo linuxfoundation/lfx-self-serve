@@ -2,9 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, Injector, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
 import { CardComponent } from '@app/shared/components/card/card.component';
 import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullcalendar.component';
@@ -49,6 +50,8 @@ export class MeetingDashboardComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
+  private readonly router = inject(Router);
+  private readonly injector = inject(Injector);
 
   // Class variables with types
   public project: typeof this.projectService.project;
@@ -103,7 +106,7 @@ export class MeetingDashboardComponent {
   }
 
   public scheduleNewMeeting(): void {
-    // TODO: Open create dialog when form is available
+    this.onCreateMeeting();
   }
 
   public onVisibilityChange(value: string | null): void {
@@ -129,6 +132,25 @@ export class MeetingDashboardComponent {
 
   public onViewChange(value: 'list' | 'calendar'): void {
     this.currentView.set(value);
+  }
+
+  public onCreateMeeting(): void {
+    this.dialogService
+      .open(MeetingModalComponent, {
+        header: 'Create Meeting',
+        width: '600px',
+        modal: true,
+        closable: true,
+        dismissableMask: true,
+        data: {
+          isEditing: false, // This triggers form mode
+        },
+      })
+      .onClose.subscribe((meeting) => {
+        if (meeting) {
+          this.refreshMeetings();
+        }
+      });
   }
 
   public onCalendarEventClick(eventInfo: any): void {
@@ -389,6 +411,16 @@ export class MeetingDashboardComponent {
           },
         };
       });
+    });
+  }
+
+  private refreshMeetings(): void {
+    runInInjectionContext(this.injector, () => {
+      this.meetings = this.initializeMeetings();
+      this.pastMeetings = this.initializePastMeetings();
+      this.filteredMeetings = this.initializeFilteredMeetings();
+      this.publicMeetingsCount = this.initializePublicMeetingsCount();
+      this.privateMeetingsCount = this.initializePrivateMeetingsCount();
     });
   }
 }

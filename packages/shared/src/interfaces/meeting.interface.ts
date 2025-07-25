@@ -7,6 +7,16 @@ export enum MeetingVisibility {
   RESTRICTED = 'restricted',
 }
 
+export enum MeetingType {
+  BOARD = 'Board',
+  MAINTAINERS = 'Maintainers',
+  MARKETING = 'Marketing',
+  TECHNICAL = 'Technical',
+  LEGAL = 'Legal',
+  OTHER = 'Other',
+  NONE = 'None',
+}
+
 export interface MeetingCommittee {
   id: string;
   name: string;
@@ -33,6 +43,7 @@ export interface Meeting {
   id: string;
   created_at: string;
   project_id: number;
+  user_id?: string;
   visibility: MeetingVisibility | null;
   youtube_enabled: boolean | null;
   zoom_ai_enabled: boolean | null;
@@ -48,8 +59,48 @@ export interface Meeting {
   end_time: string | null;
   duration: number | null;
   status: string | null;
+  early_join_time?: number;
+  show_in_public_calendar?: boolean;
+  require_ai_summary_approval?: boolean;
+  ai_summary_access?: string;
   meeting_committees: MeetingCommittee[] | null;
   individual_participants_count: number;
   committee_members_count: number;
   committees: string[];
+}
+
+export interface CreateMeetingRequest {
+  project_id: string;
+  topic: string;
+  agenda?: string;
+  start_time: string;
+  duration: number;
+  timezone: string;
+  meeting_type: string;
+  early_join_time?: number;
+  visibility?: MeetingVisibility;
+  recording_enabled?: boolean;
+  transcripts_enabled?: boolean;
+  youtube_enabled?: boolean;
+  zoom_ai_enabled?: boolean;
+  require_ai_summary_approval?: boolean;
+  ai_summary_access?: string;
+}
+
+export interface UpdateMeetingRequest {
+  project_id: string;
+  topic: string;
+  agenda?: string;
+  start_time: string;
+  duration: number;
+  timezone: string;
+  meeting_type: string;
+  early_join_time?: number;
+  show_in_public_calendar?: boolean;
+  recording_enabled?: boolean;
+  transcripts_enabled?: boolean;
+  youtube_enabled?: boolean;
+  zoom_ai_enabled?: boolean;
+  require_ai_summary_approval?: boolean;
+  ai_summary_access?: string;
 }
