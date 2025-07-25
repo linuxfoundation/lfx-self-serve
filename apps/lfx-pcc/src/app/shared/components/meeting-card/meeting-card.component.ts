@@ -61,7 +61,7 @@ export class MeetingCardComponent {
     if (!this.showParticipants()) {
       const queries = combineLatest([
         this.meetingService.getMeetingParticipants(this.meeting().id),
-        ...this.meeting().committees.map((c) => this.committeeService.getCommitteeMembers(c).pipe(catchError(() => of([])))),
+        ...(this.meeting().committees?.map((c) => this.committeeService.getCommitteeMembers(c).pipe(catchError(() => of([])))) ?? []),
       ]).pipe(
         map(([participants, ...committeeMembers]) => {
           return [

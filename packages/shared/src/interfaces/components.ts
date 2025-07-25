@@ -82,3 +82,16 @@ export interface AvatarProps {
   styleClass?: string;
   ariaLabel?: string;
 }
+
+// Time picker interfaces
+export interface TimePickerSizeOptions {
+  size: 'small' | 'large';
+}
+
+export interface TimePickerProps {
+  label?: string;
+  placeholder?: string;
+  disabled?: boolean;
+  required?: boolean;
+  size?: TimePickerSizeOptions['size'];
+}

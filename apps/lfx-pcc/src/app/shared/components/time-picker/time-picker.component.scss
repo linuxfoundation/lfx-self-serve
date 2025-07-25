@@ -1,0 +1,13 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Time picker component styles
+::ng-deep {
+  .time-picker-popover {
+    @apply w-32 max-h-48 p-0 overflow-y-auto;
+
+    .p-popover-content {
+      @apply p-0;
+    }
+  }
+}
