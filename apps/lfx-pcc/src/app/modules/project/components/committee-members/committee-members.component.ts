@@ -20,7 +20,7 @@ import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { debounceTime, distinctUntilChanged, finalize, startWith } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, finalize, startWith, take } from 'rxjs/operators';
 
 @Component({
   selector: 'lfx-committee-members',
@@ -140,7 +140,7 @@ export class CommitteeMembersComponent implements OnInit {
       },
     });
 
-    this.dialogRef.onClose.subscribe((result: boolean | undefined) => {
+    this.dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
       if (result) {
         this.refreshMembers();
       }
@@ -174,7 +174,7 @@ export class CommitteeMembersComponent implements OnInit {
         },
       });
 
-      this.dialogRef.onClose.subscribe((result: boolean | undefined) => {
+      this.dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
         if (result) {
           this.refreshMembers();
         }

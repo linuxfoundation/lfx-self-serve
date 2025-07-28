@@ -12,6 +12,10 @@ import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullc
 import { InputTextComponent } from '@app/shared/components/input-text/input-text.component';
 import { MeetingCardComponent } from '@app/shared/components/meeting-card/meeting-card.component';
 import { MeetingModalComponent } from '@app/shared/components/meeting-modal/meeting-modal.component';
+import {
+  MeetingDeleteConfirmationComponent,
+  MeetingDeleteResult,
+} from '@app/shared/components/meeting-delete-confirmation/meeting-delete-confirmation.component';
 import { MenuComponent } from '@app/shared/components/menu/menu.component';
 import { SelectButtonComponent } from '@app/shared/components/select-button/select-button.component';
 import { SelectComponent } from '@app/shared/components/select/select.component';
@@ -199,87 +203,41 @@ export class MeetingDashboardComponent {
     const meeting = this.selectedMeeting();
     if (!meeting) return;
 
-    // Format meeting details for confirmation dialog
-    const meetingDate = this.meetingTimePipe.transform(meeting.start_time, meeting.duration, 'date');
-    const meetingTime = this.meetingTimePipe.transform(meeting.start_time, meeting.duration, 'time');
-    const participantCount = meeting.individual_participants_count + meeting.committee_members_count;
-
-    const message = `<div class="text-left">
-      <p><strong>Meeting:</strong> ${meeting.topic || 'Untitled'}</p>
-      <p><strong>Date:</strong> ${meetingDate}</p>
-      <p><strong>Time:</strong> ${meetingTime}</p>
-      <p><strong>Participants:</strong> ${participantCount} guest${participantCount !== 1 ? 's' : ''}</p>
-      ${meeting.recurrence ? '<p><strong>Type:</strong> Recurring meeting</p>' : ''}
-    </div>
-    <br>
-    <p>Are you sure you want to delete this meeting? This action cannot be undone.</p>`;
-
-    // Handle recurring meetings
-    if (meeting.recurrence) {
-      this.showRecurringDeleteOptions(meeting, message);
-    } else {
-      this.showSingleDeleteConfirmation(meeting, message);
-    }
-  }
-
-  private showSingleDeleteConfirmation(meeting: Meeting, message: string): void {
-    this.confirmationService.confirm({
-      message,
+    const dialogRef = this.dialogService.open(MeetingDeleteConfirmationComponent, {
       header: 'Delete Meeting',
-      acceptLabel: 'Delete',
-      rejectLabel: 'Cancel',
-      acceptButtonStyleClass: 'p-button-danger p-button-sm',
-      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
-      accept: () => {
-        this.performDelete(meeting.id);
+      width: '500px',
+      modal: true,
+      closable: true,
+      data: {
+        meeting,
       },
     });
-  }
 
-  private showRecurringDeleteOptions(meeting: Meeting, baseMessage: string): void {
-    this.confirmationService.confirm({
-      message: `${baseMessage}
-        <br>
-        <p><strong>Delete Options:</strong></p>
-        <div style="margin-left: 20px;">
-          <input type="radio" id="single" name="deleteType" value="single" checked>
-          <label for="single" style="margin-left: 8px;">Delete only this occurrence</label><br>
-          <input type="radio" id="series" name="deleteType" value="series" style="margin-top: 8px;">
-          <label for="series" style="margin-left: 8px;">Delete entire series</label>
-        </div>`,
-      header: 'Delete Recurring Meeting',
-      acceptLabel: 'Delete',
-      rejectLabel: 'Cancel',
-      acceptButtonStyleClass: 'p-button-danger p-button-sm',
-      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
-      accept: () => {
-        // Get the selected delete type from radio buttons
-        const deleteTypeElement = document.querySelector('input[name="deleteType"]:checked') as HTMLInputElement;
-        const deleteType = deleteTypeElement?.value as 'single' | 'series' | undefined;
-        this.performDelete(meeting.id, deleteType || 'single');
-      },
+    dialogRef.onClose.subscribe((result: MeetingDeleteResult | undefined) => {
+      if (result?.confirmed) {
+        this.isDeleting.set(true);
+        const meetingId = meeting.id;
+
+        this.meetingService
+          .deleteMeeting(meetingId, result.deleteType)
+          .pipe(take(1))
+          .subscribe({
+            next: () => {
+              // Refresh the meetings list
+              this.refreshMeetings();
+              this.selectedMeeting.set(null);
+              this.isDeleting.set(false);
+            },
+            error: (error) => {
+              console.error('Failed to delete meeting:', error);
+              this.isDeleting.set(false);
+              // TODO: Show error message to user
+            },
+          });
+      } else {
+        this.selectedMeeting.set(null);
+      }
     });
-  }
-
-  private performDelete(meetingId: string, deleteType?: 'single' | 'series'): void {
-    this.isDeleting.set(true);
-
-    this.meetingService
-      .deleteMeeting(meetingId, deleteType)
-      .pipe(take(1))
-      .subscribe({
-        next: () => {
-          // Refresh the meetings list
-          this.refreshMeetings();
-          this.selectedMeeting.set(null);
-          this.isDeleting.set(false);
-        },
-        error: (error) => {
-          console.error('Failed to delete meeting:', error);
-          this.isDeleting.set(false);
-          // TODO: Show error message to user
-        },
-      });
   }
 
   // Private initialization methods
