@@ -354,7 +354,7 @@ export class MeetingFormComponent {
         startTime: startTime,
         duration: meeting.duration || 60,
         timezone: meeting.timezone || getUserTimezone(),
-        early_join_time: meeting.early_join_time || 5,
+        early_join_time: meeting.early_join_time || 10,
         show_in_public_calendar: meeting.show_in_public_calendar || false,
         recording_enabled: meeting.recording_enabled || false,
         transcripts_enabled: meeting.transcripts_enabled || false,
