@@ -3,6 +3,7 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
 import { CalendarComponent } from '@app/shared/components/calendar/calendar.component';
@@ -14,7 +15,8 @@ import { ToggleComponent } from '@app/shared/components/toggle/toggle.component'
 import { MeetingService } from '@app/shared/services/meeting.service';
 import { ProjectService } from '@app/shared/services/project.service';
 import { getUserTimezone, TIMEZONES } from '@lfx-pcc/shared/constants';
-import { CreateMeetingRequest, MeetingType, MeetingVisibility } from '@lfx-pcc/shared/interfaces';
+import { RecurrenceType } from '@lfx-pcc/shared/enums';
+import { CreateMeetingRequest, MeetingRecurrence, MeetingType, MeetingVisibility } from '@lfx-pcc/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -95,6 +97,16 @@ export class MeetingFormComponent {
     { label: 'PCC & Individuals', value: 'PCC & Individuals' },
   ];
 
+  // Recurrence options (computed dynamically based on selected date)
+  public recurrenceOptions = signal([
+    { label: 'Does not repeat', value: 'none' },
+    { label: 'Daily', value: 'daily' },
+    { label: 'Weekly on Monday', value: 'weekly' }, // Will be updated dynamically
+    { label: 'Monthly on the 1st Monday', value: 'monthly_nth' }, // Will be updated dynamically
+    { label: 'Monthly on the last Monday', value: 'monthly_last' }, // Will be updated dynamically
+    { label: 'Every weekday', value: 'weekdays' },
+  ]);
+
   // Minimum date (yesterday)
   public minDate = signal<Date>(this.getYesterday());
 
@@ -135,6 +147,9 @@ export class MeetingFormComponent {
     // Combine date and time for start_time
     const startDateTime = this.combineDateTime(formValue.startDate, formValue.startTime);
 
+    // Generate recurrence object if needed
+    const recurrenceObject = this.generateRecurrenceObject(formValue.recurrence, formValue.startDate);
+
     // Create meeting data using CreateMeetingRequest interface
     const meetingData: CreateMeetingRequest = {
       project_id: project.id,
@@ -152,6 +167,7 @@ export class MeetingFormComponent {
       zoom_ai_enabled: formValue.zoom_ai_enabled || false,
       require_ai_summary_approval: formValue.require_ai_summary_approval || false,
       ai_summary_access: formValue.ai_summary_access || 'PCC',
+      recurrence: recurrenceObject,
     };
 
     const operation = this.isEditing() ? this.meetingService.updateMeeting(this.meetingId()!, meetingData) : this.meetingService.createMeeting(meetingData);
@@ -237,6 +253,9 @@ export class MeetingFormComponent {
         zoom_ai_enabled: new FormControl(false),
         require_ai_summary_approval: new FormControl(false),
         ai_summary_access: new FormControl('PCC'),
+
+        // Recurrence settings
+        recurrence: new FormControl('none'),
       },
       { validators: this.futureDateTimeValidator() }
     );
@@ -323,6 +342,100 @@ export class MeetingFormComponent {
     };
   }
 
+  private updateRecurrenceOptions(date: Date): void {
+    const dayNames = ['Sunday', 'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday'];
+    const dayName = dayNames[date.getDay()];
+
+    // Calculate which occurrence of the day in the month (1st, 2nd, 3rd, 4th, or last)
+    const { weekOfMonth, isLastWeek } = this.getWeekOfMonth(date);
+    const ordinals = ['', '1st', '2nd', '3rd', '4th'];
+    const ordinal = ordinals[weekOfMonth] || `${weekOfMonth}th`;
+
+    const options = [
+      { label: 'Does not repeat', value: 'none' },
+      { label: 'Daily', value: 'daily' },
+      { label: `Weekly on ${dayName}`, value: 'weekly' },
+      { label: 'Every weekday', value: 'weekdays' },
+    ];
+
+    // If this is the last occurrence, show "Monthly on the last [day]" instead of "Monthly on the Nth [day]"
+    if (isLastWeek) {
+      options.splice(3, 0, { label: `Monthly on the last ${dayName}`, value: 'monthly_last' });
+    } else {
+      options.splice(3, 0, { label: `Monthly on the ${ordinal} ${dayName}`, value: 'monthly_nth' });
+    }
+
+    this.recurrenceOptions.set(options);
+  }
+
+  private getWeekOfMonth(date: Date): { weekOfMonth: number; isLastWeek: boolean } {
+    // Find the first occurrence of this day of week in the month
+    const targetDayOfWeek = date.getDay();
+    let firstOccurrence = 1;
+    while (new Date(date.getFullYear(), date.getMonth(), firstOccurrence).getDay() !== targetDayOfWeek) {
+      firstOccurrence++;
+    }
+
+    // Calculate which week this date is in
+    const weekOfMonth = Math.floor((date.getDate() - firstOccurrence) / 7) + 1;
+
+    // Check if this is the last occurrence of this day in the month
+    const nextWeekDate = new Date(date.getTime() + 7 * 24 * 60 * 60 * 1000);
+    const isLastWeek = nextWeekDate.getMonth() !== date.getMonth();
+
+    return { weekOfMonth, isLastWeek };
+  }
+
+  private generateRecurrenceObject(recurrenceType: string, startDate: Date): MeetingRecurrence | undefined {
+    if (recurrenceType === 'none') {
+      return undefined;
+    }
+
+    const dayOfWeek = startDate.getDay() + 1; // Zoom API uses 1-7 (Sunday=1)
+    const { weekOfMonth } = this.getWeekOfMonth(startDate);
+
+    switch (recurrenceType) {
+      case 'daily':
+        return {
+          type: RecurrenceType.DAILY,
+          repeat_interval: 1,
+        };
+
+      case 'weekly':
+        return {
+          type: RecurrenceType.WEEKLY,
+          repeat_interval: 1,
+          weekly_days: dayOfWeek.toString(),
+        };
+
+      case 'monthly_nth':
+        return {
+          type: RecurrenceType.MONTHLY,
+          repeat_interval: 1,
+          monthly_week: weekOfMonth,
+          monthly_week_day: dayOfWeek,
+        };
+
+      case 'monthly_last':
+        return {
+          type: RecurrenceType.MONTHLY,
+          repeat_interval: 1,
+          monthly_week: -1,
+          monthly_week_day: dayOfWeek,
+        };
+
+      case 'weekdays':
+        return {
+          type: RecurrenceType.WEEKLY,
+          repeat_interval: 1,
+          weekly_days: '2,3,4,5,6', // Monday through Friday
+        };
+
+      default:
+        return undefined;
+    }
+  }
+
   private initializeForm(): void {
     if (this.isEditing() && this.meeting()) {
       const meeting = this.meeting()!;
@@ -335,6 +448,9 @@ export class MeetingFormComponent {
         const date = new Date(meeting.start_time);
         startDate = date;
 
+        // Update recurrence options based on the meeting date
+        this.updateRecurrenceOptions(date);
+
         // Convert to 12-hour format for display
         const hours = date.getHours();
         const minutes = date.getMinutes();
@@ -344,6 +460,19 @@ export class MeetingFormComponent {
           displayHours = 12;
         }
         startTime = `${displayHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${period}`;
+      }
+
+      // Map recurrence object back to form value
+      let recurrenceValue = 'none';
+      if (meeting.recurrence) {
+        const rec = meeting.recurrence;
+        if (rec.type === RecurrenceType.DAILY) {
+          recurrenceValue = 'daily';
+        } else if (rec.type === RecurrenceType.WEEKLY) {
+          recurrenceValue = rec.weekly_days === '2,3,4,5,6' ? 'weekdays' : 'weekly';
+        } else if (rec.type === RecurrenceType.MONTHLY) {
+          recurrenceValue = rec.monthly_week === -1 ? 'monthly_last' : 'monthly_nth';
+        }
       }
 
       this.form().patchValue({
@@ -362,13 +491,19 @@ export class MeetingFormComponent {
         zoom_ai_enabled: meeting.zoom_ai_enabled || false,
         require_ai_summary_approval: meeting.require_ai_summary_approval || false,
         ai_summary_access: meeting.ai_summary_access || 'PCC',
+        recurrence: recurrenceValue,
       });
+    } else {
+      // For new meetings, update recurrence options based on default date
+      const defaultDateTime = this.getDefaultStartDateTime();
+      this.updateRecurrenceOptions(defaultDateTime.date);
     }
 
     // Add custom duration validator when duration is 'custom'
     this.form()
       .get('duration')
-      ?.valueChanges.subscribe((value) => {
+      ?.valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((value) => {
         const customDurationControl = this.form().get('customDuration');
         if (value === 'custom') {
           customDurationControl?.setValidators([Validators.required, Validators.min(5), Validators.max(480)]);
@@ -376,6 +511,18 @@ export class MeetingFormComponent {
           customDurationControl?.clearValidators();
         }
         customDurationControl?.updateValueAndValidity();
+      });
+
+    // Update recurrence options when start date changes
+    this.form()
+      .get('startDate')
+      ?.valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((date) => {
+        if (date) {
+          this.updateRecurrenceOptions(date);
+          // Reset recurrence selection to 'none' when date changes
+          this.form().get('recurrence')?.setValue('none');
+        }
       });
   }
 }

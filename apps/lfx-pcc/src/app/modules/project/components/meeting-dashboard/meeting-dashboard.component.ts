@@ -415,6 +415,8 @@ export class MeetingDashboardComponent {
   }
 
   private refreshMeetings(): void {
+    this.meetingsLoading.set(true);
+    this.pastMeetingsLoading.set(true);
     runInInjectionContext(this.injector, () => {
       this.meetings = this.initializeMeetings();
       this.pastMeetings = this.initializePastMeetings();

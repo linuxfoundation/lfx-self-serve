@@ -123,6 +123,26 @@
       <p class="mt-1 text-sm text-red-600" *ngIf="form().get('timezone')?.errors?.['required'] && form().get('timezone')?.touched">Timezone is required</p>
     </div>
 
+    <!-- Recurrence -->
+    <div>
+      <div class="flex items-center gap-2 mb-1">
+        <label for="recurrence" class="block text-sm font-medium text-gray-700"> Repeat </label>
+        <i
+          class="fa-light fa-info-circle text-gray-400 cursor-help"
+          pTooltip="Set up recurring meetings that repeat daily, weekly, monthly, or on weekdays"
+          tooltipPosition="right"
+          tooltipStyleClass="text-xs max-w-xs"></i>
+      </div>
+      <lfx-select
+        size="small"
+        [form]="form()"
+        control="recurrence"
+        [options]="recurrenceOptions()"
+        placeholder="Select recurrence"
+        styleClass="w-full"
+        id="recurrence"></lfx-select>
+    </div>
+
     <!-- Early Join Time -->
     <div>
       <div class="flex items-center gap-2 mb-1">
