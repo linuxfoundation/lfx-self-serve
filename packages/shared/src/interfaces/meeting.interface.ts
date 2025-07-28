@@ -1,23 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { RecurrenceType } from '../enums';
-
-export enum MeetingVisibility {
-  PUBLIC = 'public',
-  PRIVATE = 'private',
-  RESTRICTED = 'restricted',
-}
-
-export enum MeetingType {
-  BOARD = 'Board',
-  MAINTAINERS = 'Maintainers',
-  MARKETING = 'Marketing',
-  TECHNICAL = 'Technical',
-  LEGAL = 'Legal',
-  OTHER = 'Other',
-  NONE = 'None',
-}
+import { MeetingVisibility, MeetingType, RecurrenceType } from '../enums';
 
 export interface MeetingRecurrence {
   end_date_time?: string;

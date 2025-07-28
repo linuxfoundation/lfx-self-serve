@@ -15,8 +15,8 @@ import { ToggleComponent } from '@app/shared/components/toggle/toggle.component'
 import { MeetingService } from '@app/shared/services/meeting.service';
 import { ProjectService } from '@app/shared/services/project.service';
 import { getUserTimezone, TIMEZONES } from '@lfx-pcc/shared/constants';
-import { RecurrenceType } from '@lfx-pcc/shared/enums';
-import { CreateMeetingRequest, MeetingRecurrence, MeetingType, MeetingVisibility } from '@lfx-pcc/shared/interfaces';
+import { MeetingType, MeetingVisibility, RecurrenceType } from '@lfx-pcc/shared/enums';
+import { CreateMeetingRequest, MeetingRecurrence } from '@lfx-pcc/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
