@@ -5,7 +5,6 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, Injector, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
 import { CardComponent } from '@app/shared/components/card/card.component';
 import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullcalendar.component';
@@ -19,12 +18,11 @@ import { MeetingModalComponent } from '@app/shared/components/meeting-modal/meet
 import { MenuComponent } from '@app/shared/components/menu/menu.component';
 import { SelectButtonComponent } from '@app/shared/components/select-button/select-button.component';
 import { SelectComponent } from '@app/shared/components/select/select.component';
-import { MeetingTimePipe } from '@app/shared/pipes/meeting-time.pipe';
 import { MeetingService } from '@app/shared/services/meeting.service';
 import { ProjectService } from '@app/shared/services/project.service';
 import { CalendarEvent, Meeting } from '@lfx-pcc/shared/interfaces';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
-import { ConfirmationService, MenuItem } from 'primeng/api';
+import { MenuItem } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import { of } from 'rxjs';
@@ -53,10 +51,7 @@ export class MeetingDashboardComponent {
   // Injected services
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
-  private readonly meetingTimePipe = new MeetingTimePipe();
-  private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
-  private readonly router = inject(Router);
   private readonly injector = inject(Injector);
 
   // Class variables with types
