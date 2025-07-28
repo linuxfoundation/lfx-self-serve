@@ -15,6 +15,7 @@ import { MeetingModalComponent } from '@app/shared/components/meeting-modal/meet
 import { MenuComponent } from '@app/shared/components/menu/menu.component';
 import { SelectButtonComponent } from '@app/shared/components/select-button/select-button.component';
 import { SelectComponent } from '@app/shared/components/select/select.component';
+import { MeetingTimePipe } from '@app/shared/pipes/meeting-time.pipe';
 import { MeetingService } from '@app/shared/services/meeting.service';
 import { ProjectService } from '@app/shared/services/project.service';
 import { CalendarEvent, Meeting } from '@lfx-pcc/shared/interfaces';
@@ -23,7 +24,7 @@ import { ConfirmationService, MenuItem } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import { of } from 'rxjs';
-import { debounceTime, distinctUntilChanged, startWith, tap } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, startWith, take, tap } from 'rxjs/operators';
 
 @Component({
   selector: 'lfx-meeting-dashboard',
@@ -48,6 +49,7 @@ export class MeetingDashboardComponent {
   // Injected services
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
+  private readonly meetingTimePipe = new MeetingTimePipe();
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
   private readonly router = inject(Router);
@@ -71,7 +73,7 @@ export class MeetingDashboardComponent {
   public publicMeetingsCount: Signal<number>;
   public privateMeetingsCount: Signal<number>;
   public menuItems: MenuItem[];
-  public actionMenuItems: MenuItem[];
+  public actionMenuItems = computed(() => this.initializeActionMenuItems());
   public currentView: WritableSignal<'list' | 'calendar'>;
   public viewOptions: { label: string; value: 'list' | 'calendar' }[];
   public viewForm: FormGroup;
@@ -98,7 +100,6 @@ export class MeetingDashboardComponent {
     this.publicMeetingsCount = this.initializePublicMeetingsCount();
     this.privateMeetingsCount = this.initializePrivateMeetingsCount();
     this.menuItems = this.initializeMenuItems();
-    this.actionMenuItems = this.initializeActionMenuItems();
     this.currentView = signal<'list' | 'calendar'>('list');
     this.viewOptions = this.initializeViewOptions();
     this.viewForm = this.initializeViewForm();
@@ -146,7 +147,8 @@ export class MeetingDashboardComponent {
           isEditing: false, // This triggers form mode
         },
       })
-      .onClose.subscribe((meeting) => {
+      .onClose.pipe(take(1))
+      .subscribe((meeting) => {
         if (meeting) {
           this.refreshMeetings();
         }
@@ -173,7 +175,7 @@ export class MeetingDashboardComponent {
       dismissableMask: true,
       data: {
         meeting: meeting,
-        actionMenuItems: this.actionMenuItems,
+        actionMenuItems: this.actionMenuItems(),
       },
     });
   }
@@ -197,17 +199,87 @@ export class MeetingDashboardComponent {
     const meeting = this.selectedMeeting();
     if (!meeting) return;
 
+    // Format meeting details for confirmation dialog
+    const meetingDate = this.meetingTimePipe.transform(meeting.start_time, meeting.duration, 'date');
+    const meetingTime = this.meetingTimePipe.transform(meeting.start_time, meeting.duration, 'time');
+    const participantCount = meeting.individual_participants_count + meeting.committee_members_count;
+
+    const message = `<div class="text-left">
+      <p><strong>Meeting:</strong> ${meeting.topic || 'Untitled'}</p>
+      <p><strong>Date:</strong> ${meetingDate}</p>
+      <p><strong>Time:</strong> ${meetingTime}</p>
+      <p><strong>Participants:</strong> ${participantCount} guest${participantCount !== 1 ? 's' : ''}</p>
+      ${meeting.recurrence ? '<p><strong>Type:</strong> Recurring meeting</p>' : ''}
+    </div>
+    <br>
+    <p>Are you sure you want to delete this meeting? This action cannot be undone.</p>`;
+
+    // Handle recurring meetings
+    if (meeting.recurrence) {
+      this.showRecurringDeleteOptions(meeting, message);
+    } else {
+      this.showSingleDeleteConfirmation(meeting, message);
+    }
+  }
+
+  private showSingleDeleteConfirmation(meeting: Meeting, message: string): void {
     this.confirmationService.confirm({
-      message: `Are you sure you want to delete this meeting? This action cannot be undone.`,
+      message,
       header: 'Delete Meeting',
       acceptLabel: 'Delete',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
       accept: () => {
-        // TODO: Implement delete when API endpoint is available
+        this.performDelete(meeting.id);
       },
     });
+  }
+
+  private showRecurringDeleteOptions(meeting: Meeting, baseMessage: string): void {
+    this.confirmationService.confirm({
+      message: `${baseMessage}
+        <br>
+        <p><strong>Delete Options:</strong></p>
+        <div style="margin-left: 20px;">
+          <input type="radio" id="single" name="deleteType" value="single" checked>
+          <label for="single" style="margin-left: 8px;">Delete only this occurrence</label><br>
+          <input type="radio" id="series" name="deleteType" value="series" style="margin-top: 8px;">
+          <label for="series" style="margin-left: 8px;">Delete entire series</label>
+        </div>`,
+      header: 'Delete Recurring Meeting',
+      acceptLabel: 'Delete',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => {
+        // Get the selected delete type from radio buttons
+        const deleteTypeElement = document.querySelector('input[name="deleteType"]:checked') as HTMLInputElement;
+        const deleteType = deleteTypeElement?.value as 'single' | 'series' | undefined;
+        this.performDelete(meeting.id, deleteType || 'single');
+      },
+    });
+  }
+
+  private performDelete(meetingId: string, deleteType?: 'single' | 'series'): void {
+    this.isDeleting.set(true);
+
+    this.meetingService
+      .deleteMeeting(meetingId, deleteType)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          // Refresh the meetings list
+          this.refreshMeetings();
+          this.selectedMeeting.set(null);
+          this.isDeleting.set(false);
+        },
+        error: (error) => {
+          console.error('Failed to delete meeting:', error);
+          this.isDeleting.set(false);
+          // TODO: Show error message to user
+        },
+      });
   }
 
   // Private initialization methods
@@ -325,17 +397,25 @@ export class MeetingDashboardComponent {
   }
 
   private initializeActionMenuItems(): MenuItem[] {
-    return [
+    const baseItems: MenuItem[] = [
       {
         label: 'View',
         icon: 'fa-light fa-eye',
         command: () => this.viewMeeting(),
       },
-      {
+    ];
+
+    // Only add Edit option for upcoming meetings
+    if (this.meetingListView() !== 'past') {
+      baseItems.push({
         label: 'Edit',
         icon: 'fa-light fa-edit',
         command: () => this.editMeeting(),
-      },
+      });
+    }
+
+    // Add separator and delete option
+    baseItems.push(
       {
         separator: true,
       },
@@ -345,8 +425,10 @@ export class MeetingDashboardComponent {
         styleClass: 'text-red-500',
         disabled: this.isDeleting(),
         command: () => this.deleteMeeting(),
-      },
-    ];
+      }
+    );
+
+    return baseItems;
   }
 
   private initializePublicMeetingsCount(): Signal<number> {

@@ -744,6 +744,28 @@ export class SupabaseService {
     return meetings[0];
   }
 
+  public async deleteMeeting(id: string, deleteType?: 'single' | 'series'): Promise<void> {
+    // Note: deleteType parameter is reserved for future recurrence handling implementation
+    // Currently, all deletes remove the entire meeting record regardless of deleteType
+    const actualDeleteType = deleteType || 'single';
+
+    const params = new URLSearchParams({
+      id: `eq.${id}`,
+    });
+    const url = `${this.baseUrl}/meetings?${params.toString()}`;
+
+    const response = await fetch(url, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      const errorMessage = `Failed to delete meeting (${actualDeleteType}): ${response.status} ${response.statusText}: ${await response.text()}`;
+      throw new Error(errorMessage);
+    }
+  }
+
   private async fallbackProjectSearch(query: string): Promise<ProjectSearchResult[]> {
     let url = `${this.baseUrl}/projects?limit=10&order=name`;
 

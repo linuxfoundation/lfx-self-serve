@@ -99,4 +99,17 @@ export class MeetingService {
       })
     );
   }
+
+  public deleteMeeting(id: string, deleteType?: 'single' | 'series'): Observable<void> {
+    let params = new HttpParams();
+    if (deleteType) {
+      params = params.set('deleteType', deleteType);
+    }
+    return this.http.delete<void>(`/api/meetings/${id}`, { params }).pipe(
+      catchError((error) => {
+        console.error(`Failed to delete meeting ${id}:`, error);
+        throw error;
+      })
+    );
+  }
 }

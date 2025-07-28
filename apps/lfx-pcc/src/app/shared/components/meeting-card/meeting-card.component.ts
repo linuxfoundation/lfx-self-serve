@@ -36,6 +36,7 @@ export class MeetingCardComponent {
   public readonly meeting = input.required<Meeting>();
   public readonly actionMenuItems = input.required<MenuItem[]>();
   public readonly pastMeeting = input<boolean>(false);
+  public readonly loading = input<boolean>(false);
   public readonly meetingParticipantCount: Signal<number> = this.initMeetingParticipantCount();
   public showParticipants: WritableSignal<boolean> = signal(false);
   public participantsLoading: WritableSignal<boolean> = signal(true);

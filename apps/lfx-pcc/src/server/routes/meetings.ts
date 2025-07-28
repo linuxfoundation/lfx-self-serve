@@ -106,4 +106,33 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
+router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
+  try {
+    const meetingId = req.params['id'];
+    const { deleteType } = req.query;
+
+    if (!meetingId) {
+      return res.status(400).json({
+        error: 'Meeting ID is required',
+        code: 'MISSING_MEETING_ID',
+      });
+    }
+
+    // Validate deleteType for recurring meetings
+    if (deleteType && !['single', 'series'].includes(deleteType as string)) {
+      return res.status(400).json({
+        error: 'Delete type must be either "single" or "series"',
+        code: 'INVALID_DELETE_TYPE',
+      });
+    }
+
+    await supabaseService.deleteMeeting(meetingId, deleteType as 'single' | 'series');
+
+    return res.status(204).send();
+  } catch (error) {
+    console.error(`Failed to delete meeting ${req.params['id']}:`, error);
+    return next(error);
+  }
+});
+
 export default router;

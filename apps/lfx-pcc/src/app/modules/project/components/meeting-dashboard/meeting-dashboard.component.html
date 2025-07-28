@@ -76,7 +76,8 @@
                     <div class="p-6">
                       <lfx-meeting-card
                         [meeting]="meeting"
-                        [actionMenuItems]="actionMenuItems"
+                        [actionMenuItems]="actionMenuItems()"
+                        [loading]="isDeleting()"
                         (menuToggle)="onMenuToggle($event)"
                         [pastMeeting]="meetingListView() === 'past'"
                         pAnimateOnScroll
