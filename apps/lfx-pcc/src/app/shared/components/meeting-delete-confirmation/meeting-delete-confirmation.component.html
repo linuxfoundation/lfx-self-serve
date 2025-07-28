@@ -42,7 +42,7 @@
   </div>
 
   <!-- Recurrence Options -->
-  @if (isRecurring) {
+  @if (isRecurring && !isPastMeeting) {
     <div class="mb-6">
       <h4 class="text-md font-semibold text-gray-900 mb-3">Delete Options</h4>
       <div class="space-y-4">
@@ -51,6 +51,14 @@
           <div class="flex-1">
             <label for="delete-single" class="font-medium text-gray-900 cursor-pointer">Delete only this occurrence</label>
             <div class="text-sm text-gray-600 mt-1">Only this meeting instance will be deleted. Future meetings in the series will remain.</div>
+          </div>
+        </div>
+
+        <div class="flex items-start gap-3">
+          <lfx-radio-button [form]="deleteForm" control="deleteType" name="deleteType" value="future" inputId="delete-future"> </lfx-radio-button>
+          <div class="flex-1">
+            <label for="delete-future" class="font-medium text-gray-900 cursor-pointer">Delete this and future occurrences</label>
+            <div class="text-sm text-gray-600 mt-1">This meeting and all future meetings in the series will be deleted. Past meetings will remain.</div>
           </div>
         </div>
 
@@ -72,8 +80,10 @@
       <div>
         <h4 class="font-medium text-red-900">Warning</h4>
         <p class="text-sm text-red-700 mt-1">
-          @if (isRecurring && deleteForm.get('deleteType')?.value === 'series') {
+          @if (isRecurring && !isPastMeeting && deleteForm.get('deleteType')?.value === 'series') {
             This will permanently delete all meetings in this series. This action cannot be undone.
+          } @else if (isRecurring && !isPastMeeting && deleteForm.get('deleteType')?.value === 'future') {
+            This will permanently delete this meeting and all future occurrences in the series. This action cannot be undone.
           } @else {
             This will permanently delete this meeting. This action cannot be undone.
           }

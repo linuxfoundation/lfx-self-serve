@@ -119,14 +119,14 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
     }
 
     // Validate deleteType for recurring meetings
-    if (deleteType && !['single', 'series'].includes(deleteType as string)) {
+    if (deleteType && !['single', 'series', 'future'].includes(deleteType as string)) {
       return res.status(400).json({
-        error: 'Delete type must be either "single" or "series"',
+        error: 'Delete type must be "single", "series", or "future"',
         code: 'INVALID_DELETE_TYPE',
       });
     }
 
-    await supabaseService.deleteMeeting(meetingId, deleteType as 'single' | 'series');
+    await supabaseService.deleteMeeting(meetingId, deleteType as 'single' | 'series' | 'future');
 
     return res.status(204).send();
   } catch (error) {

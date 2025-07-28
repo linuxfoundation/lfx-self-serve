@@ -15,7 +15,7 @@ import { take } from 'rxjs/operators';
 
 export interface MeetingDeleteResult {
   confirmed: boolean;
-  deleteType?: 'single' | 'series';
+  deleteType?: 'single' | 'series' | 'future';
 }
 
 @Component({
@@ -34,12 +34,13 @@ export class MeetingDeleteConfirmationComponent {
   public readonly meeting: Meeting = this.dialogConfig.data?.meeting;
   public readonly participantCount: number = this.meeting.individual_participants_count + this.meeting.committee_members_count;
   public readonly isRecurring: boolean = !!this.meeting.recurrence;
+  public readonly isPastMeeting: boolean = this.meeting.start_time ? new Date(this.meeting.start_time) < new Date() : false;
   public readonly deleteForm: FormGroup = this.initializeDeleteForm();
   public isDeleting: WritableSignal<boolean> = signal(false);
 
   public onConfirm(): void {
     this.isDeleting.set(true);
-    const deleteType = this.isRecurring ? this.deleteForm.get('deleteType')?.value : undefined;
+    const deleteType = this.isRecurring && !this.isPastMeeting ? this.deleteForm.get('deleteType')?.value : undefined;
 
     this.meetingService
       .deleteMeeting(this.meeting.id, deleteType)

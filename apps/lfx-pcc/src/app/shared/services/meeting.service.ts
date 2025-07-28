@@ -100,7 +100,7 @@ export class MeetingService {
     );
   }
 
-  public deleteMeeting(id: string, deleteType?: 'single' | 'series'): Observable<void> {
+  public deleteMeeting(id: string, deleteType?: 'single' | 'series' | 'future'): Observable<void> {
     let params = new HttpParams();
     if (deleteType) {
       params = params.set('deleteType', deleteType);

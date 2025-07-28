@@ -744,9 +744,10 @@ export class SupabaseService {
     return meetings[0];
   }
 
-  public async deleteMeeting(id: string, deleteType?: 'single' | 'series'): Promise<void> {
+  public async deleteMeeting(id: string, deleteType?: 'single' | 'series' | 'future'): Promise<void> {
     // Note: deleteType parameter is reserved for future recurrence handling implementation
     // Currently, all deletes remove the entire meeting record regardless of deleteType
+    // 'future' type will delete this occurrence and all future occurrences in the series
     const actualDeleteType = deleteType || 'single';
 
     const params = new URLSearchParams({
