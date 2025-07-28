@@ -11,11 +11,11 @@ import { CardComponent } from '@app/shared/components/card/card.component';
 import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullcalendar.component';
 import { InputTextComponent } from '@app/shared/components/input-text/input-text.component';
 import { MeetingCardComponent } from '@app/shared/components/meeting-card/meeting-card.component';
-import { MeetingModalComponent } from '@app/shared/components/meeting-modal/meeting-modal.component';
 import {
   MeetingDeleteConfirmationComponent,
   MeetingDeleteResult,
 } from '@app/shared/components/meeting-delete-confirmation/meeting-delete-confirmation.component';
+import { MeetingModalComponent } from '@app/shared/components/meeting-modal/meeting-modal.component';
 import { MenuComponent } from '@app/shared/components/menu/menu.component';
 import { SelectButtonComponent } from '@app/shared/components/select-button/select-button.component';
 import { SelectComponent } from '@app/shared/components/select/select.component';
@@ -62,7 +62,6 @@ export class MeetingDashboardComponent {
   // Class variables with types
   public project: typeof this.projectService.project;
   public selectedMeeting: WritableSignal<Meeting | null>;
-  public isDeleting: WritableSignal<boolean>;
   public searchForm: FormGroup;
   public visibilityFilter: WritableSignal<string | null>;
   public committeeFilter: WritableSignal<string | null>;
@@ -88,7 +87,6 @@ export class MeetingDashboardComponent {
     // Initialize all class variables
     this.project = this.projectService.project;
     this.selectedMeeting = signal<Meeting | null>(null);
-    this.isDeleting = signal<boolean>(false);
     this.meetingsLoading = signal<boolean>(true);
     this.pastMeetingsLoading = signal<boolean>(true);
     this.meetings = this.initializeMeetings();
@@ -215,25 +213,9 @@ export class MeetingDashboardComponent {
 
     dialogRef.onClose.subscribe((result: MeetingDeleteResult | undefined) => {
       if (result?.confirmed) {
-        this.isDeleting.set(true);
-        const meetingId = meeting.id;
-
-        this.meetingService
-          .deleteMeeting(meetingId, result.deleteType)
-          .pipe(take(1))
-          .subscribe({
-            next: () => {
-              // Refresh the meetings list
-              this.refreshMeetings();
-              this.selectedMeeting.set(null);
-              this.isDeleting.set(false);
-            },
-            error: (error) => {
-              console.error('Failed to delete meeting:', error);
-              this.isDeleting.set(false);
-              // TODO: Show error message to user
-            },
-          });
+        // Refresh the meetings list since deletion was successful
+        this.refreshMeetings();
+        this.selectedMeeting.set(null);
       } else {
         this.selectedMeeting.set(null);
       }
@@ -381,7 +363,7 @@ export class MeetingDashboardComponent {
         label: 'Delete',
         icon: 'fa-light fa-trash',
         styleClass: 'text-red-500',
-        disabled: this.isDeleting(),
+        disabled: false,
         command: () => this.deleteMeeting(),
       }
     );
