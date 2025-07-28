@@ -4,8 +4,6 @@
 <form [formGroup]="form()" (ngSubmit)="onSubmit()" class="space-y-6">
   <!-- Basic Information Section -->
   <div class="flex flex-col gap-3">
-    <h3 class="text-lg font-medium text-gray-900">Basic Information</h3>
-
     <!-- Topic (Required) -->
     <div>
       <label for="meeting-topic" class="block text-sm font-medium text-gray-700 mb-1"> Title <span class="text-red-500">*</span> </label>
@@ -21,7 +19,7 @@
 
     <!-- Meeting Type -->
     <div>
-      <label for="meeting-type" class="block text-sm font-medium text-gray-700 mb-1"> Meeting Type <span class="text-red-500">*</span> </label>
+      <label for="meeting-type" class="block text-sm font-medium text-gray-700 mb-1"> Meeting Type </label>
       <lfx-select
         size="small"
         [form]="form()"
@@ -38,13 +36,18 @@
 
   <!-- Date & Time Section -->
   <div class="flex flex-col gap-3">
-    <h3 class="text-lg font-medium text-gray-900">Date & Time</h3>
-
     <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
       <!-- Start Date -->
       <div>
         <label for="start-date" class="block text-sm font-medium text-gray-700 mb-1"> Start Date <span class="text-red-500">*</span> </label>
-        <lfx-calendar [form]="form()" control="startDate" id="start-date" placeholder="Select date" [showIcon]="true" styleClass="w-full"></lfx-calendar>
+        <lfx-calendar
+          [form]="form()"
+          control="startDate"
+          id="start-date"
+          placeholder="Select date"
+          [showIcon]="true"
+          [minDate]="minDate()"
+          styleClass="w-full"></lfx-calendar>
         <p class="mt-1 text-sm text-red-600" *ngIf="form().get('startDate')?.errors?.['required'] && form().get('startDate')?.touched">
           Start date is required
         </p>
@@ -74,6 +77,11 @@
       </div>
     </div>
 
+    <!-- Future Date/Time validation error -->
+    <p class="mt-1 text-sm text-red-600" *ngIf="form().errors?.['futureDateTime'] && (form().get('startDate')?.touched || form().get('startTime')?.touched)">
+      Meeting must be scheduled in the future
+    </p>
+
     <!-- Custom Duration (shown when 'custom' is selected) -->
     @if (this.form().get('duration')?.value === 'custom') {
       <div>
@@ -91,6 +99,12 @@
         <p class="mt-1 text-sm text-red-600" *ngIf="form().get('customDuration')?.errors?.['required'] && form().get('customDuration')?.touched">
           Custom duration is required
         </p>
+        <p class="mt-1 text-sm text-red-600" *ngIf="form().get('customDuration')?.errors?.['min'] && form().get('customDuration')?.touched">
+          Custom duration must be greater than 5 minutes
+        </p>
+        <p class="mt-1 text-sm text-red-600" *ngIf="form().get('customDuration')?.errors?.['max'] && form().get('customDuration')?.touched">
+          Custom duration must be less than 480 minutes
+        </p>
       </div>
     }
 
@@ -99,6 +113,7 @@
       <label for="timezone" class="block text-sm font-medium text-gray-700 mb-1"> Timezone <span class="text-red-500">*</span> </label>
       <lfx-select
         size="small"
+        [filter]="true"
         [form]="form()"
         control="timezone"
         [options]="timezoneOptions"
@@ -126,7 +141,6 @@
         placeholder="Enter minutes"
         type="number"
         styleClass="w-full"></lfx-input-text>
-      <p class="mt-1 text-sm text-gray-500">How many minutes before the start time can users join the meeting</p>
     </div>
   </div>
 

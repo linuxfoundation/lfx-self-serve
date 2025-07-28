@@ -3,7 +3,7 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
 import { CalendarComponent } from '@app/shared/components/calendar/calendar.component';
 import { InputTextComponent } from '@app/shared/components/input-text/input-text.component';
@@ -13,6 +13,7 @@ import { TimePickerComponent } from '@app/shared/components/time-picker/time-pic
 import { ToggleComponent } from '@app/shared/components/toggle/toggle.component';
 import { MeetingService } from '@app/shared/services/meeting.service';
 import { ProjectService } from '@app/shared/services/project.service';
+import { getUserTimezone, TIMEZONES } from '@lfx-pcc/shared/constants';
 import { CreateMeetingRequest, MeetingType, MeetingVisibility } from '@lfx-pcc/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -82,25 +83,20 @@ export class MeetingFormComponent {
     { label: 'Restricted', value: MeetingVisibility.RESTRICTED },
   ];
 
-  // Timezone options (common timezones)
-  public timezoneOptions = [
-    { label: 'UTC', value: 'UTC' },
-    { label: 'America/New_York (EST/EDT)', value: 'America/New_York' },
-    { label: 'America/Chicago (CST/CDT)', value: 'America/Chicago' },
-    { label: 'America/Denver (MST/MDT)', value: 'America/Denver' },
-    { label: 'America/Los_Angeles (PST/PDT)', value: 'America/Los_Angeles' },
-    { label: 'Europe/London (GMT/BST)', value: 'Europe/London' },
-    { label: 'Europe/Paris (CET/CEST)', value: 'Europe/Paris' },
-    { label: 'Asia/Tokyo (JST)', value: 'Asia/Tokyo' },
-    { label: 'Asia/Shanghai (CST)', value: 'Asia/Shanghai' },
-    { label: 'Australia/Sydney (AEST/AEDT)', value: 'Australia/Sydney' },
-  ];
+  // Timezone options from shared constants
+  public timezoneOptions = TIMEZONES.map((tz) => ({
+    label: `${tz.label} (${tz.offset})`,
+    value: tz.value,
+  }));
 
   // AI Summary Access options
   public aiSummaryAccessOptions = [
     { label: 'PCC', value: 'PCC' },
     { label: 'PCC & Individuals', value: 'PCC & Individuals' },
   ];
+
+  // Minimum date (yesterday)
+  public minDate = signal<Date>(this.getYesterday());
 
   public constructor() {
     // Initialize form with data when component is created
@@ -109,8 +105,14 @@ export class MeetingFormComponent {
 
   // Public methods
   public onSubmit(): void {
+    // Mark all form controls as touched and dirty to show validation errors
+    Object.keys(this.form().controls).forEach((key) => {
+      const control = this.form().get(key);
+      control?.markAsTouched();
+      control?.markAsDirty();
+    });
+
     if (this.form().invalid) {
-      this.form().markAllAsTouched();
       return;
     }
 
@@ -141,7 +143,7 @@ export class MeetingFormComponent {
       start_time: startDateTime,
       duration: duration,
       timezone: formValue.timezone,
-      meeting_type: formValue.meeting_type,
+      meeting_type: formValue.meeting_type || 'None',
       early_join_time: formValue.early_join_time || 10,
       visibility: formValue.show_in_public_calendar ? MeetingVisibility.PUBLIC : MeetingVisibility.PRIVATE,
       recording_enabled: formValue.recording_enabled || false,
@@ -210,37 +212,115 @@ export class MeetingFormComponent {
   }
 
   private createMeetingFormGroup(): FormGroup {
-    return new FormGroup({
-      // Basic info (using exact database field names)
-      topic: new FormControl('', [Validators.required]),
-      agenda: new FormControl(''),
-      meeting_type: new FormControl('', [Validators.required]),
+    const defaultDateTime = this.getDefaultStartDateTime();
 
-      // Date/Time fields (helper fields for form, will be combined into start_time)
-      startDate: new FormControl(null, [Validators.required]),
-      startTime: new FormControl('', [Validators.required]),
-      duration: new FormControl(60, [Validators.required]),
-      customDuration: new FormControl(''),
-      timezone: new FormControl(this.getDefaultTimezone(), [Validators.required]),
-      early_join_time: new FormControl(10, [Validators.min(10), Validators.max(60)]),
+    return new FormGroup(
+      {
+        // Basic info (using exact database field names)
+        topic: new FormControl('', [Validators.required]),
+        agenda: new FormControl(''),
+        meeting_type: new FormControl(''),
 
-      // Meeting settings (using exact database field names)
-      show_in_public_calendar: new FormControl(false),
-      recording_enabled: new FormControl(false),
-      transcripts_enabled: new FormControl(false),
-      youtube_enabled: new FormControl(false),
-      zoom_ai_enabled: new FormControl(false),
-      require_ai_summary_approval: new FormControl(false),
-      ai_summary_access: new FormControl('PCC'),
-    });
+        // Date/Time fields (helper fields for form, will be combined into start_time)
+        startDate: new FormControl(defaultDateTime.date, [Validators.required]),
+        startTime: new FormControl(defaultDateTime.time, [Validators.required]),
+        duration: new FormControl(60, [Validators.required]),
+        customDuration: new FormControl(''),
+        timezone: new FormControl(getUserTimezone(), [Validators.required]),
+        early_join_time: new FormControl(10, [Validators.min(10), Validators.max(60)]),
+
+        // Meeting settings (using exact database field names)
+        show_in_public_calendar: new FormControl(false),
+        recording_enabled: new FormControl(false),
+        transcripts_enabled: new FormControl(false),
+        youtube_enabled: new FormControl(false),
+        zoom_ai_enabled: new FormControl(false),
+        require_ai_summary_approval: new FormControl(false),
+        ai_summary_access: new FormControl('PCC'),
+      },
+      { validators: this.futureDateTimeValidator() }
+    );
   }
 
-  private getDefaultTimezone(): string {
-    try {
-      return Intl.DateTimeFormat().resolvedOptions().timeZone;
-    } catch {
-      return 'UTC';
+  private getYesterday(): Date {
+    const yesterday = new Date();
+    yesterday.setDate(yesterday.getDate() - 1);
+    yesterday.setHours(0, 0, 0, 0);
+    return yesterday;
+  }
+
+  private getDefaultStartDateTime(): { date: Date; time: string } {
+    const now = new Date();
+    // Add 1 hour to current time
+    now.setHours(now.getHours() + 1);
+
+    // Round up to next 15 minutes
+    const minutes = now.getMinutes();
+    const roundedMinutes = Math.ceil(minutes / 15) * 15;
+    now.setMinutes(roundedMinutes);
+    now.setSeconds(0);
+    now.setMilliseconds(0);
+
+    // If rounding pushed us to next hour, adjust accordingly
+    if (roundedMinutes === 60) {
+      now.setHours(now.getHours() + 1);
+      now.setMinutes(0);
     }
+
+    // Format time to 12-hour format (HH:MM AM/PM)
+    const hours = now.getHours();
+    const mins = now.getMinutes();
+    const period = hours >= 12 ? 'PM' : 'AM';
+    let displayHours = hours > 12 ? hours - 12 : hours;
+    if (displayHours === 0) {
+      displayHours = 12;
+    }
+    const timeString = `${displayHours.toString().padStart(2, '0')}:${mins.toString().padStart(2, '0')} ${period}`;
+
+    return {
+      date: new Date(now),
+      time: timeString,
+    };
+  }
+
+  private futureDateTimeValidator(): ValidatorFn {
+    return (control: AbstractControl): ValidationErrors | null => {
+      const formGroup = control as FormGroup;
+      const startDate = formGroup.get('startDate')?.value;
+      const startTime = formGroup.get('startTime')?.value;
+      const timezone = formGroup.get('timezone')?.value;
+
+      if (!startDate || !startTime || !timezone) {
+        return null; // Don't validate if values are not set
+      }
+
+      // Combine the date and time
+      const combinedDateTime = this.combineDateTime(startDate, startTime);
+      if (!combinedDateTime) {
+        return null; // Invalid time format
+      }
+
+      // Parse the combined datetime
+      const selectedDate = new Date(combinedDateTime);
+
+      // Get current time in the selected timezone
+      const now = new Date();
+
+      // Create timezone-aware date strings for comparison
+      const selectedTimeString = selectedDate.toLocaleString('en-US', { timeZone: timezone });
+      const currentTimeString = now.toLocaleString('en-US', { timeZone: timezone });
+
+      // Convert back to Date objects for comparison
+      const selectedTimeInZone = new Date(selectedTimeString);
+      const currentTimeInZone = new Date(currentTimeString);
+
+      // Check if the selected time is in the future
+      if (selectedTimeInZone <= currentTimeInZone) {
+        return { futureDateTime: true };
+      }
+
+      return null;
+    };
   }
 
   private initializeForm(): void {
@@ -254,17 +334,26 @@ export class MeetingFormComponent {
       if (meeting.start_time) {
         const date = new Date(meeting.start_time);
         startDate = date;
-        startTime = date.toTimeString().slice(0, 5); // HH:MM format
+
+        // Convert to 12-hour format for display
+        const hours = date.getHours();
+        const minutes = date.getMinutes();
+        const period = hours >= 12 ? 'PM' : 'AM';
+        let displayHours = hours > 12 ? hours - 12 : hours;
+        if (displayHours === 0) {
+          displayHours = 12;
+        }
+        startTime = `${displayHours.toString().padStart(2, '0')}:${minutes.toString().padStart(2, '0')} ${period}`;
       }
 
       this.form().patchValue({
         topic: meeting.topic || '',
         agenda: meeting.agenda || '',
-        meeting_type: meeting.meeting_type || '',
+        meeting_type: meeting.meeting_type || 'None',
         startDate: startDate,
         startTime: startTime,
         duration: meeting.duration || 60,
-        timezone: meeting.timezone || this.getDefaultTimezone(),
+        timezone: meeting.timezone || getUserTimezone(),
         early_join_time: meeting.early_join_time || 5,
         show_in_public_calendar: meeting.show_in_public_calendar || false,
         recording_enabled: meeting.recording_enabled || false,

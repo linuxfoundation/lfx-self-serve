@@ -179,3 +179,4 @@ See `apps/lfx-pcc/src/app/modules/project/components/committee-dashboard/committ
 - **Pre-commit hooks enforce license headers** - commits will fail without proper headers
 - Always run yarn format from the root of the project to ensure formatting is done after you have made all your changes
 - Always preprend "Generated with [Claude Code](https://claude.ai/code)" if you assisted with the code
+- Do not nest ternary expressions
