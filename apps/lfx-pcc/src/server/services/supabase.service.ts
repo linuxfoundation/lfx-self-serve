@@ -5,11 +5,13 @@ import {
   Committee,
   CommitteeMember,
   CreateCommitteeMemberRequest,
+  CreateMeetingRequest,
   Meeting,
   MeetingParticipant,
   ObjectPermission,
   ProjectSearchResult,
   RecentActivity,
+  UpdateMeetingRequest,
   UserPermissions,
 } from '@lfx-pcc/shared/interfaces';
 import dotenv from 'dotenv';
@@ -677,6 +679,69 @@ export class SupabaseService {
     }
 
     return await response.json();
+  }
+
+  public async createMeeting(meeting: CreateMeetingRequest): Promise<Meeting> {
+    const url = `${this.baseUrl}/meetings`;
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(meeting),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to create meeting: ${response.status} ${response.statusText}: ${await response.text()}`);
+    }
+
+    const data = await response.json();
+    return data?.[0] || data;
+  }
+
+  public async updateMeeting(id: string, meeting: UpdateMeetingRequest): Promise<Meeting> {
+    const params = new URLSearchParams({
+      id: `eq.${id}`,
+    });
+    const url = `${this.baseUrl}/meetings?${params.toString()}`;
+
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: this.getHeaders(),
+      body: JSON.stringify(meeting),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to update meeting: ${response.status} ${response.statusText}: ${await response.text()}`);
+    }
+
+    const data = await response.json();
+    return data?.[0] || data;
+  }
+
+  public async getMeetingById(id: string): Promise<Meeting> {
+    const params = new URLSearchParams({
+      id: `eq.${id}`,
+    });
+    const url = `${this.baseUrl}/meetings_with_committees?${params.toString()}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.getHeaders(),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch meeting: ${response.status} ${response.statusText}: ${await response.text()}`);
+    }
+
+    const meetings = await response.json();
+    if (!meetings || meetings.length === 0) {
+      throw new Error(`Meeting with ID ${id} not found`);
+    }
+
+    return meetings[0];
   }
 
   private async fallbackProjectSearch(query: string): Promise<ProjectSearchResult[]> {

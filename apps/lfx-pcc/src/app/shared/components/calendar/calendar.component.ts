@@ -24,6 +24,8 @@ export class CalendarComponent {
   public readonly showButtonBar = input<boolean>(false);
   public readonly dateFormat = input<string>('mm/dd/yy');
   public readonly size = input<'small' | 'large'>('small');
+  public readonly minDate = input<Date | null>(null);
+  public readonly maxDate = input<Date | null>(null);
 
   // Events
   public readonly onSelect = output<any>();

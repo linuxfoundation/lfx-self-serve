@@ -1,10 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-export enum MeetingVisibility {
-  PUBLIC = 'public',
-  PRIVATE = 'private',
-  RESTRICTED = 'restricted',
+import { MeetingVisibility, MeetingType, RecurrenceType } from '../enums';
+
+export interface MeetingRecurrence {
+  end_date_time?: string;
+  end_times?: number;
+  monthly_day?: number;
+  monthly_week?: number;
+  monthly_week_day?: number;
+  repeat_interval: number;
+  type: RecurrenceType;
+  weekly_days?: string;
 }
 
 export interface MeetingCommittee {
@@ -33,6 +40,7 @@ export interface Meeting {
   id: string;
   created_at: string;
   project_id: number;
+  user_id?: string;
   visibility: MeetingVisibility | null;
   youtube_enabled: boolean | null;
   zoom_ai_enabled: boolean | null;
@@ -41,15 +49,57 @@ export interface Meeting {
   timezone: string | null;
   meeting_type: string | null;
   recording_access: string | null;
-  recurrence: Record<string, any> | null;
+  recurrence: MeetingRecurrence | null;
   topic: string | null;
   agenda: string | null;
   start_time: string | null;
   end_time: string | null;
   duration: number | null;
   status: string | null;
+  early_join_time?: number;
+  show_in_public_calendar?: boolean;
+  require_ai_summary_approval?: boolean;
+  ai_summary_access?: string;
   meeting_committees: MeetingCommittee[] | null;
   individual_participants_count: number;
   committee_members_count: number;
   committees: string[];
+}
+
+export interface CreateMeetingRequest {
+  project_id: string;
+  topic: string;
+  agenda?: string;
+  start_time: string;
+  duration: number;
+  timezone: string;
+  meeting_type: string;
+  early_join_time?: number;
+  visibility?: MeetingVisibility;
+  recording_enabled?: boolean;
+  transcripts_enabled?: boolean;
+  youtube_enabled?: boolean;
+  zoom_ai_enabled?: boolean;
+  require_ai_summary_approval?: boolean;
+  ai_summary_access?: string;
+  recurrence?: MeetingRecurrence;
+}
+
+export interface UpdateMeetingRequest {
+  project_id: string;
+  topic: string;
+  agenda?: string;
+  start_time: string;
+  duration: number;
+  timezone: string;
+  meeting_type: string;
+  early_join_time?: number;
+  show_in_public_calendar?: boolean;
+  recording_enabled?: boolean;
+  transcripts_enabled?: boolean;
+  youtube_enabled?: boolean;
+  zoom_ai_enabled?: boolean;
+  require_ai_summary_approval?: boolean;
+  ai_summary_access?: string;
+  recurrence?: MeetingRecurrence;
 }
