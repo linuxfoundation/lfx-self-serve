@@ -231,8 +231,15 @@ export class ProjectComponent {
     // Filter meetings that have a start time (scheduled meetings)
     const scheduledMeetings = meetings.filter((m) => m.start_time);
 
-    // Count meetings that were completed (have both start and end time)
-    const completedMeetings = scheduledMeetings.filter((m) => m.end_time);
+    // Count meetings that were completed (meeting end time has passed)
+    const now = new Date();
+    const completedMeetings = scheduledMeetings.filter((m) => {
+      if (m.start_time && m.duration) {
+        const endTime = new Date(new Date(m.start_time).getTime() + m.duration * 60 * 1000);
+        return endTime < now;
+      }
+      return false;
+    });
 
     const participationRate = scheduledMeetings.length > 0 ? Math.round((completedMeetings.length / scheduledMeetings.length) * 100) : 0;
 

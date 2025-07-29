@@ -124,24 +124,26 @@
     </div>
 
     <!-- Recurrence -->
-    <div>
-      <div class="flex items-center gap-2 mb-1">
-        <label for="recurrence" class="block text-sm font-medium text-gray-700"> Repeat </label>
-        <i
-          class="fa-light fa-info-circle text-gray-400 cursor-help"
-          pTooltip="Set up recurring meetings that repeat daily, weekly, monthly, or on weekdays"
-          tooltipPosition="right"
-          tooltipStyleClass="text-xs max-w-xs"></i>
+    @if (!isEditingSingleOccurrence) {
+      <div>
+        <div class="flex items-center gap-2 mb-1">
+          <label for="recurrence" class="block text-sm font-medium text-gray-700"> Repeat </label>
+          <i
+            class="fa-light fa-info-circle text-gray-400 cursor-help"
+            pTooltip="Set up recurring meetings that repeat daily, weekly, monthly, or on weekdays"
+            tooltipPosition="right"
+            tooltipStyleClass="text-xs max-w-xs"></i>
+        </div>
+        <lfx-select
+          size="small"
+          [form]="form()"
+          control="recurrence"
+          [options]="recurrenceOptions()"
+          placeholder="Select recurrence"
+          styleClass="w-full"
+          id="recurrence"></lfx-select>
       </div>
-      <lfx-select
-        size="small"
-        [form]="form()"
-        control="recurrence"
-        [options]="recurrenceOptions()"
-        placeholder="Select recurrence"
-        styleClass="w-full"
-        id="recurrence"></lfx-select>
-    </div>
+    }
 
     <!-- Early Join Time -->
     <div>
@@ -165,102 +167,135 @@
   </div>
 
   <!-- Meeting Settings Section -->
-  <div class="flex flex-col gap-3">
-    <h3 class="text-lg font-medium text-gray-900">Meeting Settings</h3>
+  @if (!isEditingSingleOccurrence) {
+    <div class="flex flex-col gap-3">
+      <h3 class="text-lg font-medium text-gray-900">Meeting Settings</h3>
 
-    <!-- Public Calendar Visibility -->
-    <div class="flex flex-col gap-2">
-      <div class="flex items-center gap-2">
-        <lfx-toggle size="small" [form]="form()" control="show_in_public_calendar" label="Show in Public Calendar" id="public-calendar-toggle"></lfx-toggle>
-        <i
-          class="fa-light fa-info-circle text-gray-400 cursor-help"
-          pTooltip="When enabled, this meeting will be visible on the project's public calendar"
-          tooltipPosition="right"
-          tooltipStyleClass="text-xs max-w-xs"></i>
-      </div>
-    </div>
-
-    <!-- Recording Settings -->
-    <div class="flex flex-col gap-2">
-      <div class="flex items-center gap-2">
-        <lfx-toggle size="small" [form]="form()" control="recording_enabled" label="Enable Recording" id="recording-toggle"></lfx-toggle>
-        <i
-          class="fa-light fa-info-circle text-gray-400 cursor-help"
-          pTooltip="Record the meeting for later viewing. Required for transcripts and automatic YouTube uploads"
-          tooltipPosition="right"
-          tooltipStyleClass="text-xs max-w-xs"></i>
-      </div>
-
-      <!-- Recording-dependent features -->
-      @if (form().get('recording_enabled')?.value === true) {
+      <!-- Public Calendar Visibility -->
+      <div class="flex flex-col gap-2">
         <div class="flex items-center gap-2">
-          <lfx-toggle size="small" [form]="form()" control="transcripts_enabled" label="Enable Transcripts" id="transcripts-toggle"></lfx-toggle>
+          <lfx-toggle size="small" [form]="form()" control="show_in_public_calendar" label="Show in Public Calendar" id="public-calendar-toggle"></lfx-toggle>
           <i
             class="fa-light fa-info-circle text-gray-400 cursor-help"
-            pTooltip="Generate automated transcripts from the meeting recording"
+            pTooltip="When enabled, this meeting will be visible on the project's public calendar"
+            tooltipPosition="right"
+            tooltipStyleClass="text-xs max-w-xs"></i>
+        </div>
+      </div>
+
+      <!-- Restricted Meeting -->
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center gap-2">
+          <lfx-toggle size="small" [form]="form()" control="restricted" label="Restricted Meeting" id="restricted-toggle"></lfx-toggle>
+          <i
+            class="fa-light fa-info-circle text-gray-400 cursor-help"
+            pTooltip="When enabled, this meeting will have restricted access and only invited participants can join"
+            tooltipPosition="right"
+            tooltipStyleClass="text-xs max-w-xs"></i>
+        </div>
+      </div>
+
+      <!-- Recording Settings -->
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center gap-2">
+          <lfx-toggle size="small" [form]="form()" control="recording_enabled" label="Enable Recording" id="recording-toggle"></lfx-toggle>
+          <i
+            class="fa-light fa-info-circle text-gray-400 cursor-help"
+            pTooltip="Record the meeting for later viewing. Required for transcripts and automatic YouTube uploads"
             tooltipPosition="right"
             tooltipStyleClass="text-xs max-w-xs"></i>
         </div>
 
-        <div class="flex items-center gap-2">
-          <lfx-toggle size="small" [form]="form()" control="youtube_enabled" label="Enable YouTube Upload" id="youtube-toggle"></lfx-toggle>
-          <i
-            class="fa-light fa-info-circle text-gray-400 cursor-help"
-            pTooltip="Automatically upload the meeting recording to YouTube after the meeting ends"
-            tooltipPosition="right"
-            tooltipStyleClass="text-xs max-w-xs"></i>
-        </div>
-      }
-    </div>
-
-    <!-- Zoom AI Settings -->
-    <div class="flex flex-col gap-2">
-      <div class="flex items-center gap-2">
-        <lfx-toggle size="small" [form]="form()" control="zoom_ai_enabled" label="Enable Zoom AI" id="zoom-ai-toggle"></lfx-toggle>
-        <i
-          class="fa-light fa-info-circle text-gray-400 cursor-help"
-          pTooltip="Use Zoom's AI features to generate meeting summaries and insights"
-          tooltipPosition="right"
-          tooltipStyleClass="text-xs max-w-xs"></i>
-      </div>
-
-      <!-- Zoom AI dependent features -->
-      @if (form().get('zoom_ai_enabled')?.value === true) {
-        <div class="flex items-center gap-2">
-          <lfx-toggle
-            size="small"
-            [form]="form()"
-            control="require_ai_summary_approval"
-            label="Require AI Summary Approval"
-            id="ai-approval-toggle"></lfx-toggle>
-          <i
-            class="fa-light fa-info-circle text-gray-400 cursor-help"
-            pTooltip="Require manual review and approval before publishing AI-generated summaries"
-            tooltipPosition="right"
-            tooltipStyleClass="text-xs max-w-xs"></i>
-        </div>
-
-        <div>
-          <div class="flex items-center gap-2 mb-1">
-            <label for="ai-summary-access" class="block text-sm font-medium text-gray-700"> AI Summary Access </label>
+        <!-- Recording-dependent features -->
+        @if (form().get('recording_enabled')?.value === true) {
+          <div class="flex items-center gap-2">
+            <lfx-toggle size="small" [form]="form()" control="transcripts_enabled" label="Enable Transcripts" id="transcripts-toggle"></lfx-toggle>
             <i
               class="fa-light fa-info-circle text-gray-400 cursor-help"
-              pTooltip="Control who can access the AI-generated meeting summaries"
+              pTooltip="Generate automated transcripts from the meeting recording"
               tooltipPosition="right"
               tooltipStyleClass="text-xs max-w-xs"></i>
           </div>
-          <lfx-select
-            size="small"
-            [form]="form()"
-            control="ai_summary_access"
-            [options]="aiSummaryAccessOptions"
-            placeholder="Select access level"
-            styleClass="w-full"
-            id="ai-summary-access"></lfx-select>
+
+          <div class="flex items-center gap-2">
+            <lfx-toggle size="small" [form]="form()" control="youtube_enabled" label="Enable YouTube Upload" id="youtube-toggle"></lfx-toggle>
+            <i
+              class="fa-light fa-info-circle text-gray-400 cursor-help"
+              pTooltip="Automatically upload the meeting recording to YouTube after the meeting ends"
+              tooltipPosition="right"
+              tooltipStyleClass="text-xs max-w-xs"></i>
+          </div>
+
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <label for="recording-access" class="block text-sm font-medium text-gray-700">Recording Access</label>
+              <i
+                class="fa-light fa-info-circle text-gray-400 cursor-help"
+                pTooltip="Control who can access the meeting recordings"
+                tooltipPosition="right"
+                tooltipStyleClass="text-xs max-w-xs"></i>
+            </div>
+            <lfx-select
+              size="small"
+              [form]="form()"
+              control="recording_access"
+              [options]="recordingAccessOptions"
+              id="recording-access"
+              placeholder="Select recording access level">
+            </lfx-select>
+          </div>
+        }
+      </div>
+
+      <!-- Zoom AI Settings -->
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center gap-2">
+          <lfx-toggle size="small" [form]="form()" control="zoom_ai_enabled" label="Enable Zoom AI" id="zoom-ai-toggle"></lfx-toggle>
+          <i
+            class="fa-light fa-info-circle text-gray-400 cursor-help"
+            pTooltip="Use Zoom's AI features to generate meeting summaries and insights"
+            tooltipPosition="right"
+            tooltipStyleClass="text-xs max-w-xs"></i>
         </div>
-      }
+
+        <!-- Zoom AI dependent features -->
+        @if (form().get('zoom_ai_enabled')?.value === true) {
+          <div class="flex items-center gap-2">
+            <lfx-toggle
+              size="small"
+              [form]="form()"
+              control="require_ai_summary_approval"
+              label="Require AI Summary Approval"
+              id="ai-approval-toggle"></lfx-toggle>
+            <i
+              class="fa-light fa-info-circle text-gray-400 cursor-help"
+              pTooltip="Require manual review and approval before publishing AI-generated summaries"
+              tooltipPosition="right"
+              tooltipStyleClass="text-xs max-w-xs"></i>
+          </div>
+
+          <div>
+            <div class="flex items-center gap-2 mb-1">
+              <label for="ai-summary-access" class="block text-sm font-medium text-gray-700"> AI Summary Access </label>
+              <i
+                class="fa-light fa-info-circle text-gray-400 cursor-help"
+                pTooltip="Control who can access the AI-generated meeting summaries"
+                tooltipPosition="right"
+                tooltipStyleClass="text-xs max-w-xs"></i>
+            </div>
+            <lfx-select
+              size="small"
+              [form]="form()"
+              control="ai_summary_access"
+              [options]="aiSummaryAccessOptions"
+              placeholder="Select access level"
+              styleClass="w-full"
+              id="ai-summary-access"></lfx-select>
+          </div>
+        }
+      </div>
     </div>
-  </div>
+  }
 
   <!-- Form Actions -->
   <div class="flex justify-end gap-3 pt-6 border-t">

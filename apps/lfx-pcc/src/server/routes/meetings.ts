@@ -85,6 +85,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const meetingId = req.params['id'];
     const meetingData = req.body;
+    const { editType } = req.query;
 
     if (!meetingId) {
       return res.status(400).json({
@@ -93,11 +94,19 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
       });
     }
 
+    // Validate editType for recurring meetings
+    if (editType && !['single', 'future'].includes(editType as string)) {
+      return res.status(400).json({
+        error: 'Edit type must be "single" or "future"',
+        code: 'INVALID_EDIT_TYPE',
+      });
+    }
+
     // Remove fields that shouldn't be updated directly
     delete meetingData.id;
     delete meetingData.created_at;
 
-    const meeting = await supabaseService.updateMeeting(meetingId, meetingData);
+    const meeting = await supabaseService.updateMeeting(meetingId, meetingData, editType as 'single' | 'future');
 
     return res.json(meeting);
   } catch (error) {

@@ -4,7 +4,6 @@
 export enum MeetingVisibility {
   PUBLIC = 'public',
   PRIVATE = 'private',
-  RESTRICTED = 'restricted',
 }
 
 export enum MeetingType {

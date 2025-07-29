@@ -1,0 +1,32 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="recurring-meeting-edit-options">
+  <div class="mb-4">
+    <p class="text-gray-700">This is a recurring meeting. What would you like to edit?</p>
+  </div>
+
+  <form [formGroup]="editForm" class="space-y-4">
+    <div class="flex items-start gap-3">
+      <lfx-radio-button [form]="editForm" control="editType" name="editType" value="single" inputId="edit-single"> </lfx-radio-button>
+      <div class="flex-1">
+        <label for="edit-single" class="font-medium text-gray-900 cursor-pointer">Edit only this occurrence</label>
+        <div class="text-sm text-gray-600 mt-1">Changes will apply only to this specific meeting instance.</div>
+      </div>
+    </div>
+
+    <div class="flex items-start gap-3">
+      <lfx-radio-button [form]="editForm" control="editType" name="editType" value="future" inputId="edit-future"> </lfx-radio-button>
+      <div class="flex-1">
+        <label for="edit-future" class="font-medium text-gray-900 cursor-pointer">Edit this and all future occurrences</label>
+        <div class="text-sm text-gray-600 mt-1">Changes will apply to this meeting and all future meetings in the series.</div>
+      </div>
+    </div>
+  </form>
+
+  <!-- Action Buttons -->
+  <div class="flex justify-end gap-3 mt-6">
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (click)="onCancel()"> </lfx-button>
+    <lfx-button label="Continue" severity="primary" size="small" icon="fa-light fa-arrow-right" (click)="onConfirm()"> </lfx-button>
+  </div>
+</div>

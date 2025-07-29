@@ -181,3 +181,4 @@ See `apps/lfx-pcc/src/app/modules/project/components/committee-dashboard/committ
 - Always preprend "Generated with [Claude Code](https://claude.ai/code)" if you assisted with the code
 - Do not nest ternary expressions
 - Always run yarn lint before yarn build to validate your linting
+- The JIRA project key for this is LFXV2. All tickets associated to this repo should generally be in there.

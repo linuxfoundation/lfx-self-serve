@@ -16,6 +16,10 @@ import {
 } from '@app/shared/components/meeting-delete-confirmation/meeting-delete-confirmation.component';
 import { MeetingModalComponent } from '@app/shared/components/meeting-modal/meeting-modal.component';
 import { MenuComponent } from '@app/shared/components/menu/menu.component';
+import {
+  RecurringEditOption,
+  RecurringMeetingEditOptionsComponent,
+} from '@app/shared/components/recurring-meeting-edit-options/recurring-meeting-edit-options.component';
 import { SelectButtonComponent } from '@app/shared/components/select-button/select-button.component';
 import { SelectComponent } from '@app/shared/components/select/select.component';
 import { MeetingService } from '@app/shared/services/meeting.service';
@@ -187,9 +191,56 @@ export class MeetingDashboardComponent {
 
   private editMeeting(): void {
     const meeting = this.selectedMeeting();
-    if (meeting) {
-      // TODO: Open edit dialog when form is available
+    if (!meeting) return;
+
+    // Check if it's a recurring meeting
+    if (meeting.recurrence) {
+      // Show recurring edit options dialog first
+      const optionsDialog = this.dialogService.open(RecurringMeetingEditOptionsComponent, {
+        header: 'Edit Recurring Meeting',
+        width: '450px',
+        modal: true,
+        closable: true,
+        dismissableMask: true,
+        data: {
+          meeting: meeting,
+        },
+      });
+
+      optionsDialog.onClose.pipe(take(1)).subscribe((result: RecurringEditOption) => {
+        if (result?.proceed) {
+          // Open the meeting form with the selected edit type
+          this.openMeetingEditForm(meeting, result.editType);
+        }
+      });
+    } else {
+      // For non-recurring meetings, open the form directly
+      this.openMeetingEditForm(meeting, 'single');
     }
+  }
+
+  private openMeetingEditForm(meeting: Meeting, editType: 'single' | 'future'): void {
+    this.dialogService
+      .open(MeetingModalComponent, {
+        header: 'Edit Meeting',
+        width: '600px',
+        modal: true,
+        closable: true,
+        dismissableMask: true,
+        data: {
+          meeting: meeting,
+          meetingId: meeting.id,
+          isEditing: true,
+          editType: editType,
+        },
+      })
+      .onClose.pipe(take(1))
+      .subscribe((updatedMeeting) => {
+        if (updatedMeeting) {
+          this.refreshMeetings();
+          this.selectedMeeting.set(null);
+        }
+      });
   }
 
   private deleteMeeting(): void {
@@ -391,7 +442,8 @@ export class MeetingDashboardComponent {
     return computed(() => {
       return [...this.meetings(), ...this.pastMeetings()].map((meeting): CalendarEvent => {
         const startTime = meeting.start_time ? new Date(meeting.start_time) : new Date();
-        const endTime = meeting.end_time ? new Date(meeting.end_time) : new Date(startTime.getTime() + 60 * 60 * 1000); // Default 1 hour duration
+        const duration = meeting.duration || 60; // Default 1 hour duration
+        const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
 
         // Color coding based on visibility and committee
         let backgroundColor = '#6b7280'; // Default gray for private
@@ -400,9 +452,6 @@ export class MeetingDashboardComponent {
         if (meeting.visibility === 'public') {
           backgroundColor = '#3b82f6'; // Blue for public
           borderColor = '#1d4ed8';
-        } else if (meeting.visibility === 'restricted') {
-          backgroundColor = '#f59e0b'; // Amber for restricted
-          borderColor = '#d97706';
         }
 
         // Create a more informative title
