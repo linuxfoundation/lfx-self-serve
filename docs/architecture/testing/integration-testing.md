@@ -275,7 +275,7 @@ describe('SSR Integration', () => {
     // Verify SSR content
     expect(response.text).toContain('<!DOCTYPE html>');
     expect(response.text).toContain('<app-root');
-    expect(response.text).toContain('LFX Project Control Center');
+    expect(response.text).toContain('LFX Projects Self-Service');
   });
 
   it('should inject auth context into SSR', async () => {
