@@ -4,7 +4,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { CreateMeetingRequest, Meeting, MeetingParticipant, UpdateMeetingRequest } from '@lfx-pcc/shared/interfaces';
-import { catchError, Observable, of, tap } from 'rxjs';
+import { catchError, Observable, of, take, tap } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
