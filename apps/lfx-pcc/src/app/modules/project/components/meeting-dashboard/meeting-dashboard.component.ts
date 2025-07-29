@@ -5,12 +5,15 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, Injector, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { Router } from '@angular/router';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
 import { CardComponent } from '@app/shared/components/card/card.component';
 import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullcalendar.component';
 import { InputTextComponent } from '@app/shared/components/input-text/input-text.component';
 import { MeetingCardComponent } from '@app/shared/components/meeting-card/meeting-card.component';
+import {
+  MeetingDeleteConfirmationComponent,
+  MeetingDeleteResult,
+} from '@app/shared/components/meeting-delete-confirmation/meeting-delete-confirmation.component';
 import { MeetingModalComponent } from '@app/shared/components/meeting-modal/meeting-modal.component';
 import { MenuComponent } from '@app/shared/components/menu/menu.component';
 import { SelectButtonComponent } from '@app/shared/components/select-button/select-button.component';
@@ -19,11 +22,11 @@ import { MeetingService } from '@app/shared/services/meeting.service';
 import { ProjectService } from '@app/shared/services/project.service';
 import { CalendarEvent, Meeting } from '@lfx-pcc/shared/interfaces';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
-import { ConfirmationService, MenuItem } from 'primeng/api';
+import { MenuItem } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import { of } from 'rxjs';
-import { debounceTime, distinctUntilChanged, startWith, tap } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, startWith, take, tap } from 'rxjs/operators';
 
 @Component({
   selector: 'lfx-meeting-dashboard',
@@ -48,15 +51,12 @@ export class MeetingDashboardComponent {
   // Injected services
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
-  private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
-  private readonly router = inject(Router);
   private readonly injector = inject(Injector);
 
   // Class variables with types
   public project: typeof this.projectService.project;
   public selectedMeeting: WritableSignal<Meeting | null>;
-  public isDeleting: WritableSignal<boolean>;
   public searchForm: FormGroup;
   public visibilityFilter: WritableSignal<string | null>;
   public committeeFilter: WritableSignal<string | null>;
@@ -71,7 +71,7 @@ export class MeetingDashboardComponent {
   public publicMeetingsCount: Signal<number>;
   public privateMeetingsCount: Signal<number>;
   public menuItems: MenuItem[];
-  public actionMenuItems: MenuItem[];
+  public actionMenuItems = computed(() => this.initializeActionMenuItems());
   public currentView: WritableSignal<'list' | 'calendar'>;
   public viewOptions: { label: string; value: 'list' | 'calendar' }[];
   public viewForm: FormGroup;
@@ -82,7 +82,6 @@ export class MeetingDashboardComponent {
     // Initialize all class variables
     this.project = this.projectService.project;
     this.selectedMeeting = signal<Meeting | null>(null);
-    this.isDeleting = signal<boolean>(false);
     this.meetingsLoading = signal<boolean>(true);
     this.pastMeetingsLoading = signal<boolean>(true);
     this.meetings = this.initializeMeetings();
@@ -98,7 +97,6 @@ export class MeetingDashboardComponent {
     this.publicMeetingsCount = this.initializePublicMeetingsCount();
     this.privateMeetingsCount = this.initializePrivateMeetingsCount();
     this.menuItems = this.initializeMenuItems();
-    this.actionMenuItems = this.initializeActionMenuItems();
     this.currentView = signal<'list' | 'calendar'>('list');
     this.viewOptions = this.initializeViewOptions();
     this.viewForm = this.initializeViewForm();
@@ -146,7 +144,8 @@ export class MeetingDashboardComponent {
           isEditing: false, // This triggers form mode
         },
       })
-      .onClose.subscribe((meeting) => {
+      .onClose.pipe(take(1))
+      .subscribe((meeting) => {
         if (meeting) {
           this.refreshMeetings();
         }
@@ -173,7 +172,7 @@ export class MeetingDashboardComponent {
       dismissableMask: true,
       data: {
         meeting: meeting,
-        actionMenuItems: this.actionMenuItems,
+        actionMenuItems: this.actionMenuItems(),
       },
     });
   }
@@ -197,16 +196,24 @@ export class MeetingDashboardComponent {
     const meeting = this.selectedMeeting();
     if (!meeting) return;
 
-    this.confirmationService.confirm({
-      message: `Are you sure you want to delete this meeting? This action cannot be undone.`,
+    const dialogRef = this.dialogService.open(MeetingDeleteConfirmationComponent, {
       header: 'Delete Meeting',
-      acceptLabel: 'Delete',
-      rejectLabel: 'Cancel',
-      acceptButtonStyleClass: 'p-button-danger p-button-sm',
-      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
-      accept: () => {
-        // TODO: Implement delete when API endpoint is available
+      width: '500px',
+      modal: true,
+      closable: true,
+      data: {
+        meeting,
       },
+    });
+
+    dialogRef.onClose.subscribe((result: MeetingDeleteResult | undefined) => {
+      if (result?.confirmed) {
+        // Refresh the meetings list since deletion was successful
+        this.refreshMeetings();
+        this.selectedMeeting.set(null);
+      } else {
+        this.selectedMeeting.set(null);
+      }
     });
   }
 
@@ -325,17 +332,25 @@ export class MeetingDashboardComponent {
   }
 
   private initializeActionMenuItems(): MenuItem[] {
-    return [
+    const baseItems: MenuItem[] = [
       {
         label: 'View',
         icon: 'fa-light fa-eye',
         command: () => this.viewMeeting(),
       },
-      {
+    ];
+
+    // Only add Edit option for upcoming meetings
+    if (this.meetingListView() !== 'past') {
+      baseItems.push({
         label: 'Edit',
         icon: 'fa-light fa-edit',
         command: () => this.editMeeting(),
-      },
+      });
+    }
+
+    // Add separator and delete option
+    baseItems.push(
       {
         separator: true,
       },
@@ -343,10 +358,12 @@ export class MeetingDashboardComponent {
         label: 'Delete',
         icon: 'fa-light fa-trash',
         styleClass: 'text-red-500',
-        disabled: this.isDeleting(),
+        disabled: false,
         command: () => this.deleteMeeting(),
-      },
-    ];
+      }
+    );
+
+    return baseItems;
   }
 
   private initializePublicMeetingsCount(): Signal<number> {

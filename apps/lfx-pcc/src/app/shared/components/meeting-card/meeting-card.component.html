@@ -26,7 +26,7 @@
     }
   </div>
   <lfx-button
-    icon="fa-light fa-ellipsis-vertical"
+    [icon]="loading() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'"
     [text]="true"
     [rounded]="true"
     size="small"

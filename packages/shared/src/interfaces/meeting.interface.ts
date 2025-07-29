@@ -103,3 +103,7 @@ export interface UpdateMeetingRequest {
   ai_summary_access?: string;
   recurrence?: MeetingRecurrence;
 }
+
+export interface DeleteMeetingRequest {
+  deleteType?: 'single' | 'series';
+}
