@@ -22,6 +22,7 @@ import {
 } from '@app/shared/components/recurring-meeting-edit-options/recurring-meeting-edit-options.component';
 import { SelectButtonComponent } from '@app/shared/components/select-button/select-button.component';
 import { SelectComponent } from '@app/shared/components/select/select.component';
+import { ParticipantManagementModalComponent } from '@app/shared/components/participant-management-modal/participant-management-modal.component';
 import { MeetingService } from '@app/shared/services/meeting.service';
 import { ProjectService } from '@app/shared/services/project.service';
 import { CalendarEvent, Meeting } from '@lfx-pcc/shared/interfaces';
@@ -167,6 +168,18 @@ export class MeetingDashboardComponent {
     }
   }
 
+  public refreshMeetings(): void {
+    this.meetingsLoading.set(true);
+    this.pastMeetingsLoading.set(true);
+    runInInjectionContext(this.injector, () => {
+      this.meetings = this.initializeMeetings();
+      this.pastMeetings = this.initializePastMeetings();
+      this.filteredMeetings = this.initializeFilteredMeetings();
+      this.publicMeetingsCount = this.initializePublicMeetingsCount();
+      this.privateMeetingsCount = this.initializePrivateMeetingsCount();
+    });
+  }
+
   private openMeetingModal(meeting: Meeting): void {
     this.dialogService.open(MeetingModalComponent, {
       header: meeting.topic || 'Meeting Details',
@@ -266,6 +279,30 @@ export class MeetingDashboardComponent {
         this.selectedMeeting.set(null);
       }
     });
+  }
+
+  private manageParticipants(): void {
+    const meeting = this.selectedMeeting();
+    if (!meeting) return;
+
+    this.dialogService
+      .open(ParticipantManagementModalComponent, {
+        header: 'Manage Participants',
+        width: '700px',
+        modal: true,
+        closable: true,
+        dismissableMask: true,
+        data: {
+          meetingId: meeting.id,
+        },
+      })
+      .onClose.pipe(take(1))
+      .subscribe((result) => {
+        if (result?.participantsModified) {
+          // Refresh meetings to update participant counts
+          this.refreshMeetings();
+        }
+      });
   }
 
   // Private initialization methods
@@ -400,6 +437,13 @@ export class MeetingDashboardComponent {
       });
     }
 
+    // Add Manage Participants option
+    baseItems.push({
+      label: 'Manage Participants',
+      icon: 'fa-light fa-users',
+      command: () => this.manageParticipants(),
+    });
+
     // Add separator and delete option
     baseItems.push(
       {
@@ -477,18 +521,6 @@ export class MeetingDashboardComponent {
           },
         };
       });
-    });
-  }
-
-  private refreshMeetings(): void {
-    this.meetingsLoading.set(true);
-    this.pastMeetingsLoading.set(true);
-    runInInjectionContext(this.injector, () => {
-      this.meetings = this.initializeMeetings();
-      this.pastMeetings = this.initializePastMeetings();
-      this.filteredMeetings = this.initializeFilteredMeetings();
-      this.publicMeetingsCount = this.initializePublicMeetingsCount();
-      this.privateMeetingsCount = this.initializePrivateMeetingsCount();
     });
   }
 }

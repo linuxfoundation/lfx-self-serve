@@ -78,6 +78,7 @@
                         [meeting]="meeting"
                         [actionMenuItems]="actionMenuItems()"
                         (menuToggle)="onMenuToggle($event)"
+                        (participantsModified)="refreshMeetings()"
                         [pastMeeting]="meetingListView() === 'past'"
                         pAnimateOnScroll
                         class="animate-delay-2000"

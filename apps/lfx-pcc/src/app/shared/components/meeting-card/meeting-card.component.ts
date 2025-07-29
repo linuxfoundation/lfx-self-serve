@@ -8,6 +8,7 @@ import { RouterLink } from '@angular/router';
 import { BadgeComponent } from '@app/shared/components/badge/badge.component';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
 import { MenuComponent } from '@app/shared/components/menu/menu.component';
+import { ParticipantManagementModalComponent } from '@app/shared/components/participant-management-modal/participant-management-modal.component';
 import { MeetingTimePipe } from '@app/shared/pipes/meeting-time.pipe';
 import { CommitteeService } from '@app/shared/services/committee.service';
 import { MeetingService } from '@app/shared/services/meeting.service';
@@ -15,8 +16,9 @@ import { ProjectService } from '@app/shared/services/project.service';
 import { Meeting, MeetingParticipant } from '@lfx-pcc/shared/interfaces';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { MenuItem } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, finalize, map, of } from 'rxjs';
+import { catchError, combineLatest, finalize, map, of, take } from 'rxjs';
 
 import { AvatarComponent } from '../avatar/avatar.component';
 
@@ -31,6 +33,7 @@ export class MeetingCardComponent {
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
   private readonly committeeService = inject(CommitteeService);
+  private readonly dialogService = inject(DialogService);
   private readonly injector = inject(Injector);
 
   public readonly meeting = input.required<Meeting>();
@@ -44,6 +47,7 @@ export class MeetingCardComponent {
   public participantsLabel: Signal<string> = this.initParticipantsLabel();
 
   public readonly menuToggle = output<{ event: Event; meeting: Meeting; menuComponent: MenuComponent }>();
+  public readonly participantsModified = output<void>();
   public readonly project = this.projectService.project;
 
   public onMenuToggle(event: Event, menuComponent: MenuComponent): void {
@@ -53,11 +57,31 @@ export class MeetingCardComponent {
 
   public onParticipantsToggle(event: Event): void {
     event.stopPropagation();
+
     if (this.meetingParticipantCount() === 0) {
-      // TODO: Add a modal to add participants
+      // Open participant management modal for adding participants
+      this.dialogService
+        .open(ParticipantManagementModalComponent, {
+          header: 'Manage Participants',
+          width: '700px',
+          modal: true,
+          closable: false,
+          dismissableMask: true,
+          data: {
+            meetingId: this.meeting().id,
+            addParticipant: true,
+          },
+        })
+        .onClose.pipe(take(1))
+        .subscribe((result) => {
+          if (result?.participantsModified) {
+            this.participantsModified.emit();
+          }
+        });
       return;
     }
 
+    // Show/hide inline participants display
     this.participantsLoading.set(true);
     if (!this.showParticipants()) {
       const queries = combineLatest([

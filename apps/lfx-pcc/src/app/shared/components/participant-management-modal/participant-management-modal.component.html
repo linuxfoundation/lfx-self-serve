@@ -1,0 +1,40 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+<!-- Generated with Claude Code -->
+
+<div class="flex flex-col gap-6">
+  <lfx-inplace
+    (onDeactivate)="onParticipantAdded()"
+    (onActivate)="onToggleAddParticipant()"
+    [active]="addParticipantActive()"
+    class="w-full"
+    styleClass="w-full">
+    <div slot="display">
+      <div class="flex justify-end">
+        <lfx-button label="Add Participant" icon="fa-light fa-plus" severity="primary" size="small"> </lfx-button>
+      </div>
+    </div>
+    <div slot="content">
+      <lfx-add-participant-form
+        [meetingId]="meetingId"
+        (participantAdded)="onParticipantAdded()"
+        (cancel)="onToggleAddParticipant()"></lfx-add-participant-form>
+    </div>
+  </lfx-inplace>
+
+  <!-- Participants List -->
+  <lfx-card header="Meeting Participants">
+    @if (loading()) {
+      <div class="flex justify-center items-center py-8">
+        <i class="fa-light fa-spinner-third fa-spin text-2xl text-blue-600"></i>
+      </div>
+    } @else {
+      <lfx-participant-list [participants]="participants() || []" [meetingId]="meetingId" (participantDeleted)="onParticipantDeleted()"></lfx-participant-list>
+    }
+  </lfx-card>
+
+  <!-- Modal Actions -->
+  <div class="flex justify-end gap-2 pt-4 border-t border-gray-200">
+    <lfx-button label="Close" severity="secondary" size="small" type="button" (onClick)="onClose()"></lfx-button>
+  </div>
+</div>
