@@ -699,7 +699,12 @@ export class SupabaseService {
     return data?.[0] || data;
   }
 
-  public async updateMeeting(id: string, meeting: UpdateMeetingRequest): Promise<Meeting> {
+  public async updateMeeting(id: string, meeting: UpdateMeetingRequest, editType?: 'single' | 'future'): Promise<Meeting> {
+    // Note: editType parameter is reserved for future recurrence handling implementation
+    // Currently, all updates modify the entire meeting record regardless of editType
+    // 'future' type will update this occurrence and all future occurrences in the series
+    const actualEditType = editType || 'single';
+
     const params = new URLSearchParams({
       id: `eq.${id}`,
     });
@@ -713,7 +718,8 @@ export class SupabaseService {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to update meeting: ${response.status} ${response.statusText}: ${await response.text()}`);
+      const errorMessage = `Failed to update meeting (${actualEditType}): ${response.status} ${response.statusText}: ${await response.text()}`;
+      throw new Error(errorMessage);
     }
 
     const data = await response.json();

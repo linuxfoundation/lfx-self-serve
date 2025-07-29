@@ -16,7 +16,7 @@ import { MeetingService } from '@app/shared/services/meeting.service';
 import { ProjectService } from '@app/shared/services/project.service';
 import { getUserTimezone, TIMEZONES } from '@lfx-pcc/shared/constants';
 import { MeetingType, MeetingVisibility, RecurrenceType } from '@lfx-pcc/shared/enums';
-import { CreateMeetingRequest, MeetingRecurrence } from '@lfx-pcc/shared/interfaces';
+import { CreateMeetingRequest, MeetingRecurrence, UpdateMeetingRequest } from '@lfx-pcc/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -56,6 +56,9 @@ export class MeetingFormComponent {
   public isEditing = computed(() => this.config.data?.isEditing || false);
   public meetingId = computed(() => this.config.data?.meetingId);
   public meeting = computed(() => this.config.data?.meeting);
+  public isRecurringMeeting: boolean = !!this.config.data?.meeting?.recurrence;
+  public editType: 'single' | 'future' = this.config.data?.editType || 'single';
+  public isEditingSingleOccurrence: boolean = this.editType === 'single' && this.isRecurringMeeting;
 
   // Duration options for the select dropdown
   public durationOptions = [
@@ -95,6 +98,13 @@ export class MeetingFormComponent {
   public aiSummaryAccessOptions = [
     { label: 'PCC', value: 'PCC' },
     { label: 'PCC & Individuals', value: 'PCC & Individuals' },
+  ];
+
+  // Recording Access options
+  public recordingAccessOptions = [
+    { label: 'Members', value: 'Members' },
+    { label: 'Public', value: 'Public' },
+    { label: 'Restricted', value: 'Restricted' },
   ];
 
   // Recurrence options (computed dynamically based on selected date)
@@ -150,8 +160,8 @@ export class MeetingFormComponent {
     // Generate recurrence object if needed
     const recurrenceObject = this.generateRecurrenceObject(formValue.recurrence, formValue.startDate);
 
-    // Create meeting data using CreateMeetingRequest interface
-    const meetingData: CreateMeetingRequest = {
+    // Create meeting data
+    const baseMeetingData = {
       project_id: project.id,
       topic: formValue.topic,
       agenda: formValue.agenda || '',
@@ -167,10 +177,13 @@ export class MeetingFormComponent {
       zoom_ai_enabled: formValue.zoom_ai_enabled || false,
       require_ai_summary_approval: formValue.require_ai_summary_approval || false,
       ai_summary_access: formValue.ai_summary_access || 'PCC',
+      recording_access: formValue.recording_access || 'Members',
       recurrence: recurrenceObject,
     };
 
-    const operation = this.isEditing() ? this.meetingService.updateMeeting(this.meetingId()!, meetingData) : this.meetingService.createMeeting(meetingData);
+    const operation = this.isEditing()
+      ? this.meetingService.updateMeeting(this.meetingId()!, baseMeetingData as UpdateMeetingRequest, this.editType)
+      : this.meetingService.createMeeting(baseMeetingData as CreateMeetingRequest);
 
     operation.subscribe({
       next: (meeting) => {
@@ -256,6 +269,9 @@ export class MeetingFormComponent {
 
         // Recurrence settings
         recurrence: new FormControl('none'),
+
+        // Recording access
+        recording_access: new FormControl('Members'),
       },
       { validators: this.futureDateTimeValidator() }
     );
@@ -484,13 +500,14 @@ export class MeetingFormComponent {
         duration: meeting.duration || 60,
         timezone: meeting.timezone || getUserTimezone(),
         early_join_time: meeting.early_join_time || 10,
-        show_in_public_calendar: meeting.show_in_public_calendar || false,
+        show_in_public_calendar: meeting.visibility === MeetingVisibility.PUBLIC,
         recording_enabled: meeting.recording_enabled || false,
         transcripts_enabled: meeting.transcripts_enabled || false,
         youtube_enabled: meeting.youtube_enabled || false,
         zoom_ai_enabled: meeting.zoom_ai_enabled || false,
-        require_ai_summary_approval: meeting.require_ai_summary_approval || false,
-        ai_summary_access: meeting.ai_summary_access || 'PCC',
+        require_ai_summary_approval: meeting.require_ai_summary_approval ?? false,
+        ai_summary_access: meeting.ai_summary_access ?? 'PCC',
+        recording_access: meeting.recording_access ?? 'Members',
         recurrence: recurrenceValue,
       });
     } else {

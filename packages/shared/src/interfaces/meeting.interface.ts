@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MeetingVisibility, MeetingType, RecurrenceType } from '../enums';
+import { MeetingVisibility, RecurrenceType } from '../enums';
 
 export interface MeetingRecurrence {
   end_date_time?: string;
@@ -53,11 +53,8 @@ export interface Meeting {
   topic: string | null;
   agenda: string | null;
   start_time: string | null;
-  end_time: string | null;
   duration: number | null;
-  status: string | null;
   early_join_time?: number;
-  show_in_public_calendar?: boolean;
   require_ai_summary_approval?: boolean;
   ai_summary_access?: string;
   meeting_committees: MeetingCommittee[] | null;
@@ -82,6 +79,7 @@ export interface CreateMeetingRequest {
   zoom_ai_enabled?: boolean;
   require_ai_summary_approval?: boolean;
   ai_summary_access?: string;
+  recording_access?: string;
   recurrence?: MeetingRecurrence;
 }
 
@@ -94,13 +92,14 @@ export interface UpdateMeetingRequest {
   timezone: string;
   meeting_type: string;
   early_join_time?: number;
-  show_in_public_calendar?: boolean;
+  visibility?: MeetingVisibility;
   recording_enabled?: boolean;
   transcripts_enabled?: boolean;
   youtube_enabled?: boolean;
   zoom_ai_enabled?: boolean;
   require_ai_summary_approval?: boolean;
   ai_summary_access?: string;
+  recording_access?: string;
   recurrence?: MeetingRecurrence;
 }
 
