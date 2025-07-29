@@ -1,6 +1,6 @@
 # LFX PCC
 
-This is a monorepo for the LFX PCC (Project Control Center) application, built
+This is a monorepo for the LFX PCC (Projects Self-Service) application, built
 with Angular 19 and experimental zoneless change detection.
 
 ## What's inside?

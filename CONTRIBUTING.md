@@ -1,4 +1,4 @@
-# Contributing to LFX Project Control Center
+# Contributing to LFX Projects Self-Service
 
 Contributions are what make the open-source community such an amazing place to learn, inspire, and create.
 

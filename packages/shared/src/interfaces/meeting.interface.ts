@@ -109,3 +109,7 @@ export interface UpdateMeetingRequest {
 export interface DeleteMeetingRequest {
   deleteType?: 'single' | 'series';
 }
+
+export interface DeleteMeetingRequest {
+  deleteType?: 'single' | 'series';
+}
