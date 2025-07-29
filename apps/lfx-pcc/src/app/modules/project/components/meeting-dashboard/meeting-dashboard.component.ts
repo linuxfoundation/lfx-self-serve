@@ -15,11 +15,11 @@ import {
   MeetingDeleteResult,
 } from '@app/shared/components/meeting-delete-confirmation/meeting-delete-confirmation.component';
 import { MeetingModalComponent } from '@app/shared/components/meeting-modal/meeting-modal.component';
-import {
-  RecurringMeetingEditOptionsComponent,
-  RecurringEditOption,
-} from '@app/shared/components/recurring-meeting-edit-options/recurring-meeting-edit-options.component';
 import { MenuComponent } from '@app/shared/components/menu/menu.component';
+import {
+  RecurringEditOption,
+  RecurringMeetingEditOptionsComponent,
+} from '@app/shared/components/recurring-meeting-edit-options/recurring-meeting-edit-options.component';
 import { SelectButtonComponent } from '@app/shared/components/select-button/select-button.component';
 import { SelectComponent } from '@app/shared/components/select/select.component';
 import { MeetingService } from '@app/shared/services/meeting.service';
@@ -452,9 +452,6 @@ export class MeetingDashboardComponent {
         if (meeting.visibility === 'public') {
           backgroundColor = '#3b82f6'; // Blue for public
           borderColor = '#1d4ed8';
-        } else if (meeting.visibility === 'restricted') {
-          backgroundColor = '#f59e0b'; // Amber for restricted
-          borderColor = '#d97706';
         }
 
         // Create a more informative title

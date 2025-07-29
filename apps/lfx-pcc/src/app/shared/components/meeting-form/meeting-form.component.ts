@@ -81,13 +81,6 @@ export class MeetingFormComponent {
     { label: 'None', value: MeetingType.NONE },
   ];
 
-  // Visibility options
-  public visibilityOptions = [
-    { label: 'Public', value: MeetingVisibility.PUBLIC },
-    { label: 'Private', value: MeetingVisibility.PRIVATE },
-    { label: 'Restricted', value: MeetingVisibility.RESTRICTED },
-  ];
-
   // Timezone options from shared constants
   public timezoneOptions = TIMEZONES.map((tz) => ({
     label: `${tz.label} (${tz.offset})`,
@@ -171,6 +164,7 @@ export class MeetingFormComponent {
       meeting_type: formValue.meeting_type || 'None',
       early_join_time: formValue.early_join_time || 10,
       visibility: formValue.show_in_public_calendar ? MeetingVisibility.PUBLIC : MeetingVisibility.PRIVATE,
+      restricted: formValue.restricted || false,
       recording_enabled: formValue.recording_enabled || false,
       transcripts_enabled: formValue.transcripts_enabled || false,
       youtube_enabled: formValue.youtube_enabled || false,
@@ -260,6 +254,7 @@ export class MeetingFormComponent {
 
         // Meeting settings (using exact database field names)
         show_in_public_calendar: new FormControl(false),
+        restricted: new FormControl(false),
         recording_enabled: new FormControl(false),
         transcripts_enabled: new FormControl(false),
         youtube_enabled: new FormControl(false),
@@ -501,6 +496,7 @@ export class MeetingFormComponent {
         timezone: meeting.timezone || getUserTimezone(),
         early_join_time: meeting.early_join_time || 10,
         show_in_public_calendar: meeting.visibility === MeetingVisibility.PUBLIC,
+        restricted: meeting.restricted ?? false,
         recording_enabled: meeting.recording_enabled || false,
         transcripts_enabled: meeting.transcripts_enabled || false,
         youtube_enabled: meeting.youtube_enabled || false,

@@ -52,6 +52,7 @@ export interface Meeting {
   recurrence: MeetingRecurrence | null;
   topic: string | null;
   agenda: string | null;
+  restricted: boolean | null;
   start_time: string | null;
   duration: number | null;
   early_join_time?: number;
@@ -81,6 +82,7 @@ export interface CreateMeetingRequest {
   ai_summary_access?: string;
   recording_access?: string;
   recurrence?: MeetingRecurrence;
+  restricted?: boolean;
 }
 
 export interface UpdateMeetingRequest {
@@ -101,6 +103,7 @@ export interface UpdateMeetingRequest {
   ai_summary_access?: string;
   recording_access?: string;
   recurrence?: MeetingRecurrence;
+  restricted?: boolean;
 }
 
 export interface DeleteMeetingRequest {

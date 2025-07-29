@@ -183,6 +183,18 @@
         </div>
       </div>
 
+      <!-- Restricted Meeting -->
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center gap-2">
+          <lfx-toggle size="small" [form]="form()" control="restricted" label="Restricted Meeting" id="restricted-toggle"></lfx-toggle>
+          <i
+            class="fa-light fa-info-circle text-gray-400 cursor-help"
+            pTooltip="When enabled, this meeting will have restricted access and only invited participants can join"
+            tooltipPosition="right"
+            tooltipStyleClass="text-xs max-w-xs"></i>
+        </div>
+      </div>
+
       <!-- Recording Settings -->
       <div class="flex flex-col gap-2">
         <div class="flex items-center gap-2">
