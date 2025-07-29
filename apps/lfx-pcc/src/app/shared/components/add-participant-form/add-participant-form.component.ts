@@ -63,6 +63,7 @@ export class AddParticipantFormComponent {
             detail: 'Participant added successfully',
           });
           this.participantAdded.emit(participant);
+          this.cancel.emit();
           this.form.reset();
         },
         error: (error) => {

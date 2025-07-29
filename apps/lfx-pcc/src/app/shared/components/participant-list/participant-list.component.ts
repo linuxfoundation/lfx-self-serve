@@ -45,6 +45,11 @@ export class ParticipantListComponent {
       message: `Are you sure you want to remove ${participant.first_name} ${participant.last_name} from this meeting?`,
       header: 'Confirm Removal',
       icon: 'fa-light fa-triangle-exclamation',
+      acceptLabel: 'Remove',
+      rejectLabel: 'Cancel',
+      acceptIcon: 'fa-light fa-trash',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm',
       accept: () => {
         this.deleteParticipant(participant);
       },

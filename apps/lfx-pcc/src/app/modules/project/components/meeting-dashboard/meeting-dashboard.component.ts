@@ -16,13 +16,13 @@ import {
 } from '@app/shared/components/meeting-delete-confirmation/meeting-delete-confirmation.component';
 import { MeetingModalComponent } from '@app/shared/components/meeting-modal/meeting-modal.component';
 import { MenuComponent } from '@app/shared/components/menu/menu.component';
+import { ParticipantManagementModalComponent } from '@app/shared/components/participant-management-modal/participant-management-modal.component';
 import {
   RecurringEditOption,
   RecurringMeetingEditOptionsComponent,
 } from '@app/shared/components/recurring-meeting-edit-options/recurring-meeting-edit-options.component';
 import { SelectButtonComponent } from '@app/shared/components/select-button/select-button.component';
 import { SelectComponent } from '@app/shared/components/select/select.component';
-import { ParticipantManagementModalComponent } from '@app/shared/components/participant-management-modal/participant-management-modal.component';
 import { MeetingService } from '@app/shared/services/meeting.service';
 import { ProjectService } from '@app/shared/services/project.service';
 import { CalendarEvent, Meeting } from '@lfx-pcc/shared/interfaces';
@@ -290,7 +290,7 @@ export class MeetingDashboardComponent {
         header: 'Manage Participants',
         width: '700px',
         modal: true,
-        closable: true,
+        closable: false,
         dismissableMask: true,
         data: {
           meetingId: meeting.id,
