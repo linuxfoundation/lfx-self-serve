@@ -17,6 +17,16 @@
         <div class="flex items-center gap-4">
           <lfx-tools kit="736c27f195" product="projects-self-service"></lfx-tools>
           <div class="flex items-center gap-6">
+            <!-- Mobile Search Toggle -->
+            <button
+              type="button"
+              class="md:hidden hover:opacity-80 transition-opacity p-2"
+              (click)="toggleMobileSearch()"
+              aria-label="Toggle search"
+              data-testid="mobile-search-toggle">
+              <i class="fa-light fa-magnifying-glass text-gray-600"></i>
+            </button>
+
             <!-- Search Input -->
             <div>
               <div class="relative flex items-center gap-4">
@@ -53,4 +63,35 @@
       </ng-template>
     </lfx-menubar>
   </div>
+
+  <!-- Mobile Search Drawer -->
+  @if (showMobileSearch()) {
+    <div class="md:hidden fixed inset-0 z-50 bg-black bg-opacity-50" data-testid="mobile-search-overlay" (click)="closeMobileSearch()">
+      <div class="absolute top-0 left-0 right-0 bg-white shadow-lg" (click)="$event.stopPropagation()">
+        <div class="container mx-auto p-4">
+          <div class="flex items-center gap-4">
+            <button
+              type="button"
+              class="hover:opacity-80 transition-opacity p-2"
+              (click)="closeMobileSearch()"
+              aria-label="Close search"
+              data-testid="mobile-search-close">
+              <i class="fa-light fa-times text-gray-600"></i>
+            </button>
+            <div class="flex-1 relative">
+              <i class="fa-light fa-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm"></i>
+              <input
+                #mobileSearchInput
+                type="text"
+                [formControl]="searchControl"
+                (keyup.enter)="onSearch(); closeMobileSearch()"
+                placeholder="Search projects..."
+                data-testid="mobile-search-input"
+                class="w-full pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:bg-white text-sm placeholder-gray-400 transition-all" />
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+  }
 </div>

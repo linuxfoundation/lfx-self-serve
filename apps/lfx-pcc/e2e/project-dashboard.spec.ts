@@ -35,10 +35,14 @@ test.describe('Project Dashboard', () => {
         // On mobile: search and brand text should be hidden
         await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
         await expect(page.getByText('Projects Self-Service')).toBeHidden();
+        // Mobile search toggle should be visible
+        await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();
       } else {
         // On desktop: search and brand text should be visible
         await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
         await expect(page.getByText('Projects Self-Service')).toBeVisible();
+        // Mobile search toggle should be hidden
+        await expect(page.getByTestId('mobile-search-toggle')).toBeHidden();
       }
     });
 
@@ -276,6 +280,9 @@ test.describe('Project Dashboard', () => {
 
       // Projects Self-Service text should also be hidden on mobile
       await expect(page.getByText('Projects Self-Service')).toBeHidden();
+
+      // Mobile search toggle should be visible
+      await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();
     });
 
     test('should display correctly on tablet viewport', async ({ page }) => {

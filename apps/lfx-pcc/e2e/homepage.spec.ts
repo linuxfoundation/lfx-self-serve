@@ -49,8 +49,37 @@ test.describe('Homepage', () => {
     await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
     await expect(page.getByText('Projects Self-Service')).toBeHidden();
 
+    // Mobile search toggle button should be visible
+    await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();
+
     // Check for tools menu button (should still be visible)
     await expect(page.getByRole('button', { name: 'Open tools menu' })).toBeVisible();
+  });
+
+  test('should open mobile search overlay when clicking search button', async ({ page }) => {
+    // Set mobile viewport
+    await page.setViewportSize({ width: 375, height: 667 });
+
+    // Click mobile search toggle button
+    await page.getByTestId('mobile-search-toggle').click();
+
+    // Mobile search overlay should be visible
+    await expect(page.getByTestId('mobile-search-overlay')).toBeVisible();
+
+    // Mobile search input should be visible
+    const mobileSearchInput = page.getByTestId('mobile-search-input');
+    await expect(mobileSearchInput).toBeVisible();
+
+    // Close button should be visible
+    await expect(page.getByTestId('mobile-search-close')).toBeVisible();
+
+    // Type in the mobile search
+    await mobileSearchInput.fill('test search');
+    await expect(mobileSearchInput).toHaveValue('test search');
+
+    // Close the search overlay
+    await page.getByTestId('mobile-search-close').click();
+    await expect(page.getByTestId('mobile-search-overlay')).toBeHidden();
   });
 
   test('should have main search input field', async ({ page }) => {

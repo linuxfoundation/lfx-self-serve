@@ -4,11 +4,11 @@
 <div class="container mx-auto py-6 px-8">
   @if (project()?.id) {
     <!-- Main content grid with sidebar -->
-    <div class="grid grid-cols-4 gap-6">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6">
       <!-- Left side content (3 columns) -->
-      <div class="col-span-3 flex flex-col gap-6">
+      <div class="col-span-1 md:col-span-3 flex flex-col gap-6">
         <!-- Project Statistics Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-6" data-testid="metrics-cards-container">
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-6" data-testid="metrics-cards-container">
           <!-- Total Members Card -->
           <lfx-card data-testid="total-members-card">
             <div class="flex items-center gap-3">
@@ -64,7 +64,7 @@
 
         <!-- Project Health Card -->
         <lfx-card header="Project Health" data-testid="project-health-card">
-          <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+          <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             <!-- Activity Score -->
             <div class="flex flex-col justify-end items-center" data-testid="activity-score-indicator">
               <div class="mb-2">
@@ -156,7 +156,7 @@
         </lfx-card>
 
         <!-- Original 3 cards row -->
-        <div class="grid grid-cols-3 gap-6 items-stretch">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
           <div class="items-stretch">
             @if (meetingsLoading()) {
               <div>
