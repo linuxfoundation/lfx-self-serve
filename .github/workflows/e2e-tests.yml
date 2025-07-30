@@ -1,0 +1,292 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+
+name: E2E Tests
+
+on:
+  workflow_call:
+    inputs:
+      node-version:
+        description: 'Node.js version to use'
+        required: false
+        default: '22'
+        type: string
+      test-command:
+        description: 'Test command to run'
+        required: false
+        default: 'e2e'
+        type: string
+      browser:
+        description: 'Browser to test (chromium, firefox, mobile-chrome, or all)'
+        required: false
+        default: 'all'
+        type: string
+      base-url:
+        description: 'Base URL for testing'
+        required: false
+        default: 'http://localhost:4200'
+        type: string
+      skip-build:
+        description: 'Skip building the application (use existing build)'
+        required: false
+        default: false
+        type: boolean
+    secrets:
+      TEST_USERNAME:
+        description: 'Username for test authentication'
+        required: false
+      TEST_PASSWORD:
+        description: 'Password for test authentication'
+        required: false
+      E2E_AUTH0_CLIENT_ID:
+        description: 'Auth0 Client ID for E2E testing'
+        required: false
+      E2E_AUTH0_CLIENT_SECRET:
+        description: 'Auth0 Client Secret for E2E testing'
+        required: false
+      E2E_AUTH0_ISSUER_BASE_URL:
+        description: 'Auth0 Issuer Base URL for E2E testing'
+        required: false
+      E2E_AUTH0_AUDIENCE:
+        description: 'Auth0 Audience for E2E testing'
+        required: false
+      E2E_SUPABASE_URL:
+        description: 'Supabase URL for E2E testing'
+        required: false
+      E2E_POSTGRES_API_KEY:
+        description: 'Postgres API Key for E2E testing'
+        required: false
+      E2E_QUERY_SERVICE_URL:
+        description: 'Query Service URL for E2E testing'
+        required: false
+      E2E_QUERY_SERVICE_TOKEN:
+        description: 'Query Service Token for E2E testing'
+        required: false
+    outputs:
+      test-results:
+        description: 'Test results summary'
+        value: ${{ jobs.e2e-tests.outputs.test-results }}
+      report-url:
+        description: 'URL to the test report artifact'
+        value: ${{ jobs.e2e-tests.outputs.report-url }}
+
+jobs:
+  e2e-tests:
+    name: Playwright E2E Tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    outputs:
+      test-results: ${{ steps.test-results.outputs.results }}
+      report-url: ${{ steps.upload-report.outputs.artifact-url }}
+
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: ${{ inputs.node-version }}
+          cache: 'yarn'
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Setup Turborepo cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            .turbo
+            node_modules/.cache/turbo
+          key: ${{ runner.os }}-turbo-${{ hashFiles('**/yarn.lock') }}-${{ hashFiles('**/*', '!**/node_modules/**', '!**/.turbo/**') }}
+          restore-keys: |
+            ${{ runner.os }}-turbo-${{ hashFiles('**/yarn.lock') }}-
+            ${{ runner.os }}-turbo-
+
+      - name: Validate required secrets for E2E testing
+        id: validate-secrets
+        run: |
+          missing_secrets=""
+          
+          if [ -z "${{ secrets.E2E_AUTH0_CLIENT_ID }}" ]; then
+            missing_secrets="$missing_secrets E2E_AUTH0_CLIENT_ID"
+          fi
+          if [ -z "${{ secrets.E2E_AUTH0_CLIENT_SECRET }}" ]; then
+            missing_secrets="$missing_secrets E2E_AUTH0_CLIENT_SECRET"
+          fi
+          if [ -z "${{ secrets.E2E_AUTH0_ISSUER_BASE_URL }}" ]; then
+            missing_secrets="$missing_secrets E2E_AUTH0_ISSUER_BASE_URL"
+          fi
+          if [ -z "${{ secrets.E2E_AUTH0_AUDIENCE }}" ]; then
+            missing_secrets="$missing_secrets E2E_AUTH0_AUDIENCE"
+          fi
+          
+          if [ -n "$missing_secrets" ]; then
+            echo "❌ Missing required secrets for E2E testing:$missing_secrets"
+            echo "Please configure these GitHub secrets to enable E2E tests."
+            echo "can_run_tests=false" >> $GITHUB_OUTPUT
+          else
+            echo "✅ All required secrets are configured"
+            echo "can_run_tests=true" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Set up application environment variables
+        if: steps.validate-secrets.outputs.can_run_tests == 'true'
+        working-directory: apps/lfx-pcc
+        run: |
+          echo "ENV=development" >> $GITHUB_ENV
+          echo "PCC_BASE_URL=http://localhost:4200" >> $GITHUB_ENV
+          echo "PCC_AUTH0_CLIENT_ID=${{ secrets.E2E_AUTH0_CLIENT_ID }}" >> $GITHUB_ENV
+          echo "PCC_AUTH0_CLIENT_SECRET=${{ secrets.E2E_AUTH0_CLIENT_SECRET }}" >> $GITHUB_ENV
+          echo "PCC_AUTH0_ISSUER_BASE_URL=${{ secrets.E2E_AUTH0_ISSUER_BASE_URL }}" >> $GITHUB_ENV
+          echo "PCC_AUTH0_AUDIENCE=${{ secrets.E2E_AUTH0_AUDIENCE }}" >> $GITHUB_ENV
+          echo "SUPABASE_URL=${{ secrets.E2E_SUPABASE_URL || 'https://mock.supabase.co' }}" >> $GITHUB_ENV
+          echo "POSTGRES_API_KEY=${{ secrets.E2E_POSTGRES_API_KEY || 'mock-postgres-key' }}" >> $GITHUB_ENV
+          echo "QUERY_SERVICE_URL=${{ secrets.E2E_QUERY_SERVICE_URL || 'http://localhost:8080/query/resources' }}" >> $GITHUB_ENV
+          echo "QUERY_SERVICE_TOKEN=${{ secrets.E2E_QUERY_SERVICE_TOKEN || 'mock-query-token' }}" >> $GITHUB_ENV
+          echo "TEST_USERNAME=${{ secrets.TEST_USERNAME }}" >> $GITHUB_ENV
+          echo "TEST_PASSWORD=${{ secrets.TEST_PASSWORD }}" >> $GITHUB_ENV
+          echo "CI=true" >> $GITHUB_ENV
+
+      - name: Install Playwright browsers
+        if: steps.validate-secrets.outputs.can_run_tests == 'true'
+        working-directory: apps/lfx-pcc
+        run: npx playwright install --with-deps
+
+      - name: Create Playwright auth directory
+        if: steps.validate-secrets.outputs.can_run_tests == 'true'
+        working-directory: apps/lfx-pcc
+        run: mkdir -p playwright/.auth
+
+      - name: Run E2E tests (All browsers)
+        if: ${{ inputs.browser == 'all' && steps.validate-secrets.outputs.can_run_tests == 'true' }}
+        working-directory: apps/lfx-pcc
+        run: |
+          if [ -n "${{ secrets.TEST_USERNAME }}" ] && [ -n "${{ secrets.TEST_PASSWORD }}" ]; then
+            echo "🔐 Running authenticated E2E tests on all browsers"
+            echo "🚀 Playwright will automatically start the dev server on localhost:4200"
+            yarn ${{ inputs.test-command }}
+          else
+            echo "⚠️ No test credentials provided. Skipping E2E tests."
+            echo "Set TEST_USERNAME and TEST_PASSWORD secrets to enable E2E tests."
+            exit 0
+          fi
+
+      - name: Run E2E tests (Specific browser)
+        if: ${{ inputs.browser != 'all' && steps.validate-secrets.outputs.can_run_tests == 'true' }}
+        working-directory: apps/lfx-pcc
+        run: |
+          if [ -n "${{ secrets.TEST_USERNAME }}" ] && [ -n "${{ secrets.TEST_PASSWORD }}" ]; then
+            echo "🔐 Running authenticated E2E tests on ${{ inputs.browser }}"
+            echo "🚀 Playwright will automatically start the dev server on localhost:4200"
+            yarn ${{ inputs.test-command }} --project=${{ inputs.browser }}
+          else
+            echo "⚠️ No test credentials provided. Skipping E2E tests."
+            echo "Set TEST_USERNAME and TEST_PASSWORD secrets to enable E2E tests."
+            exit 0
+          fi
+
+      - name: E2E tests skipped
+        if: ${{ steps.validate-secrets.outputs.can_run_tests == 'false' }}
+        run: |
+          echo "⏭️ E2E tests skipped due to missing required secrets"
+          echo "Configure the following GitHub secrets to enable E2E testing:"
+          echo "  - E2E_AUTH0_CLIENT_ID"
+          echo "  - E2E_AUTH0_CLIENT_SECRET" 
+          echo "  - E2E_AUTH0_ISSUER_BASE_URL"
+          echo "  - E2E_AUTH0_AUDIENCE"
+          echo "  - TEST_USERNAME (optional)"
+          echo "  - TEST_PASSWORD (optional)"
+
+      - name: Generate test results summary
+        id: test-results
+        if: always()
+        working-directory: apps/lfx-pcc
+        run: |
+          if [ "${{ steps.validate-secrets.outputs.can_run_tests }}" == "false" ]; then
+            echo "⏭️ E2E tests skipped (missing required secrets)"
+            echo "results=skipped" >> $GITHUB_OUTPUT
+          elif [ -z "${{ secrets.TEST_USERNAME }}" ] || [ -z "${{ secrets.TEST_PASSWORD }}" ]; then
+            echo "⏭️ E2E tests skipped (no test credentials)"
+            echo "results=skipped" >> $GITHUB_OUTPUT
+          elif [ -f "test-results/.last-run.json" ]; then
+            echo "✅ E2E tests completed successfully"
+            echo "results=success" >> $GITHUB_OUTPUT
+          else
+            echo "❌ E2E tests failed"
+            echo "results=failure" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Upload Playwright report
+        id: upload-report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report-${{ inputs.browser }}-${{ github.run_id }}
+          path: |
+            apps/lfx-pcc/playwright-report/
+            apps/lfx-pcc/test-results/
+          retention-days: 7
+
+      - name: Upload test traces
+        uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: playwright-traces-${{ inputs.browser }}-${{ github.run_id }}
+          path: apps/lfx-pcc/test-results/
+          retention-days: 7
+
+      - name: Comment test results on PR
+        if: github.event_name == 'pull_request' && always()
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const results = '${{ steps.test-results.outputs.results }}';
+            const browser = '${{ inputs.browser }}';
+            const runId = '${{ github.run_id }}';
+            
+            let emoji, status, details;
+            
+            if (results === 'success') {
+              emoji = '✅';
+              status = 'passed';
+              details = 'All E2E tests passed successfully.';
+            } else if (results === 'failure') {
+              emoji = '❌';
+              status = 'failed';
+              details = 'Some E2E tests failed. Check the [test report](https://github.com/${{ github.repository }}/actions/runs/' + runId + ') for details.';
+            } else {
+              emoji = '⏭️';
+              status = 'skipped';
+              details = 'E2E tests were skipped (no test credentials provided).';
+            }
+            
+            const comment = `## ${emoji} E2E Tests ${status.charAt(0).toUpperCase() + status.slice(1)}
+            
+            **Browser:** ${browser}
+            **Status:** ${status}
+            
+            ${details}
+            
+            <details>
+            <summary>Test Configuration</summary>
+            
+            - **Node.js:** ${{ inputs.node-version }}
+            - **Command:** \`${{ inputs.test-command }}\`
+            - **Browser:** ${browser}
+            - **Base URL:** ${{ inputs.base-url }}
+            
+            </details>`;
+            
+            github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });

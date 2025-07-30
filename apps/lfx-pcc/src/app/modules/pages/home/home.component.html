@@ -1,13 +1,16 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="container mx-auto pt-24 px-8">
+<div class="container mx-auto pt-24 px-8" data-testid="hero-section">
   <div class="flex flex-col items-center text-center">
-    <h1 class="text-3xl font-display font-light text-gray-900 mb-3 px-96">Your personalized control panel for managing projects, committees, and meetings.</h1>
-    <p>Get a comprehensive overview of all your active initiatives and upcoming events in one centralized dashboard.</p>
+    <h1 class="text-3xl font-display font-light text-gray-900 mb-3 xl:px-96 lg:px-64 md:px-48" data-testid="hero-title">
+      Your personalized control panel for managing projects, committees, and meetings.
+    </h1>
+    <p data-testid="hero-subtitle">Get a comprehensive overview of all your active initiatives and upcoming events in one centralized dashboard.</p>
 
-    <div class="mt-12 w-full max-w-2xl">
+    <div class="mt-12 w-full max-w-2xl" data-testid="hero-search-container">
       <lfx-input-text
+        data-testid="hero-search-input"
         placeholder="Search projects, committees, meetings, or mailing lists..."
         icon="fa-light fa-magnifying-glass"
         [form]="form"
@@ -19,21 +22,24 @@
 </div>
 
 @if (projectsLoading()) {
-  <div class="container mx-auto py-24 px-8 flex flex-col justify-center items-center gap-4">
-    <i class="fa-light fa-circle-notch fa-spin text-4xl text-gray-400"></i>
+  <div class="container mx-auto py-24 px-8 flex flex-col justify-center items-center gap-4" data-testid="loading-state">
+    <i class="fa-light fa-circle-notch fa-spin text-4xl text-gray-400" data-testid="loading-spinner"></i>
   </div>
 }
 
-<div class="container mx-auto py-24 px-8">
+<div class="container mx-auto py-24 px-8" data-testid="projects-section">
   @if (projects().length > 0) {
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="projects-grid">
       @for (project of filteredProjects(); track project.id; let i = $index) {
         <div
           pAnimateOnScroll
           class="animate-delay-2000"
           enterClass="animate-enter fade-in-10 slide-in-from-b-8 animate-duration-1000"
-          leaveClass="animate-leave fade-out-0">
+          leaveClass="animate-leave fade-out-0"
+          data-testid="project-card-container">
           <lfx-project-card
+            data-testid="project-card"
+            [attr.data-project-slug]="project.slug"
             [name]="project.name"
             [description]="project.description ?? ''"
             [logo]="project.logo ?? ''"
@@ -43,8 +49,8 @@
       }
     </div>
   } @else {
-    <div class="flex justify-center items-center h-full">
-      <p-skeleton width="100%" height="246px"></p-skeleton>
+    <div class="flex justify-center items-center h-full" data-testid="projects-skeleton-container">
+      <p-skeleton width="100%" height="246px" data-testid="projects-skeleton"></p-skeleton>
     </div>
   }
 </div>

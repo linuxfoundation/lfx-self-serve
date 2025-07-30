@@ -32,6 +32,8 @@ export default [
       '**/coverage/**',
       '**/*.min.js',
       '**/deps_ssr/**',
+      'playwright.config.ts',
+      'e2e/**/*',
     ],
   },
   ...fixupConfigRules(

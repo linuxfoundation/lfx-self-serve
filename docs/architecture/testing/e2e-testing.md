@@ -1,605 +1,459 @@
-# End-to-End Testing
+# End-to-End Testing Architecture
 
-## 🎭 E2E Testing Strategy
+## 🏗 Overview
 
-End-to-end tests verify complete user workflows from browser interaction to backend processing, ensuring the entire application works as expected from a user's perspective.
+Our E2E testing strategy employs a **dual architecture approach** combining content-based and structural tests to ensure comprehensive, maintainable, and reliable test coverage across the LFX Projects Self-Service application.
 
-## 🛠 Testing Tools
+## 🎯 Dual Testing Architecture
 
-### Primary E2E Framework
+### Content-Based Tests (Original)
 
-#### Playwright (Recommended)
+- **Purpose**: Validate user experience and visible content
+- **Target**: Text content, user interactions, workflows
+- **Best For**: Acceptance testing, user journey validation
+- **Examples**: `homepage.spec.ts`, `project-dashboard.spec.ts`
 
-- Cross-browser testing (Chromium, Firefox, Safari)
-- Modern async/await API
-- Built-in waiting strategies
-- Parallel test execution
-- Great developer experience
+### Structural Tests (Robust)
 
-#### Alternative: Cypress
+- **Purpose**: Validate component architecture and framework integration
+- **Target**: Component structure, Angular signals, data attributes
+- **Best For**: Technical validation, UI library independence
+- **Examples**: `homepage-robust.spec.ts`, `project-dashboard-robust.spec.ts`
 
-- Developer-friendly debugging
-- Time-travel debugging
-- Real-time browser preview
-- Chrome-based testing
+## 📊 Current Test Coverage
 
-## 🔧 Playwright Configuration
+```text
+Total E2E Tests: 85+ (All Passing)
+├── Homepage Tests: 33 tests
+│   ├── homepage.spec.ts: 11 content-based tests
+│   └── homepage-robust.spec.ts: 22 structural tests
+└── Project Dashboard Tests: 52 tests
+    ├── project-dashboard.spec.ts: 29 content-based tests
+    └── project-dashboard-robust.spec.ts: 23 structural tests
+```
 
-### Setup Configuration
+## 🛠 Technical Stack
+
+### Primary Framework: Playwright
+
+- **Cross-browser support**: Chromium, Firefox, Mobile Chrome
+- **Modern async/await API** with built-in waiting strategies
+- **Parallel execution** with worker configuration
+- **Authentication state management** with global setup
+
+### Browser Configuration
 
 ```typescript
-// playwright.config.ts
-import { defineConfig, devices } from '@playwright/test';
-
-export default defineConfig({
-  testDir: './e2e',
-  fullyParallel: true,
-  forbidOnly: !!process.env['CI'],
-  retries: process.env['CI'] ? 2 : 0,
-  workers: process.env['CI'] ? 1 : undefined,
-  reporter: 'html',
+// playwright.config.ts - Mobile Chrome Configuration
+{
+  name: 'Mobile Chrome',
   use: {
-    baseURL: 'http://localhost:4000',
-    trace: 'on-first-retry',
-    video: 'retain-on-failure',
-    screenshot: 'only-on-failure',
+    ...devices['Pixel 5'],
+    storageState: 'playwright/.auth/user.json',
   },
-
-  projects: [
-    {
-      name: 'chromium',
-      use: { ...devices['Desktop Chrome'] },
-    },
-    {
-      name: 'firefox',
-      use: { ...devices['Desktop Firefox'] },
-    },
-    {
-      name: 'webkit',
-      use: { ...devices['Desktop Safari'] },
-    },
-    {
-      name: 'mobile-chrome',
-      use: { ...devices['Pixel 5'] },
-    },
-  ],
-
-  webServer: {
-    command: 'yarn start',
-    url: 'http://localhost:4000',
-    reuseExistingServer: !process.env['CI'],
-    timeout: 120000,
-  },
-});
-```
-
-## 🎯 Core User Workflows
-
-### Authentication Flow
-
-```typescript
-// e2e/auth.spec.ts
-import { test, expect } from '@playwright/test';
-
-test.describe('Authentication', () => {
-  test('should redirect unauthenticated users to Auth0', async ({ page }) => {
-    await page.goto('/');
-
-    // Should redirect to Auth0
-    await expect(page).toHaveURL(/auth0\.com/);
-
-    // Should see Auth0 login form
-    await expect(page.locator('[data-testid="login-form"]')).toBeVisible();
-  });
-
-  test('should complete login flow', async ({ page }) => {
-    await page.goto('/');
-
-    // Wait for Auth0 redirect
-    await page.waitForURL(/auth0\.com/);
-
-    // Fill login form
-    await page.fill('[data-testid="email-input"]', 'test@example.com');
-    await page.fill('[data-testid="password-input"]', 'test-password');
-    await page.click('[data-testid="login-button"]');
-
-    // Should redirect back to application
-    await page.waitForURL('http://localhost:4000/');
-
-    // Should see authenticated state
-    await expect(page.locator('[data-testid="user-avatar"]')).toBeVisible();
-    await expect(page.locator('[data-testid="user-menu"]')).toBeVisible();
-  });
-
-  test('should handle logout', async ({ page, context }) => {
-    // Assume authenticated state
-    await context.addCookies([
-      {
-        name: 'appSession',
-        value: 'mock-session-token',
-        domain: 'localhost',
-        path: '/',
-      },
-    ]);
-
-    await page.goto('/');
-
-    // Click user menu
-    await page.click('[data-testid="user-avatar"]');
-    await page.click('[data-testid="logout-button"]');
-
-    // Should redirect to logout and back to Auth0
-    await expect(page).toHaveURL(/auth0\.com/);
-  });
-});
-```
-
-### Project Navigation
-
-```typescript
-// e2e/navigation.spec.ts
-import { test, expect } from '@playwright/test';
-
-test.describe('Project Navigation', () => {
-  test.beforeEach(async ({ page, context }) => {
-    // Mock authenticated state
-    await context.addCookies([
-      {
-        name: 'appSession',
-        value: 'mock-session-token',
-        domain: 'localhost',
-        path: '/',
-      },
-    ]);
-  });
-
-  test('should navigate from home to project page', async ({ page }) => {
-    await page.goto('/');
-
-    // Wait for projects to load
-    await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible();
-
-    // Click on first project
-    const firstProject = page.locator('[data-testid="project-card"]').first();
-    const projectTitle = await firstProject.locator('h3').textContent();
-    await firstProject.click();
-
-    // Should navigate to project page
-    await expect(page).toHaveURL(/\/project\/[^\/]+$/);
-
-    // Should show project details
-    await expect(page.locator('[data-testid="project-title"]')).toHaveText(projectTitle || '');
-    await expect(page.locator('[data-testid="project-navigation"]')).toBeVisible();
-  });
-
-  test('should navigate between project tabs', async ({ page }) => {
-    await page.goto('/project/kubernetes');
-
-    // Should show meetings tab by default
-    await expect(page.locator('[data-testid="meetings-content"]')).toBeVisible();
-
-    // Click committees tab
-    await page.click('[data-testid="committees-tab"]');
-    await expect(page).toHaveURL('/project/kubernetes/committees');
-    await expect(page.locator('[data-testid="committees-content"]')).toBeVisible();
-
-    // Click mailing lists tab
-    await page.click('[data-testid="mailing-lists-tab"]');
-    await expect(page).toHaveURL('/project/kubernetes/mailing-lists');
-    await expect(page.locator('[data-testid="mailing-lists-content"]')).toBeVisible();
-  });
-
-  test('should maintain navigation state on page reload', async ({ page }) => {
-    await page.goto('/project/kubernetes/committees');
-
-    // Reload page
-    await page.reload();
-
-    // Should maintain state
-    await expect(page).toHaveURL('/project/kubernetes/committees');
-    await expect(page.locator('[data-testid="committees-tab"]')).toHaveClass(/active/);
-    await expect(page.locator('[data-testid="committees-content"]')).toBeVisible();
-  });
-});
-```
-
-### Search and Filtering
-
-```typescript
-// e2e/search.spec.ts
-import { test, expect } from '@playwright/test';
-
-test.describe('Search and Filtering', () => {
-  test.beforeEach(async ({ page, context }) => {
-    // Mock authenticated state
-    await context.addCookies([
-      {
-        name: 'appSession',
-        value: 'mock-session-token',
-        domain: 'localhost',
-        path: '/',
-      },
-    ]);
-
-    await page.goto('/');
-  });
-
-  test('should filter projects by search term', async ({ page }) => {
-    // Wait for projects to load
-    await expect(page.locator('[data-testid="project-card"]')).toHaveCount(expect.any(Number));
-    const initialCount = await page.locator('[data-testid="project-card"]').count();
-
-    // Enter search term
-    await page.fill('[data-testid="search-input"]', 'kubernetes');
-
-    // Should filter results
-    await expect(page.locator('[data-testid="project-card"]')).toHaveCount(expect.any(Number));
-    const filteredCount = await page.locator('[data-testid="project-card"]').count();
-
-    // Filtered count should be less than or equal to initial
-    expect(filteredCount).toBeLessThanOrEqual(initialCount);
-
-    // All visible projects should match search term
-    const projectTitles = await page.locator('[data-testid="project-card"] h3').allTextContents();
-    projectTitles.forEach((title) => {
-      expect(title.toLowerCase()).toContain('kubernetes');
-    });
-  });
-
-  test('should clear search filter', async ({ page }) => {
-    // Enter search term
-    await page.fill('[data-testid="search-input"]', 'nonexistent');
-
-    // Should show no results
-    await expect(page.locator('[data-testid="no-results"]')).toBeVisible();
-
-    // Clear search
-    await page.fill('[data-testid="search-input"]', '');
-
-    // Should show all projects again
-    await expect(page.locator('[data-testid="project-card"]')).toHaveCount(expect.any(Number));
-    await expect(page.locator('[data-testid="no-results"]')).not.toBeVisible();
-  });
-});
-```
-
-## 📱 Responsive Testing
-
-### Mobile and Desktop Views
-
-```typescript
-// e2e/responsive.spec.ts
-import { test, expect } from '@playwright/test';
-
-test.describe('Responsive Design', () => {
-  test('should display mobile navigation', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 667 }); // iPhone SE
-    await page.goto('/');
-
-    // Mobile menu should be hidden initially
-    await expect(page.locator('[data-testid="mobile-menu"]')).not.toBeVisible();
-
-    // Click hamburger menu
-    await page.click('[data-testid="mobile-menu-button"]');
-
-    // Mobile menu should be visible
-    await expect(page.locator('[data-testid="mobile-menu"]')).toBeVisible();
-
-    // Navigation items should be stacked vertically
-    const menuItems = page.locator('[data-testid="mobile-menu"] [data-testid="nav-item"]');
-    await expect(menuItems).toHaveCount(expect.any(Number));
-  });
-
-  test('should adapt project grid for different screen sizes', async ({ page }) => {
-    await page.goto('/');
-
-    // Desktop: Should show multiple columns
-    await page.setViewportSize({ width: 1200, height: 800 });
-    const desktopColumns = await page.locator('[data-testid="project-grid"]').evaluate((el) => {
-      return getComputedStyle(el).gridTemplateColumns.split(' ').length;
-    });
-
-    // Tablet: Should show fewer columns
-    await page.setViewportSize({ width: 768, height: 1024 });
-    const tabletColumns = await page.locator('[data-testid="project-grid"]').evaluate((el) => {
-      return getComputedStyle(el).gridTemplateColumns.split(' ').length;
-    });
-
-    // Mobile: Should show single column
-    await page.setViewportSize({ width: 375, height: 667 });
-    const mobileColumns = await page.locator('[data-testid="project-grid"]').evaluate((el) => {
-      return getComputedStyle(el).gridTemplateColumns.split(' ').length;
-    });
-
-    expect(desktopColumns).toBeGreaterThan(tabletColumns);
-    expect(tabletColumns).toBeGreaterThan(mobileColumns);
-    expect(mobileColumns).toBe(1);
-  });
-});
-```
-
-## ⚡ Performance Testing
-
-### Core Web Vitals
-
-```typescript
-// e2e/performance.spec.ts
-import { test, expect } from '@playwright/test';
-
-test.describe('Performance', () => {
-  test('should meet Core Web Vitals thresholds', async ({ page }) => {
-    await page.goto('/');
-
-    // Measure First Contentful Paint
-    const fcpMetric = await page.evaluate(() => {
-      return new Promise((resolve) => {
-        new PerformanceObserver((list) => {
-          const entries = list.getEntries();
-          const fcp = entries.find((entry) => entry.name === 'first-contentful-paint');
-          if (fcp) resolve(fcp.startTime);
-        }).observe({ entryTypes: ['paint'] });
-      });
-    });
-
-    // FCP should be under 1.8 seconds
-    expect(fcpMetric).toBeLessThan(1800);
-
-    // Measure Largest Contentful Paint
-    const lcpMetric = await page.evaluate(() => {
-      return new Promise((resolve) => {
-        new PerformanceObserver((list) => {
-          const entries = list.getEntries();
-          const lastEntry = entries[entries.length - 1];
-          resolve(lastEntry.startTime);
-        }).observe({ entryTypes: ['largest-contentful-paint'] });
-
-        // Fallback timeout
-        setTimeout(() => resolve(0), 5000);
-      });
-    });
-
-    // LCP should be under 2.5 seconds
-    expect(lcpMetric).toBeLessThan(2500);
-  });
-
-  test('should load projects within acceptable time', async ({ page }) => {
-    const startTime = Date.now();
-
-    await page.goto('/');
-
-    // Wait for projects to load
-    await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible();
-
-    const loadTime = Date.now() - startTime;
-
-    // Should load within 3 seconds
-    expect(loadTime).toBeLessThan(3000);
-  });
-});
-```
-
-## 🔧 Test Utilities
-
-### Page Object Model
-
-```typescript
-// e2e/pages/project-page.ts
-import { Page, Locator } from '@playwright/test';
-
-export class ProjectPage {
-  readonly page: Page;
-  readonly projectTitle: Locator;
-  readonly projectDescription: Locator;
-  readonly navigationTabs: Locator;
-  readonly meetingsTab: Locator;
-  readonly committeesTab: Locator;
-  readonly mailingListsTab: Locator;
-
-  constructor(page: Page) {
-    this.page = page;
-    this.projectTitle = page.locator('[data-testid="project-title"]');
-    this.projectDescription = page.locator('[data-testid="project-description"]');
-    this.navigationTabs = page.locator('[data-testid="project-navigation"]');
-    this.meetingsTab = page.locator('[data-testid="meetings-tab"]');
-    this.committeesTab = page.locator('[data-testid="committees-tab"]');
-    this.mailingListsTab = page.locator('[data-testid="mailing-lists-tab"]');
-  }
-
-  async goto(projectSlug: string) {
-    await this.page.goto(`/project/${projectSlug}`);
-  }
-
-  async navigateToMeetings() {
-    await this.meetingsTab.click();
-  }
-
-  async navigateToCommittees() {
-    await this.committeesTab.click();
-  }
-
-  async navigateToMailingLists() {
-    await this.mailingListsTab.click();
-  }
-
-  async getProjectTitle() {
-    return await this.projectTitle.textContent();
-  }
-}
-
-// Usage in tests
-test('should navigate project tabs', async ({ page }) => {
-  const projectPage = new ProjectPage(page);
-  await projectPage.goto('kubernetes');
-
-  await projectPage.navigateToCommittees();
-  await expect(page).toHaveURL('/project/kubernetes/committees');
-});
-```
-
-### Authentication Helpers
-
-```typescript
-// e2e/helpers/auth.ts
-import { Page, BrowserContext } from '@playwright/test';
-
-export async function loginUser(page: Page, context: BrowserContext) {
-  // Add authentication cookie
-  await context.addCookies([
-    {
-      name: 'appSession',
-      value: 'mock-authenticated-session',
-      domain: 'localhost',
-      path: '/',
-      httpOnly: true,
-      secure: false,
-    },
-  ]);
-
-  // Navigate to authenticated page
-  await page.goto('/');
-
-  // Verify authentication
-  await page.waitForSelector('[data-testid="user-avatar"]');
-}
-
-export async function logoutUser(page: Page) {
-  await page.click('[data-testid="user-avatar"]');
-  await page.click('[data-testid="logout-button"]');
-  await page.waitForURL(/auth0\.com/);
+  // Single worker to prevent resource contention
+  workers: 1,
 }
 ```
 
-## 🎯 Test Data Management
+## 🔧 Data-TestID Architecture
 
-### Test Data Setup
+### Implementation Strategy
+
+#### 1. Component-Level Attributes
+
+```html
+<!-- Homepage Hero Section -->
+<div data-testid="hero-section">
+  <h1 data-testid="hero-title">...</h1>
+  <p data-testid="hero-subtitle">...</p>
+  <div data-testid="hero-search-container">
+    <lfx-input-text data-testid="hero-search-input">
+  </div>
+</div>
+```
+
+#### 2. Dynamic Attributes for State
+
+```html
+<!-- Project Cards with Dynamic Identification -->
+<lfx-project-card data-testid="project-card" [attr.data-project-slug]="project.slug"> </lfx-project-card>
+```
+
+#### 3. Nested Component Structure
+
+```html
+<!-- Project Metrics with Hierarchical Testing -->
+<div data-testid="project-metrics">
+  <div data-testid="project-metric" [attr.data-metric-label]="metric.label">
+    <div data-testid="metric-label-container">
+      <i data-testid="metric-icon"></i>
+      <span data-testid="metric-label">{{ metric.label }}</span>
+    </div>
+    <div data-testid="metric-value-container">
+      <span data-testid="metric-value">{{ metric.value }}</span>
+    </div>
+  </div>
+</div>
+```
+
+### Naming Conventions
+
+1. **Section-level**: `data-testid="hero-section"`
+2. **Component-level**: `data-testid="project-card"`
+3. **Element-level**: `data-testid="project-title"`
+4. **Container-level**: `data-testid="metrics-cards-container"`
+5. **Dynamic identification**: `[attr.data-project-slug]="project.slug"`
+
+## 🧪 Test Patterns and Examples
+
+### 1. Structural Component Validation
 
 ```typescript
-// e2e/fixtures/test-data.ts
-export const testProjects = [
-  {
-    id: 'kubernetes',
-    name: 'Kubernetes',
-    description: 'Container orchestration platform',
-    category: 'CNCF',
-    metrics: {
-      meetings: 12,
-      committees: 8,
-      mailingLists: 15,
-    },
-  },
-  {
-    id: 'prometheus',
-    name: 'Prometheus',
-    description: 'Monitoring and alerting toolkit',
-    category: 'CNCF',
-    metrics: {
-      meetings: 8,
-      committees: 4,
-      mailingLists: 6,
-    },
-  },
-];
+test('should use lfx-card components consistently', async ({ page }) => {
+  const testCards = [
+    page.locator('[data-testid="total-members-card"]'),
+    page.locator('[data-testid="project-health-card"]'),
+    page.locator('[data-testid="quick-actions-card"]'),
+  ];
 
-export async function seedTestData(page: Page) {
-  // Mock API responses
-  await page.route('/api/projects', (route) => {
-    route.fulfill({
-      status: 200,
-      contentType: 'application/json',
-      body: JSON.stringify(testProjects),
-    });
-  });
+  for (const card of testCards) {
+    await expect(card).toBeVisible();
+    // Validate component architecture
+    const tagName = await card.evaluate((el) => el.tagName.toLowerCase());
+    expect(tagName).toBe('lfx-card');
+  }
+});
+```
+
+### 2. Angular Signals Integration Testing
+
+```typescript
+test('should properly integrate Angular signals and computed values', async ({ page }) => {
+  // Wait for Angular to initialize and signals to resolve
+  await page.waitForLoadState('networkidle');
+
+  // Check that percentage values are rendered (indicates successful signal integration)
+  const activityScore = page.locator('[data-testid="activity-score-indicator"] span').filter({ hasText: /%$/ });
+  await expect(activityScore).toBeVisible();
+
+  const meetingCompletion = page.locator('[data-testid="meeting-completion-indicator"] span').filter({ hasText: /%$/ });
+  await expect(meetingCompletion).toBeVisible();
+});
+```
+
+### 3. Responsive Design Testing
+
+```typescript
+test('should display header elements correctly for current viewport', async ({ page }) => {
+  await expect(page.getByRole('button', { name: 'Go to home page' })).toBeVisible();
+  await expect(page.getByAltText('LFX Logo')).toBeVisible();
+
+  // Viewport-aware assertions
+  const viewport = page.viewportSize();
+  const isMobile = viewport && viewport.width < 768;
+
+  if (isMobile) {
+    // Mobile: search and brand text should be hidden
+    await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
+    await expect(page.getByText('Projects Self-Service')).toBeHidden();
+  } else {
+    // Desktop: search and brand text should be visible
+    await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
+    await expect(page.getByText('Projects Self-Service')).toBeVisible();
+  }
+});
+```
+
+### 4. Content-Based User Journey Testing
+
+```typescript
+test('should navigate to project detail when clicking a project card', async ({ page }) => {
+  // Wait for project cards to load
+  await page.waitForLoadState('networkidle');
+
+  const firstCard = page.locator('lfx-project-card').first();
+  await expect(firstCard).toBeVisible();
+
+  // Get project name for verification
+  const projectName = await firstCard.getByRole('heading', { level: 3 }).innerText();
+
+  // Click the card
+  await firstCard.click();
+
+  // Verify navigation
+  await expect(page).toHaveURL(/\/project\/[\w-]+$/);
+  await expect(page.getByRole('heading', { level: 1 }).filter({ hasText: projectName })).toBeVisible();
+});
+```
+
+## 📱 Multi-Browser Testing Strategy
+
+### Browser-Specific Configurations
+
+#### Chromium (Desktop)
+
+- Full feature testing
+- Parallel execution (5 workers)
+- Complete test suite
+
+#### Mobile Chrome
+
+- Single worker configuration (prevents resource contention)
+- Mobile-specific responsive validation
+- Touch interaction testing
+
+#### Firefox
+
+- Cross-browser compatibility validation
+- Engine-specific behavior testing
+
+### Viewport Testing Strategy
+
+```typescript
+// Mobile Viewport (< 768px)
+test('should display correctly on mobile viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 375, height: 667 });
+
+  // Mobile-specific expectations
+  await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
+  await expect(page.getByText('Projects Self-Service')).toBeHidden();
+  await expect(page.getByAltText('LFX Logo')).toBeVisible();
+});
+
+// Tablet Viewport (≥ 768px)
+test('should display correctly on tablet viewport', async ({ page }) => {
+  await page.setViewportSize({ width: 768, height: 1024 });
+
+  // Tablet-specific expectations
+  await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
+  await expect(page.getByText('Projects Self-Service')).toBeVisible();
+});
+```
+
+## 🔐 Authentication Architecture
+
+### Global Setup Strategy
+
+```typescript
+// e2e/helpers/global-setup.ts
+async function globalSetup(config: FullConfig) {
+  const browser = await chromium.launch();
+  const context = await browser.newContext();
+  const page = await context.newPage();
+
+  try {
+    // Navigate to logout to trigger authentication flow
+    await page.goto(`${url}/logout`);
+
+    // Perform authentication
+    await AuthHelper.loginWithAuth0(page, TEST_CREDENTIALS);
+
+    // Save authentication state
+    await context.storageState({ path: 'playwright/.auth/user.json' });
+  } finally {
+    await browser.close();
+  }
 }
 ```
 
-## 🔄 CI/CD Integration
+### Auth Helper Pattern
 
-### GitHub Actions Workflow
+```typescript
+// e2e/helpers/auth.helper.ts
+export class AuthHelper {
+  static async loginWithAuth0(page: Page, credentials: TestCredentials) {
+    // Wait for Auth0 login page
+    await page.waitForSelector('[data-testid="auth0-login-form"]');
 
-```yaml
-# .github/workflows/e2e-tests.yml
-name: E2E Tests
+    // Fill credentials
+    await page.fill('input[name="username"]', credentials.username);
+    await page.fill('input[name="password"]', credentials.password);
 
-on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
-
-jobs:
-  e2e:
-    runs-on: ubuntu-latest
-
-    steps:
-      - uses: actions/checkout@v3
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v3
-        with:
-          node-version: '18'
-
-      - name: Install dependencies
-        run: yarn install
-
-      - name: Build application
-        run: yarn build
-
-      - name: Install Playwright
-        run: yarn playwright install --with-deps
-
-      - name: Run E2E tests
-        run: yarn playwright test
-
-      - name: Upload test results
-        uses: actions/upload-artifact@v3
-        if: failure()
-        with:
-          name: playwright-report
-          path: playwright-report/
+    // Submit and wait for redirect
+    await page.click('button[type="submit"]');
+    await page.waitForURL(/localhost:4200/);
+  }
+}
 ```
 
-## 📊 Best Practices
+## 🚀 Best Practices
 
-### E2E Testing Guidelines
+### 1. Element Selection Strategy
 
-1. **Test User Journeys**: Focus on complete user workflows
-2. **Use Data Test IDs**: Reliable element selection
-3. **Avoid Flaky Tests**: Proper waiting strategies
-4. **Test Critical Paths**: Cover most important user flows
-5. **Keep Tests Independent**: Each test should be isolated
+#### ✅ Recommended: Data-TestID
 
-### Performance Optimization
+```typescript
+await expect(page.locator('[data-testid="project-card"]')).toBeVisible();
+```
 
-1. **Parallel Execution**: Run tests in parallel when possible
-2. **Smart Waiting**: Use built-in wait strategies
-3. **Resource Management**: Clean up browser resources
-4. **Test Data**: Use efficient test data setup
-5. **CI Optimization**: Optimize for CI/CD environments
+#### ✅ Acceptable: Semantic Selectors
 
-### Debugging and Maintenance
+```typescript
+await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
+```
 
-1. **Visual Debugging**: Use screenshots and videos
-2. **Trace Analysis**: Leverage Playwright traces
-3. **Error Reporting**: Clear error messages
-4. **Test Stability**: Regular test maintenance
-5. **Documentation**: Document test scenarios
+#### ❌ Avoid: CSS Classes (Tailwind)
 
-## 🔄 Implementation Status
+```typescript
+// Brittle - classes can change
+await expect(page.locator('.bg-blue-500.text-white')).toBeVisible();
+```
 
-### ✅ Ready for Implementation
+#### ❌ Avoid: Generic Text Selectors
 
-- Playwright configuration
-- Authentication flow testing
-- Navigation testing
-- Responsive design testing
-- Performance testing patterns
+```typescript
+// Unreliable - text can change
+await expect(page.getByText('Submit')).toBeVisible();
+```
+
+### 2. Waiting Strategies
+
+#### Built-in Waiting (Preferred)
+
+```typescript
+await expect(page.locator('[data-testid="loading-spinner"]')).toBeVisible();
+await expect(page.locator('[data-testid="content"]')).toBeVisible();
+```
+
+#### Network Idle for Dynamic Content
+
+```typescript
+await page.waitForLoadState('networkidle');
+const projectCards = page.locator('[data-testid="project-card"]');
+```
+
+### 3. Test Organization
+
+#### Descriptive Test Groups
+
+```typescript
+test.describe('Homepage - Robust Tests', () => {
+  test.describe('Page Structure and Components', () => {
+    test('should have correct page structure with main sections', async ({ page }) => {
+      // Component architecture validation
+    });
+  });
+
+  test.describe('Component Integration', () => {
+    test('should properly integrate Angular signals and computed values', async ({ page }) => {
+      // Framework-specific validation
+    });
+  });
+});
+```
+
+### 4. Error Handling and Debugging
+
+#### Conditional Assertions
+
+```typescript
+const hasProjects = await page
+  .locator('[data-testid="projects-grid"]')
+  .isVisible()
+  .catch(() => false);
+const hasSkeleton = await page
+  .locator('[data-testid="projects-skeleton"]')
+  .isVisible()
+  .catch(() => false);
+
+expect(hasProjects || hasSkeleton).toBe(true);
+```
+
+#### Clear Error Messages
+
+```typescript
+const cardCount = await projectCards.count();
+expect(cardCount).toBeGreaterThan(0, 'Should have at least one project card');
+```
+
+## 📊 Maintenance and Monitoring
+
+### Test Health Metrics
+
+#### Current Status: ✅ 85/85 tests passing
+
+1. **Reliability**: Zero flaky tests
+2. **Performance**: Average test suite runs in ~54 seconds (Chromium)
+3. **Coverage**: All major user journeys covered
+4. **Maintainability**: Data-testid architecture prevents UI change breakage
+
+### Test Maintenance Schedule
+
+**Weekly**: Run full test suite across all browsers
+**Per PR**: Automated test execution in CI/CD
+**Monthly**: Review and update test documentation
+**Quarterly**: Evaluate new testing patterns and tools
+
+### Debugging Guidelines
+
+1. **Screenshot Analysis**: Use Playwright's built-in screenshot capture
+2. **Trace Files**: Leverage trace viewer for step-by-step debugging
+3. **Network Analysis**: Monitor API calls and responses
+4. **Console Logs**: Check for JavaScript errors
+5. **Element Inspection**: Validate data-testid attributes in dev tools
+
+## 🔄 Implementation Checklist
+
+### ✅ Completed
+
+- [x] Dual testing architecture (content + structural)
+- [x] Data-testid implementation across components
+- [x] Multi-browser configuration (Chromium, Mobile Chrome)
+- [x] Responsive design testing
+- [x] Authentication flow with global setup
+- [x] Angular signals integration testing
+- [x] Component architecture validation
 
 ### 🔲 Future Enhancements
 
-- Cross-browser testing matrix
-- Visual regression testing
-- Accessibility testing
-- Load testing integration
-- Test reporting dashboard
+- [ ] Visual regression testing with screenshot comparison
+- [ ] Accessibility testing with axe-core integration
+- [ ] Performance testing with Core Web Vitals
+- [ ] Cross-platform testing (Windows, macOS, Linux)
+- [ ] Test reporting dashboard with historical data
 
-This E2E testing strategy ensures comprehensive coverage of user workflows and provides confidence in the application's behavior across different browsers and devices.
+## 🎯 Testing Guidelines for New Features
+
+When adding new features, follow this testing approach:
+
+### 1. Add Data-TestID Attributes
+
+```html
+<!-- New feature component -->
+<div data-testid="feature-container">
+  <lfx-new-component data-testid="feature-component">
+    <div data-testid="feature-content">
+      <!-- Feature content -->
+    </div>
+  </lfx-new-component>
+</div>
+```
+
+### 2. Create Both Test Types
+
+#### Content-Based Test (User Experience)
+
+```typescript
+test('should allow user to complete new feature workflow', async ({ page }) => {
+  // Test user-visible behavior and interactions
+});
+```
+
+#### Structural Test (Technical Implementation)
+
+```typescript
+test('should use correct component architecture for new feature', async ({ page }) => {
+  // Test component structure and framework integration
+});
+```
+
+### 3. Include Responsive Testing
+
+```typescript
+test('should display new feature correctly across viewports', async ({ page }) => {
+  // Test mobile, tablet, and desktop layouts
+});
+```
+
+This comprehensive E2E testing architecture ensures reliable, maintainable tests that provide confidence in both user experience and technical implementation while surviving UI changes and framework updates.

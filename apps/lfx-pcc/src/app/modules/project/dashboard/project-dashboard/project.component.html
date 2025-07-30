@@ -8,9 +8,9 @@
       <!-- Left side content (3 columns) -->
       <div class="col-span-3 flex flex-col gap-6">
         <!-- Project Statistics Cards -->
-        <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-6" data-testid="metrics-cards-container">
           <!-- Total Members Card -->
-          <lfx-card>
+          <lfx-card data-testid="total-members-card">
             <div class="flex items-center gap-3">
               <div class="flex items-center justify-center w-12 h-12 bg-primary-100 rounded-lg">
                 <i class="fa-light fa-users text-xl text-primary-600"></i>
@@ -23,7 +23,7 @@
           </lfx-card>
 
           <!-- Total Committees Card -->
-          <lfx-card>
+          <lfx-card data-testid="total-committees-card">
             <div class="flex items-center gap-3">
               <div class="flex items-center justify-center w-12 h-12 bg-green-100 rounded-lg">
                 <i class="fa-light fa-people-group text-xl text-green-600"></i>
@@ -36,7 +36,7 @@
           </lfx-card>
 
           <!-- Total Meetings Card -->
-          <lfx-card>
+          <lfx-card data-testid="total-meetings-card">
             <div class="flex items-center gap-3">
               <div class="flex items-center justify-center w-12 h-12 bg-blue-100 rounded-lg">
                 <i class="fa-light fa-calendar text-xl text-blue-600"></i>
@@ -49,7 +49,7 @@
           </lfx-card>
 
           <!-- Upcoming Meetings Card -->
-          <lfx-card>
+          <lfx-card data-testid="upcoming-meetings-card">
             <div class="flex items-center gap-3">
               <div class="flex items-center justify-center w-12 h-12 bg-amber-100 rounded-lg">
                 <i class="fa-light fa-calendar-clock text-xl text-amber-600"></i>
@@ -63,10 +63,10 @@
         </div>
 
         <!-- Project Health Card -->
-        <lfx-card header="Project Health">
+        <lfx-card header="Project Health" data-testid="project-health-card">
           <div class="grid grid-cols-2 md:grid-cols-4 gap-6">
             <!-- Activity Score -->
-            <div class="flex flex-col justify-end items-center">
+            <div class="flex flex-col justify-end items-center" data-testid="activity-score-indicator">
               <div class="mb-2">
                 <div class="relative inline-flex items-center justify-center w-24 h-24">
                   <lfx-chart type="doughnut" [data]="activityChartData()" [options]="activityChartOptions()" [style]="{ width: '96px', height: '96px' }">
@@ -86,7 +86,7 @@
             </div>
 
             <!-- Meeting Participation Rate -->
-            <div class="flex flex-col justify-end items-center">
+            <div class="flex flex-col justify-end items-center" data-testid="meeting-completion-indicator">
               <div class="mb-2">
                 <div class="relative inline-flex items-center justify-center w-24 h-24">
                   <lfx-chart
@@ -110,7 +110,7 @@
             </div>
 
             <!-- Meeting Frequency -->
-            <div class="flex flex-col justify-end items-center">
+            <div class="flex flex-col justify-end items-center" data-testid="meeting-trend-indicator">
               <div class="mb-2 w-full" style="height: 120px">
                 <lfx-chart
                   type="line"
@@ -130,7 +130,7 @@
             </div>
 
             <!-- Committee Utilization -->
-            <div class="flex flex-col justify-end items-center">
+            <div class="flex flex-col justify-end items-center" data-testid="active-committees-indicator">
               <div class="mb-2">
                 <div class="relative inline-flex items-center justify-center w-24 h-24">
                   <lfx-chart
@@ -304,12 +304,12 @@
       <!-- Right sidebar (1 column) -->
       <div class="flex flex-col gap-6">
         <!-- Quick Actions Card -->
-        <lfx-card header="Quick Actions">
+        <lfx-card header="Quick Actions" data-testid="quick-actions-card">
           <lfx-menu [model]="quickActionMenuItems" styleClass="w-full border-0 p-0"></lfx-menu>
         </lfx-card>
 
         <!-- Recent Activity Card -->
-        <lfx-card header="Recent Activity">
+        <lfx-card header="Recent Activity" data-testid="recent-activity-card">
           <div class="space-y-4">
             @if (recentActivity().length > 0) {
               @for (activity of recentActivity(); track activity.date + activity.title) {

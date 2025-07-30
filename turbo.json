@@ -32,6 +32,23 @@
     "start:server": {
       "dependsOn": ["build"],
       "cache": false
+    },
+    "e2e": {
+      "dependsOn": ["build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*", "e2e/**", "playwright.config.ts"],
+      "outputs": ["playwright-report/**", "test-results/**"],
+      "cache": false
+    },
+    "e2e:ui": {
+      "dependsOn": ["build"],
+      "cache": false,
+      "persistent": true
+    },
+    "e2e:headed": {
+      "dependsOn": ["build"],
+      "inputs": ["$TURBO_DEFAULT$", ".env*", "e2e/**", "playwright.config.ts"],
+      "outputs": ["playwright-report/**", "test-results/**"],
+      "cache": false
     }
   }
 }

@@ -6,51 +6,45 @@ The testing architecture is designed to ensure code quality and reliability acro
 
 ## 🏗 Testing Strategy
 
-### Testing Pyramid
+### Testing Approach
 
-- **Unit Tests**: Component and service testing
-- **Integration Tests**: API and service integration
-- **End-to-End Tests**: Full application workflows
+- **End-to-End Tests**: Full application workflows with comprehensive coverage (85+ tests)
+- **Dual Architecture**: Content-based tests for user experience + Structural tests for technical validation
 
 ### Key Principles
 
-- **Test-Driven Development**: Write tests before implementation
+- **Dual Test Architecture**: Content-based + Structural tests for maximum reliability
+- **Data-TestID Strategy**: Robust element targeting that survives UI changes
+- **Responsive Testing**: Multi-viewport validation (mobile, tablet, desktop)
+- **Framework-Aware Testing**: Angular signals, components, and architecture validation
 - **Fast Feedback**: Quick test execution for development
 - **Reliable Tests**: Consistent and deterministic test results
 - **Comprehensive Coverage**: Critical paths and edge cases covered
 
 ## 📋 Documentation Sections
 
-### [Unit Testing](./unit-testing.md)
-
-Learn about component testing, service testing, and testing utilities for Angular applications.
-
-### [Integration Testing](./integration-testing.md)
-
-Understand API testing, database testing, and service integration patterns.
-
 ### [E2E Testing](./e2e-testing.md)
 
-Discover end-to-end testing strategies, user workflows, and browser automation.
+Comprehensive end-to-end testing with dual architecture approach, covering user workflows, component validation, and browser automation.
+
+### [Testing Best Practices](./testing-best-practices.md)
+
+Complete guide to testing patterns, data-testid conventions, responsive testing, and maintenance strategies.
 
 ## 🚀 Testing Tools
 
-### Frontend Testing
+### Primary Testing Framework
 
-- **Jest**: Unit testing framework
-- **Angular Testing Utilities**: Component and service testing
-- **Testing Library**: User-centric testing approaches
+- **Playwright**: Modern browser automation framework
+- **Multi-browser Support**: Chromium, Firefox, Mobile Chrome
+- **Data-TestID Architecture**: Robust element targeting that survives UI changes
+- **Dual Testing Strategy**: Content-based + Structural tests for comprehensive coverage
 
-### Backend Testing
+### Supporting Tools
 
-- **Jest**: Node.js testing framework
-- **Supertest**: HTTP API testing
-- **Test Containers**: Database testing
-
-### E2E Testing
-
-- **Playwright**: Modern browser automation
-- **Cypress**: Alternative E2E framework
+- **Auth0 Integration**: Global authentication setup for testing
+- **Responsive Testing**: Multi-viewport validation
+- **Angular Integration**: Signals, components, and framework-specific validation
 
 ## 🔗 Quick Links
 

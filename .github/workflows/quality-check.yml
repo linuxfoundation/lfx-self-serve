@@ -71,3 +71,24 @@ jobs:
           name: turbo-cache-summary
           path: .turbo/
           retention-days: 1
+
+  e2e-tests:
+    name: E2E Tests
+    needs: quality-checks
+    uses: ./.github/workflows/e2e-tests.yml
+    with:
+      node-version: '22'
+      test-command: 'e2e'
+      browser: 'chromium'  # Use only Chromium for PR testing for faster feedback
+      skip-build: false
+    secrets:
+      TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
+      TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+      E2E_AUTH0_CLIENT_ID: ${{ secrets.E2E_AUTH0_CLIENT_ID }}
+      E2E_AUTH0_CLIENT_SECRET: ${{ secrets.E2E_AUTH0_CLIENT_SECRET }}
+      E2E_AUTH0_ISSUER_BASE_URL: ${{ secrets.E2E_AUTH0_ISSUER_BASE_URL }}
+      E2E_AUTH0_AUDIENCE: ${{ secrets.E2E_AUTH0_AUDIENCE }}
+      E2E_SUPABASE_URL: ${{ secrets.E2E_SUPABASE_URL }}
+      E2E_POSTGRES_API_KEY: ${{ secrets.E2E_POSTGRES_API_KEY }}
+      E2E_QUERY_SERVICE_URL: ${{ secrets.E2E_QUERY_SERVICE_URL }}
+      E2E_QUERY_SERVICE_TOKEN: ${{ secrets.E2E_QUERY_SERVICE_TOKEN }}

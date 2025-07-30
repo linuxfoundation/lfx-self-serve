@@ -47,6 +47,8 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 - [Authentication](docs/architecture/backend/authentication.md) - Auth0 setup
 - [SSR Server](docs/architecture/backend/ssr-server.md) - Server-side rendering
 - [Logging & Monitoring](docs/architecture/backend/logging-monitoring.md) - Structured logging
+- [E2E Testing](docs/architecture/testing/e2e-testing.md) - Comprehensive end-to-end testing with dual architecture
+- [Testing Best Practices](docs/architecture/testing/testing-best-practices.md) - Testing patterns and implementation guide
 
 ### 💡 Quick Reference
 
@@ -161,6 +163,50 @@ export class ComponentName {
 
 See `apps/lfx-pcc/src/app/modules/project/committees/committee-dashboard/committee-dashboard.component.ts` for a complete implementation following this pattern.
 
+## Testing
+
+The project uses a comprehensive E2E testing strategy with Playwright, featuring a dual architecture approach:
+
+### Test Commands
+
+- `yarn e2e` - Run all E2E tests across all browsers
+- `yarn e2e --project=chromium` - Run tests on Chromium only
+- `yarn e2e --project="Mobile Chrome"` - Run tests on Mobile Chrome only
+- `yarn e2e --reporter=list` - Run tests with detailed output
+- `yarn e2e --headed` - Run tests in headed mode (visible browser)
+
+### Test Architecture
+
+**Dual Testing Approach:**
+
+- **Content-Based Tests** (`*.spec.ts`) - Validate user experience and visible content
+- **Structural Tests** (`*-robust.spec.ts`) - Validate component architecture and framework integration
+
+**Current Coverage:**
+
+- **85+ tests** across homepage and project dashboard
+- **Multi-browser support** (Chromium, Firefox, Mobile Chrome)
+- **Responsive testing** with viewport-aware assertions
+- **Data-testid architecture** for reliable element targeting
+
+### Key Testing Features
+
+- **Authentication Flow** - Global Auth0 setup with session management
+- **Angular Integration** - Signals, computed values, and component testing
+- **Mobile-First** - Responsive design validation across viewports
+- **Robust Selectors** - Data-testid attributes that survive UI changes
+- **Error Handling** - Graceful failure handling and debugging support
+
+### Test Maintenance
+
+- All tests should pass consistently (currently 85/85 passing)
+- Use data-testid attributes for reliable element selection
+- Follow naming conventions: `[section]-[component]-[element]`
+- Include both user experience and technical validation
+- Update tests when adding new features or components
+
+For detailed testing guidelines, see [E2E Testing Documentation](docs/architecture/testing/e2e-testing.md) and [Testing Best Practices](docs/architecture/testing/testing-best-practices.md).
+
 ## Development Memories
 
 - Always reference PrimeNG's component interface when trying to define types
@@ -182,3 +228,8 @@ See `apps/lfx-pcc/src/app/modules/project/committees/committee-dashboard/committ
 - Do not nest ternary expressions
 - Always run yarn lint before yarn build to validate your linting
 - The JIRA project key for this is LFXV2. All tickets associated to this repo should generally be in there.
+- **E2E tests use dual architecture** - both content-based (_.spec.ts) and structural (_-robust.spec.ts) tests
+- **Always add data-testid attributes** when creating new components for reliable test targeting
+- **Run yarn e2e before major changes** to ensure all 85+ tests pass consistently
+- **Use data-testid naming convention** - `[section]-[component]-[element]` for hierarchical structure
+- **Test responsive behavior** - validate mobile, tablet, and desktop viewports appropriately

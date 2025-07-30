@@ -1,22 +1,25 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer h-full" [routerLink]="['/project', url()]">
+<div
+  class="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow cursor-pointer h-full"
+  [routerLink]="['/project', url()]"
+  data-testid="project-card-container">
   <div class="p-6">
     <!-- Logo and Title Section -->
-    <div class="flex flex-col gap-6 mb-6">
+    <div class="flex flex-col gap-6 mb-6" data-testid="project-header">
       <div class="flex flex-col items-start gap-0">
         <!-- Logo Container -->
-        <div class="flex items-start">
-          <img [src]="logo()" [alt]="name() + ' logo'" class="w-full h-16 object-contain" />
+        <div class="flex items-start" data-testid="project-logo-container">
+          <img [src]="logo()" [alt]="name() + ' logo'" class="w-full h-16 object-contain" data-testid="project-logo" />
         </div>
 
         <!-- Title and Description -->
-        <div class="flex flex-col gap-2 mt-4">
-          <h3 class="text-base font-display font-semibold text-gray-900">
+        <div class="flex flex-col gap-2 mt-4" data-testid="project-info">
+          <h3 class="text-base font-display font-semibold text-gray-900" data-testid="project-title">
             {{ name() }}
           </h3>
-          <p class="text-sm text-gray-600 leading-relaxed line-clamp-2">
+          <p class="text-sm text-gray-600 leading-relaxed line-clamp-2" data-testid="project-description">
             {{ description() }}
           </p>
         </div>
@@ -25,14 +28,14 @@
 
     <!-- Metrics Section -->
     @if (metrics().length > 0) {
-      <div class="flex flex-col gap-3">
+      <div class="flex flex-col gap-3" data-testid="project-metrics">
         @for (metric of metrics(); track metric.label) {
-          <div class="flex items-center justify-between py-0.5">
-            <div class="flex items-center gap-2">
-              <i [class]="metric.icon" class="text-base w-5"></i>
-              <span class="text-sm text-gray-600">{{ metric.label }}</span>
+          <div class="flex items-center justify-between py-0.5" data-testid="project-metric" [attr.data-metric-label]="metric.label">
+            <div class="flex items-center gap-2" data-testid="metric-label-container">
+              <i [class]="metric.icon" class="text-base w-5" data-testid="metric-icon"></i>
+              <span class="text-sm text-gray-600" data-testid="metric-label">{{ metric.label }}</span>
             </div>
-            <div class="flex items-center gap-2">
+            <div class="flex items-center gap-2" data-testid="metric-value-container">
               @if (metric.badge) {
                 <span
                   class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-semibold"
@@ -44,11 +47,13 @@
                         : metric.badge.severity === 'warning'
                           ? 'bg-amber-500 text-white'
                           : 'bg-red-500 text-white'
-                  ">
+                  "
+                  data-testid="metric-badge"
+                  [attr.data-badge-severity]="metric.badge.severity">
                   {{ metric.badge.label }}
                 </span>
               } @else {
-                <span class="text-sm text-gray-900 font-normal font-display">{{ metric.value }}</span>
+                <span class="text-sm text-gray-900 font-normal font-display" data-testid="metric-value">{{ metric.value }}</span>
               }
             </div>
           </div>
