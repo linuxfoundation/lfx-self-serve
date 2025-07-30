@@ -24,6 +24,8 @@
       "@config/*": ["./src/app/config/*"],
       "@shared/*": ["./src/app/shared/*"],
       "@components/*": ["./src/app/shared/components/*"],
+      "@services/*": ["./src/app/shared/services/*"],
+      "@pipes/*": ["./src/app/shared/pipes/*"],
       "@environments/*": ["./src/environments/*"],
       "@lfx-pcc/shared": ["../../packages/shared/src"],
       "@lfx-pcc/shared/*": ["../../packages/shared/src/*"]

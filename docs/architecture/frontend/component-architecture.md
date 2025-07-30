@@ -1,5 +1,69 @@
 # Component Architecture
 
+## 📁 Module File Organization
+
+The project follows a modular file organization pattern where components are organized by their functional area:
+
+### Module Structure
+
+```text
+apps/lfx-pcc/src/app/modules/project/
+├── dashboard/                  # Project overview section
+│   └── project-dashboard/      # Main dashboard route component
+├── meetings/                   # Meetings management section
+│   ├── meeting-dashboard/      # Main meetings route component
+│   └── components/             # Meeting-specific components
+│       ├── meeting-card/
+│       ├── meeting-form/
+│       ├── meeting-modal/
+│       └── participant-list/
+├── committees/                 # Committee management section
+│   ├── committee-dashboard/    # Main committees route component
+│   ├── committee-view/         # Committee detail route component
+│   └── components/             # Committee-specific components
+│       ├── committee-form/
+│       ├── committee-members/
+│       ├── member-card/
+│       └── member-form/
+├── mailing-lists/              # Mailing lists section
+│   └── mailing-list-dashboard/ # Main mailing lists route component
+└── settings/                   # Settings section
+    ├── settings-dashboard/     # Main settings route component
+    └── components/             # Settings-specific components
+        └── user-permissions-table/
+```
+
+### Key Principles
+
+1. **Section Organization**: Each major feature area (meetings, committees, etc.) has its own folder
+2. **Route Components**: Components that have routes live directly in their section folder
+3. **Shared Components Within Section**: Components used only within a section live in that section's `components` folder
+4. **Truly Shared Components**: Only components used across multiple sections remain in `app/shared/components`
+
+### Import Pattern
+
+When importing section-specific components:
+
+```typescript
+// From within the same section (e.g., committee-view importing committee-form)
+import { CommitteeFormComponent } from '../components/committee-form/committee-form.component';
+
+// From another section (e.g., project dashboard importing committee-form)
+import { CommitteeFormComponent } from '../../committees/components/committee-form/committee-form.component';
+
+// Truly shared components still use the alias
+import { ButtonComponent } from '@app/shared/components/button/button.component';
+```
+
+### Component Placement Guidelines
+
+When creating new components, follow these guidelines:
+
+1. **Route Components**: If the component has its own route, place it directly in the section folder
+2. **Section-Specific Components**: If used only within one section, place in that section's `components` folder
+3. **Cross-Section Components**: If used across multiple sections, place in `app/shared/components`
+4. **UI Wrapper Components**: Generic UI components (buttons, cards, etc.) always go in `app/shared/components`
+
 ## 🎯 PrimeNG Component Wrapper Strategy
 
 All PrimeNG components are abstracted through LFX wrapper components for UI library independence and consistent API.
@@ -516,10 +580,29 @@ AppComponent
 └── RouterOutlet
     ├── HomeComponent
     │   └── ProjectCardComponent (multiple instances)
-    ├── ProjectComponent
-    │   └── ProjectLayoutComponent
-    └── Dashboard Components
-        └── ProjectLayoutComponent
+    └── ProjectLayoutComponent
+        └── RouterOutlet (project sub-routes)
+            ├── project/dashboard/
+            │   └── ProjectDashboardComponent
+            ├── project/meetings/
+            │   ├── MeetingDashboardComponent
+            │   └── components/
+            │       ├── MeetingCardComponent
+            │       ├── MeetingFormComponent
+            │       └── ParticipantListComponent
+            ├── project/committees/
+            │   ├── CommitteeDashboardComponent
+            │   ├── CommitteeViewComponent
+            │   └── components/
+            │       ├── CommitteeFormComponent
+            │       ├── CommitteeMembersComponent
+            │       └── MemberCardComponent
+            ├── project/mailing-lists/
+            │   └── MailingListDashboardComponent
+            └── project/settings/
+                ├── SettingsDashboardComponent
+                └── components/
+                    └── UserPermissionsTableComponent
 ```
 
 ## 🎯 Usage Guidelines
@@ -531,3 +614,5 @@ AppComponent
 5. **Support template projection** for flexibility
 6. **Maintain accessibility** standards
 7. **Test component isolation** and integration
+8. **Follow module organization** - place components in section-specific folders when appropriate
+9. **Minimize shared components** - only truly cross-cutting components belong in shared/components

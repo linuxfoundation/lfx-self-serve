@@ -26,6 +26,7 @@
   --font-serif: 'Roboto Slab', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
 
   --p-datatable-body-cell-padding: 0;
+  --p-inplace-padding: 0;
 }
 
 :root {
@@ -44,6 +45,7 @@
   --p-textarea-md-font-size: 1rem;
   --p-textarea-lg-font-size: 1.125rem;
   --p-toggle-sm-font-size: 0.875rem;
+  --p-inplace-padding: 0;
 }
 
 html {

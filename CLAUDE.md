@@ -159,7 +159,7 @@ export class ComponentName {
 
 ### Example: Committee Dashboard
 
-See `apps/lfx-pcc/src/app/modules/project/components/committee-dashboard/committee-dashboard.component.ts` for a complete implementation following this pattern.
+See `apps/lfx-pcc/src/app/modules/project/committees/committee-dashboard/committee-dashboard.component.ts` for a complete implementation following this pattern.
 
 ## Development Memories
 

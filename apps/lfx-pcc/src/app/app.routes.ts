@@ -5,12 +5,12 @@ import { Routes } from '@angular/router';
 
 import { ProjectLayoutComponent } from './layouts/project-layout/project-layout.component';
 import { HomeComponent } from './modules/pages/home/home.component';
-import { CommitteeDashboardComponent } from './modules/project/components/committee-dashboard/committee-dashboard.component';
-import { CommitteeViewComponent } from './modules/project/components/committee-view/committee-view.component';
-import { MailingListDashboardComponent } from './modules/project/components/mailing-list-dashboard/mailing-list-dashboard.component';
-import { MeetingDashboardComponent } from './modules/project/components/meeting-dashboard/meeting-dashboard.component';
-import { SettingsDashboardComponent } from './modules/project/components/settings-dashboard/settings-dashboard.component';
-import { ProjectComponent } from './modules/project/project.component';
+import { CommitteeDashboardComponent } from './modules/project/committees/committee-dashboard/committee-dashboard.component';
+import { CommitteeViewComponent } from './modules/project/committees/committee-view/committee-view.component';
+import { MailingListDashboardComponent } from './modules/project/mailing-lists/mailing-list-dashboard/mailing-list-dashboard.component';
+import { MeetingDashboardComponent } from './modules/project/meetings/meeting-dashboard/meeting-dashboard.component';
+import { SettingsDashboardComponent } from './modules/project/settings/settings-dashboard/settings-dashboard.component';
+import { ProjectComponent } from './modules/project/dashboard/project-dashboard/project.component';
 
 export const routes: Routes = [
   {

@@ -44,6 +44,14 @@
     }
   }
 
+  .p-inplace-display {
+    @apply w-full;
+
+    &:hover {
+      @apply bg-transparent;
+    }
+  }
+
   .pill {
     @apply inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full transition-colors text-gray-600 border border-gray-200 hover:bg-gray-50;
   }

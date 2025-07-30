@@ -941,7 +941,7 @@ app.use(auth(authConfig));
 ```typescript
 // Component or service
 import { inject } from '@angular/core';
-import { UserService } from '@app/shared/services/user.service';
+import { UserService } from '@services/user.service';
 
 export class MyComponent {
   private readonly userService = inject(UserService);

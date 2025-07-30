@@ -4,7 +4,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { CreateMeetingRequest, Meeting, MeetingParticipant, UpdateMeetingRequest } from '@lfx-pcc/shared/interfaces';
-import { catchError, Observable, of, tap } from 'rxjs';
+import { catchError, Observable, of, take, tap } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -84,6 +84,7 @@ export class MeetingService {
 
   public createMeeting(meeting: CreateMeetingRequest): Observable<Meeting> {
     return this.http.post<Meeting>('/api/meetings', meeting).pipe(
+      take(1),
       catchError((error) => {
         console.error('Failed to create meeting:', error);
         throw error;
@@ -97,6 +98,7 @@ export class MeetingService {
       params = params.set('editType', editType);
     }
     return this.http.put<Meeting>(`/api/meetings/${id}`, meeting, { params }).pipe(
+      take(1),
       catchError((error) => {
         console.error(`Failed to update meeting ${id}:`, error);
         throw error;
@@ -110,8 +112,29 @@ export class MeetingService {
       params = params.set('deleteType', deleteType);
     }
     return this.http.delete<void>(`/api/meetings/${id}`, { params }).pipe(
+      take(1),
       catchError((error) => {
         console.error(`Failed to delete meeting ${id}:`, error);
+        throw error;
+      })
+    );
+  }
+
+  public addMeetingParticipant(meetingId: string, participant: Partial<MeetingParticipant>): Observable<MeetingParticipant> {
+    return this.http.post<MeetingParticipant>(`/api/meetings/${meetingId}/participants`, participant).pipe(
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to add participant to meeting ${meetingId}:`, error);
+        throw error;
+      })
+    );
+  }
+
+  public deleteMeetingParticipant(meetingId: string, participantId: string): Observable<void> {
+    return this.http.delete<void>(`/api/meetings/${meetingId}/participants/${participantId}`).pipe(
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to delete participant ${participantId} from meeting ${meetingId}:`, error);
         throw error;
       })
     );
