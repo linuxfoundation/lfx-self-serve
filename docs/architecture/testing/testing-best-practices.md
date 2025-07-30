@@ -58,7 +58,7 @@ test('should use lfx-card components consistently', async ({ page }) => {
 
 **Hierarchical Structure**:
 
-```
+```text
 [section]-[component]-[element]
 hero-search-input
 metrics-cards-container
