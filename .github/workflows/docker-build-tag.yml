@@ -1,0 +1,139 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+
+name: Docker Build - Release
+
+on:
+  push:
+    tags:
+      - v*
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+  COSIGN_VERSION: v2.5.3
+  HELM_VERSION: v3.18.4
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      packages: write
+      id-token: write
+    outputs:
+      app_version: ${{ steps.prepare.outputs.app_version }}
+      chart_name: ${{ steps.prepare.outputs.chart_name }}
+      chart_version: ${{ steps.prepare.outputs.chart_version }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Prepare versions and chart name
+        id: prepare
+        run: |
+          set -euo pipefail
+          APP_VERSION=$(echo ${{ github.ref_name }} | sed 's/v//g')
+          CHART_NAME="$(yq '.name' charts/*/Chart.yaml)"
+          CHART_VERSION="$(yq '.version' charts/*/Chart.yaml)"
+          {
+            echo "app_version=$APP_VERSION"
+            echo "chart_name=$CHART_NAME"
+            echo "chart_version=$CHART_VERSION"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+
+      - name: Build and push Docker image
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64,linux/arm64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_ENV=production
+
+  release-helm-chart:
+    needs: build-and-push
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+      id-token: write
+    outputs:
+      digest: ${{ steps.publish-ghcr.outputs.digest }}
+      image_name: ${{ steps.publish-ghcr.outputs.image_name }}
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Publish Chart to GHCR
+        id: publish-ghcr
+        uses: linuxfoundation/lfx-public-workflows/.github/actions/helm-chart-oci-publisher@c465d6571fa0b8be9d551d902955164ea04a00af # main
+        with:
+          name: ${{ needs.build-and-push.outputs.chart_name }}
+          repository: ${{ github.repository }}/chart
+          chart_version: ${{ needs.build-and-push.outputs.chart_version }}
+          app_version: ${{ needs.build-and-push.outputs.app_version }}
+          registry: ghcr.io
+          registry_username: ${{ github.actor }}
+          registry_password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Install Cosign
+        uses: sigstore/cosign-installer@d58896d6a1865668819e1d91763c7751a165e159 # v3.9.2
+        with:
+          cosign-release: "${{ env.COSIGN_VERSION }}"
+
+      - name: Login to GitHub
+        uses: docker/login-action@74a5d142397b4f367a81961eba4e8cd7edddf772 # v3.4.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Sign the Helm chart in GHCR
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          cosign sign --yes '${{ steps.publish-ghcr.outputs.image_name }}@${{ steps.publish-ghcr.outputs.digest }}'
+
+  create-ghcr-helm-provenance:
+    needs:
+      - release-helm-chart
+    permissions:
+      actions: read
+      id-token: write
+      packages: write
+    uses: slsa-framework/slsa-github-generator/.github/workflows/generator_container_slsa3.yml@v2.1.0
+    with:
+      image: ${{ needs.release-helm-chart.outputs.image_name }}
+      digest: ${{ needs.release-helm-chart.outputs.digest }}
+      registry-username: ${{ github.actor }}
+    secrets:
+      registry-password: ${{ secrets.GITHUB_TOKEN }}

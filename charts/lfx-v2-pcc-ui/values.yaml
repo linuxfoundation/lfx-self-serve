@@ -1,0 +1,88 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+
+replicaCount: 1
+
+image:
+  repository: ghcr.io/linuxfoundation/lfx-v2-pcc-ui
+  pullPolicy: IfNotPresent
+  # Overrides the image tag whose default is the chart appVersion.
+  tag: ""
+
+imagePullSecrets: []
+nameOverride: ""
+fullnameOverride: ""
+
+# Global annotations to add to all resources
+annotations: {}
+
+# Global labels to add to all resources
+labels: {}
+
+serviceAccount:
+  # Specifies whether a service account should be created
+  create: true
+  # Automatically mount a ServiceAccount's API credentials?
+  automount: true
+  # Annotations to add to the service account
+  annotations: {}
+  # The name of the service account to use.
+  # If not set and create is true, a name is generated using the fullname template
+  name: ""
+
+podAnnotations: {}
+podLabels: {}
+
+service:
+  type: ClusterIP
+  port: 80
+  targetPort: 4000
+  annotations: {}
+
+ingress:
+  enabled: false
+  className: ""
+  annotations: {}
+  hosts:
+    - host: chart-example.local
+      paths:
+        - path: /
+          pathType: Prefix
+  tls: []
+
+# Environment variables for the application
+# Uses map/object format for deep merging support
+environment:
+  # Node.js environment
+  NODE_ENV:
+    value: production
+  
+  # Application configuration
+  PORT:
+    value: "4000"
+  
+  # Cache and temporary directories
+  COREPACK_HOME:
+    value: "/home/appuser/.cache/node/corepack"
+  XDG_CACHE_HOME:
+    value: "/home/appuser/.cache"
+  TMPDIR:
+    value: "/tmp"
+  
+  # PCC specific configuration
+  PCC_BASE_URL:
+    value: "https://pcc.k8s.orb.local"
+  
+  # Auth0 configuration (non-secret values)
+  PCC_AUTH0_ISSUER_BASE_URL:
+    value: "https://linuxfoundation-dev.auth0.com/"
+  PCC_AUTH0_AUDIENCE:
+    value: "https://api-gw.dev.platform.linuxfoundation.org/"
+  
+  # Environment identifier
+  ENV:
+    value: "production"
+  
+  # Query service configuration
+  QUERY_SERVICE_URL:
+    value: "http://localhost:8080/query/resources"
