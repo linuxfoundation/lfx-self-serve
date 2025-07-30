@@ -16,10 +16,6 @@ import { CardComponent } from '../card/card.component';
 import { InplaceComponent } from '../inplace/inplace.component';
 import { ParticipantListComponent } from '../participant-list/participant-list.component';
 
-interface ParticipantManagementData {
-  meetingId: string;
-}
-
 @Component({
   selector: 'lfx-participant-management-modal',
   standalone: true,
@@ -42,8 +38,7 @@ export class ParticipantManagementModalComponent {
   private participantsModified: boolean;
 
   public constructor() {
-    const data = this.config.data as ParticipantManagementData;
-    this.meetingId = data.meetingId;
+    this.meetingId = this.config.data.meetingId;
     this.addParticipantActive = signal(this.config.data.addParticipant ?? false);
     this.participantsModified = false;
     this.refreshTrigger = new Subject<void>();

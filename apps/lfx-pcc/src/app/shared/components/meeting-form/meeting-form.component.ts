@@ -53,12 +53,11 @@ export class MeetingFormComponent {
   public form = signal<FormGroup>(this.createMeetingFormGroup());
   public loading = signal<boolean>(false);
 
-  public isEditing = computed(() => this.config.data?.isEditing || false);
-  public meetingId = computed(() => this.config.data?.meetingId);
-  public meeting = computed(() => this.config.data?.meeting);
-  public isRecurringMeeting: boolean = !!this.config.data?.meeting?.recurrence;
-  public editType: 'single' | 'future' = this.config.data?.editType || 'single';
-  public isEditingSingleOccurrence: boolean = this.editType === 'single' && this.isRecurringMeeting;
+  public isEditing = signal(this.config.data?.isEditing || false);
+  public meetingId = signal(this.config.data?.meetingId);
+  public meeting = signal(this.config.data?.meeting);
+  public editType = signal(this.config.data?.editType || 'single');
+  public isEditingSingleOccurrence = computed(() => this.editType() === 'single' && !!this.meeting()?.recurrence);
 
   // Duration options for the select dropdown
   public durationOptions = [
@@ -176,7 +175,7 @@ export class MeetingFormComponent {
     };
 
     const operation = this.isEditing()
-      ? this.meetingService.updateMeeting(this.meetingId()!, baseMeetingData as UpdateMeetingRequest, this.editType)
+      ? this.meetingService.updateMeeting(this.meetingId()!, baseMeetingData as UpdateMeetingRequest, this.editType())
       : this.meetingService.createMeeting(baseMeetingData as CreateMeetingRequest);
 
     operation.subscribe({

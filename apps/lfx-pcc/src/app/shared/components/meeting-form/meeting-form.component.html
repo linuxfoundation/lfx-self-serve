@@ -124,7 +124,7 @@
     </div>
 
     <!-- Recurrence -->
-    @if (!isEditingSingleOccurrence) {
+    @if (!isEditingSingleOccurrence()) {
       <div>
         <div class="flex items-center gap-2 mb-1">
           <label for="recurrence" class="block text-sm font-medium text-gray-700"> Repeat </label>
@@ -167,7 +167,7 @@
   </div>
 
   <!-- Meeting Settings Section -->
-  @if (!isEditingSingleOccurrence) {
+  @if (!isEditingSingleOccurrence()) {
     <div class="flex flex-col gap-3">
       <h3 class="text-lg font-medium text-gray-900">Meeting Settings</h3>
 
