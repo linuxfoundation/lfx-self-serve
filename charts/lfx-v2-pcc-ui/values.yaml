@@ -87,9 +87,7 @@ environment:
   QUERY_SERVICE_URL:
     value: "http://query-service.default.svc.cluster.local/query/resources"
 
-# required environment variable secrets
-  PCC_BASE_URL:
-    value:
+  # required environment variable secrets
 
   PCC_AUTH0_CLIENT_ID:
     value:
