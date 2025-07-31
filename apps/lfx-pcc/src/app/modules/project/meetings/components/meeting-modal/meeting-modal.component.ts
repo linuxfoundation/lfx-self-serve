@@ -18,7 +18,7 @@ export class MeetingModalComponent {
 
   public readonly meeting = this.config.data?.meeting;
 
-  public onRefresh(): void {
+  public onDelete(): void {
     this.dialogRef.close(true);
   }
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, Injector, input, output, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, effect, inject, Injector, input, output, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
@@ -52,20 +52,26 @@ export class MeetingCardComponent {
   private readonly dialogService = inject(DialogService);
   private readonly injector = inject(Injector);
 
-  public readonly meeting = input.required<Meeting>();
+  public readonly meetingInput = input.required<Meeting>();
   public readonly pastMeeting = input<boolean>(false);
   public readonly loading = input<boolean>(false);
   public readonly meetingParticipantCount: Signal<number> = this.initMeetingParticipantCount();
   public showParticipants: WritableSignal<boolean> = signal(false);
+  public meeting: WritableSignal<Meeting> = signal({} as Meeting);
   public participantsLoading: WritableSignal<boolean> = signal(true);
   public participants!: Signal<MeetingParticipant[]>;
   public participantsLabel: Signal<string> = this.initParticipantsLabel();
   public additionalParticipantsCount: WritableSignal<number> = signal(0);
   public actionMenuItems: Signal<MenuItem[]> = this.initializeActionMenuItems();
 
-  public readonly meetingUpdated = output<void>();
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
+
+  public constructor() {
+    effect(() => {
+      this.meeting.set(this.meetingInput());
+    });
+  }
 
   public onParticipantsToggle(event: Event): void {
     event.stopPropagation();
@@ -78,43 +84,6 @@ export class MeetingCardComponent {
 
     // Show/hide inline participants display
     this.participantsLoading.set(true);
-    if (!this.showParticipants()) {
-      const queries = combineLatest([
-        this.meetingService.getMeetingParticipants(this.meeting().id),
-        ...(this.meeting().committees?.map((c) => this.committeeService.getCommitteeMembers(c).pipe(catchError(() => of([])))) ?? []),
-      ]).pipe(
-        map(([participants, ...committeeMembers]) => {
-          return [
-            ...participants,
-            ...committeeMembers
-              .filter((c) => c.length > 0)
-              .flatMap((c) => {
-                return c.map((m) => ({
-                  id: m.id,
-                  meeting_id: this.meeting().id,
-                  first_name: m.first_name,
-                  last_name: m.last_name,
-                  email: m.email,
-                  organization: m.organization,
-                  is_host: false,
-                  type: 'committee',
-                  invite_accepted: true,
-                  attended: true,
-                }));
-              }),
-          ];
-        }),
-        // Sort participants by first name
-        map((participants) => participants.sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingParticipant[]),
-        finalize(() => this.participantsLoading.set(false))
-      );
-
-      runInInjectionContext(this.injector, () => {
-        this.participants = toSignal(queries, {
-          initialValue: [],
-        });
-      });
-    }
 
     this.showParticipants.set(!this.showParticipants());
   }
@@ -277,7 +246,7 @@ export class MeetingCardComponent {
       .onClose.pipe(take(1))
       .subscribe((updatedMeeting) => {
         if (updatedMeeting) {
-          this.meetingUpdated.emit();
+          this.refreshMeeting();
         }
       });
   }
@@ -339,5 +308,19 @@ export class MeetingCardComponent {
 
       return baseItems;
     });
+  }
+
+  private refreshMeeting(): void {
+    this.meetingService
+      .getMeeting(this.meeting().id)
+      .pipe(
+        take(1),
+        tap((meeting) => {
+          this.additionalParticipantsCount.set(0);
+          this.meeting.set(meeting);
+        }),
+        finalize(() => this.refreshParticipantsList())
+      )
+      .subscribe();
   }
 }

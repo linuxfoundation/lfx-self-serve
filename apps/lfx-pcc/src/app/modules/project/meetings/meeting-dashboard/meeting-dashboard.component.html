@@ -75,7 +75,7 @@
                   <div class="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow h-full">
                     <div class="p-6">
                       <lfx-meeting-card
-                        [meeting]="meeting"
+                        [meetingInput]="meeting"
                         (meetingUpdated)="refreshMeetings()"
                         (meetingDeleted)="refreshMeetings()"
                         [pastMeeting]="meetingListView() === 'past'"
