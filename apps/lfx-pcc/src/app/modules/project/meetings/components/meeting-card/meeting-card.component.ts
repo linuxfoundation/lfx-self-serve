@@ -85,6 +85,12 @@ export class MeetingCardComponent {
     // Show/hide inline participants display
     this.participantsLoading.set(true);
 
+    // Show/hide inline participants display
+    this.participantsLoading.set(true);
+    if (!this.showParticipants()) {
+      this.initParticipantsList();
+    }
+
     this.showParticipants.set(!this.showParticipants());
   }
 
@@ -101,15 +107,10 @@ export class MeetingCardComponent {
       },
     });
 
-    dialogRef.onChildComponentLoaded.pipe(take(1)).subscribe((r) => {
-      r.participantSaved.subscribe(() => {
-        this.refreshParticipantsList();
+    dialogRef.onChildComponentLoaded.pipe(take(1)).subscribe((component) => {
+      component.participantSaved.subscribe(() => {
+        this.initParticipantsList();
       });
-    });
-
-    // Still handle modal close for final cleanup if needed
-    dialogRef.onClose.pipe(take(1)).subscribe(() => {
-      // Final refresh when modal closes (in case we missed any events)
     });
   }
 
@@ -132,7 +133,7 @@ export class MeetingCardComponent {
       .subscribe((result) => {
         if (result) {
           // Refresh the current participant display
-          this.refreshParticipantsList();
+          this.initParticipantsList();
         }
       });
   }
@@ -156,7 +157,7 @@ export class MeetingCardComponent {
     });
   }
 
-  private refreshParticipantsList(): void {
+  private initParticipantsList(): void {
     this.participantsLoading.set(true);
     const queries = combineLatest([
       this.meetingService.getMeetingParticipants(this.meeting().id),
@@ -319,7 +320,7 @@ export class MeetingCardComponent {
           this.additionalParticipantsCount.set(0);
           this.meeting.set(meeting);
         }),
-        finalize(() => this.refreshParticipantsList())
+        finalize(() => this.initParticipantsList())
       )
       .subscribe();
   }
