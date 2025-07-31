@@ -3,6 +3,12 @@
 
 name: E2E Tests
 
+permissions:
+  id-token: write
+  contents: read
+  issues: write
+  pull-requests: write
+
 on:
   workflow_call:
     inputs:
@@ -106,11 +112,11 @@ jobs:
         run: |
           missing_secrets=""
 
-          # Check AWS Secrets Manager secrets
-          if [ -z "${{ steps.get_secrets.outputs.AUTH0 }}" ]; then
+          # Check AWS Secrets Manager secrets (masked environment variables)
+          if [ -z "$AUTH0" ]; then
             missing_secrets="$missing_secrets AUTH0 (from AWS Secrets Manager)"
           fi
-          if [ -z "${{ steps.get_secrets.outputs.SUPABASE }}" ]; then
+          if [ -z "$SUPABASE" ]; then
             missing_secrets="$missing_secrets SUPABASE (from AWS Secrets Manager)"
           fi
           
@@ -131,55 +137,53 @@ jobs:
             echo "can_run_tests=true" >> $GITHUB_OUTPUT
           fi
 
-      - name: Set up application environment variables
+      - name: Set up non-sensitive environment variables
         if: steps.validate-secrets.outputs.can_run_tests == 'true'
-        working-directory: apps/lfx-pcc
         run: |
           echo "ENV=development" >> $GITHUB_ENV
           echo "PCC_BASE_URL=http://localhost:4200" >> $GITHUB_ENV
-          
-          # Parse AUTH0 secret from AWS Secrets Manager
-          AUTH0_SECRET='${{ steps.get_secrets.outputs.AUTH0 }}'
-          if [ -n "$AUTH0_SECRET" ]; then
-            # Extract individual AUTH0 values from JSON format
-            echo "PCC_AUTH0_CLIENT_ID=$(echo $AUTH0_SECRET | jq -r '.client_id // empty')" >> $GITHUB_ENV
-            echo "PCC_AUTH0_CLIENT_SECRET=$(echo $AUTH0_SECRET | jq -r '.client_secret // empty')" >> $GITHUB_ENV
+          echo "PCC_AUTH0_ISSUER_BASE_URL=https://linuxfoundation-dev.auth0.com/" >> $GITHUB_ENV
+          echo "PCC_AUTH0_AUDIENCE=https://api-gw.dev.platform.linuxfoundation.org/" >> $GITHUB_ENV
+          echo "CI=true" >> $GITHUB_ENV
 
-            # Set default Auth0 configuration values
-            echo "PCC_AUTH0_ISSUER_BASE_URL=https://linuxfoundation-dev.auth0.com/" >> $GITHUB_ENV
-            echo "PCC_AUTH0_AUDIENCE=https://api-gw.dev.platform.linuxfoundation.org/" >> $GITHUB_ENV
-            
-            echo "✅ AUTH0 secrets loaded from AWS Secrets Manager"
-          else
-            echo "⚠️ AUTH0 secret not found in AWS Secrets Manager"
+      - name: Set up sensitive environment variables
+        if: steps.validate-secrets.outputs.can_run_tests == 'true'
+        run: |
+          # Parse and set AUTH0 secrets with explicit masking
+          if [ -n "$AUTH0" ]; then
+            AUTH0_CLIENT_ID=$(echo "$AUTH0" | jq -r '.client_id // empty')
+            AUTH0_CLIENT_SECRET=$(echo "$AUTH0" | jq -r '.client_secret // empty')
+
+            # Explicitly mask the values
+            echo "::add-mask::$AUTH0_CLIENT_ID"
+            echo "::add-mask::$AUTH0_CLIENT_SECRET"
+
+            # Set as environment variables
+            echo "PCC_AUTH0_CLIENT_ID=$AUTH0_CLIENT_ID" >> $GITHUB_ENV
+            echo "PCC_AUTH0_CLIENT_SECRET=$AUTH0_CLIENT_SECRET" >> $GITHUB_ENV
+            echo "✅ AUTH0 secrets set as masked environment variables"
           fi
           
-          # Parse SUPABASE secret from AWS Secrets Manager
-          SUPABASE_SECRET='${{ steps.get_secrets.outputs.SUPABASE }}'
-          if [ -n "$SUPABASE_SECRET" ]; then
-            echo "SUPABASE_URL=$(echo $SUPABASE_SECRET | jq -r '.url // empty')" >> $GITHUB_ENV
-            echo "POSTGRES_API_KEY=$(echo $SUPABASE_SECRET | jq -r '.api_key // empty')" >> $GITHUB_ENV
+          # Parse and set SUPABASE secrets
+          if [ -n "$SUPABASE" ]; then
+            SUPABASE_URL=$(echo "$SUPABASE" | jq -r '.url // empty')
+            SUPABASE_API_KEY=$(echo "$SUPABASE" | jq -r '.api_key // empty')
             
-            echo "✅ SUPABASE secrets loaded from AWS Secrets Manager"
-          else
-            echo "⚠️ SUPABASE secret not found in AWS Secrets Manager"
+            # Explicitly mask the values
+            echo "::add-mask::$SUPABASE_URL"
+            echo "::add-mask::$SUPABASE_API_KEY"
+            
+            # Set as environment variables
+            echo "SUPABASE_URL=$SUPABASE_URL" >> $GITHUB_ENV
+            echo "POSTGRES_API_KEY=$SUPABASE_API_KEY" >> $GITHUB_ENV
+            echo "✅ SUPABASE secrets set as masked environment variables"
           fi
           
-          # Fallback to GitHub secrets if AWS secrets are not available
+          # Set test credentials
+          echo "::add-mask::${{ secrets.TEST_USERNAME }}"
+          echo "::add-mask::${{ secrets.TEST_PASSWORD }}"
           echo "TEST_USERNAME=${{ secrets.TEST_USERNAME }}" >> $GITHUB_ENV
           echo "TEST_PASSWORD=${{ secrets.TEST_PASSWORD }}" >> $GITHUB_ENV
-          echo "CI=true" >> $GITHUB_ENV
-          
-          # Debug: Show which secrets were loaded (without exposing values)
-          echo "🔍 Environment variables loaded:"
-          echo "  - PCC_AUTH0_CLIENT_ID: ${PCC_AUTH0_CLIENT_ID:+✅ Set}"
-          echo "  - PCC_AUTH0_CLIENT_SECRET: ${PCC_AUTH0_CLIENT_SECRET:+✅ Set}"
-          echo "  - PCC_AUTH0_ISSUER_BASE_URL: ${PCC_AUTH0_ISSUER_BASE_URL:+✅ Set}"
-          echo "  - PCC_AUTH0_AUDIENCE: ${PCC_AUTH0_AUDIENCE:+✅ Set}"
-          echo "  - SUPABASE_URL: ${SUPABASE_URL:+✅ Set}"
-          echo "  - POSTGRES_API_KEY: ${POSTGRES_API_KEY:+✅ Set}"
-          echo "  - TEST_USERNAME: ${TEST_USERNAME:+✅ Set}"
-          echo "  - TEST_PASSWORD: ${TEST_PASSWORD:+✅ Set}"
 
       - name: Install Playwright browsers
         if: steps.validate-secrets.outputs.can_run_tests == 'true'
@@ -191,6 +195,10 @@ jobs:
         working-directory: apps/lfx-pcc
         run: mkdir -p playwright/.auth
 
+      - name: Build the application
+        if: steps.validate-secrets.outputs.can_run_tests == 'true'
+        run: yarn build
+
       - name: Run E2E tests (All browsers)
         if: ${{ inputs.browser == 'all' && steps.validate-secrets.outputs.can_run_tests == 'true' }}
         working-directory: apps/lfx-pcc
@@ -199,7 +207,7 @@ jobs:
             echo "🔐 Running authenticated E2E tests on all browsers"
             echo "🚀 Playwright will automatically start the dev server on localhost:4200"
             echo "📋 Using secrets from AWS Secrets Manager"
-            yarn ${{ inputs.test-command }}
+            yarn ${{ inputs.test-command }} --reporter=list
           else
             echo "⚠️ No test credentials provided. Skipping E2E tests."
             echo "Set TEST_USERNAME and TEST_PASSWORD secrets to enable E2E tests."
@@ -214,7 +222,7 @@ jobs:
             echo "🔐 Running authenticated E2E tests on ${{ inputs.browser }}"
             echo "🚀 Playwright will automatically start the dev server on localhost:4200"
             echo "📋 Using secrets from AWS Secrets Manager"
-            yarn ${{ inputs.test-command }} --project=${{ inputs.browser }}
+            yarn ${{ inputs.test-command }} --project=${{ inputs.browser }} --reporter=list
           else
             echo "⚠️ No test credentials provided. Skipping E2E tests."
             echo "Set TEST_USERNAME and TEST_PASSWORD secrets to enable E2E tests."
@@ -262,15 +270,6 @@ jobs:
           name: playwright-report-${{ inputs.browser }}-${{ github.run_id }}
           path: |
             apps/lfx-pcc/playwright-report/
-            apps/lfx-pcc/test-results/
-          retention-days: 7
-
-      - name: Upload test traces
-        uses: actions/upload-artifact@v4
-        if: failure()
-        with:
-          name: playwright-traces-${{ inputs.browser }}-${{ github.run_id }}
-          path: apps/lfx-pcc/test-results/
           retention-days: 7
 
       - name: Comment test results on PR
@@ -281,7 +280,7 @@ jobs:
             const results = '${{ steps.test-results.outputs.results }}';
             const browser = '${{ inputs.browser }}';
             const runId = '${{ github.run_id }}';
-            
+
             let emoji, status, details;
             
             if (results === 'success') {
@@ -315,9 +314,35 @@ jobs:
             
             </details>`;
             
-            github.rest.issues.createComment({
+            // Look for existing E2E test comment by this bot
+            const existingComments = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: comment
+              repo: context.repo.repo
             });
+            
+            const botComment = existingComments.data.find(comment => 
+              comment.user.login === 'github-actions[bot]' && 
+              comment.body.includes('## ') && 
+              comment.body.includes('E2E Tests')
+            );
+            
+            if (botComment) {
+              // Update existing comment
+              await github.rest.issues.updateComment({
+                comment_id: botComment.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+              console.log('Updated existing E2E test comment');
+            } else {
+              // Create new comment
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+              console.log('Created new E2E test comment');
+            }
