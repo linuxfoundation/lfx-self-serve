@@ -86,3 +86,19 @@ environment:
   # Query service configuration
   QUERY_SERVICE_URL:
     value: "http://query-service.default.svc.cluster.local/query/resources"
+
+# required environment variable secrets
+  PCC_BASE_URL:
+    value:
+
+  PCC_AUTH0_CLIENT_ID:
+    value:
+
+  PCC_AUTH0_CLIENT_SECRET:
+    value:
+
+  SUPABASE_URL:
+    value:
+
+  POSTGRES_API_KEY:
+    value:

@@ -49,5 +49,3 @@ spec:
               {{- toYaml $config.valueFrom | nindent 14 }}
             {{- end }}
           {{- end }}
-          resources:
-            {{- toYaml .Values.resources | nindent 12 }}
