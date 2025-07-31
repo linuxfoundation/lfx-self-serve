@@ -38,30 +38,6 @@ on:
       TEST_PASSWORD:
         description: 'Password for test authentication'
         required: false
-      E2E_AUTH0_CLIENT_ID:
-        description: 'Auth0 Client ID for E2E testing'
-        required: false
-      E2E_AUTH0_CLIENT_SECRET:
-        description: 'Auth0 Client Secret for E2E testing'
-        required: false
-      E2E_AUTH0_ISSUER_BASE_URL:
-        description: 'Auth0 Issuer Base URL for E2E testing'
-        required: false
-      E2E_AUTH0_AUDIENCE:
-        description: 'Auth0 Audience for E2E testing'
-        required: false
-      E2E_SUPABASE_URL:
-        description: 'Supabase URL for E2E testing'
-        required: false
-      E2E_POSTGRES_API_KEY:
-        description: 'Postgres API Key for E2E testing'
-        required: false
-      E2E_QUERY_SERVICE_URL:
-        description: 'Query Service URL for E2E testing'
-        required: false
-      E2E_QUERY_SERVICE_TOKEN:
-        description: 'Query Service Token for E2E testing'
-        required: false
     outputs:
       test-results:
         description: 'Test results summary'
@@ -98,6 +74,22 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
+      - name: OIDC Auth
+        uses: aws-actions/configure-aws-credentials@v4
+        id: oidc-auth
+        with:
+          audience: sts.amazonaws.com
+          role-to-assume: arn:aws:iam::788942260905:role/github-actions-deploy
+          aws-region: us-west-2
+
+      - name: Read secrets from AWS Secrets Manager into environment variables
+        id: get_secrets
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            SUPABASE, /cloudops/managed-secrets/cloud/supabase/api_key
+            AUTH0,  /cloudops/managed-secrets/auth0/LFX_V2_PCC
+
       - name: Setup Turborepo cache
         uses: actions/cache@v4
         with:
@@ -113,23 +105,26 @@ jobs:
         id: validate-secrets
         run: |
           missing_secrets=""
+
+          # Check AWS Secrets Manager secrets
+          if [ -z "${{ steps.get_secrets.outputs.AUTH0 }}" ]; then
+            missing_secrets="$missing_secrets AUTH0 (from AWS Secrets Manager)"
+          fi
+          if [ -z "${{ steps.get_secrets.outputs.SUPABASE }}" ]; then
+            missing_secrets="$missing_secrets SUPABASE (from AWS Secrets Manager)"
+          fi
           
-          if [ -z "${{ secrets.E2E_AUTH0_CLIENT_ID }}" ]; then
-            missing_secrets="$missing_secrets E2E_AUTH0_CLIENT_ID"
+          # Check GitHub secrets (fallback)
+          if [ -z "${{ secrets.TEST_USERNAME }}" ]; then
+            missing_secrets="$missing_secrets TEST_USERNAME"
           fi
-          if [ -z "${{ secrets.E2E_AUTH0_CLIENT_SECRET }}" ]; then
-            missing_secrets="$missing_secrets E2E_AUTH0_CLIENT_SECRET"
-          fi
-          if [ -z "${{ secrets.E2E_AUTH0_ISSUER_BASE_URL }}" ]; then
-            missing_secrets="$missing_secrets E2E_AUTH0_ISSUER_BASE_URL"
-          fi
-          if [ -z "${{ secrets.E2E_AUTH0_AUDIENCE }}" ]; then
-            missing_secrets="$missing_secrets E2E_AUTH0_AUDIENCE"
+          if [ -z "${{ secrets.TEST_PASSWORD }}" ]; then
+            missing_secrets="$missing_secrets TEST_PASSWORD"
           fi
           
           if [ -n "$missing_secrets" ]; then
             echo "❌ Missing required secrets for E2E testing:$missing_secrets"
-            echo "Please configure these GitHub secrets to enable E2E tests."
+            echo "Please configure these secrets to enable E2E tests."
             echo "can_run_tests=false" >> $GITHUB_OUTPUT
           else
             echo "✅ All required secrets are configured"
@@ -142,17 +137,49 @@ jobs:
         run: |
           echo "ENV=development" >> $GITHUB_ENV
           echo "PCC_BASE_URL=http://localhost:4200" >> $GITHUB_ENV
-          echo "PCC_AUTH0_CLIENT_ID=${{ secrets.E2E_AUTH0_CLIENT_ID }}" >> $GITHUB_ENV
-          echo "PCC_AUTH0_CLIENT_SECRET=${{ secrets.E2E_AUTH0_CLIENT_SECRET }}" >> $GITHUB_ENV
-          echo "PCC_AUTH0_ISSUER_BASE_URL=${{ secrets.E2E_AUTH0_ISSUER_BASE_URL }}" >> $GITHUB_ENV
-          echo "PCC_AUTH0_AUDIENCE=${{ secrets.E2E_AUTH0_AUDIENCE }}" >> $GITHUB_ENV
-          echo "SUPABASE_URL=${{ secrets.E2E_SUPABASE_URL || 'https://mock.supabase.co' }}" >> $GITHUB_ENV
-          echo "POSTGRES_API_KEY=${{ secrets.E2E_POSTGRES_API_KEY || 'mock-postgres-key' }}" >> $GITHUB_ENV
-          echo "QUERY_SERVICE_URL=${{ secrets.E2E_QUERY_SERVICE_URL || 'http://localhost:8080/query/resources' }}" >> $GITHUB_ENV
-          echo "QUERY_SERVICE_TOKEN=${{ secrets.E2E_QUERY_SERVICE_TOKEN || 'mock-query-token' }}" >> $GITHUB_ENV
+          
+          # Parse AUTH0 secret from AWS Secrets Manager
+          AUTH0_SECRET='${{ steps.get_secrets.outputs.AUTH0 }}'
+          if [ -n "$AUTH0_SECRET" ]; then
+            # Extract individual AUTH0 values from JSON format
+            echo "PCC_AUTH0_CLIENT_ID=$(echo $AUTH0_SECRET | jq -r '.client_id // empty')" >> $GITHUB_ENV
+            echo "PCC_AUTH0_CLIENT_SECRET=$(echo $AUTH0_SECRET | jq -r '.client_secret // empty')" >> $GITHUB_ENV
+
+            # Set default Auth0 configuration values
+            echo "PCC_AUTH0_ISSUER_BASE_URL=https://linuxfoundation-dev.auth0.com/" >> $GITHUB_ENV
+            echo "PCC_AUTH0_AUDIENCE=https://api-gw.dev.platform.linuxfoundation.org/" >> $GITHUB_ENV
+            
+            echo "✅ AUTH0 secrets loaded from AWS Secrets Manager"
+          else
+            echo "⚠️ AUTH0 secret not found in AWS Secrets Manager"
+          fi
+          
+          # Parse SUPABASE secret from AWS Secrets Manager
+          SUPABASE_SECRET='${{ steps.get_secrets.outputs.SUPABASE }}'
+          if [ -n "$SUPABASE_SECRET" ]; then
+            echo "SUPABASE_URL=$(echo $SUPABASE_SECRET | jq -r '.url // empty')" >> $GITHUB_ENV
+            echo "POSTGRES_API_KEY=$(echo $SUPABASE_SECRET | jq -r '.api_key // empty')" >> $GITHUB_ENV
+            
+            echo "✅ SUPABASE secrets loaded from AWS Secrets Manager"
+          else
+            echo "⚠️ SUPABASE secret not found in AWS Secrets Manager"
+          fi
+          
+          # Fallback to GitHub secrets if AWS secrets are not available
           echo "TEST_USERNAME=${{ secrets.TEST_USERNAME }}" >> $GITHUB_ENV
           echo "TEST_PASSWORD=${{ secrets.TEST_PASSWORD }}" >> $GITHUB_ENV
           echo "CI=true" >> $GITHUB_ENV
+          
+          # Debug: Show which secrets were loaded (without exposing values)
+          echo "🔍 Environment variables loaded:"
+          echo "  - PCC_AUTH0_CLIENT_ID: ${PCC_AUTH0_CLIENT_ID:+✅ Set}"
+          echo "  - PCC_AUTH0_CLIENT_SECRET: ${PCC_AUTH0_CLIENT_SECRET:+✅ Set}"
+          echo "  - PCC_AUTH0_ISSUER_BASE_URL: ${PCC_AUTH0_ISSUER_BASE_URL:+✅ Set}"
+          echo "  - PCC_AUTH0_AUDIENCE: ${PCC_AUTH0_AUDIENCE:+✅ Set}"
+          echo "  - SUPABASE_URL: ${SUPABASE_URL:+✅ Set}"
+          echo "  - POSTGRES_API_KEY: ${POSTGRES_API_KEY:+✅ Set}"
+          echo "  - TEST_USERNAME: ${TEST_USERNAME:+✅ Set}"
+          echo "  - TEST_PASSWORD: ${TEST_PASSWORD:+✅ Set}"
 
       - name: Install Playwright browsers
         if: steps.validate-secrets.outputs.can_run_tests == 'true'
@@ -168,9 +195,10 @@ jobs:
         if: ${{ inputs.browser == 'all' && steps.validate-secrets.outputs.can_run_tests == 'true' }}
         working-directory: apps/lfx-pcc
         run: |
-          if [ -n "${{ secrets.TEST_USERNAME }}" ] && [ -n "${{ secrets.TEST_PASSWORD }}" ]; then
+          if [ -n "$TEST_USERNAME" ] && [ -n "$TEST_PASSWORD" ]; then
             echo "🔐 Running authenticated E2E tests on all browsers"
             echo "🚀 Playwright will automatically start the dev server on localhost:4200"
+            echo "📋 Using secrets from AWS Secrets Manager"
             yarn ${{ inputs.test-command }}
           else
             echo "⚠️ No test credentials provided. Skipping E2E tests."
@@ -182,9 +210,10 @@ jobs:
         if: ${{ inputs.browser != 'all' && steps.validate-secrets.outputs.can_run_tests == 'true' }}
         working-directory: apps/lfx-pcc
         run: |
-          if [ -n "${{ secrets.TEST_USERNAME }}" ] && [ -n "${{ secrets.TEST_PASSWORD }}" ]; then
+          if [ -n "$TEST_USERNAME" ] && [ -n "$TEST_PASSWORD" ]; then
             echo "🔐 Running authenticated E2E tests on ${{ inputs.browser }}"
             echo "🚀 Playwright will automatically start the dev server on localhost:4200"
+            echo "📋 Using secrets from AWS Secrets Manager"
             yarn ${{ inputs.test-command }} --project=${{ inputs.browser }}
           else
             echo "⚠️ No test credentials provided. Skipping E2E tests."
@@ -196,13 +225,15 @@ jobs:
         if: ${{ steps.validate-secrets.outputs.can_run_tests == 'false' }}
         run: |
           echo "⏭️ E2E tests skipped due to missing required secrets"
-          echo "Configure the following GitHub secrets to enable E2E testing:"
-          echo "  - E2E_AUTH0_CLIENT_ID"
-          echo "  - E2E_AUTH0_CLIENT_SECRET" 
-          echo "  - E2E_AUTH0_ISSUER_BASE_URL"
-          echo "  - E2E_AUTH0_AUDIENCE"
-          echo "  - TEST_USERNAME (optional)"
-          echo "  - TEST_PASSWORD (optional)"
+          echo "Configure the following secrets to enable E2E testing:"
+          echo ""
+          echo "AWS Secrets Manager (required):"
+          echo "  - /cloudops/managed-secrets/auth0/LFX_V2_PCC (AUTH0 configuration)"
+          echo "  - /cloudops/managed-secrets/cloud/supabase/api_key (SUPABASE configuration)"
+          echo ""
+          echo "GitHub Secrets (required for authenticated tests):"
+          echo "  - TEST_USERNAME"
+          echo "  - TEST_PASSWORD"
 
       - name: Generate test results summary
         id: test-results
@@ -212,7 +243,7 @@ jobs:
           if [ "${{ steps.validate-secrets.outputs.can_run_tests }}" == "false" ]; then
             echo "⏭️ E2E tests skipped (missing required secrets)"
             echo "results=skipped" >> $GITHUB_OUTPUT
-          elif [ -z "${{ secrets.TEST_USERNAME }}" ] || [ -z "${{ secrets.TEST_PASSWORD }}" ]; then
+          elif [ -z "$TEST_USERNAME" ] || [ -z "$TEST_PASSWORD" ]; then
             echo "⏭️ E2E tests skipped (no test credentials)"
             echo "results=skipped" >> $GITHUB_OUTPUT
           elif [ -f "test-results/.last-run.json" ]; then
