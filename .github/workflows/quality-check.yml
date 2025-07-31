@@ -74,7 +74,7 @@ jobs:
 
   e2e-tests:
     name: E2E Tests
-    # needs: quality-checks
+    needs: quality-checks
     uses: ./.github/workflows/e2e-tests.yml
     with:
       node-version: '22'
