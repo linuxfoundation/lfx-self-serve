@@ -85,4 +85,4 @@ environment:
   
   # Query service configuration
   QUERY_SERVICE_URL:
-    value: "http://localhost:8080/query/resources"
+    value: "http://query-service.default.svc.cluster.local/query/resources"
