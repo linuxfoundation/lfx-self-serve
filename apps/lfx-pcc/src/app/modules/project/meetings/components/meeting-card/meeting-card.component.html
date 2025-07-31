@@ -28,7 +28,7 @@
     [rounded]="true"
     size="small"
     severity="secondary"
-    (click)="onMenuToggle($event, actionMenu)"></lfx-button>
+    (click)="actionMenu.toggle($event)"></lfx-button>
 </div>
 <!-- Action Menu -->
 <lfx-menu #actionMenu [model]="actionMenuItems()" [popup]="true" appendTo="body"></lfx-menu>
@@ -72,6 +72,12 @@
   <div class="flex items-center gap-2">
     <i [class]="meeting().recording_enabled ? 'fa-light fa-check-circle text-green-500' : 'fa-light fa-times-circle text-gray-400'" class="text-base"></i>
     <span class="text-sm text-gray-600">Recording</span>
+  </div>
+  <div class="flex flex-wrap gap-3">
+    <div class="flex items-center gap-2">
+      <i [class]="meeting().restricted ? 'fa-light fa-check-circle text-green-500' : 'fa-light fa-times-circle text-gray-400'" class="text-base"></i>
+      <span class="text-sm text-gray-600">Restricted</span>
+    </div>
   </div>
   @if (meeting().recording_enabled) {
     <div class="flex items-center gap-2">
@@ -146,13 +152,41 @@
 
   @if (!participantsLoading()) {
     <div class="grid grid-cols-3 gap-2 mt-4">
+      <!-- Add Participant Option -->
+      <div
+        pAnimateOnScroll
+        class="animate-delay-2000"
+        enterClass="animate-enter fade-in-10 slide-in-from-b-8 animate-duration-1000"
+        leaveClass="animate-leave fade-out-0">
+        <div
+          class="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors border-2 border-dashed border-blue-200 hover:border-blue-400"
+          (click)="openAddParticipantModal()"
+          data-testid="add-participant-button">
+          <div class="relative">
+            <div class="w-8 h-8 bg-blue-100 border border-blue-200 rounded-full flex items-center justify-center">
+              <i class="fa-light fa-plus text-blue-500"></i>
+            </div>
+          </div>
+          <div class="flex flex-col">
+            <div class="flex items-center gap-1 text-xs">
+              <span class="text-sm text-blue-600 font-medium">Add Guests</span>
+            </div>
+            <span class="text-xs text-blue-500">Click to add new guests</span>
+          </div>
+        </div>
+      </div>
+
       @for (participant of participants(); track participant.id) {
         <div
           pAnimateOnScroll
           class="animate-delay-2000"
           enterClass="animate-enter fade-in-10 slide-in-from-b-8 animate-duration-1000"
           leaveClass="animate-leave fade-out-0">
-          <div class="flex items-center gap-2" [ngClass]="{ 'gap-3': !pastMeeting() }">
+          <div
+            class="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors"
+            [ngClass]="{ 'gap-3': !pastMeeting() }"
+            (click)="onParticipantEdit(participant, $event)"
+            [attr.data-testid]="'participant-' + participant.id">
             @if (pastMeeting()) {
               @if (participant.attended) {
                 <i class="fa-light fa-check-circle text-green-500" pTooltip="Attended"></i>
@@ -194,3 +228,6 @@
     </div>
   }
 }
+
+<!-- Confirmation Dialog -->
+<p-confirmDialog></p-confirmDialog>

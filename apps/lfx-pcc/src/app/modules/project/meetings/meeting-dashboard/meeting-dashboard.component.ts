@@ -23,13 +23,8 @@ import { of } from 'rxjs';
 import { debounceTime, distinctUntilChanged, startWith, take, tap } from 'rxjs/operators';
 
 import { MeetingCardComponent } from '../components/meeting-card/meeting-card.component';
-import { MeetingDeleteConfirmationComponent, MeetingDeleteResult } from '../components/meeting-delete-confirmation/meeting-delete-confirmation.component';
+import { MeetingFormComponent } from '../components/meeting-form/meeting-form.component';
 import { MeetingModalComponent } from '../components/meeting-modal/meeting-modal.component';
-import { ParticipantManagementModalComponent } from '../components/participant-management-modal/participant-management-modal.component';
-import {
-  RecurringEditOption,
-  RecurringMeetingEditOptionsComponent,
-} from '../components/recurring-meeting-edit-options/recurring-meeting-edit-options.component';
 
 @Component({
   selector: 'lfx-meeting-dashboard',
@@ -59,7 +54,6 @@ export class MeetingDashboardComponent {
 
   // Class variables with types
   public project: typeof this.projectService.project;
-  public selectedMeeting: WritableSignal<Meeting | null>;
   public searchForm: FormGroup;
   public visibilityFilter: WritableSignal<string | null>;
   public committeeFilter: WritableSignal<string | null>;
@@ -74,7 +68,6 @@ export class MeetingDashboardComponent {
   public publicMeetingsCount: Signal<number>;
   public privateMeetingsCount: Signal<number>;
   public menuItems: MenuItem[];
-  public actionMenuItems = computed(() => this.initializeActionMenuItems());
   public currentView: WritableSignal<'list' | 'calendar'>;
   public viewOptions: { label: string; value: 'list' | 'calendar' }[];
   public viewForm: FormGroup;
@@ -84,7 +77,6 @@ export class MeetingDashboardComponent {
   public constructor() {
     // Initialize all class variables
     this.project = this.projectService.project;
-    this.selectedMeeting = signal<Meeting | null>(null);
     this.meetingsLoading = signal<boolean>(true);
     this.pastMeetingsLoading = signal<boolean>(true);
     this.meetings = this.initializeMeetings();
@@ -106,21 +98,12 @@ export class MeetingDashboardComponent {
     this.calendarEvents = this.initializeCalendarEvents();
   }
 
-  public scheduleNewMeeting(): void {
-    this.onCreateMeeting();
-  }
-
   public onVisibilityChange(value: string | null): void {
     this.visibilityFilter.set(value);
   }
 
   public onCommitteeChange(value: string | null): void {
     this.committeeFilter.set(value);
-  }
-
-  public onMenuToggle(event: { event: Event; meeting: Meeting; menuComponent: MenuComponent }): void {
-    this.selectedMeeting.set(event.meeting);
-    event.menuComponent.toggle(event.event);
   }
 
   public onMeetingListViewChange(value: 'upcoming' | 'past'): void {
@@ -137,7 +120,7 @@ export class MeetingDashboardComponent {
 
   public onCreateMeeting(): void {
     this.dialogService
-      .open(MeetingModalComponent, {
+      .open(MeetingFormComponent, {
         header: 'Create Meeting',
         width: '600px',
         modal: true,
@@ -151,6 +134,11 @@ export class MeetingDashboardComponent {
       .subscribe((meeting) => {
         if (meeting) {
           this.refreshMeetings();
+          this.openMeetingModal({
+            ...meeting,
+            individual_participants_count: 0,
+            committee_members_count: 0,
+          });
         }
       });
   }
@@ -160,7 +148,6 @@ export class MeetingDashboardComponent {
     if (meetingId) {
       const meeting = this.meetings().find((m) => m.id === meetingId);
       if (meeting) {
-        this.selectedMeeting.set(meeting);
         this.openMeetingModal(meeting);
       }
     }
@@ -179,125 +166,20 @@ export class MeetingDashboardComponent {
   }
 
   private openMeetingModal(meeting: Meeting): void {
-    this.dialogService.open(MeetingModalComponent, {
-      header: meeting.topic || 'Meeting Details',
-      width: '700px',
-      modal: true,
-      closable: true,
-      dismissableMask: true,
-      data: {
-        meeting: meeting,
-        actionMenuItems: this.actionMenuItems(),
-      },
-    });
-  }
-
-  // Action handlers
-  private viewMeeting(): void {
-    const meeting = this.selectedMeeting();
-    if (meeting) {
-      // TODO: Navigate to meeting details when route is available
-    }
-  }
-
-  private editMeeting(): void {
-    const meeting = this.selectedMeeting();
-    if (!meeting) return;
-
-    // Check if it's a recurring meeting
-    if (meeting.recurrence) {
-      // Show recurring edit options dialog first
-      const optionsDialog = this.dialogService.open(RecurringMeetingEditOptionsComponent, {
-        header: 'Edit Recurring Meeting',
-        width: '450px',
-        modal: true,
-        closable: true,
-        dismissableMask: true,
-        data: {
-          meeting: meeting,
-        },
-      });
-
-      optionsDialog.onClose.pipe(take(1)).subscribe((result: RecurringEditOption) => {
-        if (result?.proceed) {
-          // Open the meeting form with the selected edit type
-          this.openMeetingEditForm(meeting, result.editType);
-        }
-      });
-    } else {
-      // For non-recurring meetings, open the form directly
-      this.openMeetingEditForm(meeting, 'single');
-    }
-  }
-
-  private openMeetingEditForm(meeting: Meeting, editType: 'single' | 'future'): void {
     this.dialogService
       .open(MeetingModalComponent, {
-        header: 'Edit Meeting',
-        width: '600px',
+        header: meeting.topic || 'Meeting Details',
+        width: '700px',
         modal: true,
         closable: true,
         dismissableMask: true,
         data: {
-          meeting: meeting,
-          meetingId: meeting.id,
-          isEditing: true,
-          editType: editType,
-        },
-      })
-      .onClose.pipe(take(1))
-      .subscribe((updatedMeeting) => {
-        if (updatedMeeting) {
-          this.refreshMeetings();
-          this.selectedMeeting.set(null);
-        }
-      });
-  }
-
-  private deleteMeeting(): void {
-    const meeting = this.selectedMeeting();
-    if (!meeting) return;
-
-    const dialogRef = this.dialogService.open(MeetingDeleteConfirmationComponent, {
-      header: 'Delete Meeting',
-      width: '500px',
-      modal: true,
-      closable: true,
-      data: {
-        meeting,
-      },
-    });
-
-    dialogRef.onClose.subscribe((result: MeetingDeleteResult | undefined) => {
-      if (result?.confirmed) {
-        // Refresh the meetings list since deletion was successful
-        this.refreshMeetings();
-        this.selectedMeeting.set(null);
-      } else {
-        this.selectedMeeting.set(null);
-      }
-    });
-  }
-
-  private manageParticipants(): void {
-    const meeting = this.selectedMeeting();
-    if (!meeting) return;
-
-    this.dialogService
-      .open(ParticipantManagementModalComponent, {
-        header: 'Manage Participants',
-        width: '700px',
-        modal: true,
-        closable: false,
-        dismissableMask: true,
-        data: {
-          meetingId: meeting.id,
+          meeting,
         },
       })
       .onClose.pipe(take(1))
       .subscribe((result) => {
-        if (result?.participantsModified) {
-          // Refresh meetings to update participant counts
+        if (result) {
           this.refreshMeetings();
         }
       });
@@ -403,7 +285,7 @@ export class MeetingDashboardComponent {
       {
         label: 'Schedule Meeting',
         icon: 'fa-light fa-calendar-plus text-sm',
-        command: () => this.scheduleNewMeeting(),
+        command: () => this.onCreateMeeting(),
       },
       {
         label: this.meetingListView() === 'past' ? 'Upcoming Meetings' : 'Meeting History',
@@ -415,48 +297,6 @@ export class MeetingDashboardComponent {
         icon: 'fa-light fa-calendar-check text-sm',
       },
     ];
-  }
-
-  private initializeActionMenuItems(): MenuItem[] {
-    const baseItems: MenuItem[] = [
-      {
-        label: 'View',
-        icon: 'fa-light fa-eye',
-        command: () => this.viewMeeting(),
-      },
-    ];
-
-    // Only add Edit option for upcoming meetings
-    if (this.meetingListView() !== 'past') {
-      baseItems.push({
-        label: 'Edit',
-        icon: 'fa-light fa-edit',
-        command: () => this.editMeeting(),
-      });
-    }
-
-    // Add Manage Participants option
-    baseItems.push({
-      label: 'Manage Participants',
-      icon: 'fa-light fa-users',
-      command: () => this.manageParticipants(),
-    });
-
-    // Add separator and delete option
-    baseItems.push(
-      {
-        separator: true,
-      },
-      {
-        label: 'Delete',
-        icon: 'fa-light fa-trash',
-        styleClass: 'text-red-500',
-        disabled: false,
-        command: () => this.deleteMeeting(),
-      }
-    );
-
-    return baseItems;
   }
 
   private initializePublicMeetingsCount(): Signal<number> {

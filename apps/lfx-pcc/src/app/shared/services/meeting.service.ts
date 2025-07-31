@@ -130,6 +130,16 @@ export class MeetingService {
     );
   }
 
+  public updateMeetingParticipant(meetingId: string, participantId: string, participant: Partial<MeetingParticipant>): Observable<MeetingParticipant> {
+    return this.http.put<MeetingParticipant>(`/api/meetings/${meetingId}/participants/${participantId}`, participant).pipe(
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to update participant ${participantId} in meeting ${meetingId}:`, error);
+        throw error;
+      })
+    );
+  }
+
   public deleteMeetingParticipant(meetingId: string, participantId: string): Observable<void> {
     return this.http.delete<void>(`/api/meetings/${meetingId}/participants/${participantId}`).pipe(
       take(1),

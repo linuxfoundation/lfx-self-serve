@@ -643,6 +643,30 @@ export class SupabaseService {
     return Array.isArray(data) ? data[0] : data;
   }
 
+  public async updateMeetingParticipant(meetingId: string, participantId: string, participantData: Partial<MeetingParticipant>): Promise<MeetingParticipant> {
+    const params = {
+      meeting_id: `eq.${meetingId}`,
+      id: `eq.${participantId}`,
+    };
+    const queryString = new URLSearchParams(params).toString();
+    const url = `${this.baseUrl}/meeting_participants?${queryString}`;
+
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: this.getHeaders(),
+      body: JSON.stringify(participantData),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      const errorData = await response.json();
+      throw new Error(errorData.message || `Failed to update participant: ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return Array.isArray(data) ? data[0] : data;
+  }
+
   public async deleteMeetingParticipant(meetingId: string, participantId: string): Promise<void> {
     const params = {
       meeting_id: `eq.${meetingId}`,

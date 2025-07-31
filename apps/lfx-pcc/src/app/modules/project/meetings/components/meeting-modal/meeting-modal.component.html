@@ -1,12 +1,9 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="p-0">
-  @if (showForm()) {
-    <!-- Show form for create/edit modes -->
-    <lfx-meeting-form></lfx-meeting-form>
-  } @else {
+@if (meeting) {
+  <div class="p-0">
     <!-- Show meeting card for view mode -->
-    <lfx-meeting-card [meeting]="meeting()" [actionMenuItems]="actionMenuItems()" (menuToggle)="onMenuToggle($event)"></lfx-meeting-card>
-  }
-</div>
+    <lfx-meeting-card [meeting]="meeting" [pastMeeting]="false" (meetingDeleted)="onRefresh()" (meetingUpdated)="onRefresh()"></lfx-meeting-card>
+  </div>
+}

@@ -18,4 +18,5 @@ export class CheckboxComponent {
   public readonly label = input<string>('');
   public readonly binary = input<boolean>(true);
   public readonly disabled = input<boolean>(false);
+  public readonly styleClass = input<string>('');
 }
