@@ -45,6 +45,16 @@ jobs:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
             type=raw,value=development
+          labels: |
+            org.opencontainers.image.title=LFX PCC UI
+            org.opencontainers.image.description=Linux Foundation LFX Project Control Center UI application
+            org.opencontainers.image.vendor=The Linux Foundation
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/main/README.md
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            com.github.actions.run_id=${{ github.run_id }}
+            com.github.actions.run_number=${{ github.run_number }}
+            com.github.actions.workflow=${{ github.workflow }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@v5
@@ -53,7 +63,7 @@ jobs:
           push: true
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
-          platforms: linux/amd64,linux/arm64
+          platforms: linux/amd64
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
