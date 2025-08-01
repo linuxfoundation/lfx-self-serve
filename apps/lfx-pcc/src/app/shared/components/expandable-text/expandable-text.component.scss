@@ -1,0 +1,18 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+.expandable-content {
+  &.collapsed {
+    &::after {
+      content: '';
+      @apply absolute bottom-0 left-0 right-0 h-12 pointer-events-none;
+      background: linear-gradient(180deg, transparent 0%, rgba(255, 255, 255, 0.5) 40%, rgba(255, 255, 255, 0.9) 70%, rgba(255, 255, 255, 1) 100%);
+    }
+  }
+
+  &.expanded {
+    &::after {
+      @apply hidden;
+    }
+  }
+}

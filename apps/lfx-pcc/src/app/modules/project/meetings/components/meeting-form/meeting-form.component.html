@@ -14,7 +14,13 @@
     <!-- Agenda -->
     <div>
       <label for="meeting-agenda" class="block text-sm font-medium text-gray-700 mb-1"> Agenda </label>
-      <lfx-textarea [form]="form()" control="agenda" id="meeting-agenda" placeholder="Enter meeting agenda" [rows]="4" styleClass="w-full"></lfx-textarea>
+      <lfx-textarea
+        [form]="form()"
+        control="agenda"
+        id="meeting-agenda"
+        placeholder="Enter meeting agenda"
+        [rows]="4"
+        styleClass="w-full max-h-40 overflow-y-auto"></lfx-textarea>
     </div>
 
     <!-- Meeting Type -->
@@ -208,24 +214,6 @@
 
         <!-- Recording-dependent features -->
         @if (form().get('recording_enabled')?.value === true) {
-          <div class="flex items-center gap-2">
-            <lfx-toggle size="small" [form]="form()" control="transcripts_enabled" label="Enable Transcripts" id="transcripts-toggle"></lfx-toggle>
-            <i
-              class="fa-light fa-info-circle text-gray-400 cursor-help"
-              pTooltip="Generate automated transcripts from the meeting recording"
-              tooltipPosition="right"
-              tooltipStyleClass="text-xs max-w-xs"></i>
-          </div>
-
-          <div class="flex items-center gap-2">
-            <lfx-toggle size="small" [form]="form()" control="youtube_enabled" label="Enable YouTube Upload" id="youtube-toggle"></lfx-toggle>
-            <i
-              class="fa-light fa-info-circle text-gray-400 cursor-help"
-              pTooltip="Automatically upload the meeting recording to YouTube after the meeting ends"
-              tooltipPosition="right"
-              tooltipStyleClass="text-xs max-w-xs"></i>
-          </div>
-
           <div>
             <div class="flex items-center gap-2 mb-1">
               <label for="recording-access" class="block text-sm font-medium text-gray-700">Recording Access</label>
@@ -243,6 +231,23 @@
               id="recording-access"
               placeholder="Select recording access level">
             </lfx-select>
+          </div>
+          <div class="flex items-center gap-2">
+            <lfx-toggle size="small" [form]="form()" control="transcripts_enabled" label="Enable Transcripts" id="transcripts-toggle"></lfx-toggle>
+            <i
+              class="fa-light fa-info-circle text-gray-400 cursor-help"
+              pTooltip="Generate automated transcripts from the meeting recording"
+              tooltipPosition="right"
+              tooltipStyleClass="text-xs max-w-xs"></i>
+          </div>
+
+          <div class="flex items-center gap-2">
+            <lfx-toggle size="small" [form]="form()" control="youtube_enabled" label="Enable YouTube Upload" id="youtube-toggle"></lfx-toggle>
+            <i
+              class="fa-light fa-info-circle text-gray-400 cursor-help"
+              pTooltip="Automatically upload the meeting recording to YouTube after the meeting ends"
+              tooltipPosition="right"
+              tooltipStyleClass="text-xs max-w-xs"></i>
           </div>
         }
       </div>

@@ -57,49 +57,83 @@
   }
 </div>
 
-@if (meeting().meeting_type) {
-  <div class="flex items-center gap-2 mb-4">
-    <lfx-badge [value]="meeting().meeting_type!" severity="secondary" icon="fa-light fa-calendar-days"></lfx-badge>
-  </div>
-}
-
-@if (meeting().agenda) {
-  <div class="text-base text-gray-600 pb-3" [innerHTML]="meeting().agenda"></div>
-}
-
-<!-- Meeting Settings -->
-<div class="flex flex-wrap gap-3 mb-4">
-  <div class="flex items-center gap-2">
-    <i [class]="meeting().recording_enabled ? 'fa-light fa-check-circle text-green-500' : 'fa-light fa-times-circle text-gray-400'" class="text-base"></i>
-    <span class="text-sm text-gray-600">Recording</span>
-  </div>
-  <div class="flex flex-wrap gap-3">
-    <div class="flex items-center gap-2">
-      <i [class]="meeting().restricted ? 'fa-light fa-check-circle text-green-500' : 'fa-light fa-times-circle text-gray-400'" class="text-base"></i>
-      <span class="text-sm text-gray-600">Restricted</span>
+<div class="flex justify-between">
+  @if (meeting().meeting_type) {
+    <div class="flex items-center gap-2 mb-4">
+      <lfx-badge [value]="meeting().meeting_type!" severity="secondary" icon="fa-light fa-calendar-days"></lfx-badge>
     </div>
-  </div>
-  @if (meeting().recording_enabled) {
-    <div class="flex items-center gap-2">
-      <i [class]="meeting().youtube_enabled ? 'fa-light fa-check-circle text-green-500' : 'fa-light fa-times-circle text-gray-400'" class="text-base"></i>
-      <span class="text-sm text-gray-600">YouTube</span>
+    <!-- Meeting Settings -->
+    <div class="flex gap-2 mb-4">
+      <i
+        class="fa-light fa-video text-lg"
+        [class.text-blue-500]="meeting().recording_enabled"
+        [class.text-gray-400]="!meeting().recording_enabled"
+        pTooltip="Recording {{ meeting().recording_enabled ? 'enabled' : 'disabled' }}"
+        tooltipPosition="top">
+      </i>
+      <i
+        class="fa-light fa-lock text-lg"
+        [class.text-blue-500]="meeting().restricted"
+        [class.text-gray-400]="!meeting().restricted"
+        pTooltip="Meeting {{ meeting().restricted ? 'restricted' : 'not restricted' }}"
+        tooltipPosition="top">
+      </i>
+      <i
+        class="fa-brands fa-youtube text-lg"
+        [class.text-blue-500]="meeting().youtube_enabled"
+        [class.text-gray-400]="!meeting().youtube_enabled"
+        pTooltip="YouTube {{ meeting().youtube_enabled ? 'enabled' : 'disabled' }}"
+        tooltipPosition="top">
+      </i>
+      <i
+        class="fa-light fa-microchip-ai text-lg"
+        [class.text-blue-500]="meeting().zoom_ai_enabled"
+        [class.text-gray-400]="!meeting().zoom_ai_enabled"
+        pTooltip="Zoom AI {{ meeting().zoom_ai_enabled ? 'enabled' : 'disabled' }}"
+        tooltipPosition="top">
+      </i>
+      <i
+        class="fa-light fa-file-lines text-lg"
+        [class.text-blue-500]="meeting().transcripts_enabled"
+        [class.text-gray-400]="!meeting().transcripts_enabled"
+        pTooltip="Transcripts {{ meeting().transcripts_enabled ? 'enabled' : 'disabled' }}"
+        tooltipPosition="top">
+      </i>
     </div>
-    <div class="flex items-center gap-2">
-      <i [class]="meeting().zoom_ai_enabled ? 'fa-light fa-check-circle text-green-500' : 'fa-light fa-times-circle text-gray-400'" class="text-base"></i>
-      <span class="text-sm text-gray-600">Zoom AI</span>
-    </div>
-    <div class="flex items-center gap-2">
-      <i [class]="meeting().transcripts_enabled ? 'fa-light fa-check-circle text-green-500' : 'fa-light fa-times-circle text-gray-400'" class="text-base"></i>
-      <span class="text-sm text-gray-600">Transcripts</span>
-    </div>
-    @if (meeting().recording_access) {
-      <div class="flex items-center gap-2">
-        <i class="fa-light fa-video text-gray-400"></i>
-        <span class="text-sm text-gray-600">{{ meeting().recording_access }}</span>
-      </div>
-    }
   }
 </div>
+
+@if (meeting().agenda) {
+  <div class="pb-3">
+    <lfx-expandable-text [maxHeight]="100">
+      <div class="flex flex-col gap-4">
+        <div [innerHTML]="meeting().agenda | linkify"></div>
+        <!-- Important Links -->
+        @if (importantLinks().length > 0) {
+          <div class="mb-4">
+            <h4 class="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
+              <i class="fa-light fa-link text-blue-500"></i>
+              Important Links
+            </h4>
+            <div class="flex flex-wrap gap-2">
+              @for (link of importantLinks(); track link.url) {
+                <a
+                  [href]="link.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
+                  [title]="link.url">
+                  <i class="fa-light fa-external-link"></i>
+                  {{ link.domain }}
+                </a>
+              }
+            </div>
+          </div>
+        }
+      </div>
+    </lfx-expandable-text>
+  </div>
+}
 
 <!-- Associated Committees -->
 @if (meeting().meeting_committees && meeting().meeting_committees!.length > 0) {
