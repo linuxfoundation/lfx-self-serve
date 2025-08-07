@@ -30,9 +30,12 @@
     }
   }
 
-  .p-select-overlay {
-    .p-select-list-container {
-      .p-select-option {
+  .p-select-overlay,
+  .p-multiselect-overlay {
+    .p-select-list-container,
+    .p-multiselect-list-container {
+      .p-select-option,
+      .p-multiselect-option {
         @apply text-sm;
       }
     }

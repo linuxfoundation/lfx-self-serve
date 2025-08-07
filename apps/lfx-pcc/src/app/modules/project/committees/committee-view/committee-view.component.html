@@ -62,7 +62,11 @@
         <div class="lg:col-span-2 flex flex-col gap-6">
           <!-- Members Section -->
           @if (committee()?.id) {
-            <lfx-committee-members [committee]="committee()" (refresh)="refreshMembers()"></lfx-committee-members>
+            <lfx-committee-members
+              [committee]="committee()"
+              [members]="members()"
+              [membersLoading]="membersLoading()"
+              (refresh)="refreshMembers()"></lfx-committee-members>
           }
 
           <!-- Subcommittees Section -->

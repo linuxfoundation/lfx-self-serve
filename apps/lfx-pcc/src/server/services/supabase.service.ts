@@ -4,15 +4,20 @@
 import {
   Committee,
   CommitteeMember,
+  CommitteePermission,
   CreateCommitteeMemberRequest,
   CreateMeetingRequest,
+  CreateUserPermissionRequest,
   Meeting,
   MeetingParticipant,
-  ObjectPermission,
+  PermissionLevel,
+  ProjectPermission,
   ProjectSearchResult,
   RecentActivity,
   UpdateMeetingRequest,
-  UserPermissions,
+  UpdateUserPermissionRequest,
+  User,
+  UserPermissionSummary,
 } from '@lfx-pcc/shared/interfaces';
 import dotenv from 'dotenv';
 
@@ -423,117 +428,68 @@ export class SupabaseService {
     return 0;
   }
 
-  public async getProjectPermissions(projectId: string): Promise<UserPermissions[]> {
-    // Single query to get all effective permissions from the view
-    const params = new URLSearchParams({
-      select: `
-        user_id,
-        first_name,
-        last_name,
-        email,
-        username,
-        role_name,
-        object_type,
-        object_id
-      `,
-      order: 'user_id,object_type,object_id',
+  public async getProjectPermissions(projectId: string): Promise<UserPermissionSummary[]> {
+    // Get project permissions
+    const projectPermissionsParams = new URLSearchParams({
+      select: `user_id,permission_level,users(id,first_name,last_name,email,username,created_at)`,
+      project_id: `eq.${projectId}`,
     });
 
-    const response = await fetch(`${this.baseUrl}/effective_user_permissions?project_id=eq.${projectId}&${params}`, {
+    const projectPermissionsResponse = await fetch(`${this.baseUrl}/user_project_permissions?${projectPermissionsParams.toString()}`, {
       method: 'GET',
       headers: this.getHeaders(),
       signal: AbortSignal.timeout(this.timeout),
     });
 
-    if (!response.ok) {
-      const errorText = await response.text();
-      throw new Error(`Failed to fetch user permissions: ${response.status} ${response.statusText}: ${errorText}`);
+    // Get committee permissions
+    const committeePermissionsParams = new URLSearchParams({
+      select: `user_id,committee_id,permission_level,users(id,first_name,last_name,email,username,created_at),committees(id,name,description,project_id)`,
+      project_id: `eq.${projectId}`,
+    });
+
+    const committeePermissionsResponse = await fetch(`${this.baseUrl}/user_committee_permissions?${committeePermissionsParams.toString()}`, {
+      method: 'GET',
+      headers: this.getHeaders(),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!projectPermissionsResponse.ok) {
+      const errorText = await projectPermissionsResponse.text();
+      throw new Error(`Failed to fetch project permissions: ${errorText}`);
     }
 
-    const data = await response.json();
+    if (!committeePermissionsResponse.ok) {
+      const errorText = await committeePermissionsResponse.text();
+      throw new Error(`Failed to fetch committee permissions: ${errorText}`);
+    }
 
-    // Group data by user
-    const userPermissionsMap = new Map<string, UserPermissions>();
+    const projectPermissions = await projectPermissionsResponse.json();
+    const committeePermissions = await committeePermissionsResponse.json();
 
-    data.forEach((user: any) => {
-      // Initialize user if not already in map
-      if (!userPermissionsMap.has(user.user_id)) {
-        userPermissionsMap.set(user.user_id, {
-          user: {
-            sid: user.user_id,
-            ['https://sso.linuxfoundation.org/claims/username']: user.username || user.email,
-            given_name: user.first_name || '',
-            family_name: user.last_name || '',
-            nickname: user.username || user.email,
-            name: `${user.first_name || ''} ${user.last_name || ''}`.trim(),
-            picture: 'https://via.placeholder.com/40',
-            updated_at: user.updated_at || new Date().toISOString(),
-            email: user.email,
-            email_verified: false,
-            sub: user.id,
-            first_name: user.first_name,
-            last_name: user.last_name,
-            username: user.username,
-            id: user.id,
-            created_at: user.created_at,
-          },
-          projectRoles: [],
-          permissions: {
-            meetings: { manageAll: false, specific: [] },
-            committees: { manageAll: false, specific: [] },
-            mailingLists: { manageAll: false, specific: [] },
-          },
+    // Combine and group by user
+    const userPermissionsMap = new Map<string, UserPermissionSummary>();
+
+    projectPermissions.forEach((perm: { user_id: string; users: User; project_id: string; permission_level: PermissionLevel }) => {
+      userPermissionsMap.set(perm.user_id, {
+        user: perm.users,
+        projectPermission: { level: perm.permission_level, scope: 'project' },
+        committeePermissions: [],
+      });
+    });
+
+    committeePermissions.forEach((perm: { user_id: string; users: User; committee_id: string; permission_level: PermissionLevel; committees: Committee }) => {
+      const user = userPermissionsMap.get(perm.user_id);
+      if (user) {
+        userPermissionsMap.set(perm.user_id, {
+          user: perm.users,
+          projectPermission: user.projectPermission,
+          committeePermissions: [...user.committeePermissions, { committee: perm.committees, level: perm.permission_level, scope: 'committee' }],
         });
-      }
-
-      const userPerms = userPermissionsMap.get(user.user_id)!;
-      const row = user;
-      // Process permissions based on whether it's project-wide or object-specific
-      if (row.object_type === null && row.object_id === null) {
-        // Project-wide permission
-        if (row.role_name === 'manage_committees') {
-          userPerms.permissions.committees.manageAll = true;
-        }
-        if (row.role_name === 'manage_meetings') {
-          userPerms.permissions.meetings.manageAll = true;
-        }
-        if (row.role_name === 'manage_mailing_lists') {
-          userPerms.permissions.mailingLists.manageAll = true;
-        }
-
-        // Add to project roles (for display purposes)
-        if (!userPerms.projectRoles.some((pr) => pr.role_id === row.role_name)) {
-          userPerms.projectRoles.push({
-            id: 0,
-            user_id: user.user_id,
-            project_id: projectId,
-            role_id: 0,
-            roles: {
-              id: 0,
-              name: row.role_name,
-              description: `Manage ${row.role_name.replace('manage_', '')}`,
-            },
-          });
-        }
       } else {
-        // Object-specific permission
-        const permissionObj: ObjectPermission = {
-          id: 0,
-          user_id: user.user_id,
-          object_type: row.object_type,
-          object_id: row.object_id,
-          permission: row.role_name,
-          committee_name: row.committee_name,
-        };
-
-        // Add specific object permissions only if user doesn't have manage all
-        if (row.object_type === 'meeting' && !userPerms.permissions.meetings.manageAll) {
-          userPerms.permissions.meetings.specific.push(permissionObj);
-        } else if (row.object_type === 'committee' && !userPerms.permissions.committees.manageAll) {
-          userPerms.permissions.committees.specific.push(permissionObj);
-        } else if (row.object_type === 'mailing_list' && !userPerms.permissions.mailingLists.manageAll) {
-          userPerms.permissions.mailingLists.specific.push(permissionObj);
-        }
+        userPermissionsMap.set(perm.user_id, {
+          user: perm.users,
+          committeePermissions: [{ committee: perm.committees, level: perm.permission_level, scope: 'committee' }],
+        });
       }
     });
 
@@ -840,6 +796,137 @@ export class SupabaseService {
     }
   }
 
+  public async removeUserFromProject(userId: string, projectId: string): Promise<void> {
+    // Remove project-level permissions
+    const projectPermissionsParams = new URLSearchParams({
+      user_id: `eq.${userId}`,
+      project_id: `eq.${projectId}`,
+    });
+    const projectPermissionsUrl = `${this.baseUrl}/user_project_permissions?${projectPermissionsParams.toString()}`;
+
+    const projectPermissionsResponse = await fetch(projectPermissionsUrl, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    // 404 is acceptable - it means there were no project permissions to delete
+    if (!projectPermissionsResponse.ok && projectPermissionsResponse.status !== 404) {
+      throw new Error(`Failed to remove project permissions: ${projectPermissionsResponse.status} ${projectPermissionsResponse.statusText}`);
+    }
+
+    // Remove committee-level permissions for this project
+    const committeePermissionsParams = new URLSearchParams({
+      user_id: `eq.${userId}`,
+      project_id: `eq.${projectId}`,
+    });
+    const committeePermissionsUrl = `${this.baseUrl}/user_committee_permissions?${committeePermissionsParams.toString()}`;
+
+    const committeePermissionsResponse = await fetch(committeePermissionsUrl, {
+      method: 'DELETE',
+      headers: this.getHeaders(),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    // 404 is acceptable - it means there were no committee permissions to delete
+    if (!committeePermissionsResponse.ok && committeePermissionsResponse.status !== 404) {
+      throw new Error(`Failed to remove committee permissions: ${committeePermissionsResponse.status} ${committeePermissionsResponse.statusText}`);
+    }
+  }
+
+  // New permission system methods
+  public async createUserWithPermissions(userData: CreateUserPermissionRequest): Promise<any> {
+    // Check if user with email already exists
+    const emailCheckUrl = `${this.baseUrl}/users?email=eq.${encodeURIComponent(userData.email)}&select=id`;
+    const emailCheckResponse = await fetch(emailCheckUrl, {
+      method: 'GET',
+      headers: this.getHeaders(),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!emailCheckResponse.ok) {
+      throw new Error(`Failed to check email existence: ${emailCheckResponse.status} ${emailCheckResponse.statusText}`);
+    }
+
+    const existingEmailUsers = await emailCheckResponse.json();
+    let userId: string;
+
+    if (existingEmailUsers && existingEmailUsers.length > 0) {
+      // User exists, use existing user ID
+      userId = existingEmailUsers[0].id;
+    } else {
+      // Create new user
+      const userCreateUrl = `${this.baseUrl}/users`;
+      const newUser = {
+        first_name: userData.first_name,
+        last_name: userData.last_name,
+        email: userData.email,
+        username: userData.username || userData.email,
+      };
+
+      const userCreateResponse = await fetch(userCreateUrl, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(newUser),
+        signal: AbortSignal.timeout(this.timeout),
+      });
+
+      if (!userCreateResponse.ok) {
+        throw new Error(`Failed to create user: ${userCreateResponse.status} ${userCreateResponse.statusText}`);
+      }
+
+      const createdUsers = await userCreateResponse.json();
+      userId = createdUsers[0].id;
+    }
+
+    // Add permissions based on scope
+    if (userData.permission_scope === 'project') {
+      await this.createProjectPermission({
+        user_id: userId,
+        project_id: userData.project_id,
+        permission_level: userData.permission_level,
+      });
+    } else if (userData.permission_scope === 'committee' && userData.committee_ids) {
+      await Promise.all(
+        userData.committee_ids.map((committeeId) =>
+          this.createCommitteePermission({
+            user_id: userId,
+            project_id: userData.project_id,
+            committee_id: committeeId,
+            permission_level: userData.permission_level,
+          })
+        )
+      );
+    }
+
+    return { id: userId };
+  }
+
+  public async updateUserPermissions(updateData: UpdateUserPermissionRequest): Promise<void> {
+    // Remove existing permissions
+    await this.removeUserFromProject(updateData.user_id, updateData.project_id);
+
+    // Add new permissions based on scope
+    if (updateData.permission_scope === 'project') {
+      await this.createProjectPermission({
+        user_id: updateData.user_id,
+        project_id: updateData.project_id,
+        permission_level: updateData.permission_level,
+      });
+    } else if (updateData.permission_scope === 'committee' && updateData.committee_ids) {
+      await Promise.all(
+        updateData.committee_ids.map((committeeId) =>
+          this.createCommitteePermission({
+            user_id: updateData.user_id,
+            project_id: updateData.project_id,
+            committee_id: committeeId,
+            permission_level: updateData.permission_level,
+          })
+        )
+      );
+    }
+  }
+
   private async fallbackProjectSearch(query: string): Promise<ProjectSearchResult[]> {
     let url = `${this.baseUrl}/projects?limit=10&order=name`;
 
@@ -880,5 +967,33 @@ export class SupabaseService {
       ['Content-Type']: 'application/json',
       Prefer: 'return=representation',
     };
+  }
+
+  private async createProjectPermission(permission: Omit<ProjectPermission, 'id' | 'created_at' | 'updated_at'>): Promise<void> {
+    const url = `${this.baseUrl}/user_project_permissions`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(permission),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to create project permission: ${response.status} ${response.statusText}`);
+    }
+  }
+
+  private async createCommitteePermission(permission: Omit<CommitteePermission, 'id' | 'created_at' | 'updated_at'>): Promise<void> {
+    const url = `${this.baseUrl}/user_committee_permissions`;
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(permission),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to create committee permission: ${response.status} ${response.statusText}`);
+    }
   }
 }

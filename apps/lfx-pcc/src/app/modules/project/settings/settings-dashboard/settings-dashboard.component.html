@@ -2,14 +2,17 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto py-6 px-8">
-  <div class="grid grid-cols-1 lg:grid-cols-4 gap-6 items-stretch">
-    <div class="lg:col-span-3 items-stretch h-full">
-      <lfx-user-permissions-table></lfx-user-permissions-table>
+  <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
+    <div class="lg:col-span-3">
+      <lfx-user-permissions-table [users]="users()" [loading]="loading()" (refresh)="refreshUsers()"></lfx-user-permissions-table>
     </div>
-    <div class="lg:col-span-1 items-stretch">
+    <div class="lg:col-span-1 flex flex-col gap-6">
       <lfx-card header="Quick Actions">
         <lfx-menu [model]="menuItems" styleClass="border-none"></lfx-menu>
       </lfx-card>
+
+      <!-- Permissions Matrix -->
+      <lfx-permissions-matrix></lfx-permissions-matrix>
     </div>
   </div>
 </div>

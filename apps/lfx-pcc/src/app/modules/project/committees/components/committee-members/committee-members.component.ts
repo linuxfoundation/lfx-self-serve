@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, Injector, input, OnInit, output, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, Injector, input, OnInit, output, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -18,7 +18,7 @@ import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { debounceTime, distinctUntilChanged, finalize, startWith, take } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, startWith, take } from 'rxjs/operators';
 
 import { MemberCardComponent } from '../member-card/member-card.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
@@ -54,13 +54,13 @@ export class CommitteeMembersComponent implements OnInit {
 
   // Input signals
   public committee = input.required<Committee | null>();
+  public members = input.required<CommitteeMember[]>();
+  public membersLoading = input<boolean>(true);
 
   public readonly refresh = output<void>();
 
   // Class variables with types
   private dialogRef: DynamicDialogRef | undefined;
-  public membersLoading: WritableSignal<boolean>;
-  public members: Signal<CommitteeMember[]> = signal<CommitteeMember[]>([]);
   public selectedMember: WritableSignal<CommitteeMember | null>;
   public isDeleting: WritableSignal<boolean>;
   public memberActionMenuItems: MenuItem[] = [];
@@ -85,7 +85,6 @@ export class CommitteeMembersComponent implements OnInit {
     // Initialize all class variables
     this.selectedMember = signal<CommitteeMember | null>(null);
     this.isDeleting = signal<boolean>(false);
-    this.membersLoading = signal<boolean>(true);
     // Initialize filter form
     this.filterForm = this.initializeFilterForm();
     this.searchTerm = this.initializeSearchTerm();
@@ -104,10 +103,7 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   public ngOnInit(): void {
-    runInInjectionContext(this.injector, () => {
-      this.members = this.initializeMembers();
-      this.memberActionMenuItems = this.initializeMemberActionMenuItems();
-    });
+    this.memberActionMenuItems = this.initializeMemberActionMenuItems();
   }
 
   public onMemberMenuToggle(data: { event: Event; member: CommitteeMember; menu: MenuComponent }): void {
@@ -267,13 +263,6 @@ export class CommitteeMembersComponent implements OnInit {
 
   private initializeOrganizationFilter(): Signal<string | null> {
     return toSignal(this.filterForm.get('organization')!.valueChanges.pipe(startWith(null), distinctUntilChanged()), { initialValue: null });
-  }
-  private initializeMembers(): Signal<CommitteeMember[]> {
-    const committee = this.committee();
-    if (!committee || !committee.id) {
-      return signal<CommitteeMember[]>([]);
-    }
-    return toSignal(this.committeeService.getCommitteeMembers(committee.id).pipe(finalize(() => this.membersLoading.set(false))), { initialValue: [] });
   }
 
   private initializeMemberActionMenuItems(): MenuItem[] {

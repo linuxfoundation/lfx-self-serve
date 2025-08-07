@@ -10,10 +10,10 @@
 }
 
 @if (!loading()) {
-  <lfx-card header="Users" styleClass="h-full" class="h-full">
-    @if (userPermissions().length > 0) {
+  <lfx-card header="Permissions">
+    @if (users().length > 0) {
       <lfx-table
-        [value]="userPermissions()"
+        [value]="users()"
         size="small"
         styleClass="p-datatable-sm animate-fade-in-up"
         [paginator]="true"
@@ -24,9 +24,9 @@
         <ng-template #header>
           <tr>
             <th><span class="text-sm font-sans text-gray-500">User</span></th>
-            <th><span class="text-sm font-sans text-gray-500">Meetings</span></th>
-            <th><span class="text-sm font-sans text-gray-500">Committees</span></th>
-            <th><span class="text-sm font-sans text-gray-500">Mailing Lists</span></th>
+            <th><span class="text-sm font-sans text-gray-500">Permission Scope</span></th>
+            <th><span class="text-sm font-sans text-gray-500">Access Level</span></th>
+            <th><span class="text-sm font-sans text-gray-500">Details</span></th>
             <th class="text-center">
               <div class="flex justify-center">
                 <span class="text-sm font-sans text-gray-500">Actions</span>
@@ -47,50 +47,66 @@
               </div>
             </td>
 
-            <!-- Meetings Column -->
+            <!-- Permission Scope Column -->
             <td>
-              @if (userPermission.permissions.meetings.manageAll) {
-                <span class="text-sm font-sans text-green-700 font-medium">Full Access</span>
-              } @else if (userPermission.permissions.meetings.specific.length > 0) {
-                <span class="text-sm font-sans text-gray-500"> {{ userPermission.permissions.meetings.specific.length }} specific </span>
+              @if (userPermission.projectPermission) {
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"> Project </span>
+              } @else if (userPermission.committeePermissions?.length > 0) {
+                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"> Committee </span>
               } @else {
                 <span class="text-sm font-sans text-gray-400">No Access</span>
               }
             </td>
 
-            <!-- Committees Column -->
+            <!-- Access Level Column -->
             <td>
-              @if (userPermission.permissions.committees.manageAll) {
-                <span class="text-sm font-sans text-green-700 font-medium">Full Access</span>
-              } @else if (userPermission.permissions.committees.specific.length > 0) {
-                <span
-                  class="text-sm font-sans text-gray-500"
-                  [pTooltip]="userPermission.permissions.committees.specific | committeeNames"
-                  tooltipPosition="top">
-                  {{ userPermission.permissions.committees.specific.length }} Committee(s)
+              @if (userPermission.projectPermission) {
+                <span class="text-sm font-sans {{ userPermission.projectPermission.level === 'write' ? 'text-green-700 font-medium' : 'text-blue-600' }}">
+                  {{ userPermission.projectPermission.level === 'write' ? 'Manage' : 'View' }}
+                </span>
+              } @else if (userPermission.committeePermissions?.length > 0) {
+                <span class="text-sm font-sans {{ userPermission.committeePermissions[0].level === 'write' ? 'text-green-700 font-medium' : 'text-blue-600' }}">
+                  {{ userPermission.committeePermissions[0].level === 'write' ? 'Manage' : 'View' }}
                 </span>
               } @else {
-                <span class="text-sm font-sans text-gray-400">No Access</span>
+                <span class="text-sm font-sans text-gray-400">-</span>
               }
             </td>
 
-            <!-- Mailing Lists Column -->
+            <!-- Details Column -->
             <td>
-              @if (userPermission.permissions.mailingLists.manageAll) {
-                <span class="text-sm font-sans text-green-700 font-medium">Full Access</span>
-              } @else if (userPermission.permissions.mailingLists.specific.length > 0) {
-                <span class="text-sm font-sans text-gray-500"> {{ userPermission.permissions.mailingLists.specific.length }} specific </span>
+              @if (userPermission.projectPermission) {
+                <span class="text-sm font-sans text-gray-600">All committees, meetings, and mailing lists</span>
+              } @else if (userPermission.committeePermissions?.length > 0) {
+                <div class="text-sm font-sans text-gray-600">
+                  @if (userPermission.committeePermissions.length === 1) {
+                    {{ userPermission.committeePermissions[0].committee.name }}
+                  } @else {
+                    <span [pTooltip]="userPermission.committeePermissions | committeeNames" tooltipPosition="top">
+                      {{ userPermission.committeePermissions.length }} committees
+                    </span>
+                  }
+                </div>
               } @else {
-                <span class="text-sm font-sans text-gray-400">No Access</span>
+                <span class="text-sm font-sans text-gray-400">-</span>
               }
             </td>
 
             <!-- Actions Column -->
-            <td class="text-center">
-              <div class="flex justify-center gap-2">
-                <button class="text-blue-600 hover:text-blue-800 text-sm font-sans" (click)="onEditUser(userPermission)">Edit</button>
-                <button class="text-red-600 hover:text-red-800 text-sm font-sans" (click)="onRemoveUser(userPermission)">Remove</button>
-              </div>
+            <td class="text-center relative">
+              <lfx-menu #userActionMenu [model]="userActionMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+              <lfx-button
+                [icon]="
+                  isRemoving() === (userPermission.user.sid || userPermission.user.id) ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'
+                "
+                [text]="true"
+                [rounded]="true"
+                size="small"
+                severity="secondary"
+                [disabled]="isRemoving() === (userPermission.user.sid || userPermission.user.id)"
+                (onClick)="toggleUserActionMenu($event, userPermission, userActionMenu)"
+                data-testid="user-actions-menu">
+              </lfx-button>
             </td>
           </tr>
         </ng-template>
@@ -118,3 +134,6 @@
     }
   </lfx-card>
 }
+
+<!-- Confirmation Dialog -->
+<p-confirmDialog></p-confirmDialog>

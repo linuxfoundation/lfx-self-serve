@@ -51,7 +51,7 @@ export class CommitteeFormComponent {
   }
 
   // Form submission handler
-  protected handleSubmit(): void {
+  protected onSubmit(): void {
     this.markAllFieldsAsTouched();
 
     if (this.form().valid) {
@@ -66,11 +66,11 @@ export class CommitteeFormComponent {
         this.committeeService.updateCommittee(committeeId, formValue).subscribe({
           next: () => {
             this.submitting.set(false);
-            this.handleSuccess();
+            this.onSuccess();
           },
           error: (error) => {
             this.submitting.set(false);
-            this.handleError('Failed to update committee:', error);
+            this.onError('Failed to update committee:', error);
           },
         });
       } else {
@@ -78,11 +78,11 @@ export class CommitteeFormComponent {
         this.committeeService.createCommittee(formValue).subscribe({
           next: () => {
             this.submitting.set(false);
-            this.handleSuccess();
+            this.onSuccess();
           },
           error: (error) => {
             this.submitting.set(false);
-            this.handleError('Failed to create committee:', error);
+            this.onError('Failed to create committee:', error);
           },
         });
       }
@@ -92,7 +92,7 @@ export class CommitteeFormComponent {
   }
 
   // Cancel handler
-  protected handleCancel(): void {
+  protected onCancel(): void {
     if (this.config.data?.onCancel) {
       this.config.data.onCancel();
     } else {
@@ -127,7 +127,7 @@ export class CommitteeFormComponent {
   }
 
   // Success handler
-  private handleSuccess(): void {
+  private onSuccess(): void {
     const isEditing = this.isEditing();
     const action = isEditing ? 'updated' : 'created';
 
@@ -149,7 +149,7 @@ export class CommitteeFormComponent {
   }
 
   // Error handler
-  private handleError(message: string, error: any): void {
+  private onError(message: string, error: any): void {
     console.error(message, error);
 
     this.messageService.add({

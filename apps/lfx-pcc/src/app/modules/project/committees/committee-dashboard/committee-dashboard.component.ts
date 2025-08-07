@@ -19,8 +19,8 @@ import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MenuItem } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { of } from 'rxjs';
-import { debounceTime, distinctUntilChanged, startWith, tap } from 'rxjs/operators';
+import { BehaviorSubject, of } from 'rxjs';
+import { debounceTime, distinctUntilChanged, startWith, switchMap, tap } from 'rxjs/operators';
 
 import { CommitteeFormComponent } from '../components/committee-form/committee-form.component';
 import { UpcomingCommitteeMeetingComponent } from '../components/upcoming-committee-meeting/upcoming-committee-meeting.component';
@@ -55,7 +55,6 @@ export class CommitteeDashboardComponent {
   private readonly dialogService = inject(DialogService);
 
   // Class variables with types
-  private dialogRef: DynamicDialogRef | undefined;
   public project: typeof this.projectService.project;
   public selectedCommittee: WritableSignal<Committee | null>;
   public isDeleting: WritableSignal<boolean>;
@@ -63,7 +62,6 @@ export class CommitteeDashboardComponent {
   public rows: number;
   public searchForm: FormGroup;
   public categoryFilter: WritableSignal<string | null>;
-  private searchTerm: Signal<string>;
   public committeesLoading: WritableSignal<boolean>;
   public committees: Signal<Committee[]>;
   public categories: Signal<{ label: string; value: string | null }[]>;
@@ -71,6 +69,9 @@ export class CommitteeDashboardComponent {
   public totalRecords: Signal<number>;
   public menuItems: MenuItem[];
   public actionMenuItems: MenuItem[];
+  public refresh: BehaviorSubject<void>;
+  private searchTerm: Signal<string>;
+  private dialogRef: DynamicDialogRef | undefined;
 
   public constructor() {
     // Initialize all class variables
@@ -80,6 +81,7 @@ export class CommitteeDashboardComponent {
     this.first = signal<number>(0);
     this.rows = 10;
     this.committeesLoading = signal<boolean>(true);
+    this.refresh = new BehaviorSubject<void>(undefined);
     this.committees = this.initializeCommittees();
     this.searchForm = this.initializeSearchForm();
     this.categoryFilter = signal<string | null>(null);
@@ -189,9 +191,7 @@ export class CommitteeDashboardComponent {
   }
 
   private refreshCommittees(): void {
-    this.router.navigate(['/project', this.project()?.slug], { skipLocationChange: true }).then(() => {
-      this.router.navigate(['/project', this.project()?.slug, 'committees']);
-    });
+    this.refresh.next();
   }
 
   private openEditDialog(): void {
@@ -227,7 +227,12 @@ export class CommitteeDashboardComponent {
 
   private initializeCommittees(): Signal<Committee[]> {
     return toSignal(
-      this.project() ? this.committeeService.getCommitteesByProject(this.project()!.id).pipe(tap(() => this.committeesLoading.set(false))) : of([]),
+      this.project()
+        ? this.refresh.pipe(
+            tap(() => this.committeesLoading.set(true)),
+            switchMap(() => this.committeeService.getCommitteesByProject(this.project()!.id).pipe(tap(() => this.committeesLoading.set(false))))
+          )
+        : of([]),
       { initialValue: [] }
     );
   }

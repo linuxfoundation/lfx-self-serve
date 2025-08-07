@@ -2,59 +2,77 @@
 // SPDX-License-Identifier: MIT
 
 import { User } from './auth';
+import { Committee } from './committee.interface';
 
-export interface Role {
-  id: number;
-  name: string;
-  description: string;
-}
+export type PermissionLevel = 'read' | 'write';
+export type PermissionScope = 'project' | 'committee';
 
-export interface UserRole {
+export interface ProjectPermission {
   id: number;
   user_id: string;
   project_id: string;
-  role_id: number;
-  roles?: Role;
+  permission_level: PermissionLevel;
+  created_at?: string;
+  updated_at?: string;
 }
 
-export interface ObjectPermission {
+export interface CommitteePermission {
   id: number;
   user_id: string;
-  object_type: 'meeting' | 'committee' | 'mailing_list';
-  object_id: string;
-  permission: string;
-  committee_name?: string;
-}
-
-export interface MeetingPermissionObject {
-  id: number;
-  name: string;
-  description?: string;
-  project_id: number;
+  project_id: string;
+  committee_id: string;
+  permission_level: PermissionLevel;
+  created_at?: string;
+  updated_at?: string;
 }
 
 export interface MailingList {
-  id: number;
+  id: string;
   name: string;
   description?: string;
-  project_id: number;
+  committee_id?: string;
+  project_id: string;
 }
 
-export interface UserPermissions {
+export interface UserPermissionSummary {
   user: Partial<User>;
-  projectRoles: UserRole[];
-  permissions: {
-    meetings: {
-      manageAll: boolean;
-      specific: ObjectPermission[];
-    };
-    committees: {
-      manageAll: boolean;
-      specific: ObjectPermission[];
-    };
-    mailingLists: {
-      manageAll: boolean;
-      specific: ObjectPermission[];
-    };
+  projectPermission?: {
+    level: PermissionLevel;
+    scope: 'project';
+  };
+  committeePermissions: {
+    committee: Committee;
+    level: PermissionLevel;
+    scope: 'committee';
+  }[];
+}
+
+export interface CreateUserPermissionRequest {
+  first_name: string;
+  last_name: string;
+  email: string;
+  username?: string;
+  project_id: string;
+  permission_scope: PermissionScope;
+  permission_level: PermissionLevel;
+  committee_ids?: string[]; // Required when scope is 'committee'
+}
+
+export interface UpdateUserPermissionRequest {
+  user_id: string;
+  project_id: string;
+  permission_scope: PermissionScope;
+  permission_level: PermissionLevel;
+  committee_ids?: string[]; // Required when scope is 'committee'
+}
+
+export interface PermissionMatrixItem {
+  scope: string;
+  level: string;
+  description: string;
+  capabilities: string[];
+  badge: {
+    color: string;
+    bgColor: string;
   };
 }

@@ -2,20 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, Injector, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TableComponent } from '@components/table/table.component';
-import { Committee } from '@lfx-pcc/shared/interfaces';
+import { Committee, CommitteeMember } from '@lfx-pcc/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
 import { ConfirmationService, MenuItem } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { of, switchMap } from 'rxjs';
+import { BehaviorSubject, combineLatest, of, switchMap } from 'rxjs';
 
 import { CommitteeFormComponent } from '../components/committee-form/committee-form.component';
 import { CommitteeMembersComponent } from '../components/committee-members/committee-members.component';
@@ -46,25 +46,32 @@ export class CommitteeViewComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
+  private readonly injector = inject(Injector);
 
   // Class variables with types
   private dialogRef: DynamicDialogRef | undefined;
   public project: typeof this.projectService.project;
   public committee: Signal<Committee | null>;
-  public loading: Signal<boolean>;
+  public members: WritableSignal<CommitteeMember[]>;
+  public membersLoading: WritableSignal<boolean>;
+  public loading: WritableSignal<boolean>;
   public error: WritableSignal<boolean>;
   public isDeleting: WritableSignal<boolean>;
   public actionMenuItems: MenuItem[];
   public formattedCreatedDate: Signal<string>;
   public formattedUpdatedDate: Signal<string>;
+  public refresh: BehaviorSubject<void>;
 
   public constructor() {
     // Initialize all class variables
     this.project = this.projectService.project;
     this.error = signal<boolean>(false);
     this.isDeleting = signal<boolean>(false);
+    this.refresh = new BehaviorSubject<void>(undefined);
+    this.members = signal<CommitteeMember[]>([]);
+    this.membersLoading = signal<boolean>(true);
+    this.loading = signal<boolean>(true);
     this.committee = this.initializeCommittee();
-    this.loading = this.initializeLoading();
     this.actionMenuItems = this.initializeActionMenuItems();
     this.formattedCreatedDate = this.initializeFormattedCreatedDate();
     this.formattedUpdatedDate = this.initializeFormattedUpdatedDate();
@@ -83,13 +90,7 @@ export class CommitteeViewComponent {
   }
 
   public refreshMembers(): void {
-    this.router
-      .navigate(['/project', this.project()?.slug, 'committees'], {
-        skipLocationChange: true,
-      })
-      .then(() => {
-        this.router.navigate(['/project', this.project()?.slug, 'committees', this.committee()?.id]);
-      });
+    this.refresh.next();
   }
 
   // Action handlers
@@ -148,24 +149,26 @@ export class CommitteeViewComponent {
 
   private initializeCommittee(): Signal<Committee | null> {
     return toSignal(
-      this.route.paramMap.pipe(
-        switchMap((params) => {
-          const committeeId = params.get('id');
+      combineLatest([this.route.paramMap, this.refresh]).pipe(
+        switchMap(([params]) => {
+          const committeeId = params?.get('id');
           if (!committeeId) {
             this.error.set(true);
             return of(null);
           }
-          return this.committeeService.getCommittee(committeeId);
+
+          return combineLatest([this.committeeService.getCommittee(committeeId), this.committeeService.getCommitteeMembers(committeeId)]).pipe(
+            switchMap(([committee, members]) => {
+              this.members.set(members);
+              this.loading.set(false);
+              this.membersLoading.set(false);
+              return of(committee);
+            })
+          );
         })
       ),
       { initialValue: null }
     );
-  }
-
-  private initializeLoading(): Signal<boolean> {
-    return computed(() => {
-      return !this.error() && this.committee() === null;
-    });
   }
 
   private initializeActionMenuItems(): MenuItem[] {

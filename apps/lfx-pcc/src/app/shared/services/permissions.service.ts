@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { UserPermissions } from '@lfx-pcc/shared/interfaces';
+import { UpdateUserPermissionRequest, UserPermissionSummary } from '@lfx-pcc/shared/interfaces';
 import { Observable } from 'rxjs';
 
 @Injectable({
@@ -13,18 +13,13 @@ export class PermissionsService {
   private readonly http = inject(HttpClient);
 
   // Fetch all user permissions for a project
-  public getProjectPermissions(project: string): Observable<UserPermissions[]> {
-    return this.http.get<UserPermissions[]>(`/api/projects/${project}/permissions`);
-  }
-
-  // Add new user with permissions
-  public addUserPermissions(project: string, userPermissions: UserPermissions): Observable<UserPermissions> {
-    return this.http.post<UserPermissions>(`/api/projects/${project}/permissions`, userPermissions);
+  public getProjectPermissions(project: string): Observable<UserPermissionSummary[]> {
+    return this.http.get<UserPermissionSummary[]>(`/api/projects/${project}/permissions`);
   }
 
   // Update user permissions
-  public updateUserPermissions(project: string, userId: string, permissions: UserPermissions): Observable<UserPermissions> {
-    return this.http.put<UserPermissions>(`/api/projects/${project}/permissions/${userId}`, permissions);
+  public updateUserPermissions(project: string, userId: string, permissions: Omit<UpdateUserPermissionRequest, 'user_id' | 'project_id'>): Observable<void> {
+    return this.http.put<void>(`/api/projects/${project}/permissions/${userId}`, permissions);
   }
 
   // Remove all permissions for a user

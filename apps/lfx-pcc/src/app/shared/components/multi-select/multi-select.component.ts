@@ -24,4 +24,6 @@ export class MultiSelectComponent {
   public readonly appendTo = input<any>();
   public readonly filter = input<boolean>(true);
   public readonly filterPlaceHolder = input<string>('Search');
+  public readonly size = input<'small' | 'large'>('small');
+  public readonly styleClass = input<string>('w-full');
 }

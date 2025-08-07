@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, Injector, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, Injector, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -19,8 +19,8 @@ import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { MenuItem } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
-import { of } from 'rxjs';
-import { debounceTime, distinctUntilChanged, startWith, take, tap } from 'rxjs/operators';
+import { BehaviorSubject, of } from 'rxjs';
+import { debounceTime, distinctUntilChanged, startWith, switchMap, take, tap } from 'rxjs/operators';
 
 import { MeetingCardComponent } from '../components/meeting-card/meeting-card.component';
 import { MeetingFormComponent } from '../components/meeting-form/meeting-form.component';
@@ -72,6 +72,7 @@ export class MeetingDashboardComponent {
   public viewOptions: { label: string; value: 'list' | 'calendar' }[];
   public viewForm: FormGroup;
   public calendarEvents: Signal<CalendarEvent[]>;
+  public refresh: BehaviorSubject<void>;
   private searchTerm: Signal<string>;
 
   public constructor() {
@@ -79,6 +80,7 @@ export class MeetingDashboardComponent {
     this.project = this.projectService.project;
     this.meetingsLoading = signal<boolean>(true);
     this.pastMeetingsLoading = signal<boolean>(true);
+    this.refresh = new BehaviorSubject<void>(undefined);
     this.meetings = this.initializeMeetings();
     this.pastMeetings = this.initializePastMeetings();
     this.searchForm = this.initializeSearchForm();
@@ -156,13 +158,7 @@ export class MeetingDashboardComponent {
   public refreshMeetings(): void {
     this.meetingsLoading.set(true);
     this.pastMeetingsLoading.set(true);
-    runInInjectionContext(this.injector, () => {
-      this.meetings = this.initializeMeetings();
-      this.pastMeetings = this.initializePastMeetings();
-      this.filteredMeetings = this.initializeFilteredMeetings();
-      this.publicMeetingsCount = this.initializePublicMeetingsCount();
-      this.privateMeetingsCount = this.initializePrivateMeetingsCount();
-    });
+    this.refresh.next();
   }
 
   private openMeetingModal(meeting: Meeting): void {
@@ -200,7 +196,11 @@ export class MeetingDashboardComponent {
 
   private initializeMeetings(): Signal<Meeting[]> {
     return toSignal(
-      this.project() ? this.meetingService.getUpcomingMeetingsByProject(this.project()!.id, 100).pipe(tap(() => this.meetingsLoading.set(false))) : of([]),
+      this.project()
+        ? this.refresh.pipe(
+            switchMap(() => this.meetingService.getUpcomingMeetingsByProject(this.project()!.id, 100).pipe(tap(() => this.meetingsLoading.set(false))))
+          )
+        : of([]),
       {
         initialValue: [],
       }
@@ -209,7 +209,11 @@ export class MeetingDashboardComponent {
 
   private initializePastMeetings(): Signal<Meeting[]> {
     return toSignal(
-      this.project() ? this.meetingService.getPastMeetingsByProject(this.project()!.id, 100).pipe(tap(() => this.pastMeetingsLoading.set(false))) : of([]),
+      this.project()
+        ? this.refresh.pipe(
+            switchMap(() => this.meetingService.getPastMeetingsByProject(this.project()!.id, 100).pipe(tap(() => this.pastMeetingsLoading.set(false))))
+          )
+        : of([]),
       {
         initialValue: [],
       }
