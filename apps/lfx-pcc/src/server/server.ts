@@ -14,7 +14,6 @@ import pinoHttp from 'pino-http';
 
 import { extractBearerToken } from './middleware/auth-token.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
-import { tokenRefreshMiddleware } from './middleware/token-refresh.middleware';
 import committeesRouter from './routes/committees';
 import meetingsRouter from './routes/meetings';
 import permissionsRouter from './routes/permissions';
@@ -80,7 +79,7 @@ const authConfig: ConfigParams = {
 
 app.use(auth(authConfig));
 
-app.use(tokenRefreshMiddleware);
+// app.use(tokenRefreshMiddleware);
 
 // Apply bearer token middleware to all API routes
 app.use('/api', extractBearerToken);
