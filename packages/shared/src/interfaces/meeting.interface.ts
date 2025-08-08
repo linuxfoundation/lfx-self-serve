@@ -83,6 +83,7 @@ export interface CreateMeetingRequest {
   recording_access?: string;
   recurrence?: MeetingRecurrence;
   restricted?: boolean;
+  committees?: string[];
 }
 
 export interface UpdateMeetingRequest {
@@ -104,6 +105,7 @@ export interface UpdateMeetingRequest {
   recording_access?: string;
   recurrence?: MeetingRecurrence;
   restricted?: boolean;
+  committees?: string[];
 }
 
 export interface DeleteMeetingRequest {

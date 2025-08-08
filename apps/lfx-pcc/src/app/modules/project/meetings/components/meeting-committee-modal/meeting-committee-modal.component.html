@@ -1,0 +1,176 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4">
+  <!-- Loading State -->
+  @if (committeesLoading()) {
+    <div class="flex items-center justify-center py-8">
+      <i class="fa-light fa-circle-notch fa-spin text-2xl text-blue-600 mr-3"></i>
+      <span class="text-gray-600">Loading committees...</span>
+    </div>
+  } @else {
+    <!-- Committee Selection -->
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">Select Committees</label>
+      <lfx-multi-select
+        [form]="form"
+        control="committees"
+        [options]="committees()"
+        optionLabel="name"
+        optionValue="id"
+        placeholder="Select one or more committees"
+        [filter]="true"
+        filterPlaceHolder="Search committees"
+        [showToggleAll]="true"
+        appendTo="body"
+        styleClass="w-full"
+        data-testid="meeting-committee-multi-select"></lfx-multi-select>
+      <p class="text-xs text-gray-500">
+        @if (selectedCommitteeIds().length === 0) {
+          Select committees to associate with this meeting. Committee members will automatically be added as participants.
+        } @else {
+          <strong>{{ selectedCommitteeIds().length }}</strong> committee(s) selected.
+          @if (committeeMembers().length > 0) {
+            <strong>{{ committeeMembers().length }}</strong> unique member(s) will be added to the meeting.
+          }
+        }
+      </p>
+    </div>
+  }
+
+  <!-- Committee Members Section -->
+  @if (!committeesLoading() && selectedCommitteeIds().length === 0) {
+    <div class="bg-blue-50 rounded-lg p-6 text-center">
+      <i class="fa-light fa-users text-3xl text-blue-400 mb-3"></i>
+      <h4 class="text-lg font-medium text-gray-900 mb-2">No Committees Selected</h4>
+      <p class="text-sm text-gray-600">Select one or more committees above to view their members</p>
+    </div>
+  }
+
+  @if (selectedCommitteeIds().length > 0) {
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-medium text-gray-700">Committee Members</h3>
+        @if (membersLoading()) {
+          <i class="fa-light fa-circle-notch fa-spin text-blue-600"></i>
+        }
+      </div>
+
+      @if (!membersLoading() && committeeMembers().length > 0) {
+        <div class="border border-gray-200 p-4 rounded-lg overflow-hidden shadow-sm">
+          <lfx-table
+            [value]="committeeMembers()"
+            [paginator]="committeeMembers().length > 5"
+            [rows]="5"
+            [rowsPerPageOptions]="[5, 10, 25, 50]"
+            paginatorDropdownAppendTo="body"
+            styleClass="p-datatable-sm p-datatable-striped"
+            sortField="first_name"
+            [sortOrder]="1">
+            <ng-template #header>
+              <tr>
+                <th>
+                  <span class="text-xs font-sans text-gray-500">Name</span>
+                </th>
+                <th>
+                  <span class="text-xs font-sans text-gray-500">Organization</span>
+                </th>
+                @if (form.value.committees.length > 1) {
+                  <th>
+                    <span class="text-xs font-sans text-gray-500">Committee</span>
+                  </th>
+                }
+                @if (hasVotingEnabledCommittee()) {
+                  <th>
+                    <span class="text-xs font-sans text-gray-500">Role</span>
+                  </th>
+                  <th>
+                    <span class="text-xs font-sans text-gray-500">Voting Status</span>
+                  </th>
+                }
+              </tr>
+            </ng-template>
+            <ng-template #body let-member>
+              <tr>
+                <td>
+                  <div class="flex flex-col">
+                    <span class="text-sm text-gray-900"> {{ member.first_name }} {{ member.last_name }} </span>
+                    <a class="text-xs text-gray-600" [href]="'mailto:' + member.email">{{ member.email }}</a>
+                  </div>
+                </td>
+                <td>
+                  <span class="text-sm text-gray-600">{{ member.organization || '-' }}</span>
+                </td>
+                @if (form.value.committees.length > 1) {
+                  <td>
+                    <span class="text-xs text-gray-500">{{ member.committees?.join(', ') }}</span>
+                  </td>
+                }
+                @if (hasVotingEnabledCommittee()) {
+                  <td>
+                    <span class="text-sm text-gray-600">{{ member.role || '-' }}</span>
+                  </td>
+                  <td>
+                    @if (member.voting_status) {
+                      <span
+                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border"
+                        [ngClass]="{
+                          'bg-green-100 text-green-800 border-green-200': member.voting_status === 'voting',
+                          'bg-gray-100 text-gray-800 border-gray-200': member.voting_status === 'non-voting',
+                          'bg-yellow-100 text-yellow-800 border-yellow-200': member.voting_status === 'alternate',
+                        }">
+                        {{ member.voting_status | titlecase }}
+                      </span>
+                    } @else {
+                      <span class="text-sm text-gray-400">-</span>
+                    }
+                  </td>
+                }
+              </tr>
+            </ng-template>
+            <ng-template #emptymessage>
+              <tr>
+                <td [attr.colspan]="tableColspan()" class="text-center py-4">
+                  <span class="text-sm text-gray-500">No members found in selected committees</span>
+                </td>
+              </tr>
+            </ng-template>
+          </lfx-table>
+        </div>
+      }
+
+      @if (!membersLoading()) {
+        @if (committeeMembers().length === 0) {
+          <div class="bg-gray-50 rounded-lg p-4 text-center">
+            <i class="fa-light fa-users text-2xl text-gray-400 mb-2"></i>
+            <p class="text-sm text-gray-500">No members found in the selected committees</p>
+          </div>
+        }
+
+        <p class="text-xs text-gray-500 mt-2">
+          <i class="fa-light fa-info-circle mr-1"></i>
+          Total members: {{ committeeMembers().length }}
+        </p>
+      }
+    </div>
+  }
+</div>
+
+<!-- Footer Actions -->
+<div class="flex justify-end gap-2 mt-6 pt-4 border-t">
+  <lfx-button
+    label="Cancel"
+    severity="secondary"
+    size="small"
+    (onClick)="onCancel()"
+    [disabled]="saving()"
+    data-testid="meeting-committee-modal-cancel-button"></lfx-button>
+  <lfx-button
+    label="Save"
+    severity="primary"
+    size="small"
+    [icon]="saving() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-save'"
+    (onClick)="onSave()"
+    [disabled]="saving()"
+    data-testid="meeting-committee-modal-save-button"></lfx-button>
+</div>

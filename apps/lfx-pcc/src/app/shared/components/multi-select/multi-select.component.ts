@@ -19,7 +19,6 @@ export class MultiSelectComponent {
   public readonly optionLabel = input<string>('label');
   public readonly optionValue = input<string>('value');
   public readonly placeholder = input<string>('Select');
-  public readonly disabled = input<boolean>(false);
   public readonly showToggleAll = input<boolean>(true);
   public readonly appendTo = input<any>();
   public readonly filter = input<boolean>(true);

@@ -23,6 +23,7 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, finalize, map, of, take, tap } from 'rxjs';
 
+import { MeetingCommitteeModalComponent } from '../meeting-committee-modal/meeting-committee-modal.component';
 import { MeetingDeleteConfirmationComponent, MeetingDeleteResult } from '../meeting-delete-confirmation/meeting-delete-confirmation.component';
 import { MeetingFormComponent } from '../meeting-form/meeting-form.component';
 import { ParticipantFormComponent } from '../participant-form/participant-form.component';
@@ -45,7 +46,7 @@ import { RecurringEditOption, RecurringMeetingEditOptionsComponent } from '../re
     ExpandableTextComponent,
     LinkifyPipe,
   ],
-  providers: [ConfirmationService, MessageService],
+  providers: [ConfirmationService],
   templateUrl: './meeting-card.component.html',
   styleUrl: './meeting-card.component.scss',
 })
@@ -54,6 +55,7 @@ export class MeetingCardComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly committeeService = inject(CommitteeService);
   private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
   private readonly injector = inject(Injector);
 
   public readonly meetingInput = input.required<Meeting>();
@@ -121,8 +123,38 @@ export class MeetingCardComponent {
     });
   }
 
+  public openCommitteeModal(): void {
+    this.dialogService
+      .open(MeetingCommitteeModalComponent, {
+        header: this.meeting().meeting_committees && this.meeting().meeting_committees!.length > 0 ? 'Manage Committees' : 'Connect Committees',
+        width: '950px',
+        modal: true,
+        closable: true,
+        dismissableMask: true,
+        data: {
+          meeting: this.meeting(),
+        },
+      })
+      .onClose.pipe(take(1))
+      .subscribe((result) => {
+        if (result) {
+          this.refreshMeeting();
+        }
+      });
+  }
+
   public onParticipantEdit(participant: MeetingParticipant, event: Event): void {
     event.stopPropagation();
+
+    // Don't allow editing committee members - show informational message
+    if (participant.type === 'committee') {
+      this.messageService.add({
+        severity: 'info',
+        summary: 'Committee Member',
+        detail: 'This is a committee member. To update their details, please edit them in the individual committee(s)',
+      });
+      return;
+    }
 
     this.dialogService
       .open(ParticipantFormComponent, {
@@ -185,7 +217,7 @@ export class MeetingCardComponent {
                 organization: m.organization,
                 is_host: false,
                 type: 'committee',
-                invite_accepted: true,
+                invite_accepted: null,
                 attended: true,
               }));
             }),
@@ -292,6 +324,12 @@ export class MeetingCardComponent {
           label: 'Add Guests',
           icon: 'fa-light fa-plus',
           command: () => this.openAddParticipantModal(),
+        });
+
+        baseItems.push({
+          label: this.meeting().meeting_committees && this.meeting().meeting_committees!.length > 0 ? 'Manage Committees' : 'Connect Committees',
+          icon: 'fa-light fa-people-group',
+          command: () => this.openCommitteeModal(),
         });
 
         baseItems.push({
