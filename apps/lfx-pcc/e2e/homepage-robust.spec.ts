@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 test.describe('Homepage - Robust Tests', () => {
   test.beforeEach(async ({ page }) => {
@@ -13,7 +13,7 @@ test.describe('Homepage - Robust Tests', () => {
 
   test.describe('Page Structure and Components', () => {
     test('should have correct page structure with main sections', async ({ page }) => {
-      await expect(page).toHaveTitle('LFX Projects Self-Service');
+      await expect(page).toHaveTitle('LFX Projects');
       await expect(page).toHaveURL('/');
 
       // Check main homepage component is present
@@ -320,7 +320,7 @@ test.describe('Homepage - Robust Tests', () => {
       if (isMobile) {
         // Search in header should be hidden on mobile
         await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
-        await expect(page.getByText('Projects Self-Service')).toBeHidden();
+        await expect(page.getByText('Projects', { exact: true })).toBeHidden();
       }
 
       // Logo should still be visible
@@ -336,7 +336,7 @@ test.describe('Homepage - Robust Tests', () => {
 
       // Header elements should be visible on tablet (medium and up)
       await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
-      await expect(page.getByText('Projects Self-Service')).toBeVisible();
+      await expect(page.getByText('Projects', { exact: true })).toBeVisible();
       await expect(page.getByAltText('LFX Logo')).toBeVisible();
     });
 
@@ -349,7 +349,7 @@ test.describe('Homepage - Robust Tests', () => {
 
       // Header elements should be visible on desktop
       await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
-      await expect(page.getByText('Projects Self-Service')).toBeVisible();
+      await expect(page.getByText('Projects', { exact: true })).toBeVisible();
       await expect(page.getByAltText('LFX Logo')).toBeVisible();
     });
   });

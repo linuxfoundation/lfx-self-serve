@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 test.describe('Project Dashboard - Robust Tests', () => {
   test.beforeEach(async ({ page }) => {
@@ -19,7 +19,7 @@ test.describe('Project Dashboard - Robust Tests', () => {
 
   test.describe('Page Structure and Components', () => {
     test('should have correct page structure with main content', async ({ page }) => {
-      await expect(page).toHaveTitle('LFX Projects Self-Service');
+      await expect(page).toHaveTitle('LFX Projects');
       await expect(page).toHaveURL(/\/project\/\w+$/);
 
       // Check main project component is present
@@ -249,8 +249,8 @@ test.describe('Project Dashboard - Robust Tests', () => {
       // Search bar should be hidden on mobile (responsive design)
       await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
 
-      // Projects Self-Service text should be hidden on mobile
-      await expect(page.getByText('Projects Self-Service')).toBeHidden();
+      // Projects text should be hidden on mobile
+      await expect(page.getByText('Projects', { exact: true })).toBeHidden();
 
       // Logo should still be visible
       await expect(page.getByAltText('LFX Logo')).toBeVisible();
@@ -267,7 +267,7 @@ test.describe('Project Dashboard - Robust Tests', () => {
 
       // Header elements should be visible on tablet (medium and up)
       await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
-      await expect(page.getByText('Projects Self-Service')).toBeVisible();
+      await expect(page.getByText('Projects', { exact: true })).toBeVisible();
       await expect(page.getByAltText('LFX Logo')).toBeVisible();
     });
   });

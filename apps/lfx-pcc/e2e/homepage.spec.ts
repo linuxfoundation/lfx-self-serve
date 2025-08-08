@@ -28,7 +28,7 @@ test.describe('Homepage', () => {
     // Check for logo and brand
     await expect(page.getByRole('button', { name: 'Go to home page' })).toBeVisible();
     await expect(page.getByAltText('LFX Logo')).toBeVisible();
-    await expect(page.getByText('Projects Self-Service')).toBeVisible();
+    await expect(page.getByText('Projects', { exact: true })).toBeVisible();
 
     // Header search should be visible on desktop (md and larger)
     await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
@@ -47,7 +47,7 @@ test.describe('Homepage', () => {
 
     // Header search and brand text should be hidden on mobile
     await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
-    await expect(page.getByText('Projects Self-Service')).toBeHidden();
+    await expect(page.getByText('Projects', { exact: true })).toBeHidden();
 
     // Mobile search toggle button should be visible
     await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();
@@ -205,7 +205,7 @@ test.describe('Homepage', () => {
 
     // On mobile, header search and brand text should be hidden
     await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
-    await expect(page.getByText('Projects Self-Service')).toBeHidden();
+    await expect(page.getByText('Projects', { exact: true })).toBeHidden();
 
     // Logo should still be visible
     await expect(page.getByAltText('LFX Logo')).toBeVisible();

@@ -31,7 +31,6 @@ const authConfig: ConfigParams = {
   clientID: process.env['PCC_AUTH0_CLIENT_ID'] || '1234',
   issuerBaseURL: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || 'https://example.com',
   secret: process.env['PCC_AUTH0_SECRET'] || 'sufficiently-long-string',
-  idTokenSigningAlg: 'HS256',
   authorizationParams: {
     response_type: 'code',
     audience: process.env['PCC_AUTH0_AUDIENCE'] || 'https://example.com',

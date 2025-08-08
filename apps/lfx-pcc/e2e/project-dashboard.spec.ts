@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { test, expect } from '@playwright/test';
+import { expect, test } from '@playwright/test';
 
 test.describe('Project Dashboard', () => {
   test.beforeEach(async ({ page }) => {
@@ -19,7 +19,7 @@ test.describe('Project Dashboard', () => {
 
   test.describe('Navigation and Layout', () => {
     test('should display correct page title and URL', async ({ page }) => {
-      await expect(page).toHaveTitle('LFX Projects Self-Service');
+      await expect(page).toHaveTitle('LFX Projects');
       await expect(page).toHaveURL(/\/project\/\w+$/);
     });
 
@@ -34,13 +34,13 @@ test.describe('Project Dashboard', () => {
       if (isMobile) {
         // On mobile: search and brand text should be hidden
         await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
-        await expect(page.getByText('Projects Self-Service')).toBeHidden();
+        await expect(page.getByText('Projects', { exact: true })).toBeHidden();
         // Mobile search toggle should be visible
         await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();
       } else {
         // On desktop: search and brand text should be visible
         await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
-        await expect(page.getByText('Projects Self-Service')).toBeVisible();
+        await expect(page.getByText('Projects', { exact: true })).toBeVisible();
         // Mobile search toggle should be hidden
         await expect(page.getByTestId('mobile-search-toggle')).toBeHidden();
       }
@@ -278,8 +278,8 @@ test.describe('Project Dashboard', () => {
       // Search bar should be hidden on mobile (responsive design)
       await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
 
-      // Projects Self-Service text should also be hidden on mobile
-      await expect(page.getByText('Projects Self-Service')).toBeHidden();
+      // Projects text should also be hidden on mobile
+      await expect(page.getByText('Projects', { exact: true })).toBeHidden();
 
       // Mobile search toggle should be visible
       await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();

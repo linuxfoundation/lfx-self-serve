@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, inject, signal, WritableSignal, viewChild, ElementRef } from '@angular/core';
+import { Component, CUSTOM_ELEMENTS_SCHEMA, ElementRef, inject, signal, viewChild, WritableSignal } from '@angular/core';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
@@ -42,7 +42,7 @@ export class HeaderComponent {
     {
       label: 'Developer Settings',
       icon: 'fa-light fa-cog',
-      url: environment.urls.profile + '/developer-settings',
+      url: environment.urls.profile + 'developer-settings',
       target: '_blank',
     },
     {

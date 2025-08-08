@@ -6,13 +6,45 @@ The application uses Pino for high-performance structured logging with automatic
 
 ## 🔧 Pino Configuration
 
-### Current Implementation
+### Dual Logger Architecture
+
+The application uses a dual logger architecture for optimal performance and flexibility:
+
+#### Server Logger (Base Logger)
 
 ```typescript
 // apps/lfx-pcc/src/server/server.ts
-import pinoHttp from 'pino-http';
+import pino from 'pino';
 
-const logger = pinoHttp({
+/**
+ * Base Pino logger instance for server-level operations.
+ * Used for server startup/shutdown, direct logging from server code,
+ * and can be imported by other modules for consistent logging.
+ */
+const serverLogger = pino({
+  level: process.env['LOG_LEVEL'] || 'info',
+  redact: {
+    paths: ['access_token', 'refresh_token', 'authorization', 'cookie'],
+    remove: true,
+  },
+  formatters: {
+    level: (label) => {
+      return { level: label.toUpperCase() };
+    },
+  },
+  timestamp: pino.stdTimeFunctions.isoTime,
+});
+```
+
+#### HTTP Logger (Request Middleware)
+
+```typescript
+/**
+ * HTTP request/response logging middleware using Pino.
+ * Provides request-scoped logger accessible via req.log in route handlers.
+ */
+const httpLogger = pinoHttp({
+  logger: serverLogger, // Uses same base logger for consistency
   autoLogging: {
     ignore: (req: Request) => {
       return req.url === '/health' || req.url === '/api/health';
@@ -23,26 +55,63 @@ const logger = pinoHttp({
     remove: true,
   },
   level: 'info',
+  formatters: {
+    level: (label) => {
+      return { level: label.toUpperCase() };
+    },
+  },
+  timestamp: pino.stdTimeFunctions.isoTime,
 });
 
-// Add logger middleware after health endpoint to avoid logging health checks
-app.use(logger);
+// Add HTTP logger middleware after health endpoint
+app.use(httpLogger);
 ```
 
 ### Key Features
 
+- **Dual Logger Architecture**: Separate loggers for server operations and HTTP requests
+- **Shared Configuration**: Consistent formatting and settings across both loggers
+- **Environment-Based Levels**: Configurable log levels via LOG_LEVEL environment variable
 - **High Performance**: Pino is optimized for speed and low overhead
-- **Structured Logging**: JSON output for easy parsing and analysis
-- **Security Redaction**: Automatically removes sensitive headers
+- **Structured Logging**: JSON output with uppercase level formatting
+- **Security Redaction**: Automatically removes sensitive headers and tokens
 - **Health Check Filtering**: Excludes health endpoints from logs
 - **Request Correlation**: Automatic request ID generation
+- **Modular Design**: Server logger can be exported and reused in other modules
 
 ## 📊 Logging Configuration
 
+### Environment Variables
+
+```bash
+# Set log level for both server and HTTP loggers
+LOG_LEVEL=info  # Options: trace, debug, info, warn, error, fatal
+
+# Other environment variables affecting logging
+NODE_ENV=production  # Affects stack trace inclusion in logs
+```
+
 ### Security Redaction
 
+#### Server Logger Redaction
+
 ```typescript
-// Sensitive data automatically redacted
+// Server-level sensitive data redaction
+redact: {
+  paths: [
+    'access_token',     // OAuth access tokens
+    'refresh_token',    // OAuth refresh tokens
+    'authorization',    // Authorization headers
+    'cookie'           // Cookie data
+  ],
+  remove: true,  // Completely removes instead of showing [Redacted]
+}
+```
+
+#### HTTP Logger Redaction
+
+```typescript
+// HTTP request/response sensitive data redaction
 redact: {
   paths: [
     'req.headers.authorization',    // Bearer tokens
@@ -51,6 +120,18 @@ redact: {
   ],
   remove: true,  // Completely removes instead of showing [Redacted]
 }
+```
+
+### Formatting Configuration
+
+```typescript
+// Consistent formatting across both loggers
+formatters: {
+  level: (label) => {
+    return { level: label.toUpperCase() };  // INFO, ERROR, WARN, etc.
+  },
+},
+timestamp: pino.stdTimeFunctions.isoTime,  // ISO 8601 timestamps
 ```
 
 ### Health Check Filtering
@@ -102,10 +183,22 @@ Pino-http automatically logs:
 
 ### Application Error Handling
 
+#### Angular SSR Error Logging
+
 ```typescript
-// Error logging in main request handler
+// Enhanced error logging in main request handler
 .catch((error) => {
-  req.log.error({ error }, 'Error rendering Angular application');
+  req.log.error(
+    {
+      error: error.message,
+      code: error.code,
+      stack: process.env['NODE_ENV'] !== 'production' ? error.stack : undefined,
+      url: req.url,
+      method: req.method,
+      user_agent: req.get('User-Agent'),
+    },
+    'Error rendering Angular application'
+  );
 
   if (error.code === 'NOT_FOUND') {
     res.status(404).send('Not Found');
@@ -117,12 +210,42 @@ Pino-http automatically logs:
 });
 ```
 
-### Error Log Format
+#### API Error Handler Integration
+
+```typescript
+// API error handler middleware with enhanced logging
+export function apiErrorHandler(error: ApiError, req: Request, res: Response, next: NextFunction): void {
+  // Log unhandled errors using request logger
+  req.log.error(
+    {
+      error: error.message,
+      stack: process.env['NODE_ENV'] !== 'production' ? error.stack : undefined,
+      path: req.path,
+      method: req.method,
+      user_agent: req.get('User-Agent'),
+      error_name: error.name,
+      status_code: error.status || 500,
+    },
+    'Unhandled API error'
+  );
+
+  // Return structured error response
+  res.status(error.status || 500).json({
+    error: error.status ? error.message : 'Internal server error',
+    code: error.code || 'INTERNAL_ERROR',
+    path: req.path,
+  });
+}
+```
+
+### Enhanced Error Log Format
+
+#### Angular SSR Error Log
 
 ```json
 {
-  "level": 50,
-  "time": 1640995200000,
+  "level": "ERROR",
+  "time": "2024-01-01T12:00:00.000Z",
   "pid": 12345,
   "hostname": "server-name",
   "req": {
@@ -130,21 +253,46 @@ Pino-http automatically logs:
     "method": "GET",
     "url": "/problematic-route"
   },
-  "error": {
-    "type": "Error",
-    "message": "Something went wrong",
-    "stack": "Error: Something went wrong\n    at handler (/app/server.js:123:45)"
-  },
+  "error": "Something went wrong",
+  "code": "INTERNAL_ERROR",
+  "stack": "Error: Something went wrong\n    at handler (/app/server.js:123:45)",
+  "url": "/problematic-route",
+  "method": "GET",
+  "user_agent": "Mozilla/5.0 (compatible; browser)",
   "msg": "Error rendering Angular application"
 }
 ```
 
-## 📈 Health Monitoring
+#### API Error Log
+
+```json
+{
+  "level": "ERROR",
+  "time": "2024-01-01T12:00:00.000Z",
+  "pid": 12345,
+  "hostname": "server-name",
+  "req": {
+    "id": "req-2",
+    "method": "POST",
+    "url": "/api/projects"
+  },
+  "error": "Validation failed",
+  "stack": "ValidationError: Required field missing\n    at validator (/app/api.js:45:12)",
+  "path": "/api/projects",
+  "method": "POST",
+  "user_agent": "Mozilla/5.0 (compatible; browser)",
+  "error_name": "ValidationError",
+  "status_code": 400,
+  "msg": "Unhandled API error"
+}
+```
+
+## 📈 Health Monitoring & Server Startup
 
 ### Health Check Endpoint
 
 ```typescript
-// Simple health check endpoint
+// Simple health check endpoint (added before logger middleware)
 app.get('/health', (_req: Request, res: Response) => {
   res.send('OK');
 });
@@ -158,16 +306,73 @@ Response: 200 OK
 Body: OK
 ```
 
+### Server Startup Logging
+
+```typescript
+// Enhanced server startup logging
+export function startServer() {
+  const port = process.env['PORT'] || 4000;
+  app.listen(port, () => {
+    serverLogger.info(
+      {
+        port,
+        url: `http://localhost:${port}`,
+        node_env: process.env['NODE_ENV'] || 'development',
+        pm2: process.env['PM2'] === 'true',
+      },
+      'Node Express server started'
+    );
+  });
+}
+```
+
+### Server Startup Log Format
+
+```json
+{
+  "level": "INFO",
+  "time": "2024-01-01T12:00:00.000Z",
+  "pid": 12345,
+  "hostname": "server-name",
+  "port": 4000,
+  "url": "http://localhost:4000",
+  "node_env": "production",
+  "pm2": true,
+  "msg": "Node Express server started"
+}
+```
+
 ## 🔧 Production Considerations
 
 ### Log Level Configuration
 
 ```typescript
-// Development vs Production logging
-const logger = pinoHttp({
-  level: process.env['NODE_ENV'] === 'production' ? 'info' : 'debug',
+// Environment-based log level configuration
+const serverLogger = pino({
+  level: process.env['LOG_LEVEL'] || 'info', // Configurable via environment
   // ... other config
 });
+```
+
+### Stack Trace Handling
+
+```typescript
+// Conditional stack trace inclusion based on environment
+stack: process.env['NODE_ENV'] !== 'production' ? error.stack : undefined,
+```
+
+### Logger Export and Reusability
+
+```typescript
+/**
+ * Export server logger for use in other modules that need logging
+ * outside of the HTTP request context (e.g., startup scripts, utilities).
+ */
+export { serverLogger };
+
+// Usage in other modules:
+// import { serverLogger } from './server/server';
+// serverLogger.info({ data }, 'Module operation completed');
 ```
 
 ### Log Rotation (Recommended)
@@ -207,17 +412,35 @@ Pino-http automatically generates request IDs for correlation:
 }
 ```
 
-### Using Request Logger
+### Using Request Logger vs Server Logger
+
+#### Request-Scoped Logging (req.log)
 
 ```typescript
-// Access the request logger in handlers
-app.use('/**', (req: Request, res: Response, next: NextFunction) => {
-  // req.log is available for custom logging
-  req.log.info({ customData: 'value' }, 'Custom log message');
-
+// Use req.log for request-specific operations
+app.use('/api/projects', (req: Request, res: Response, next: NextFunction) => {
+  req.log.info({ projectId: req.params.id }, 'Processing project request');
   // ... rest of handler
 });
 ```
+
+#### Server-Level Logging (serverLogger)
+
+```typescript
+// Use serverLogger for operations outside request context
+import { serverLogger } from './server/server';
+
+// Startup operations
+serverLogger.info({ config: 'loaded' }, 'Configuration initialized');
+
+// Background tasks
+serverLogger.warn({ task: 'cleanup' }, 'Background cleanup completed');
+```
+
+#### When to Use Each Logger
+
+- **req.log**: HTTP request handling, API operations, user actions
+- **serverLogger**: Server startup/shutdown, background tasks, module initialization
 
 ## 📊 Log Analysis
 
@@ -275,12 +498,16 @@ cat logs.json | jq 'select(.req.url | startswith("/api/"))'
 
 ### ✅ Implemented Features
 
-- Pino-http middleware integration
-- Automatic request/response logging
-- Security header redaction
-- Health check filtering
-- Error logging with context
-- JSON structured output
+- **Dual Logger Architecture**: Separate server and HTTP loggers
+- **Environment Configuration**: LOG_LEVEL environment variable support
+- **Enhanced Error Handling**: API error handler middleware integration
+- **Server Startup Logging**: Comprehensive server initialization logging
+- **Security Redaction**: Multiple layers of sensitive data protection
+- **Exportable Logger**: Server logger available for module imports
+- **Consistent Formatting**: Uppercase levels and ISO timestamps
+- **Conditional Stack Traces**: Production-safe error logging
+- **Request Correlation**: Automatic request ID generation
+- **Health Check Filtering**: Excluded from request logs
 
 ### 🔲 Not Yet Implemented
 

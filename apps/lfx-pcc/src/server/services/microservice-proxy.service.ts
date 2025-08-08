@@ -29,7 +29,7 @@ export class MicroserviceProxyService {
       }
 
       const MICROSERVICE_URLS: MicroserviceUrls = {
-        LFX_V2_SERVICE: process.env['LFX_V2_SERVICE_URL'] || 'http://lfx-api.k8s.orb.local',
+        LFX_V2_SERVICE: process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local',
       };
 
       const baseUrl = MICROSERVICE_URLS[service];
