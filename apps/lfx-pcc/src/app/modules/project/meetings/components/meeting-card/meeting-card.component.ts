@@ -62,6 +62,7 @@ export class MeetingCardComponent {
   public readonly pastMeeting = input<boolean>(false);
   public readonly loading = input<boolean>(false);
   public readonly meetingParticipantCount: Signal<number> = this.initMeetingParticipantCount();
+  public readonly participantResponseBreakdown: Signal<string> = this.initParticipantResponseBreakdown();
   public showParticipants: WritableSignal<boolean> = signal(false);
   public meeting: WritableSignal<Meeting> = signal({} as Meeting);
   public participantsLoading: WritableSignal<boolean> = signal(true);
@@ -188,11 +189,37 @@ export class MeetingCardComponent {
         return 'Add Guests';
       }
 
-      if (this.meetingParticipantCount() === 1) {
-        return '1 Guest';
+      const totalGuests = this.meetingParticipantCount();
+      const breakdown = this.participantResponseBreakdown();
+
+      if (totalGuests === 1) {
+        return breakdown ? `1 Guest (${breakdown})` : '1 Guest';
       }
 
-      return this.meetingParticipantCount() + ' Guests';
+      return breakdown ? `${totalGuests} Guests (${breakdown})` : `${totalGuests} Guests`;
+    });
+  }
+
+  private initParticipantResponseBreakdown(): Signal<string> {
+    return computed(() => {
+      const meeting = this.meeting();
+      if (!meeting) return '';
+
+      const accepted = meeting.participants_accepted_count || 0;
+      const declined = meeting.participants_declined_count || 0;
+      const pending = meeting.participants_pending_count || 0;
+
+      // Only show breakdown if there are individual participants with responses
+      if (accepted === 0 && declined === 0 && pending === 0) {
+        return '';
+      }
+
+      const parts: string[] = [];
+      if (accepted > 0) parts.push(`${accepted} Attending`);
+      if (declined > 0) parts.push(`${declined} Not Attending`);
+      if (pending > 0) parts.push(`${pending} Pending Response`);
+
+      return parts.join(', ');
     });
   }
 

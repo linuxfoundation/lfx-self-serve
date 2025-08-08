@@ -61,6 +61,9 @@ export interface Meeting {
   meeting_committees: MeetingCommittee[] | null;
   individual_participants_count: number;
   committee_members_count: number;
+  participants_accepted_count: number;
+  participants_declined_count: number;
+  participants_pending_count: number;
   committees: string[];
 }
 
