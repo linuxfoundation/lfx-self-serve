@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 export interface ProjectSearchResult {
-  project_id: string;
+  project_uid: string;
   project_name: string;
   project_slug: string;
   project_description: string;
   status: string;
-  logo: string;
+  logo_url: string;
   meetings_count: number;
   mailing_list_count: number;
   committee_names?: string[];

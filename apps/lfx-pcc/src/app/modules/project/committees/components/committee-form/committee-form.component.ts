@@ -102,16 +102,16 @@ export class CommitteeFormComponent {
 
   private initializeForm(): void {
     const committee = this.committee();
-    const projectId = this.config.data?.projectId || this.projectService.project()?.id;
+    const projectId = this.config.data?.projectId || this.projectService.project()?.uid;
 
     if (committee) {
       // Populate form with existing committee data
       this.form.set(this.createCommitteeFormGroup(committee));
     } else {
-      // Create empty form and set project_id if available
+      // Create empty form and set project_uid if available
       const form = this.createCommitteeFormGroup();
       if (projectId) {
-        form.patchValue({ project_id: projectId });
+        form.patchValue({ project_uid: projectId });
       }
       this.form.set(form);
     }
@@ -183,7 +183,8 @@ export class CommitteeFormComponent {
       sso_group_enabled: new FormControl(committee?.sso_group_enabled || false),
       sso_group_name: new FormControl(committee?.sso_group_name || ''),
       committee_website: new FormControl(committee?.committee_website || '', [Validators.pattern(/^https?:\/\/.+\..+/)]),
-      project_id: new FormControl(committee?.project_id || ''),
+      project_uid: new FormControl(committee?.project_uid || ''),
+      joinable: new FormControl(committee?.joinable || false),
     });
   }
 }

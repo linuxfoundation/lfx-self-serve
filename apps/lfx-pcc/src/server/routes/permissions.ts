@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NextFunction, Request, Response, Router } from 'express';
 import { CreateUserPermissionRequest, UpdateUserPermissionRequest } from '@lfx-pcc/shared/interfaces';
+import { NextFunction, Request, Response, Router } from 'express';
 
 import { SupabaseService } from '../services/supabase.service';
 
@@ -67,7 +67,7 @@ router.post('/:projectId/permissions', async (req: Request, res: Response, next:
       });
     }
 
-    userData.project_id = projectId;
+    userData.project_uid = projectId;
 
     req.log.info({ projectId, userData }, 'Creating user with permissions');
 
@@ -87,7 +87,7 @@ router.post('/:projectId/permissions', async (req: Request, res: Response, next:
 router.put('/:projectId/permissions/:userId', async (req: Request, res: Response, next: NextFunction) => {
   try {
     const { projectId, userId } = req.params;
-    const updateData: Omit<UpdateUserPermissionRequest, 'user_id' | 'project_id'> = req.body;
+    const updateData: Omit<UpdateUserPermissionRequest, 'user_id' | 'project_uid'> = req.body;
 
     if (!projectId || !userId) {
       return res.status(400).json({
@@ -115,7 +115,7 @@ router.put('/:projectId/permissions/:userId', async (req: Request, res: Response
     const fullUpdateData: UpdateUserPermissionRequest = {
       ...updateData,
       user_id: userId,
-      project_id: projectId,
+      project_uid: projectId,
     };
 
     req.log.info({ projectId, userId, updateData }, 'Updating user permissions');

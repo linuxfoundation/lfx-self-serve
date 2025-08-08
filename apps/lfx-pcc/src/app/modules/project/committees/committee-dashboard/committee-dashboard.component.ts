@@ -128,7 +128,7 @@ export class CommitteeDashboardComponent {
 
   // Dialog methods for create/edit
   public openCreateDialog(): void {
-    const projectId = this.project()?.id;
+    const projectId = this.project()?.uid;
     if (!projectId) return;
 
     this.dialogRef = this.dialogService.open(CommitteeFormComponent, {
@@ -148,7 +148,7 @@ export class CommitteeDashboardComponent {
   // Action handlers (use selectedCommittee)
   private viewCommittee(): void {
     const committee = this.selectedCommittee();
-    const projectId = this.project()?.id;
+    const projectId = this.project()?.uid;
     if (committee && projectId) {
       this.router.navigate(['/project', this.project()?.slug, 'committees', committee.id]);
     }
@@ -230,7 +230,7 @@ export class CommitteeDashboardComponent {
       this.project()
         ? this.refresh.pipe(
             tap(() => this.committeesLoading.set(true)),
-            switchMap(() => this.committeeService.getCommitteesByProject(this.project()!.id).pipe(tap(() => this.committeesLoading.set(false))))
+            switchMap(() => this.committeeService.getCommitteesByProject(this.project()!.uid).pipe(tap(() => this.committeesLoading.set(false))))
           )
         : of([]),
       { initialValue: [] }

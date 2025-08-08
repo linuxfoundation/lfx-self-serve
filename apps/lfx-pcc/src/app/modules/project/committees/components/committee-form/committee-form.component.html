@@ -2,6 +2,15 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <form [formGroup]="form()" (ngSubmit)="onSubmit()" class="space-y-6">
+  @if (!isEditing()) {
+    <div class="bg-blue-50 shadow-md p-3 rounded-md text-sm">
+      <p class="text-sm">
+        Committees are a great way to connect community members who have shared interests. There are common committees like governing boards and technical
+        oversight committees, but you can also create committees for special interest groups (SIGs) or working groups to tackle specific concerns for your
+        project community.
+      </p>
+    </div>
+  }
   <!-- Basic Information Section -->
   <div class="flex flex-col gap-3">
     <h3 class="text-lg font-medium text-gray-900">Basic Information</h3>
@@ -45,11 +54,34 @@
     <h3 class="text-lg font-medium text-gray-900">Settings</h3>
 
     <div class="flex flex-col gap-2">
-      <lfx-toggle size="small" [form]="form()" control="business_email_required" label="Business Email Required" id="business-email-toggle"></lfx-toggle>
+      <lfx-toggle
+        size="small"
+        [form]="form()"
+        control="business_email_required"
+        label="Business Email Required"
+        id="business-email-toggle"
+        tooltip="If enabled, public emails like Gmail or Yahoo will require confirmation before being saved to limit their presence in the committee"
+        tooltipPosition="right"></lfx-toggle>
 
-      <lfx-toggle size="small" [form]="form()" control="enable_voting" label="Enable Voting" id="voting-toggle"></lfx-toggle>
+      <lfx-toggle
+        size="small"
+        [form]="form()"
+        control="enable_voting"
+        label="Enable Voting"
+        id="voting-toggle"
+        tooltip="Voting status for members can be enabled for the committee"
+        tooltipPosition="right"></lfx-toggle>
 
       <lfx-toggle size="small" [form]="form()" control="is_audit_enabled" label="Enable Audit" id="audit-toggle"></lfx-toggle>
+
+      <lfx-toggle
+        size="small"
+        [form]="form()"
+        control="joinable"
+        label="Joinable"
+        id="joinable-toggle"
+        tooltip="When enabled, users are able to join the committee through LFX Projects"
+        tooltipPosition="right"></lfx-toggle>
     </div>
   </div>
 
@@ -57,7 +89,14 @@
   <div class="flex flex-col gap-3">
     <h3 class="text-lg font-medium text-gray-900">Public Settings</h3>
 
-    <lfx-toggle size="small" [form]="form()" control="public_enabled" label="Make Committee Public" id="public-toggle"></lfx-toggle>
+    <lfx-toggle
+      size="small"
+      [form]="form()"
+      control="public_enabled"
+      label="Make Committee Public"
+      id="public-toggle"
+      tooltip="When enabled, the committee will be visible to the public on LFX tools like the public meeting calendar"
+      tooltipPosition="right"></lfx-toggle>
 
     <!-- Conditional Public Name Field -->
     <div *ngIf="form().get('public_enabled')?.value === true">

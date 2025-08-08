@@ -1,30 +1,85 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Project } from '@lfx-pcc/shared';
 import { NextFunction, Request, Response, Router } from 'express';
 
+import { ApiClientService } from '../services/api-client.service';
+import { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { SupabaseService } from '../services/supabase.service';
 
 const router = Router();
 
 const supabaseService = new SupabaseService();
+const microserviceProxyService = new MicroserviceProxyService(new ApiClientService());
 
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+  const startTime = Date.now();
+
+  req.log.info(
+    {
+      operation: 'fetch_projects',
+      query_params: req.query,
+    },
+    'Starting project fetch request'
+  );
+
   try {
-    const projects = await supabaseService.getProjects(req.query as Record<string, any>);
+    let { projects } = await microserviceProxyService.proxyRequest<{ projects: Project[] }>(req, 'LFX_V2_SERVICE', '/projects', 'GET', req.query);
+
+    projects = projects.filter((project) => project.name !== 'ROOT');
+
+    const duration = Date.now() - startTime;
+    req.log.info(
+      {
+        operation: 'fetch_projects',
+        project_count: projects.length,
+        duration,
+        status_code: 200,
+      },
+      'Successfully fetched projects'
+    );
 
     return res.json(projects);
   } catch (error) {
-    console.error('Failed to fetch projects:', error);
+    const duration = Date.now() - startTime;
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        operation: 'fetch_projects',
+        duration,
+        query_params: req.query,
+      },
+      'Failed to fetch projects'
+    );
     return next(error);
   }
 });
 
 router.get('/search', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const { q } = req.query;
+  const startTime = Date.now();
+  const { q } = req.query;
 
+  req.log.info(
+    {
+      operation: 'search_projects',
+      has_query: !!q,
+    },
+    'Starting project search request'
+  );
+
+  try {
     if (!q || typeof q !== 'string') {
+      req.log.warn(
+        {
+          operation: 'search_projects',
+          error: 'Missing or invalid search query',
+          query_type: typeof q,
+          status_code: 400,
+        },
+        'Bad request: Search query validation failed'
+      );
+
       return res.status(400).json({
         error: 'Search query is required',
         code: 'MISSING_SEARCH_QUERY',
@@ -32,18 +87,56 @@ router.get('/search', async (req: Request, res: Response, next: NextFunction) =>
     }
 
     const results = await supabaseService.searchProjects(q);
+    const duration = Date.now() - startTime;
+
+    req.log.info(
+      {
+        operation: 'search_projects',
+        result_count: results.length,
+        duration,
+        status_code: 200,
+      },
+      'Successfully searched projects'
+    );
+
     return res.json(results);
   } catch (error) {
-    console.error('Failed to search projects:', error);
+    const duration = Date.now() - startTime;
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        operation: 'search_projects',
+        duration,
+      },
+      'Failed to search projects'
+    );
     return next(error);
   }
 });
 
 router.get('/:slug', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const projectSlug = req.params['slug'];
+  const startTime = Date.now();
+  const projectSlug = req.params['slug'];
 
+  req.log.info(
+    {
+      operation: 'fetch_project_by_slug',
+      has_project_slug: !!projectSlug,
+    },
+    'Starting project fetch by slug request'
+  );
+
+  try {
     if (!projectSlug) {
+      req.log.warn(
+        {
+          operation: 'fetch_project_by_slug',
+          error: 'Missing project slug parameter',
+          status_code: 400,
+        },
+        'Bad request: Project slug validation failed'
+      );
+
       return res.status(400).json({
         error: 'Project Slug is required',
         code: 'MISSING_PROJECT_SLUG',
@@ -53,24 +146,73 @@ router.get('/:slug', async (req: Request, res: Response, next: NextFunction) => 
     const project = await supabaseService.getProjectBySlug(projectSlug);
 
     if (!project) {
+      const duration = Date.now() - startTime;
+      req.log.warn(
+        {
+          operation: 'fetch_project_by_slug',
+          error: 'Project not found',
+          duration,
+          status_code: 404,
+        },
+        'Project not found'
+      );
+
       return res.status(404).json({
         error: 'Project not found',
         code: 'PROJECT_NOT_FOUND',
       });
     }
 
+    const duration = Date.now() - startTime;
+    req.log.info(
+      {
+        operation: 'fetch_project_by_slug',
+        project_uid: project.uid,
+        duration,
+        status_code: 200,
+      },
+      'Successfully fetched project'
+    );
+
     return res.json(project);
   } catch (error) {
-    console.error(`Failed to fetch project ${req.params['slug']}:`, error);
+    const duration = Date.now() - startTime;
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        operation: 'fetch_project_by_slug',
+        duration,
+      },
+      'Failed to fetch project'
+    );
     return next(error);
   }
 });
 
 router.get('/:slug/recent-activity', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const projectSlug = req.params['slug'];
+  const startTime = Date.now();
+  const projectSlug = req.params['slug'];
 
+  req.log.info(
+    {
+      operation: 'fetch_project_recent_activity',
+      has_project_slug: !!projectSlug,
+      query_params: req.query,
+    },
+    'Starting project recent activity fetch request'
+  );
+
+  try {
     if (!projectSlug) {
+      req.log.warn(
+        {
+          operation: 'fetch_project_recent_activity',
+          error: 'Missing project slug parameter',
+          status_code: 400,
+        },
+        'Bad request: Project slug validation failed'
+      );
+
       return res.status(400).json({
         error: 'Project Slug is required',
         code: 'MISSING_PROJECT_SLUG',
@@ -81,16 +223,48 @@ router.get('/:slug/recent-activity', async (req: Request, res: Response, next: N
     const project = await supabaseService.getProjectBySlug(projectSlug);
 
     if (!project) {
+      const duration = Date.now() - startTime;
+      req.log.warn(
+        {
+          operation: 'fetch_project_recent_activity',
+          error: 'Project not found for recent activity fetch',
+          duration,
+          status_code: 404,
+        },
+        'Project not found for recent activity'
+      );
+
       return res.status(404).json({
         error: 'Project not found',
         code: 'PROJECT_NOT_FOUND',
       });
     }
 
-    const recentActivity = await supabaseService.getRecentActivityByProject(project.id, req.query as Record<string, any>);
+    const recentActivity = await supabaseService.getRecentActivityByProject(project.uid, req.query as Record<string, any>);
+    const duration = Date.now() - startTime;
+
+    req.log.info(
+      {
+        operation: 'fetch_project_recent_activity',
+        project_uid: project.uid,
+        activity_count: recentActivity.length,
+        duration,
+        status_code: 200,
+      },
+      'Successfully fetched project recent activity'
+    );
+
     return res.json(recentActivity);
   } catch (error) {
-    console.error(`Failed to fetch recent activity for project ${req.params['slug']}:`, error);
+    const duration = Date.now() - startTime;
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        operation: 'fetch_project_recent_activity',
+        duration,
+      },
+      'Failed to fetch recent activity for project'
+    );
     return next(error);
   }
 });

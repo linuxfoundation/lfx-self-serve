@@ -55,7 +55,7 @@ export class MeetingCommitteeModalComponent {
 
   // Load committees using toSignal
   public committees: Signal<Committee[]> = toSignal(
-    this.committeeService.getCommitteesByProject(this.projectService.project()?.id || '').pipe(
+    this.committeeService.getCommitteesByProject(this.projectService.project()?.uid || '').pipe(
       tap(() => this.committeesLoading.set(false)),
       catchError((error) => {
         console.error('Failed to load committees:', error);
@@ -135,7 +135,7 @@ export class MeetingCommitteeModalComponent {
 
     // Build update request with all existing meeting fields plus committees
     const updateRequest = {
-      project_id: this.meeting.project_id.toString(),
+      project_uid: this.meeting.project_uid,
       topic: this.meeting.topic || '',
       agenda: this.meeting.agenda || undefined,
       start_time: this.meeting.start_time || '',

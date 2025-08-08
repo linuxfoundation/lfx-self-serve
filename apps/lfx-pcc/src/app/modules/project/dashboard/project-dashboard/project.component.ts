@@ -386,7 +386,7 @@ export class ProjectComponent {
   public constructor() {
     // Fetch all committees
     this.allCommittees = toSignal(
-      this.committeeService.getCommitteesByProject(this.project()?.id || '').pipe(
+      this.committeeService.getCommitteesByProject(this.project()?.uid || '').pipe(
         finalize(() => {
           this.committeesLoading.set(false);
         })
@@ -396,7 +396,7 @@ export class ProjectComponent {
 
     // Fetch all meetings
     this.allMeetings = toSignal(
-      this.meetingService.getMeetingsByProject(this.project()?.id || '').pipe(
+      this.meetingService.getMeetingsByProject(this.project()?.uid || '').pipe(
         finalize(() => {
           this.meetingsLoading.set(false);
         })
@@ -409,7 +409,7 @@ export class ProjectComponent {
   }
 
   public openCreateDialog(): void {
-    const projectId = this.project()?.id;
+    const projectId = this.project()?.uid;
     if (!projectId) return;
 
     this.dialogService.open(CommitteeFormComponent, {

@@ -10,7 +10,7 @@ export type PermissionScope = 'project' | 'committee';
 export interface ProjectPermission {
   id: number;
   user_id: string;
-  project_id: string;
+  project_uid: string;
   permission_level: PermissionLevel;
   created_at?: string;
   updated_at?: string;
@@ -19,7 +19,7 @@ export interface ProjectPermission {
 export interface CommitteePermission {
   id: number;
   user_id: string;
-  project_id: string;
+  project_uid: string;
   committee_id: string;
   permission_level: PermissionLevel;
   created_at?: string;
@@ -31,7 +31,7 @@ export interface MailingList {
   name: string;
   description?: string;
   committee_id?: string;
-  project_id: string;
+  project_uid: string;
 }
 
 export interface UserPermissionSummary {
@@ -52,7 +52,7 @@ export interface CreateUserPermissionRequest {
   last_name: string;
   email: string;
   username?: string;
-  project_id: string;
+  project_uid: string;
   permission_scope: PermissionScope;
   permission_level: PermissionLevel;
   committee_ids?: string[]; // Required when scope is 'committee'
@@ -60,7 +60,7 @@ export interface CreateUserPermissionRequest {
 
 export interface UpdateUserPermissionRequest {
   user_id: string;
-  project_id: string;
+  project_uid: string;
   permission_scope: PermissionScope;
   permission_level: PermissionLevel;
   committee_ids?: string[]; // Required when scope is 'committee'

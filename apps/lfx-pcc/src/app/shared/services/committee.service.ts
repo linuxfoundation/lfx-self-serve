@@ -24,7 +24,7 @@ export class CommitteeService {
   }
 
   public getCommitteesByProject(projectId: string, limit?: number, orderBy?: string): Observable<Committee[]> {
-    let params = new HttpParams().set('project_id', `eq.${projectId}`);
+    let params = new HttpParams().set('project_uid', `eq.${projectId}`);
 
     if (limit) {
       params = params.set('limit', limit.toString());

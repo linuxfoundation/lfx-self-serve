@@ -43,10 +43,10 @@ export class SettingsDashboardComponent {
   public constructor() {
     // Initialize userPermissions signal from service
     this.users = toSignal(
-      this.project()?.id
+      this.project()?.uid
         ? this.refresh.pipe(
             tap(() => this.loading.set(true)),
-            switchMap(() => this.permissionsService.getProjectPermissions(this.project()?.id as string).pipe(tap(() => this.loading.set(false))))
+            switchMap(() => this.permissionsService.getProjectPermissions(this.project()?.uid as string).pipe(tap(() => this.loading.set(false))))
           )
         : of([]),
       {

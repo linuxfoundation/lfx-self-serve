@@ -103,30 +103,56 @@
   }
 </div>
 
+<!-- Meeting Attachments Template -->
+@if (attachments().length > 0 || importantLinks().length > 0) {
+  <div class="bg-gray-50 p-4 border border-gray-100 mb-4 rounded-md shadow-sm">
+    <h4 class="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
+      <i class="fa-light fa-link text-blue-500"></i>
+      @if (attachments().length > 0) {
+        <span>Attachments</span>
+        @if (importantLinks().length > 0) {
+          <span>&</span>
+        }
+      }
+      @if (importantLinks().length > 0) {
+        <span>Important Links</span>
+      }
+    </h4>
+
+    <!-- Important Links -->
+    <div>
+      <div class="flex flex-wrap gap-2">
+        @for (attachment of attachments(); track attachment.id) {
+          <a
+            [href]="attachment.file_url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
+            [title]="attachment.file_name + ' (' + (attachment.file_size || 0 | fileSize) + ')'">
+            <i [class]="attachment.mime_type || '' | fileTypeIcon"></i>
+            <span class="truncate max-w-[120px]">{{ attachment.file_name }}</span>
+            <span class="text-gray-400 ml-1">({{ attachment.file_size || 0 | fileSize }})</span>
+          </a>
+        }
+
+        @for (link of importantLinks(); track link.url) {
+          <a
+            [href]="link.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
+            [title]="link.url">
+            <i class="fa-light fa-link"></i>
+            {{ link.domain }}
+          </a>
+        }
+      </div>
+    </div>
+  </div>
+}
+
 @if (meeting().agenda) {
   <div class="pb-3">
-    <!-- Important Links -->
-    @if (importantLinks().length > 0) {
-      <div class="mb-4">
-        <h4 class="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-2">
-          <i class="fa-light fa-link text-blue-500"></i>
-          Important Links
-        </h4>
-        <div class="flex flex-wrap gap-2">
-          @for (link of importantLinks(); track link.url) {
-            <a
-              [href]="link.url"
-              target="_blank"
-              rel="noopener noreferrer"
-              class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
-              [title]="link.url">
-              <i class="fa-light fa-external-link"></i>
-              {{ link.domain }}
-            </a>
-          }
-        </div>
-      </div>
-    }
     <lfx-expandable-text [maxHeight]="100">
       <div class="flex flex-col gap-4">
         <div [innerHTML]="meeting().agenda | linkify"></div>

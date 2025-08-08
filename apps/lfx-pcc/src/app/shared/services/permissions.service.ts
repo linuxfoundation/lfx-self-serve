@@ -18,7 +18,7 @@ export class PermissionsService {
   }
 
   // Update user permissions
-  public updateUserPermissions(project: string, userId: string, permissions: Omit<UpdateUserPermissionRequest, 'user_id' | 'project_id'>): Observable<void> {
+  public updateUserPermissions(project: string, userId: string, permissions: Omit<UpdateUserPermissionRequest, 'user_id' | 'project_uid'>): Observable<void> {
     return this.http.put<void>(`/api/projects/${project}/permissions/${userId}`, permissions);
   }
 

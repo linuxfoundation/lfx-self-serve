@@ -5,9 +5,6 @@
  * Default query parameters for different microservices
  * These parameters cannot be overridden by API callers
  */
-export const DEFAULT_QUERY_PARAMS: Record<string, Record<string, string>> = {
-  QUERY_SERVICE: {
-    v: '1',
-    type: 'project',
-  },
+export const DEFAULT_QUERY_PARAMS: Record<string, string> = {
+  v: '1',
 };

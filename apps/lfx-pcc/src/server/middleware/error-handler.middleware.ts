@@ -61,14 +61,19 @@ export function apiErrorHandler(error: ApiError, req: Request, res: Response, ne
     return;
   }
 
-  // Log unhandled errors
-  console.error('Unhandled API error:', {
-    error: error.message,
-    stack: error.stack,
-    path: req.path,
-    method: req.method,
-    userAgent: req.get('User-Agent'),
-  });
+  // Log unhandled errors using request logger
+  req.log.error(
+    {
+      error: error.message,
+      stack: process.env['NODE_ENV'] !== 'production' ? error.stack : undefined,
+      path: req.path,
+      method: req.method,
+      user_agent: req.get('User-Agent'),
+      error_name: error.name,
+      status_code: error.status || 500,
+    },
+    'Unhandled API error'
+  );
 
   // Default error response
   res.status(error.status || 500).json({

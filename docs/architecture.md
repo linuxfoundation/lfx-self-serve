@@ -755,7 +755,7 @@ Components integrate with services using signal-based state:
       <div class="error">{{ error() }}</div>
     } @else {
       <div class="content">
-        @for (project of projects(); track project.id) {
+        @for (project of projects(); track project.uid) {
           <lfx-project-card [title]="project.name" [description]="project.description" [metrics]="project.metrics"> </lfx-project-card>
         }
       </div>

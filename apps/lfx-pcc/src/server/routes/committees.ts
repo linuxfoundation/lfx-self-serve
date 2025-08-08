@@ -10,21 +10,69 @@ const router = Router();
 const supabaseService = new SupabaseService();
 
 router.get('/', async (req: Request, res: Response, next: NextFunction) => {
+  const startTime = Date.now();
+
+  req.log.info(
+    {
+      operation: 'fetch_committees',
+      query_params: req.query,
+    },
+    'Starting committees fetch request'
+  );
+
   try {
     const committees = await supabaseService.getCommittees(req.query as Record<string, any>);
+    const duration = Date.now() - startTime;
+
+    req.log.info(
+      {
+        operation: 'fetch_committees',
+        committee_count: committees.length,
+        duration,
+        status_code: 200,
+      },
+      'Successfully fetched committees'
+    );
 
     return res.json(committees);
   } catch (error) {
-    console.error('Failed to fetch committees:', error);
+    const duration = Date.now() - startTime;
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        operation: 'fetch_committees',
+        duration,
+        query_params: req.query,
+      },
+      'Failed to fetch committees'
+    );
     return next(error);
   }
 });
 
 router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const committeeId = req.params['id'];
+  const startTime = Date.now();
+  const committeeId = req.params['id'];
 
+  req.log.info(
+    {
+      operation: 'fetch_committee_by_id',
+      committee_id: committeeId,
+    },
+    'Starting committee fetch by ID request'
+  );
+
+  try {
     if (!committeeId) {
+      req.log.warn(
+        {
+          operation: 'fetch_committee_by_id',
+          error: 'Missing committee ID parameter',
+          status_code: 400,
+        },
+        'Bad request: Committee ID validation failed'
+      );
+
       return res.status(400).json({
         error: 'Committee ID is required',
         code: 'MISSING_COMMITTEE_ID',
@@ -34,24 +82,76 @@ router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
     const committee = await supabaseService.getCommitteeById(committeeId);
 
     if (!committee) {
+      const duration = Date.now() - startTime;
+      req.log.warn(
+        {
+          operation: 'fetch_committee_by_id',
+          committee_id: committeeId,
+          error: 'Committee not found',
+          duration,
+          status_code: 404,
+        },
+        'Committee not found'
+      );
+
       return res.status(404).json({
         error: 'Committee not found',
         code: 'COMMITTEE_NOT_FOUND',
       });
     }
 
+    const duration = Date.now() - startTime;
+    req.log.info(
+      {
+        operation: 'fetch_committee_by_id',
+        committee_id: committeeId,
+        duration,
+        status_code: 200,
+      },
+      'Successfully fetched committee'
+    );
+
     return res.json(committee);
   } catch (error) {
-    console.error(`Failed to fetch committee ${req.params['id']}:`, error);
+    const duration = Date.now() - startTime;
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        operation: 'fetch_committee_by_id',
+        committee_id: committeeId,
+        duration,
+      },
+      'Failed to fetch committee'
+    );
     return next(error);
   }
 });
 
 router.post('/', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const committeeData = req.body;
+  const startTime = Date.now();
+  const committeeData = req.body;
 
+  req.log.info(
+    {
+      operation: 'create_committee',
+      committee_category: committeeData?.category,
+      body_size: JSON.stringify(req.body).length,
+    },
+    'Starting committee creation request'
+  );
+
+  try {
     if (!committeeData?.name) {
+      req.log.warn(
+        {
+          operation: 'create_committee',
+          error: 'Missing committee name',
+          provided_data: { has_name: !!committeeData?.name, has_category: !!committeeData?.category },
+          status_code: 400,
+        },
+        'Bad request: Committee name validation failed'
+      );
+
       return res.status(400).json({
         error: 'Committee name is required',
         code: 'MISSING_COMMITTEE_NAME',
@@ -59,6 +159,16 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     }
 
     if (!committeeData?.category) {
+      req.log.warn(
+        {
+          operation: 'create_committee',
+          error: 'Missing committee category',
+          provided_data: { has_name: !!committeeData?.name, has_category: !!committeeData?.category },
+          status_code: 400,
+        },
+        'Bad request: Committee category validation failed'
+      );
+
       return res.status(400).json({
         error: 'Committee category is required',
         code: 'MISSING_COMMITTEE_CATEGORY',
@@ -66,10 +176,31 @@ router.post('/', async (req: Request, res: Response, next: NextFunction) => {
     }
 
     const newCommittee = await supabaseService.createCommittee(committeeData);
+    const duration = Date.now() - startTime;
+
+    req.log.info(
+      {
+        operation: 'create_committee',
+        committee_id: newCommittee.id,
+        committee_category: newCommittee.category,
+        duration,
+        status_code: 201,
+      },
+      'Successfully created committee'
+    );
 
     return res.status(201).json(newCommittee);
   } catch (error) {
-    console.error('Failed to create committee:', error);
+    const duration = Date.now() - startTime;
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        operation: 'create_committee',
+        committee_category: req.body?.category,
+        duration,
+      },
+      'Failed to create committee'
+    );
     return next(error);
   }
 });
@@ -99,7 +230,13 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
 
     return res.json(updatedCommittee);
   } catch (error) {
-    console.error(`Failed to update committee ${req.params['id']}:`, error);
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        committee_id: req.params['id'],
+      },
+      'Failed to update committee'
+    );
     return next(error);
   }
 });
@@ -128,7 +265,13 @@ router.delete('/:id', async (req: Request, res: Response, next: NextFunction) =>
 
     return res.status(204).send();
   } catch (error) {
-    console.error(`Failed to delete committee ${req.params['id']}:`, error);
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        committee_id: req.params['id'],
+      },
+      'Failed to delete committee'
+    );
     return next(error);
   }
 });
@@ -159,7 +302,13 @@ router.get('/:id/members', async (req: Request, res: Response, next: NextFunctio
 
     return res.json(members);
   } catch (error) {
-    console.error(`Failed to fetch members for committee ${req.params['id']}:`, error);
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        committee_id: req.params['id'],
+      },
+      'Failed to fetch committee members'
+    );
     return next(error);
   }
 });
@@ -204,7 +353,14 @@ router.get('/:id/members/:memberId', async (req: Request, res: Response, next: N
 
     return res.json(member);
   } catch (error) {
-    console.error(`Failed to fetch member ${req.params['memberId']} for committee ${req.params['id']}:`, error);
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        committee_id: req.params['id'],
+        member_id: req.params['memberId'],
+      },
+      'Failed to fetch committee member'
+    );
     return next(error);
   }
 });
@@ -250,7 +406,13 @@ router.post('/:id/members', async (req: Request, res: Response, next: NextFuncti
 
     return res.status(201).json(newMember);
   } catch (error) {
-    console.error(`Failed to add member to committee ${req.params['id']}:`, error);
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        committee_id: req.params['id'],
+      },
+      'Failed to add committee member'
+    );
     return next(error);
   }
 });
@@ -298,7 +460,14 @@ router.put('/:id/members/:memberId', async (req: Request, res: Response, next: N
 
     return res.json(updatedMember);
   } catch (error) {
-    console.error(`Failed to update member ${req.params['memberId']} for committee ${req.params['id']}:`, error);
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        committee_id: req.params['id'],
+        member_id: req.params['memberId'],
+      },
+      'Failed to update committee member'
+    );
     return next(error);
   }
 });
@@ -345,7 +514,14 @@ router.delete('/:id/members/:memberId', async (req: Request, res: Response, next
 
     return res.status(204).send();
   } catch (error) {
-    console.error(`Failed to remove member ${req.params['memberId']} from committee ${req.params['id']}:`, error);
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        committee_id: req.params['id'],
+        member_id: req.params['memberId'],
+      },
+      'Failed to remove committee member'
+    );
     return next(error);
   }
 });

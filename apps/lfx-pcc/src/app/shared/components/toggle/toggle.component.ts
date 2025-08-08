@@ -4,11 +4,12 @@
 import { Component, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-toggle',
   standalone: true,
-  imports: [ToggleSwitchModule, ReactiveFormsModule],
+  imports: [ToggleSwitchModule, ReactiveFormsModule, TooltipModule],
   templateUrl: './toggle.component.html',
 })
 export class ToggleComponent {
@@ -21,4 +22,7 @@ export class ToggleComponent {
   public trueValue = input<any>(true);
   public falseValue = input<any>(false);
   public dataTest = input<string>();
+  public tooltipPosition = input<string>('top');
+  public tooltip = input<string>();
+  public tooltipIcon = input<string>('info-circle');
 }

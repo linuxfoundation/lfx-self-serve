@@ -104,7 +104,7 @@ export class UserPermissionsTableComponent {
     this.isRemoving.set(userId);
 
     this.permissionsService
-      .removeUserPermissions(this.project()!.id, userId)
+      .removeUserPermissions(this.project()!.uid, userId)
       .pipe(take(1))
       .subscribe({
         next: () => {

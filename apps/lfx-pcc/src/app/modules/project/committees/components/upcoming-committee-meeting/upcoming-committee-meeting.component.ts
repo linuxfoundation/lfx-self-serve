@@ -42,7 +42,7 @@ export class UpcomingCommitteeMeetingComponent implements OnInit {
   }
 
   private initializeUpcomingMeeting(): Signal<Meeting | null> {
-    return toSignal(this.project() ? this.getNextUpcomingCommitteeMeeting(this.project()!.id.toString(), this.committeeId()) : of(null), {
+    return toSignal(this.project() ? this.getNextUpcomingCommitteeMeeting(this.project()!.uid.toString(), this.committeeId()) : of(null), {
       initialValue: null,
     });
   }
@@ -58,7 +58,7 @@ export class UpcomingCommitteeMeetingComponent implements OnInit {
 
   private getNextUpcomingCommitteeMeeting(projectId: string, committeeId: string | null = null) {
     const now = new Date().toISOString();
-    let params = new HttpParams().set('project_id', `eq.${projectId}`).set('start_time', `gte.${now}`).set('order', 'start_time.asc').set('limit', '1');
+    let params = new HttpParams().set('project_uid', `eq.${projectId}`).set('start_time', `gte.${now}`).set('order', 'start_time.asc').set('limit', '1');
 
     // If a specific committee ID is provided, filter by that committee
     if (committeeId) {

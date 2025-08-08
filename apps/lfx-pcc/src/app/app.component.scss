@@ -58,4 +58,18 @@
   .pill {
     @apply inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full transition-colors text-gray-600 border border-gray-200 hover:bg-gray-50;
   }
+
+  .p-fileupload {
+    .p-fileupload-content {
+      @apply mx-3 mb-3 border border-dashed border-blue-300 rounded-md text-gray-500;
+
+      .p-fileupload-file-list {
+        @apply hidden;
+      }
+
+      p-progressbar {
+        @apply hidden;
+      }
+    }
+  }
 }

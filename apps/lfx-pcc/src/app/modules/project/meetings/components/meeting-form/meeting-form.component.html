@@ -302,6 +302,71 @@
     </div>
   }
 
+  @if (!isEditing()) {
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center gap-2">
+        <label for="demo[]" class="block text-sm font-medium text-gray-700">Upload Meeting Attachments</label>
+        <i
+          class="fa-light fa-info-circle text-gray-400 cursor-help"
+          pTooltip="Upload any meeting materials that will be shared with participants"
+          tooltipPosition="right"
+          tooltipStyleClass="text-xs max-w-xs"></i>
+      </div>
+      <lfx-file-upload
+        name="attachments[]"
+        [customUpload]="true"
+        (onSelect)="onFileSelect($event)"
+        [multiple]="true"
+        accept="image/*, application/pdf, application/msword, application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        [maxFileSize]="10000000"
+        [showUploadButton]="false"
+        [showCancelButton]="true"
+        chooseStyleClass="p-button-sm"
+        cancelStyleClass="p-button-sm"
+        mode="advanced"
+        chooseLabel="Choose Files"
+        cancelLabel="Clear">
+        <ng-template #content>
+          <div class="text-sm flex items-center justify-center">Drag and drop files to here to upload.</div>
+        </ng-template>
+      </lfx-file-upload>
+
+      <!-- Show pending attachments -->
+      @if (pendingAttachments().length > 0) {
+        <div class="mt-4 space-y-2">
+          <h4 class="text-sm font-medium text-gray-900">Selected Files:</h4>
+          @for (attachment of pendingAttachments(); track attachment.id) {
+            <div class="flex items-center justify-between p-2 bg-gray-50 rounded-lg">
+              <div class="flex items-center space-x-2">
+                @if (attachment.uploading) {
+                  <i class="pi pi-spin pi-spinner text-blue-500"></i>
+                } @else if (attachment.uploadError) {
+                  <i class="pi pi-exclamation-triangle text-red-500"></i>
+                } @else {
+                  <i class="pi pi-check-circle text-green-500"></i>
+                }
+                <span class="text-sm text-gray-700">{{ attachment.fileName }}</span>
+                <span class="text-xs text-gray-500">({{ attachment.fileSize / 1024 / 1024 | number: '1.1-1' }}MB)</span>
+              </div>
+              <div class="flex items-center space-x-2">
+                @if (attachment.uploading) {
+                  <span class="text-xs text-blue-600">Uploading...</span>
+                } @else if (attachment.uploadError) {
+                  <span class="text-xs text-red-600">{{ attachment.uploadError }}</span>
+                } @else {
+                  <span class="text-xs text-green-600">Ready</span>
+                }
+                <button type="button" (click)="removePendingAttachment(attachment.id)" class="text-red-500 hover:text-red-700">
+                  <i class="pi pi-times text-xs"></i>
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  }
+
   <!-- Form Actions -->
   <div class="flex justify-end gap-3 pt-6 border-t">
     <lfx-button label="Cancel" severity="secondary" [outlined]="true" (click)="onCancel()" size="small" type="button"></lfx-button>

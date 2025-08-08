@@ -9,6 +9,7 @@ export function extractBearerToken(req: Request, _res: Response, next: NextFunct
     const authHeader = req.headers.authorization;
     if (authHeader && authHeader.startsWith('Bearer ')) {
       req.bearerToken = authHeader.substring(7);
+      req.log.debug({ has_token: true, token_source: 'header' }, 'Bearer token extracted from Authorization header');
       return next();
     }
 
@@ -17,6 +18,7 @@ export function extractBearerToken(req: Request, _res: Response, next: NextFunct
       const accessToken = req.oidc.accessToken?.access_token;
       if (accessToken && typeof accessToken === 'string') {
         req.bearerToken = accessToken;
+        req.log.debug({ has_token: true, token_source: 'oidc' }, 'Bearer token extracted from OIDC session');
         return next();
       }
     }
@@ -26,14 +28,38 @@ export function extractBearerToken(req: Request, _res: Response, next: NextFunct
     const isInternalRequest = !userAgent || userAgent.includes('LFX-PCC-Server');
 
     if (isInternalRequest) {
-      // For SSR requests, we'll need to handle authentication differently
-      // For now, let's see if we can use a fallback token or skip auth
+      req.log.warn(
+        {
+          user_agent: userAgent,
+          url: req.url,
+          method: req.method,
+        },
+        'SSR request without authentication context'
+      );
       throw new Error('SSR request without authentication context');
     }
+
+    req.log.warn(
+      {
+        has_auth_header: !!authHeader,
+        is_oidc_authenticated: req.oidc?.isAuthenticated(),
+        url: req.url,
+        method: req.method,
+      },
+      'Bearer token not available'
+    );
 
     // If neither Authorization header nor OIDC session, error
     throw new Error('Bearer token not available');
   } catch (error) {
+    req.log.error(
+      {
+        error: error instanceof Error ? error.message : error,
+        url: req.url,
+        method: req.method,
+      },
+      'Error extracting bearer token'
+    );
     next(error);
   }
 }

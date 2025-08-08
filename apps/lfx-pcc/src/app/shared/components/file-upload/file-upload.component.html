@@ -1,0 +1,137 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-fileUpload
+  [mode]="mode()"
+  [name]="name()"
+  [url]="url()"
+  [method]="method()"
+  [multiple]="multiple()"
+  [accept]="accept()"
+  [maxFileSize]="maxFileSize()"
+  [auto]="auto()"
+  [customUpload]="customUpload()"
+  [disabled]="disabled()"
+  [withCredentials]="withCredentials()"
+  [previewWidth]="previewWidth()"
+  [chooseLabel]="chooseLabel()"
+  [uploadLabel]="uploadLabel()"
+  [cancelLabel]="cancelLabel()"
+  [showUploadButton]="showUploadButton()"
+  [showCancelButton]="showCancelButton()"
+  [chooseIcon]="chooseIcon()"
+  [uploadIcon]="uploadIcon()"
+  [cancelIcon]="cancelIcon()"
+  [styleClass]="styleClass()"
+  [style]="style()"
+  [attr.data-testid]="dataTest()"
+  (onBeforeUpload)="handleBeforeUpload($event)"
+  (onSend)="handleBeforeSend($event)"
+  (onUpload)="handleUpload($event)"
+  (onError)="handleError($event)"
+  (onClear)="handleClear()"
+  (onSelect)="handleSelect($event)"
+  (onRemove)="handleRemove($event)"
+  (onProgress)="handleProgress($event)"
+  (onValidationFail)="handleValidationFail($event)"
+  [uploadStyleClass]="uploadStyleClass()"
+  [chooseStyleClass]="chooseStyleClass()"
+  [cancelStyleClass]="cancelStyleClass()"
+  (uploadHandler)="handleCustomUpload($event)">
+  <!-- Header template passthrough -->
+  @if (headerTemplate) {
+    <ng-template
+      pTemplate="header"
+      let-files
+      let-uploadedFiles="uploadedFiles"
+      let-chooseCallback="chooseCallback"
+      let-clearCallback="clearCallback"
+      let-uploadCallback="uploadCallback">
+      <ng-container
+        *ngTemplateOutlet="
+          headerTemplate || null;
+          context: {
+            $implicit: files,
+            uploadedFiles: uploadedFiles,
+            chooseCallback: chooseCallback,
+            clearCallback: clearCallback,
+            uploadCallback: uploadCallback,
+          }
+        "></ng-container>
+    </ng-template>
+  }
+
+  <!-- Toolbar template passthrough -->
+  @if (toolbarTemplate) {
+    <ng-template pTemplate="toolbar">
+      <ng-container *ngTemplateOutlet="toolbarTemplate || null"></ng-container>
+    </ng-template>
+  }
+
+  <!-- Content template passthrough -->
+  @if (contentTemplate) {
+    <ng-template
+      pTemplate="content"
+      let-files
+      let-uploadedFiles="uploadedFiles"
+      let-chooseCallback="chooseCallback"
+      let-clearCallback="clearCallback"
+      let-removeUploadedFileCallback="removeUploadedFileCallback"
+      let-removeFileCallback="removeFileCallback"
+      let-progress="progress"
+      let-messages="messages">
+      <ng-container
+        *ngTemplateOutlet="
+          contentTemplate || null;
+          context: {
+            $implicit: files,
+            uploadedFiles: uploadedFiles,
+            chooseCallback: chooseCallback,
+            clearCallback: clearCallback,
+            removeUploadedFileCallback: removeUploadedFileCallback,
+            removeFileCallback: removeFileCallback,
+            progress: progress,
+            messages: messages,
+          }
+        "></ng-container>
+    </ng-template>
+  }
+
+  <!-- File item template passthrough -->
+  @if (fileTemplate) {
+    <ng-template pTemplate="file" let-file let-index="index">
+      <ng-container *ngTemplateOutlet="fileTemplate || null; context: { $implicit: file, index: index }"></ng-container>
+    </ng-template>
+  }
+
+  <!-- File label template passthrough (basic mode) -->
+  @if (fileLabelTemplate) {
+    <ng-template pTemplate="filelabel" let-files>
+      <ng-container *ngTemplateOutlet="fileLabelTemplate || null; context: { $implicit: files }"></ng-container>
+    </ng-template>
+  }
+
+  <!-- Icon template passthroughs -->
+  @if (chooseIconTemplate) {
+    <ng-template pTemplate="chooseicon">
+      <ng-container *ngTemplateOutlet="chooseIconTemplate || null"></ng-container>
+    </ng-template>
+  }
+  @if (uploadIconTemplate) {
+    <ng-template pTemplate="uploadicon">
+      <ng-container *ngTemplateOutlet="uploadIconTemplate || null"></ng-container>
+    </ng-template>
+  }
+  @if (cancelIconTemplate) {
+    <ng-template pTemplate="cancelicon">
+      <ng-container *ngTemplateOutlet="cancelIconTemplate || null"></ng-container>
+    </ng-template>
+  }
+
+  <!-- Empty state template passthrough -->
+  @if (emptyTemplate) {
+    <ng-template pTemplate="empty">
+      <ng-container *ngTemplateOutlet="emptyTemplate || null"></ng-container>
+    </ng-template>
+  }
+</p-fileUpload>

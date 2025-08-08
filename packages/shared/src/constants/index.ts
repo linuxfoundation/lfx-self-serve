@@ -4,5 +4,6 @@
 export * from './api';
 export * from './colors';
 export * from './committees';
+export * from './file-upload';
 export * from './font-sizes';
 export * from './timezones';

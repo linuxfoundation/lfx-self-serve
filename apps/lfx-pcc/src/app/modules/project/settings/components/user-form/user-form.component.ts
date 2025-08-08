@@ -102,14 +102,14 @@ export class UserFormComponent {
           last_name: formValue.last_name,
           email: formValue.email,
           username: formValue.username,
-          project_id: project.id,
+          project_uid: project.uid,
           permission_scope: formValue.permission_scope,
           permission_level: formValue.permission_level,
           committee_ids: formValue.permission_scope === 'committee' ? formValue.committee_ids : undefined,
         } as CreateUserPermissionRequest);
 
     const operation = this.isEditing()
-      ? this.permissionsService.updateUserPermissions(project.id, this.userId()!, userData)
+      ? this.permissionsService.updateUserPermissions(project.uid, this.userId()!, userData)
       : this.userService.createUserWithPermissions(userData as CreateUserPermissionRequest);
 
     operation.pipe(take(1)).subscribe({
@@ -152,7 +152,7 @@ export class UserFormComponent {
 
   private initCommittees(): Signal<{ label: string; value: string }[]> {
     return toSignal(
-      this.committeeService.getCommitteesByProject(this.project()?.id as string).pipe(
+      this.committeeService.getCommitteesByProject(this.project()?.uid as string).pipe(
         take(1),
         map((committees) =>
           committees.map((committee) => ({

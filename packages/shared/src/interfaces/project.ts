@@ -24,12 +24,26 @@ export interface FilterButton {
 }
 
 export interface Project {
-  id: string;
-  name: string;
+  uid: string;
   slug: string;
   description: string;
-  status: string;
-  logo: string;
+  name: string;
+  public: boolean;
+  parent_uid: string;
+  stage: string;
+  category: string;
+  funding_model: string[];
+  charter_url: string;
+  legal_entity_type: string;
+  legal_entity_name: string;
+  legal_parent_uid: string;
+  autojoin_enabled: boolean;
+  formation_date: string;
+  logo_url: string;
+  repository_url: string;
+  website_url: string;
+  created_at: string;
+  updated_at: string;
   committees_count: number;
   meetings_count: number;
   mailing_list_count: number;

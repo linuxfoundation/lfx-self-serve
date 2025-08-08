@@ -5,6 +5,7 @@ import { DEFAULT_QUERY_PARAMS } from '@lfx-pcc/shared/constants';
 import { MicroserviceUrls } from '@lfx-pcc/shared/interfaces';
 import { Request } from 'express';
 
+import { serverLogger } from '../server';
 import { ApiClientService } from './api-client.service';
 
 export class MicroserviceProxyService {
@@ -28,27 +29,33 @@ export class MicroserviceProxyService {
       }
 
       const MICROSERVICE_URLS: MicroserviceUrls = {
-        QUERY_SERVICE: process.env['QUERY_SERVICE_URL'] || 'http://localhost:8080/query/resources',
+        LFX_V2_SERVICE: process.env['LFX_V2_SERVICE_URL'] || 'http://lfx-api.k8s.orb.local',
       };
 
       const baseUrl = MICROSERVICE_URLS[service];
       const endpoint = `${baseUrl}${path}`;
-      // const token = req.bearerToken;
-      const token = process.env['QUERY_SERVICE_TOKEN'] as string;
+      const token = req.bearerToken;
 
       // Merge query parameters with defaults taking precedence
       // This ensures that default params cannot be overridden by the caller
-      const defaultParams = DEFAULT_QUERY_PARAMS[service] || {};
+      const defaultParams = DEFAULT_QUERY_PARAMS;
       const mergedParams = { ...params, ...defaultParams };
 
       const response = await this.executeRequest<T>(method, endpoint, token, data, mergedParams);
       return response.data;
     } catch (error) {
-      console.error(`Microservice request failed: ${service}${path}`, {
-        method,
-        error: error instanceof Error ? error.message : error,
-        stack: error instanceof Error ? error.stack : undefined,
-      });
+      serverLogger.error(
+        {
+          service,
+          path,
+          method,
+          error: error instanceof Error ? error.message : error,
+          stack: error instanceof Error && process.env['NODE_ENV'] !== 'production' ? error.stack : undefined,
+          endpoint: `${service}${path}`,
+          has_bearer_token: !!req.bearerToken,
+        },
+        'Microservice request failed'
+      );
 
       throw this.transformError(error, service, path);
     }

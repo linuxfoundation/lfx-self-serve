@@ -10,5 +10,5 @@ export interface RecentActivity {
   description: string;
   icon: string;
   url?: string;
-  project_id: number;
+  project_uid: string;
 }

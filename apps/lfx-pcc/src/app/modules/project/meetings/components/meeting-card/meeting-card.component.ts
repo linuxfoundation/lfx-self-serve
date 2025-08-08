@@ -2,16 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, effect, inject, Injector, input, output, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, effect, inject, Injector, input, OnInit, output, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
+import { FileSizePipe } from '@app/shared/pipes/file-size.pipe';
+import { FileTypeIconPipe } from '@app/shared/pipes/file-type-icon.pipe';
 import { LinkifyPipe } from '@app/shared/pipes/linkify.pipe';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
-import { extractUrlsWithDomains, Meeting, MeetingParticipant } from '@lfx-pcc/shared';
+import { extractUrlsWithDomains, Meeting, MeetingAttachment, MeetingParticipant } from '@lfx-pcc/shared';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
@@ -45,12 +47,14 @@ import { RecurringEditOption, RecurringMeetingEditOptionsComponent } from '../re
     ConfirmDialogModule,
     ExpandableTextComponent,
     LinkifyPipe,
+    FileTypeIconPipe,
+    FileSizePipe,
   ],
   providers: [ConfirmationService],
   templateUrl: './meeting-card.component.html',
   styleUrl: './meeting-card.component.scss',
 })
-export class MeetingCardComponent {
+export class MeetingCardComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
   private readonly committeeService = inject(CommitteeService);
@@ -70,6 +74,7 @@ export class MeetingCardComponent {
   public participantsLabel: Signal<string> = this.initParticipantsLabel();
   public additionalParticipantsCount: WritableSignal<number> = signal(0);
   public actionMenuItems: Signal<MenuItem[]> = this.initializeActionMenuItems();
+  public attachments: Signal<MeetingAttachment[]> = signal([]);
 
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
@@ -77,10 +82,16 @@ export class MeetingCardComponent {
   // Extract important links from agenda
   public readonly importantLinks = this.initImportantLinks();
 
+  // Meeting attachments
+
   public constructor() {
     effect(() => {
       this.meeting.set(this.meetingInput());
     });
+  }
+
+  public ngOnInit(): void {
+    this.attachments = this.initAttachments();
   }
 
   public onParticipantsToggle(event: Event): void {
@@ -95,8 +106,6 @@ export class MeetingCardComponent {
     // Show/hide inline participants display
     this.participantsLoading.set(true);
 
-    // Show/hide inline participants display
-    this.participantsLoading.set(true);
     if (!this.showParticipants()) {
       this.initParticipantsList();
     }
@@ -404,6 +413,12 @@ export class MeetingCardComponent {
 
       // Use shared utility to extract URLs with domains
       return extractUrlsWithDomains(agenda);
+    });
+  }
+
+  private initAttachments(): Signal<MeetingAttachment[]> {
+    return runInInjectionContext(this.injector, () => {
+      return toSignal(this.meetingService.getMeetingAttachments(this.meetingInput().id).pipe(catchError(() => of([]))), { initialValue: [] });
     });
   }
 }

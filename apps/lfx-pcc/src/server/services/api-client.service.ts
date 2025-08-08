@@ -3,6 +3,7 @@
 
 import { ApiClientConfig, ApiResponse } from '@lfx-pcc/shared/interfaces';
 
+import { serverLogger } from '../server';
 import { createHttpError, createNetworkError, createTimeoutError } from '../utils/api-error';
 
 export class ApiClientService {
@@ -68,13 +69,51 @@ export class ApiClientService {
         lastError = error instanceof Error ? error : new Error(String(error));
 
         if (attempt === this.config.retryAttempts) {
+          serverLogger.error(
+            {
+              url,
+              method: requestInit.method,
+              attempt,
+              max_attempts: this.config.retryAttempts,
+              error: lastError.message,
+              error_code: (error as any)?.code,
+              status: (error as any)?.status,
+            },
+            'API request failed after all retry attempts'
+          );
           break;
         }
 
         if (this.isRetryableError(error)) {
+          serverLogger.warn(
+            {
+              url,
+              method: requestInit.method,
+              attempt,
+              max_attempts: this.config.retryAttempts,
+              error: lastError.message,
+              retry_delay: this.config.retryDelay * attempt,
+              will_retry: true,
+            },
+            'API request failed, retrying'
+          );
+
           await this.delay(this.config.retryDelay * attempt);
           continue;
         }
+
+        serverLogger.error(
+          {
+            url,
+            method: requestInit.method,
+            attempt,
+            error: lastError.message,
+            error_code: (error as any)?.code,
+            status: (error as any)?.status,
+            will_retry: false,
+          },
+          'API request failed with non-retryable error'
+        );
 
         throw lastError;
       }

@@ -5,6 +5,7 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
+import { FileUploadComponent } from '@app/shared/components/file-upload/file-upload.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -12,14 +13,16 @@ import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
-import { getUserTimezone, TIMEZONES } from '@lfx-pcc/shared/constants';
+import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB, TIMEZONES } from '@lfx-pcc/shared/constants';
+import { getUserTimezone } from '@lfx-pcc/shared/utils';
 import { MeetingType, MeetingVisibility, RecurrenceType } from '@lfx-pcc/shared/enums';
-import { CreateMeetingRequest, MeetingRecurrence, UpdateMeetingRequest } from '@lfx-pcc/shared/interfaces';
+import { CreateMeetingRequest, MeetingAttachment, MeetingRecurrence, PendingAttachment, UpdateMeetingRequest } from '@lfx-pcc/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
+import { forkJoin, Observable, of, take, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-form',
@@ -35,6 +38,7 @@ import { TooltipModule } from 'primeng/tooltip';
     TimePickerComponent,
     ToggleComponent,
     TooltipModule,
+    FileUploadComponent,
   ],
   templateUrl: './meeting-form.component.html',
   styleUrl: './meeting-form.component.scss',
@@ -48,6 +52,7 @@ export class MeetingFormComponent {
 
   // Loading state for form submissions
   public submitting = signal<boolean>(false);
+  public pendingAttachments = signal<PendingAttachment[]>([]);
 
   // Create form group internally
   public form = signal<FormGroup>(this.createMeetingFormGroup());
@@ -154,7 +159,7 @@ export class MeetingFormComponent {
 
     // Create meeting data
     const baseMeetingData = {
-      project_id: project.id,
+      project_uid: project.uid,
       topic: formValue.topic,
       agenda: formValue.agenda || '',
       start_time: startDateTime,
@@ -180,12 +185,35 @@ export class MeetingFormComponent {
 
     operation.subscribe({
       next: (meeting) => {
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Success',
-          detail: `Meeting ${this.isEditing() ? 'updated' : 'created'} successfully`,
-        });
-        this.dialogRef.close(meeting);
+        // If we have pending attachments and this is a new meeting, save them to the database
+        if (!this.isEditing() && this.pendingAttachments().length > 0) {
+          this.savePendingAttachments(meeting.id).subscribe({
+            next: () => {
+              this.messageService.add({
+                severity: 'success',
+                summary: 'Success',
+                detail: `Meeting created successfully with ${this.pendingAttachments().length} attachment(s)`,
+              });
+              this.dialogRef.close(meeting);
+            },
+            error: (attachmentError: any) => {
+              console.error('Error saving attachments:', attachmentError);
+              this.messageService.add({
+                severity: 'warn',
+                summary: 'Meeting Created',
+                detail: 'Meeting created but some attachments failed to save. You can add them later.',
+              });
+              this.dialogRef.close(meeting);
+            },
+          });
+        } else {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: `Meeting ${this.isEditing() ? 'updated' : 'created'} successfully`,
+          });
+          this.dialogRef.close(meeting);
+        }
       },
       error: (error) => {
         console.error('Error saving meeting:', error);
@@ -201,6 +229,122 @@ export class MeetingFormComponent {
 
   public onCancel(): void {
     this.dialogRef.close();
+  }
+
+  public onFileSelect(event: any): void {
+    // Handle different possible event structures
+    let files: File[] = [];
+    if (event.files && Array.isArray(event.files)) {
+      files = event.files;
+    } else if (event.currentFiles && Array.isArray(event.currentFiles)) {
+      files = event.currentFiles;
+    } else if (event.target && event.target.files) {
+      files = Array.from(event.target.files);
+    } else {
+      console.error('Could not extract files from event:', event);
+      return;
+    }
+
+    if (!files || files.length === 0) {
+      return;
+    }
+
+    // Validate each file before processing
+    files.forEach((file) => {
+      const validationError = this.validateFile(file);
+      if (validationError) {
+        // Show validation error to user
+        this.messageService.add({
+          severity: 'error',
+          summary: 'File Upload Error',
+          detail: validationError,
+          life: 5000,
+        });
+        return;
+      }
+
+      const pendingAttachment: PendingAttachment = {
+        id: crypto.randomUUID(),
+        fileName: file.name,
+        fileUrl: '',
+        fileSize: file.size,
+        mimeType: file.type,
+        uploading: true,
+      };
+
+      // Add to pending list with uploading status
+      this.pendingAttachments.update((current) => [...current, pendingAttachment]);
+
+      // Start the upload
+      this.meetingService.uploadFileToStorage(file).subscribe({
+        next: (result) => {
+          // Update the pending attachment with the uploaded URL
+          this.pendingAttachments.update((current) =>
+            current.map((pa) => (pa.id === pendingAttachment.id ? { ...pa, fileUrl: result.url, uploading: false } : pa))
+          );
+        },
+        error: (error) => {
+          // Update the pending attachment with error status
+          this.pendingAttachments.update((current) =>
+            current.map((pa) => (pa.id === pendingAttachment.id ? { ...pa, uploading: false, uploadError: error.message || 'Upload failed' } : pa))
+          );
+          console.error(`Failed to upload ${file.name}:`, error);
+        },
+      });
+    });
+  }
+
+  public removePendingAttachment(attachmentId: string): void {
+    this.pendingAttachments.update((current) => current.filter((pa) => pa.id !== attachmentId));
+  }
+
+  private validateFile(file: File): string | null {
+    // Check file size (10MB limit)
+    if (file.size > MAX_FILE_SIZE_BYTES) {
+      return `File "${file.name}" is too large. Maximum size is ${MAX_FILE_SIZE_MB}MB.`;
+    }
+
+    // Check file type
+    if (!ALLOWED_FILE_TYPES.includes(file.type as any)) {
+      const allowedTypes = ALLOWED_FILE_TYPES.map((type) => type.split('/')[1]).join(', ');
+      return `File type "${file.type}" is not supported. Allowed types: ${allowedTypes}.`;
+    }
+
+    // Check for duplicate filenames in current session
+    const currentFiles = this.pendingAttachments();
+    const isDuplicate = currentFiles.some((attachment) => attachment.fileName === file.name && !attachment.uploadError);
+
+    if (isDuplicate) {
+      return `A file named "${file.name}" has already been selected for upload.`;
+    }
+
+    // Check filename safety
+    if (file.name.includes('..') || file.name.startsWith('.')) {
+      return `Invalid filename "${file.name}". Filename cannot contain path traversal characters or start with a dot.`;
+    }
+
+    return null; // File is valid
+  }
+
+  private savePendingAttachments(meetingId: string): Observable<MeetingAttachment[]> {
+    const attachmentsToSave = this.pendingAttachments().filter((attachment) => !attachment.uploading && !attachment.uploadError && attachment.fileUrl);
+
+    if (attachmentsToSave.length === 0) {
+      return of([]);
+    }
+
+    const saveRequests = attachmentsToSave.map((attachment) =>
+      this.meetingService.createAttachmentFromUrl(meetingId, attachment.fileName, attachment.fileUrl, attachment.fileSize, attachment.mimeType)
+    );
+
+    return forkJoin(saveRequests).pipe(
+      take(1),
+      tap(() => {
+        // Clear pending attachments after successful save
+        this.pendingAttachments.set([]);
+      }),
+      tap(() => undefined) // Transform to void
+    );
   }
 
   // Private methods

@@ -198,7 +198,7 @@ export class MeetingDashboardComponent {
     return toSignal(
       this.project()
         ? this.refresh.pipe(
-            switchMap(() => this.meetingService.getUpcomingMeetingsByProject(this.project()!.id, 100).pipe(tap(() => this.meetingsLoading.set(false))))
+            switchMap(() => this.meetingService.getUpcomingMeetingsByProject(this.project()!.uid, 100).pipe(tap(() => this.meetingsLoading.set(false))))
           )
         : of([]),
       {
@@ -211,7 +211,7 @@ export class MeetingDashboardComponent {
     return toSignal(
       this.project()
         ? this.refresh.pipe(
-            switchMap(() => this.meetingService.getPastMeetingsByProject(this.project()!.id, 100).pipe(tap(() => this.pastMeetingsLoading.set(false))))
+            switchMap(() => this.meetingService.getPastMeetingsByProject(this.project()!.uid, 100).pipe(tap(() => this.pastMeetingsLoading.set(false))))
           )
         : of([]),
       {

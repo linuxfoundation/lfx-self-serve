@@ -58,10 +58,10 @@ export class HomeComponent {
     ];
 
     return {
-      id: project.slug,
+      uid: project.uid,
       name: project.name,
       description: project.description,
-      logo: project.logo,
+      logo_url: project.logo_url,
       slug: project.slug,
       metrics,
     };

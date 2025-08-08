@@ -17,6 +17,6 @@ export class UserService {
 
   // Create a new user with permissions
   public createUserWithPermissions(userData: CreateUserPermissionRequest): Observable<any> {
-    return this.http.post(`/api/projects/${userData.project_id}/permissions`, userData);
+    return this.http.post(`/api/projects/${userData.project_uid}/permissions`, userData);
   }
 }

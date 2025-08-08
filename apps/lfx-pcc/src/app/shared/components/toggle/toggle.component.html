@@ -16,5 +16,11 @@
         {{ label() }}
       </label>
     }
+
+    @if (tooltip()) {
+      <div class="tooltip">
+        <i class=" text-sm fa-light fa-{{ tooltipIcon() }}" [pTooltip]="tooltip()" [tooltipPosition]="tooltipPosition()"></i>
+      </div>
+    }
   </div>
 </ng-container>

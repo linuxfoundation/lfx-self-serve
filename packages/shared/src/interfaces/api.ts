@@ -15,7 +15,7 @@ export interface ApiResponse<T = unknown> {
 }
 
 export interface MicroserviceUrls {
-  QUERY_SERVICE: string;
+  LFX_V2_SERVICE: string;
 }
 
 export interface ApiError extends Error {

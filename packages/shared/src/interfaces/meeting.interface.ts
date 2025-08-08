@@ -39,7 +39,7 @@ export interface MeetingParticipant {
 export interface Meeting {
   id: string;
   created_at: string;
-  project_id: number;
+  project_uid: string;
   user_id?: string;
   visibility: MeetingVisibility | null;
   youtube_enabled: boolean | null;
@@ -68,7 +68,7 @@ export interface Meeting {
 }
 
 export interface CreateMeetingRequest {
-  project_id: string;
+  project_uid: string;
   topic: string;
   agenda?: string;
   start_time: string;
@@ -90,7 +90,7 @@ export interface CreateMeetingRequest {
 }
 
 export interface UpdateMeetingRequest {
-  project_id: string;
+  project_uid: string;
   topic: string;
   agenda?: string;
   start_time: string;

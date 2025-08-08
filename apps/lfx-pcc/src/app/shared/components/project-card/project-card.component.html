@@ -53,7 +53,7 @@
                   {{ metric.badge.label }}
                 </span>
               } @else {
-                <span class="text-sm text-gray-900 font-normal font-display" data-testid="metric-value">{{ metric.value }}</span>
+                <span class="text-sm text-gray-900 font-normal font-display" data-testid="metric-value">{{ metric.value || 0 }}</span>
               }
             </div>
           </div>
