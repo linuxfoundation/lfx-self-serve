@@ -6,21 +6,31 @@ import { expect, test } from '@playwright/test';
 test.describe('Project Dashboard - Robust Tests', () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to homepage and search for a project
-    await page.goto('/');
-    await page.getByRole('textbox', { name: 'Search projects, committees, meetings, or mailing lists...' }).fill('test');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+    // Wait for the search input to be available
+    await expect(page.getByRole('textbox', { name: 'Search projects, committees, meetings, or mailing lists...' })).toBeVisible({ timeout: 10000 });
+
+    // Perform search for "aswf" to get the Academy Software Foundation project
+    await page.getByRole('textbox', { name: 'Search projects, committees, meetings, or mailing lists...' }).fill('aswf');
     await page.keyboard.press('Enter');
 
-    // Click on the Academy Software Foundation project
-    await page.locator('lfx-project-card').first().click();
+    // Wait for search results to load
+    await expect(page.locator('lfx-project-card').first()).toBeVisible({ timeout: 10000 });
 
-    // Ensure we're on the dashboard tab
+    // Click on the Academy Software Foundation project card specifically
+    await page.locator('lfx-project-card').filter({ hasText: 'Academy Software Foundation' }).click();
+
+    // Wait for navigation to project page and ensure we're on the dashboard tab
+    await expect(page).toHaveURL(/\/project\/[\w-]+$/, { timeout: 10000 });
+    await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible();
     await page.getByRole('link', { name: 'Dashboard' }).click();
   });
 
   test.describe('Page Structure and Components', () => {
     test('should have correct page structure with main content', async ({ page }) => {
       await expect(page).toHaveTitle('LFX Projects');
-      await expect(page).toHaveURL(/\/project\/\w+$/);
+      await expect(page).toHaveURL(/\/project\/[\w-]+$/);
 
       // Check main project component is present
       await expect(page.locator('lfx-project')).toBeVisible();
@@ -249,8 +259,15 @@ test.describe('Project Dashboard - Robust Tests', () => {
       // Search bar should be hidden on mobile (responsive design)
       await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
 
-      // Projects text should be hidden on mobile
-      await expect(page.getByText('Projects', { exact: true })).toBeHidden();
+      // On mobile: "Projects" text is completely hidden from header button
+      // We need to target the specific span that contains "Projects" text
+      await expect(page.getByTestId('header-projects-text')).toBeHidden();
+
+      // Search bar should be hidden on mobile (responsive design)
+      await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
+
+      // Mobile search toggle should be visible
+      await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();
 
       // Logo should still be visible
       await expect(page.getByAltText('LFX Logo')).toBeVisible();
@@ -267,22 +284,25 @@ test.describe('Project Dashboard - Robust Tests', () => {
 
       // Header elements should be visible on tablet (medium and up)
       await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
-      await expect(page.getByText('Projects', { exact: true })).toBeVisible();
+      await expect(page.getByTestId('header-projects-text')).toBeVisible();
       await expect(page.getByAltText('LFX Logo')).toBeVisible();
     });
   });
 
   test.describe('Component Integration', () => {
     test('should properly integrate Angular signals and computed values', async ({ page }) => {
+      // Wait for the health indicators section to be present first
+      await expect(page.locator('[data-testid="project-health-card"]')).toBeVisible({ timeout: 15000 });
+
       // Check that percentage values are rendered (they would be 0% initially but should be present)
       const activityScore = page.locator('[data-testid="activity-score-indicator"] span').filter({ hasText: /%$/ });
-      await expect(activityScore).toBeVisible();
+      await expect(activityScore).toBeVisible({ timeout: 20000 });
 
       const meetingCompletion = page.locator('[data-testid="meeting-completion-indicator"] span').filter({ hasText: /%$/ });
-      await expect(meetingCompletion).toBeVisible();
+      await expect(meetingCompletion).toBeVisible({ timeout: 20000 });
 
       const activeCommittees = page.locator('[data-testid="active-committees-indicator"] span').filter({ hasText: /%$/ });
-      await expect(activeCommittees).toBeVisible();
+      await expect(activeCommittees).toBeVisible({ timeout: 20000 });
     });
 
     test('should use lfx-card components consistently', async ({ page }) => {

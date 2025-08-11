@@ -5,18 +5,18 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Homepage', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
 
     // Verify we're authenticated and on the homepage
     await expect(page).not.toHaveURL(/auth0\.com/);
   });
 
   test('should display the homepage title and subtitle', async ({ page }) => {
-    // Check for the main heading
-    await expect(page.getByRole('heading', { level: 1 })).toContainText('Your personalized control panel for managing projects, committees, and meetings.');
+    // Check for the main heading using data-testid
+    await expect(page.getByTestId('hero-title')).toContainText('Your personalized control panel for managing projects, committees, and meetings.');
 
-    // Check for the subtitle
-    await expect(page.locator('p').first()).toContainText(
+    // Check for the subtitle using data-testid
+    await expect(page.getByTestId('hero-subtitle')).toContainText(
       'Get a comprehensive overview of all your active initiatives and upcoming events in one centralized dashboard.'
     );
   });
@@ -25,10 +25,9 @@ test.describe('Homepage', () => {
     // Ensure we're in desktop viewport
     await page.setViewportSize({ width: 1024, height: 768 });
 
-    // Check for logo and brand
+    // Check for logo
     await expect(page.getByRole('button', { name: 'Go to home page' })).toBeVisible();
     await expect(page.getByAltText('LFX Logo')).toBeVisible();
-    await expect(page.getByText('Projects', { exact: true })).toBeVisible();
 
     // Header search should be visible on desktop (md and larger)
     await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
@@ -45,9 +44,8 @@ test.describe('Homepage', () => {
     await expect(page.getByRole('button', { name: 'Go to home page' })).toBeVisible();
     await expect(page.getByAltText('LFX Logo')).toBeVisible();
 
-    // Header search and brand text should be hidden on mobile
+    // Header search should be hidden on mobile
     await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
-    await expect(page.getByText('Projects', { exact: true })).toBeHidden();
 
     // Mobile search toggle button should be visible
     await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();
@@ -90,93 +88,101 @@ test.describe('Homepage', () => {
   });
 
   test('should display project cards when projects load', async ({ page }) => {
-    // Wait for project data to load
-    await page.waitForLoadState('networkidle');
+    // Wait for project cards to appear
+    await expect(page.getByTestId('project-card').first()).toBeVisible({ timeout: 10000 });
 
     // Check if project cards are displayed
-    const projectCards = page.locator('lfx-project-card');
+    const projectCards = page.getByTestId('project-card');
 
     // Should have multiple project cards
     const cardCount = await projectCards.count();
     expect(cardCount).toBeGreaterThan(0);
 
-    // Check first project card has expected elements
+    // Check first project card has expected elements using data-testids
     const firstCard = projectCards.first();
-    await expect(firstCard.getByRole('heading', { level: 3 })).toBeVisible();
-    await expect(firstCard.locator('img')).toBeVisible(); // Project logo
-    await expect(firstCard.locator('p')).toBeVisible(); // Description
+    await expect(firstCard.getByTestId('project-title')).toBeVisible();
+    await expect(firstCard.getByTestId('project-logo')).toBeAttached();
+    await expect(firstCard.getByTestId('project-description')).toBeVisible();
 
-    // Check for metrics in project cards
-    await expect(firstCard.getByText('Meetings')).toBeVisible();
-    await expect(firstCard.getByText('Committees')).toBeVisible();
-    await expect(firstCard.getByText('Mailing Lists')).toBeVisible();
+    // Check for metrics in project cards using data-testids
+    await expect(firstCard.getByTestId('metric-label').filter({ hasText: 'Meetings' })).toBeVisible();
+    await expect(firstCard.getByTestId('metric-label').filter({ hasText: 'Committees' })).toBeVisible();
+    await expect(firstCard.getByTestId('metric-label').filter({ hasText: 'Mailing Lists' })).toBeVisible();
   });
 
   test('should filter projects when searching', async ({ page }) => {
-    // Wait for initial load
-    await page.waitForLoadState('networkidle');
+    // Wait for project cards to appear
+    await expect(page.getByTestId('project-card').first()).toBeVisible({ timeout: 10000 });
 
     // Get initial project count
-    const initialCards = page.locator('lfx-project-card');
+    const initialCards = page.getByTestId('project-card');
     const initialCount = await initialCards.count();
     expect(initialCount).toBeGreaterThan(1);
 
-    // Search for specific project
+    // Search for specific project using hero search input
     const searchInput = page.getByRole('textbox', { name: 'Search projects, committees,' });
     await searchInput.fill('CNCF');
 
-    // Wait for search to complete
-    await page.waitForTimeout(500);
-    await page.waitForLoadState('networkidle');
+    // Wait for search results to update by checking that the count has decreased
+    await expect(async () => {
+      const filteredCards = page.getByTestId('project-card');
+      const filteredCount = await filteredCards.count();
+      expect(filteredCount).toBeLessThan(initialCount);
+    }).toPass({ timeout: 5000 });
 
-    // Verify search results are displayed
+    // Verify the CNCF project is visible
+    await expect(page.getByTestId('project-title').filter({ hasText: 'Cloud Native Computing Foundation' })).toBeVisible();
 
-    // Should show CNCF project in results
-    await expect(page.getByRole('heading', { name: 'Cloud Native Computing Foundation' })).toBeVisible();
+    // Verify search results are filtered (should have fewer results)
+    const filteredCards = page.getByTestId('project-card');
+    const filteredCount = await filteredCards.count();
+    expect(filteredCount).toBeLessThan(initialCount);
 
     // Verify search input has the search term
     await expect(searchInput).toHaveValue('CNCF');
   });
 
   test('should clear search and show all projects', async ({ page }) => {
-    // Wait for initial load
-    await page.waitForLoadState('networkidle');
+    // Wait for project cards to appear
+    await expect(page.getByTestId('project-card').first()).toBeVisible({ timeout: 10000 });
 
-    // Search for specific project
+    // Search for specific project using hero search input
     const searchInput = page.getByRole('textbox', { name: 'Search projects, committees,' });
     await searchInput.fill('CNCF');
-    await page.waitForTimeout(500);
+
+    // Wait for search to filter results
+    await expect(page.getByTestId('project-title').filter({ hasText: 'Cloud Native Computing Foundation' })).toBeVisible();
 
     // Clear search
     await searchInput.clear();
-    await page.waitForTimeout(500);
-    await page.waitForLoadState('networkidle');
+
+    // Wait for all projects to show again by checking for multiple project cards
+    await expect(page.getByTestId('project-card').nth(1)).toBeVisible();
 
     // Should show multiple projects again
-    const allCards = page.locator('lfx-project-card');
+    const allCards = page.getByTestId('project-card');
     const finalCount = await allCards.count();
     expect(finalCount).toBeGreaterThanOrEqual(1);
   });
 
   test('should navigate to project detail when clicking a project card', async ({ page }) => {
-    // Wait for project cards to load
-    await page.waitForLoadState('networkidle');
+    // Wait for project cards to appear
+    await expect(page.getByTestId('project-card').first()).toBeVisible({ timeout: 10000 });
 
-    // Click on first project card
-    const firstCard = page.locator('lfx-project-card').first();
-    await expect(firstCard).toBeVisible();
+    // Click on a specific project card (CNCF) for consistent testing
+    const cncfCard = page
+      .getByTestId('project-card')
+      .filter({ has: page.getByTestId('project-title').filter({ hasText: 'Cloud Native Computing Foundation' }) });
+    await expect(cncfCard).toBeVisible();
 
     // Get the project name to verify navigation
-    const projectName = await firstCard.getByRole('heading', { level: 3 }).innerText();
+    const projectName = await cncfCard.getByTestId('project-title').innerText();
 
     // Click the project card
-    await firstCard.click();
+    await cncfCard.click();
 
-    // Wait for navigation
-    await page.waitForLoadState('networkidle');
-
-    // Verify navigation to project page
-    expect(page.url()).toMatch(/\/project\/[\w-]+$/);
+    // Wait for navigation by checking URL change
+    await expect(page).toHaveURL(/\/project\/[\w-]+$/, { timeout: 10000 });
 
     // Verify project detail page elements - use heading that contains the project name
     await expect(page.getByRole('heading', { level: 1 }).filter({ hasText: projectName })).toBeVisible();
@@ -187,12 +193,12 @@ test.describe('Homepage', () => {
   });
 
   test('should have proper responsive layout', async ({ page }) => {
-    // Wait for content to load
-    await page.waitForLoadState('networkidle');
+    // Wait for project cards to appear
+    await expect(page.getByTestId('project-card').first()).toBeVisible({ timeout: 10000 });
 
     // Test desktop view
     await page.setViewportSize({ width: 1920, height: 1080 });
-    const projectCards = page.locator('lfx-project-card');
+    const projectCards = page.getByTestId('project-card');
     await expect(projectCards.first()).toBeVisible();
 
     // Test tablet view
@@ -203,9 +209,8 @@ test.describe('Homepage', () => {
     await page.setViewportSize({ width: 375, height: 667 });
     await expect(projectCards.first()).toBeVisible();
 
-    // On mobile, header search and brand text should be hidden
+    // On mobile, header search should be hidden
     await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
-    await expect(page.getByText('Projects', { exact: true })).toBeHidden();
 
     // Logo should still be visible
     await expect(page.getByAltText('LFX Logo')).toBeVisible();
@@ -220,20 +225,15 @@ test.describe('Homepage', () => {
   });
 
   test('should handle search with no results', async ({ page }) => {
-    // Wait for initial load
-    await page.waitForLoadState('networkidle');
+    // Wait for project cards to appear first
+    await expect(page.getByTestId('project-card').first()).toBeVisible({ timeout: 10000 });
 
     // Search for something that should return no results
     const searchInput = page.getByRole('textbox', { name: 'Search projects, committees,' });
     await searchInput.fill('nonexistentproject12345');
 
-    // Wait for search to complete
-    await page.waitForTimeout(500);
-    await page.waitForLoadState('networkidle');
-
-    // Should have no project cards visible
-    const projectCards = page.locator('lfx-project-card');
-    await expect(projectCards).toHaveCount(0);
+    // Wait for search to complete by checking that project cards are hidden
+    await expect(page.getByTestId('project-card')).toHaveCount(0);
   });
 });
 

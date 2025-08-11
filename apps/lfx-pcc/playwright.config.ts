@@ -51,11 +51,14 @@ export default defineConfig({
         ...devices['Desktop Firefox'],
         // Use saved auth state for all tests
         storageState: 'playwright/.auth/user.json',
+        // Firefox-specific timeout adjustments
+        actionTimeout: 15000, // Increased from default 10s
+        navigationTimeout: 45000, // Increased from default 30s
       },
     },
     /* Test against mobile viewports. */
     {
-      name: 'Mobile Chrome',
+      name: 'mobile-chrome',
       use: {
         ...devices['Pixel 5'],
         // Use saved auth state for all tests

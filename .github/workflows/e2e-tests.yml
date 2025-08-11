@@ -144,6 +144,7 @@ jobs:
           echo "PCC_BASE_URL=http://localhost:4200" >> $GITHUB_ENV
           echo "PCC_AUTH0_ISSUER_BASE_URL=https://linuxfoundation-dev.auth0.com/" >> $GITHUB_ENV
           echo "PCC_AUTH0_AUDIENCE=https://api-gw.dev.platform.linuxfoundation.org/" >> $GITHUB_ENV
+          echo "LFX_V2_SERVICE=http://lfx-api.dev.v2.cluster.linuxfound.info" >> $GITHUB_ENV
           echo "CI=true" >> $GITHUB_ENV
 
       - name: Set up sensitive environment variables

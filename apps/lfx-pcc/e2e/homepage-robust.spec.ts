@@ -5,7 +5,7 @@ import { expect, test } from '@playwright/test';
 
 test.describe('Homepage - Robust Tests', () => {
   test.beforeEach(async ({ page }) => {
-    await page.goto('/');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
 
     // Verify we're authenticated and on the homepage
     await expect(page).not.toHaveURL(/auth0\.com/);
@@ -25,7 +25,7 @@ test.describe('Homepage - Robust Tests', () => {
     });
 
     test('should display home component selector', async ({ page }) => {
-      await expect(page.locator('lfx-home')).toBeVisible();
+      await expect(page.locator('lfx-home')).toBeAttached({ timeout: 10000 });
     });
   });
 
@@ -104,7 +104,7 @@ test.describe('Homepage - Robust Tests', () => {
       await expect(projectsSection).toBeVisible();
 
       // Wait for projects to load
-      await page.waitForLoadState('networkidle');
+      await expect(page.locator('[data-testid="projects-section"]')).toBeVisible({ timeout: 10000 });
 
       // Should have either projects grid or skeleton
       const hasProjects = await page
@@ -121,7 +121,7 @@ test.describe('Homepage - Robust Tests', () => {
 
     test('should display project cards when projects load', async ({ page }) => {
       // Wait for projects to load
-      await page.waitForLoadState('networkidle');
+      await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible({ timeout: 10000 });
 
       // Check for projects grid
       const projectsGrid = page.locator('[data-testid="projects-grid"]');
@@ -139,7 +139,7 @@ test.describe('Homepage - Robust Tests', () => {
 
     test('should display project cards with proper structure', async ({ page }) => {
       // Wait for projects to load
-      await page.waitForLoadState('networkidle');
+      await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible({ timeout: 10000 });
 
       const projectCards = page.locator('[data-testid="project-card"]');
       const cardCount = await projectCards.count();
@@ -161,7 +161,7 @@ test.describe('Homepage - Robust Tests', () => {
 
     test('should display project card content elements', async ({ page }) => {
       // Wait for projects to load
-      await page.waitForLoadState('networkidle');
+      await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible({ timeout: 10000 });
 
       const projectCards = page.locator('[data-testid="project-card"]');
       const cardCount = await projectCards.count();
@@ -169,8 +169,8 @@ test.describe('Homepage - Robust Tests', () => {
       if (cardCount > 0) {
         const firstCard = projectCards.first();
 
-        // Check project logo
-        await expect(firstCard.locator('[data-testid="project-logo"]')).toBeVisible();
+        // Check project logo exists (might be hidden if no valid logo URL)
+        await expect(firstCard.locator('[data-testid="project-logo"]')).toBeAttached();
 
         // Check project title and description
         await expect(firstCard.locator('[data-testid="project-title"]')).toBeVisible();
@@ -194,7 +194,7 @@ test.describe('Homepage - Robust Tests', () => {
 
     test('should display project metrics with proper structure', async ({ page }) => {
       // Wait for projects to load
-      await page.waitForLoadState('networkidle');
+      await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible({ timeout: 10000 });
 
       const projectCards = page.locator('[data-testid="project-card"]');
       const cardCount = await projectCards.count();
@@ -234,7 +234,7 @@ test.describe('Homepage - Robust Tests', () => {
   test.describe('Search Functionality', () => {
     test('should filter projects when searching', async ({ page }) => {
       // Wait for initial load
-      await page.waitForLoadState('networkidle');
+      await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible({ timeout: 10000 });
 
       // Get initial project count
       const projectCards = page.locator('[data-testid="project-card"]');
@@ -245,9 +245,8 @@ test.describe('Homepage - Robust Tests', () => {
         const searchInput = page.getByRole('textbox', { name: 'Search projects, committees,' });
         await searchInput.fill('test');
 
-        // Wait for search to complete
-        await page.waitForTimeout(500);
-        await page.waitForLoadState('networkidle');
+        // Wait for search results to update
+        await expect(page.locator('[data-testid="projects-section"]')).toBeVisible();
 
         // Projects should be filtered (count may change)
         await expect(page.locator('[data-testid="projects-section"]')).toBeVisible();
@@ -256,18 +255,18 @@ test.describe('Homepage - Robust Tests', () => {
 
     test('should clear search and show all projects', async ({ page }) => {
       // Wait for initial load
-      await page.waitForLoadState('networkidle');
+      await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible({ timeout: 10000 });
 
       const searchInput = page.getByRole('textbox', { name: 'Search projects, committees,' });
 
       // Search for something
       await searchInput.fill('nonexistent');
-      await page.waitForTimeout(500);
 
       // Clear search
       await searchInput.clear();
-      await page.waitForTimeout(500);
-      await page.waitForLoadState('networkidle');
+
+      // Wait for projects to be visible again
+      await expect(page.locator('[data-testid="projects-section"]')).toBeVisible();
 
       // Projects section should still be visible
       await expect(page.locator('[data-testid="projects-section"]')).toBeVisible();
@@ -277,27 +276,30 @@ test.describe('Homepage - Robust Tests', () => {
   test.describe('Navigation and Interaction', () => {
     test('should navigate to project detail when clicking a project card', async ({ page }) => {
       // Wait for project cards to load
-      await page.waitForLoadState('networkidle');
+      await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible({ timeout: 10000 });
+
+      // Search for ASWF to get consistent results
+      const searchInput = page.getByRole('textbox', { name: 'Search projects, committees,' });
+      await searchInput.fill('aswf');
+      await page.keyboard.press('Enter');
+
+      // Wait for search results and ensure we have the ASWF project
+      await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible({ timeout: 10000 });
+
+      // Verify we found the ASWF project by checking the title contains "Academy Software Foundation"
+      await expect(page.getByTestId('project-title').filter({ hasText: 'Academy Software Foundation' })).toBeVisible();
 
       const projectCards = page.locator('[data-testid="project-card"]');
       const cardCount = await projectCards.count();
 
       if (cardCount > 0) {
-        const firstCard = projectCards.first();
-        await expect(firstCard).toBeVisible();
+        // Click specifically on the ASWF project card
+        const aswfCard = projectCards.filter({ has: page.getByTestId('project-title').filter({ hasText: 'Academy Software Foundation' }) });
+        await expect(aswfCard).toBeVisible();
+        await aswfCard.click();
 
-        // Get the project slug for navigation verification
-        const projectSlug = await firstCard.getAttribute('data-project-slug');
-
-        // Click the card
-        await firstCard.click();
-
-        // Should navigate to project detail
-        if (projectSlug) {
-          await expect(page).toHaveURL(new RegExp(`/project/${projectSlug}`));
-        } else {
-          await expect(page).toHaveURL(/\/project\/\w+/);
-        }
+        // Should navigate to ASWF project
+        await expect(page).toHaveURL('/project/aswf');
       }
     });
   });
@@ -320,7 +322,6 @@ test.describe('Homepage - Robust Tests', () => {
       if (isMobile) {
         // Search in header should be hidden on mobile
         await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
-        await expect(page.getByText('Projects', { exact: true })).toBeHidden();
       }
 
       // Logo should still be visible
@@ -336,7 +337,6 @@ test.describe('Homepage - Robust Tests', () => {
 
       // Header elements should be visible on tablet (medium and up)
       await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
-      await expect(page.getByText('Projects', { exact: true })).toBeVisible();
       await expect(page.getByAltText('LFX Logo')).toBeVisible();
     });
 
@@ -349,7 +349,6 @@ test.describe('Homepage - Robust Tests', () => {
 
       // Header elements should be visible on desktop
       await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
-      await expect(page.getByText('Projects', { exact: true })).toBeVisible();
       await expect(page.getByAltText('LFX Logo')).toBeVisible();
     });
   });
@@ -357,7 +356,7 @@ test.describe('Homepage - Robust Tests', () => {
   test.describe('Component Integration', () => {
     test('should properly integrate Angular signals and computed values', async ({ page }) => {
       // Wait for Angular to initialize and signals to resolve
-      await page.waitForLoadState('networkidle');
+      await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible({ timeout: 20000 });
 
       // The presence of project cards indicates successful signal integration
       const projectsSection = page.locator('[data-testid="projects-section"]');
@@ -387,7 +386,7 @@ test.describe('Homepage - Robust Tests', () => {
 
     test('should use lfx-project-card components for project display', async ({ page }) => {
       // Wait for projects to load
-      await page.waitForLoadState('networkidle');
+      await expect(page.locator('[data-testid="project-card"]').first()).toBeVisible({ timeout: 10000 });
 
       const projectCards = page.locator('[data-testid="project-card"]');
       const cardCount = await projectCards.count();

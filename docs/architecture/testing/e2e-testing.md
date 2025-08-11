@@ -46,7 +46,7 @@ Total E2E Tests: 85+ (All Passing)
 ```typescript
 // playwright.config.ts - Mobile Chrome Configuration
 {
-  name: 'Mobile Chrome',
+  name: 'mobile-chrome',
   use: {
     ...devices['Pixel 5'],
     storageState: 'playwright/.auth/user.json',

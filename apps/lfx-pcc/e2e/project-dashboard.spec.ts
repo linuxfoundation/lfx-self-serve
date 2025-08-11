@@ -6,21 +6,31 @@ import { expect, test } from '@playwright/test';
 test.describe('Project Dashboard', () => {
   test.beforeEach(async ({ page }) => {
     // Navigate to homepage and search for a project
-    await page.goto('/');
-    await page.getByRole('textbox', { name: 'Search projects, committees, meetings, or mailing lists...' }).fill('test');
+    await page.goto('/', { waitUntil: 'domcontentloaded' });
+
+    // Wait for the search input to be available
+    await expect(page.getByRole('textbox', { name: 'Search projects, committees, meetings, or mailing lists...' })).toBeVisible({ timeout: 10000 });
+
+    // Perform search for "aswf" to get the Academy Software Foundation project
+    await page.getByRole('textbox', { name: 'Search projects, committees, meetings, or mailing lists...' }).fill('aswf');
     await page.keyboard.press('Enter');
 
-    // Click on the Academy Software Foundation project
-    await page.locator('lfx-project-card').first().click();
+    // Wait for search results to load
+    await expect(page.locator('lfx-project-card').first()).toBeVisible({ timeout: 10000 });
 
-    // Ensure we're on the dashboard tab
+    // Click on the Academy Software Foundation project card specifically
+    await page.locator('lfx-project-card').filter({ hasText: 'Academy Software Foundation' }).click();
+
+    // Wait for navigation to project page and ensure we're on the dashboard tab
+    await expect(page).toHaveURL(/\/project\/[\w-]+$/, { timeout: 10000 });
+    await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible();
     await page.getByRole('link', { name: 'Dashboard' }).click();
   });
 
   test.describe('Navigation and Layout', () => {
     test('should display correct page title and URL', async ({ page }) => {
       await expect(page).toHaveTitle('LFX Projects');
-      await expect(page).toHaveURL(/\/project\/\w+$/);
+      await expect(page).toHaveURL(/\/project\/[\w-]+$/);
     });
 
     test('should display header elements correctly for current viewport', async ({ page }) => {
@@ -32,15 +42,16 @@ test.describe('Project Dashboard', () => {
       const isMobile = viewport && viewport.width < 768;
 
       if (isMobile) {
-        // On mobile: search and brand text should be hidden
+        // On mobile: "Projects" text is completely hidden from header button
+        // Search should be hidden
         await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
-        await expect(page.getByText('Projects', { exact: true })).toBeHidden();
         // Mobile search toggle should be visible
         await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();
       } else {
-        // On desktop: search and brand text should be visible
+        // On desktop: "Projects" text is visible in header button
+        await expect(page.getByTestId('header-projects-text')).toBeVisible();
+        // Search should be visible
         await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
-        await expect(page.getByText('Projects', { exact: true })).toBeVisible();
         // Mobile search toggle should be hidden
         await expect(page.getByTestId('mobile-search-toggle')).toBeHidden();
       }
@@ -53,7 +64,7 @@ test.describe('Project Dashboard', () => {
 
     test('should highlight active Dashboard tab', async ({ page }) => {
       const dashboardTab = page.getByRole('link', { name: 'Dashboard' });
-      await expect(dashboardTab).toHaveClass(/active|bg-blue-50/);
+      await expect(dashboardTab).toHaveClass(/bg-blue-50/);
     });
 
     test('should display all navigation tabs', async ({ page }) => {
@@ -67,7 +78,7 @@ test.describe('Project Dashboard', () => {
 
   test.describe('Project Header', () => {
     test('should display project name and description', async ({ page }) => {
-      await expect(page.getByRole('heading', { name: 'Academy Software Foundation' })).toBeVisible();
+      await expect(page.getByRole('heading', { level: 1 })).toContainText('Academy Software Foundation (ASWF)');
       await expect(page.getByText(/The mission of the Academy Software Foundation/)).toBeVisible();
     });
 
@@ -269,17 +280,26 @@ test.describe('Project Dashboard', () => {
     test('should display correctly on mobile viewport', async ({ page }) => {
       await page.setViewportSize({ width: 375, height: 667 });
 
+      // Navigate to homepage and search for a project after viewport change
+      await page.goto('/');
+      await expect(page.getByRole('textbox', { name: 'Search projects, committees, meetings, or mailing lists...' })).toBeVisible({ timeout: 10000 });
+      await page.getByRole('textbox', { name: 'Search projects, committees, meetings, or mailing lists...' }).fill('aswf');
+      await page.keyboard.press('Enter');
+      await expect(page.locator('lfx-project-card').first()).toBeVisible({ timeout: 10000 });
+      await page.locator('lfx-project-card').filter({ hasText: 'Academy Software Foundation' }).click();
+      await expect(page).toHaveURL(/\/project\/[\w-]+$/, { timeout: 10000 });
+      await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible();
+      await page.getByRole('link', { name: 'Dashboard' }).click();
+
       // Key elements should still be visible on mobile
-      await expect(page.getByRole('heading', { name: 'Academy Software Foundation' })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Academy Software Foundation (ASWF)' })).toBeVisible();
       await expect(page.getByText('Total Members')).toBeVisible();
       await expect(page.getByText('Project Health')).toBeVisible();
       await expect(page.getByText('Quick Actions')).toBeVisible();
 
+      // On mobile: "Projects" text is completely hidden from header button
       // Search bar should be hidden on mobile (responsive design)
       await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
-
-      // Projects text should also be hidden on mobile
-      await expect(page.getByText('Projects', { exact: true })).toBeHidden();
 
       // Mobile search toggle should be visible
       await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();
@@ -288,8 +308,20 @@ test.describe('Project Dashboard', () => {
     test('should display correctly on tablet viewport', async ({ page }) => {
       await page.setViewportSize({ width: 768, height: 1024 });
 
-      // All dashboard elements should be visible on tablet
-      await expect(page.getByRole('heading', { name: 'Academy Software Foundation' })).toBeVisible();
+      // Navigate to homepage and search for a project after viewport change
+      await page.goto('/');
+      await expect(page.getByRole('textbox', { name: 'Search projects, committees, meetings, or mailing lists...' })).toBeVisible({ timeout: 10000 });
+      await page.getByRole('textbox', { name: 'Search projects, committees, meetings, or mailing lists...' }).fill('aswf');
+      await page.keyboard.press('Enter');
+      await expect(page.locator('lfx-project-card').first()).toBeVisible({ timeout: 10000 });
+      await page.locator('lfx-project-card').filter({ hasText: 'Academy Software Foundation' }).click();
+      await expect(page).toHaveURL(/\/project\/[\w-]+$/, { timeout: 10000 });
+      await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible();
+      await page.getByRole('link', { name: 'Dashboard' }).click();
+
+      // All dashboard elements should be visible on tablet (768px = desktop, "Projects" text visible)
+      await expect(page.getByRole('button', { name: 'Go to home page' }).getByText('Projects', { exact: true })).toBeVisible();
+      await expect(page.getByRole('heading', { name: 'Academy Software Foundation (ASWF)' })).toBeVisible();
       await expect(page.getByText('Total Members')).toBeVisible();
       await expect(page.getByText('Project Health')).toBeVisible();
       await expect(page.getByText('Quick Actions')).toBeVisible();

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Page, BrowserContext } from '@playwright/test';
+import { BrowserContext, Page } from '@playwright/test';
 
 export interface AuthCredentials {
   username: string;
