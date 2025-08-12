@@ -9,7 +9,6 @@ import { FileSizePipe } from '@app/shared/pipes/file-size.pipe';
 import { FileTypeIconPipe } from '@app/shared/pipes/file-type-icon.pipe';
 import { LinkifyPipe } from '@app/shared/pipes/linkify.pipe';
 import { AvatarComponent } from '@components/avatar/avatar.component';
-import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
@@ -39,7 +38,6 @@ import { RecurringEditOption, RecurringMeetingEditOptionsComponent } from '../re
     RouterLink,
     ButtonComponent,
     MenuComponent,
-    BadgeComponent,
     MeetingTimePipe,
     AvatarComponent,
     TooltipModule,
@@ -65,6 +63,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly meetingInput = input.required<Meeting>();
   public readonly pastMeeting = input<boolean>(false);
   public readonly loading = input<boolean>(false);
+  public readonly showBorder = input<boolean>(false);
   public readonly meetingParticipantCount: Signal<number> = this.initMeetingParticipantCount();
   public readonly participantResponseBreakdown: Signal<string> = this.initParticipantResponseBreakdown();
   public showParticipants: WritableSignal<boolean> = signal(false);
@@ -75,6 +74,14 @@ export class MeetingCardComponent implements OnInit {
   public additionalParticipantsCount: WritableSignal<number> = signal(0);
   public actionMenuItems: Signal<MenuItem[]> = this.initializeActionMenuItems();
   public attachments: Signal<MeetingAttachment[]> = signal([]);
+
+  // Computed values for template
+  public readonly attendancePercentage: Signal<number> = this.initAttendancePercentage();
+  public readonly attendanceBarColor: Signal<string> = this.initAttendanceBarColor();
+  public readonly totalResourcesCount: Signal<number> = this.initTotalResourcesCount();
+  public readonly enabledFeaturesCount: Signal<number> = this.initEnabledFeaturesCount();
+  public readonly meetingTypeBadge: Signal<{ badgeClass: string; icon?: string; text: string } | null> = this.initMeetingTypeBadge();
+  public readonly containerClass: Signal<string> = this.initContainerClass();
 
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
@@ -131,6 +138,36 @@ export class MeetingCardComponent implements OnInit {
         this.initParticipantsList();
       });
     });
+  }
+
+  public editMeeting(): void {
+    const meeting = this.meeting();
+    if (!meeting) return;
+
+    // Check if it's a recurring meeting
+    if (meeting.recurrence) {
+      // Show recurring edit options dialog first
+      const optionsDialog = this.dialogService.open(RecurringMeetingEditOptionsComponent, {
+        header: 'Edit Recurring Meeting',
+        width: '450px',
+        modal: true,
+        closable: true,
+        dismissableMask: true,
+        data: {
+          meeting: meeting,
+        },
+      });
+
+      optionsDialog.onClose.pipe(take(1)).subscribe((result: RecurringEditOption) => {
+        if (result?.proceed) {
+          // Open the meeting form with the selected edit type
+          this.openMeetingEditForm(meeting, result.editType);
+        }
+      });
+    } else {
+      // For non-recurring meetings, open the form directly
+      this.openMeetingEditForm(meeting, 'single');
+    }
   }
 
   public openCommitteeModal(): void {
@@ -199,13 +236,12 @@ export class MeetingCardComponent implements OnInit {
       }
 
       const totalGuests = this.meetingParticipantCount();
-      const breakdown = this.participantResponseBreakdown();
 
       if (totalGuests === 1) {
-        return breakdown ? `1 Guest (${breakdown})` : '1 Guest';
+        return '1 Guest';
       }
 
-      return breakdown ? `${totalGuests} Guests (${breakdown})` : `${totalGuests} Guests`;
+      return `${totalGuests} Guests`;
     });
   }
 
@@ -272,36 +308,6 @@ export class MeetingCardComponent implements OnInit {
         initialValue: [],
       });
     });
-  }
-
-  private editMeeting(): void {
-    const meeting = this.meeting();
-    if (!meeting) return;
-
-    // Check if it's a recurring meeting
-    if (meeting.recurrence) {
-      // Show recurring edit options dialog first
-      const optionsDialog = this.dialogService.open(RecurringMeetingEditOptionsComponent, {
-        header: 'Edit Recurring Meeting',
-        width: '450px',
-        modal: true,
-        closable: true,
-        dismissableMask: true,
-        data: {
-          meeting: meeting,
-        },
-      });
-
-      optionsDialog.onClose.pipe(take(1)).subscribe((result: RecurringEditOption) => {
-        if (result?.proceed) {
-          // Open the meeting form with the selected edit type
-          this.openMeetingEditForm(meeting, result.editType);
-        }
-      });
-    } else {
-      // For non-recurring meetings, open the form directly
-      this.openMeetingEditForm(meeting, 'single');
-    }
   }
 
   private openMeetingEditForm(meeting: Meeting, editType: 'single' | 'future'): void {
@@ -419,6 +425,104 @@ export class MeetingCardComponent implements OnInit {
   private initAttachments(): Signal<MeetingAttachment[]> {
     return runInInjectionContext(this.injector, () => {
       return toSignal(this.meetingService.getMeetingAttachments(this.meetingInput().id).pipe(catchError(() => of([]))), { initialValue: [] });
+    });
+  }
+
+  private initAttendancePercentage(): Signal<number> {
+    return computed(() => {
+      const totalParticipants = this.meetingParticipantCount();
+      const acceptedCount = this.meeting().participants_accepted_count || 0;
+      return totalParticipants > 0 ? Math.round((acceptedCount / totalParticipants) * 100) : 0;
+    });
+  }
+
+  private initAttendanceBarColor(): Signal<string> {
+    return computed(() => {
+      const percentage = this.attendancePercentage();
+
+      if (percentage < 25) {
+        return 'bg-amber-500';
+      }
+      if (percentage < 70) {
+        return 'bg-blue-500';
+      }
+      return 'bg-green-500';
+    });
+  }
+
+  private initTotalResourcesCount(): Signal<number> {
+    return computed(() => {
+      return this.attachments().length + this.importantLinks().length;
+    });
+  }
+
+  private initEnabledFeaturesCount(): Signal<number> {
+    return computed(() => {
+      const meeting = this.meeting();
+      return (
+        (meeting.recording_enabled ? 1 : 0) + (meeting.transcripts_enabled ? 1 : 0) + (meeting.youtube_enabled ? 1 : 0) + (meeting.zoom_ai_enabled ? 1 : 0)
+      );
+    });
+  }
+
+  private initMeetingTypeBadge(): Signal<{ badgeClass: string; icon?: string; text: string } | null> {
+    return computed(() => {
+      const meetingType = this.meeting().meeting_type;
+      if (!meetingType) return null;
+
+      const type = meetingType.toLowerCase();
+
+      switch (type) {
+        case 'board':
+          return { badgeClass: 'bg-red-100 text-red-500', icon: 'fa-light fa-user-check', text: meetingType };
+        case 'maintainers':
+          return { badgeClass: 'bg-blue-100 text-blue-500', icon: 'fa-light fa-gear', text: meetingType };
+        case 'marketing':
+          return { badgeClass: 'bg-green-100 text-green-500', icon: 'fa-light fa-chart-line-up', text: meetingType };
+        case 'technical':
+          return { badgeClass: 'bg-purple-100 text-purple-500', icon: 'fa-light fa-code', text: meetingType };
+        case 'legal':
+          return { badgeClass: 'bg-amber-100 text-amber-500', icon: 'fa-light fa-scale-balanced', text: meetingType };
+        default:
+          return { badgeClass: 'bg-gray-100 text-gray-400', icon: 'fa-light fa-calendar-days', text: meetingType };
+      }
+    });
+  }
+
+  private initContainerClass(): Signal<string> {
+    return computed(() => {
+      if (!this.showBorder()) {
+        return '';
+      }
+
+      const baseClasses = 'bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md h-full border-l-4 transition-all duration-300';
+      const meetingType = this.meeting().meeting_type?.toLowerCase();
+
+      let borderClass = '';
+      switch (meetingType) {
+        case 'board':
+          borderClass = 'border-l-red-300';
+          break;
+        case 'maintainers':
+          borderClass = 'border-l-blue-300';
+          break;
+        case 'marketing':
+          borderClass = 'border-l-green-300';
+          break;
+        case 'technical':
+          borderClass = 'border-l-purple-300';
+          break;
+        case 'legal':
+          borderClass = 'border-l-amber-300';
+          break;
+        case 'other':
+        case 'none':
+        default:
+          borderClass = 'border-l-gray-300';
+          break;
+      }
+
+      return `${baseClasses} ${borderClass}`;
     });
   }
 }

@@ -96,7 +96,7 @@ export class CustomButtonComponent {}
 <!-- custom-button.component.html -->
 <p-button label="Custom Icon" severity="success">
   <ng-template pTemplate="icon">
-    <i class="fas fa-rocket text-yellow-400"></i>
+    <i class="fas fa-rocket text-amber-400"></i>
   </ng-template>
 </p-button>
 ```

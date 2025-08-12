@@ -1,293 +1,355 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Header with visibility badge and action menu -->
-<div class="flex items-center justify-between mb-4 transition-all duration-300">
-  <div class="flex gap-3">
-    <div class="flex items-center gap-3">
-      @switch (meeting().visibility) {
-        @case ('public') {
-          <lfx-badge value="Public" severity="success" icon="fa-light fa-globe"></lfx-badge>
-        }
-        @case ('private') {
-          <lfx-badge value="Private" severity="danger" icon="fa-light fa-lock"></lfx-badge>
-        }
-      }
-    </div>
-    <!-- Recurrence Info -->
-    @if (meeting().recurrence) {
-      <div class="flex items-center gap-2">
-        <i class="fa-light fa-repeat text-gray-400"></i>
-        <span class="text-sm text-gray-600">Recurring Meeting</span>
-      </div>
-    }
-  </div>
-  <lfx-button
-    [icon]="loading() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'"
-    [text]="true"
-    [rounded]="true"
-    size="small"
-    severity="secondary"
-    (click)="actionMenu.toggle($event)"></lfx-button>
-</div>
-<!-- Action Menu -->
-<lfx-menu #actionMenu [model]="actionMenuItems()" [popup]="true" appendTo="body"></lfx-menu>
-
-<!-- Meeting Topic -->
-<div class="flex justify-between gap-x-4 flex-wrap">
-  @if (meeting().topic) {
-    <h3 class="text-xl font-display font-semibold text-gray-900 mb-3">
-      {{ meeting().topic }}
-    </h3>
-  }
-  <!-- Meeting Time -->
-  @if (meeting().start_time) {
-    <div class="flex items-start gap-3 mb-4">
-      <div class="flex gap-2 items-center">
-        <div class="text-sm font-medium text-gray-900 flex items-center gap-2">
-          <i class="fa-light fa-calendar-days text-blue-400 text-lg"></i>
-          {{ meeting().start_time | meetingTime: meeting().duration : 'date' }}
-        </div>
-        <div class="text-sm text-gray-600 flex items-center gap-2">
-          &#64;
-          {{ meeting().start_time | meetingTime: meeting().duration : 'time' }}
-        </div>
-      </div>
-    </div>
-  }
-</div>
-
-<div class="flex justify-between">
-  @if (meeting().meeting_type) {
-    <div class="flex items-center gap-2 mb-4">
-      <lfx-badge [value]="meeting().meeting_type!" severity="secondary" icon="fa-light fa-calendar-days"></lfx-badge>
-    </div>
-    <!-- Meeting Settings -->
-    <div class="flex gap-2 mb-4">
-      <i
-        class="fa-light fa-video text-lg"
-        [class.text-blue-500]="meeting().recording_enabled"
-        [class.text-gray-400]="!meeting().recording_enabled"
-        pTooltip="Recording {{ meeting().recording_enabled ? 'enabled' : 'disabled' }}"
-        tooltipPosition="top">
-      </i>
-      <i
-        class="fa-light fa-lock text-lg"
-        [class.text-blue-500]="meeting().restricted"
-        [class.text-gray-400]="!meeting().restricted"
-        pTooltip="Meeting {{ meeting().restricted ? 'restricted' : 'not restricted' }}"
-        tooltipPosition="top">
-      </i>
-      <i
-        class="fa-brands fa-youtube text-lg"
-        [class.text-blue-500]="meeting().youtube_enabled"
-        [class.text-gray-400]="!meeting().youtube_enabled"
-        pTooltip="YouTube {{ meeting().youtube_enabled ? 'enabled' : 'disabled' }}"
-        tooltipPosition="top">
-      </i>
-      <i
-        class="fa-light fa-microchip-ai text-lg"
-        [class.text-blue-500]="meeting().zoom_ai_enabled"
-        [class.text-gray-400]="!meeting().zoom_ai_enabled"
-        pTooltip="Zoom AI {{ meeting().zoom_ai_enabled ? 'enabled' : 'disabled' }}"
-        tooltipPosition="top">
-      </i>
-      <i
-        class="fa-light fa-file-lines text-lg"
-        [class.text-blue-500]="meeting().transcripts_enabled"
-        [class.text-gray-400]="!meeting().transcripts_enabled"
-        pTooltip="Transcripts {{ meeting().transcripts_enabled ? 'enabled' : 'disabled' }}"
-        tooltipPosition="top">
-      </i>
-    </div>
-  }
-</div>
-
-<!-- Meeting Attachments Template -->
-@if (attachments().length > 0 || importantLinks().length > 0) {
-  <div class="bg-gray-50 p-4 border border-gray-100 mb-4 rounded-md shadow-sm">
-    <h4 class="text-sm font-semibold text-gray-700 mb-2 flex items-center gap-1">
-      <i class="fa-light fa-link text-blue-500"></i>
-      @if (attachments().length > 0) {
-        <span>Attachments</span>
-        @if (importantLinks().length > 0) {
-          <span>&</span>
-        }
-      }
-      @if (importantLinks().length > 0) {
-        <span>Important Links</span>
-      }
-    </h4>
-
-    <!-- Important Links -->
-    <div>
-      <div class="flex flex-wrap gap-2">
-        @for (attachment of attachments(); track attachment.id) {
-          <a
-            [href]="attachment.file_url"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
-            [title]="attachment.file_name + ' (' + (attachment.file_size || 0 | fileSize) + ')'">
-            <i [class]="attachment.mime_type || '' | fileTypeIcon"></i>
-            <span class="truncate max-w-[120px]">{{ attachment.file_name }}</span>
-            <span class="text-gray-400 ml-1">({{ attachment.file_size || 0 | fileSize }})</span>
-          </a>
+<div data-testid="meeting-card-container" [class]="containerClass()">
+  <div [ngClass]="{ 'p-6': showBorder() }">
+    <!-- Header with badges and action menu -->
+    <div class="flex items-start justify-between mb-4" data-testid="meeting-details-header">
+      <div class="flex items-center gap-2 flex-wrap">
+        <!-- Privacy Badge -->
+        @if (meeting().visibility === 'private') {
+          <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-500 text-white">
+            <i class="fa-light fa-shield"></i>
+            <span>Private</span>
+          </div>
         }
 
-        @for (link of importantLinks(); track link.url) {
-          <a
-            [href]="link.url"
-            target="_blank"
-            rel="noopener noreferrer"
-            class="cursor-pointer inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-blue-600 bg-blue-50 hover:bg-blue-100 rounded-md transition-colors"
-            [title]="link.url">
-            <i class="fa-light fa-link"></i>
-            {{ link.domain }}
-          </a>
-        }
-      </div>
-    </div>
-  </div>
-}
-
-@if (meeting().agenda) {
-  <div class="pb-3">
-    <lfx-expandable-text [maxHeight]="100">
-      <div class="flex flex-col gap-4">
-        <div [innerHTML]="meeting().agenda | linkify"></div>
-      </div>
-    </lfx-expandable-text>
-  </div>
-}
-
-<!-- Associated Committees -->
-@if (meeting().meeting_committees && meeting().meeting_committees!.length > 0) {
-  <div class="flex items-start gap-2 mb-4">
-    <i class="fa-light fa-people-group text-gray-400 mt-0.5"></i>
-    <div class="flex flex-wrap gap-1">
-      <div class="text-sm text-gray-600">
-        @for (committee of meeting().meeting_committees!; track committee.id; let isLast = $last) {
-          <a
-            [routerLink]="['/project', project()?.slug, 'committees', committee.id]"
-            class="text-primary hover:text-primary-600 hover:underline"
-            [title]="committee.committee_total_members + ' members'">
-            {{ committee.name }}
-          </a>
-          @if (!isLast) {
-            <span>, </span>
+        <!-- Meeting Type Badge -->
+        @if (meetingTypeBadge(); as badge) {
+          @if (badge.text !== 'None') {
+            <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium" [class]="badge.badgeClass">
+              @if (badge.icon) {
+                <i [class]="badge.icon"></i>
+              }
+              <span>{{ badge.text }}</span>
+            </div>
           }
         }
+
+        <!-- Recurring Badge -->
+        @if (meeting().recurrence) {
+          <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-400 text-white">
+            <i class="fa-light fa-repeat"></i>
+            <span>Recurring</span>
+          </div>
+        }
+      </div>
+      <div class="flex items-center gap-1">
+        <lfx-button
+          icon="fa-light fa-copy"
+          [text]="true"
+          [rounded]="true"
+          size="small"
+          severity="secondary"
+          data-testid="copy-meeting-button"
+          pTooltip="Copy Meeting"></lfx-button>
+        @if (meeting().visibility === 'public') {
+          <lfx-button
+            icon="fa-light fa-share"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="share-meeting-button"
+            pTooltip="Share Meeting"></lfx-button>
+        }
+        <lfx-button
+          icon="fa-light fa-edit"
+          [text]="true"
+          [rounded]="true"
+          size="small"
+          severity="secondary"
+          data-testid="edit-meeting-button"
+          (click)="editMeeting()"></lfx-button>
+        <lfx-button
+          [icon]="loading() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis'"
+          [text]="true"
+          [rounded]="true"
+          size="small"
+          severity="secondary"
+          data-testid="meeting-actions-button"
+          (click)="actionMenu.toggle($event)"></lfx-button>
       </div>
     </div>
-  </div>
-}
+    <!-- Action Menu -->
+    <lfx-menu #actionMenu [model]="actionMenuItems()" [popup]="true" appendTo="body"></lfx-menu>
 
-<div class="flex justify-between items-end gap-x-4">
-  <!-- Meeting Participants Expander -->
-  <div class="flex-1">
-    <lfx-button
-      icon="fa-light fa-users"
-      size="small"
-      severity="secondary"
-      class="w-full"
-      [label]="participantsLabel()"
-      class="cursor-pointer"
-      (click)="onParticipantsToggle($event)">
-    </lfx-button>
-  </div>
-
-  <!-- Created Date -->
-  <div class="mt-4 text-xs text-gray-500">Last Updated {{ meeting().created_at | date: 'MMM d, y' }}</div>
-</div>
-
-<!-- Meeting Participants -->
-@if (showParticipants()) {
-  <div class="border-b border-gray-200 pt-4 w-full"></div>
-  @if (participantsLoading()) {
-    <div class="flex items-center justify-center mt-4">
-      <i class="fa-light fa-circle-notch fa-spin text-3xl text-blue-600 mb-4"></i>
+    <!-- Meeting Title and Date -->
+    <div class="flex items-start justify-between mb-4" data-testid="meeting-title-section">
+      <div class="flex-1 pr-4">
+        @if (meeting().topic) {
+          <h3 class="text-xl font-display font-semibold text-gray-900 mb-1 leading-tight" data-testid="meeting-title">
+            {{ meeting().topic }}
+          </h3>
+        }
+      </div>
+      @if (meeting().start_time) {
+        <div class="flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded flex-shrink-0" data-testid="meeting-datetime">
+          <i class="fa-light fa-calendar-days text-gray-400"></i>
+          <span
+            >{{ meeting().start_time | meetingTime: meeting().duration : 'date' }} • {{ meeting().start_time | meetingTime: meeting().duration : 'time' }}</span
+          >
+        </div>
+      }
     </div>
-  }
 
-  @if (!participantsLoading()) {
-    <div class="grid grid-cols-3 gap-2 mt-4">
-      <!-- Add Participant Option -->
-      <div
-        pAnimateOnScroll
-        class="animate-delay-2000"
-        enterClass="animate-enter fade-in-10 slide-in-from-b-8 animate-duration-1000"
-        leaveClass="animate-leave fade-out-0">
-        <div
-          class="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors border-2 border-dashed border-blue-200 hover:border-blue-400"
-          (click)="openAddParticipantModal()"
-          data-testid="add-participant-button">
-          <div class="relative">
-            <div class="w-8 h-8 bg-blue-100 border border-blue-200 rounded-full flex items-center justify-center">
-              <i class="fa-light fa-plus text-blue-500"></i>
-            </div>
+    <!-- Description Section -->
+    @if (meeting().agenda) {
+      <div class="mb-4" data-testid="meeting-description">
+        <lfx-expandable-text [maxHeight]="85">
+          <div class="text-sm text-gray-600 leading-relaxed">
+            <div [innerHTML]="meeting().agenda | linkify"></div>
           </div>
-          <div class="flex flex-col">
-            <div class="flex items-center gap-1 text-xs">
-              <span class="text-sm text-blue-600 font-medium">Add Guests</span>
+        </lfx-expandable-text>
+      </div>
+    }
+
+    <!-- Three Column Info Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-4 py-4 border-y border-gray-200 mb-4" data-testid="meeting-info-cards">
+      <!-- Attendees Card -->
+      <div class="bg-gray-50 rounded-lg p-3 space-y-2" data-testid="attendees-card">
+        <div class="flex items-center gap-2 text-xs text-gray-500">
+          <i class="fa-light fa-users text-gray-400"></i>
+          <span>Attendees</span>
+        </div>
+        <div class="space-y-2">
+          <div class="flex items-center justify-between text-sm">
+            <span>{{ meeting().participants_accepted_count || 0 }} of {{ meetingParticipantCount() }} attending</span>
+            <span class="text-xs text-gray-500">{{ attendancePercentage() }}%</span>
+          </div>
+          <!-- Progress Bar -->
+          <div class="w-full bg-gray-200 rounded-full h-1.5">
+            <div class="h-1.5 rounded-full transition-all duration-300" [class]="attendanceBarColor()" [style.width.%]="attendancePercentage()"></div>
+          </div>
+          <!-- Response Breakdown -->
+          <div class="flex items-center justify-between text-xs text-gray-500">
+            <div class="flex items-center gap-1">
+              <i class="fa-light fa-check-circle text-green-500"></i>
+              <span>{{ meeting().participants_accepted_count || 0 }} Yes</span>
             </div>
-            <span class="text-xs text-blue-500">Click to add new guests</span>
+            <div class="flex items-center gap-1">
+              <i class="fa-light fa-times-circle text-red-500"></i>
+              <span>{{ meeting().participants_declined_count || 0 }} No</span>
+            </div>
+            <div class="flex items-center gap-1">
+              <i class="fa-light fa-question-circle text-amber-500"></i>
+              <span>{{ meeting().participants_pending_count || 0 }} Maybe</span>
+            </div>
           </div>
         </div>
       </div>
 
-      @for (participant of participants(); track participant.id) {
+      <!-- Resources Card -->
+      <div class="bg-gray-50 rounded-lg p-3 space-y-2" data-testid="resources-card">
+        <div class="flex items-center gap-2 text-xs text-gray-500">
+          <i class="fa-light fa-paperclip text-gray-400"></i>
+          <span>Resources</span>
+        </div>
+        <div class="space-y-1">
+          <div class="flex items-center justify-between text-sm">
+            <span>{{ totalResourcesCount() }} items</span>
+            <div class="flex items-center gap-2 text-xs text-gray-500">
+              <i class="fa-light fa-file text-gray-400"></i>
+              <span>{{ attachments().length }}</span>
+              <i class="fa-light fa-link text-gray-400"></i>
+              <span>{{ importantLinks().length }}</span>
+            </div>
+          </div>
+          @if (attachments().length > 0 || importantLinks().length > 0) {
+            <div class="text-xs text-gray-500">{{ attachments().length }} files, {{ importantLinks().length }} links</div>
+          }
+        </div>
+      </div>
+
+      <!-- Details Card -->
+      <div class="bg-gray-50 rounded-lg p-3 space-y-2" data-testid="details-card">
+        <div class="flex items-center gap-2 text-xs text-gray-500">
+          <i class="fa-light fa-clock text-gray-400"></i>
+          <span>Details</span>
+        </div>
+        <div class="space-y-1">
+          @if (meeting().duration) {
+            <div class="text-sm">{{ meeting().duration }}m duration</div>
+          }
+          <div class="text-xs text-gray-500">{{ enabledFeaturesCount() }} features enabled</div>
+          <div class="text-xs text-gray-500">Updated {{ meeting().created_at | date: 'MMM d, y' }}</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Feature Badges -->
+    <div class="flex flex-wrap gap-2 mb-4" data-testid="feature-badges">
+      @if (meeting().recording_enabled) {
+        <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-blue-50 text-blue-700" pTooltip="Meeting recording is enabled">
+          <i class="fa-light fa-video"></i>
+          Recording
+        </div>
+      }
+      @if (meeting().youtube_enabled) {
         <div
-          pAnimateOnScroll
-          class="animate-delay-2000"
-          enterClass="animate-enter fade-in-10 slide-in-from-b-8 animate-duration-1000"
-          leaveClass="animate-leave fade-out-0">
-          <div
-            class="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors"
-            [ngClass]="{ 'gap-3': !pastMeeting() }"
-            (click)="onParticipantEdit(participant, $event)"
-            [attr.data-testid]="'participant-' + participant.id">
-            @if (pastMeeting()) {
-              @if (participant.attended) {
-                <i class="fa-light fa-check-circle text-green-500" pTooltip="Attended"></i>
-              } @else if (participant.invite_accepted && !participant.attended) {
-                <i class="fa-light fa-times-circle text-amber-400" pTooltip="Accepted & Not Attended"></i>
-              } @else if (participant.invite_accepted === false) {
-                <i class="fa-light fa-times-circle text-red-500" pTooltip="Declined Attendance"></i>
-              } @else {
-                <i class="fa-light fa-circle-question text-gray-400" pTooltip="No Response"></i>
+          class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-red-50 text-red-700"
+          pTooltip="Automatically upload meeting recording to YouTube">
+          <i class="fa-light fa-upload"></i>
+          YouTube Upload
+        </div>
+      }
+      @if (meeting().transcripts_enabled) {
+        <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-purple-50 text-purple-700" pTooltip="Meeting transcripts are enabled">
+          <i class="fa-light fa-file-lines"></i>
+          Transcripts
+        </div>
+      }
+      @if (meeting().zoom_ai_enabled) {
+        <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-green-50 text-green-700" pTooltip="AI summary is enabled">
+          <i class="fa-light fa-microchip-ai"></i>
+          AI Summary
+        </div>
+      }
+    </div>
+
+    <!-- Resources Section -->
+    @if (attachments().length > 0 || importantLinks().length > 0) {
+      <div class="space-y-2 mb-4" data-testid="resources-section">
+        <div class="flex items-center gap-2 text-xs text-gray-500">
+          <i class="fa-light fa-paperclip text-gray-400"></i>
+          <span>Resources</span>
+        </div>
+        <div class="flex flex-wrap gap-2">
+          @for (attachment of attachments(); track attachment.id) {
+            <a
+              [href]="attachment.file_url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-xs rounded transition-colors"
+              [title]="attachment.file_name + ' (' + (attachment.file_size || 0 | fileSize) + ')'">
+              <i [class]="attachment.mime_type || '' | fileTypeIcon"></i>
+              <span class="truncate max-w-[120px]">{{
+                attachment.file_name.length > 15 ? attachment.file_name.substring(0, 15) + '...' : attachment.file_name
+              }}</span>
+            </a>
+          }
+          @for (link of importantLinks(); track link.url) {
+            <a
+              [href]="link.url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-xs rounded transition-colors"
+              [title]="link.url">
+              <i class="fa-light fa-link"></i>
+              {{ link.domain }}
+            </a>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- Associated Committees -->
+    @if (meeting().meeting_committees && meeting().meeting_committees!.length > 0) {
+      <div class="flex items-start gap-2 mb-4">
+        <i class="fa-light fa-people-group text-gray-400 mt-0.5"></i>
+        <div class="flex flex-wrap gap-1">
+          <div class="text-sm text-gray-600">
+            @for (committee of meeting().meeting_committees!; track committee.id; let isLast = $last) {
+              <a
+                [routerLink]="['/project', project()?.slug, 'committees', committee.id]"
+                class="text-primary hover:text-primary-600 hover:underline"
+                [title]="committee.committee_total_members + ' members'">
+                {{ committee.name }}
+              </a>
+              @if (!isLast) {
+                <span>, </span>
               }
-            } @else {
-              <div class="relative">
-                <lfx-avatar [label]="participant.first_name" styleClass="bg-blue-50 border border-gray-200" shape="circle"></lfx-avatar>
-                <div class="absolute -top-2 -right-1.5">
-                  @if (participant.invite_accepted === false) {
-                    <i class="fa-solid text-xs fa-times-circle text-red-500" pTooltip="Declined Invite"></i>
-                  } @else if (participant.invite_accepted === null) {
-                    <i class="fa-solid text-xs fa-circle-question text-amber-400" pTooltip="Pending Response"></i>
+            }
+          </div>
+        </div>
+      </div>
+    }
+
+    <!-- Bottom Actions -->
+    <div class="flex items-center justify-between pt-2" data-testid="meeting-actions">
+      <lfx-button
+        icon="fa-light fa-users"
+        size="small"
+        severity="secondary"
+        [label]="participantsLabel()"
+        data-testid="view-guests-button"
+        (click)="onParticipantsToggle($event)">
+      </lfx-button>
+    </div>
+
+    <!-- Meeting Participants -->
+    @if (showParticipants()) {
+      <div class="border-t border-gray-200 pt-4 mt-4" data-testid="participants-section">
+        @if (participantsLoading()) {
+          <div class="flex items-center justify-center py-8">
+            <i class="fa-light fa-circle-notch fa-spin text-2xl text-blue-600"></i>
+          </div>
+        }
+
+        @if (!participantsLoading()) {
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            <!-- Add Participant Option -->
+            <div
+              class="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors border-2 border-dashed border-blue-200 hover:border-blue-400"
+              (click)="openAddParticipantModal()"
+              data-testid="add-participant-button">
+              <div class="w-8 h-8 bg-blue-100 border border-blue-200 rounded-full flex items-center justify-center">
+                <i class="fa-light fa-plus text-blue-500"></i>
+              </div>
+              <div class="flex flex-col min-w-0 flex-1">
+                <span class="text-sm text-blue-600 font-medium">Add Guests</span>
+                <span class="text-xs text-blue-500">Click to add new guests</span>
+              </div>
+            </div>
+
+            @for (participant of participants(); track participant.id) {
+              <div
+                class="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors"
+                (click)="onParticipantEdit(participant, $event)"
+                [attr.data-testid]="'participant-' + participant.id">
+                @if (pastMeeting()) {
+                  @if (participant.attended) {
+                    <i class="fa-light fa-check-circle text-green-500" pTooltip="Attended"></i>
+                  } @else if (participant.invite_accepted && !participant.attended) {
+                    <i class="fa-light fa-times-circle text-amber-400" pTooltip="Accepted & Not Attended"></i>
+                  } @else if (participant.invite_accepted === false) {
+                    <i class="fa-light fa-times-circle text-red-500" pTooltip="Declined Attendance"></i>
                   } @else {
-                    <i class="fa-solid text-xs fa-check-circle text-green-500" pTooltip="Invite Accepted"></i>
+                    <i class="fa-light fa-circle-question text-gray-400" pTooltip="No Response"></i>
                   }
+                } @else {
+                  <div class="relative">
+                    <lfx-avatar [label]="participant.first_name" styleClass="bg-blue-50 border border-gray-200 w-8 h-8" shape="circle"></lfx-avatar>
+                    <div class="absolute -top-1 -right-1">
+                      @if (participant.invite_accepted === false) {
+                        <i class="fa-solid text-xs fa-times-circle text-red-500" pTooltip="Declined Invite"></i>
+                      } @else if (participant.invite_accepted === null) {
+                        <i class="fa-solid text-xs fa-circle-question text-amber-400" pTooltip="Pending Response"></i>
+                      } @else {
+                        <i class="fa-solid text-xs fa-check-circle text-green-500" pTooltip="Invite Accepted"></i>
+                      }
+                    </div>
+                  </div>
+                }
+                <div class="flex flex-col min-w-0 flex-1">
+                  <div class="flex items-center gap-1 text-xs">
+                    @if (participant.type === 'committee') {
+                      <i class="fa-light fa-people-group text-green-500" pTooltip="Committee"></i>
+                    } @else {
+                      <i class="fa-light fa-user text-blue-500" pTooltip="Individual"></i>
+                    }
+                    <span class="text-sm text-gray-900 truncate">{{ participant.first_name }} {{ participant.last_name }}</span>
+                  </div>
+                  <span class="text-xs text-gray-500 truncate">{{ participant.email }}</span>
                 </div>
               </div>
             }
-            <div class="flex flex-col">
-              <div class="flex items-center gap-1 text-xs">
-                @if (participant.type === 'committee') {
-                  <i class="flex items-center fa-light fa-people-group text-green-500" pTooltip="Committee"></i>
-                } @else {
-                  <i class="flex items-center fa-light fa-user text-blue-500" pTooltip="Individual"></i>
-                }
-                <span class="text-sm text-gray-600">{{ participant.first_name }} {{ participant.last_name }}</span>
-              </div>
-              <span class="text-xs text-gray-500">{{ participant.email }}</span>
-            </div>
           </div>
-        </div>
-      }
-    </div>
-  }
-}
+        }
+      </div>
+    }
 
-<!-- Confirmation Dialog -->
-<p-confirmDialog></p-confirmDialog>
+    <!-- Confirmation Dialog -->
+    <p-confirmDialog></p-confirmDialog>
+  </div>
+</div>

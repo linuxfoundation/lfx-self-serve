@@ -72,19 +72,16 @@
               <!-- Meetings Card Grid -->
               <div class="grid grid-cols-1 gap-4">
                 @for (meeting of filteredMeetings(); track meeting.id) {
-                  <div class="bg-white rounded-lg border border-gray-200 shadow-sm hover:shadow-md transition-shadow h-full">
-                    <div class="p-6">
-                      <lfx-meeting-card
-                        [meetingInput]="meeting"
-                        (meetingUpdated)="refreshMeetings()"
-                        (meetingDeleted)="refreshMeetings()"
-                        [pastMeeting]="meetingListView() === 'past'"
-                        pAnimateOnScroll
-                        class="animate-delay-2000"
-                        enterClass="animate-enter fade-in-10 slide-in-from-b-8 animate-duration-1000"
-                        leaveClass="animate-leave fade-out-0"></lfx-meeting-card>
-                    </div>
-                  </div>
+                  <lfx-meeting-card
+                    [meetingInput]="meeting"
+                    (meetingUpdated)="refreshMeetings()"
+                    (meetingDeleted)="refreshMeetings()"
+                    [pastMeeting]="meetingListView() === 'past'"
+                    [showBorder]="true"
+                    pAnimateOnScroll
+                    class="animate-delay-2000"
+                    enterClass="animate-enter fade-in-10 slide-in-from-b-8 animate-duration-1000"
+                    leaveClass="animate-leave fade-out-0"></lfx-meeting-card>
                 }
               </div>
             }
