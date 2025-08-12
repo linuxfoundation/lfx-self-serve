@@ -22,6 +22,9 @@ import { MenuComponent } from '../menu/menu.component';
   templateUrl: './header.component.html',
   styleUrl: './header.component.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
+  // TODO: Remove ngSkipHydration when upgrading to Angular 20 - zoneless hydration compatibility
+  // https://github.com/angular/angular/issues/50543
+  host: { ngSkipHydration: 'true' },
 })
 export class HeaderComponent {
   private readonly router = inject(Router);

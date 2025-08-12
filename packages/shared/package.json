@@ -41,6 +41,6 @@
     "typescript": "5.8.3"
   },
   "dependencies": {
-    "@fullcalendar/core": "^6.1.18"
+    "@fullcalendar/core": "^6.1.19"
   }
 }
