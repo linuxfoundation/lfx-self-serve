@@ -112,5 +112,13 @@ lfx-pcc-v3/
 - **Use data-testid naming convention** - `[section]-[component]-[element]` for hierarchical structure
 - **Test responsive behavior** - validate mobile, tablet, and desktop viewports appropriately
 - When running tests to validate UI tests, use reporter=list
-
+- Follow Angular commit conventions: `type(scope): description`
+- Valid types: feat, fix, docs, style, refactor, perf, test, build, ci, chore, revert
+- Scope should be lowercase and describe the affected area (e.g., auth, ui, api, docs) and follow the angular scope conventions
+- Use present tense, imperative mood: "add feature" not "added feature"
+- Examples:
+  - `feat(auth): add OAuth2 integration`
+  - `fix(ui): resolve mobile button alignment`
 - All commits and pull requests need to be associated to a JIRA ticket. If there isn't one, we need to create it and reference it moving forward.
+- Branch names should be following the commit types (feat,fix,docs, etc) followed by the JIRA ticket number. i.e; feat/LFXV2-123 or ci/LFXV2-456
+- PR titles must also follow a similar format as conventional commits - `type(scope): description`. The scope has to follow the angular config for conventional commit and not include the JIRA ticket in the title.
