@@ -5,13 +5,11 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { Router, RouterLink } from '@angular/router';
+import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
-import { TableComponent } from '@components/table/table.component';
 import { Committee } from '@lfx-pcc/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
@@ -23,6 +21,7 @@ import { BehaviorSubject, of } from 'rxjs';
 import { debounceTime, distinctUntilChanged, startWith, switchMap, tap } from 'rxjs/operators';
 
 import { CommitteeFormComponent } from '../components/committee-form/committee-form.component';
+import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
 import { UpcomingCommitteeMeetingComponent } from '../components/upcoming-committee-meeting/upcoming-committee-meeting.component';
 
 @Component({
@@ -30,10 +29,8 @@ import { UpcomingCommitteeMeetingComponent } from '../components/upcoming-commit
   imports: [
     CommonModule,
     ReactiveFormsModule,
-    RouterLink,
     CardComponent,
-    MenuComponent,
-    TableComponent,
+    CommitteeTableComponent,
     InputTextComponent,
     SelectComponent,
     ButtonComponent,
@@ -62,9 +59,11 @@ export class CommitteeDashboardComponent {
   public rows: number;
   public searchForm: FormGroup;
   public categoryFilter: WritableSignal<string | null>;
+  public votingStatusFilter: WritableSignal<string | null>;
   public committeesLoading: WritableSignal<boolean>;
   public committees: Signal<Committee[]>;
   public categories: Signal<{ label: string; value: string | null }[]>;
+  public votingStatusOptions: Signal<{ label: string; value: string | null }[]>;
   public filteredCommittees: Signal<Committee[]>;
   public totalRecords: Signal<number>;
   public menuItems: MenuItem[];
@@ -72,6 +71,11 @@ export class CommitteeDashboardComponent {
   public refresh: BehaviorSubject<void>;
   private searchTerm: Signal<string>;
   private dialogRef: DynamicDialogRef | undefined;
+
+  // Statistics calculations
+  public totalCommittees: Signal<number> = computed(() => this.committees().length);
+  public publicCommittees: Signal<number> = computed(() => this.committees().filter((c) => c.public_enabled).length);
+  public activeVoting: Signal<number> = computed(() => this.committees().filter((c) => c.enable_voting).length);
 
   public constructor() {
     // Initialize all class variables
@@ -85,8 +89,10 @@ export class CommitteeDashboardComponent {
     this.committees = this.initializeCommittees();
     this.searchForm = this.initializeSearchForm();
     this.categoryFilter = signal<string | null>(null);
+    this.votingStatusFilter = signal<string | null>(null);
     this.searchTerm = this.initializeSearchTerm();
     this.categories = this.initializeCategories();
+    this.votingStatusOptions = this.initializeVotingStatusOptions();
     this.filteredCommittees = this.initializeFilteredCommittees();
     this.totalRecords = this.initializeTotalRecords();
     this.menuItems = this.initializeMenuItems();
@@ -104,26 +110,16 @@ export class CommitteeDashboardComponent {
     this.first.set(0);
   }
 
-  public onSearch(): void {
-    // Reset to first page when searching
+  public onVotingStatusChange(value: string | null): void {
+    // Update the voting status filter signal
+    this.votingStatusFilter.set(value);
+    // Reset to first page when changing filter
     this.first.set(0);
   }
 
-  public formatDate(dateString: string): string {
-    if (!dateString) return '-';
-    const date = new Date(dateString);
-    return date.toLocaleDateString('en-US', {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    });
-  }
-
-  // Toggle action menu for a committee
-  public toggleActionMenu(event: Event, committee: Committee, menuComponent: MenuComponent): void {
-    event.stopPropagation();
-    this.selectedCommittee.set(committee);
-    menuComponent.toggle(event);
+  public onSearch(): void {
+    // Reset to first page when searching
+    this.first.set(0);
   }
 
   // Dialog methods for create/edit
@@ -143,6 +139,22 @@ export class CommitteeDashboardComponent {
         onCancel: () => this.dialogRef?.close(),
       },
     });
+  }
+
+  // Committee table event handlers
+  public onEditCommittee(committee: Committee): void {
+    this.selectedCommittee.set(committee);
+    this.editCommittee();
+  }
+
+  public onViewCommittee(committee: Committee): void {
+    this.selectedCommittee.set(committee);
+    this.viewCommittee();
+  }
+
+  public onDeleteCommittee(committee: Committee): void {
+    this.selectedCommittee.set(committee);
+    this.deleteCommittee();
   }
 
   // Action handlers (use selectedCommittee)
@@ -218,6 +230,7 @@ export class CommitteeDashboardComponent {
     return new FormGroup({
       search: new FormControl<string>(''),
       category: new FormControl<string | null>(null),
+      votingStatus: new FormControl<string | null>(null),
     });
   }
 
@@ -240,8 +253,41 @@ export class CommitteeDashboardComponent {
   private initializeCategories(): Signal<{ label: string; value: string | null }[]> {
     return computed(() => {
       const committeesData = this.committees();
-      const uniqueCategories = [...new Set(committeesData.map((c) => c.category).filter(Boolean))];
-      return [{ label: 'All Categories', value: null }, ...uniqueCategories.map((cat) => ({ label: cat, value: cat }))];
+
+      // Count committees by category
+      const categoryCounts = new Map<string, number>();
+      committeesData.forEach((committee) => {
+        if (committee.category) {
+          categoryCounts.set(committee.category, (categoryCounts.get(committee.category) || 0) + 1);
+        }
+      });
+
+      // Get unique categories and sort them
+      const uniqueCategories = Array.from(categoryCounts.keys()).sort((a, b) => a.localeCompare(b));
+
+      // Create options with counts
+      const categoryOptions = uniqueCategories.map((cat) => ({
+        label: `${cat} (${categoryCounts.get(cat)})`,
+        value: cat,
+      }));
+
+      return [{ label: 'All Committee Types', value: null }, ...categoryOptions];
+    });
+  }
+
+  private initializeVotingStatusOptions(): Signal<{ label: string; value: string | null }[]> {
+    return computed(() => {
+      const committeesData = this.committees();
+
+      // Count committees by voting status
+      const votingEnabledCount = committeesData.filter((c) => c.enable_voting === true).length;
+      const votingDisabledCount = committeesData.filter((c) => c.enable_voting === false).length;
+
+      return [
+        { label: 'All Voting Status', value: null },
+        { label: `Voting Enabled (${votingEnabledCount})`, value: 'enabled' },
+        { label: `Voting Disabled (${votingDisabledCount})`, value: 'disabled' },
+      ];
     });
   }
 
@@ -264,6 +310,16 @@ export class CommitteeDashboardComponent {
       const category = this.categoryFilter();
       if (category) {
         filtered = filtered.filter((committee) => committee.category === category);
+      }
+
+      // Apply voting status filter
+      const votingStatus = this.votingStatusFilter();
+      if (votingStatus) {
+        if (votingStatus === 'enabled') {
+          filtered = filtered.filter((committee) => committee.enable_voting === true);
+        } else if (votingStatus === 'disabled') {
+          filtered = filtered.filter((committee) => committee.enable_voting === false);
+        }
       }
 
       return filtered;

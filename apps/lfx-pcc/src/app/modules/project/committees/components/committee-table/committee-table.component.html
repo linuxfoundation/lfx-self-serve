@@ -1,0 +1,163 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="shadow-sm overflow-hidden">
+  <lfx-table [value]="organizedCommittees()" styleClass="committee-table">
+    <!-- Header template -->
+    <ng-template #header>
+      <tr class="border-b border-gray-100 bg-gray-50">
+        <th class="text-left px-4 py-3">
+          <span class="text-xs font-medium text-gray-700">Committee Name</span>
+        </th>
+        <th class="text-left px-4 py-3">
+          <span class="text-xs font-medium text-gray-700">Description</span>
+        </th>
+        <th class="text-left px-4 py-3">
+          <span class="text-xs font-medium text-gray-700">Type</span>
+        </th>
+        <th class="text-center px-4 py-3">
+          <span class="text-xs font-medium text-gray-700">Visibility</span>
+        </th>
+        <th class="text-center px-4 py-3">
+          <span class="text-xs font-medium text-gray-700">Voting</span>
+        </th>
+        <th class="text-center px-4 py-3">
+          <span class="text-xs font-medium text-gray-700">Members</span>
+        </th>
+        <th class="text-left px-4 py-3">
+          <span class="text-xs font-medium text-gray-700">Last Updated</span>
+        </th>
+        <th class="text-center px-4 py-3">
+          <span class="text-xs font-medium text-gray-700">Actions</span>
+        </th>
+      </tr>
+    </ng-template>
+
+    <!-- Body template -->
+    <ng-template #body let-committee>
+      <tr class="border-b border-gray-50 hover:bg-gray-50/50 transition-colors" [attr.data-testid]="'committee-table-row-' + committee.id">
+        <!-- Name column with hierarchy indicator -->
+        <td class="px-4 py-3">
+          <div class="flex items-center gap-2">
+            @if (committee.level === 1) {
+              <div class="flex items-center gap-1">
+                <div class="w-4 h-px bg-gray-300"></div>
+                <i class="fa-light fa-corner-down-right text-[10px] text-gray-400"></i>
+              </div>
+            }
+            <div>
+              <a
+                [routerLink]="['/project', project()?.slug, 'committees', committee.id]"
+                class="text-sm font-medium text-gray-900 hover:text-blue-600 transition-colors">
+                {{ committee.name }}
+              </a>
+              @if (committee.level === 1) {
+                <div class="text-[10px] text-gray-500 mt-0.5">Sub-committee</div>
+              }
+            </div>
+          </div>
+        </td>
+
+        <!-- Description column -->
+        <td class="px-4 py-3 max-w-[200px]">
+          <div class="text-xs text-gray-600 line-clamp-2">
+            {{ committee.description || '-' }}
+          </div>
+        </td>
+
+        <!-- Type column -->
+        <td class="px-4 py-3">
+          <span class="text-xs font-medium {{ committee.category | committeeTypeColor }}">{{ committee.category }}</span>
+        </td>
+
+        <!-- Visibility column -->
+        <td class="px-4 py-3 text-center">
+          @if (committee.public_enabled) {
+            <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 text-blue-700 border border-blue-200">
+              <i class="fa-light fa-eye text-[10px]"></i>
+              <span class="text-[10px] font-medium">Public</span>
+            </div>
+          } @else {
+            <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-200">
+              <i class="fa-light fa-eye-slash text-[10px]"></i>
+              <span class="text-[10px] font-medium">Private</span>
+            </div>
+          }
+        </td>
+
+        <!-- Voting column -->
+        <td class="px-4 py-3 text-center">
+          @if (committee.enable_voting) {
+            <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-green-100 text-green-700 border border-green-200">
+              <i class="fa-light fa-vote-yea text-[10px]"></i>
+              <span class="text-[10px] font-medium">Enabled</span>
+            </div>
+          } @else {
+            <div class="inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-gray-100 text-gray-700 border border-gray-200">
+              <i class="fa-light fa-xmark text-[10px]"></i>
+              <span class="text-[10px] font-medium">Disabled</span>
+            </div>
+          }
+        </td>
+
+        <!-- Members column -->
+        <td class="px-4 py-3 text-center">
+          <span class="text-sm font-medium text-gray-900">{{ committee.total_members || 0 }}</span>
+        </td>
+
+        <!-- Last Updated column -->
+        <td class="px-4 py-3">
+          <span class="text-xs text-gray-600">{{ committee.updated_at ? (committee.updated_at | date: 'MMM d, y') : '-' }}</span>
+        </td>
+
+        <!-- Actions column -->
+        <td class="px-4 py-3">
+          <div class="flex items-center justify-center gap-1">
+            <lfx-button
+              icon="fa-light fa-edit"
+              [text]="true"
+              [rounded]="true"
+              size="small"
+              severity="secondary"
+              styleClass="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
+              (onClick)="onEdit(committee)"
+              [attr.data-testid]="'committee-edit-' + committee.id" />
+            <lfx-button
+              icon="fa-light fa-users"
+              [text]="true"
+              [rounded]="true"
+              size="small"
+              severity="secondary"
+              styleClass="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
+              (onClick)="onView(committee)"
+              [attr.data-testid]="'committee-members-' + committee.id" />
+            <lfx-button
+              icon="fa-light fa-ellipsis"
+              [text]="true"
+              [rounded]="true"
+              size="small"
+              severity="secondary"
+              styleClass="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
+              (onClick)="toggleCommitteeActionMenu($event, committee, actionMenu)"
+              [attr.data-testid]="'committee-more-' + committee.id" />
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+
+    <lfx-menu #actionMenu [model]="committeeActionMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+
+    <!-- Empty message template -->
+    <ng-template #emptymessage>
+      <tr>
+        <td colspan="8" class="text-center py-8">
+          <div class="flex flex-col items-center gap-2">
+            <i class="fa-light fa-users text-4xl text-gray-400"></i>
+            <p class="text-gray-600">No committees found</p>
+            <p class="text-sm text-gray-500">Try adjusting your search or filters</p>
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+  </lfx-table>
+</div>

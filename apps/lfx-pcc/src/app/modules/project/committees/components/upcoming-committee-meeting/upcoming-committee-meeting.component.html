@@ -26,20 +26,10 @@
         }
       </div>
     }
-
-    <div class="flex justify-start mt-2">
-      <lfx-button
-        label="Join Meeting"
-        icon="fa-light fa-video"
-        severity="secondary"
-        size="small"
-        [routerLink]="['/project', project()?.slug, 'meetings', upcomingMeeting()!.id]">
-      </lfx-button>
-    </div>
   </div>
 } @else {
   <div class="flex flex-col items-center text-center py-4">
-    <i class="fa-light fa-calendar text-2xl text-gray-400 mb-2"></i>
+    <i class="fa-light fa-calendar text-xl text-gray-400 mb-2"></i>
     <p class="text-sm text-gray-600 mb-2">No upcoming meetings</p>
     <p class="text-xs text-gray-500">No committee meetings scheduled</p>
   </div>

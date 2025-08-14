@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -11,10 +12,12 @@ import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { COMMITTEE_CATEGORIES } from '@lfx-pcc/shared/constants';
+import { Committee } from '@lfx-pcc/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { map } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-form',
@@ -44,6 +47,9 @@ export class CommitteeFormComponent {
 
   // Committee category options
   public categoryOptions = COMMITTEE_CATEGORIES;
+
+  // Parent committee options
+  public parentCommitteeOptions: Signal<{ label: string; value: string | null }[]> = this.initializeParentCommitteeOptions();
 
   public constructor() {
     // Initialize form with data when component is created
@@ -170,11 +176,42 @@ export class CommitteeFormComponent {
     }
   }
 
+  private initializeParentCommitteeOptions(): Signal<{ label: string; value: string | null }[]> {
+    const projectId = this.config.data?.projectId || this.projectService.project()?.uid;
+    if (!projectId) {
+      return signal([{ label: 'No Parent Committee', value: null }]);
+    }
+
+    return toSignal(
+      this.committeeService.getCommitteesByProject(projectId).pipe(
+        map((committees: Committee[]) => {
+          // Filter to only top-level committees (no parent_uid)
+          const topLevelCommittees = committees.filter((committee) => !committee.parent_uid);
+
+          // If editing, exclude the current committee
+          const currentCommitteeId = this.committee()?.id;
+          const availableCommittees = currentCommitteeId ? topLevelCommittees.filter((committee) => committee.id !== currentCommitteeId) : topLevelCommittees;
+
+          // Transform to dropdown options
+          const options = availableCommittees.map((committee) => ({
+            label: committee.name,
+            value: committee.id,
+          }));
+
+          // Add "No Parent Committee" option at the beginning
+          return [{ label: 'No Parent Committee', value: null }, ...options];
+        })
+      ),
+      { initialValue: [{ label: 'No Parent Committee', value: null }] }
+    );
+  }
+
   private createCommitteeFormGroup(committee?: any): FormGroup {
     return new FormGroup({
       name: new FormControl(committee?.name || '', [Validators.required]),
       category: new FormControl(committee?.category || '', [Validators.required]),
       description: new FormControl(committee?.description || ''),
+      parent_uid: new FormControl(committee?.parent_uid || null),
       business_email_required: new FormControl(committee?.business_email_required || false),
       enable_voting: new FormControl(committee?.enable_voting || false),
       is_audit_enabled: new FormControl(committee?.is_audit_enabled || false),

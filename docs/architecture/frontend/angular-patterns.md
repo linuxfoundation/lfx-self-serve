@@ -161,6 +161,56 @@ Modern Angular template syntax used throughout:
 {{ signalValue() }}
 ```
 
+## 🔄 Data Transformation Best Practices
+
+### Use Pipes Instead of Methods
+
+For data transformation in templates, always use Angular pipes instead of component methods:
+
+```typescript
+// ❌ BAD: Using methods in templates
+@Component({
+  template: `<span>{{ formatDate(item.created_at) }}</span>`,
+})
+export class BadComponent {
+  formatDate(date: string): string {
+    return new Date(date).toLocaleDateString();
+  }
+}
+
+// ✅ GOOD: Using pipes in templates
+@Component({
+  template: `<span>{{ item.created_at | date: 'MMM d, y' }}</span>`,
+})
+export class GoodComponent {
+  // No method needed - use Angular's built-in date pipe
+}
+```
+
+### Benefits of Using Pipes
+
+1. **Performance**: Pipes are pure by default and cached - they only re-execute when inputs change
+2. **Reusability**: Pipes can be shared across components
+3. **Testability**: Easier to unit test pipes in isolation
+4. **Separation of Concerns**: Keeps components focused on logic, not formatting
+5. **Change Detection**: Methods are called on every change detection cycle, pipes only when needed
+
+### Common Built-in Pipes
+
+```html
+<!-- Date formatting -->
+{{ dateValue | date: 'MMM d, y' }} {{ dateValue | date: 'MMM d, yyyy @ h:mm a' }}
+
+<!-- Number formatting -->
+{{ numberValue | number: '1.2-2' }} {{ price | currency: 'USD' }}
+
+<!-- Text transformation -->
+{{ text | uppercase }} {{ text | lowercase }} {{ text | titlecase }}
+
+<!-- Array/Object manipulation -->
+{{ items | slice: 0:10 }} {{ object | json }}
+```
+
 ## 🎨 Component Input/Output Patterns
 
 ### Input Signals

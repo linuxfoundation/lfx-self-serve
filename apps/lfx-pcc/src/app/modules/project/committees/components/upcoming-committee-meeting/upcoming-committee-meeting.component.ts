@@ -6,7 +6,6 @@ import { HttpParams } from '@angular/common/http';
 import { Component, computed, inject, Injector, input, OnInit, runInInjectionContext, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
-import { ButtonComponent } from '@components/button/button.component';
 import { Meeting } from '@lfx-pcc/shared/interfaces';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
@@ -17,7 +16,7 @@ import { map, of } from 'rxjs';
 @Component({
   selector: 'lfx-upcoming-committee-meeting',
   standalone: true,
-  imports: [CommonModule, RouterLink, ButtonComponent, MeetingTimePipe, TooltipModule],
+  imports: [CommonModule, RouterLink, MeetingTimePipe, TooltipModule],
   templateUrl: './upcoming-committee-meeting.component.html',
   styleUrl: './upcoming-committee-meeting.component.scss',
 })

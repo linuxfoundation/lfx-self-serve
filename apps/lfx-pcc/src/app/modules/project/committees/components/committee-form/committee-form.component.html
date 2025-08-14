@@ -36,6 +36,21 @@
       <p class="mt-1 text-sm text-red-600" *ngIf="form().get('category')?.errors?.['required'] && form().get('category')?.touched">Category is required</p>
     </div>
 
+    <!-- Parent Committee -->
+    <div>
+      <label for="parent-committee" class="block text-sm font-medium text-gray-700 mb-1"> Parent Committee (Optional) </label>
+      <lfx-select
+        size="small"
+        [form]="form()"
+        control="parent_uid"
+        [options]="parentCommitteeOptions()"
+        placeholder="Select a parent committee"
+        styleClass="w-full"
+        id="parent-committee"
+        [showClear]="true"></lfx-select>
+      <p class="mt-1 text-sm text-gray-500">Select a parent committee to create a subcommittee. Leave empty for top-level committees.</p>
+    </div>
+
     <!-- Description -->
     <div>
       <label for="committee-description" class="block text-sm font-medium text-gray-700 mb-1"> Description </label>

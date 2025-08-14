@@ -68,39 +68,6 @@
               [membersLoading]="membersLoading()"
               (refresh)="refreshMembers()"></lfx-committee-members>
           }
-
-          <!-- Subcommittees Section -->
-          @if (committee()?.subcommittees && (committee()?.subcommittees)!.length > 0) {
-            <lfx-card title="Subcommittees">
-              <lfx-table [value]="committee()?.subcommittees!" [paginator]="false">
-                <ng-template #header>
-                  <tr>
-                    <th class="text-sm font-sans text-gray-500">Name</th>
-                    <th class="text-sm font-sans text-gray-500">Category</th>
-                    <th class="text-sm font-sans text-gray-500">Members</th>
-                    <th class="text-sm font-sans text-gray-500">Voting Reps</th>
-                    <th class="text-center text-sm font-sans text-gray-500">Actions</th>
-                  </tr>
-                </ng-template>
-
-                <ng-template #body let-subcommittee>
-                  <tr>
-                    <td class="font-medium">{{ subcommittee.name }}</td>
-                    <td>
-                      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
-                        {{ subcommittee.category }}
-                      </span>
-                    </td>
-                    <td class="text-center">{{ subcommittee.total_members }}</td>
-                    <td class="text-center">{{ subcommittee.total_voting_reps }}</td>
-                    <td class="text-center">
-                      <button class="text-blue-600 hover:text-blue-800 text-sm">View Details</button>
-                    </td>
-                  </tr>
-                </ng-template>
-              </lfx-table>
-            </lfx-card>
-          }
         </div>
 
         <!-- Right Column - Settings & Stats -->
@@ -130,11 +97,6 @@
               <div class="flex justify-between items-center py-2 border-t border-gray-100">
                 <span class="text-gray-600">Voting Representatives</span>
                 <span class="font-semibold text-gray-900">{{ committee()?.total_voting_reps || 0 }}</span>
-              </div>
-
-              <div class="flex justify-between items-center py-2 border-t border-gray-100">
-                <span class="text-gray-600">Subcommittees</span>
-                <span class="font-semibold text-gray-900">{{ committee()?.subcommittees?.length || 0 }}</span>
               </div>
 
               @if (committee()?.committee_website) {

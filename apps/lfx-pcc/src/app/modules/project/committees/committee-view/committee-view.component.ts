@@ -2,13 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, Injector, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
-import { TableComponent } from '@components/table/table.component';
 import { Committee, CommitteeMember } from '@lfx-pcc/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
@@ -27,7 +26,6 @@ import { UpcomingCommitteeMeetingComponent } from '../components/upcoming-commit
     CommonModule,
     CardComponent,
     MenuComponent,
-    TableComponent,
     ButtonComponent,
     CommitteeMembersComponent,
     UpcomingCommitteeMeetingComponent,
@@ -46,7 +44,6 @@ export class CommitteeViewComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
-  private readonly injector = inject(Injector);
 
   // Class variables with types
   private dialogRef: DynamicDialogRef | undefined;
