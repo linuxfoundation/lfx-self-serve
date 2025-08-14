@@ -315,14 +315,8 @@ test.describe('Homepage - Robust Tests', () => {
       // Search should be visible and functional
       await expect(page.locator('[data-testid="hero-search-container"]')).toBeVisible();
 
-      // Header elements should adapt to mobile
-      const viewport = page.viewportSize();
-      const isMobile = viewport && viewport.width < 768;
-
-      if (isMobile) {
-        // Search in header should be hidden on mobile
-        await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
-      }
+      // Header search should be hidden on mobile
+      await expect(page.locator('[data-testid="header-search-autocomplete"]')).toBeHidden();
 
       // Logo should still be visible
       await expect(page.getByAltText('LFX Logo')).toBeVisible();
@@ -335,8 +329,8 @@ test.describe('Homepage - Robust Tests', () => {
       await expect(page.locator('[data-testid="hero-section"]')).toBeVisible();
       await expect(page.locator('[data-testid="projects-section"]')).toBeVisible();
 
-      // Header elements should be visible on tablet (medium and up)
-      await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
+      // Header search should be visible on tablet (medium and up)
+      await expect(page.locator('[data-testid="header-search-autocomplete"]')).toBeVisible();
       await expect(page.getByAltText('LFX Logo')).toBeVisible();
     });
 
@@ -347,8 +341,8 @@ test.describe('Homepage - Robust Tests', () => {
       await expect(page.locator('[data-testid="hero-section"]')).toBeVisible();
       await expect(page.locator('[data-testid="projects-section"]')).toBeVisible();
 
-      // Header elements should be visible on desktop
-      await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
+      // Header search should be visible on desktop
+      await expect(page.locator('[data-testid="header-search-autocomplete"]')).toBeVisible();
       await expect(page.getByAltText('LFX Logo')).toBeVisible();
     });
   });

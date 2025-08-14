@@ -36,3 +36,6 @@ export * from './activity.interface';
 
 // Meeting attachment interfaces
 export * from './meeting-attachment.interface';
+
+// Dashboard interfaces
+export * from './dashboard.interface';

@@ -20,8 +20,8 @@ export class MicroserviceProxyService {
     service: keyof MicroserviceUrls,
     path: string,
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE' = 'GET',
-    data?: any,
-    params?: Record<string, any>
+    params?: Record<string, any>,
+    data?: any
   ): Promise<T> {
     try {
       if (!req.bearerToken) {

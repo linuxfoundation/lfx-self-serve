@@ -72,4 +72,14 @@
       }
     }
   }
+
+  .p-autocomplete-list-container {
+    .p-autocomplete-list {
+      .p-autocomplete-option {
+        span {
+          @apply text-ellipsis whitespace-nowrap overflow-hidden;
+        }
+      }
+    }
+  }
 }

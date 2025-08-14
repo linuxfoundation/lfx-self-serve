@@ -44,14 +44,14 @@ test.describe('Project Dashboard', () => {
       if (isMobile) {
         // On mobile: "Projects" text is completely hidden from header button
         // Search should be hidden
-        await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
+        await expect(page.locator('[data-testid="header-search-autocomplete"]')).toBeHidden();
         // Mobile search toggle should be visible
         await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();
       } else {
         // On desktop: "Projects" text is visible in header button
         await expect(page.getByTestId('header-projects-text')).toBeVisible();
         // Search should be visible
-        await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
+        await expect(page.locator('[data-testid="header-search-autocomplete"]')).toBeVisible();
         // Mobile search toggle should be hidden
         await expect(page.getByTestId('mobile-search-toggle')).toBeHidden();
       }
@@ -257,7 +257,7 @@ test.describe('Project Dashboard', () => {
 
   test.describe('Search Functionality', () => {
     test('should have working global search when visible', async ({ page }) => {
-      const searchBox = page.getByPlaceholder('Search projects...');
+      const searchBox = page.locator('[data-testid="header-search-autocomplete"] input');
       const viewport = page.viewportSize();
       const isMobile = viewport && viewport.width < 768;
 
@@ -299,7 +299,7 @@ test.describe('Project Dashboard', () => {
 
       // On mobile: "Projects" text is completely hidden from header button
       // Search bar should be hidden on mobile (responsive design)
-      await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
+      await expect(page.locator('[data-testid="header-search-autocomplete"]')).toBeHidden();
 
       // Mobile search toggle should be visible
       await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();

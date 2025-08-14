@@ -21,6 +21,17 @@
   </div>
 </div>
 
+@if (form.get('search')?.value?.trim() && projects().length === 0 && !projectsLoading()) {
+  <div class="container mx-auto py-24 px-8 flex flex-col justify-center items-center gap-4" data-testid="no-results-container">
+    <i class="fa-light fa-magnifying-glass text-4xl text-gray-400" data-testid="no-results-icon"></i>
+    <p class="text-gray-500">
+      We couldn't find any projects or project resources matching "<strong>{{ form.get('search')?.value }}</strong
+      >". Try adjusting your search terms or browse all projects.
+    </p>
+    <button type="button" (click)="onClearSearch()" class="cursor-pointer" data-testid="no-results-browse-link">Browse all projects</button>
+  </div>
+}
+
 @if (projectsLoading()) {
   <div class="container mx-auto py-24 px-8 flex flex-col justify-center items-center gap-4" data-testid="loading-state">
     <i class="fa-light fa-circle-notch fa-spin text-4xl text-gray-400" data-testid="loading-spinner"></i>

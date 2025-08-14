@@ -2873,6 +2873,8 @@ __metadata:
   dependencies:
     "@fullcalendar/core": "npm:^6.1.19"
     typescript: "npm:5.8.3"
+  peerDependencies:
+    "@fullcalendar/core": ^6.1.19
   languageName: unknown
   linkType: soft
 

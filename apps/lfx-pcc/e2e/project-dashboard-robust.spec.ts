@@ -257,14 +257,14 @@ test.describe('Project Dashboard - Robust Tests', () => {
 
       // Header elements should adapt to mobile
       // Search bar should be hidden on mobile (responsive design)
-      await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
+      await expect(page.locator('[data-testid="header-search-autocomplete"]')).toBeHidden();
 
       // On mobile: "Projects" text is completely hidden from header button
       // We need to target the specific span that contains "Projects" text
       await expect(page.getByTestId('header-projects-text')).toBeHidden();
 
       // Search bar should be hidden on mobile (responsive design)
-      await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
+      await expect(page.locator('[data-testid="header-search-autocomplete"]')).toBeHidden();
 
       // Mobile search toggle should be visible
       await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();
@@ -283,7 +283,7 @@ test.describe('Project Dashboard - Robust Tests', () => {
       await expect(page.locator('[data-testid="recent-activity-card"]')).toBeVisible();
 
       // Header elements should be visible on tablet (medium and up)
-      await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
+      await expect(page.locator('[data-testid="header-search-autocomplete"]')).toBeVisible();
       await expect(page.getByTestId('header-projects-text')).toBeVisible();
       await expect(page.getByAltText('LFX Logo')).toBeVisible();
     });

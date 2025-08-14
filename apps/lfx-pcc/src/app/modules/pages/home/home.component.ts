@@ -10,7 +10,7 @@ import { Project, ProjectCard, ProjectCardMetric } from '@lfx-pcc/shared/interfa
 import { ProjectService } from '@shared/services/project.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { SkeletonModule } from 'primeng/skeleton';
-import { debounceTime, distinctUntilChanged, startWith, switchMap, tap } from 'rxjs/operators';
+import { catchError, debounceTime, distinctUntilChanged, of, startWith, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-home',
@@ -36,6 +36,10 @@ export class HomeComponent {
     this.projects = this.initializeProjects();
     this.projectCards = this.initializeProjectCards();
     this.filteredProjects = this.initializeFilteredProjects();
+  }
+
+  public onClearSearch(): void {
+    this.form.get('search')?.setValue('');
   }
 
   private transformProjectToCard(project: Project): ProjectCard {
@@ -83,7 +87,7 @@ export class HomeComponent {
       switchMap((searchTerm: string) => {
         const trimmedTerm = searchTerm?.trim() || '';
 
-        if (!trimmedTerm || trimmedTerm.length < 3) {
+        if (!trimmedTerm) {
           // If search is empty or too short, return all projects
           this.isSearching.set(false);
           return this.projectService.getProjects();
@@ -92,6 +96,10 @@ export class HomeComponent {
         // Otherwise, search for projects
         this.isSearching.set(true);
         return this.projectService.searchProjects(trimmedTerm).pipe(tap(() => this.isSearching.set(false)));
+      }),
+      catchError((error) => {
+        console.error('Error searching projects:', error);
+        return of([]);
       }),
       tap(() => this.projectsLoading.set(false))
     );

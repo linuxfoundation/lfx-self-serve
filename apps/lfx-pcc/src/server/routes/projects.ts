@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Project } from '@lfx-pcc/shared';
+import { Project, QueryServiceResponse } from '@lfx-pcc/shared';
 import { NextFunction, Request, Response, Router } from 'express';
 
 import { ApiClientService } from '../services/api-client.service';
@@ -25,11 +25,16 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   );
 
   try {
-    let { projects } = await microserviceProxyService.proxyRequest<{ projects: Project[] }>(req, 'LFX_V2_SERVICE', '/projects', 'GET', req.query);
+    const query = {
+      ...req.query,
+      type: 'project',
+    };
+    const { resources } = await microserviceProxyService.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', query);
 
-    projects = projects.filter((project) => project.name !== 'ROOT');
+    const projects = resources.map((resource) => resource.data);
 
     const duration = Date.now() - startTime;
+
     req.log.info(
       {
         operation: 'fetch_projects',
@@ -86,7 +91,13 @@ router.get('/search', async (req: Request, res: Response, next: NextFunction) =>
       });
     }
 
-    const results = await supabaseService.searchProjects(q);
+    const { resources } = await microserviceProxyService.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      type: 'project',
+      name: q,
+    });
+
+    const results = resources.map((resource) => resource.data);
+
     const duration = Date.now() - startTime;
 
     req.log.info(

@@ -43,4 +43,6 @@ export interface QueryServiceItem<T = unknown> {
   data: T;
 }
 
-export type QueryServiceResponse<T = unknown> = QueryServiceItem<T>[];
+export interface QueryServiceResponse<T = unknown> {
+  resources: QueryServiceItem<T>[];
+}

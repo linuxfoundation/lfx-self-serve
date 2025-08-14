@@ -1,0 +1,24 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<ng-container [formGroup]="form()">
+  <p-autocomplete
+    [formControlName]="control()"
+    [suggestions]="suggestions()"
+    [placeholder]="placeholder()"
+    [styleClass]="styleClass()"
+    [optionLabel]="optionLabel()"
+    [optionValue]="optionValue()"
+    [inputStyleClass]="inputStyleClass()"
+    [delay]="delay()"
+    [minLength]="minLength()"
+    (completeMethod)="searchCompleted($event)"
+    (onSelect)="optionSelected($event)"
+    (onClear)="onClear.emit()"
+    [attr.data-testid]="dataTestId()"
+    [autoOptionFocus]="autoOptionFocus()"
+    [completeOnFocus]="completeOnFocus()"
+    [panelStyleClass]="panelStyleClass()"
+    [autoHighlight]="autoHighlight()">
+  </p-autocomplete>
+</ng-container>

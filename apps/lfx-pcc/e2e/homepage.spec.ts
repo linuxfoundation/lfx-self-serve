@@ -30,7 +30,7 @@ test.describe('Homepage', () => {
     await expect(page.getByAltText('LFX Logo')).toBeVisible();
 
     // Header search should be visible on desktop (md and larger)
-    await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
+    await expect(page.locator('[data-testid="header-search-autocomplete"]')).toBeVisible();
 
     // Check for tools menu button
     await expect(page.getByRole('button', { name: 'Open tools menu' })).toBeVisible();
@@ -45,7 +45,7 @@ test.describe('Homepage', () => {
     await expect(page.getByAltText('LFX Logo')).toBeVisible();
 
     // Header search should be hidden on mobile
-    await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
+    await expect(page.locator('[data-testid="header-search-autocomplete"]')).toBeHidden();
 
     // Mobile search toggle button should be visible
     await expect(page.getByTestId('mobile-search-toggle')).toBeVisible();
@@ -64,14 +64,15 @@ test.describe('Homepage', () => {
     // Mobile search overlay should be visible
     await expect(page.getByTestId('mobile-search-overlay')).toBeVisible();
 
-    // Mobile search input should be visible
-    const mobileSearchInput = page.getByTestId('mobile-search-input');
-    await expect(mobileSearchInput).toBeVisible();
+    // Mobile search autocomplete should be visible
+    const mobileSearchAutocomplete = page.locator('[data-testid="mobile-search-autocomplete"]');
+    await expect(mobileSearchAutocomplete).toBeVisible();
 
     // Close button should be visible
     await expect(page.getByTestId('mobile-search-close')).toBeVisible();
 
-    // Type in the mobile search
+    // Type in the mobile search input within the autocomplete
+    const mobileSearchInput = mobileSearchAutocomplete.locator('input');
     await mobileSearchInput.fill('test search');
     await expect(mobileSearchInput).toHaveValue('test search');
 
@@ -210,7 +211,7 @@ test.describe('Homepage', () => {
     await expect(projectCards.first()).toBeVisible();
 
     // On mobile, header search should be hidden
-    await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
+    await expect(page.locator('[data-testid="header-search-autocomplete"]')).toBeHidden();
 
     // Logo should still be visible
     await expect(page.getByAltText('LFX Logo')).toBeVisible();

@@ -38,9 +38,10 @@
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
+    "@fullcalendar/core": "^6.1.19",
     "typescript": "5.8.3"
   },
-  "dependencies": {
+  "peerDependencies": {
     "@fullcalendar/core": "^6.1.19"
   }
 }
