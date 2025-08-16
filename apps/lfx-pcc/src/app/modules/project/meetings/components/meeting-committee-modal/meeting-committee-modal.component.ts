@@ -75,7 +75,7 @@ export class MeetingCommitteeModalComponent {
   public hasVotingEnabledCommittee = computed(() => {
     const selectedIds = this.selectedCommitteeIds();
     const committees = this.committees();
-    return committees.some((c) => selectedIds.includes(c.id) && c.enable_voting);
+    return committees.some((c) => selectedIds.includes(c.uid) && c.enable_voting);
   });
 
   public tableColspan = computed(() => {
@@ -100,7 +100,7 @@ export class MeetingCommitteeModalComponent {
 
     // Set initial selected committees
     if (this.meeting.meeting_committees && this.meeting.meeting_committees.length > 0) {
-      const committeeIds = this.meeting.meeting_committees.map((c) => c.id);
+      const committeeIds = this.meeting.meeting_committees.map((c) => c.uid);
       this.selectedCommitteeIds.set(committeeIds);
       this.form.patchValue({ committees: committeeIds });
       // Load members for initially selected committees
@@ -125,7 +125,7 @@ export class MeetingCommitteeModalComponent {
     const selectedIds = this.form.value.committees as string[];
 
     // If no changes, just close
-    const currentIds = this.meeting.meeting_committees?.map((c) => c.id) || [];
+    const currentIds = this.meeting.meeting_committees?.map((c) => c.uid) || [];
     if (JSON.stringify(selectedIds.sort()) === JSON.stringify(currentIds.sort())) {
       this.ref.close();
       return;
@@ -201,7 +201,7 @@ export class MeetingCommitteeModalComponent {
 
     // Load members for committees that haven't been loaded yet
     const memberRequests = committeesToLoad.map((id) => {
-      const committee = this.committees().find((c) => c.id === id);
+      const committee = this.committees().find((c) => c.uid === id);
       return this.committeeService.getCommitteeMembers(id).pipe(
         map((members) => {
           const membersWithCommittee = members.map((member) => ({
@@ -237,7 +237,7 @@ export class MeetingCommitteeModalComponent {
 
     for (const committeeId of committeeIds) {
       const cachedMembers = this.committeesMembersCache.get(committeeId) || [];
-      const committee = this.committees().find((c) => c.id === committeeId);
+      const committee = this.committees().find((c) => c.uid === committeeId);
       const committeeName = committee?.name || '';
 
       for (const member of cachedMembers) {

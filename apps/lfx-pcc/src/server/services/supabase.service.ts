@@ -129,8 +129,8 @@ export class SupabaseService {
     const committeesWithCounts = await Promise.all(
       committees.map(async (committee: Committee) => {
         const [totalMembers, totalVotingReps] = await Promise.all([
-          this.getCommitteeMemberCountByCommitteeId(committee.id),
-          this.getCommitteeVotingRepsCount(committee.id),
+          this.getCommitteeMemberCountByCommitteeId(committee.uid),
+          this.getCommitteeVotingRepsCount(committee.uid),
         ]);
 
         return {

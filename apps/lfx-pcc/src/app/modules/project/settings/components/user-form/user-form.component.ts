@@ -157,7 +157,7 @@ export class UserFormComponent {
         map((committees) =>
           committees.map((committee) => ({
             label: committee.name,
-            value: committee.id,
+            value: committee.uid,
           }))
         )
       ),
@@ -182,7 +182,7 @@ export class UserFormComponent {
       } else if (user.committeePermissions?.length > 0) {
         permissionScope = 'committee';
         permissionLevel = user.committeePermissions[0].level;
-        committeeIds = user.committeePermissions.map((cp) => cp.committee.id);
+        committeeIds = user.committeePermissions.map((cp) => cp.committee.uid);
       }
 
       this.form().patchValue({

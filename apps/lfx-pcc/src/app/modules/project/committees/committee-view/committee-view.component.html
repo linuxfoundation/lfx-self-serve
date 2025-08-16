@@ -25,7 +25,7 @@
   }
 
   <!-- Committee Content -->
-  @if (committee()?.id && !loading() && !error()) {
+  @if (committee()?.uid && !loading() && !error()) {
     <div class="flex flex-col gap-6">
       <!-- Header Section -->
       <div class="flex justify-between items-start">
@@ -61,7 +61,7 @@
         <!-- Left Column - Committee Details -->
         <div class="lg:col-span-2 flex flex-col gap-6">
           <!-- Members Section -->
-          @if (committee()?.id) {
+          @if (committee()?.uid) {
             <lfx-committee-members
               [committee]="committee()"
               [members]="members()"
@@ -74,8 +74,8 @@
         <div class="flex flex-col gap-6">
           <!-- Upcoming Meeting -->
           <lfx-card title="Next Meeting">
-            @if (committee()?.id) {
-              <lfx-upcoming-committee-meeting [committeeId]="committee()!.id"></lfx-upcoming-committee-meeting>
+            @if (committee()?.uid) {
+              <lfx-upcoming-committee-meeting [committeeId]="committee()!.uid"></lfx-upcoming-committee-meeting>
             }
           </lfx-card>
 
@@ -99,19 +99,19 @@
                 <span class="font-semibold text-gray-900">{{ committee()?.total_voting_reps || 0 }}</span>
               </div>
 
-              @if (committee()?.committee_website) {
+              @if (committee()?.website) {
                 <div class="flex justify-between items-center py-2 border-t border-gray-100">
                   <span class="text-gray-600">Website</span>
-                  <a [href]="committee()?.committee_website" target="_blank" class="text-blue-600 hover:text-blue-800 underline text-sm">
-                    {{ committee()?.committee_website }}
+                  <a [href]="committee()?.website" target="_blank" class="text-blue-600 hover:text-blue-800 underline text-sm" rel="noopener noreferrer">
+                    {{ committee()?.website }}
                   </a>
                 </div>
               }
 
-              @if (committee()?.public_name) {
+              @if (committee()?.display_name) {
                 <div class="flex justify-between items-center py-2 border-t border-gray-100">
                   <span class="text-gray-600">Public Name</span>
-                  <span class="text-gray-900">{{ committee()?.public_name }}</span>
+                  <span class="text-gray-900">{{ committee()?.display_name }}</span>
                 </div>
               }
 
@@ -132,12 +132,12 @@
                 <span class="inline-flex items-center">
                   <i
                     class="fa-light text-sm mr-1"
-                    [class.fa-check-circle]="committee()?.public_enabled"
-                    [class.text-green-500]="committee()?.public_enabled"
-                    [class.fa-times-circle]="!committee()?.public_enabled"
-                    [class.text-red-500]="!committee()?.public_enabled"></i>
-                  <span class="text-sm" [class.text-green-600]="committee()?.public_enabled" [class.text-red-600]="!committee()?.public_enabled">
-                    {{ committee()?.public_enabled ? 'Enabled' : 'Disabled' }}
+                    [class.fa-check-circle]="committee()?.public"
+                    [class.text-green-500]="committee()?.public"
+                    [class.fa-times-circle]="!committee()?.public"
+                    [class.text-red-500]="!committee()?.public"></i>
+                  <span class="text-sm" [class.text-green-600]="committee()?.public" [class.text-red-600]="!committee()?.public">
+                    {{ committee()?.public ? 'Enabled' : 'Disabled' }}
                   </span>
                 </span>
               </div>

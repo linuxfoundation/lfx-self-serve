@@ -35,7 +35,7 @@
 
     <!-- Body template -->
     <ng-template #body let-committee>
-      <tr class="border-b border-gray-50 hover:bg-gray-50/50 transition-colors" [attr.data-testid]="'committee-table-row-' + committee.id">
+      <tr class="border-b border-gray-50 hover:bg-gray-50/50 transition-colors" [attr.data-testid]="'committee-table-row-' + committee.uid">
         <!-- Name column with hierarchy indicator -->
         <td class="px-4 py-3">
           <div class="flex items-center gap-2">
@@ -47,7 +47,7 @@
             }
             <div>
               <a
-                [routerLink]="['/project', project()?.slug, 'committees', committee.id]"
+                [routerLink]="['/project', project()?.slug, 'committees', committee.uid]"
                 class="text-sm font-medium text-gray-900 hover:text-blue-600 transition-colors">
                 {{ committee.name }}
               </a>
@@ -121,7 +121,7 @@
               severity="secondary"
               styleClass="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
               (onClick)="onEdit(committee)"
-              [attr.data-testid]="'committee-edit-' + committee.id" />
+              [attr.data-testid]="'committee-edit-' + committee.uid" />
             <lfx-button
               icon="fa-light fa-users"
               [text]="true"
@@ -130,7 +130,7 @@
               severity="secondary"
               styleClass="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
               (onClick)="onView(committee)"
-              [attr.data-testid]="'committee-members-' + committee.id" />
+              [attr.data-testid]="'committee-members-' + committee.uid" />
             <lfx-button
               icon="fa-light fa-ellipsis"
               [text]="true"
@@ -139,7 +139,7 @@
               severity="secondary"
               styleClass="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
               (onClick)="toggleCommitteeActionMenu($event, committee, actionMenu)"
-              [attr.data-testid]="'committee-more-' + committee.id" />
+              [attr.data-testid]="'committee-more-' + committee.uid" />
           </div>
         </td>
       </tr>

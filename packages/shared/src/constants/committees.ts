@@ -90,6 +90,13 @@ export const COMMITTEE_TYPE_COLORS = {
 export const DEFAULT_COMMITTEE_TYPE_COLOR = 'text-gray-500';
 
 /**
+ * Get valid committee category values for validation
+ */
+export function getValidCommitteeCategories(): string[] {
+  return COMMITTEE_CATEGORIES.map((category) => category.value);
+}
+
+/**
  * Get color class for a committee type
  */
 export function getCommitteeTypeColor(type: string): string {

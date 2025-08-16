@@ -305,7 +305,7 @@ export class MeetingFormComponent {
     }
 
     // Check file type
-    if (!ALLOWED_FILE_TYPES.includes(file.type as any)) {
+    if (!ALLOWED_FILE_TYPES.includes(file.type as (typeof ALLOWED_FILE_TYPES)[number])) {
       const allowedTypes = ALLOWED_FILE_TYPES.map((type) => type.split('/')[1]).join(', ');
       return `File type "${file.type}" is not supported. Allowed types: ${allowedTypes}.`;
     }

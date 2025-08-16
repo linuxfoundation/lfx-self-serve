@@ -62,7 +62,16 @@ export class CommitteeFormComponent {
 
     if (this.form().valid) {
       const isEditingMode = this.isEditing();
-      const formValue = this.form().value;
+      const rawFormValue = {
+        ...this.form().value,
+        calendar: {
+          public: this.form().value.public || false,
+        },
+        display_name: this.form().value.display_name || this.form().value.name,
+        website: this.form().value.website || null,
+        public: true,
+      };
+      const formValue = this.cleanFormData(rawFormValue);
       const committeeId = this.committeeId();
 
       this.submitting.set(true);
@@ -132,6 +141,23 @@ export class CommitteeFormComponent {
     });
   }
 
+  // Helper method to clean form data - convert empty strings to null
+  private cleanFormData(formData: any): any {
+    const cleaned: any = {};
+
+    Object.keys(formData).forEach((key) => {
+      const value = formData[key];
+      // Convert empty strings to null for optional string fields
+      if (typeof value === 'string' && value.trim() === '') {
+        cleaned[key] = null;
+      } else {
+        cleaned[key] = value;
+      }
+    });
+
+    return cleaned;
+  }
+
   // Success handler
   private onSuccess(): void {
     const isEditing = this.isEditing();
@@ -190,12 +216,12 @@ export class CommitteeFormComponent {
 
           // If editing, exclude the current committee
           const currentCommitteeId = this.committee()?.id;
-          const availableCommittees = currentCommitteeId ? topLevelCommittees.filter((committee) => committee.id !== currentCommitteeId) : topLevelCommittees;
+          const availableCommittees = currentCommitteeId ? topLevelCommittees.filter((committee) => committee.uid !== currentCommitteeId) : topLevelCommittees;
 
           // Transform to dropdown options
           const options = availableCommittees.map((committee) => ({
             label: committee.name,
-            value: committee.id,
+            value: committee.uid,
           }));
 
           // Add "No Parent Committee" option at the beginning
@@ -215,11 +241,11 @@ export class CommitteeFormComponent {
       business_email_required: new FormControl(committee?.business_email_required || false),
       enable_voting: new FormControl(committee?.enable_voting || false),
       is_audit_enabled: new FormControl(committee?.is_audit_enabled || false),
-      public_enabled: new FormControl(committee?.public_enabled || false),
-      public_name: new FormControl(committee?.public_name || ''),
+      public: new FormControl(committee?.public || false),
+      display_name: new FormControl(committee?.display_name || ''),
       sso_group_enabled: new FormControl(committee?.sso_group_enabled || false),
       sso_group_name: new FormControl(committee?.sso_group_name || ''),
-      committee_website: new FormControl(committee?.committee_website || '', [Validators.pattern(/^https?:\/\/.+\..+/)]),
+      website: new FormControl(committee?.website || '', [Validators.pattern(/^https?:\/\/.+\..+/)]),
       project_uid: new FormControl(committee?.project_uid || ''),
       joinable: new FormControl(committee?.joinable || false),
     });

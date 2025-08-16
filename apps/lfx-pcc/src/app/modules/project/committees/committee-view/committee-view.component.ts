@@ -113,7 +113,7 @@ export class CommitteeViewComponent {
   private performDelete(committee: Committee): void {
     this.isDeleting.set(true);
 
-    this.committeeService.deleteCommittee(committee.id).subscribe({
+    this.committeeService.deleteCommittee(committee.uid).subscribe({
       next: () => {
         this.isDeleting.set(false);
         this.goBack();
@@ -138,7 +138,7 @@ export class CommitteeViewComponent {
       data: {
         isEditing: true,
         committee: committee,
-        committeeId: committee.id,
+        committeeId: committee.uid,
         onCancel: () => this.dialogRef?.close(),
       },
     });

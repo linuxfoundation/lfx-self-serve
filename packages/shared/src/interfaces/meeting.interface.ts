@@ -15,7 +15,7 @@ export interface MeetingRecurrence {
 }
 
 export interface MeetingCommittee {
-  id: string;
+  uid: string;
   name: string;
   committee_total_members: number;
 }

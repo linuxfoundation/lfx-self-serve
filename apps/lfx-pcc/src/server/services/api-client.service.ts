@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ApiClientConfig, ApiResponse } from '@lfx-pcc/shared/interfaces';
+import { ApiClientConfig, ApiResponse, extractErrorDetails } from '@lfx-pcc/shared/interfaces';
 
 import { serverLogger } from '../server';
 import { createHttpError, createNetworkError, createTimeoutError } from '../utils/api-error';
@@ -17,33 +17,34 @@ export class ApiClientService {
     };
   }
 
-  public async get<T = any>(url: string, bearerToken: string, params?: Record<string, any>): Promise<ApiResponse<T>> {
+  public async get<T = any>(url: string, bearerToken: string, params?: Record<string, any>, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
     const queryString = params ? new URLSearchParams(params).toString() : '';
     const fullUrl = queryString ? `${url}?${queryString}` : url;
 
-    return this.makeRequest<T>('GET', fullUrl, bearerToken);
+    return this.makeRequest<T>('GET', fullUrl, bearerToken, undefined, customHeaders);
   }
 
-  public async post<T = any>(url: string, bearerToken: string, data?: any): Promise<ApiResponse<T>> {
-    return this.makeRequest<T>('POST', url, bearerToken, data);
+  public async post<T = any>(url: string, bearerToken: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
+    return this.makeRequest<T>('POST', url, bearerToken, data, customHeaders);
   }
 
-  public async put<T = any>(url: string, bearerToken: string, data?: any): Promise<ApiResponse<T>> {
-    return this.makeRequest<T>('PUT', url, bearerToken, data);
+  public async put<T = any>(url: string, bearerToken: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
+    return this.makeRequest<T>('PUT', url, bearerToken, data, customHeaders);
   }
 
-  public async patch<T = any>(url: string, bearerToken: string, data?: any): Promise<ApiResponse<T>> {
-    return this.makeRequest<T>('PATCH', url, bearerToken, data);
+  public async patch<T = any>(url: string, bearerToken: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
+    return this.makeRequest<T>('PATCH', url, bearerToken, data, customHeaders);
   }
 
-  public async delete<T = any>(url: string, bearerToken: string): Promise<ApiResponse<T>> {
-    return this.makeRequest<T>('DELETE', url, bearerToken);
+  public async delete<T = any>(url: string, bearerToken: string, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
+    return this.makeRequest<T>('DELETE', url, bearerToken, undefined, customHeaders);
   }
 
-  private async makeRequest<T>(method: string, url: string, bearerToken: string, data?: any): Promise<ApiResponse<T>> {
+  private async makeRequest<T>(method: string, url: string, bearerToken: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
     const requestInit: RequestInit = {
       method,
       headers: {
+        ...customHeaders,
         Authorization: `Bearer ${bearerToken}`,
         Accept: 'application/json',
         ['Content-Type']: 'application/json',
@@ -69,15 +70,16 @@ export class ApiClientService {
         lastError = error instanceof Error ? error : new Error(String(error));
 
         if (attempt === this.config.retryAttempts) {
+          const errorDetails = extractErrorDetails(error);
           serverLogger.error(
             {
               url,
               method: requestInit.method,
               attempt,
               max_attempts: this.config.retryAttempts,
-              error: lastError.message,
-              error_code: (error as any)?.code,
-              status: (error as any)?.status,
+              error: errorDetails.message,
+              error_code: errorDetails.code,
+              status: errorDetails.statusCode,
             },
             'API request failed after all retry attempts'
           );
@@ -102,14 +104,15 @@ export class ApiClientService {
           continue;
         }
 
+        const errorDetails = extractErrorDetails(error);
         serverLogger.error(
           {
             url,
             method: requestInit.method,
             attempt,
-            error: lastError.message,
-            error_code: (error as any)?.code,
-            status: (error as any)?.status,
+            error: errorDetails.message,
+            error_code: errorDetails.code,
+            status: errorDetails.statusCode,
             will_retry: false,
           },
           'API request failed with non-retryable error'
@@ -170,29 +173,40 @@ export class ApiClientService {
     }
   }
 
-  private isRetryableError(error: any): boolean {
+  private isRetryableError(error: unknown): boolean {
+    const errorDetails = extractErrorDetails(error);
+
     // Timeout errors
-    if (error.code === 'TIMEOUT' || error.name === 'AbortError') {
+    if (errorDetails.code === 'TIMEOUT' || (error instanceof Error && error.name === 'AbortError')) {
       return true;
     }
 
-    // Network errors
-    if (error.code === 'ECONNRESET' || error.code === 'ENOTFOUND' || error.code === 'ECONNREFUSED') {
-      return true;
-    }
+    // Network errors - check if error has these specific codes
+    if (error && typeof error === 'object') {
+      const errorObj = error as Record<string, unknown>;
+      const errorCode = errorObj['code'];
 
-    // Fetch network errors
-    if (error.cause?.code === 'ECONNRESET' || error.cause?.code === 'ENOTFOUND' || error.cause?.code === 'ECONNREFUSED') {
-      return true;
+      if (errorCode === 'ECONNRESET' || errorCode === 'ENOTFOUND' || errorCode === 'ECONNREFUSED') {
+        return true;
+      }
+
+      // Fetch network errors
+      const cause = errorObj['cause'] as Record<string, unknown> | undefined;
+      if (cause && typeof cause === 'object') {
+        const causeCode = cause['code'];
+        if (causeCode === 'ECONNRESET' || causeCode === 'ENOTFOUND' || causeCode === 'ECONNREFUSED') {
+          return true;
+        }
+      }
     }
 
     // Server errors (5xx)
-    if (error.status >= 500 && error.status < 600) {
+    if (errorDetails.statusCode >= 500 && errorDetails.statusCode < 600) {
       return true;
     }
 
     // Rate limiting
-    if (error.status === 429) {
+    if (errorDetails.statusCode === 429) {
       return true;
     }
 

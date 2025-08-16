@@ -46,14 +46,14 @@ export class CommitteeTableComponent {
       result.push(parent);
 
       // Then add any subcommittees for this parent
-      const subcommittees = allCommittees.filter((c) => c.parent_uid === parent.id);
+      const subcommittees = allCommittees.filter((c) => c.parent_uid === parent.uid);
       subcommittees.forEach((sub) => {
         result.push({ ...sub, level: 1 });
       });
     });
 
     // Add any orphaned committees (shouldn't happen, but just in case)
-    const orphaned = allCommittees.filter((c) => c.parent_uid && !allCommittees.find((p) => p.id === c.parent_uid));
+    const orphaned = allCommittees.filter((c) => c.parent_uid && !allCommittees.find((p) => p.uid === c.parent_uid));
     result.push(...orphaned);
 
     return result;

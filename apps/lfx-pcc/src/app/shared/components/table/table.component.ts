@@ -10,6 +10,9 @@ import { TableModule } from 'primeng/table';
   standalone: true,
   imports: [CommonModule, TableModule],
   templateUrl: './table.component.html',
+  host: {
+    ngSkipHydration: 'true',
+  },
 })
 export class TableComponent {
   // Template references for content projection

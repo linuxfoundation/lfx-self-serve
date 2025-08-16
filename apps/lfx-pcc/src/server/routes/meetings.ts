@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NextFunction, Request, Response, Router } from 'express';
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, sanitizeFilename } from '@lfx-pcc/shared';
+import { NextFunction, Request, Response, Router } from 'express';
 
 import { SupabaseService } from '../services/supabase.service';
 
@@ -22,7 +22,7 @@ router.get('/', async (req: Request, res: Response, next: NextFunction) => {
   );
 
   try {
-    const meetings = await supabaseService.getMeetings(req.query as Record<string, any>);
+    const meetings = await supabaseService.getMeetings(req.query);
     const duration = Date.now() - startTime;
 
     req.log.info(
@@ -475,7 +475,7 @@ router.post('/:id/attachments/upload', async (req: Request, res: Response, next:
     }
 
     // Validate file type
-    if (!ALLOWED_FILE_TYPES.includes(mimeType as any)) {
+    if (!ALLOWED_FILE_TYPES.includes(mimeType as (typeof ALLOWED_FILE_TYPES)[number])) {
       req.log.warn(
         {
           operation: 'upload_meeting_attachment',
@@ -656,7 +656,7 @@ router.post('/storage/upload', async (req: Request, res: Response, next: NextFun
     }
 
     // Validate file type
-    if (!ALLOWED_FILE_TYPES.includes(mimeType as any)) {
+    if (!ALLOWED_FILE_TYPES.includes(mimeType as (typeof ALLOWED_FILE_TYPES)[number])) {
       return res.status(400).json({
         error: 'File type not supported',
         code: 'UNSUPPORTED_FILE_TYPE',

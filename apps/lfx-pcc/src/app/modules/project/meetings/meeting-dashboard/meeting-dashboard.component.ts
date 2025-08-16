@@ -236,7 +236,7 @@ export class MeetingDashboardComponent {
       // Extract unique committees from all meetings
       meetings.forEach((meeting) => {
         meeting.meeting_committees?.forEach((committee) => {
-          committeeMap.set(committee.id, committee.name);
+          committeeMap.set(committee.uid, committee.name);
         });
       });
 
@@ -277,7 +277,7 @@ export class MeetingDashboardComponent {
       // Apply committee filter
       const committee = this.committeeFilter();
       if (committee) {
-        filtered = filtered.filter((meeting) => meeting.meeting_committees?.some((c) => c.id === committee));
+        filtered = filtered.filter((meeting) => meeting.meeting_committees?.some((c) => c.uid === committee));
       }
 
       return filtered;

@@ -196,7 +196,7 @@ export class CommitteeMembersComponent implements OnInit {
 
   private performDelete(member: CommitteeMember): void {
     const committee = this.committee();
-    if (!committee || !committee.id) {
+    if (!committee || !committee.uid) {
       this.messageService.add({
         severity: 'error',
         summary: 'Error',
@@ -207,7 +207,7 @@ export class CommitteeMembersComponent implements OnInit {
 
     this.isDeleting.set(true);
 
-    this.committeeService.deleteCommitteeMember(committee.id, member.id).subscribe({
+    this.committeeService.deleteCommitteeMember(committee.uid, member.id).subscribe({
       next: () => {
         this.isDeleting.set(false);
 

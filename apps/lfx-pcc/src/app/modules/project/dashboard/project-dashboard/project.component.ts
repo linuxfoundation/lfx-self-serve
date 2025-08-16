@@ -239,9 +239,9 @@ export class ProjectComponent {
       }
 
       return committees.map((committee) => ({
-        id: committee.id,
+        id: committee.uid,
         title: committee.name,
-        url: `/project/${project.slug}/committees/${committee.id}`,
+        url: `/project/${project.slug}/committees/${committee.uid}`,
         status: 'Active',
         date: committee.updated_at || committee.created_at,
       }));

@@ -249,9 +249,9 @@
         <i class="fa-light fa-people-group text-gray-400 mt-0.5"></i>
         <div class="flex flex-wrap gap-1">
           <div class="text-sm text-gray-600">
-            @for (committee of meeting().meeting_committees!; track committee.id; let isLast = $last) {
+            @for (committee of meeting().meeting_committees!; track committee.uid; let isLast = $last) {
               <a
-                [routerLink]="['/project', project()?.slug, 'committees', committee.id]"
+                [routerLink]="['/project', project()?.slug, 'committees', committee.uid]"
                 class="text-primary hover:text-primary-600 hover:underline"
                 [title]="committee.committee_total_members + ' members'">
                 {{ committee.name }}

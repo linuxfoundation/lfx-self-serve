@@ -74,7 +74,7 @@ export class CommitteeDashboardComponent {
 
   // Statistics calculations
   public totalCommittees: Signal<number> = computed(() => this.committees().length);
-  public publicCommittees: Signal<number> = computed(() => this.committees().filter((c) => c.public_enabled).length);
+  public publicCommittees: Signal<number> = computed(() => this.committees().filter((c) => c.public).length);
   public activeVoting: Signal<number> = computed(() => this.committees().filter((c) => c.enable_voting).length);
 
   public constructor() {
@@ -162,7 +162,7 @@ export class CommitteeDashboardComponent {
     const committee = this.selectedCommittee();
     const projectId = this.project()?.uid;
     if (committee && projectId) {
-      this.router.navigate(['/project', this.project()?.slug, 'committees', committee.id]);
+      this.router.navigate(['/project', this.project()?.slug, 'committees', committee.uid]);
     }
   }
 
@@ -188,7 +188,7 @@ export class CommitteeDashboardComponent {
   private performDelete(committee: Committee): void {
     this.isDeleting.set(true);
 
-    this.committeeService.deleteCommittee(committee.id).subscribe({
+    this.committeeService.deleteCommittee(committee.uid).subscribe({
       next: () => {
         this.isDeleting.set(false);
         // Refresh the committees list by reloading
@@ -219,7 +219,7 @@ export class CommitteeDashboardComponent {
       data: {
         isEditing: true,
         committee: committee,
-        committeeId: committee.id,
+        committeeId: committee.uid,
         onCancel: () => this.dialogRef?.close(),
       },
     });
