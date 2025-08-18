@@ -3,13 +3,14 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, input, output } from '@angular/core';
+import { RouterModule } from '@angular/router';
 import { ButtonProps } from '@lfx-pcc/shared/interfaces';
 import { ButtonModule } from 'primeng/button';
 
 @Component({
   selector: 'lfx-button',
   standalone: true,
-  imports: [CommonModule, ButtonModule],
+  imports: [CommonModule, ButtonModule, RouterModule],
   templateUrl: './button.component.html',
 })
 export class ButtonComponent {
@@ -47,6 +48,9 @@ export class ButtonComponent {
 
   // Accessibility
   public readonly ariaLabel = input<string | undefined>(undefined);
+
+  // Navigation
+  public readonly routerLink = input<string | string[] | undefined>(undefined);
 
   // Events
   public readonly onClick = output<MouseEvent>();

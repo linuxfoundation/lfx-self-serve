@@ -26,6 +26,7 @@
   [variant]="variant()"
   [fluid]="fluid()"
   [style]="style()"
-  (onClick)="handleClick($event)">
+  (onClick)="handleClick($event)"
+  [routerLink]="routerLink()">
   <ng-content></ng-content>
 </p-button>

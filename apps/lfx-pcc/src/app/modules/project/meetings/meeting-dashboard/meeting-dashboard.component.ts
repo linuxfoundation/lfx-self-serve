@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, Injector, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -23,7 +23,6 @@ import { BehaviorSubject, of } from 'rxjs';
 import { debounceTime, distinctUntilChanged, startWith, switchMap, take, tap } from 'rxjs/operators';
 
 import { MeetingCardComponent } from '../components/meeting-card/meeting-card.component';
-import { MeetingFormComponent } from '../components/meeting-form/meeting-form.component';
 import { MeetingModalComponent } from '../components/meeting-modal/meeting-modal.component';
 
 @Component({
@@ -50,7 +49,6 @@ export class MeetingDashboardComponent {
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
   private readonly dialogService = inject(DialogService);
-  private readonly injector = inject(Injector);
 
   // Class variables with types
   public project: typeof this.projectService.project;
@@ -118,31 +116,6 @@ export class MeetingDashboardComponent {
 
   public onViewChange(value: 'list' | 'calendar'): void {
     this.currentView.set(value);
-  }
-
-  public onCreateMeeting(): void {
-    this.dialogService
-      .open(MeetingFormComponent, {
-        header: 'Create Meeting',
-        width: '600px',
-        modal: true,
-        closable: true,
-        dismissableMask: true,
-        data: {
-          isEditing: false, // This triggers form mode
-        },
-      })
-      .onClose.pipe(take(1))
-      .subscribe((meeting) => {
-        if (meeting) {
-          this.refreshMeetings();
-          this.openMeetingModal({
-            ...meeting,
-            individual_participants_count: 0,
-            committee_members_count: 0,
-          });
-        }
-      });
   }
 
   public onCalendarEventClick(eventInfo: any): void {
@@ -285,11 +258,12 @@ export class MeetingDashboardComponent {
   }
 
   private initializeMenuItems(): MenuItem[] {
+    const project = this.project();
     return [
       {
         label: 'Schedule Meeting',
         icon: 'fa-light fa-calendar-plus text-sm',
-        command: () => this.onCreateMeeting(),
+        routerLink: project ? `/project/${project.slug}/meetings/create` : '#',
       },
       {
         label: this.meetingListView() === 'past' ? 'Upcoming Meetings' : 'Meeting History',

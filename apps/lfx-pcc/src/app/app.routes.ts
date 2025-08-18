@@ -9,6 +9,7 @@ import { CommitteeDashboardComponent } from './modules/project/committees/commit
 import { CommitteeViewComponent } from './modules/project/committees/committee-view/committee-view.component';
 import { MailingListDashboardComponent } from './modules/project/mailing-lists/mailing-list-dashboard/mailing-list-dashboard.component';
 import { MeetingDashboardComponent } from './modules/project/meetings/meeting-dashboard/meeting-dashboard.component';
+import { MeetingCreateComponent } from './modules/project/meetings/components/meeting-create/meeting-create.component';
 import { SettingsDashboardComponent } from './modules/project/settings/settings-dashboard/settings-dashboard.component';
 import { ProjectComponent } from './modules/project/dashboard/project-dashboard/project.component';
 
@@ -28,6 +29,10 @@ export const routes: Routes = [
       {
         path: 'meetings',
         component: MeetingDashboardComponent,
+      },
+      {
+        path: 'meetings/create',
+        component: MeetingCreateComponent,
       },
       {
         path: 'committees',

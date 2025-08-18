@@ -1,0 +1,70 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="space-y-6">
+  <div class="text-center mb-8">
+    <h2 class="text-2xl font-semibold text-slate-900 mb-2">Meeting Type</h2>
+    <p class="text-slate-500 text-base">What kind of meeting are you organizing for your open source project?</p>
+  </div>
+
+  <div class="bg-blue-50 border border-blue-100 p-4 rounded-lg">
+    <div class="flex items-start gap-3">
+      <div class="bg-primary flex items-center justify-center px-1 py-1 rounded-full">
+        <i class="fa-light fa-info-circle text-white text-sm"></i>
+      </div>
+      <div>
+        <h4 class="text-sm font-semibold text-slate-900 mb-1">Why meetings matter for open source projects</h4>
+        <p class="text-sm text-slate-600">
+          Regular meetings help maintain project momentum, align contributors, make important decisions, and build community. They provide structure and
+          transparency that keeps everyone on the same page.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <div class="space-y-6">
+    <div>
+      <label class="text-sm font-semibold text-slate-900 mb-4 block">Select Meeting Type <span class="text-red-500">*</span></label>
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+        @for (option of meetingTypeOptions; track option.value) {
+          @let typeInfo = getMeetingTypeInfo(option.value);
+          <div
+            class="p-4 border rounded-lg cursor-pointer transition-all hover:border-blue-600 hover:bg-blue-50"
+            [ngClass]="{
+              'border-blue-600 bg-blue-50': form().get('meeting_type')?.value === option.value,
+              'border-slate-200 bg-white': form().get('meeting_type')?.value !== option.value,
+            }"
+            (click)="onMeetingTypeSelect(option.value)"
+            [attr.data-testid]="'meeting-type-option-' + option.value.toLowerCase()">
+            <div class="flex items-start gap-3">
+              <div class="p-2 rounded-lg flex-shrink-0" [style.background-color]="typeInfo.color + '1A'" [style.color]="typeInfo.color">
+                <i [class]="typeInfo.icon + ' text-base'"></i>
+              </div>
+              <div>
+                <h4 class="text-sm font-semibold text-slate-900">{{ option.label }}</h4>
+                <p class="text-xs text-slate-600 mt-1">{{ typeInfo.description }}</p>
+                <p class="text-xs text-slate-500 mt-1 italic">Examples: {{ typeInfo.examples }}</p>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+      @if (form().get('meeting_type')?.errors?.['required'] && form().get('meeting_type')?.touched) {
+        <p class="text-sm text-red-600 mt-2">Meeting type is required</p>
+      }
+    </div>
+
+    <div class="bg-slate-50 border border-slate-200 p-4 rounded-lg">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-3">
+          <i class="fa-light fa-shield text-slate-500 text-lg"></i>
+          <div>
+            <label for="private-toggle" class="text-sm font-semibold text-slate-900">Private Meeting</label>
+            <p class="text-xs text-slate-500">Restrict access to invited participants only</p>
+          </div>
+        </div>
+        <lfx-toggle id="private-toggle" [form]="form()" control="restricted" size="small" data-testid="private-meeting-toggle"> </lfx-toggle>
+      </div>
+    </div>
+  </div>
+</div>
