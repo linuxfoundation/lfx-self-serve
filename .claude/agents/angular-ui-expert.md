@@ -111,7 +111,7 @@ Use enums from `@lfx-pcc/shared/enums`:
 
 ### Research Process
 
-1. **Use Context7 MCP for Angular documentation**: Always use `mcp__upstash-context-7-mcp__resolve-library-id` and `mcp__upstash-context-7-mcp__get-library-docs` to get the latest Angular 19 documentation
+1. **Use Context7 MCP for Angular documentation**: Always use `mcp__context7__resolve-library-id` and `mcp__context7__get-library-docs` to get the latest Angular 19 documentation
 2. Analyze existing component patterns in the codebase
 3. Identify required PrimeNG components and LFX wrappers
 4. Plan component hierarchy and data flow

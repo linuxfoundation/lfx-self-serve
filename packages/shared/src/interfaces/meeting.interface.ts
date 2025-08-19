@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MeetingVisibility, RecurrenceType } from '../enums';
+import { MeetingVisibility, RecurrenceType, MeetingType } from '../enums';
 
 export interface MeetingRecurrence {
   end_date_time?: string;
@@ -115,6 +115,28 @@ export interface DeleteMeetingRequest {
   deleteType?: 'single' | 'series';
 }
 
-export interface DeleteMeetingRequest {
-  deleteType?: 'single' | 'series';
+/**
+ * Interface representing a meeting agenda template
+ */
+export interface MeetingTemplate {
+  /** Unique identifier for the template */
+  id: string;
+  /** Template title displayed to users */
+  title: string;
+  /** Structured markdown content for the agenda */
+  content: string;
+  /** Meeting type this template is designed for */
+  meetingType: MeetingType;
+  /** Estimated duration in minutes */
+  estimatedDuration: number;
+}
+
+/**
+ * Interface representing a group of templates for a specific meeting type
+ */
+export interface MeetingTemplateGroup {
+  /** Meeting type for this group */
+  meetingType: MeetingType;
+  /** Array of templates for this meeting type */
+  templates: MeetingTemplate[];
 }

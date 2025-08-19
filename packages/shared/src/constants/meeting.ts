@@ -82,3 +82,6 @@ export const AI_SUMMARY_ACCESS_OPTIONS = [
   { label: 'Project Members', value: 'Members' },
   { label: 'Public', value: 'Public' },
 ];
+
+// Re-export meeting templates from the organized template files
+export { MEETING_TEMPLATES } from './meeting-templates';

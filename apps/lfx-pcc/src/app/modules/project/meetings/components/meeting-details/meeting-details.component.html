@@ -27,15 +27,25 @@
     <div>
       <div class="flex items-center justify-between mb-2">
         <label for="meeting-agenda" class="block text-sm font-medium text-gray-700"> Agenda <span class="text-red-500">*</span> </label>
-        @if (!showAiHelper()) {
-          <lfx-button
-            (onClick)="showAiAgendaHelper()"
-            icon="fa-light fa-sparkles"
-            label="Help me write this"
-            size="small"
-            [text]="true"
-            styleClass="text-blue-600 hover:text-blue-700 hover:bg-blue-50 text-xs h-7"
-            data-testid="meeting-details-ai-helper-button"></lfx-button>
+        @if (!showAiHelper() && !showTemplateSelector()) {
+          <div class="flex items-center gap-2">
+            <lfx-button
+              (onClick)="showAgendaTemplateSelector()"
+              icon="fa-light fa-book-open"
+              label="Use Template"
+              size="small"
+              [text]="true"
+              styleClass="text-gray-600 hover:text-gray-700 hover:bg-gray-50 text-xs h-7"
+              data-testid="meeting-details-template-button"></lfx-button>
+            <lfx-button
+              (onClick)="showAiAgendaHelper()"
+              icon="fa-light fa-sparkles"
+              label="Help me write this"
+              size="small"
+              [text]="true"
+              styleClass="text-blue-600 hover:text-blue-700 hover:bg-blue-50 text-xs h-7"
+              data-testid="meeting-details-ai-helper-button"></lfx-button>
+          </div>
         }
       </div>
 
@@ -81,6 +91,16 @@
             </div>
           </div>
         </div>
+      }
+
+      @if (showTemplateSelector()) {
+        <lfx-agenda-template-selector
+          [meetingType]="form().get('meeting_type')?.value"
+          [visible]="showTemplateSelector()"
+          (templateSelected)="applyTemplate($event)"
+          (closeSelector)="hideAgendaTemplateSelector()"
+          data-testid="meeting-details-template-selector">
+        </lfx-agenda-template-selector>
       }
 
       <lfx-textarea

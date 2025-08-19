@@ -1,0 +1,51 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (visible()) {
+  <div class="mb-4 bg-gray-50 border border-gray-200 rounded-lg p-4" data-testid="template-selector-panel">
+    <div class="flex items-center gap-3 mb-4">
+      <div class="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center">
+        <i class="fa-light fa-list text-white text-sm"></i>
+      </div>
+      <div>
+        <h3 class="text-base font-semibold text-gray-900">Agenda Templates</h3>
+        <p class="text-sm text-gray-600">Choose from common agenda templates for {{ meetingType().toLowerCase() }} meetings.</p>
+      </div>
+    </div>
+
+    @if (displayTemplates().length > 0) {
+      <div class="space-y-3 mb-4" data-testid="template-list">
+        @for (template of displayTemplates(); track template.id) {
+          <div
+            class="bg-white border border-gray-200 rounded-lg p-4 hover:border-blue-500 hover:bg-blue-50 cursor-pointer transition-all duration-200"
+            (click)="selectTemplate(template)"
+            [attr.data-testid]="'template-item-' + template.id">
+            <div class="flex items-start justify-between">
+              <h4 class="text-sm font-semibold text-gray-900">{{ template.title }}</h4>
+              <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
+                {{ template.formattedDuration }}
+              </span>
+            </div>
+            <p class="text-xs text-gray-600 leading-relaxed">{{ template.preview }}</p>
+          </div>
+        }
+      </div>
+    } @else {
+      <div class="text-center py-6" data-testid="no-templates-message">
+        <i class="fa-light fa-book-open text-gray-400 text-2xl mb-2"></i>
+        <p class="text-sm text-gray-500">No templates available for {{ meetingType() }} meetings</p>
+      </div>
+    }
+
+    <div class="pt-3 border-t border-gray-200">
+      <lfx-button
+        (onClick)="close()"
+        label="Cancel"
+        size="small"
+        [text]="true"
+        styleClass="text-gray-500 hover:text-gray-700 text-sm"
+        data-testid="template-selector-close">
+      </lfx-button>
+    </div>
+  </div>
+}
