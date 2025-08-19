@@ -1,0 +1,141 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="space-y-6">
+  <!-- Header -->
+  <div class="text-center mb-8">
+    <h2 class="text-xl font-semibold text-slate-900 mb-2">Meeting Platform & Features</h2>
+    <p class="text-slate-500 text-sm">Choose your meeting platform and enable helpful features.</p>
+  </div>
+
+  <!-- Meeting Platform Selection -->
+  <div class="space-y-4">
+    <h3 class="text-base font-medium text-slate-900">Meeting Platform <span class="text-red-500">*</span></h3>
+
+    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
+      @for (platform of platformOptions; track platform.value) {
+        <div
+          (click)="selectPlatform(platform.value)"
+          [ngClass]="{
+            'cursor-pointer hover:border-primary hover:bg-blue-50': platform.available,
+            'cursor-not-allowed bg-slate-50 opacity-60': !platform.available,
+            'border-primary bg-blue-50': platform.available && form().get('meetingTool')?.value === platform.value,
+            'border-slate-200 bg-white': platform.available && form().get('meetingTool')?.value !== platform.value,
+          }"
+          class="p-4 border rounded-lg transition-all relative"
+          [attr.data-testid]="'platform-option-' + platform.value">
+          @if (!platform.available) {
+            <div class="absolute bottom-2 right-2">
+              <span class="bg-slate-600 text-white text-xs px-2 py-1 rounded-full">Coming Soon</span>
+            </div>
+          }
+
+          <div class="flex items-start gap-3">
+            <div class="p-2 rounded-lg flex-shrink-0" [style.background-color]="platform.color + '15'" [style.color]="platform.color">
+              <i [class]="platform.icon + ' text-sm'"></i>
+            </div>
+            <div>
+              <h4 class="text-sm font-semibold text-slate-900">{{ platform.label }}</h4>
+              <p class="text-xs text-slate-600 mt-1">{{ platform.description }}</p>
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+
+    @if (form().get('meetingTool')?.errors?.['required'] && form().get('meetingTool')?.touched) {
+      <p class="mt-1 text-sm text-red-600" data-testid="platform-error">Please select a meeting platform</p>
+    }
+  </div>
+
+  <!-- Info Section -->
+  <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+    <div class="flex items-start gap-3">
+      <div class="bg-primary flex items-center justify-center p-1.5 rounded-full">
+        <i class="fa-light fa-info-circle text-white text-sm"></i>
+      </div>
+      <div>
+        <h4 class="text-sm font-semibold text-slate-900 mb-1">Meeting Features</h4>
+        <p class="text-sm text-slate-600">
+          Open source thrives on transparency and accessibility. Recording meetings, generating transcripts, and enabling features helps include community
+          members who can't attend live and creates valuable documentation.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Meeting Features -->
+  <div class="space-y-4">
+    <h3 class="text-base font-medium text-slate-900">Meeting Features</h3>
+
+    @for (feature of features; track feature.key) {
+      <div class="bg-white border border-slate-200 p-4 rounded-lg hover:border-primary transition-colors" [attr.data-testid]="'feature-' + feature.key">
+        <div class="flex items-center justify-between">
+          <div class="flex items-center gap-3">
+            <div class="p-2 rounded-lg" [style.background-color]="feature.color + '15'" [style.color]="feature.color">
+              <i [class]="feature.icon + ' text-sm'"></i>
+            </div>
+            <div>
+              <div class="flex items-center gap-2">
+                <label [for]="feature.key" class="text-sm font-semibold text-slate-900 cursor-pointer">{{ feature.title }}</label>
+                @if (feature.recommended) {
+                  <span class="bg-blue-100 text-primary text-xs px-2 py-1 rounded-full font-medium">Recommended</span>
+                }
+              </div>
+              <p class="text-xs text-slate-600">{{ feature.description }}</p>
+            </div>
+          </div>
+          <lfx-toggle [form]="form()" [control]="feature.key" [id]="feature.key" [attr.data-testid]="'toggle-' + feature.key"></lfx-toggle>
+        </div>
+      </div>
+    }
+  </div>
+
+  <!-- Additional Options (if recording is enabled) -->
+  @if (form().get('recording_enabled')?.value) {
+    <div class="bg-slate-50 border border-slate-200 p-4 rounded-lg space-y-4" data-testid="recording-options">
+      <h4 class="text-sm font-semibold text-slate-900">Recording Options</h4>
+
+      <!-- Recording Access -->
+      <div>
+        <label for="recording-access" class="block text-sm font-medium text-slate-700 mb-1">Recording Access</label>
+        <lfx-select
+          size="small"
+          [form]="form()"
+          control="recording_access"
+          [options]="recordingAccessOptions"
+          placeholder="Select recording access"
+          styleClass="w-full"
+          id="recording-access"
+          data-testid="recording-access-select"></lfx-select>
+        <p class="mt-1 text-xs text-slate-500">Who can view the meeting recording</p>
+      </div>
+
+      <!-- AI Summary Access (if AI summary is enabled) -->
+      @if (form().get('zoom_ai_enabled')?.value) {
+        <div data-testid="ai-summary-options">
+          <label for="ai-summary-access" class="block text-sm font-medium text-slate-700 mb-1">AI Summary Access</label>
+          <lfx-select
+            size="small"
+            [form]="form()"
+            control="ai_summary_access"
+            [options]="aiSummaryAccessOptions"
+            placeholder="Select AI summary access"
+            styleClass="w-full"
+            id="ai-summary-access"
+            data-testid="ai-summary-access-select"></lfx-select>
+          <p class="mt-1 text-xs text-slate-500">Who can access the AI-generated meeting summary</p>
+
+          <!-- Require AI Summary Approval -->
+          <div class="flex items-center justify-between mt-3">
+            <div>
+              <label for="require-ai-approval" class="text-sm font-medium text-slate-900">Require AI Summary Approval</label>
+              <p class="text-xs text-slate-500">AI summary must be reviewed before sharing</p>
+            </div>
+            <lfx-toggle [form]="form()" control="require_ai_summary_approval" id="require-ai-approval" data-testid="require-ai-approval-toggle"></lfx-toggle>
+          </div>
+        </div>
+      }
+    </div>
+  }
+</div>

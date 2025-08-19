@@ -89,7 +89,8 @@
         id="meeting-agenda"
         placeholder="Enter meeting agenda and key discussion points"
         [rows]="6"
-        styleClass="w-full max-h-40 overflow-y-auto"
+        [autoResize]="true"
+        styleClass="w-full"
         data-testid="meeting-details-agenda-textarea"></lfx-textarea>
       <p class="mt-1 text-xs text-gray-500">A clear agenda helps participants prepare and keeps discussions focused</p>
       @if (form().get('agenda')?.errors?.['required'] && form().get('agenda')?.touched) {

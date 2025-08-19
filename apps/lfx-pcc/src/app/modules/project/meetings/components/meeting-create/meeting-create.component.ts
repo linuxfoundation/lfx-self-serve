@@ -16,12 +16,21 @@ import { MessageService } from 'primeng/api';
 import { StepperModule } from 'primeng/stepper';
 
 import { MeetingDetailsComponent } from '../meeting-details/meeting-details.component';
+import { MeetingPlatformFeaturesComponent } from '../meeting-platform-features/meeting-platform-features.component';
 import { MeetingTypeSelectionComponent } from '../meeting-type-selection/meeting-type-selection.component';
 
 @Component({
   selector: 'lfx-meeting-create',
   standalone: true,
-  imports: [CommonModule, StepperModule, ButtonComponent, ReactiveFormsModule, MeetingTypeSelectionComponent, MeetingDetailsComponent],
+  imports: [
+    CommonModule,
+    StepperModule,
+    ButtonComponent,
+    ReactiveFormsModule,
+    MeetingTypeSelectionComponent,
+    MeetingDetailsComponent,
+    MeetingPlatformFeaturesComponent,
+  ],
   templateUrl: './meeting-create.component.html',
 })
 export class MeetingCreateComponent {
@@ -33,7 +42,7 @@ export class MeetingCreateComponent {
 
   // Stepper state
   public currentStep = signal<number>(0);
-  public readonly totalSteps = 5;
+  public readonly totalSteps = 4;
 
   // Form state
   public form = signal<FormGroup>(this.createMeetingFormGroup());
@@ -78,6 +87,11 @@ export class MeetingCreateComponent {
   public nextStep(): void {
     const next = this.currentStep() + 1;
     if (next < this.totalSteps && this.canNavigateToStep(next)) {
+      // Auto-generate title when moving from step 1 to step 2
+      if (this.currentStep() === 0 && next === 1) {
+        this.generateMeetingTitle();
+      }
+
       this.currentStep.set(next);
       this.scrollToStepper();
     }
@@ -218,10 +232,7 @@ export class MeetingCreateComponent {
       case 2: // Platform & Features
         return !!form.get('meetingTool')?.value;
 
-      case 3: // Participants (optional but should not have validation errors)
-        return true;
-
-      case 4: // Resources & Summary (optional)
+      case 3: // Resources & Summary (optional)
         return true;
 
       default:
@@ -253,7 +264,7 @@ export class MeetingCreateComponent {
         recurrence: new FormControl('none'),
 
         // Step 3: Platform & Features
-        meetingTool: new FormControl('', [Validators.required]),
+        meetingTool: new FormControl('zoom', [Validators.required]),
         recording_enabled: new FormControl(false),
         transcripts_enabled: new FormControl(false),
         youtube_enabled: new FormControl(false),
@@ -457,6 +468,31 @@ export class MeetingCreateComponent {
         top: elementTop - 50,
         behavior: 'smooth',
       });
+    }
+  }
+
+  private generateMeetingTitle(): void {
+    const form = this.form();
+    const meetingType = form.get('meeting_type')?.value;
+    const startDate = form.get('startDate')?.value;
+
+    // Only auto-generate if we have meeting type and the title is empty
+    const currentTitle = form.get('topic')?.value;
+    if (meetingType && (!currentTitle || currentTitle.trim() === '')) {
+      const formattedDate = startDate
+        ? new Date(startDate).toLocaleDateString('en-US', {
+            month: '2-digit',
+            day: '2-digit',
+            year: 'numeric',
+          })
+        : new Date().toLocaleDateString('en-US', {
+            month: '2-digit',
+            day: '2-digit',
+            year: 'numeric',
+          });
+
+      const generatedTitle = `${meetingType} Meeting - ${formattedDate}`;
+      form.get('topic')?.setValue(generatedTitle);
     }
   }
 }

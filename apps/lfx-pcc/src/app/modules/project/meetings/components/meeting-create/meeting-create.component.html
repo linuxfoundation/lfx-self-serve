@@ -37,21 +37,11 @@
 
           <p-step-panel [value]="2" data-testid="meeting-create-panel-2">
             <ng-template #content let-activateCallback="activateCallback">
-              <div class="min-h-96 flex items-center justify-center text-slate-500">
-                <p>Step 3: Platform & Features - To be implemented</p>
-              </div>
+              <lfx-meeting-platform-features [form]="form()"></lfx-meeting-platform-features>
             </ng-template>
           </p-step-panel>
 
           <p-step-panel [value]="3" data-testid="meeting-create-panel-3">
-            <ng-template #content let-activateCallback="activateCallback">
-              <div class="min-h-96 flex items-center justify-center text-slate-500">
-                <p>Step 4: Participants - To be implemented</p>
-              </div>
-            </ng-template>
-          </p-step-panel>
-
-          <p-step-panel [value]="4" data-testid="meeting-create-panel-4">
             <ng-template #content let-activateCallback="activateCallback">
               <div class="min-h-96 flex items-center justify-center text-slate-500">
                 <p>Step 5: Resources & Summary - To be implemented</p>

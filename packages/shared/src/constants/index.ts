@@ -6,5 +6,6 @@ export * from './colors';
 export * from './committees';
 export * from './file-upload';
 export * from './font-sizes';
+export * from './meeting';
 export * from './server';
 export * from './timezones';
