@@ -42,3 +42,8 @@ yarn-error.log*
 
 # yarn
 .yarn/install-state.gz
+
+# Claude Code Agents
+.claude/doc
+.claude/sessions
+.claude/tasks
