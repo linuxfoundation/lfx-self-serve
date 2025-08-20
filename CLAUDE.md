@@ -123,60 +123,12 @@ lfx-pcc-v3/
 - Branch names should be following the commit types (feat,fix,docs, etc) followed by the JIRA ticket number. i.e; feat/LFXV2-123 or ci/LFXV2-456
 - PR titles must also follow a similar format as conventional commits - `type(scope): description`. The scope has to follow the angular config for conventional commit and not include the JIRA ticket in the title, and everything should be in lowercase.
 - All interfaces, reusable constants, and enums should live in the shared package.
-- Before you do any work, MUST view files in `.claude/tasks/context_session_x.md` file to get the full context (x being the id of the session we are operating in, if file doesn't exist, then create one). Each context session file should be per feature
-- `.claude/tasks/context_session_x.md` should contain most of context of what we did, overall plan, and sub agents will continuously add context to the file
-- After you finish the work, MUST update the `.claude/tasks/context_session_x.md` file to make sure others can get full context of what you did
-
-## Claude Code Subagent System
-
-This project uses specialized Claude Code subagents for complex tasks. Follow these rules when working with subagents:
-
-### Context Management Rules
-
-- **Always maintain project context** in `.claude/tasks/context_session_x.md`
-- **Read context file first** before starting any task to understand current project state
-- **Update context file** after completing research or implementation to share findings
-- **Use context template** from `.claude/tasks/context_session_x.md` for new projects
-
-### Available Subagents
-
-- **Angular UI Expert** (`angular-ui-expert`): Specialized in Angular 19, signals, PrimeNG, and LFX component architecture
-  - Use for: UI/UX research, component planning, Angular patterns, responsive design
-  - Configuration: `.claude/agents/angular-ui-expert.md`
-
-- **JIRA Project Manager** (`jira-project-manager`): Manages JIRA ticket lifecycle and ensures proper tracking
-  - Use for: Creating tickets, updating status, linking PRs, validating work is tracked
-  - Configuration: `.claude/agents/jira-project-manager.md`
-
-### When to Use Subagents
-
-- Complex multi-step UI implementations
-- Research-heavy tasks requiring specialized knowledge
-- Architecture decisions requiring expert analysis
-- Planning phases before implementation
-
-### Subagent Workflow
-
-1. **Parent agent creates context file** with project requirements and current state
-2. **Delegate to specialized subagent** with specific research/planning task
-3. **Use jira-project-manager to ensure work is tracked** before making any changes or commits
-4. **Subagent researches and creates detailed plan** (no implementation)
-5. **Parent agent reads plan and executes implementation** with full context
-6. **Update context file** with progress and decisions
-
-### Subagent Rules
-
-- Subagents should **NEVER implement code directly** - only research and plan
-- Always **read context file first** to understand project scope
-- Create **detailed implementation plans** in markdown format
-- **Save research reports** in `.claude/doc/` directory
-- **Update context file** after completing research
 
 ## Commit Workflow with JIRA Tracking
 
-Before making any commits:
+Before starting any work or commits:
 
-1. **Use jira-project-manager subagent** to validate changes are properly tracked
+1. **Check if there is a JIRA ticket** we always want to track our work. Do not use discarded or resolved tickets
 2. **Create JIRA ticket if needed** for untracked work
 3. **Include JIRA ticket in commit message** (e.g., LFXV2-XXX)
 4. **Link PR to JIRA ticket** when creating pull requests
