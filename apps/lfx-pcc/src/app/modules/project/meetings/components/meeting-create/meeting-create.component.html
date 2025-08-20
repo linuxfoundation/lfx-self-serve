@@ -19,7 +19,6 @@
           <p-step [value]="1" data-testid="meeting-create-step-1"></p-step>
           <p-step [value]="2" data-testid="meeting-create-step-2"></p-step>
           <p-step [value]="3" data-testid="meeting-create-step-3"></p-step>
-          <p-step [value]="4" data-testid="meeting-create-step-4"></p-step>
         </p-step-list>
 
         <p-step-panels>
@@ -43,9 +42,7 @@
 
           <p-step-panel [value]="3" data-testid="meeting-create-panel-3">
             <ng-template #content let-activateCallback="activateCallback">
-              <div class="min-h-96 flex items-center justify-center text-slate-500">
-                <p>Step 5: Resources & Summary - To be implemented</p>
-              </div>
+              <lfx-meeting-resources-summary [form]="form()" (goToStep)="goToStep($event)"> </lfx-meeting-resources-summary>
             </ng-template>
           </p-step-panel>
         </p-step-panels>

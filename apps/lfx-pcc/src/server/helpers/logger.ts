@@ -23,7 +23,7 @@ export class Logger {
         user_agent: req.get('User-Agent'),
         ip_address: req.ip,
       },
-      `Starting ${operation.replace('_', ' ')}`
+      `Starting ${operation.replace(/_/g, ' ')}`
     );
 
     return startTime;
@@ -43,7 +43,7 @@ export class Logger {
         ...metadata,
         request_id: req.id,
       },
-      `Successfully completed ${operation.replace('_', ' ')}`
+      `Successfully completed ${operation.replace(/_/g, ' ')}`
     );
   }
 
@@ -66,7 +66,7 @@ export class Logger {
         ...metadata,
         request_id: req.id,
       },
-      `Failed to ${operation.replace('_', ' ')}`
+      `Failed to ${operation.replace(/_/g, ' ')}`
     );
   }
 
@@ -82,7 +82,7 @@ export class Logger {
         ...metadata,
         request_id: req.id,
       },
-      `Validation failed for ${operation.replace('_', ' ')}`
+      `Validation failed for ${operation.replace(/_/g, ' ')}`
     );
   }
 
@@ -99,7 +99,7 @@ export class Logger {
         ...metadata,
         request_id: req.id,
       },
-      `ETag operation: ${operation.replace('_', ' ')}`
+      `ETag operation: ${operation.replace(/_/g, ' ')}`
     );
   }
 
@@ -114,7 +114,7 @@ export class Logger {
         ...metadata,
         request_id: req.id,
       },
-      `Warning during ${operation.replace('_', ' ')}: ${message}`
+      `Warning during ${operation.replace(/_/g, ' ')}: ${message}`
     );
   }
 

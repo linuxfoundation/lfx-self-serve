@@ -60,9 +60,19 @@
   }
 
   .p-fileupload {
-    .p-fileupload-content {
-      @apply mx-3 mb-3 border border-dashed border-blue-300 rounded-md text-gray-500;
+    .p-fileupload-header {
+      @apply hidden;
+    }
 
+    .p-fileupload-content {
+      .p-message-error {
+        .p-message-text {
+          @apply text-xs;
+        }
+      }
+    }
+
+    .p-fileupload-content {
       .p-fileupload-file-list {
         @apply hidden;
       }

@@ -4,19 +4,21 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
-import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
+import { AbstractControl, FormArray, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { MeetingVisibility, RecurrenceType } from '@lfx-pcc/shared/enums';
-import { CreateMeetingRequest, MeetingRecurrence } from '@lfx-pcc/shared/interfaces';
+import { CreateMeetingRequest, MeetingAttachment, MeetingRecurrence, PendingAttachment } from '@lfx-pcc/shared/interfaces';
 import { getUserTimezone } from '@lfx-pcc/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
 import { StepperModule } from 'primeng/stepper';
+import { forkJoin, Observable, of, take } from 'rxjs';
 
 import { MeetingDetailsComponent } from '../meeting-details/meeting-details.component';
 import { MeetingPlatformFeaturesComponent } from '../meeting-platform-features/meeting-platform-features.component';
+import { MeetingResourcesSummaryComponent } from '../meeting-resources-summary/meeting-resources-summary.component';
 import { MeetingTypeSelectionComponent } from '../meeting-type-selection/meeting-type-selection.component';
 
 @Component({
@@ -30,6 +32,7 @@ import { MeetingTypeSelectionComponent } from '../meeting-type-selection/meeting
     MeetingTypeSelectionComponent,
     MeetingDetailsComponent,
     MeetingPlatformFeaturesComponent,
+    MeetingResourcesSummaryComponent,
   ],
   templateUrl: './meeting-create.component.html',
 })
@@ -47,6 +50,11 @@ export class MeetingCreateComponent {
   // Form state
   public form = signal<FormGroup>(this.createMeetingFormGroup());
   public submitting = signal<boolean>(false);
+
+  // Get pending attachments from the form
+  private get pendingAttachments(): PendingAttachment[] {
+    return this.form().get('attachments')?.value || [];
+  }
 
   // Validation signals for template
   public readonly canProceed = signal<boolean>(false);
@@ -166,16 +174,42 @@ export class MeetingCreateComponent {
       ai_summary_access: formValue.ai_summary_access || 'PCC',
       recording_access: formValue.recording_access || 'Members',
       recurrence: recurrenceObject,
+      important_links: (this.form().get('important_links') as FormArray).value || [],
     };
 
     this.meetingService.createMeeting(meetingData).subscribe({
-      next: () => {
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Success',
-          detail: 'Meeting created successfully',
-        });
-        this.router.navigate(['/project', project.slug, 'meetings']);
+      next: (meeting) => {
+        // If we have pending attachments, save them to the database
+        if (this.pendingAttachments.length > 0) {
+          this.savePendingAttachments(meeting.id)
+            .pipe(take(1))
+            .subscribe({
+              next: () => {
+                this.messageService.add({
+                  severity: 'success',
+                  summary: 'Success',
+                  detail: `Meeting created successfully with ${this.pendingAttachments.length} attachment(s)`,
+                });
+                this.router.navigate(['/project', project.slug, 'meetings']);
+              },
+              error: (attachmentError: any) => {
+                console.error('Error saving attachments:', attachmentError);
+                this.messageService.add({
+                  severity: 'warn',
+                  summary: 'Meeting Created',
+                  detail: 'Meeting created but some attachments failed to save. You can add them later.',
+                });
+                this.router.navigate(['/project', project.slug, 'meetings']);
+              },
+            });
+        } else {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: 'Meeting created successfully',
+          });
+          this.router.navigate(['/project', project.slug, 'meetings']);
+        }
       },
       error: (error) => {
         console.error('Error creating meeting:', error);
@@ -273,11 +307,9 @@ export class MeetingCreateComponent {
         ai_summary_access: new FormControl('PCC'),
         recording_access: new FormControl('Members'),
 
-        // Step 4: Participants
-        guestEmails: new FormControl<string[]>([]),
-
-        // Step 5: Resources
-        importantLinks: new FormControl<{ title: string; url: string }[]>([]),
+        // Step 4: Resources & Summary
+        attachments: new FormControl<PendingAttachment[]>([]),
+        important_links: new FormArray([]),
       },
       { validators: this.futureDateTimeValidator() }
     );
@@ -455,7 +487,7 @@ export class MeetingCreateComponent {
   }
 
   private getStepTitle(step: number): string {
-    const titles = ['Meeting Type', 'Meeting Details', 'Platform & Features', 'Participants', 'Resources & Summary'];
+    const titles = ['Meeting Type', 'Meeting Details', 'Platform & Features', 'Resources & Summary'];
     return titles[step] || '';
   }
 
@@ -494,5 +526,19 @@ export class MeetingCreateComponent {
       const generatedTitle = `${meetingType} Meeting - ${formattedDate}`;
       form.get('topic')?.setValue(generatedTitle);
     }
+  }
+
+  private savePendingAttachments(meetingId: string): Observable<MeetingAttachment[]> {
+    const attachmentsToSave = this.pendingAttachments.filter((attachment) => !attachment.uploading && !attachment.uploadError && attachment.fileUrl);
+
+    if (attachmentsToSave.length === 0) {
+      return of([]);
+    }
+
+    const saveRequests = attachmentsToSave.map((attachment) =>
+      this.meetingService.createAttachmentFromUrl(meetingId, attachment.fileName, attachment.fileUrl, attachment.fileSize, attachment.mimeType)
+    );
+
+    return forkJoin(saveRequests).pipe(take(1));
   }
 }

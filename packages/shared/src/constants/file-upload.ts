@@ -14,6 +14,8 @@ export const ALLOWED_FILE_TYPES = [
   'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
   'application/vnd.ms-powerpoint',
   'application/vnd.openxmlformats-officedocument.presentationml.presentation',
+  'text/plain',
+  'text/markdown',
 ] as const;
 
 export const MAX_FILE_SIZE_BYTES = 10 * 1024 * 1024; // 10MB

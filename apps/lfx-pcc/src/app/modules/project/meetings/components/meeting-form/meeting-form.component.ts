@@ -44,6 +44,8 @@ import { forkJoin, Observable, of, take, tap } from 'rxjs';
   styleUrl: './meeting-form.component.scss',
 })
 export class MeetingFormComponent {
+  private static readonly allowedFileTypesSet = new Set(ALLOWED_FILE_TYPES);
+
   private readonly config = inject(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly meetingService = inject(MeetingService);
@@ -273,7 +275,12 @@ export class MeetingFormComponent {
       };
 
       // Add to pending list with uploading status
-      this.pendingAttachments.update((current) => [...current, pendingAttachment]);
+      this.pendingAttachments.update((current) => {
+        const newAttachments = [...current, pendingAttachment];
+        // Update form control to reflect new attachments immediately
+        this.form().get('attachments')?.setValue(newAttachments);
+        return newAttachments;
+      });
 
       // Start the upload
       this.meetingService.uploadFileToStorage(file).subscribe({
@@ -305,7 +312,7 @@ export class MeetingFormComponent {
     }
 
     // Check file type
-    if (!ALLOWED_FILE_TYPES.includes(file.type as (typeof ALLOWED_FILE_TYPES)[number])) {
+    if (!MeetingFormComponent.allowedFileTypesSet.has(file.type as (typeof ALLOWED_FILE_TYPES)[number])) {
       const allowedTypes = ALLOWED_FILE_TYPES.map((type) => type.split('/')[1]).join(', ');
       return `File type "${file.type}" is not supported. Allowed types: ${allowedTypes}.`;
     }
@@ -410,6 +417,9 @@ export class MeetingFormComponent {
 
         // Recording access
         recording_access: new FormControl('Members'),
+
+        // Attachments
+        attachments: new FormControl<PendingAttachment[]>([]),
       },
       { validators: this.futureDateTimeValidator() }
     );

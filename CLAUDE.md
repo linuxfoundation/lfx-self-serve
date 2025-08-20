@@ -123,7 +123,7 @@ lfx-pcc-v3/
 - Branch names should be following the commit types (feat,fix,docs, etc) followed by the JIRA ticket number. i.e; feat/LFXV2-123 or ci/LFXV2-456
 - PR titles must also follow a similar format as conventional commits - `type(scope): description`. The scope has to follow the angular config for conventional commit and not include the JIRA ticket in the title, and everything should be in lowercase.
 - All interfaces, reusable constants, and enums should live in the shared package.
-- Before you do any work, MUST view files in `.claude/tasks/context_session_x.md` file to get the full context (x being the id of the session we are operating in, if file doesn't exist, then create one)
+- Before you do any work, MUST view files in `.claude/tasks/context_session_x.md` file to get the full context (x being the id of the session we are operating in, if file doesn't exist, then create one). Each context session file should be per feature
 - `.claude/tasks/context_session_x.md` should contain most of context of what we did, overall plan, and sub agents will continuously add context to the file
 - After you finish the work, MUST update the `.claude/tasks/context_session_x.md` file to make sure others can get full context of what you did
 

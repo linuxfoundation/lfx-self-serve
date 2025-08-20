@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MeetingVisibility, RecurrenceType, MeetingType } from '../enums';
+import { MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
 
 export interface MeetingRecurrence {
   end_date_time?: string;
@@ -12,6 +12,12 @@ export interface MeetingRecurrence {
   repeat_interval: number;
   type: RecurrenceType;
   weekly_days?: string;
+}
+
+export interface ImportantLink {
+  id?: string;
+  title: string;
+  url: string;
 }
 
 export interface MeetingCommittee {
@@ -87,6 +93,7 @@ export interface CreateMeetingRequest {
   recurrence?: MeetingRecurrence;
   restricted?: boolean;
   committees?: string[];
+  important_links?: ImportantLink[];
 }
 
 export interface UpdateMeetingRequest {

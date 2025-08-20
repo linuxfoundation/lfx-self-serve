@@ -139,7 +139,7 @@ export class Responder {
 
     // Handle HTTP status code errors
     const statusCode = errorDetails.statusCode;
-    const message = errorDetails.message || `Failed to ${operation.replace('_', ' ')}`;
+    const message = errorDetails.message || `Failed to ${operation.replace(/_/g, ' ')}`;
 
     this.error(res, message, {
       statusCode,

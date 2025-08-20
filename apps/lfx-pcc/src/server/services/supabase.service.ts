@@ -22,6 +22,7 @@ import {
   User,
   UserPermissionSummary,
 } from '@lfx-pcc/shared/interfaces';
+import { createApiError, createHttpError } from '../utils/api-error';
 import dotenv from 'dotenv';
 
 dotenv.config();
@@ -715,19 +716,28 @@ export class SupabaseService {
   public async createMeeting(meeting: CreateMeetingRequest): Promise<Meeting> {
     const url = `${this.baseUrl}/meetings`;
 
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(meeting),
-      signal: AbortSignal.timeout(this.timeout),
-    });
+    try {
+      const response = await fetch(url, {
+        method: 'POST',
+        headers: this.getHeaders(),
+        body: JSON.stringify(meeting),
+        signal: AbortSignal.timeout(this.timeout),
+      });
 
-    if (!response.ok) {
-      throw new Error(`Failed to create meeting: ${response.status} ${response.statusText}: ${await response.text()}`);
+      if (!response.ok) {
+        const errorText = await response.text();
+        const error = this.parseSupabaseError(response, errorText, 'Failed to create meeting');
+        throw error;
+      }
+
+      const data = await response.json();
+      return data?.[0] || data;
+    } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        throw this.createTimeoutError('create meeting');
+      }
+      throw error;
     }
-
-    const data = await response.json();
-    return data?.[0] || data;
   }
 
   public async updateMeeting(id: string, meeting: UpdateMeetingRequest, editType?: 'single' | 'future'): Promise<Meeting> {
@@ -1142,5 +1152,125 @@ export class SupabaseService {
     if (!response.ok) {
       throw new Error(`Failed to create committee permission: ${response.status} ${response.statusText}`);
     }
+  }
+
+  // Error handling helper methods
+  private parseSupabaseError(response: Response, errorText: string, operation: string) {
+    const status = response.status;
+
+    try {
+      // Try to parse JSON error response from Supabase
+      const errorJson = JSON.parse(errorText);
+
+      if (errorJson.message) {
+        // Supabase returns structured errors
+        let userMessage = errorJson.message;
+        let code = 'SUPABASE_ERROR';
+
+        // Parse common Supabase/PostgreSQL errors into user-friendly messages
+        if (errorJson.code) {
+          code = errorJson.code;
+          userMessage = this.parsePostgresError(errorJson.code, errorJson.message, errorJson.details);
+        } else if (errorJson.hint) {
+          userMessage = errorJson.hint;
+        }
+
+        return createApiError({
+          message: userMessage,
+          status,
+          code,
+          service: 'supabase',
+          originalMessage: errorJson.message,
+        });
+      }
+    } catch {
+      // Not valid JSON, treat as plain text error
+    }
+
+    // Handle HTTP status codes
+    if (status >= 400) {
+      return createHttpError(status, response.statusText, errorText);
+    }
+
+    // Fallback to generic error
+    return createApiError({
+      message: `${operation}: ${errorText}`,
+      status,
+      code: 'SUPABASE_ERROR',
+      service: 'supabase',
+      originalMessage: errorText,
+    });
+  }
+
+  private parsePostgresError(code: string, message: string, details?: string): string {
+    switch (code) {
+      case '23505': // unique_violation
+        if (message.includes('duplicate key')) {
+          // Parse specific constraint names for better user messages
+          if (message.includes('meetings_project_uid_topic_start_time_key')) {
+            return 'A meeting with this topic and start time already exists for this project';
+          }
+          if (message.includes('committees_project_uid_name_key')) {
+            return 'A committee with this name already exists for this project';
+          }
+          if (message.includes('users_email_key')) {
+            return 'An account with this email address already exists';
+          }
+          // Generic fallback
+          return 'This item already exists. Please use different values.';
+        }
+        return message;
+
+      case '23503': // foreign_key_violation
+        if (message.includes('project_uid')) {
+          return 'The specified project does not exist';
+        }
+        if (message.includes('user_id')) {
+          return 'The specified user does not exist';
+        }
+        if (message.includes('committee_id')) {
+          return 'The specified committee does not exist';
+        }
+        if (message.includes('meeting_id')) {
+          return 'The specified meeting does not exist';
+        }
+        return 'Referenced item does not exist';
+
+      case '23514': // check_violation
+        return 'Invalid data provided - please check your input values';
+
+      case '23502': // not_null_violation
+        if (details) {
+          // Extract field name from details
+          const fieldMatch = details.match(/column "([^"]+)"/);
+          if (fieldMatch) {
+            const field = fieldMatch[1].replace(/_/g, ' ');
+            return `Missing required field: ${field}`;
+          }
+        }
+        return 'Missing required information';
+
+      case '42501': // insufficient_privilege
+        return 'You do not have permission to perform this action';
+
+      case '42P01': // undefined_table
+        return 'System error: Database table not found';
+
+      case '42703': // undefined_column
+        return 'System error: Database column not found';
+
+      default:
+        // Return the original message for unknown codes
+        return message;
+    }
+  }
+
+  private createTimeoutError(operation: string) {
+    return createApiError({
+      message: `Request timeout while trying to ${operation}`,
+      status: 408,
+      code: 'TIMEOUT',
+      service: 'supabase',
+    });
   }
 }

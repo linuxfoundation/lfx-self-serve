@@ -70,6 +70,20 @@ export class FileUploadComponent {
   public readonly onValidationFail = output<any>();
   public readonly onCustomUpload = output<any>();
 
+  // Helper methods for template
+  public getFileTypeHint(): string {
+    const accept = this.accept();
+    if (!accept) return '';
+
+    const extensions = accept.split(',').map((ext) => ext.trim().replace(/\./g, '').toUpperCase());
+    return extensions.join(', ');
+  }
+
+  public getFileExtension(fileName: string): string {
+    const extension = fileName.split('.').pop()?.toUpperCase();
+    return extension || 'FILE';
+  }
+
   // Handlers
   protected handleBeforeUpload(event: any): void {
     this.onBeforeUpload.emit(event);

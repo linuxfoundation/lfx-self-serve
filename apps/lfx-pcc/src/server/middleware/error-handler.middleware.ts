@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Request, Response, NextFunction } from 'express';
 import { ApiError } from '@lfx-pcc/shared/interfaces';
+import { NextFunction, Request, Response } from 'express';
 
 export function apiErrorHandler(error: ApiError, req: Request, res: Response, next: NextFunction): void {
   // If response already sent, delegate to default Express error handler
