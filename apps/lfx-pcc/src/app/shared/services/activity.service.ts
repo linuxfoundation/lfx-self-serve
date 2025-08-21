@@ -15,14 +15,14 @@ export class ActivityService {
   /**
    * Get recent activity for a specific project
    */
-  public getRecentActivitiesByProject(projectSlug: string, limit: number = 10): Observable<RecentActivity[]> {
+  public getRecentActivitiesByProject(projectUid: string, limit: number = 10): Observable<RecentActivity[]> {
     let params = new HttpParams();
 
     if (limit) {
       params = params.set('limit', limit.toString());
     }
 
-    return this.http.get<RecentActivity[]>(`/api/projects/${projectSlug}/recent-activity`, { params }).pipe(
+    return this.http.get<RecentActivity[]>(`/api/projects/${projectUid}/recent-activity`, { params }).pipe(
       catchError((error) => {
         console.error('Failed to load recent activities:', error);
         return of([]);

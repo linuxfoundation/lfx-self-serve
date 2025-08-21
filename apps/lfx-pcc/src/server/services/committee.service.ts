@@ -16,6 +16,7 @@ import {
 import { Request } from 'express';
 
 import { createApiError } from '../utils/api-error';
+import { ApiClientService } from './api-client.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -24,9 +25,11 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
  */
 export class CommitteeService {
   private etagService: ETagService;
+  private microserviceProxy: MicroserviceProxyService;
 
-  public constructor(private microserviceProxy: MicroserviceProxyService) {
-    this.etagService = new ETagService(microserviceProxy);
+  public constructor() {
+    this.microserviceProxy = new MicroserviceProxyService(new ApiClientService());
+    this.etagService = new ETagService(this.microserviceProxy);
   }
 
   /**

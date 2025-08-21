@@ -178,7 +178,7 @@ export class ProjectComponent {
           if (!project?.slug) {
             return of([]);
           }
-          return this.activityService.getRecentActivitiesByProject(project.slug, 5).pipe(
+          return this.activityService.getRecentActivitiesByProject(project.uid, 5).pipe(
             catchError((error) => {
               console.error('Error loading recent activities:', error);
               return of([]);

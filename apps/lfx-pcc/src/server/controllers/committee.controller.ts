@@ -1,23 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Request, Response } from 'express';
 import { CommitteeCreateData, CommitteeUpdateData } from '@lfx-pcc/shared/interfaces';
+import { Request, Response } from 'express';
 
-import { CommitteeService } from '../services/committee.service';
-import { MicroserviceProxyService } from '../services/microservice-proxy.service';
 import { Logger } from '../helpers/logger';
 import { Responder } from '../helpers/responder';
+import { CommitteeService } from '../services/committee.service';
 
 /**
  * Controller for handling committee HTTP requests
  */
 export class CommitteeController {
-  private committeeService: CommitteeService;
-
-  public constructor(private microserviceProxy: MicroserviceProxyService) {
-    this.committeeService = new CommitteeService(microserviceProxy);
-  }
+  private committeeService: CommitteeService = new CommitteeService();
 
   /**
    * GET /committees

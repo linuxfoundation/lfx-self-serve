@@ -39,3 +39,6 @@ export * from './meeting-attachment.interface';
 
 // Dashboard interfaces
 export * from './dashboard.interface';
+
+// NATS interfaces
+export * from './nats.interface';

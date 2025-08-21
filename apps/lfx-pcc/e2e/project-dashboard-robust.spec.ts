@@ -3,8 +3,13 @@
 
 import { expect, test } from '@playwright/test';
 
+import { ApiMockHelper } from './helpers/api-mock.helper';
+
 test.describe('Project Dashboard - Robust Tests', () => {
   test.beforeEach(async ({ page }) => {
+    // Setup API mocks before navigation
+    await ApiMockHelper.setupProjectSlugMock(page);
+
     // Navigate to homepage and search for a project
     await page.goto('/', { waitUntil: 'domcontentloaded' });
 

@@ -22,8 +22,9 @@ import {
   User,
   UserPermissionSummary,
 } from '@lfx-pcc/shared/interfaces';
-import { createApiError, createHttpError } from '../utils/api-error';
 import dotenv from 'dotenv';
+
+import { createApiError, createHttpError } from '../utils/api-error';
 
 dotenv.config();
 
@@ -79,9 +80,9 @@ export class SupabaseService {
     return projectsWithCounts;
   }
 
-  public async getProjectBySlug(slug: string) {
+  public async getProjectById(id: string) {
     const params = {
-      slug: `eq.${slug}`,
+      uid: `eq.${id}`,
       limit: '1',
     };
     const queryString = new URLSearchParams(params).toString();

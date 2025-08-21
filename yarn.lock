@@ -8520,6 +8520,7 @@ __metadata:
     eslint-plugin-import: "npm:^2.32.0"
     express: "npm:^4.18.2"
     express-openid-connect: "npm:^2.19.2"
+    nats: "npm:^2.29.3"
     ngx-cookie-service-ssr: "npm:^19.1.2"
     pino-http: "npm:^10.5.0"
     playwright: "npm:^1.54.2"
@@ -9270,6 +9271,15 @@ __metadata:
   languageName: node
   linkType: hard
 
+"nats@npm:^2.29.3":
+  version: 2.29.3
+  resolution: "nats@npm:2.29.3"
+  dependencies:
+    nkeys.js: "npm:1.1.0"
+  checksum: 10c0/9a4c09c4b562e415f28926cc7d3b609ee4a727570c398e90d5d71f1a4c08f84ebf8c6d881eb1d202d39fa071c4779bcd8764b982767135b09826f28386cc55fb
+  languageName: node
+  linkType: hard
+
 "natural-compare@npm:^1.4.0":
   version: 1.4.0
   resolution: "natural-compare@npm:1.4.0"
@@ -9327,6 +9337,15 @@ __metadata:
     "@angular/core": ^19.0.0
     "@angular/ssr": ^19.0.0
   checksum: 10c0/2e0f0ef7f0e0f3bfc01815555df826ff69d44dedbe112c4b1a19ccaee43de1709eea2be4182482bead80c55b0c10f6c493976cfceb1a909ede8fb8f0f9d6df13
+  languageName: node
+  linkType: hard
+
+"nkeys.js@npm:1.1.0":
+  version: 1.1.0
+  resolution: "nkeys.js@npm:1.1.0"
+  dependencies:
+    tweetnacl: "npm:1.0.3"
+  checksum: 10c0/44ff8d61e46d2b345351ed7844d66036a815aeca23927def6ca258e27a18a1678fe5ab161c5cf0b6e3a3993a945d422b71036986d09669b214540c8491478bef
   languageName: node
   linkType: hard
 
@@ -12197,6 +12216,13 @@ __metadata:
   bin:
     turbo: bin/turbo
   checksum: 10c0/f51ec295286b4126fee2a5020754126ccff8d062332599aeb2ad26edabd1847bc8c535f81cd4fa3aedcca9fd47e70c4effe3d38cbbac487ceed2db393e89fb0f
+  languageName: node
+  linkType: hard
+
+"tweetnacl@npm:1.0.3":
+  version: 1.0.3
+  resolution: "tweetnacl@npm:1.0.3"
+  checksum: 10c0/069d9df51e8ad4a89fbe6f9806c68e06c65be3c7d42f0701cc43dba5f0d6064686b238bbff206c5addef8854e3ce00c643bff59432ea2f2c639feab0ee1a93f9
   languageName: node
   linkType: hard
 

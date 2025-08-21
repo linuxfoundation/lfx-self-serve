@@ -3,8 +3,13 @@
 
 import { expect, test } from '@playwright/test';
 
+import { ApiMockHelper } from './helpers/api-mock.helper';
+
 test.describe('Project Dashboard', () => {
   test.beforeEach(async ({ page }) => {
+    // Setup API mocks before navigation
+    await ApiMockHelper.setupProjectSlugMock(page);
+
     // Navigate to homepage and search for a project
     await page.goto('/', { waitUntil: 'domcontentloaded' });
 
@@ -68,11 +73,12 @@ test.describe('Project Dashboard', () => {
     });
 
     test('should display all navigation tabs', async ({ page }) => {
-      await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Meetings' })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Committees' })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Mailing Lists' })).toBeVisible();
-      await expect(page.getByRole('link', { name: 'Settings' })).toBeVisible();
+      console.log(await page.getByTestId('menu-item').allInnerTexts());
+      await expect(page.getByTestId('menu-item').filter({ hasText: 'Dashboard' })).toBeVisible();
+      await expect(page.getByTestId('menu-item').filter({ hasText: 'Meetings' })).toBeVisible();
+      await expect(page.getByTestId('menu-item').filter({ hasText: 'Committees' })).toBeVisible();
+      await expect(page.getByTestId('menu-item').filter({ hasText: 'Mailing Lists' })).toBeVisible();
+      await expect(page.getByTestId('menu-item').filter({ hasText: 'Settings' })).toBeVisible();
     });
   });
 

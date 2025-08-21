@@ -43,11 +43,11 @@
         <div class="flex items-center gap-8 mb-8 flex-wrap">
           @for (metric of metrics(); track metric.label) {
             <div class="flex flex-col">
-              <div class="flex items-center gap-2 mb-1">
+              <div class="flex items-center gap-2 mb-1" data-testid="metric-label">
                 <i [class]="metric.icon" class="text-sm"></i>
                 <span class="text-sm text-gray-600">{{ metric.label }}</span>
               </div>
-              <div class="text-2xl font-normal text-gray-900 font-display">{{ metric.value }}</div>
+              <div class="text-2xl font-normal text-gray-900 font-display" data-testid="metric-value">{{ metric.value }}</div>
             </div>
           }
         </div>
@@ -62,6 +62,7 @@
             [routerLink]="menu.routerLink"
             class="pill"
             routerLinkActive="bg-blue-50 text-blue-600 border-0"
+            data-testid="menu-item"
             [routerLinkActiveOptions]="menu.routerLinkActiveOptions">
             @if (menu.icon) {
               <i [class]="menu.icon"></i>
@@ -74,9 +75,10 @@
             routerLink="/project/{{ projectSlug() }}/settings"
             class="pill"
             routerLinkActive="bg-blue-50 text-blue-600 border-0 block md:hidden"
+            data-testid="mobile-menu-item"
             [routerLinkActiveOptions]="{ exact: true }">
             <i class="fa-light fa-gear"></i>
-            Settings
+            <span>Settings</span>
           </a>
         </div>
       </div>
@@ -85,9 +87,10 @@
           routerLink="/project/{{ projectSlug() }}/settings"
           class="pill"
           routerLinkActive="bg-blue-50 text-blue-600 border-0"
+          data-testid="menu-item"
           [routerLinkActiveOptions]="{ exact: true }">
           <i class="fa-light fa-gear"></i>
-          Settings
+          <span>Settings</span>
         </a>
       </div>
     </div>

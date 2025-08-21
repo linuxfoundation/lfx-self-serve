@@ -3,16 +3,13 @@
 
 import { NextFunction, Request, Response, Router } from 'express';
 
-import { ApiClientService } from '../services/api-client.service';
-import { MicroserviceProxyService } from '../services/microservice-proxy.service';
-import { SupabaseService } from '../services/supabase.service';
 import { CommitteeController } from '../controllers/committee.controller';
+import { SupabaseService } from '../services/supabase.service';
 
 const router = Router();
 
 const supabaseService = new SupabaseService();
-const microserviceProxyService = new MicroserviceProxyService(new ApiClientService());
-const committeeController = new CommitteeController(microserviceProxyService);
+const committeeController = new CommitteeController();
 
 // Committee CRUD routes - using new controller pattern
 router.get('/', (req, res) => committeeController.getCommittees(req, res));

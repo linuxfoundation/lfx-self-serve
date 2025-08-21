@@ -3,6 +3,8 @@
 
 import { expect, test } from '@playwright/test';
 
+import { ApiMockHelper } from './helpers/api-mock.helper';
+
 test.describe('Homepage', () => {
   test.beforeEach(async ({ page }) => {
     await page.goto('/', { waitUntil: 'domcontentloaded' });
@@ -112,6 +114,9 @@ test.describe('Homepage', () => {
   });
 
   test('should filter projects when searching', async ({ page }) => {
+    // Setup API mocks before navigation
+    await ApiMockHelper.setupProjectSlugMock(page);
+
     // Wait for project cards to appear
     await expect(page.getByTestId('project-card').first()).toBeVisible({ timeout: 10000 });
 
@@ -144,6 +149,9 @@ test.describe('Homepage', () => {
   });
 
   test('should clear search and show all projects', async ({ page }) => {
+    // Setup API mocks before navigation
+    await ApiMockHelper.setupProjectSlugMock(page);
+
     // Wait for project cards to appear
     await expect(page.getByTestId('project-card').first()).toBeVisible({ timeout: 10000 });
 
@@ -167,6 +175,9 @@ test.describe('Homepage', () => {
   });
 
   test('should navigate to project detail when clicking a project card', async ({ page }) => {
+    // Setup API mocks before navigation
+    await ApiMockHelper.setupProjectSlugMock(page);
+
     // Wait for project cards to appear
     await expect(page.getByTestId('project-card').first()).toBeVisible({ timeout: 10000 });
 
@@ -176,9 +187,6 @@ test.describe('Homepage', () => {
       .filter({ has: page.getByTestId('project-title').filter({ hasText: 'Cloud Native Computing Foundation' }) });
     await expect(cncfCard).toBeVisible();
 
-    // Get the project name to verify navigation
-    const projectName = await cncfCard.getByTestId('project-title').innerText();
-
     // Click the project card
     await cncfCard.click();
 
@@ -186,7 +194,7 @@ test.describe('Homepage', () => {
     await expect(page).toHaveURL(/\/project\/[\w-]+$/, { timeout: 10000 });
 
     // Verify project detail page elements - use heading that contains the project name
-    await expect(page.getByRole('heading', { level: 1 }).filter({ hasText: projectName })).toBeVisible();
+    await expect(page.getByRole('heading', { level: 1 }).filter({ hasText: 'Cloud Native Computing Foundation' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'All Projects' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Dashboard' })).toBeVisible();
     await expect(page.getByRole('link', { name: 'Meetings' })).toBeVisible();
