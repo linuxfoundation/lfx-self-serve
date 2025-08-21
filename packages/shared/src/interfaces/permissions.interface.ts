@@ -1,78 +1,161 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { User } from './auth';
+import { User } from './auth.interface';
 import { Committee } from './committee.interface';
 
+/**
+ * Permission levels available in the system
+ * @description Access control levels for users within projects and committees
+ */
 export type PermissionLevel = 'read' | 'write';
+
+/**
+ * Permission scope types
+ * @description Areas where permissions can be applied
+ */
 export type PermissionScope = 'project' | 'committee';
 
+/**
+ * Project-level permission assignment
+ * @description Grants user access to entire project with specified permission level
+ */
 export interface ProjectPermission {
+  /** Unique permission record ID */
   id: number;
+  /** User ID this permission applies to */
   user_id: string;
+  /** Project UID this permission applies to */
   project_uid: string;
+  /** Level of access granted */
   permission_level: PermissionLevel;
+  /** Timestamp when permission was created */
   created_at?: string;
+  /** Timestamp when permission was last updated */
   updated_at?: string;
 }
 
+/**
+ * Committee-level permission assignment
+ * @description Grants user access to specific committee with specified permission level
+ */
 export interface CommitteePermission {
+  /** Unique permission record ID */
   id: number;
+  /** User ID this permission applies to */
   user_id: string;
+  /** Project UID containing the committee */
   project_uid: string;
+  /** Committee ID this permission applies to */
   committee_id: string;
+  /** Level of access granted */
   permission_level: PermissionLevel;
+  /** Timestamp when permission was created */
   created_at?: string;
+  /** Timestamp when permission was last updated */
   updated_at?: string;
 }
 
+/**
+ * Mailing list entity
+ * @description Communication channel associated with projects or committees
+ */
 export interface MailingList {
+  /** Unique mailing list identifier */
   id: string;
+  /** Mailing list display name */
   name: string;
+  /** Optional description of the mailing list purpose */
   description?: string;
+  /** Associated committee ID (if committee-specific) */
   committee_id?: string;
+  /** Project UID this mailing list belongs to */
   project_uid: string;
 }
 
+/**
+ * Comprehensive user permission summary
+ * @description Complete overview of a user's permissions across project and committees
+ */
 export interface UserPermissionSummary {
+  /** User profile information */
   user: Partial<User>;
+  /** Project-level permission (if any) */
   projectPermission?: {
+    /** Permission level granted */
     level: PermissionLevel;
+    /** Scope identifier */
     scope: 'project';
   };
+  /** Array of committee-specific permissions */
   committeePermissions: {
+    /** Committee this permission applies to */
     committee: Committee;
+    /** Permission level granted */
     level: PermissionLevel;
+    /** Scope identifier */
     scope: 'committee';
   }[];
 }
 
+/**
+ * Data required to create user permissions
+ * @description Input payload for granting permissions to new or existing users
+ */
 export interface CreateUserPermissionRequest {
+  /** User's first name */
   first_name: string;
+  /** User's last name */
   last_name: string;
+  /** User's email address */
   email: string;
+  /** User's username (optional) */
   username?: string;
+  /** Project UID to grant permissions for */
   project_uid: string;
+  /** Scope of permission (project or committee level) */
   permission_scope: PermissionScope;
+  /** Level of access to grant */
   permission_level: PermissionLevel;
-  committee_ids?: string[]; // Required when scope is 'committee'
+  /** Committee IDs (required when scope is 'committee') */
+  committee_ids?: string[];
 }
 
+/**
+ * Data required to update user permissions
+ * @description Input payload for modifying existing user permissions
+ */
 export interface UpdateUserPermissionRequest {
+  /** User ID to update permissions for */
   user_id: string;
+  /** Project UID the permissions apply to */
   project_uid: string;
+  /** Scope of permission (project or committee level) */
   permission_scope: PermissionScope;
+  /** Level of access to grant */
   permission_level: PermissionLevel;
-  committee_ids?: string[]; // Required when scope is 'committee'
+  /** Committee IDs (required when scope is 'committee') */
+  committee_ids?: string[];
 }
 
+/**
+ * Permission matrix display item
+ * @description UI representation of permission capabilities with visual styling
+ */
 export interface PermissionMatrixItem {
+  /** Permission scope (project/committee) */
   scope: string;
+  /** Permission level (read/write) */
   level: string;
+  /** Human-readable description of the permission */
   description: string;
+  /** List of capabilities this permission grants */
   capabilities: string[];
+  /** Visual styling for the permission badge */
   badge: {
+    /** Text color */
     color: string;
+    /** Background color */
     bgColor: string;
   };
 }

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 // Project interfaces
-export * from './project';
+export * from './project.interface';
 
 // Committee interfaces
 export * from './committee.interface';
@@ -11,13 +11,13 @@ export * from './committee.interface';
 export * from './member.interface';
 
 // Component interfaces
-export * from './components';
+export * from './components.interface';
 
 // Auth interfaces
-export * from './auth';
+export * from './auth.interface';
 
 // API interfaces
-export * from './api';
+export * from './api.interface';
 
 // Permissions interfaces
 export * from './permissions.interface';

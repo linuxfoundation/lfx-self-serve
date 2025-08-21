@@ -1,6 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+/**
+ * Available committee category types for classification
+ * @description Standard categories used across the LFX platform for organizing committees
+ * @readonly
+ * @example
+ * // Use in dropdown components
+ * <LfxDropdown options={COMMITTEE_CATEGORIES} />
+ */
 export const COMMITTEE_CATEGORIES = [
   { label: 'Legal Committee', value: 'Legal Committee' },
   { label: 'Finance Committee', value: 'Finance Committee' },
@@ -23,6 +31,14 @@ export const COMMITTEE_CATEGORIES = [
   { label: 'Other', value: 'Other' },
 ];
 
+/**
+ * Available member roles within committees
+ * @description Standard roles that members can have within committees and working groups
+ * @readonly
+ * @example
+ * // Use for role assignment
+ * const chairRole = MEMBER_ROLES.find(role => role.value === 'Chair');
+ */
 export const MEMBER_ROLES = [
   { label: 'Chair', value: 'Chair' },
   { label: 'Counsel', value: 'Counsel' },
@@ -38,6 +54,14 @@ export const MEMBER_ROLES = [
   { label: 'Technical Lead', value: 'Technical Lead' },
 ];
 
+/**
+ * Available voting status types for committee members
+ * @description Defines the voting rights and status of committee members
+ * @readonly
+ * @example
+ * // Check if member has voting rights
+ * const canVote = ['Voting Rep', 'Alternate Voting Rep'].includes(member.votingStatus);
+ */
 export const VOTING_STATUSES = [
   { label: 'Alternate Voting Rep', value: 'Alternate Voting Rep' },
   { label: 'Observer', value: 'Observer' },

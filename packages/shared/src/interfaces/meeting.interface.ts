@@ -3,40 +3,81 @@
 
 import { MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
 
+/**
+ * Meeting recurrence configuration
+ * @description Defines how and when a meeting repeats (compatible with Zoom API)
+ */
 export interface MeetingRecurrence {
+  /** End date/time for the recurrence pattern (ISO string) */
   end_date_time?: string;
+  /** Number of times the meeting should repeat before ending */
   end_times?: number;
+  /** Day of the month for monthly recurrence (1-31) */
   monthly_day?: number;
+  /** Week of the month for monthly recurrence (1-4, -1 for last week) */
   monthly_week?: number;
+  /** Day of the week for monthly recurrence (1-7, Sunday=1) */
   monthly_week_day?: number;
+  /** Interval between recurrences (e.g., 1=every week, 2=every other week) */
   repeat_interval: number;
+  /** Type of recurrence pattern */
   type: RecurrenceType;
+  /** Comma-separated days of week for weekly recurrence (1-7, Sunday=1) */
   weekly_days?: string;
 }
 
+/**
+ * Important link associated with a meeting
+ * @description External links relevant to the meeting (agendas, documents, etc.)
+ */
 export interface ImportantLink {
+  /** Unique identifier for the link */
   id?: string;
+  /** Display title for the link */
   title: string;
+  /** URL of the external resource */
   url: string;
 }
 
+/**
+ * Committee associated with a meeting
+ * @description Basic committee information for meeting association
+ */
 export interface MeetingCommittee {
+  /** Unique identifier for the committee */
   uid: string;
+  /** Display name of the committee */
   name: string;
+  /** Total number of members in the committee */
   committee_total_members: number;
 }
 
+/**
+ * Meeting participant information
+ * @description Individual or committee member participating in a meeting
+ */
 export interface MeetingParticipant {
+  /** Unique identifier for the participant */
   id: string;
+  /** ID of the meeting this participant is associated with */
   meeting_id: string;
+  /** Participant's first name */
   first_name: string;
+  /** Participant's last name */
   last_name: string;
+  /** Participant's email address */
   email: string;
+  /** Participant's organization (if any) */
   organization: string | null;
+  /** Whether this participant is a meeting host */
   is_host: boolean;
+  /** Participant's job title (if provided) */
   job_title: string | null;
+  /** Timestamp when participant was added */
   created_at: string;
+  /** Timestamp when participant was last updated */
   updated_at: string;
+  /** Type of participant (individual person or committee representative) */
   type: 'individual' | 'committee';
   invite_accepted: boolean | null;
   attended: boolean | null;

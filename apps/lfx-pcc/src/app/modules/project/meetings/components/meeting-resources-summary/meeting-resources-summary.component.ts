@@ -7,7 +7,7 @@ import { FormArray, FormControl, FormGroup, FormsModule, ReactiveFormsModule } f
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-pcc/shared/constants';
-import { PendingAttachment } from '@lfx-pcc/shared/interfaces';
+import { MeetingAttachment, PendingAttachment } from '@lfx-pcc/shared/interfaces';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -21,6 +21,9 @@ import { MessageService } from 'primeng/api';
 export class MeetingResourcesSummaryComponent implements OnInit {
   // Input from parent
   public readonly form = input.required<FormGroup>();
+  public readonly existingAttachments = input<MeetingAttachment[]>([]);
+  public readonly isEditMode = input<boolean>(false);
+  public readonly deletingAttachmentId = input<string | null>(null);
 
   // File management
   public pendingAttachments = signal<PendingAttachment[]>([]);
@@ -45,6 +48,7 @@ export class MeetingResourcesSummaryComponent implements OnInit {
 
   // Navigation
   public readonly goToStep = output<number>();
+  public readonly deleteAttachment = output<string>();
 
   public constructor() {}
 
@@ -146,6 +150,10 @@ export class MeetingResourcesSummaryComponent implements OnInit {
   // Navigation methods
   public editStep(step: number): void {
     this.goToStep.emit(step);
+  }
+
+  public onDeleteExistingAttachment(attachmentId: string): void {
+    this.deleteAttachment.emit(attachmentId);
   }
 
   // Private methods

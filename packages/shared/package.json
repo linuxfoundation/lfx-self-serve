@@ -29,6 +29,12 @@
       "require": "./dist/constants/index.js",
       "default": "./dist/constants/index.js"
     },
+    "./validators": {
+      "types": "./dist/validators/index.d.ts",
+      "import": "./dist/validators/index.js",
+      "require": "./dist/validators/index.js",
+      "default": "./dist/validators/index.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },
@@ -38,10 +44,16 @@
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
+    "@angular/forms": "^19.0.0",
     "@fullcalendar/core": "^6.1.19",
     "typescript": "5.8.3"
   },
   "peerDependencies": {
+    "@angular/forms": "^19.0.0",
     "@fullcalendar/core": "^6.1.19"
+  },
+  "dependencies": {
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0"
   }
 }

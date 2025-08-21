@@ -4,19 +4,19 @@
 import { MeetingType } from '../../enums';
 import { MeetingTemplateGroup } from '../../interfaces';
 
-export { BOARD_TEMPLATES } from './board';
-export { MAINTAINERS_TEMPLATES } from './maintainers';
-export { MARKETING_TEMPLATES } from './marketing';
-export { TECHNICAL_TEMPLATES } from './technical';
-export { LEGAL_TEMPLATES } from './legal';
-export { OTHER_TEMPLATES } from './other';
+export { BOARD_TEMPLATES } from './board.constants';
+export { MAINTAINERS_TEMPLATES } from './maintainers.constants';
+export { MARKETING_TEMPLATES } from './marketing.constants';
+export { TECHNICAL_TEMPLATES } from './technical.constants';
+export { LEGAL_TEMPLATES } from './legal.constants';
+export { OTHER_TEMPLATES } from './other.constants';
 
-import { BOARD_TEMPLATES } from './board';
-import { MAINTAINERS_TEMPLATES } from './maintainers';
-import { MARKETING_TEMPLATES } from './marketing';
-import { TECHNICAL_TEMPLATES } from './technical';
-import { LEGAL_TEMPLATES } from './legal';
-import { OTHER_TEMPLATES } from './other';
+import { BOARD_TEMPLATES } from './board.constants';
+import { MAINTAINERS_TEMPLATES } from './maintainers.constants';
+import { MARKETING_TEMPLATES } from './marketing.constants';
+import { TECHNICAL_TEMPLATES } from './technical.constants';
+import { LEGAL_TEMPLATES } from './legal.constants';
+import { OTHER_TEMPLATES } from './other.constants';
 
 export const MEETING_TEMPLATES: MeetingTemplateGroup[] = [
   {

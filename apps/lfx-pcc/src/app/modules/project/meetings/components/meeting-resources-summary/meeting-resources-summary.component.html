@@ -60,6 +60,61 @@
       </div>
     }
 
+    <!-- Existing Attachments (for edit mode) -->
+    @if (isEditMode() && existingAttachments().length > 0) {
+      <div>
+        <label class="text-sm font-semibold text-slate-900 mb-3 block"> Existing Files ({{ existingAttachments().length }}) </label>
+        <div class="space-y-2">
+          @for (attachment of existingAttachments(); track attachment.id; let i = $index) {
+            <div
+              class="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg"
+              [attr.data-testid]="'existing-attachment-item-' + i">
+              <div class="flex items-center gap-3">
+                <div class="p-2 bg-green-100 rounded-lg">
+                  <i class="fa-light fa-file text-green-600"></i>
+                </div>
+                <div>
+                  <p class="text-sm font-medium text-slate-900">{{ attachment.file_name }}</p>
+                  <p class="text-xs text-slate-500">
+                    {{ getFileType(attachment.file_name) }}
+                    @if (attachment.file_size) {
+                      • {{ attachment.file_size | fileSize }}
+                    }
+                  </p>
+                </div>
+              </div>
+              <div class="flex items-center gap-2">
+                @if (attachment.file_url) {
+                  <a
+                    [href]="attachment.file_url"
+                    target="_blank"
+                    class="h-6 w-6 p-0 text-slate-400 hover:text-blue-500 flex items-center justify-center"
+                    data-testid="download-attachment-btn">
+                    <i class="fa-light fa-download w-3 h-3"></i>
+                  </a>
+                }
+                <button
+                  (click)="onDeleteExistingAttachment(attachment.id)"
+                  [disabled]="deletingAttachmentId() === attachment.id"
+                  [class]="
+                    deletingAttachmentId() === attachment.id
+                      ? 'h-6 w-6 p-0 text-slate-300 flex items-center justify-center cursor-not-allowed'
+                      : 'h-6 w-6 p-0 text-slate-400 hover:text-red-500 flex items-center justify-center'
+                  "
+                  data-testid="delete-existing-attachment-btn">
+                  @if (deletingAttachmentId() === attachment.id) {
+                    <i class="fa-light fa-spinner fa-spin w-3 h-3"></i>
+                  } @else {
+                    <i class="fa-light fa-trash w-3 h-3"></i>
+                  }
+                </button>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    }
+
     <!-- Add Important Links Section -->
     <div>
       <label class="text-sm font-semibold text-slate-900 mb-2 block">Add Important Links</label>

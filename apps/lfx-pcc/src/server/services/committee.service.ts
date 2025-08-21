@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { getValidCommitteeCategories } from '@lfx-pcc/shared/constants';
 import {
   Committee,
   CommitteeCreateData,
@@ -12,12 +13,11 @@ import {
   QueryServiceResponse,
   ValidationApiError,
 } from '@lfx-pcc/shared/interfaces';
-import { getValidCommitteeCategories } from '@lfx-pcc/shared/constants';
 import { Request } from 'express';
 
+import { createApiError } from '../utils/api-error';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
-import { createApiError } from '../utils/api-error';
 
 /**
  * Service for handling committee business logic
@@ -253,7 +253,7 @@ export class CommitteeService {
     }
 
     // Name validation
-    if (data.name !== undefined) {
+    if (data.name !== null && data.name !== undefined) {
       if (typeof data.name !== 'string') {
         errors.push({
           field: 'name',
@@ -276,7 +276,7 @@ export class CommitteeService {
     }
 
     // Category validation
-    if (data.category !== undefined) {
+    if (data.category !== null && data.category !== undefined) {
       const validCategories = getValidCommitteeCategories();
       if (typeof data.category !== 'string') {
         errors.push({
@@ -294,7 +294,7 @@ export class CommitteeService {
     }
 
     // Description validation
-    if (data.description !== undefined) {
+    if (data.description !== null) {
       if (typeof data.description !== 'string') {
         errors.push({
           field: 'description',
@@ -311,7 +311,7 @@ export class CommitteeService {
     }
 
     // Display name validation
-    if (data.display_name !== undefined) {
+    if (data.display_name !== null) {
       if (typeof data.display_name !== 'string') {
         errors.push({
           field: 'display_name',
@@ -328,7 +328,7 @@ export class CommitteeService {
     }
 
     // Website validation
-    if (data.website !== undefined) {
+    if (data.website !== null) {
       if (typeof data.website !== 'string') {
         errors.push({
           field: 'website',

@@ -26,9 +26,7 @@ import { catchError, combineLatest, finalize, map, of, take, tap } from 'rxjs';
 
 import { MeetingCommitteeModalComponent } from '../meeting-committee-modal/meeting-committee-modal.component';
 import { MeetingDeleteConfirmationComponent, MeetingDeleteResult } from '../meeting-delete-confirmation/meeting-delete-confirmation.component';
-import { MeetingFormComponent } from '../meeting-form/meeting-form.component';
 import { ParticipantFormComponent } from '../participant-form/participant-form.component';
-import { RecurringEditOption, RecurringMeetingEditOptionsComponent } from '../recurring-meeting-edit-options/recurring-meeting-edit-options.component';
 
 @Component({
   selector: 'lfx-meeting-card',
@@ -138,36 +136,6 @@ export class MeetingCardComponent implements OnInit {
         this.initParticipantsList();
       });
     });
-  }
-
-  public editMeeting(): void {
-    const meeting = this.meeting();
-    if (!meeting) return;
-
-    // Check if it's a recurring meeting
-    if (meeting.recurrence) {
-      // Show recurring edit options dialog first
-      const optionsDialog = this.dialogService.open(RecurringMeetingEditOptionsComponent, {
-        header: 'Edit Recurring Meeting',
-        width: '450px',
-        modal: true,
-        closable: true,
-        dismissableMask: true,
-        data: {
-          meeting: meeting,
-        },
-      });
-
-      optionsDialog.onClose.pipe(take(1)).subscribe((result: RecurringEditOption) => {
-        if (result?.proceed) {
-          // Open the meeting form with the selected edit type
-          this.openMeetingEditForm(meeting, result.editType);
-        }
-      });
-    } else {
-      // For non-recurring meetings, open the form directly
-      this.openMeetingEditForm(meeting, 'single');
-    }
   }
 
   public openCommitteeModal(): void {
@@ -310,29 +278,6 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  private openMeetingEditForm(meeting: Meeting, editType: 'single' | 'future'): void {
-    this.dialogService
-      .open(MeetingFormComponent, {
-        header: 'Edit Meeting',
-        width: '600px',
-        modal: true,
-        closable: true,
-        dismissableMask: true,
-        data: {
-          meeting: meeting,
-          isEditing: true,
-          editType: editType,
-          meetingId: meeting.id,
-        },
-      })
-      .onClose.pipe(take(1))
-      .subscribe((updatedMeeting) => {
-        if (updatedMeeting) {
-          this.refreshMeeting();
-        }
-      });
-  }
-
   private deleteMeeting(): void {
     const meeting = this.meeting();
     if (!meeting) return;
@@ -374,11 +319,14 @@ export class MeetingCardComponent implements OnInit {
           command: () => this.openCommitteeModal(),
         });
 
-        baseItems.push({
-          label: 'Edit',
-          icon: 'fa-light fa-edit',
-          command: () => this.editMeeting(),
-        });
+        const projectSlug = this.project()?.slug;
+        if (projectSlug) {
+          baseItems.push({
+            label: 'Edit',
+            icon: 'fa-light fa-edit',
+            routerLink: ['/project', projectSlug, 'meetings', this.meeting().id, 'edit'],
+          });
+        }
         baseItems.push({
           separator: true,
         });

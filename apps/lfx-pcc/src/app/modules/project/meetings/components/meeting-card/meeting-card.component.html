@@ -53,14 +53,16 @@
             data-testid="share-meeting-button"
             pTooltip="Share Meeting"></lfx-button>
         }
-        <lfx-button
-          icon="fa-light fa-edit"
-          [text]="true"
-          [rounded]="true"
-          size="small"
-          severity="secondary"
-          data-testid="edit-meeting-button"
-          (click)="editMeeting()"></lfx-button>
+        @if (project()?.slug) {
+          <lfx-button
+            icon="fa-light fa-edit"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="edit-meeting-button"
+            [routerLink]="['/project', project()!.slug, 'meetings', meeting().id, 'edit']"></lfx-button>
+        }
         <lfx-button
           [icon]="loading() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis'"
           [text]="true"

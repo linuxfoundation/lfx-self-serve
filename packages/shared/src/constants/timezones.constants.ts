@@ -1,12 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+/**
+ * Timezone option interface for dropdown components
+ * @description Structured timezone data with human-readable labels and IANA identifiers
+ */
 export interface TimezoneOption {
+  /** Human-readable timezone label */
   label: string;
+  /** IANA timezone identifier value */
   value: string;
+  /** UTC offset string representation */
   offset: string;
 }
 
+/**
+ * Comprehensive list of timezone options for global meeting scheduling
+ * @description Organized by region with major cities and their UTC offsets
+ * @readonly
+ * @example
+ * // Use in timezone selection dropdown
+ * <LfxDropdown options={TIMEZONES} placeholder="Select timezone" />
+ *
+ * // Find specific timezone
+ * const nyTimezone = TIMEZONES.find(tz => tz.value === 'America/New_York');
+ */
 export const TIMEZONES: TimezoneOption[] = [
   // UTC
   { label: 'UTC', value: 'UTC', offset: '+00:00' },
