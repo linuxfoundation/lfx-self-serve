@@ -24,5 +24,5 @@ RUN yarn build
 # Expose port 4200
 EXPOSE 4200
 
-# Start the SSR server
-CMD ["yarn", "start:server"]
+# Start the SSR server directly from built artifacts
+CMD ["yarn", "workspace", "lfx-pcc", "start:server"]
