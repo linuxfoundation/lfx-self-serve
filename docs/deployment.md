@@ -189,24 +189,46 @@ The application uses GitHub Actions for automated deployment to AWS ECS:
 ```bash
 # Application Configuration
 NODE_ENV=production
-PORT=4200
-PM2=true
-PCC_BASE_URL=https://pcc.lfx.dev
 
-# Auth0 Authentication
-PCC_AUTH0_CLIENT_ID=production-client-id
-PCC_AUTH0_CLIENT_SECRET=production-client-secret
-PCC_AUTH0_ISSUER_BASE_URL=https://linuxfoundation.auth0.com
-PCC_AUTH0_AUDIENCE=https://api.lfx.dev
-PCC_AUTH0_SECRET=production-secret
+# Environment Configuration
+ENV=development
+PCC_BASE_URL=http://localhost:4200
+LOG_LEVEL=info
+
+# Auth0 Authentication Configuration
+# Get these values from your Auth0 dashboard
+PCC_AUTH0_CLIENT_ID=your-auth0-client-id
+PCC_AUTH0_CLIENT_SECRET=your-auth0-client-secret
+PCC_AUTH0_ISSUER_BASE_URL=https://auth.k8s.orb.local
+PCC_AUTH0_AUDIENCE=http://lfx-api.k8s.orb.local/
+PCC_AUTH0_SECRET=sufficiently-long-string
 
 # Microservice Configuration
-QUERY_SERVICE_URL=https://api.lfx.dev/query/resources
-QUERY_SERVICE_TOKEN=production-jwt-token
+# URL and JWT token for the query service
+LFX_V2_SERVICE=http://lfx-api.k8s.orb.local
 
-# Database Configuration (Supabase)
+# Supabase Database Configuration
+# Get these from your Supabase project settings
 SUPABASE_URL=https://your-project.supabase.co
-POSTGRES_API_KEY=production-supabase-key
+POSTGRES_API_KEY=your-supabase-anon-key
+SUPABASE_STORAGE_BUCKET=your-supabase-bucket-name
+
+# NATS Configuration
+# Internal k8s service DNS for NATS cluster
+NATS_URL=nats://lfx-platform-nats.lfx.svc.cluster.local:4222
+
+# AI Service Configuration
+# OpenAI-compatible proxy for meeting agenda generation
+AI_PROXY_URL=https://litellm.tools.lfx.dev/chat/completions
+AI_API_KEY=your-ai-api-key
+
+# E2E Test Configuration (Optional)
+# Test user credentials for automated testing
+TEST_USERNAME=your-test-username
+TEST_PASSWORD=your-test-password
+
+# LOCAL ONLY FOR AUTHELIA
+NODE_TLS_REJECT_UNAUTHORIZED=0
 ```
 
 ## 🔧 Production Setup Steps

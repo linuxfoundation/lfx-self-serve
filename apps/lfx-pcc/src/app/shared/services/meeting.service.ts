@@ -3,7 +3,16 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { CreateMeetingRequest, Meeting, MeetingAttachment, MeetingParticipant, UpdateMeetingRequest, UploadFileResponse } from '@lfx-pcc/shared/interfaces';
+import {
+  CreateMeetingRequest,
+  GenerateAgendaRequest,
+  GenerateAgendaResponse,
+  Meeting,
+  MeetingAttachment,
+  MeetingParticipant,
+  UpdateMeetingRequest,
+  UploadFileResponse,
+} from '@lfx-pcc/shared/interfaces';
 import { catchError, defer, Observable, of, switchMap, take, tap, throwError } from 'rxjs';
 
 @Injectable({
@@ -240,6 +249,16 @@ export class MeetingService {
       take(1),
       catchError((error) => {
         console.error(`Failed to delete attachment ${attachmentId} from meeting ${meetingId}:`, error);
+        throw error;
+      })
+    );
+  }
+
+  public generateAgenda(request: GenerateAgendaRequest): Observable<GenerateAgendaResponse> {
+    return this.http.post<GenerateAgendaResponse>('/api/meetings/generate-agenda', request).pipe(
+      take(1),
+      catchError((error) => {
+        console.error('Failed to generate meeting agenda:', error);
         throw error;
       })
     );

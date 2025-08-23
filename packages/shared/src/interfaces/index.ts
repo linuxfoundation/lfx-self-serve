@@ -42,3 +42,6 @@ export * from './dashboard.interface';
 
 // NATS interfaces
 export * from './nats.interface';
+
+// AI interfaces
+export * from './ai.interface';

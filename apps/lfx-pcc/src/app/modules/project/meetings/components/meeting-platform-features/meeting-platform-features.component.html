@@ -9,39 +9,18 @@
   </div>
 
   <!-- Meeting Platform Selection -->
-  <div class="space-y-4">
-    <h3 class="text-base font-medium text-slate-900">Meeting Platform <span class="text-red-500">*</span></h3>
+  <div class="flex flex-col gap-2">
+    <label for="meeting-platform" class="block text-sm font-medium text-slate-900">Meeting Platform <span class="text-red-500">*</span></label>
 
-    <div class="grid grid-cols-1 md:grid-cols-3 gap-3">
-      @for (platform of platformOptions; track platform.value) {
-        <div
-          (click)="selectPlatform(platform.value)"
-          [ngClass]="{
-            'cursor-pointer hover:border-primary hover:bg-blue-50': platform.available,
-            'cursor-not-allowed bg-slate-50 opacity-60': !platform.available,
-            'border-primary bg-blue-50': platform.available && form().get('meetingTool')?.value === platform.value,
-            'border-slate-200 bg-white': platform.available && form().get('meetingTool')?.value !== platform.value,
-          }"
-          class="p-4 border rounded-lg transition-all relative"
-          [attr.data-testid]="'platform-option-' + platform.value">
-          @if (!platform.available) {
-            <div class="absolute bottom-2 right-2">
-              <span class="bg-slate-600 text-white text-xs px-2 py-1 rounded-full">Coming Soon</span>
-            </div>
-          }
-
-          <div class="flex items-start gap-3">
-            <div class="p-2 rounded-lg flex-shrink-0" [style.background-color]="platform.color + '15'" [style.color]="platform.color">
-              <i [class]="platform.icon + ' text-sm'"></i>
-            </div>
-            <div>
-              <h4 class="text-sm font-semibold text-slate-900">{{ platform.label }}</h4>
-              <p class="text-xs text-slate-600 mt-1">{{ platform.description }}</p>
-            </div>
-          </div>
-        </div>
-      }
-    </div>
+    <lfx-select
+      [form]="form()"
+      control="meetingTool"
+      [options]="platformDropdownOptions"
+      placeholder="Select meeting platform"
+      styleClass="w-full"
+      id="meeting-platform"
+      data-testid="meeting-platform-select">
+    </lfx-select>
 
     @if (form().get('meetingTool')?.errors?.['required'] && form().get('meetingTool')?.touched) {
       <p class="mt-1 text-sm text-red-600" data-testid="platform-error">Please select a meeting platform</p>

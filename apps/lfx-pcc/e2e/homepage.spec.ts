@@ -7,6 +7,9 @@ import { ApiMockHelper } from './helpers/api-mock.helper';
 
 test.describe('Homepage', () => {
   test.beforeEach(async ({ page }) => {
+    // Setup API mocks before navigation
+    await ApiMockHelper.setupProjectSlugMock(page);
+
     await page.goto('/', { waitUntil: 'domcontentloaded' });
 
     // Verify we're authenticated and on the homepage
@@ -114,9 +117,6 @@ test.describe('Homepage', () => {
   });
 
   test('should filter projects when searching', async ({ page }) => {
-    // Setup API mocks before navigation
-    await ApiMockHelper.setupProjectSlugMock(page);
-
     // Wait for project cards to appear
     await expect(page.getByTestId('project-card').first()).toBeVisible({ timeout: 10000 });
 
@@ -149,9 +149,6 @@ test.describe('Homepage', () => {
   });
 
   test('should clear search and show all projects', async ({ page }) => {
-    // Setup API mocks before navigation
-    await ApiMockHelper.setupProjectSlugMock(page);
-
     // Wait for project cards to appear
     await expect(page.getByTestId('project-card').first()).toBeVisible({ timeout: 10000 });
 
@@ -175,9 +172,6 @@ test.describe('Homepage', () => {
   });
 
   test('should navigate to project detail when clicking a project card', async ({ page }) => {
-    // Setup API mocks before navigation
-    await ApiMockHelper.setupProjectSlugMock(page);
-
     // Wait for project cards to appear
     await expect(page.getByTestId('project-card').first()).toBeVisible({ timeout: 10000 });
 

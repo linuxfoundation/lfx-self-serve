@@ -21,7 +21,7 @@ export class TextareaComponent {
   public id = input<string>();
   public readonly = input<boolean>(false);
   public styleClass = input<string>();
-  public autoResize = input<boolean>(true);
+  public autoResize = input<boolean>(false);
   public maxlength = input<number>();
   public dataTest = input<string>();
 }

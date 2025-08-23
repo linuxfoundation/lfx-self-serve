@@ -12,10 +12,14 @@ import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
+import { GenerateAgendaRequest, MeetingTemplate } from '@lfx-pcc/shared';
 import { TIMEZONES } from '@lfx-pcc/shared/constants';
-import { MeetingType } from '@lfx-pcc/shared/enums';
-import { MeetingTemplate } from '@lfx-pcc/shared';
+import { MeetingService } from '@services/meeting.service';
+import { ProjectService } from '@services/project.service';
+import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
+import { finalize, take, tap } from 'rxjs';
+
 import { AgendaTemplateSelectorComponent } from '../agenda-template-selector/agenda-template-selector.component';
 
 @Component({
@@ -37,6 +41,10 @@ import { AgendaTemplateSelectorComponent } from '../agenda-template-selector/age
   templateUrl: './meeting-details.component.html',
 })
 export class MeetingDetailsComponent implements OnInit {
+  private readonly projectService = inject(ProjectService);
+  private readonly meetingService = inject(MeetingService);
+  private readonly messageService = inject(MessageService);
+
   // Form group input from parent
   public readonly form = input.required<FormGroup>();
 
@@ -141,20 +149,65 @@ export class MeetingDetailsComponent implements OnInit {
   }
 
   public async generateAiAgenda(): Promise<void> {
-    const promptValue = this.form().get('aiPrompt')?.value;
-    if (!promptValue?.trim()) return;
+    const context = this.form().get('aiPrompt')?.value;
+    const currentProject = this.projectService.project();
+    const form = this.form();
+    const topic = form.get('topic')?.value;
+    const meetingType = form.get('meeting_type')?.value;
+
+    if (!currentProject || !topic || !meetingType || !context) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Missing Information',
+        detail: 'Please fill in the meeting title, type, and prompt before generating an agenda.',
+      });
+      return;
+    }
+
+    const request: GenerateAgendaRequest = {
+      meetingType,
+      title: topic,
+      projectName: currentProject.name,
+      context,
+    };
 
     this.isGeneratingAgenda.set(true);
 
-    // Simulate API call delay
-    await new Promise((resolve) => setTimeout(resolve, 2500));
+    this.meetingService
+      .generateAgenda(request)
+      .pipe(
+        take(1),
+        tap({
+          next: (response) => {
+            // Set the generated agenda in the form
+            this.form().get('agenda')?.setValue(response.agenda);
 
-    const meetingType = this.form().get('meeting_type')?.value || MeetingType.OTHER;
-    const generatedAgenda = this.getMockAgenda(meetingType, promptValue);
+            // Set the AI-estimated duration
+            this.setAiEstimatedDuration(response.estimatedDuration);
 
-    this.form().get('agenda')?.setValue(generatedAgenda);
-    this.isGeneratingAgenda.set(false);
-    this.hideAiAgendaHelper();
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Agenda Generated',
+              detail: 'AI has successfully generated a meeting agenda.',
+            });
+          },
+          error: (error) => {
+            console.error('Failed to generate agenda:', error);
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Generation Failed',
+              detail: 'Failed to generate agenda. Please try again.',
+            });
+          },
+          complete: () => {
+            this.hideAiAgendaHelper();
+          },
+        }),
+        finalize(() => {
+          this.isGeneratingAgenda.set(false);
+        })
+      )
+      .subscribe();
   }
 
   // Template selector public methods
@@ -235,125 +288,18 @@ export class MeetingDetailsComponent implements OnInit {
     return { weekOfMonth, isLastWeek };
   }
 
-  private getMockAgenda(meetingType: string, prompt: string): string {
-    const mockAgendas: Record<string, string> = {
-      [MeetingType.BOARD]: `**Meeting Objective**: ${prompt}
+  private setAiEstimatedDuration(estimatedDuration: number): void {
+    // Check if the estimated duration matches one of our standard options
+    const standardDuration = this.durationOptions.find((option) => typeof option.value === 'number' && option.value === estimatedDuration);
 
-**Agenda Items**:
-1. **Opening & Welcome** (5 min)
-   - Roll call and attendance
-   - Review of previous meeting minutes
-
-2. **Strategic Discussion** (25 min)
-   - ${prompt}
-   - Financial overview and budget considerations
-   - Key performance indicators review
-
-3. **Decision Items** (15 min)
-   - Action items requiring board approval
-   - Risk assessment and mitigation strategies
-
-4. **Next Steps & Closing** (5 min)
-   - Assignment of action items
-   - Next meeting date confirmation`,
-
-      [MeetingType.TECHNICAL]: `**Development Focus**: ${prompt}
-
-**Technical Agenda**:
-1. **System Status Review** (10 min)
-   - Current sprint progress
-   - Infrastructure health check
-
-2. **Core Discussion** (30 min)
-   - ${prompt}
-   - Technical implementation approach
-   - Architecture considerations and trade-offs
-
-3. **Code Review & Quality** (15 min)
-   - Recent pull requests and code changes
-   - Testing coverage and quality metrics
-
-4. **Planning & Blockers** (5 min)
-   - Upcoming milestones
-   - Technical blockers and dependencies`,
-
-      [MeetingType.MAINTAINERS]: `**Community Focus**: ${prompt}
-
-**Maintainers Sync Agenda**:
-1. **Community Updates** (10 min)
-   - Recent contributor activity
-   - Community feedback highlights
-
-2. **Project Discussion** (25 min)
-   - ${prompt}
-   - Release planning and roadmap updates
-   - Contributor onboarding improvements
-
-3. **Issue Triage** (20 min)
-   - High-priority issues review
-   - Feature requests evaluation
-
-4. **Action Planning** (5 min)
-   - Task assignments and next steps`,
-
-      [MeetingType.MARKETING]: `**Marketing Initiative**: ${prompt}
-
-**Marketing Meeting Agenda**:
-1. **Performance Review** (10 min)
-   - Current campaign metrics
-   - Community growth statistics
-
-2. **Strategic Focus** (25 min)
-   - ${prompt}
-   - Brand positioning and messaging
-   - Content strategy alignment
-
-3. **Campaign Planning** (20 min)
-   - Upcoming marketing initiatives
-   - Budget allocation and resources
-
-4. **Collaboration & Next Steps** (5 min)
-   - Cross-team coordination
-   - Action item assignments`,
-
-      [MeetingType.LEGAL]: `**Legal Review**: ${prompt}
-
-**Legal Meeting Agenda**:
-1. **Compliance Overview** (10 min)
-   - Current legal standing
-   - Recent regulatory changes
-
-2. **Focus Discussion** (30 min)
-   - ${prompt}
-   - Legal risk assessment
-   - Policy and procedure updates
-
-3. **Documentation Review** (15 min)
-   - Contract updates and amendments
-   - Terms of service modifications
-
-4. **Action Items** (5 min)
-   - Legal task assignments
-   - Timeline for deliverables`,
-
-      [MeetingType.OTHER]: `**Meeting Purpose**: ${prompt}
-
-**General Meeting Agenda**:
-1. **Welcome & Introductions** (10 min)
-   - Participant introductions
-   - Meeting objectives overview
-
-2. **Main Discussion** (35 min)
-   - ${prompt}
-   - Open discussion and brainstorming
-   - Key points and considerations
-
-3. **Summary & Next Steps** (15 min)
-   - Key takeaways summary
-   - Action item assignments
-   - Follow-up meeting planning`,
-    };
-
-    return mockAgendas[meetingType] || mockAgendas[MeetingType.OTHER];
+    if (standardDuration) {
+      // Use standard duration option
+      this.form().get('duration')?.setValue(estimatedDuration);
+      this.form().get('customDuration')?.setValue(null);
+    } else {
+      // Use custom duration
+      this.form().get('duration')?.setValue('custom');
+      this.form().get('customDuration')?.setValue(estimatedDuration);
+    }
   }
 }

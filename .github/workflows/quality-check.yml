@@ -84,3 +84,5 @@ jobs:
     secrets:
       TEST_USERNAME: ${{ secrets.TEST_USERNAME }}
       TEST_PASSWORD: ${{ secrets.TEST_PASSWORD }}
+      AI_API_KEY: ${{ secrets.AI_API_KEY }}
+      AI_PROXY_URL: ${{ secrets.AI_PROXY_URL }}

@@ -3,8 +3,12 @@
 
 import { expect, test } from '@playwright/test';
 
+import { ApiMockHelper } from './helpers/api-mock.helper';
+
 test.describe('Homepage - Robust Tests', () => {
   test.beforeEach(async ({ page }) => {
+    await ApiMockHelper.setupProjectSlugMock(page);
+
     await page.goto('/', { waitUntil: 'domcontentloaded' });
 
     // Verify we're authenticated and on the homepage

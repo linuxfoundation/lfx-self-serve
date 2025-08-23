@@ -24,6 +24,7 @@ import { extractBearerToken } from './middleware/auth-token.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { tokenRefreshMiddleware } from './middleware/token-refresh.middleware';
 import projectsRouter from './routes/projects';
+import meetingsRouter from './routes/meetings';
 
 dotenv.config();
 
@@ -106,6 +107,7 @@ app.use('/api', extractBearerToken);
 
 // Mount API routes before Angular SSR
 app.use('/api/projects', projectsRouter);
+app.use('/api/meetings', meetingsRouter);
 
 // Add API error handler middleware
 app.use('/api/*', apiErrorHandler);
@@ -271,8 +273,11 @@ src/server/
 │   ├── auth-token.middleware.ts # Bearer token extraction
 │   ├── error-handler.middleware.ts # API error handling
 │   └── token-refresh.middleware.ts # Auth0 token refresh
-└── routes/
-    └── projects.ts              # Project API routes
+├── routes/
+│   ├── projects.ts              # Project API routes
+│   └── meetings.ts              # Meeting API routes (including AI endpoints)
+└── services/
+    └── ai.service.ts            # AI integration service
 ```
 
 This Express.js configuration provides a robust foundation for serving Angular 19 SSR applications with proper security, performance, and development features.

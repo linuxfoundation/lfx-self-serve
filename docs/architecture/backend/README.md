@@ -41,6 +41,20 @@ Request → Controller → Service → Microservice/Data Layer
 - **CRUD Operations**: Create, Read, Update, Delete with ETag concurrency control
 - **Query Service Integration**: Integration with LFX Query Service microservice
 
+#### AI Integration Service
+
+- **AI Service**: Claude Sonnet integration for meeting agenda generation
+- **LiteLLM Proxy**: OpenAI-compatible API proxy for AI model access
+- **JSON Schema Validation**: Strict response validation with fallback parsing
+- **Meeting API Integration**: Protected endpoints for AI-powered features
+
+#### NATS Messaging Service
+
+- **NATS Service**: High-performance inter-service messaging integration
+- **Project Slug Resolution**: Real-time project lookup via request-reply pattern
+- **Lazy Connection Management**: On-demand connection with automatic reconnection
+- **Kubernetes Service Discovery**: Native cluster DNS integration for NATS access
+
 #### Authentication & Session Management
 
 - **Auth0 Integration**: OpenID Connect with session-based authentication
@@ -60,6 +74,14 @@ Understand Auth0 integration, JWT handling, and user session management.
 ### [Logging & Monitoring](./logging-monitoring.md)
 
 Explore Winston logging configuration, structured logging, and monitoring strategies.
+
+### [AI Service](./ai-service.md)
+
+Learn about AI integration, Claude Sonnet model configuration, and meeting agenda generation.
+
+### [NATS Integration](./nats-integration.md)
+
+Understand NATS messaging integration, project slug resolution, and inter-service communication.
 
 ### [Deployment](../../deployment.md)
 
@@ -81,6 +103,7 @@ Discover PM2 configuration, production deployment, and server management.
 - **Structured Logging**: Pino with request correlation, timing, and sensitive data redaction
 - **Process Management**: PM2 for production deployment with health monitoring
 - **Health Monitoring**: Built-in health check endpoints with detailed system status
+- **AI Integration**: Claude Sonnet model integration via LiteLLM proxy for intelligent features
 
 ### Development & Quality
 
@@ -221,7 +244,11 @@ apps/lfx-pcc/src/server/
 │   ├── committee.service.ts
 │   ├── etag.service.ts
 │   ├── api-client.service.ts
-│   └── microservice-proxy.service.ts
+│   ├── microservice-proxy.service.ts
+│   ├── ai.service.ts
+│   ├── nats.service.ts
+│   ├── project.service.ts
+│   └── supabase.service.ts
 ├── helpers/              # Utility classes
 │   ├── logger.ts         # Standardized logging
 │   ├── responder.ts      # Response formatting

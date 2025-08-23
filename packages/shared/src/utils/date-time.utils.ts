@@ -2,18 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { fromZonedTime, toZonedTime } from 'date-fns-tz';
-import { RecurrenceType } from '../enums';
-import { MeetingRecurrence } from '../interfaces';
+
 import {
-  TIME_ROUNDING_MINUTES,
-  WEEKDAY_CODES,
+  DAYS_IN_WEEK,
   DEFAULT_REPEAT_INTERVAL,
   MINUTES_IN_HOUR,
-  DAYS_IN_WEEK,
   MS_IN_DAY,
+  TIME_ROUNDING_MINUTES,
+  TimezoneOption,
   TIMEZONES,
-  type TimezoneOption,
+  WEEKDAY_CODES,
 } from '../constants';
+import { RecurrenceType } from '../enums';
+import { MeetingRecurrence } from '../interfaces';
 
 // ============================================================================
 // Date Formatting and Parsing Utilities
@@ -100,12 +101,12 @@ export function combineDateTime(date: Date, time: string, timezone?: string): st
 // ============================================================================
 
 /**
- * Gets default start date and time (1 hour from now, rounded to next 15 minutes)
+ * Gets default start date and time (1 week from now, rounded to next 15 minutes)
  */
 export function getDefaultStartDateTime(): { date: Date; time: string } {
   const now = new Date();
   // Add 1 hour to current time
-  now.setHours(now.getHours() + 1);
+  now.setDate(now.getDate() + 7);
 
   // Round up to next 15 minutes
   const minutes = now.getMinutes();

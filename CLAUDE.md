@@ -63,7 +63,7 @@ LFX PCC is a Turborepo monorepo containing an Angular 19 SSR application with ex
 ## Monorepo Structure
 
 ```text
-lfx-pcc-v3/
+lfx-v2-pcc-ui/
 ├── apps/
 │   └── lfx-pcc/              # Angular 19 SSR application with zoneless change detection
 │       ├── eslint.config.mjs # Angular-specific ESLint rules
@@ -96,6 +96,8 @@ lfx-pcc-v3/
 - Logging uses Pino for structured JSON logs with sensitive data redaction
 - Health checks are available at /health and are not logged or authenticated
 - All shared types, interfaces, and constants are centralized in @lfx-pcc/shared package
+- **AI Service Integration**: Claude Sonnet 4 model via LiteLLM proxy for meeting agenda generation
+- **AI Environment Variables**: AI_PROXY_URL and AI_API_KEY required for AI functionality
 - Use TypeScript interfaces instead of union types for better maintainability
 - Shared package uses direct source imports during development for hot reloading
 - **Interfaces go into the shared packages**

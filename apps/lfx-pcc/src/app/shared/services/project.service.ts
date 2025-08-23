@@ -17,8 +17,7 @@ export class ProjectService {
 
   public getProjects(params?: HttpParams): Observable<Project[]> {
     return this.http.get<Project[]>('/api/projects', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to load projects:', error);
+      catchError(() => {
         return of([]);
       })
     );
@@ -26,8 +25,7 @@ export class ProjectService {
 
   public getProject(slug: string): Observable<Project | null> {
     return this.http.get<Project>(`/api/projects/${slug}`).pipe(
-      catchError((error) => {
-        console.error(`Failed to load project ${slug}:`, error);
+      catchError(() => {
         return of(null);
       }),
       tap((project) => {

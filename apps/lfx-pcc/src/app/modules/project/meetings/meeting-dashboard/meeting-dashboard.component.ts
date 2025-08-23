@@ -261,7 +261,7 @@ export class MeetingDashboardComponent {
     const project = this.project();
     return [
       {
-        label: 'Schedule Meeting',
+        label: 'Create Meeting',
         icon: 'fa-light fa-calendar-plus text-sm',
         routerLink: project ? `/project/${project.slug}/meetings/create` : '#',
       },
