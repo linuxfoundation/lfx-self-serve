@@ -134,3 +134,5 @@ Before starting any work or commits:
 2. **Create JIRA ticket if needed** for untracked work
 3. **Include JIRA ticket in commit message** (e.g., LFXV2-XXX)
 4. **Link PR to JIRA ticket** when creating pull requests
+
+- Always use sequential thinking mcp for planning before doing any changes

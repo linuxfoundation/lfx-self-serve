@@ -168,46 +168,8 @@ router.get('/:id', (req, res) => meetingController.getMeetingById(req, res));
 // POST /meetings - using new controller pattern
 router.post('/', (req, res) => meetingController.createMeeting(req, res));
 
-router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const meetingId = req.params['id'];
-    const meetingData = req.body;
-    const { editType } = req.query;
-
-    if (!meetingId) {
-      return res.status(400).json({
-        error: 'Meeting ID is required',
-        code: 'MISSING_MEETING_ID',
-      });
-    }
-
-    // Validate editType for recurring meetings
-    if (editType && !['single', 'future'].includes(editType as string)) {
-      return res.status(400).json({
-        error: 'Edit type must be "single" or "future"',
-        code: 'INVALID_EDIT_TYPE',
-      });
-    }
-
-    // Remove fields that shouldn't be updated directly
-    delete meetingData.id;
-    delete meetingData.created_at;
-
-    const meeting = await supabaseService.updateMeeting(meetingId, meetingData, editType as 'single' | 'future');
-
-    return res.json(meeting);
-  } catch (error) {
-    req.log.error(
-      {
-        error: error instanceof Error ? error.message : error,
-        meeting_id: req.params['id'],
-        edit_type: req.query['editType'],
-      },
-      'Failed to update meeting'
-    );
-    return next(error);
-  }
-});
+// PUT /meetings/:id - using new controller pattern
+router.put('/:id', (req, res) => meetingController.updateMeeting(req, res));
 
 router.delete('/:id', (req, res) => meetingController.deleteMeeting(req, res));
 

@@ -1,11 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreateMeetingRequest, ETagError, Meeting, QueryServiceResponse } from '@lfx-pcc/shared/interfaces';
+import { CreateMeetingRequest, ETagError, Meeting, QueryServiceResponse, UpdateMeetingRequest } from '@lfx-pcc/shared/interfaces';
 import { Request } from 'express';
 
-import { getUsernameFromAuth } from '../utils/auth-helper';
 import { Logger } from '../helpers/logger';
+import { getUsernameFromAuth } from '../utils/auth-helper';
 import { ApiClientService } from './api-client.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -99,6 +99,57 @@ export class MeetingService {
     );
 
     return newMeeting;
+  }
+
+  /**
+   * Updates a meeting using ETag for concurrency control
+   */
+  public async updateMeeting(req: Request, meetingId: string, meetingData: UpdateMeetingRequest, editType?: 'single' | 'future'): Promise<Meeting> {
+    // Step 1: Fetch meeting with ETag
+    const { etag, data } = await this.etagService.fetchWithETag<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingId}`, 'update_meeting');
+
+    // Get the logged-in user's username to maintain organizer if not provided
+    const username = await getUsernameFromAuth(req);
+
+    // Create organizers array ensuring no duplicates or null values
+    const existingOrganizers = data.organizers || [];
+    const organizersSet = new Set(existingOrganizers.filter((organizer) => organizer != null));
+
+    // Add current user as organizer if username exists and not already included
+    if (username) {
+      organizersSet.add(username);
+    }
+
+    // Include organizers in the update payload
+    const updatePayload = {
+      ...meetingData,
+      organizers: Array.from(organizersSet),
+    };
+
+    const sanitizedPayload = Logger.sanitize({ updatePayload, editType });
+    req.log.info(sanitizedPayload, 'Updating meeting payload');
+
+    // Step 2: Update meeting with ETag, including editType query parameter if provided
+    let path = `/meetings/${meetingId}`;
+    if (editType) {
+      path += `?editType=${editType}`;
+    }
+
+    const updatedMeeting = await this.etagService.updateWithETag<Meeting>(req, 'LFX_V2_SERVICE', path, etag, updatePayload, 'update_meeting');
+
+    req.log.info(
+      {
+        operation: 'update_meeting',
+        meeting_id: meetingId,
+        project_uid: updatedMeeting.project_uid,
+        title: updatedMeeting.title,
+        edit_type: editType || 'single',
+        organizer: username || 'none',
+      },
+      'Meeting updated successfully'
+    );
+
+    return updatedMeeting;
   }
 
   /**

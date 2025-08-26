@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreateMeetingRequest } from '@lfx-pcc/shared/interfaces';
+import { CreateMeetingRequest, UpdateMeetingRequest } from '@lfx-pcc/shared/interfaces';
 import { Request, Response } from 'express';
 
 import { Logger } from '../helpers/logger';
@@ -131,6 +131,95 @@ export class MeetingController {
         project_uid: req.body?.project_uid,
       });
       Responder.handle(res, error, 'create_meeting');
+    }
+  }
+
+  /**
+   * PUT /meetings/:id
+   */
+  public async updateMeeting(req: Request, res: Response): Promise<void> {
+    const { id } = req.params;
+    const meetingData: UpdateMeetingRequest = req.body;
+    const { editType } = req.query;
+    const startTime = Logger.start(req, 'update_meeting', {
+      meeting_id: id,
+      project_uid: meetingData?.project_uid,
+      title: meetingData?.title,
+      start_time: meetingData?.start_time,
+      duration: meetingData?.duration,
+      timezone: meetingData?.timezone,
+      edit_type: editType,
+      body_size: JSON.stringify(req.body).length,
+    });
+
+    try {
+      if (!id) {
+        Logger.error(req, 'update_meeting', startTime, new Error('Missing meeting ID parameter'));
+
+        Responder.badRequest(res, 'Meeting ID is required', {
+          code: 'MISSING_MEETING_ID',
+        });
+        return;
+      }
+
+      // Basic validation
+      if (!meetingData.title || !meetingData.start_time || !meetingData.project_uid || !meetingData.duration || !meetingData.timezone) {
+        Logger.error(req, 'update_meeting', startTime, new Error('Missing required fields for meeting update'), {
+          provided_fields: {
+            has_title: !!meetingData.title,
+            has_start_time: !!meetingData.start_time,
+            has_project_uid: !!meetingData.project_uid,
+            has_duration: !!meetingData.duration,
+            has_timezone: !!meetingData.timezone,
+          },
+        });
+
+        Responder.badRequest(res, 'Title, start_time, duration, timezone, and project_uid are required fields', {
+          code: 'MISSING_REQUIRED_FIELDS',
+        });
+        return;
+      }
+
+      // Validate duration range
+      if (meetingData.duration < 0 || meetingData.duration > 600) {
+        Logger.error(req, 'update_meeting', startTime, new Error('Invalid duration for meeting update'), {
+          provided_duration: meetingData.duration,
+        });
+
+        Responder.badRequest(res, 'Duration must be between 0 and 600 minutes', {
+          code: 'INVALID_DURATION',
+        });
+        return;
+      }
+
+      // Validate editType for recurring meetings
+      if (editType && !['single', 'future'].includes(editType as string)) {
+        Logger.error(req, 'update_meeting', startTime, new Error('Invalid edit type for meeting update'), {
+          provided_edit_type: editType,
+        });
+
+        Responder.badRequest(res, 'Edit type must be "single" or "future"', {
+          code: 'INVALID_EDIT_TYPE',
+        });
+        return;
+      }
+
+      const meeting = await this.meetingService.updateMeeting(req, id, meetingData, editType as 'single' | 'future');
+
+      Logger.success(req, 'update_meeting', startTime, {
+        meeting_id: id,
+        project_uid: meeting.project_uid,
+        title: meeting.title,
+        edit_type: editType || 'single',
+      });
+
+      res.json(meeting);
+    } catch (error) {
+      Logger.error(req, 'update_meeting', startTime, error, {
+        meeting_id: id,
+        edit_type: editType,
+      });
+      Responder.handle(res, error, 'update_meeting');
     }
   }
 

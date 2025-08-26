@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ETagError, ETagResult, extractErrorDetails } from '@lfx-pcc/shared/interfaces';
 import { HTTP_HEADERS } from '@lfx-pcc/shared/constants';
+import { ETagError, ETagResult, extractErrorDetails } from '@lfx-pcc/shared/interfaces';
 import { Request } from 'express';
 
 import { MicroserviceProxyService } from './microservice-proxy.service';
