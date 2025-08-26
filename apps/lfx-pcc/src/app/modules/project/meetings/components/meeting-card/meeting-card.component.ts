@@ -84,7 +84,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
 
-  // Extract important links from agenda
+  // Extract important links from description
   public readonly importantLinks = this.initImportantLinks();
 
   // Meeting attachments
@@ -126,7 +126,7 @@ export class MeetingCardComponent implements OnInit {
       closable: true,
       dismissableMask: true,
       data: {
-        meetingId: this.meeting().id,
+        meetingId: this.meeting().uid,
         participant: null, // Add mode
       },
     });
@@ -179,7 +179,7 @@ export class MeetingCardComponent implements OnInit {
         closable: true,
         dismissableMask: true,
         data: {
-          meetingId: this.meeting().id,
+          meetingId: this.meeting().uid,
           participant: participant, // Edit mode
         },
       })
@@ -239,8 +239,8 @@ export class MeetingCardComponent implements OnInit {
   private initParticipantsList(): void {
     this.participantsLoading.set(true);
     const queries = combineLatest([
-      this.meetingService.getMeetingParticipants(this.meeting().id),
-      ...(this.meeting().committees?.map((c) => this.committeeService.getCommitteeMembers(c).pipe(catchError(() => of([])))) ?? []),
+      this.meetingService.getMeetingParticipants(this.meeting().uid),
+      ...(this.meeting().committees?.map((c) => this.committeeService.getCommitteeMembers(c.uid).pipe(catchError(() => of([])))) ?? []),
     ]).pipe(
       map(([participants, ...committeeMembers]) => {
         return [
@@ -250,7 +250,7 @@ export class MeetingCardComponent implements OnInit {
             .flatMap((c) => {
               return c.map((m) => ({
                 id: m.id,
-                meeting_id: this.meeting().id,
+                meeting_id: this.meeting().uid,
                 first_name: m.first_name,
                 last_name: m.last_name,
                 email: m.email,
@@ -324,7 +324,7 @@ export class MeetingCardComponent implements OnInit {
           baseItems.push({
             label: 'Edit',
             icon: 'fa-light fa-edit',
-            routerLink: ['/project', projectSlug, 'meetings', this.meeting().id, 'edit'],
+            routerLink: ['/project', projectSlug, 'meetings', this.meeting().uid, 'edit'],
           });
         }
         baseItems.push({
@@ -346,7 +346,7 @@ export class MeetingCardComponent implements OnInit {
 
   private refreshMeeting(): void {
     this.meetingService
-      .getMeeting(this.meeting().id)
+      .getMeeting(this.meeting().uid)
       .pipe(
         take(1),
         tap((meeting) => {
@@ -360,19 +360,19 @@ export class MeetingCardComponent implements OnInit {
 
   private initImportantLinks(): Signal<{ url: string; domain: string }[]> {
     return computed(() => {
-      const agenda = this.meeting().agenda;
-      if (!agenda) {
+      const description = this.meeting().description;
+      if (!description) {
         return [];
       }
 
       // Use shared utility to extract URLs with domains
-      return extractUrlsWithDomains(agenda);
+      return extractUrlsWithDomains(description);
     });
   }
 
   private initAttachments(): Signal<MeetingAttachment[]> {
     return runInInjectionContext(this.injector, () => {
-      return toSignal(this.meetingService.getMeetingAttachments(this.meetingInput().id).pipe(catchError(() => of([]))), { initialValue: [] });
+      return toSignal(this.meetingService.getMeetingAttachments(this.meetingInput().uid).pipe(catchError(() => of([]))), { initialValue: [] });
     });
   }
 
@@ -408,7 +408,11 @@ export class MeetingCardComponent implements OnInit {
     return computed(() => {
       const meeting = this.meeting();
       return (
-        (meeting.recording_enabled ? 1 : 0) + (meeting.transcripts_enabled ? 1 : 0) + (meeting.youtube_enabled ? 1 : 0) + (meeting.zoom_ai_enabled ? 1 : 0)
+        (meeting.recording_enabled ? 1 : 0) +
+        (meeting.transcript_enabled ? 1 : 0) +
+        (meeting.youtube_upload_enabled ? 1 : 0) +
+        (meeting.zoom_config?.ai_companion_enabled ? 1 : 0) +
+        (meeting.visibility === 'public' ? 1 : 0)
       );
     });
   }

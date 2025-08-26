@@ -220,8 +220,8 @@ export class ProjectComponent {
       }
 
       return meetings.map((meeting) => ({
-        id: meeting.id,
-        title: meeting.topic || meeting.meeting_type || 'Untitled Meeting',
+        id: meeting.uid,
+        title: meeting.title || meeting.meeting_type || 'Untitled Meeting',
         url: `/project/${project.slug}/meetings`,
         status: 'Upcoming',
         date: meeting.start_time,

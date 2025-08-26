@@ -1,7 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
+import { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
+
+/**
+ * Zoom-specific meeting configuration
+ * @description Settings specific to Zoom platform integration
+ */
+export interface ZoomConfig {
+  /** Zoom meeting ID (response only) */
+  meeting_id?: string;
+  /** Zoom meeting passcode (response only) */
+  passcode?: string;
+  /** Enable/disable Zoom AI companion */
+  ai_companion_enabled?: boolean;
+  /** Require approval for AI summaries in LFX system */
+  ai_summary_require_approval?: boolean;
+}
 
 /**
  * Meeting recurrence configuration
@@ -53,6 +68,17 @@ export interface MeetingCommittee {
 }
 
 /**
+ * Committee payload for meeting API requests
+ * @description Committee structure used in create/update meeting requests
+ */
+export interface MeetingCommitteePayload {
+  /** Unique identifier for the committee */
+  uid: string;
+  /** Allowed voting statuses for committee members */
+  allowed_voting_statuses: string[];
+}
+
+/**
  * Meeting participant information
  * @description Individual or committee member participating in a meeting
  */
@@ -84,83 +110,132 @@ export interface MeetingParticipant {
 }
 
 export interface Meeting {
-  id: string;
+  // API Response fields - not in create payload
+  /** UUID of the LFX Meeting */
+  uid: string;
+  /** Timestamp when meeting was created */
   created_at: string;
+  /** Timestamp when meeting was last updated */
+  updated_at: string;
+
+  // Required API fields
+  /** UUID of the LF project */
   project_uid: string;
-  user_id?: string;
-  visibility: MeetingVisibility | null;
-  youtube_enabled: boolean | null;
-  zoom_ai_enabled: boolean | null;
-  recording_enabled: boolean | null;
-  transcripts_enabled: boolean | null;
-  timezone: string | null;
-  meeting_type: string | null;
-  recording_access: string | null;
-  recurrence: MeetingRecurrence | null;
-  topic: string | null;
-  agenda: string | null;
-  restricted: boolean | null;
+  /** Meeting start time in RFC3339 format */
   start_time: string | null;
+  /** Meeting duration in minutes (0-600) */
   duration: number | null;
-  early_join_time?: number;
-  require_ai_summary_approval?: boolean;
-  ai_summary_access?: string;
-  meeting_committees: MeetingCommittee[] | null;
+  /** Meeting timezone (e.g., "America/New_York") */
+  timezone: string | null;
+  /** Meeting title */
+  title: string | null;
+  /** Meeting description */
+  description: string | null;
+
+  // Optional API fields
+  /** Currently only "Zoom" is supported */
+  platform?: string;
+  /** For recurring meetings */
+  recurrence: MeetingRecurrence | null;
+  /** Associated committees with voting statuses */
+  committees?: MeetingCommitteePayload[];
+  /** "Board", "Maintainers", "Technical", etc. */
+  meeting_type: string | null;
+  /** "public" or "private" */
+  visibility: MeetingVisibility | null;
+  /** Boolean for invitation-only meetings */
+  restricted: boolean | null;
+  /** Enable meeting recording */
+  recording_enabled: boolean | null;
+  /** Enable transcription */
+  transcript_enabled: boolean | null;
+  /** YouTube upload integration */
+  youtube_upload_enabled: boolean | null;
+  /** Who can access meeting artifacts (recordings, transcripts, AI summaries) */
+  artifact_visibility: ArtifactVisibility | null;
+  /** Minutes before meeting participants can join */
+  early_join_time_minutes?: number;
+  /** Array of organizer usernames */
+  organizers: string[];
+  /** Zoom-specific settings */
+  zoom_config?: ZoomConfig | null;
+
+  // Fields NOT in API - likely response-only
+  /** Full committee objects (response only) */
+  meeting_committees?: MeetingCommittee[] | null;
+  /** Count fields (response only) */
   individual_participants_count: number;
+  /** Count fields (response only) */
   committee_members_count: number;
+  /** Count fields (response only) */
   participants_accepted_count: number;
+  /** Count fields (response only) */
   participants_declined_count: number;
+  /** Count fields (response only) */
   participants_pending_count: number;
-  committees: string[];
 }
 
 export interface CreateMeetingRequest {
-  project_uid: string;
-  topic: string;
-  agenda?: string;
-  start_time: string;
-  duration: number;
-  timezone: string;
-  meeting_type: string;
-  early_join_time?: number;
-  visibility?: MeetingVisibility;
-  recording_enabled?: boolean;
-  transcripts_enabled?: boolean;
-  youtube_enabled?: boolean;
-  zoom_ai_enabled?: boolean;
-  require_ai_summary_approval?: boolean;
-  ai_summary_access?: string;
-  recording_access?: string;
-  recurrence?: MeetingRecurrence;
-  restricted?: boolean;
-  committees?: string[];
-  important_links?: ImportantLink[];
+  // Required API fields
+  project_uid: string; // UUID of the LF project
+  start_time: string; // Meeting start time in RFC3339 format
+  duration: number; // Meeting duration in minutes (0-600)
+  timezone: string; // Meeting timezone (e.g., "America/New_York")
+  title: string; // Meeting title
+  description: string; // Meeting description
+
+  // Optional API fields
+  platform?: string; // Currently only "Zoom" is supported
+  recurrence?: MeetingRecurrence; // For recurring meetings
+  committees?: MeetingCommitteePayload[]; // Associated committees with voting statuses
+  meeting_type?: string; // "Board", "Maintainers", "Technical", etc.
+  visibility?: MeetingVisibility; // "public" or "private"
+  restricted?: boolean; // Boolean for invitation-only meetings
+  recording_enabled?: boolean; // Enable meeting recording
+  transcript_enabled?: boolean; // Enable transcription
+  youtube_upload_enabled?: boolean; // YouTube upload integration
+  artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
+  early_join_time_minutes?: number; // Minutes before meeting participants can join
+  organizers?: string[]; // Array of organizer email addresses
+  zoom_config?: ZoomConfig; // Zoom-specific settings
 }
 
 export interface UpdateMeetingRequest {
-  project_uid: string;
-  topic: string;
-  agenda?: string;
-  start_time: string;
-  duration: number;
-  timezone: string;
-  meeting_type: string;
-  early_join_time?: number;
-  visibility?: MeetingVisibility;
-  recording_enabled?: boolean;
-  transcripts_enabled?: boolean;
-  youtube_enabled?: boolean;
-  zoom_ai_enabled?: boolean;
-  require_ai_summary_approval?: boolean;
-  ai_summary_access?: string;
-  recording_access?: string;
-  recurrence?: MeetingRecurrence;
-  restricted?: boolean;
-  committees?: string[];
+  // Required API fields
+  project_uid: string; // UUID of the LF project
+  start_time: string; // Meeting start time in RFC3339 format
+  duration: number; // Meeting duration in minutes (0-600)
+  timezone: string; // Meeting timezone (e.g., "America/New_York")
+  title: string; // Meeting title
+  description?: string; // Meeting description
+
+  // Optional API fields
+  platform?: string; // Currently only "Zoom" is supported
+  recurrence?: MeetingRecurrence; // For recurring meetings
+  committees?: MeetingCommitteePayload[]; // Associated committees with voting statuses
+  meeting_type?: string; // "Board", "Maintainers", "Technical", etc.
+  visibility?: MeetingVisibility; // "public" or "private"
+  restricted?: boolean; // Boolean for invitation-only meetings
+  recording_enabled?: boolean; // Enable meeting recording
+  transcript_enabled?: boolean; // Enable transcription
+  youtube_upload_enabled?: boolean; // YouTube upload integration
+  artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
+  early_join_time_minutes?: number; // Minutes before meeting participants can join
+  organizers?: string[]; // Array of organizer email addresses
+  zoom_config?: ZoomConfig; // Zoom-specific settings
 }
 
 export interface DeleteMeetingRequest {
   deleteType?: 'single' | 'series';
+}
+
+/**
+ * Meeting settings update request
+ * @description Structure for updating meeting settings via PUT /meetings/{uid}/settings
+ */
+export interface MeetingSettingsRequest {
+  /** Array of organizer usernames */
+  organizers?: string[];
 }
 
 /**

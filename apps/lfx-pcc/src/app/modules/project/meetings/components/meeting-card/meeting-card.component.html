@@ -61,7 +61,7 @@
             size="small"
             severity="secondary"
             data-testid="edit-meeting-button"
-            [routerLink]="['/project', project()!.slug, 'meetings', meeting().id, 'edit']"></lfx-button>
+            [routerLink]="['/project', project()!.slug, 'meetings', meeting().uid, 'edit']"></lfx-button>
         }
         <lfx-button
           [icon]="loading() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis'"
@@ -79,9 +79,9 @@
     <!-- Meeting Title and Date -->
     <div class="flex items-start justify-between mb-4" data-testid="meeting-title-section">
       <div class="flex-1 pr-4">
-        @if (meeting().topic) {
+        @if (meeting().title) {
           <h3 class="text-xl font-display font-semibold text-gray-900 mb-1 leading-tight" data-testid="meeting-title">
-            {{ meeting().topic }}
+            {{ meeting().title }}
           </h3>
         }
       </div>
@@ -96,11 +96,11 @@
     </div>
 
     <!-- Description Section -->
-    @if (meeting().agenda) {
+    @if (meeting().description) {
       <div class="mb-4" data-testid="meeting-description">
         <lfx-expandable-text [maxHeight]="85">
           <div class="text-sm text-gray-600 leading-relaxed">
-            <div [innerHTML]="meeting().agenda | linkify"></div>
+            <div [innerHTML]="meeting().description | linkify"></div>
           </div>
         </lfx-expandable-text>
       </div>
@@ -187,7 +187,7 @@
           Recording
         </div>
       }
-      @if (meeting().youtube_enabled) {
+      @if (meeting().youtube_upload_enabled) {
         <div
           class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-red-50 text-red-700"
           pTooltip="Automatically upload meeting recording to YouTube">
@@ -195,16 +195,22 @@
           YouTube Upload
         </div>
       }
-      @if (meeting().transcripts_enabled) {
+      @if (meeting().transcript_enabled) {
         <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-purple-50 text-purple-700" pTooltip="Meeting transcripts are enabled">
           <i class="fa-light fa-file-lines"></i>
           Transcripts
         </div>
       }
-      @if (meeting().zoom_ai_enabled) {
+      @if (meeting().zoom_config?.ai_companion_enabled) {
         <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-green-50 text-green-700" pTooltip="AI summary is enabled">
           <i class="fa-light fa-microchip-ai"></i>
           AI Summary
+        </div>
+      }
+      @if (meeting().visibility === 'public') {
+        <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs bg-indigo-50 text-indigo-700" pTooltip="Meeting is shown in public calendar">
+          <i class="fa-light fa-calendar-check"></i>
+          Public Calendar
         </div>
       }
     </div>

@@ -64,7 +64,14 @@
               <p class="text-xs text-slate-600">{{ feature.description }}</p>
             </div>
           </div>
-          <lfx-toggle [form]="form()" [control]="feature.key" [id]="feature.key" [attr.data-testid]="'toggle-' + feature.key"></lfx-toggle>
+          <lfx-toggle
+            [form]="form()"
+            [control]="feature.key"
+            [id]="feature.key"
+            [trueValue]="feature.trueValue || true"
+            [falseValue]="feature.falseValue || false"
+            [attr.data-testid]="'toggle-' + feature.key">
+          </lfx-toggle>
         </div>
       </div>
     }
@@ -72,47 +79,30 @@
 
   <!-- Additional Options (if recording is enabled) -->
   @if (form().get('recording_enabled')?.value) {
-    <div class="bg-slate-50 border border-slate-200 p-4 rounded-lg space-y-4" data-testid="recording-options">
-      <h4 class="text-sm font-semibold text-slate-900">Recording Options</h4>
-
-      <!-- Recording Access -->
+    <div class="bg-slate-50 border border-slate-200 p-4 rounded-lg space-y-4" data-testid="artifact-options">
+      <!-- Artifact Visibility -->
       <div>
-        <label for="recording-access" class="block text-sm font-medium text-slate-700 mb-1">Recording Access</label>
+        <label for="artifact-visibility" class="block text-sm font-medium text-slate-700 mb-1">Recording & Summary Access</label>
         <lfx-select
           size="small"
           [form]="form()"
-          control="recording_access"
-          [options]="recordingAccessOptions"
-          placeholder="Select recording access"
+          control="artifact_visibility"
+          [options]="artifactVisibilityOptions"
+          placeholder="Select artifact visibility"
           styleClass="w-full"
-          id="recording-access"
-          data-testid="recording-access-select"></lfx-select>
-        <p class="mt-1 text-xs text-slate-500">Who can view the meeting recording</p>
+          id="artifact-visibility"
+          data-testid="artifact-visibility-select"></lfx-select>
+        <p class="mt-1 text-xs text-slate-500">Who can access recordings, transcripts, and AI summaries</p>
       </div>
 
-      <!-- AI Summary Access (if AI summary is enabled) -->
+      <!-- Require AI Summary Approval (if AI summary is enabled) -->
       @if (form().get('zoom_ai_enabled')?.value) {
-        <div data-testid="ai-summary-options">
-          <label for="ai-summary-access" class="block text-sm font-medium text-slate-700 mb-1">AI Summary Access</label>
-          <lfx-select
-            size="small"
-            [form]="form()"
-            control="ai_summary_access"
-            [options]="aiSummaryAccessOptions"
-            placeholder="Select AI summary access"
-            styleClass="w-full"
-            id="ai-summary-access"
-            data-testid="ai-summary-access-select"></lfx-select>
-          <p class="mt-1 text-xs text-slate-500">Who can access the AI-generated meeting summary</p>
-
-          <!-- Require AI Summary Approval -->
-          <div class="flex items-center justify-between mt-3">
-            <div>
-              <label for="require-ai-approval" class="text-sm font-medium text-slate-900">Require AI Summary Approval</label>
-              <p class="text-xs text-slate-500">AI summary must be reviewed before sharing</p>
-            </div>
-            <lfx-toggle [form]="form()" control="require_ai_summary_approval" id="require-ai-approval" data-testid="require-ai-approval-toggle"></lfx-toggle>
+        <div class="flex items-center justify-between" data-testid="ai-summary-approval">
+          <div>
+            <label for="require-ai-approval" class="text-sm font-medium text-slate-900">Require AI Summary Approval</label>
+            <p class="text-xs text-slate-500">AI summary must be reviewed before sharing</p>
           </div>
+          <lfx-toggle [form]="form()" control="require_ai_summary_approval" id="require-ai-approval" data-testid="require-ai-approval-toggle"></lfx-toggle>
         </div>
       }
     </div>

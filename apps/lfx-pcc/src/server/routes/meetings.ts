@@ -6,52 +6,16 @@ import { NextFunction, Request, Response, Router } from 'express';
 
 import { AiService } from '../services/ai.service';
 import { SupabaseService } from '../services/supabase.service';
+import { MeetingController } from '../controllers/meeting.controller';
 
 const router = Router();
 
 const supabaseService = new SupabaseService();
 const aiService = new AiService();
+const meetingController = new MeetingController();
 
-router.get('/', async (req: Request, res: Response, next: NextFunction) => {
-  const startTime = Date.now();
-
-  req.log.info(
-    {
-      operation: 'fetch_meetings',
-      query_params: req.query,
-    },
-    'Starting meetings fetch request'
-  );
-
-  try {
-    const meetings = await supabaseService.getMeetings(req.query);
-    const duration = Date.now() - startTime;
-
-    req.log.info(
-      {
-        operation: 'fetch_meetings',
-        meeting_count: meetings.length,
-        duration,
-        status_code: 200,
-      },
-      'Successfully fetched meetings'
-    );
-
-    return res.json(meetings);
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    req.log.error(
-      {
-        error: error instanceof Error ? error.message : error,
-        operation: 'fetch_meetings',
-        duration,
-        query_params: req.query,
-      },
-      'Failed to fetch meetings'
-    );
-    return next(error);
-  }
-});
+// GET /meetings - using new controller pattern
+router.get('/', (req, res) => meetingController.getMeetings(req, res));
 
 router.get('/:id/participants', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -198,150 +162,11 @@ router.delete('/:id/participants/:participantId', async (req: Request, res: Resp
   }
 });
 
-router.get('/:id', async (req: Request, res: Response, next: NextFunction) => {
-  const startTime = Date.now();
-  const meetingId = req.params['id'];
+// GET /meetings/:id - using new controller pattern
+router.get('/:id', (req, res) => meetingController.getMeetingById(req, res));
 
-  req.log.info(
-    {
-      operation: 'fetch_meeting_by_id',
-      meeting_id: meetingId,
-    },
-    'Starting meeting fetch by ID request'
-  );
-
-  try {
-    if (!meetingId) {
-      req.log.warn(
-        {
-          operation: 'fetch_meeting_by_id',
-          error: 'Missing meeting ID parameter',
-          status_code: 400,
-        },
-        'Bad request: Meeting ID validation failed'
-      );
-
-      return res.status(400).json({
-        error: 'Meeting ID is required',
-        code: 'MISSING_MEETING_ID',
-      });
-    }
-
-    const meeting = await supabaseService.getMeetingById(meetingId);
-    const duration = Date.now() - startTime;
-
-    if (!meeting) {
-      req.log.warn(
-        {
-          operation: 'fetch_meeting_by_id',
-          meeting_id: meetingId,
-          error: 'Meeting not found',
-          duration,
-          status_code: 404,
-        },
-        'Meeting not found'
-      );
-
-      return res.status(404).json({
-        error: 'Meeting not found',
-        code: 'MEETING_NOT_FOUND',
-      });
-    }
-
-    req.log.info(
-      {
-        operation: 'fetch_meeting_by_id',
-        meeting_id: meetingId,
-        duration,
-        status_code: 200,
-      },
-      'Successfully fetched meeting'
-    );
-
-    return res.json(meeting);
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    req.log.error(
-      {
-        error: error instanceof Error ? error.message : error,
-        operation: 'fetch_meeting_by_id',
-        meeting_id: meetingId,
-        duration,
-      },
-      'Failed to fetch meeting'
-    );
-    return next(error);
-  }
-});
-
-router.post('/', async (req: Request, res: Response, next: NextFunction) => {
-  const startTime = Date.now();
-  const meetingData = req.body;
-
-  req.log.info(
-    {
-      operation: 'create_meeting',
-      project_uid: meetingData?.project_uid,
-      start_time: meetingData?.start_time,
-      duration_minutes: meetingData?.duration,
-      body_size: JSON.stringify(req.body).length,
-    },
-    'Starting meeting creation request'
-  );
-
-  try {
-    // Basic validation
-    if (!meetingData.topic || !meetingData.start_time || !meetingData.project_uid || !meetingData.duration) {
-      req.log.warn(
-        {
-          operation: 'create_meeting',
-          error: 'Missing required fields for meeting creation',
-          provided_fields: {
-            has_topic: !!meetingData.topic,
-            has_start_time: !!meetingData.start_time,
-            has_project_uid: !!meetingData.project_uid,
-            has_duration: !!meetingData.duration,
-          },
-          status_code: 400,
-        },
-        'Bad request: Meeting required fields validation failed'
-      );
-
-      return res.status(400).json({
-        error: 'Topic, start_time, duration, and project_uid are required fields',
-        code: 'MISSING_REQUIRED_FIELDS',
-      });
-    }
-
-    const meeting = await supabaseService.createMeeting(meetingData);
-    const duration = Date.now() - startTime;
-
-    req.log.info(
-      {
-        operation: 'create_meeting',
-        meeting_id: meeting.id,
-        project_uid: meeting.project_uid,
-        duration,
-        status_code: 201,
-      },
-      'Successfully created meeting'
-    );
-
-    return res.status(201).json(meeting);
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    req.log.error(
-      {
-        error: error instanceof Error ? error.message : error,
-        operation: 'create_meeting',
-        project_uid: req.body?.project_uid,
-        duration,
-      },
-      'Failed to create meeting'
-    );
-    return next(error);
-  }
-});
+// POST /meetings - using new controller pattern
+router.post('/', (req, res) => meetingController.createMeeting(req, res));
 
 router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   try {
@@ -384,41 +209,7 @@ router.put('/:id', async (req: Request, res: Response, next: NextFunction) => {
   }
 });
 
-router.delete('/:id', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const meetingId = req.params['id'];
-    const { deleteType } = req.query;
-
-    if (!meetingId) {
-      return res.status(400).json({
-        error: 'Meeting ID is required',
-        code: 'MISSING_MEETING_ID',
-      });
-    }
-
-    // Validate deleteType for recurring meetings
-    if (deleteType && !['single', 'series', 'future'].includes(deleteType as string)) {
-      return res.status(400).json({
-        error: 'Delete type must be "single", "series", or "future"',
-        code: 'INVALID_DELETE_TYPE',
-      });
-    }
-
-    await supabaseService.deleteMeeting(meetingId, deleteType as 'single' | 'series' | 'future');
-
-    return res.status(204).send();
-  } catch (error) {
-    req.log.error(
-      {
-        error: error instanceof Error ? error.message : error,
-        meeting_id: req.params['id'],
-        delete_type: req.query['deleteType'],
-      },
-      'Failed to delete meeting'
-    );
-    return next(error);
-  }
-});
+router.delete('/:id', (req, res) => meetingController.deleteMeeting(req, res));
 
 router.post('/:id/attachments/upload', async (req: Request, res: Response, next: NextFunction) => {
   const startTime = Date.now();

@@ -7,7 +7,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
-import { AI_SUMMARY_ACCESS_OPTIONS, MEETING_FEATURES, MEETING_PLATFORMS, RECORDING_ACCESS_OPTIONS } from '@lfx-pcc/shared/constants';
+import { ARTIFACT_VISIBILITY_OPTIONS, MEETING_FEATURES, MEETING_PLATFORMS } from '@lfx-pcc/shared/constants';
 import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
@@ -24,8 +24,7 @@ export class MeetingPlatformFeaturesComponent implements OnInit {
   // Constants from shared package
   public readonly platformOptions = MEETING_PLATFORMS;
   public readonly features = MEETING_FEATURES;
-  public readonly recordingAccessOptions = RECORDING_ACCESS_OPTIONS;
-  public readonly aiSummaryAccessOptions = AI_SUMMARY_ACCESS_OPTIONS;
+  public readonly artifactVisibilityOptions = ARTIFACT_VISIBILITY_OPTIONS;
 
   // Transform platforms into dropdown options (only available platforms)
   public readonly platformDropdownOptions = MEETING_PLATFORMS.map((platform) => ({
@@ -42,7 +41,7 @@ export class MeetingPlatformFeaturesComponent implements OnInit {
       .get('recording_enabled')
       ?.valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe((recordingEnabled: boolean) => {
-        const dependentControls = ['transcripts_enabled', 'zoom_ai_enabled', 'youtube_enabled'];
+        const dependentControls = ['transcript_enabled', 'zoom_ai_enabled', 'youtube_upload_enabled'];
 
         dependentControls.forEach((controlName) => {
           const control = this.form().get(controlName);

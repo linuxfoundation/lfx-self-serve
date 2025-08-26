@@ -39,7 +39,7 @@ export class Logger {
       {
         operation,
         duration,
-        status_code: 200,
+        status_code: metadata['status_code'] || 200,
         ...metadata,
         request_id: req.id,
       },

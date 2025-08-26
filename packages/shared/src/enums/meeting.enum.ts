@@ -45,3 +45,16 @@ export enum RecurrenceType {
   /** Meeting repeats monthly on the same date/day pattern */
   MONTHLY = 3,
 }
+
+/**
+ * Meeting artifact visibility levels
+ * @description Determines who can access meeting recordings, transcripts, and AI summaries
+ */
+export enum ArtifactVisibility {
+  /** Only meeting hosts can access artifacts */
+  MEETING_HOSTS = 'meeting_hosts',
+  /** Meeting hosts and participants can access artifacts */
+  MEETING_PARTICIPANTS = 'meeting_participants',
+  /** Artifacts are publicly accessible */
+  PUBLIC = 'public',
+}

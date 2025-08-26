@@ -20,6 +20,9 @@ export const SENSITIVE_FIELDS = [
   'api_key',
   'access_token',
   'refresh_token',
+  'email',
+  'passcode',
+  'organizers',
 ] as const;
 
 /**

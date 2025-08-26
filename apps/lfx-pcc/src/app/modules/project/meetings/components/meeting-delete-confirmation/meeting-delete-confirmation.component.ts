@@ -43,7 +43,7 @@ export class MeetingDeleteConfirmationComponent {
     const deleteType = this.isRecurring && !this.isPastMeeting ? this.deleteForm.get('deleteType')?.value : undefined;
 
     this.meetingService
-      .deleteMeeting(this.meeting.id, deleteType)
+      .deleteMeeting(this.meeting.uid, deleteType)
       .pipe(take(1))
       .subscribe({
         next: () => {

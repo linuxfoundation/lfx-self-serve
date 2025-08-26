@@ -71,7 +71,7 @@
             @if (currentView() === 'list') {
               <!-- Meetings Card Grid -->
               <div class="grid grid-cols-1 gap-4">
-                @for (meeting of filteredMeetings(); track meeting.id) {
+                @for (meeting of filteredMeetings(); track meeting.uid) {
                   <lfx-meeting-card
                     [meetingInput]="meeting"
                     (meetingUpdated)="refreshMeetings()"

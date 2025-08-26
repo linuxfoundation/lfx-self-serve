@@ -8,6 +8,8 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { TableComponent } from '@components/table/table.component';
+import { MIN_EARLY_JOIN_TIME } from '@lfx-pcc/shared';
+import { ArtifactVisibility, MeetingVisibility } from '@lfx-pcc/shared/enums';
 import { Committee, CommitteeMember, Meeting } from '@lfx-pcc/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
@@ -136,28 +138,32 @@ export class MeetingCommitteeModalComponent {
     // Build update request with all existing meeting fields plus committees
     const updateRequest = {
       project_uid: this.meeting.project_uid,
-      topic: this.meeting.topic || '',
-      agenda: this.meeting.agenda || undefined,
+      title: this.meeting.title || '',
+      description: this.meeting.description || undefined,
       start_time: this.meeting.start_time || '',
       duration: this.meeting.duration || 60,
       timezone: this.meeting.timezone || 'UTC',
       meeting_type: this.meeting.meeting_type || 'online',
-      early_join_time: this.meeting.early_join_time || undefined,
-      visibility: this.meeting.visibility || undefined,
-      recording_enabled: this.meeting.recording_enabled || undefined,
-      transcripts_enabled: this.meeting.transcripts_enabled || undefined,
-      youtube_enabled: this.meeting.youtube_enabled || undefined,
-      zoom_ai_enabled: this.meeting.zoom_ai_enabled || undefined,
-      require_ai_summary_approval: this.meeting.require_ai_summary_approval || undefined,
-      ai_summary_access: this.meeting.ai_summary_access || undefined,
-      recording_access: this.meeting.recording_access || undefined,
+      early_join_time_minutes: this.meeting.early_join_time_minutes || MIN_EARLY_JOIN_TIME,
+      visibility: this.meeting.visibility || MeetingVisibility.PUBLIC,
+      recording_enabled: this.meeting.recording_enabled || false,
+      transcript_enabled: this.meeting.transcript_enabled || false,
+      youtube_upload_enabled: this.meeting.youtube_upload_enabled || false,
+      zoom_config: {
+        ai_companion_enabled: this.meeting.zoom_config?.ai_companion_enabled || false,
+        ai_summary_require_approval: this.meeting.zoom_config?.ai_summary_require_approval || false,
+      },
+      artifact_visibility: this.meeting.artifact_visibility || ArtifactVisibility.PUBLIC,
       recurrence: this.meeting.recurrence || undefined,
-      restricted: this.meeting.restricted || undefined,
-      committees: selectedIds,
+      restricted: this.meeting.restricted || false,
+      committees: selectedIds.map((uid) => ({
+        uid,
+        allowed_voting_statuses: ['active', 'voting'],
+      })),
     };
 
     this.meetingService
-      .updateMeeting(this.meeting.id, updateRequest)
+      .updateMeeting(this.meeting.uid, updateRequest)
       .pipe(take(1))
       .subscribe({
         next: () => {

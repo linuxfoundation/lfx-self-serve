@@ -8,12 +8,11 @@ import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } fr
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import {
-  DEFAULT_AI_SUMMARY_ACCESS,
+  DEFAULT_ARTIFACT_VISIBILITY,
   DEFAULT_DURATION,
   DEFAULT_EARLY_JOIN_TIME,
   DEFAULT_MEETING_TOOL,
   DEFAULT_MEETING_TYPE,
-  DEFAULT_RECORDING_ACCESS,
   MAX_EARLY_JOIN_TIME,
   MEETING_STEP_TITLES,
   MIN_EARLY_JOIN_TIME,
@@ -249,22 +248,23 @@ export class MeetingManageComponent {
     // Create meeting data
     const baseMeetingData = {
       project_uid: project.uid,
-      topic: formValue.topic,
-      agenda: formValue.agenda || '',
+      title: formValue.title,
+      description: formValue.description || '',
       start_time: startDateTime,
       duration: duration,
       timezone: formValue.timezone,
       meeting_type: formValue.meeting_type || DEFAULT_MEETING_TYPE,
-      early_join_time: formValue.early_join_time || DEFAULT_EARLY_JOIN_TIME,
-      visibility: formValue.show_in_public_calendar ? MeetingVisibility.PUBLIC : MeetingVisibility.PRIVATE,
+      early_join_time_minutes: formValue.early_join_time_minutes || DEFAULT_EARLY_JOIN_TIME,
+      visibility: formValue.visibility || MeetingVisibility.PRIVATE,
       restricted: formValue.restricted || false,
       recording_enabled: formValue.recording_enabled || false,
-      transcripts_enabled: formValue.transcripts_enabled || false,
-      youtube_enabled: formValue.youtube_enabled || false,
-      zoom_ai_enabled: formValue.zoom_ai_enabled || false,
-      require_ai_summary_approval: formValue.require_ai_summary_approval || false,
-      ai_summary_access: formValue.ai_summary_access || DEFAULT_AI_SUMMARY_ACCESS,
-      recording_access: formValue.recording_access || DEFAULT_RECORDING_ACCESS,
+      transcript_enabled: formValue.transcript_enabled || false,
+      youtube_upload_enabled: formValue.youtube_upload_enabled || false,
+      zoom_config: {
+        ai_companion_enabled: formValue.zoom_ai_enabled || false,
+        ai_summary_require_approval: formValue.require_ai_summary_approval || false,
+      },
+      artifact_visibility: formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY,
       recurrence: recurrenceObject,
       important_links: (this.form().get('important_links') as FormArray).value || [],
     };
@@ -277,7 +277,7 @@ export class MeetingManageComponent {
       next: (meeting) => {
         // If we have pending attachments, save them to the database
         if (this.pendingAttachments.length > 0) {
-          this.savePendingAttachments(meeting.id)
+          this.savePendingAttachments(meeting.uid)
             .pipe(take(1))
             .subscribe({
               next: (result) => {
@@ -402,23 +402,22 @@ export class MeetingManageComponent {
     const recurrenceValue = mapRecurrenceToFormValue(meeting.recurrence);
 
     this.form().patchValue({
-      topic: meeting.topic || '',
-      agenda: meeting.agenda || '',
+      title: meeting.title,
+      description: meeting.description,
       meeting_type: meeting.meeting_type || 'None',
       startDate: startDate,
       startTime: startTime,
       duration: meeting.duration || DEFAULT_DURATION,
       timezone: meeting.timezone || getUserTimezone(),
-      early_join_time: meeting.early_join_time || DEFAULT_EARLY_JOIN_TIME,
-      show_in_public_calendar: meeting.visibility === MeetingVisibility.PUBLIC,
+      early_join_time_minutes: meeting.early_join_time_minutes || DEFAULT_EARLY_JOIN_TIME,
+      visibility: meeting.visibility || MeetingVisibility.PRIVATE,
       restricted: meeting.restricted ?? false,
       recording_enabled: meeting.recording_enabled || false,
-      transcripts_enabled: meeting.transcripts_enabled || false,
-      youtube_enabled: meeting.youtube_enabled || false,
-      zoom_ai_enabled: meeting.zoom_ai_enabled || false,
-      require_ai_summary_approval: meeting.require_ai_summary_approval ?? false,
-      ai_summary_access: meeting.ai_summary_access ?? DEFAULT_AI_SUMMARY_ACCESS,
-      recording_access: meeting.recording_access ?? DEFAULT_RECORDING_ACCESS,
+      transcript_enabled: meeting.transcript_enabled || false,
+      youtube_upload_enabled: meeting.youtube_upload_enabled || false,
+      zoom_ai_enabled: meeting.zoom_config?.ai_companion_enabled || false,
+      require_ai_summary_approval: meeting.zoom_config?.ai_summary_require_approval ?? false,
+      artifact_visibility: meeting.artifact_visibility ?? DEFAULT_ARTIFACT_VISIBILITY,
       recurrence: recurrenceValue,
     });
   }
@@ -452,12 +451,12 @@ export class MeetingManageComponent {
 
       case 1: // Meeting Details
         return !!(
-          form.get('topic')?.value &&
-          form.get('agenda')?.value &&
+          form.get('title')?.value &&
+          form.get('description')?.value &&
           form.get('startDate')?.value &&
           form.get('startTime')?.value &&
           form.get('timezone')?.value &&
-          form.get('topic')?.valid &&
+          form.get('title')?.valid &&
           form.get('startDate')?.valid &&
           form.get('startTime')?.valid &&
           !form.errors?.['futureDateTime']
@@ -481,31 +480,30 @@ export class MeetingManageComponent {
       {
         // Step 1: Meeting Type
         meeting_type: new FormControl('', [Validators.required]),
-        show_in_public_calendar: new FormControl(false),
+        visibility: new FormControl(MeetingVisibility.PRIVATE),
         restricted: new FormControl(false),
 
         // Step 2: Meeting Details
-        topic: new FormControl('', [Validators.required]),
-        agenda: new FormControl('', [Validators.required]),
+        title: new FormControl('', [Validators.required]),
+        description: new FormControl('', [Validators.required]),
         aiPrompt: new FormControl(''),
         startDate: new FormControl(defaultDateTime.date, [Validators.required]),
         startTime: new FormControl(defaultDateTime.time, [Validators.required]),
         duration: new FormControl(DEFAULT_DURATION, [Validators.required]),
         customDuration: new FormControl(''),
         timezone: new FormControl(getUserTimezone(), [Validators.required]),
-        early_join_time: new FormControl(DEFAULT_EARLY_JOIN_TIME, [Validators.min(MIN_EARLY_JOIN_TIME), Validators.max(MAX_EARLY_JOIN_TIME)]),
+        early_join_time_minutes: new FormControl(DEFAULT_EARLY_JOIN_TIME, [Validators.min(MIN_EARLY_JOIN_TIME), Validators.max(MAX_EARLY_JOIN_TIME)]),
         isRecurring: new FormControl(false),
         recurrence: new FormControl('none'),
 
         // Step 3: Platform & Features
         meetingTool: new FormControl(DEFAULT_MEETING_TOOL, [Validators.required]),
         recording_enabled: new FormControl(false),
-        transcripts_enabled: new FormControl({ value: false, disabled: true }),
-        youtube_enabled: new FormControl({ value: false, disabled: true }),
+        transcript_enabled: new FormControl({ value: false, disabled: true }),
+        youtube_upload_enabled: new FormControl({ value: false, disabled: true }),
         zoom_ai_enabled: new FormControl({ value: false, disabled: true }),
         require_ai_summary_approval: new FormControl(false),
-        ai_summary_access: new FormControl(DEFAULT_AI_SUMMARY_ACCESS),
-        recording_access: new FormControl(DEFAULT_RECORDING_ACCESS),
+        artifact_visibility: new FormControl(DEFAULT_ARTIFACT_VISIBILITY),
 
         // Step 4: Resources & Summary
         attachments: new FormControl<PendingAttachment[]>([]),
@@ -538,7 +536,7 @@ export class MeetingManageComponent {
     const project = this.projectService.project();
 
     // Only auto-generate if we have meeting type, start date, and the title is empty
-    const currentTitle = form.get('topic')?.value;
+    const currentTitle = form.get('title')?.value;
     if (meetingType && startDate && (!currentTitle || currentTitle.trim() === '')) {
       const formattedDate = new Date(startDate).toLocaleDateString('en-US', {
         month: '2-digit',
@@ -548,7 +546,7 @@ export class MeetingManageComponent {
 
       const projectSlug = project?.slug?.toUpperCase() || '';
       const generatedTitle = `${projectSlug} ${meetingType} Meeting - ${formattedDate}`;
-      form.get('topic')?.setValue(generatedTitle);
+      form.get('title')?.setValue(generatedTitle);
     }
   }
 

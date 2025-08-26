@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { DEFAULT_QUERY_PARAMS } from '@lfx-pcc/shared/constants';
-import { ApiResponse, MicroserviceUrls, ApiError, extractErrorDetails } from '@lfx-pcc/shared/interfaces';
+import { ApiError, ApiResponse, extractErrorDetails, MicroserviceUrls } from '@lfx-pcc/shared/interfaces';
 import { Request } from 'express';
 
 import { serverLogger } from '../server';
-import { ApiClientService } from './api-client.service';
 import { createApiError } from '../utils/api-error';
+import { ApiClientService } from './api-client.service';
 
 export class MicroserviceProxyService {
   private apiClient: ApiClientService;

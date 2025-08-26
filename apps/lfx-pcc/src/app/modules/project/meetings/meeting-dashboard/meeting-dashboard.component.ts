@@ -121,7 +121,7 @@ export class MeetingDashboardComponent {
   public onCalendarEventClick(eventInfo: any): void {
     const meetingId = eventInfo.event.extendedProps?.meetingId;
     if (meetingId) {
-      const meeting = this.meetings().find((m) => m.id === meetingId);
+      const meeting = this.meetings().find((m) => m.uid === meetingId);
       if (meeting) {
         this.openMeetingModal(meeting);
       }
@@ -137,7 +137,7 @@ export class MeetingDashboardComponent {
   private openMeetingModal(meeting: Meeting): void {
     this.dialogService
       .open(MeetingModalComponent, {
-        header: meeting.topic || 'Meeting Details',
+        header: meeting.title || 'Meeting Details',
         width: '700px',
         modal: true,
         closable: true,
@@ -234,8 +234,8 @@ export class MeetingDashboardComponent {
       if (searchTerm) {
         filtered = filtered.filter(
           (meeting) =>
-            meeting.topic?.toLowerCase().includes(searchTerm) ||
-            meeting.agenda?.toLowerCase().includes(searchTerm) ||
+            meeting.title?.toLowerCase().includes(searchTerm) ||
+            meeting.description?.toLowerCase().includes(searchTerm) ||
             meeting.meeting_type?.toLowerCase().includes(searchTerm) ||
             meeting.meeting_committees?.some((committee) => committee.name.toLowerCase().includes(searchTerm))
         );
@@ -316,10 +316,10 @@ export class MeetingDashboardComponent {
 
         // Create a more informative title
         const committeeName = meeting.meeting_committees?.[0]?.name;
-        const displayTitle = committeeName ? `${meeting.topic || 'Meeting'} (${committeeName})` : meeting.topic || 'Meeting';
+        const displayTitle = committeeName ? `${meeting.title || 'Meeting'} (${committeeName})` : meeting.title || 'Meeting';
 
         return {
-          id: meeting.id,
+          id: meeting.uid,
           title: displayTitle,
           start: startTime.toISOString(),
           end: endTime.toISOString(),
@@ -328,12 +328,12 @@ export class MeetingDashboardComponent {
           textColor: '#ffffff',
           classNames: ['meeting-event'],
           extendedProps: {
-            meetingId: meeting.id,
+            meetingId: meeting.uid,
             visibility: meeting.visibility || 'private',
             committee: meeting.meeting_committees?.[0]?.name,
             meetingType: meeting.meeting_type,
-            agenda: meeting.agenda,
-            topic: meeting.topic,
+            description: meeting.description,
+            title: meeting.title,
           },
         };
       });

@@ -152,10 +152,10 @@ export class MeetingDetailsComponent implements OnInit {
     const context = this.form().get('aiPrompt')?.value;
     const currentProject = this.projectService.project();
     const form = this.form();
-    const topic = form.get('topic')?.value;
+    const title = form.get('title')?.value;
     const meetingType = form.get('meeting_type')?.value;
 
-    if (!currentProject || !topic || !meetingType || !context) {
+    if (!currentProject || !title || !meetingType || !context) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Missing Information',
@@ -166,7 +166,7 @@ export class MeetingDetailsComponent implements OnInit {
 
     const request: GenerateAgendaRequest = {
       meetingType,
-      title: topic,
+      title,
       projectName: currentProject.name,
       context,
     };
@@ -180,7 +180,7 @@ export class MeetingDetailsComponent implements OnInit {
         tap({
           next: (response) => {
             // Set the generated agenda in the form
-            this.form().get('agenda')?.setValue(response.agenda);
+            this.form().get('description')?.setValue(response.agenda);
 
             // Set the AI-estimated duration
             this.setAiEstimatedDuration(response.estimatedDuration);
@@ -221,7 +221,7 @@ export class MeetingDetailsComponent implements OnInit {
   }
 
   public applyTemplate(template: MeetingTemplate): void {
-    this.form().get('agenda')?.setValue(template.content);
+    this.form().get('description')?.setValue(template.content);
     this.selectedTemplateId.set(template.id);
 
     // Set duration based on template

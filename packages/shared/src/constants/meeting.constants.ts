@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ArtifactVisibility } from '../enums';
+
 /**
  * Available meeting platforms and their configurations
  * @description Defines the supported platforms for hosting meetings
@@ -46,7 +48,7 @@ export const MEETING_FEATURES = [
     color: '#3b82f6', // blue - matches bg-blue-50 text-blue-700
   },
   {
-    key: 'transcripts_enabled',
+    key: 'transcript_enabled',
     icon: 'fa-light fa-file-lines',
     title: 'Generate Transcripts',
     description: 'Automatically create searchable text transcripts',
@@ -54,7 +56,7 @@ export const MEETING_FEATURES = [
     color: '#8b5cf6', // purple - matches bg-purple-50 text-purple-700
   },
   {
-    key: 'youtube_enabled',
+    key: 'youtube_upload_enabled',
     icon: 'fa-light fa-upload',
     title: 'YouTube Auto-upload',
     description: "Automatically publish recordings to your project's YouTube channel",
@@ -70,33 +72,25 @@ export const MEETING_FEATURES = [
     color: '#16a34a', // green - matches bg-green-50 text-green-700
   },
   {
-    key: 'show_in_public_calendar',
+    key: 'visibility',
     icon: 'fa-light fa-calendar-check',
     title: 'Show in Public Calendar',
     description: 'Make this meeting visible in the public project calendar',
     recommended: true,
     color: '#ea580c', // orange - unique color for calendar visibility
+    trueValue: 'public',
+    falseValue: 'private',
   },
 ];
 
 /**
- * Recording access control options
- * @description Defines who can access meeting recordings
+ * Artifact visibility control options
+ * @description Defines who can access meeting artifacts (recordings, transcripts, AI summaries)
  */
-export const RECORDING_ACCESS_OPTIONS = [
-  { label: 'Members Only', value: 'Members' },
-  { label: 'Public', value: 'Public' },
-  { label: 'Private', value: 'Private' },
-];
-
-/**
- * AI summary access control options
- * @description Defines who can access AI-generated meeting summaries
- */
-export const AI_SUMMARY_ACCESS_OPTIONS = [
-  { label: 'PCC Members', value: 'PCC' },
-  { label: 'Project Members', value: 'Members' },
-  { label: 'Public', value: 'Public' },
+export const ARTIFACT_VISIBILITY_OPTIONS = [
+  { label: 'Meeting Hosts Only', value: ArtifactVisibility.MEETING_HOSTS },
+  { label: 'Meeting Participants', value: ArtifactVisibility.MEETING_PARTICIPANTS },
+  { label: 'Public', value: ArtifactVisibility.PUBLIC },
 ];
 
 // ============================================================================
@@ -166,16 +160,10 @@ export const DEFAULT_MEETING_TYPE = 'None';
 export const DEFAULT_MEETING_TOOL = 'zoom';
 
 /**
- * Default AI summary access level
- * @description Who can view AI-generated meeting summaries by default
+ * Default artifact visibility level
+ * @description Who can access meeting artifacts (recordings, transcripts, AI summaries) by default
  */
-export const DEFAULT_AI_SUMMARY_ACCESS = 'PCC';
-
-/**
- * Default recording access level
- * @description Who can view meeting recordings by default
- */
-export const DEFAULT_RECORDING_ACCESS = 'Members';
+export const DEFAULT_ARTIFACT_VISIBILITY = 'meeting_participants';
 
 /**
  * Default repeat interval for recurring meetings
