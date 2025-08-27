@@ -9,7 +9,7 @@ module.exports = {
       env: {
         PM2: 'true',
         NODE_ENV: 'production',
-        PORT: 4200,
+        PORT: 4000,
       },
       max_restarts: 10, // Restart limit for unstable apps
       exp_backoff_restart_delay: 100, // Exponential backoff restart delay

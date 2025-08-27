@@ -4000,6 +4000,16 @@ __metadata:
   languageName: node
   linkType: hard
 
+"@types/compression@npm:^1":
+  version: 1.8.1
+  resolution: "@types/compression@npm:1.8.1"
+  dependencies:
+    "@types/express": "npm:*"
+    "@types/node": "npm:*"
+  checksum: 10c0/3b958b1c9b7cdf9852cd8fbd85fb9067196656fb771aaed950b1ae6ebab5e87d2f7b75260160c772038919a12c8ca8bee42aaa3fdb989b0646163979d75fe8b2
+  languageName: node
+  linkType: hard
+
 "@types/connect-history-api-fallback@npm:^1.5.4":
   version: 1.5.4
   resolution: "@types/connect-history-api-fallback@npm:1.5.4"
@@ -5668,7 +5678,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"compression@npm:^1.7.4":
+"compression@npm:^1.7.4, compression@npm:^1.8.1":
   version: 1.8.1
   resolution: "compression@npm:1.8.1"
   dependencies:
@@ -8896,6 +8906,7 @@ __metadata:
     "@linuxfoundation/lfx-ui-core": "npm:^0.0.20"
     "@playwright/test": "npm:^1.54.2"
     "@primeng/themes": "npm:^19.1.4"
+    "@types/compression": "npm:^1"
     "@types/express": "npm:^4.17.17"
     "@types/node": "npm:^18.18.0"
     "@typescript-eslint/eslint-plugin": "npm:^8.39.1"
@@ -8904,6 +8915,7 @@ __metadata:
     "@typescript-eslint/types": "npm:^8.39.1"
     "@typescript-eslint/utils": "npm:^8.39.1"
     autoprefixer: "npm:^10.4.21"
+    compression: "npm:^1.8.1"
     dotenv: "npm:^17.2.1"
     eslint: "npm:^9.33.0"
     eslint-plugin-import: "npm:^2.32.0"

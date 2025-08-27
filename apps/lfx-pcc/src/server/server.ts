@@ -33,6 +33,25 @@ const angularApp = new AngularNodeAppEngine();
 const app = express();
 
 /**
+ * Enable gzip/deflate compression for all responses.
+ *
+ * Configuration optimized for SSR:
+ * - Compresses HTML, CSS, JS, JSON, and other text-based responses
+ * - Uses level 6 (balanced compression/speed ratio)
+ * - 1KB threshold to avoid compressing small responses
+ * - Uses default filter for text-based content types
+ */
+// Use require to avoid TypeScript type conflicts with @types/compression
+// eslint-disable-next-line @typescript-eslint/no-require-imports
+const compression = require('compression');
+app.use(
+  compression({
+    level: 6, // Balanced compression level (1=fastest, 9=best compression)
+    threshold: 1024, // Only compress responses larger than 1KB
+  })
+);
+
+/**
  * Base Pino logger instance for server-level operations.
  *
  * Used for:
