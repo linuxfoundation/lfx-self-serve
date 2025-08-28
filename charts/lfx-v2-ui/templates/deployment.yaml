@@ -4,10 +4,10 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: {{ include "lfx-v2-pcc-ui.fullname" . }}
+  name: {{ include "lfx-v2-ui.fullname" . }}
   labels:
-    {{- include "lfx-v2-pcc-ui.labels" . | nindent 4 }}
-  {{- with (include "lfx-v2-pcc-ui.annotations" .) }}
+    {{- include "lfx-v2-ui.labels" . | nindent 4 }}
+  {{- with (include "lfx-v2-ui.annotations" .) }}
   annotations:
     {{- . | nindent 4 }}
   {{- end }}
@@ -15,13 +15,13 @@ spec:
   replicas: {{ .Values.replicaCount }}
   selector:
     matchLabels:
-      {{- include "lfx-v2-pcc-ui.selectorLabels" . | nindent 6 }}
+      {{- include "lfx-v2-ui.selectorLabels" . | nindent 6 }}
   template:
     metadata:
       annotations:
-        {{- include "lfx-v2-pcc-ui.podAnnotations" . | nindent 8 }}
+        {{- include "lfx-v2-ui.podAnnotations" . | nindent 8 }}
       labels:
-        {{- include "lfx-v2-pcc-ui.labels" . | nindent 8 }}
+        {{- include "lfx-v2-ui.labels" . | nindent 8 }}
         {{- with .Values.podLabels }}
         {{- toYaml . | nindent 8 }}
         {{- end }}
@@ -30,10 +30,10 @@ spec:
       imagePullSecrets:
         {{- toYaml . | nindent 8 }}
       {{- end }}
-      serviceAccountName: {{ .Values.serviceAccount.name | default (include "lfx-v2-pcc-ui.serviceAccountName" .) }}
+      serviceAccountName: {{ .Values.serviceAccount.name | default (include "lfx-v2-ui.serviceAccountName" .) }}
       containers:
         - name: {{ .Chart.Name }}
-          image: {{ include "lfx-v2-pcc-ui.image" . }}
+          image: {{ include "lfx-v2-ui.image" . }}
           imagePullPolicy: {{ .Values.image.pullPolicy }}
           ports:
             - name: http

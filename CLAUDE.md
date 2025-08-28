@@ -63,7 +63,7 @@ LFX PCC is a Turborepo monorepo containing an Angular 19 SSR application with ex
 ## Monorepo Structure
 
 ```text
-lfx-v2-pcc-ui/
+lfx-v2-ui/
 ├── apps/
 │   └── lfx-pcc/              # Angular 19 SSR application with zoneless change detection
 │       ├── eslint.config.mjs # Angular-specific ESLint rules
