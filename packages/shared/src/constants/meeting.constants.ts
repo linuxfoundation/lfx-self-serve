@@ -101,14 +101,14 @@ export const ARTIFACT_VISIBILITY_OPTIONS = [
  * Step titles for the meeting creation/edit stepper
  * @description Array of human-readable titles for each step in the meeting form
  */
-export const MEETING_STEP_TITLES = ['Meeting Type', 'Meeting Details', 'Platform & Features', 'Resources & Summary'];
+export const MEETING_STEP_TITLES = ['Meeting Type', 'Meeting Details', 'Platform & Features', 'Resources & Summary', 'Manage Guests'];
 
 /**
  * Total number of steps in the meeting form
  * @description Must match the length of MEETING_STEP_TITLES array
- * @example 4 steps: Meeting Type → Details → Platform → Resources
+ * @example 5 steps: Meeting Type → Details → Platform → Resources → Guests
  */
-export const TOTAL_STEPS = 4;
+export const TOTAL_STEPS = MEETING_STEP_TITLES.length;
 
 /**
  * Default meeting duration in minutes
@@ -157,7 +157,7 @@ export const DEFAULT_MEETING_TYPE = 'None';
  * Default meeting platform
  * @description Primary platform used for hosting meetings
  */
-export const DEFAULT_MEETING_TOOL = 'zoom';
+export const DEFAULT_MEETING_TOOL = 'Zoom';
 
 /**
  * Default artifact visibility level
@@ -236,6 +236,8 @@ export const MEETING_FORM_STEPS = {
   PLATFORM_FEATURES: 2,
   /** Step 3: Add resources and review summary */
   RESOURCES_SUMMARY: 3,
+  /** Step 4: Manage meeting guests and send invitations */
+  MANAGE_GUESTS: 4,
 };
 
 /**

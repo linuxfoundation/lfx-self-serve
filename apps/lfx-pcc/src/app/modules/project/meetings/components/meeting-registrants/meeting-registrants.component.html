@@ -1,0 +1,197 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="meeting-registrants-container max-w-4xl mx-auto" data-testid="meeting-registrants-container">
+  <!-- Confirm Dialog for participant deletion -->
+  <p-confirmDialog></p-confirmDialog>
+
+  <!-- Main Card Container (following React pattern) -->
+
+  <div class="flex items-center mb-4">
+    <div class="flex items-center gap-3">
+      <!-- <lfx-button size="small" label="Bulk Add" icon="fa-light fa-upload" severity="secondary" data-testid="bulk-add-button" (click)="onBulkAdd()">
+      </lfx-button> -->
+      <lfx-button
+        size="small"
+        label="Add Guest"
+        icon="fa-light fa-user-plus"
+        severity="secondary"
+        data-testid="add-guest-button"
+        (click)="onToggleAddRegistrant()">
+      </lfx-button>
+    </div>
+  </div>
+
+  <!-- Add Registrant Modal Placeholder -->
+  @if (showAddForm()) {
+    <div class="mb-6">
+      <!-- Placeholder for Add Registrant Modal Component -->
+      <lfx-card>
+        <ng-template #header>
+          <div class="px-8 pt-4 flex items-center justify-between">
+            <h4 class="font-semibold text-slate-900">Add New Guest</h4>
+            <lfx-button
+              size="small"
+              icon="fa-light fa-times"
+              [text]="true"
+              styleClass="text-gray-400 hover:text-gray-600"
+              severity="secondary"
+              (click)="onCloseAddForm()">
+            </lfx-button>
+          </div>
+        </ng-template>
+
+        <!-- Use the shared registrant-form component -->
+        <lfx-registrant-form [form]="addRegistrantForm" [registrant]="null"> </lfx-registrant-form>
+
+        <ng-template #footer>
+          <div class="flex items-center justify-end gap-3">
+            <lfx-button
+              size="small"
+              label="Add Guest"
+              severity="primary"
+              [disabled]="!addRegistrantForm.valid || !addRegistrantForm.dirty"
+              (click)="onAddRegistrant()">
+            </lfx-button>
+            <lfx-button
+              size="small"
+              label="Cancel"
+              [text]="true"
+              styleClass="text-gray-400 hover:text-gray-600"
+              severity="secondary"
+              (click)="onCloseAddForm()">
+            </lfx-button>
+          </div>
+        </ng-template>
+      </lfx-card>
+    </div>
+  }
+
+  <!-- Combined Import Component (Bulk Add + CSV Import with Tabs) -->
+  @if (showImport()) {
+    <div class="mb-6">
+      <!-- Placeholder for Combined Import Component (following React pattern) -->
+      <lfx-card>
+        <ng-template #header>
+          <div class="px-8 pt-4 flex items-center justify-between">
+            <h4 class="font-semibold text-slate-900 flex items-center gap-2">
+              <i class="fa-light fa-upload"></i>
+              Import Guests
+            </h4>
+            <lfx-button
+              size="small"
+              icon="fa-light fa-times"
+              [text]="true"
+              styleClass="text-gray-400 hover:text-gray-600"
+              severity="secondary"
+              (click)="onCloseImport()">
+            </lfx-button>
+          </div>
+        </ng-template>
+
+        <!-- Tab Navigation (simplified, will be replaced with actual tabs component) -->
+        <div class="border-b border-slate-200 mb-4">
+          <div class="flex space-x-2">
+            <lfx-button size="small" label="Bulk Email Add" severity="primary" class="border-b-2 border-blue-500"> </lfx-button>
+            <lfx-button size="small" label="CSV Upload" severity="secondary"> </lfx-button>
+          </div>
+        </div>
+
+        <!-- Tab Content Placeholder -->
+        <div class="space-y-4 mb-4">
+          <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg">
+            <div class="flex items-start gap-3">
+              <i class="fa-light fa-info-circle text-blue-600 mt-0.5"></i>
+              <div>
+                <h5 class="text-sm font-semibold text-blue-800 mb-2">Combined Import Component</h5>
+                <ul class="text-sm text-blue-700 space-y-1">
+                  <li>• This will be a tabbed component with Bulk Email Add and CSV Upload tabs</li>
+                  <li>• Follows the exact React pattern from the reference code</li>
+                  <li>• Will include all functionality for both import methods</li>
+                </ul>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <ng-template #footer>
+          <div class="flex gap-2">
+            <lfx-button size="small" label="Test Bulk Add" severity="primary" (click)="handleBulkAdd({ emails: ['test1@example.com', 'test2@example.com'] })">
+            </lfx-button>
+            <lfx-button size="small" label="Test CSV Import" severity="success" (click)="handleImportCSV({ csvData: 'sample csv data' })"> </lfx-button>
+            <lfx-button size="small" label="Cancel" [text]="true" styleClass="text-gray-400 hover:text-gray-600" severity="secondary" (click)="onCloseImport()">
+            </lfx-button>
+          </div>
+        </ng-template>
+      </lfx-card>
+    </div>
+  }
+
+  <!-- Main registrants content -->
+  <div class="space-y-4">
+    <!-- Stats and filters section (simplified) -->
+    <div class="flex items-center justify-between">
+      <h3 class="text-lg font-semibold text-gray-900">Guests ({{ registrantCount() }})</h3>
+      <span class="text-sm text-gray-500" data-testid="stats"> {{ hostCount() }} accepted • {{ memberCount() }} pending </span>
+    </div>
+
+    <!-- Search and filters (simplified for now) -->
+    <div class="flex items-center gap-4 p-4 bg-gray-50 rounded-lg" [formGroup]="searchForm">
+      <div class="flex-1">
+        <lfx-input-text
+          size="small"
+          [form]="searchForm"
+          control="search"
+          placeholder="Search guests..."
+          icon="fa-light fa-search"
+          styleClass="w-full"
+          dataTest="search-input">
+        </lfx-input-text>
+      </div>
+      <lfx-select
+        [form]="searchForm"
+        control="status"
+        [options]="statusOptions"
+        placeholder="Filter by status"
+        styleClass="w-full"
+        data-testid="status-filter"
+        (onChange)="onStatusFilterChange($event.value)">
+      </lfx-select>
+    </div>
+
+    <!-- Loading state -->
+    @if (loading()) {
+      <div class="text-center py-8" data-testid="loading-state">
+        <i class="fa-light fa-circle-notch fa-spin text-2xl text-blue-600 mb-2"></i>
+        <p class="text-sm text-gray-500">Loading guests...</p>
+      </div>
+    }
+
+    @if (registrants()) {
+      <!-- Empty state -->
+      @if (!loading() && filteredRegistrants().length === 0) {
+        <div class="text-center py-8" data-testid="empty-state">
+          <i class="fa-light fa-users text-4xl text-gray-300 mb-4"></i>
+          <h3 class="text-lg font-medium text-gray-600 mb-2">No guests found</h3>
+          <p class="text-gray-500 mb-4">
+            @if (registrantCount() === 0) {
+              Get started by adding your first guest
+            } @else {
+              Try adjusting your search terms or filters
+            }
+          </p>
+        </div>
+      }
+
+      <!-- Registrants list -->
+      @if (!loading() && filteredRegistrants().length > 0) {
+        <div class="flex flex-col gap-2" data-testid="registrants-list">
+          @for (registrant of filteredRegistrants(); track registrant.uid ?? registrant.tempId) {
+            <lfx-registrant-card [registrant]="registrant" (onValidSave)="handleRegistrantUpdate($event)" (onDelete)="handleRegistrantDelete($event)">
+            </lfx-registrant-card>
+          }
+        </div>
+      }
+    }
+  </div>
+</div>

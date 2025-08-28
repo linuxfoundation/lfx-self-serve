@@ -1,12 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreateMeetingRequest, ETagError, Meeting, QueryServiceResponse, UpdateMeetingRequest } from '@lfx-pcc/shared/interfaces';
+import {
+  CreateMeetingRegistrantRequest,
+  CreateMeetingRequest,
+  ETagError,
+  Meeting,
+  MeetingRegistrant,
+  QueryServiceResponse,
+  UpdateMeetingRegistrantRequest,
+  UpdateMeetingRequest,
+} from '@lfx-pcc/shared/interfaces';
 import { Request } from 'express';
 
 import { Logger } from '../helpers/logger';
 import { getUsernameFromAuth } from '../utils/auth-helper';
-import { ApiClientService } from './api-client.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -18,7 +26,7 @@ export class MeetingService {
   private microserviceProxy: MicroserviceProxyService;
 
   public constructor() {
-    this.microserviceProxy = new MicroserviceProxyService(new ApiClientService());
+    this.microserviceProxy = new MicroserviceProxyService();
     this.etagService = new ETagService(this.microserviceProxy);
   }
 
@@ -37,12 +45,12 @@ export class MeetingService {
   }
 
   /**
-   * Fetches a single meeting by ID
+   * Fetches a single meeting by UID
    */
-  public async getMeetingById(req: Request, meetingId: string): Promise<Meeting> {
+  public async getMeetingById(req: Request, meetingUid: string): Promise<Meeting> {
     const params = {
       type: 'meeting',
-      tags: meetingId,
+      tags: meetingUid,
     };
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
@@ -59,10 +67,10 @@ export class MeetingService {
     if (resources.length > 1) {
       req.log.warn(
         {
-          meeting_id: meetingId,
+          meeting_uid: meetingUid,
           result_count: resources.length,
         },
-        'Multiple meetings found for single ID lookup'
+        'Multiple meetings found for single UID lookup'
       );
     }
 
@@ -104,9 +112,9 @@ export class MeetingService {
   /**
    * Updates a meeting using ETag for concurrency control
    */
-  public async updateMeeting(req: Request, meetingId: string, meetingData: UpdateMeetingRequest, editType?: 'single' | 'future'): Promise<Meeting> {
+  public async updateMeeting(req: Request, meetingUid: string, meetingData: UpdateMeetingRequest, editType?: 'single' | 'future'): Promise<Meeting> {
     // Step 1: Fetch meeting with ETag
-    const { etag, data } = await this.etagService.fetchWithETag<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingId}`, 'update_meeting');
+    const { etag, data } = await this.etagService.fetchWithETag<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}`, 'update_meeting');
 
     // Get the logged-in user's username to maintain organizer if not provided
     const username = await getUsernameFromAuth(req);
@@ -130,7 +138,7 @@ export class MeetingService {
     req.log.info(sanitizedPayload, 'Updating meeting payload');
 
     // Step 2: Update meeting with ETag, including editType query parameter if provided
-    let path = `/meetings/${meetingId}`;
+    let path = `/meetings/${meetingUid}`;
     if (editType) {
       path += `?editType=${editType}`;
     }
@@ -140,7 +148,7 @@ export class MeetingService {
     req.log.info(
       {
         operation: 'update_meeting',
-        meeting_id: meetingId,
+        meeting_uid: meetingUid,
         project_uid: updatedMeeting.project_uid,
         title: updatedMeeting.title,
         edit_type: editType || 'single',
@@ -155,19 +163,192 @@ export class MeetingService {
   /**
    * Deletes a meeting using ETag for concurrency control
    */
-  public async deleteMeeting(req: Request, meetingId: string): Promise<void> {
+  public async deleteMeeting(req: Request, meetingUid: string): Promise<void> {
     // Step 1: Fetch meeting with ETag
-    const { etag } = await this.etagService.fetchWithETag<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingId}`, 'delete_meeting');
+    const { etag } = await this.etagService.fetchWithETag<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}`, 'delete_meeting');
 
     // Step 2: Delete meeting with ETag
-    await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/meetings/${meetingId}`, etag, 'delete_meeting');
+    await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}`, etag, 'delete_meeting');
 
     req.log.info(
       {
         operation: 'delete_meeting',
-        meeting_id: meetingId,
+        meeting_uid: meetingUid,
       },
       'Meeting deleted successfully'
     );
+  }
+
+  /**
+   * Fetches all registrants for a meeting
+   */
+  public async getMeetingRegistrants(req: Request, meetingUid: string): Promise<MeetingRegistrant[]> {
+    try {
+      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
+        req,
+        'LFX_V2_SERVICE',
+        `/query/resources`,
+        'GET',
+        {
+          type: 'meeting_registrant',
+          tags: meetingUid,
+        }
+      );
+
+      req.log.info(
+        {
+          operation: 'get_meeting_registrants',
+          meeting_uid: meetingUid,
+          registrant_count: resources.length,
+        },
+        'Meeting registrants fetched successfully'
+      );
+
+      return resources.map((resource) => resource.data);
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'get_meeting_registrants',
+          meeting_uid: meetingUid,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to fetch meeting registrants'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Creates a new meeting registrant
+   */
+  public async addMeetingRegistrant(req: Request, registrantData: CreateMeetingRegistrantRequest): Promise<MeetingRegistrant> {
+    try {
+      const sanitizedPayload = Logger.sanitize({ registrantData });
+      req.log.info(sanitizedPayload, 'Creating meeting registrant');
+
+      const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
+        req,
+        'LFX_V2_SERVICE',
+        `/meetings/${registrantData.meeting_uid}/registrants`,
+        'POST',
+        undefined,
+        registrantData
+      );
+
+      req.log.info(
+        {
+          operation: 'add_meeting_registrant',
+          meeting_uid: registrantData.meeting_uid,
+          registrant_uid: newRegistrant.uid,
+          host: registrantData.host || false,
+        },
+        'Meeting registrant created successfully'
+      );
+
+      return newRegistrant;
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'add_meeting_registrant',
+          meeting_uid: registrantData.meeting_uid,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to create meeting registrant'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Updates an existing meeting registrant using ETag for concurrency control
+   */
+  public async updateMeetingRegistrant(
+    req: Request,
+    meetingUid: string,
+    registrantUid: string,
+    updateData: UpdateMeetingRegistrantRequest
+  ): Promise<MeetingRegistrant> {
+    try {
+      // Step 1: Fetch registrant with ETag
+      const { etag } = await this.etagService.fetchWithETag<MeetingRegistrant>(
+        req,
+        'LFX_V2_SERVICE',
+        `/meetings/${meetingUid}/registrants/${registrantUid}`,
+        'update_meeting_registrant'
+      );
+
+      const sanitizedPayload = Logger.sanitize({ updateData });
+      req.log.info(sanitizedPayload, 'Updating meeting registrant payload');
+
+      // Step 2: Update registrant with ETag
+      const updatedRegistrant = await this.etagService.updateWithETag<MeetingRegistrant>(
+        req,
+        'LFX_V2_SERVICE',
+        `/meetings/${meetingUid}/registrants/${registrantUid}`,
+        etag,
+        updateData,
+        'update_meeting_registrant'
+      );
+
+      req.log.info(
+        {
+          operation: 'update_meeting_registrant',
+          meeting_uid: meetingUid,
+          registrant_uid: registrantUid,
+        },
+        'Meeting registrant updated successfully'
+      );
+
+      return updatedRegistrant;
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'update_meeting_registrant',
+          meeting_uid: meetingUid,
+          registrant_uid: registrantUid,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to update meeting registrant'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Deletes a meeting registrant using ETag for concurrency control
+   */
+  public async deleteMeetingRegistrant(req: Request, meetingUid: string, registrantUid: string): Promise<void> {
+    try {
+      // Step 1: Fetch registrant with ETag
+      const { etag } = await this.etagService.fetchWithETag<MeetingRegistrant>(
+        req,
+        'LFX_V2_SERVICE',
+        `/meetings/${meetingUid}/registrants/${registrantUid}`,
+        'delete_meeting_registrant'
+      );
+
+      // Step 2: Delete registrant with ETag
+      await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/registrants/${registrantUid}`, etag, 'delete_meeting_registrant');
+
+      req.log.info(
+        {
+          operation: 'delete_meeting_registrant',
+          meeting_uid: meetingUid,
+          registrant_uid: registrantUid,
+        },
+        'Meeting registrant deleted successfully'
+      );
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'delete_meeting_registrant',
+          meeting_uid: meetingUid,
+          registrant_uid: registrantUid,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to delete meeting registrant'
+      );
+      throw error;
+    }
   }
 }

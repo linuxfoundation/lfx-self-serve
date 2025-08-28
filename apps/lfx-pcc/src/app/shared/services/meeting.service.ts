@@ -4,12 +4,15 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import {
+  CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
   GenerateAgendaRequest,
   GenerateAgendaResponse,
   Meeting,
   MeetingAttachment,
   MeetingParticipant,
+  MeetingRegistrant,
+  UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UploadFileResponse,
 } from '@lfx-pcc/shared/interfaces';
@@ -81,7 +84,7 @@ export class MeetingService {
     return this.http.get<Meeting>(`/api/meetings/${id}`).pipe(
       catchError((error) => {
         console.error(`Failed to load meeting ${id}:`, error);
-        return of(error);
+        return throwError(() => error);
       }),
       tap((meeting) => this.meeting.set(meeting))
     );
@@ -101,8 +104,9 @@ export class MeetingService {
       take(1),
       catchError((error) => {
         console.error('Failed to create meeting:', error);
-        throw error;
-      })
+        return throwError(() => error);
+      }),
+      tap(console.log)
     );
   }
 
@@ -115,7 +119,7 @@ export class MeetingService {
       take(1),
       catchError((error) => {
         console.error(`Failed to update meeting ${id}:`, error);
-        throw error;
+        return throwError(() => error);
       })
     );
   }
@@ -129,7 +133,7 @@ export class MeetingService {
       take(1),
       catchError((error) => {
         console.error(`Failed to delete meeting ${id}:`, error);
-        throw error;
+        return throwError(() => error);
       })
     );
   }
@@ -139,7 +143,7 @@ export class MeetingService {
       take(1),
       catchError((error) => {
         console.error(`Failed to add participant to meeting ${meetingId}:`, error);
-        throw error;
+        return throwError(() => error);
       })
     );
   }
@@ -149,7 +153,7 @@ export class MeetingService {
       take(1),
       catchError((error) => {
         console.error(`Failed to update participant ${participantId} in meeting ${meetingId}:`, error);
-        throw error;
+        return throwError(() => error);
       })
     );
   }
@@ -159,7 +163,7 @@ export class MeetingService {
       take(1),
       catchError((error) => {
         console.error(`Failed to delete participant ${participantId} from meeting ${meetingId}:`, error);
-        throw error;
+        return throwError(() => error);
       })
     );
   }
@@ -217,7 +221,7 @@ export class MeetingService {
             take(1),
             catchError((error) => {
               console.error(`Failed to upload attachment to meeting ${meetingId}:`, error);
-              throw error;
+              return throwError(() => error);
             })
           )
           .subscribe(observer);
@@ -244,7 +248,7 @@ export class MeetingService {
       take(1),
       catchError((error) => {
         console.error(`Failed to create attachment for meeting ${meetingId}:`, error);
-        throw error;
+        return throwError(() => error);
       })
     );
   }
@@ -254,7 +258,7 @@ export class MeetingService {
       take(1),
       catchError((error) => {
         console.error(`Failed to delete attachment ${attachmentId} from meeting ${meetingId}:`, error);
-        throw error;
+        return throwError(() => error);
       })
     );
   }
@@ -264,7 +268,46 @@ export class MeetingService {
       take(1),
       catchError((error) => {
         console.error('Failed to generate meeting agenda:', error);
-        throw error;
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getMeetingRegistrants(meetingUid: string): Observable<MeetingRegistrant[]> {
+    return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`).pipe(
+      catchError((error) => {
+        console.error(`Failed to load registrants for meeting ${meetingUid}:`, error);
+        return of([]);
+      })
+    );
+  }
+
+  public addMeetingRegistrants(meetingUid: string, registrantData: CreateMeetingRegistrantRequest[]): Observable<MeetingRegistrant[]> {
+    return this.http.post<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, registrantData).pipe(
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to add registrants to meeting ${meetingUid}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public updateMeetingRegistrants(meetingUid: string, updateData: { uid: string; changes: UpdateMeetingRegistrantRequest }[]): Observable<MeetingRegistrant[]> {
+    return this.http.put<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, updateData).pipe(
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to update registrants in meeting ${meetingUid}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public deleteMeetingRegistrants(meetingUid: string, registrantUids: string[]): Observable<void> {
+    return this.http.delete<void>(`/api/meetings/${meetingUid}/registrants`, { body: registrantUids }).pipe(
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to delete registrants from meeting ${meetingUid}:`, error);
+        return throwError(() => error);
       })
     );
   }

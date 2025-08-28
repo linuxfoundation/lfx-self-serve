@@ -17,10 +17,10 @@ import pinoPretty from 'pino-pretty';
 import { extractBearerToken } from './middleware/auth-token.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { tokenRefreshMiddleware } from './middleware/token-refresh.middleware';
-import committeesRouter from './routes/committees';
-import meetingsRouter from './routes/meetings';
-import permissionsRouter from './routes/permissions';
-import projectsRouter from './routes/projects';
+import committeesRouter from './routes/committees.route';
+import meetingsRouter from './routes/meetings.route';
+import permissionsRouter from './routes/permissions.route';
+import projectsRouter from './routes/projects.route';
 
 if (process.env['NODE_ENV'] !== 'production') {
   dotenv.config();

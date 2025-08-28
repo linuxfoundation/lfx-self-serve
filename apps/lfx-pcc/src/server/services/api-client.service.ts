@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ApiClientConfig, ApiResponse, extractErrorDetails } from '@lfx-pcc/shared/interfaces';
+import { ApiClientConfig, ApiResponse } from '@lfx-pcc/shared/interfaces';
+import { extractErrorDetails } from '@lfx-pcc/shared/utils';
 
 import { serverLogger } from '../server';
 import { createHttpError, createNetworkError, createTimeoutError } from '../utils/api-error';
@@ -70,16 +71,14 @@ export class ApiClientService {
         lastError = error instanceof Error ? error : new Error(String(error));
 
         if (attempt === this.config.retryAttempts) {
-          const errorDetails = extractErrorDetails(error);
           serverLogger.error(
             {
               url,
               method: requestInit.method,
               attempt,
               max_attempts: this.config.retryAttempts,
-              error: errorDetails.message,
-              error_code: errorDetails.code,
-              status: errorDetails.statusCode,
+              error: lastError.message,
+              error_name: lastError.name,
             },
             'API request failed after all retry attempts'
           );
@@ -104,15 +103,13 @@ export class ApiClientService {
           continue;
         }
 
-        const errorDetails = extractErrorDetails(error);
         serverLogger.error(
           {
             url,
             method: requestInit.method,
             attempt,
-            error: errorDetails.message,
-            error_code: errorDetails.code,
-            status: errorDetails.statusCode,
+            error: lastError.message,
+            error_name: lastError.name,
             will_retry: false,
           },
           'API request failed with non-retryable error'

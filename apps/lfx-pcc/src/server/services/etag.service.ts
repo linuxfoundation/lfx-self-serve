@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HTTP_HEADERS } from '@lfx-pcc/shared/constants';
-import { ETagError, ETagResult, extractErrorDetails } from '@lfx-pcc/shared/interfaces';
+import { ETagError, ETagResult } from '@lfx-pcc/shared/interfaces';
 import { Request } from 'express';
 
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -77,16 +77,11 @@ export class ETagService {
       };
     } catch (error) {
       if (this.isETagError(error)) {
-        throw error;
+        req.log.error({ error }, 'ETag error');
       }
 
-      const errorDetails = extractErrorDetails(error);
-      const etagError: ETagError = {
-        code: 'NETWORK_ERROR',
-        message: errorDetails.message,
-        statusCode: errorDetails.statusCode,
-      };
-      throw etagError;
+      // Let original error bubble up - don't transform here
+      throw error;
     }
   }
 
