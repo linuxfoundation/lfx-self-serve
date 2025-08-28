@@ -4,7 +4,7 @@
 {{/*
 Expand the name of the chart.
 */}}
-{{- define "lfx-v2-pcc-ui.name" -}}
+{{- define "lfx-v2-ui.name" -}}
 {{- default .Chart.Name .Values.nameOverride | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
@@ -13,7 +13,7 @@ Create a default fully qualified app name.
 We truncate at 63 chars because some Kubernetes name fields are limited to this (by the DNS naming spec).
 If release name contains chart name it will be used as a full name.
 */}}
-{{- define "lfx-v2-pcc-ui.fullname" -}}
+{{- define "lfx-v2-ui.fullname" -}}
 {{- if .Values.fullnameOverride }}
 {{- .Values.fullnameOverride | trunc 63 | trimSuffix "-" }}
 {{- else }}
@@ -29,16 +29,16 @@ If release name contains chart name it will be used as a full name.
 {{/*
 Create chart name and version as used by the chart label.
 */}}
-{{- define "lfx-v2-pcc-ui.chart" -}}
+{{- define "lfx-v2-ui.chart" -}}
 {{- printf "%s-%s" .Chart.Name .Chart.Version | replace "+" "_" | trunc 63 | trimSuffix "-" }}
 {{- end }}
 
 {{/*
 Common labels
 */}}
-{{- define "lfx-v2-pcc-ui.labels" -}}
-helm.sh/chart: {{ include "lfx-v2-pcc-ui.chart" . }}
-{{ include "lfx-v2-pcc-ui.selectorLabels" . }}
+{{- define "lfx-v2-ui.labels" -}}
+helm.sh/chart: {{ include "lfx-v2-ui.chart" . }}
+{{ include "lfx-v2-ui.selectorLabels" . }}
 {{- if .Chart.AppVersion }}
 app.kubernetes.io/version: {{ .Chart.AppVersion | quote }}
 {{- end }}
@@ -51,17 +51,17 @@ app.kubernetes.io/managed-by: {{ .Release.Service }}
 {{/*
 Selector labels
 */}}
-{{- define "lfx-v2-pcc-ui.selectorLabels" -}}
-app.kubernetes.io/name: {{ include "lfx-v2-pcc-ui.name" . }}
+{{- define "lfx-v2-ui.selectorLabels" -}}
+app.kubernetes.io/name: {{ include "lfx-v2-ui.name" . }}
 app.kubernetes.io/instance: {{ .Release.Name }}
 {{- end }}
 
 {{/*
 Create the name of the service account to use
 */}}
-{{- define "lfx-v2-pcc-ui.serviceAccountName" -}}
+{{- define "lfx-v2-ui.serviceAccountName" -}}
 {{- if .Values.serviceAccount.create }}
-{{- default (include "lfx-v2-pcc-ui.fullname" .) .Values.serviceAccount.name }}
+{{- default (include "lfx-v2-ui.fullname" .) .Values.serviceAccount.name }}
 {{- else }}
 {{- default "default" .Values.serviceAccount.name }}
 {{- end }}
@@ -70,7 +70,7 @@ Create the name of the service account to use
 {{/*
 Create the image name with tag
 */}}
-{{- define "lfx-v2-pcc-ui.image" -}}
+{{- define "lfx-v2-ui.image" -}}
 {{- $tag := .Values.image.tag | default .Chart.AppVersion }}
 {{- printf "%s:%s" .Values.image.repository $tag }}
 {{- end }}
@@ -78,7 +78,7 @@ Create the image name with tag
 {{/*
 Common annotations
 */}}
-{{- define "lfx-v2-pcc-ui.annotations" -}}
+{{- define "lfx-v2-ui.annotations" -}}
 {{- with .Values.annotations }}
 {{ toYaml . }}
 {{- end }}
@@ -87,7 +87,7 @@ Common annotations
 {{/*
 Pod annotations
 */}}
-{{- define "lfx-v2-pcc-ui.podAnnotations" -}}
+{{- define "lfx-v2-ui.podAnnotations" -}}
 {{- with .Values.podAnnotations }}
 {{ toYaml . }}
 {{- end }}

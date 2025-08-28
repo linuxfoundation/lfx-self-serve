@@ -1,0 +1,103 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div [attr.data-testid]="'registrant-' + registrant().uid">
+  @if (isEditing()) {
+    <!-- Edit Form using shared registrant-form component -->
+    <lfx-card>
+      <ng-template #header>
+        <div class="px-8 pt-4 flex items-center justify-between">
+          <h4 class="font-medium text-slate-900">Edit Participant</h4>
+          <lfx-button
+            size="small"
+            icon="fa-light fa-times"
+            [text]="true"
+            styleClass="text-gray-400 hover:text-gray-600"
+            severity="secondary"
+            (click)="handleCancelEdit()">
+          </lfx-button>
+        </div>
+      </ng-template>
+
+      <!-- Use the shared registrant-form component -->
+      <lfx-registrant-form [form]="form" [registrant]="registrant()"> </lfx-registrant-form>
+
+      <ng-template #footer>
+        <div class="flex items-center justify-between">
+          <div class="text-sm">
+            @if (!form.valid) {
+              <span class="text-red-600">Please fill in all required fields correctly</span>
+            }
+            @if (form.dirty && form.valid) {
+              <span class="text-blue-600">Ready to save changes</span>
+            }
+          </div>
+          <div class="flex items-center gap-3">
+            <lfx-button size="small" label="Save Changes" severity="primary" [disabled]="!form.valid || !form.dirty" (click)="handleSaveEdit()"> </lfx-button>
+            <lfx-button size="small" label="Cancel" severity="secondary" (click)="handleCancelEdit()"> </lfx-button>
+          </div>
+        </div>
+      </ng-template>
+    </lfx-card>
+  } @else {
+    <!-- Normal Display (Registrant Card Component) -->
+    <div class="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
+      <div class="flex items-center justify-between">
+        <div class="flex-1 min-w-0">
+          <!-- Status badge and name -->
+          <div class="flex items-center gap-2 mb-1">
+            <!-- Status badge (will include invited/accepted/declined/maybe) -->
+            <lfx-badge value="Invited" severity="secondary" size="small" styleClass="inline-flex items-center"> </lfx-badge>
+            @if (registrant().host) {
+              <lfx-badge value="Host" severity="success" size="small" styleClass="inline-flex items-center"> </lfx-badge>
+            }
+            <h4 class="font-medium truncate">
+              {{ registrant().first_name && registrant().last_name ? registrant().first_name + ' ' + registrant().last_name : registrant().email }}
+            </h4>
+          </div>
+
+          <div class="flex items-center gap-4 text-sm text-gray-600 mb-1">
+            <div class="flex items-center gap-1">
+              <i class="fa-light fa-envelope text-xs"></i>
+              <span class="truncate">{{ registrant().email }}</span>
+            </div>
+
+            @if (registrant().job_title) {
+              <div class="flex items-center gap-1">
+                <i class="fa-light fa-briefcase text-xs"></i>
+                <span class="truncate">{{ registrant().job_title }}</span>
+              </div>
+            }
+
+            @if (registrant().org_name) {
+              <div class="flex items-center gap-1">
+                <i class="fa-light fa-building text-xs"></i>
+                <span class="truncate">{{ registrant().org_name }}</span>
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- Action buttons -->
+        <div class="flex items-center gap-2 ml-3">
+          <lfx-button
+            size="small"
+            icon="fa-light fa-edit"
+            styleClass="text-gray-400 hover:text-gray-600"
+            [text]="true"
+            (click)="handleEditClick()"
+            [attr.data-testid]="'edit-' + registrant().uid">
+          </lfx-button>
+          <lfx-button
+            size="small"
+            icon="fa-light fa-trash"
+            styleClass="text-gray-400 hover:text-gray-600"
+            [text]="true"
+            (click)="handleDeleteClick()"
+            [attr.data-testid]="'delete-' + registrant().uid">
+          </lfx-button>
+        </div>
+      </div>
+    </div>
+  }
+</div>

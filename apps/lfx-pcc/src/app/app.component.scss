@@ -22,6 +22,12 @@
     }
   }
 
+  .p-tabs {
+    .p-tablist-content {
+      @apply px-3;
+    }
+  }
+
   .p-toggleswitch {
     @apply flex;
 

@@ -263,3 +263,142 @@ export interface MeetingTemplateGroup {
   /** Array of templates for this meeting type */
   templates: MeetingTemplate[];
 }
+
+/**
+ * Meeting registrant information from microproxy service
+ * @description Individual registrant/guest for a meeting
+ */
+export interface MeetingRegistrant {
+  /** Unique identifier for the registrant (auto-generated) */
+  uid: string;
+  /** Meeting UUID this registrant belongs to */
+  meeting_uid: string;
+  /** Registrant's email address */
+  email: string;
+  /** Registrant's first name */
+  first_name: string;
+  /** Registrant's last name */
+  last_name: string;
+  /** Whether this registrant has host access */
+  host: boolean;
+  /** Registrant's job title */
+  job_title: string | null;
+  /** Registrant's organization name */
+  org_name: string | null;
+  /** Specific occurrence ID to invite to */
+  occurrence_id: string | null;
+  /** LF membership status (read-only) */
+  org_is_member: boolean;
+  /** Project membership status (read-only) */
+  org_is_project_member: boolean;
+  /** Registrant's avatar URL */
+  avatar_url: string | null;
+  /** Registrant's LFID username */
+  username: string | null;
+  /** Creation timestamp */
+  created_at: string;
+  /** Last update timestamp */
+  updated_at: string;
+}
+
+/**
+ * Request payload for creating a meeting registrant
+ * @description Data required to add a new registrant to a meeting
+ */
+export interface CreateMeetingRegistrantRequest {
+  /** UUID of the meeting */
+  meeting_uid: string;
+  /** User's email address */
+  email: string;
+  /** User's first name */
+  first_name: string;
+  /** User's last name */
+  last_name: string;
+  /** Whether user should have host access */
+  host?: boolean;
+  /** User's job title */
+  job_title?: string | null;
+  /** User's organization */
+  org_name?: string | null;
+  /** Specific occurrence ID to invite to (blank = all occurrences) */
+  occurrence_id?: string | null;
+  /** User's avatar URL */
+  avatar_url?: string | null;
+  /** User's LFID */
+  username?: string | null;
+}
+
+/**
+ * Request payload for updating a meeting registrant
+ * @description Data required for PUT request to update an existing registrant
+ */
+export interface UpdateMeetingRegistrantRequest {
+  /** UUID of the meeting (required) */
+  meeting_uid: string;
+  /** User's email address (required) */
+  email: string;
+  /** User's first name (required) */
+  first_name: string;
+  /** User's last name (required) */
+  last_name: string;
+  /** Whether user should have host access */
+  host?: boolean;
+  /** User's job title */
+  job_title?: string | null;
+  /** User's organization */
+  org_name?: string | null;
+  /** Specific occurrence ID to invite to */
+  occurrence_id?: string | null;
+  /** User's avatar URL */
+  avatar_url?: string | null;
+  /** User's LFID */
+  username?: string | null;
+}
+
+/**
+ * State types for tracking registrant changes
+ */
+export type RegistrantState = 'existing' | 'new' | 'modified' | 'deleted';
+
+/**
+ * Enhanced meeting registrant with state tracking
+ * @description Extends MeetingRegistrant with metadata for local state management
+ */
+export interface MeetingRegistrantWithState extends MeetingRegistrant {
+  /** Current state of this registrant */
+  state: RegistrantState;
+  /** Original data from API (for existing registrants) */
+  originalData?: MeetingRegistrant;
+  /** Temporary ID for new registrants (starts with 'temp_') */
+  tempId?: string;
+}
+
+/**
+ * Batch update request for meeting registrants
+ * @description Request payload for updating multiple registrants at once
+ */
+export interface BatchUpdateMeetingRegistrantsRequest {
+  /** Array of registrants to update with their UIDs and change data */
+  registrants: { uid: string; changes: UpdateMeetingRegistrantRequest }[];
+}
+
+/**
+ * Batch delete request for meeting registrants
+ * @description Request payload for deleting multiple registrants at once
+ */
+export interface BatchDeleteMeetingRegistrantsRequest {
+  /** Array of registrant UIDs to delete */
+  registrantUids: string[];
+}
+
+/**
+ * Pending changes summary for registrants
+ */
+export interface RegistrantPendingChanges {
+  /** Registrants to be created via API */
+  toAdd: CreateMeetingRegistrantRequest[];
+  /** Registrants to be updated via API */
+  toUpdate: { uid: string; changes: UpdateMeetingRegistrantRequest }[];
+  /** Registrant UIDs to be deleted via API */
+  toDelete: string[];
+}

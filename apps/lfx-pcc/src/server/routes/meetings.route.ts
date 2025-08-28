@@ -4,9 +4,9 @@
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, sanitizeFilename } from '@lfx-pcc/shared';
 import { NextFunction, Request, Response, Router } from 'express';
 
+import { MeetingController } from '../controllers/meeting.controller';
 import { AiService } from '../services/ai.service';
 import { SupabaseService } from '../services/supabase.service';
-import { MeetingController } from '../controllers/meeting.controller';
 
 const router = Router();
 
@@ -14,168 +14,36 @@ const supabaseService = new SupabaseService();
 const aiService = new AiService();
 const meetingController = new MeetingController();
 
-// GET /meetings - using new controller pattern
+// GET /meetings - get all meetings
 router.get('/', (req, res) => meetingController.getMeetings(req, res));
 
-router.get('/:id/participants', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const meetingId = req.params['id'];
+// GET /meetings/:uid - get a single meeting
+router.get('/:uid', (req, res) => meetingController.getMeetingById(req, res));
 
-    if (!meetingId) {
-      return res.status(400).json({
-        error: 'Meeting ID is required',
-        code: 'MISSING_MEETING_ID',
-      });
-    }
-
-    const participants = await supabaseService.getMeetingParticipants(meetingId);
-
-    return res.json(participants);
-  } catch (error) {
-    req.log.error(
-      {
-        error: error instanceof Error ? error.message : error,
-        meeting_id: req.params['id'],
-      },
-      'Failed to fetch meeting participants'
-    );
-    return next(error);
-  }
-});
-
-router.post('/:id/participants', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const meetingId = req.params['id'];
-    const participantData = req.body;
-
-    if (!meetingId) {
-      return res.status(400).json({
-        error: 'Meeting ID is required',
-        code: 'MISSING_MEETING_ID',
-      });
-    }
-
-    // Basic validation
-    if (!participantData.first_name || !participantData.last_name || !participantData.email) {
-      return res.status(400).json({
-        error: 'First name, last name, and email are required fields',
-        code: 'MISSING_REQUIRED_FIELDS',
-      });
-    }
-
-    const participant = await supabaseService.addMeetingParticipant(meetingId, participantData);
-
-    return res.status(201).json(participant);
-  } catch (error) {
-    req.log.error(
-      {
-        error: error instanceof Error ? error.message : error,
-        meeting_id: req.params['id'],
-      },
-      'Failed to add meeting participant'
-    );
-    return next(error);
-  }
-});
-
-router.put('/:id/participants/:participantId', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const meetingId = req.params['id'];
-    const participantId = req.params['participantId'];
-    const participantData = req.body;
-
-    if (!meetingId) {
-      return res.status(400).json({
-        error: 'Meeting ID is required',
-        code: 'MISSING_MEETING_ID',
-      });
-    }
-
-    if (!participantId) {
-      return res.status(400).json({
-        error: 'Participant ID is required',
-        code: 'MISSING_PARTICIPANT_ID',
-      });
-    }
-
-    // Basic validation
-    if (!participantData.first_name || !participantData.last_name || !participantData.email) {
-      return res.status(400).json({
-        error: 'First name, last name, and email are required fields',
-        code: 'MISSING_REQUIRED_FIELDS',
-      });
-    }
-
-    // Remove fields that shouldn't be updated directly
-    delete participantData.id;
-    delete participantData.meeting_id;
-    delete participantData.created_at;
-
-    const participant = await supabaseService.updateMeetingParticipant(meetingId, participantId, participantData);
-
-    return res.json(participant);
-  } catch (error) {
-    req.log.error(
-      {
-        error: error instanceof Error ? error.message : error,
-        meeting_id: req.params['id'],
-        participant_id: req.params['participantId'],
-      },
-      'Failed to update meeting participant'
-    );
-    return next(error);
-  }
-});
-
-router.delete('/:id/participants/:participantId', async (req: Request, res: Response, next: NextFunction) => {
-  try {
-    const meetingId = req.params['id'];
-    const participantId = req.params['participantId'];
-
-    if (!meetingId) {
-      return res.status(400).json({
-        error: 'Meeting ID is required',
-        code: 'MISSING_MEETING_ID',
-      });
-    }
-
-    if (!participantId) {
-      return res.status(400).json({
-        error: 'Participant ID is required',
-        code: 'MISSING_PARTICIPANT_ID',
-      });
-    }
-
-    await supabaseService.deleteMeetingParticipant(meetingId, participantId);
-
-    return res.status(204).send();
-  } catch (error) {
-    req.log.error(
-      {
-        error: error instanceof Error ? error.message : error,
-        meeting_id: req.params['id'],
-        participant_id: req.params['participantId'],
-      },
-      'Failed to delete meeting participant'
-    );
-    return next(error);
-  }
-});
-
-// GET /meetings/:id - using new controller pattern
-router.get('/:id', (req, res) => meetingController.getMeetingById(req, res));
-
-// POST /meetings - using new controller pattern
+// POST /meetings - create a new meeting
 router.post('/', (req, res) => meetingController.createMeeting(req, res));
 
-// PUT /meetings/:id - using new controller pattern
-router.put('/:id', (req, res) => meetingController.updateMeeting(req, res));
+// PUT /meetings/:uid - update a meeting
+router.put('/:uid', (req, res) => meetingController.updateMeeting(req, res));
 
-router.delete('/:id', (req, res) => meetingController.deleteMeeting(req, res));
+// DELETE /meetings/:uid - delete a meeting
+router.delete('/:uid', (req, res) => meetingController.deleteMeeting(req, res));
 
-router.post('/:id/attachments/upload', async (req: Request, res: Response, next: NextFunction) => {
+// Registrant routes
+router.get('/:uid/registrants', (req, res) => meetingController.getMeetingRegistrants(req, res));
+
+// POST /meetings/:uid/registrants - add registrants (handles single or multiple)
+router.post('/:uid/registrants', (req, res) => meetingController.addMeetingRegistrants(req, res));
+
+// PUT /meetings/:uid/registrants - update registrants (handles single or multiple)
+router.put('/:uid/registrants', (req, res) => meetingController.updateMeetingRegistrants(req, res));
+
+// DELETE /meetings/:uid/registrants - delete registrants (handles single or multiple)
+router.delete('/:uid/registrants', (req, res) => meetingController.deleteMeetingRegistrants(req, res));
+
+router.post('/:uid/attachments/upload', async (req: Request, res: Response, next: NextFunction) => {
   const startTime = Date.now();
-  const meetingId = req.params['id'];
+  const meetingId = req.params['uid'];
   const { fileName, fileData, mimeType, fileSize } = req.body;
 
   req.log.info(
@@ -301,7 +169,6 @@ router.post('/:id/attachments/upload', async (req: Request, res: Response, next:
       file_url: uploadResult.url,
       file_size: fileSize || buffer.length,
       mime_type: mimeType,
-      // uploaded_by: req.user?.id, // TODO: Add user ID from auth context
     });
 
     const duration = Date.now() - startTime;
@@ -337,9 +204,9 @@ router.post('/:id/attachments/upload', async (req: Request, res: Response, next:
   }
 });
 
-router.delete('/:id/attachments/:attachmentId', async (req: Request, res: Response, next: NextFunction) => {
+router.delete('/:uid/attachments/:attachmentId', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const meetingId = req.params['id'];
+    const meetingId = req.params['uid'];
     const attachmentId = req.params['attachmentId'];
 
     if (!meetingId) {
@@ -450,9 +317,9 @@ router.post('/storage/upload', async (req: Request, res: Response, next: NextFun
 });
 
 // Meeting attachment routes
-router.post('/:id/attachments', async (req: Request, res: Response, next: NextFunction) => {
+router.post('/:uid/attachments', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const meetingId = req.params['id'];
+    const meetingId = req.params['uid'];
     const attachmentData = req.body;
 
     if (!meetingId) {
@@ -491,9 +358,9 @@ router.post('/:id/attachments', async (req: Request, res: Response, next: NextFu
   }
 });
 
-router.get('/:id/attachments', async (req: Request, res: Response, next: NextFunction) => {
+router.get('/:uid/attachments', async (req: Request, res: Response, next: NextFunction) => {
   try {
-    const meetingId = req.params['id'];
+    const meetingId = req.params['uid'];
 
     if (!meetingId) {
       return res.status(400).json({
