@@ -2,14 +2,14 @@
 # SPDX-License-Identifier: MIT
 
 {{- if .Values.ingress.enabled -}}
-{{- $fullName := include "lfx-v2-pcc-ui.fullname" . -}}
+{{- $fullName := include "lfx-v2-ui.fullname" . -}}
 {{- $svcPort := .Values.service.port }}
 apiVersion: networking.k8s.io/v1
 kind: Ingress
 metadata:
   name: {{ $fullName }}
   labels:
-    {{- include "lfx-v2-pcc-ui.labels" . | nindent 4 }}
+    {{- include "lfx-v2-ui.labels" . | nindent 4 }}
   {{- with .Values.ingress.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}

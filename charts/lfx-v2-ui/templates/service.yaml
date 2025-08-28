@@ -4,9 +4,9 @@
 apiVersion: v1
 kind: Service
 metadata:
-  name: {{ include "lfx-v2-pcc-ui.fullname" . }}
+  name: {{ include "lfx-v2-ui.fullname" . }}
   labels:
-    {{- include "lfx-v2-pcc-ui.labels" . | nindent 4 }}
+    {{- include "lfx-v2-ui.labels" . | nindent 4 }}
   {{- with .Values.service.annotations }}
   annotations:
     {{- toYaml . | nindent 4 }}
@@ -19,4 +19,4 @@ spec:
       protocol: TCP
       name: http
   selector:
-    {{- include "lfx-v2-pcc-ui.selectorLabels" . | nindent 4 }}
+    {{- include "lfx-v2-ui.selectorLabels" . | nindent 4 }}

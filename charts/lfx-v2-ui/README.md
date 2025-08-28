@@ -46,7 +46,7 @@ POSTGRES_API_KEY:
 | ------------------- | ------------------ | --------------------------------------- |
 | `replicaCount`      | Number of replicas | `1`                                     |
 | `image.registry`    | Image registry     | `""`                                    |
-| `image.repository`  | Image repository   | `ghcr.io/linuxfoundation/lfx-v2-pcc-ui` |
+| `image.repository`  | Image repository   | `ghcr.io/linuxfoundation/lfx-v2-ui` |
 | `image.tag`         | Image tag          | `"latest"`                              |
 | `image.pullPolicy`  | Image pull policy  | `IfNotPresent`                          |
 | `image.pullSecrets` | Image pull secrets | `[]`                                    |
