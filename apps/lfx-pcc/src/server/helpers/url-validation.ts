@@ -13,7 +13,7 @@
  * - Unauthorized cookie acceptance from random domains
  *
  * Security Features:
- * - Strict domain whitelisting per environment
+ * - Strict domain allowlisting per environment
  * - Protocol validation (http/https only)
  * - Exact domain matching (no subdomain/parent domain matching)
  * - Suspicious character detection
@@ -65,9 +65,9 @@ export const validateAndSanitizeUrl = (url: string, allowedDomains?: string[]): 
 };
 
 /**
- * Domain whitelist for each environment
+ * Domain allowlist for each environment
  */
-const DOMAIN_WHITELIST = {
+const DOMAIN_ALLOWLIST = {
   development: ['auth0.InaRygxwVLWCKf6k6rmOc25mTPvvBrDy.is.authenticated', 'auth-linuxfoundation-dev.auth0.com'],
   staging: ['auth-linuxfoundation-staging.auth0.com'],
   production: ['auth-sso.linuxfoundation.org'],
@@ -109,7 +109,7 @@ const extractDomainFromCookie = (cookie: string): string | null => {
     // This handles cases where the cookie name itself contains the domain
     const cookieName = cookie.split('=')[0]?.trim();
     if (cookieName && cookieName.length > 0 && cookieName.length < 4096) {
-      // Only accept specific cookie patterns that match our whitelist
+      // Only accept specific cookie patterns that match our allowlist
       // This prevents accepting random Auth0 cookies from any domain
 
       // Check for our specific Auth0 cookie pattern
@@ -152,8 +152,8 @@ const extractDomainFromCookie = (cookie: string): string | null => {
  * @param environment - The current environment (development, staging, production)
  * @returns True if the cookie domain is allowed, false otherwise
  */
-export const validateCookieDomain = (cookie: string, environment: keyof typeof DOMAIN_WHITELIST): boolean => {
-  if (!cookie || !environment || !DOMAIN_WHITELIST[environment]) {
+export const validateCookieDomain = (cookie: string, environment: keyof typeof DOMAIN_ALLOWLIST): boolean => {
+  if (!cookie || !environment || !DOMAIN_ALLOWLIST[environment]) {
     return false;
   }
 
@@ -162,7 +162,7 @@ export const validateCookieDomain = (cookie: string, environment: keyof typeof D
     return false;
   }
 
-  const allowedDomains = DOMAIN_WHITELIST[environment];
+  const allowedDomains = DOMAIN_ALLOWLIST[environment];
   const normalizedExtractedDomain = extractedDomain.toLowerCase();
 
   // Additional security checks
@@ -182,7 +182,7 @@ export const validateCookieDomain = (cookie: string, environment: keyof typeof D
     return false;
   }
 
-  // Strict validation - only allow exact matches from our whitelist
+  // Strict validation - only allow exact matches from our allowlist
   // This prevents accepting cookies from similar domains or subdomains
   return allowedDomains.some((allowedDomain) => {
     const normalizedAllowedDomain = allowedDomain.toLowerCase();
