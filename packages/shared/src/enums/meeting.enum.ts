@@ -53,7 +53,7 @@ export enum RecurrenceType {
 export enum ArtifactVisibility {
   /** Only meeting hosts can access artifacts */
   MEETING_HOSTS = 'meeting_hosts',
-  /** Meeting hosts and participants can access artifacts */
+  /** Meeting hosts and guests can access artifacts */
   MEETING_PARTICIPANTS = 'meeting_participants',
   /** Artifacts are publicly accessible */
   PUBLIC = 'public',

@@ -89,7 +89,7 @@ export const MEETING_FEATURES = [
  */
 export const ARTIFACT_VISIBILITY_OPTIONS = [
   { label: 'Meeting Hosts Only', value: ArtifactVisibility.MEETING_HOSTS },
-  { label: 'Meeting Participants', value: ArtifactVisibility.MEETING_PARTICIPANTS },
+  { label: 'Meeting Guests', value: ArtifactVisibility.MEETING_PARTICIPANTS },
   { label: 'Public', value: ArtifactVisibility.PUBLIC },
 ];
 
@@ -118,13 +118,13 @@ export const DEFAULT_DURATION = 60;
 
 /**
  * Minimum early join time in minutes
- * @description Earliest time participants can join before the scheduled start
+ * @description Earliest time guests can join before the scheduled start
  */
 export const MIN_EARLY_JOIN_TIME = 10;
 
 /**
  * Maximum early join time in minutes
- * @description Latest time participants can join before the scheduled start
+ * @description Latest time guests can join before the scheduled start
  */
 export const MAX_EARLY_JOIN_TIME = 60;
 

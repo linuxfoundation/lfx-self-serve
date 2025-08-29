@@ -1,0 +1,50 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-3" data-testid="registrant-modal-form">
+  <!-- Use the existing registrant form component -->
+  <lfx-registrant-form [form]="form" [registrant]="registrant" data-testid="registrant-modal-form-component"> </lfx-registrant-form>
+
+  <!-- Action Buttons -->
+  <div class="flex border-t border-gray-200 pt-4 justify-between items-center" data-testid="registrant-modal-actions">
+    @if (isEditMode) {
+      <lfx-button
+        label="Delete Registrant"
+        severity="danger"
+        size="small"
+        type="button"
+        (onClick)="onDeleteRegistrant()"
+        data-testid="registrant-modal-delete-button">
+      </lfx-button>
+    } @else {
+      <!-- Add More Registrants Option (only in add mode) -->
+      <lfx-checkbox
+        inputId="add-more"
+        [binary]="true"
+        [form]="form"
+        control="add_more_registrants"
+        label="Add more registrants after saving"
+        data-testid="registrant-modal-add-more-checkbox">
+      </lfx-checkbox>
+    }
+    <div class="flex gap-2 items-center justify-end" data-testid="registrant-modal-form-actions">
+      <lfx-button
+        label="Cancel"
+        severity="secondary"
+        [text]="true"
+        size="small"
+        type="button"
+        (onClick)="onCancel()"
+        data-testid="registrant-modal-cancel-button">
+      </lfx-button>
+      <lfx-button
+        [label]="isEditMode ? 'Update Registrant' : 'Add Registrant'"
+        [loading]="submitting()"
+        [disabled]="form.invalid || submitting()"
+        type="submit"
+        size="small"
+        data-testid="registrant-modal-submit-button">
+      </lfx-button>
+    </div>
+  </div>
+</form>

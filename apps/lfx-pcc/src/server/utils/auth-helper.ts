@@ -46,5 +46,5 @@ export async function getUsernameFromAuth(req: Request): Promise<string | null> 
   }
 
   // Fall back to OIDC claims for non-authelia tokens
-  return req.oidc?.user?.['https://sso.linuxfoundation.org/claims/username'] || null;
+  return req.oidc?.user?.['sub'] || null;
 }

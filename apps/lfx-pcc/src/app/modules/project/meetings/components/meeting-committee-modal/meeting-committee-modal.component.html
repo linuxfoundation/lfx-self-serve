@@ -27,7 +27,7 @@
         data-testid="meeting-committee-multi-select"></lfx-multi-select>
       <p class="text-xs text-gray-500">
         @if (selectedCommitteeIds().length === 0) {
-          Select committees to associate with this meeting. Committee members will automatically be added as participants.
+          Select committees to associate with this meeting. Committee members will automatically be added as guests.
         } @else {
           <strong>{{ selectedCommitteeIds().length }}</strong> committee(s) selected.
           @if (committeeMembers().length > 0) {

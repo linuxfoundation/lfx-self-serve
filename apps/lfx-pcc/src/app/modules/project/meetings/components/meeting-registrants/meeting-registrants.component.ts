@@ -20,8 +20,8 @@ import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, finalize, of, take, tap } from 'rxjs';
 
-import { RegistrantCardComponent } from './registrant-card/registrant-card.component';
-import { RegistrantFormComponent } from './registrant-form/registrant-form.component';
+import { RegistrantCardComponent } from '../registrant-card/registrant-card.component';
+import { RegistrantFormComponent } from '../registrant-form/registrant-form.component';
 
 @Component({
   selector: 'lfx-meeting-registrants',
@@ -202,6 +202,9 @@ export class MeetingRegistrantsComponent implements OnInit {
         username: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        type: 'individual',
+        invite_accepted: null,
+        attended: null,
       };
 
       this.handleAddRegistrant(registrantData);
@@ -278,8 +281,8 @@ export class MeetingRegistrantsComponent implements OnInit {
 
   public handleRegistrantDelete(id: string): void {
     this.confirmationService.confirm({
-      message: 'Are you sure you want to remove this participant from the meeting?',
-      header: 'Remove Participant',
+      message: 'Are you sure you want to remove this guest from the meeting?',
+      header: 'Remove Guest',
       icon: 'fa-light fa-triangle-exclamation',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm',

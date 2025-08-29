@@ -31,7 +31,7 @@ export class MeetingController {
     try {
       const meetings = await this.meetingService.getMeetings(req, req.query as Record<string, any>);
 
-      // TODO: Remove this once we have a way to get the participants count
+      // TODO: Remove this once we have a way to get the registrants count
       const counts = await Promise.all(
         meetings.map(async (m) => {
           const registrants = await this.meetingService.getMeetingRegistrants(req, m.uid);
@@ -39,7 +39,7 @@ export class MeetingController {
         })
       );
       meetings.forEach((m, i) => {
-        m.individual_participants_count = counts[i];
+        m.individual_registrants_count = counts[i];
       });
 
       Logger.success(req, 'get_meetings', startTime, {
