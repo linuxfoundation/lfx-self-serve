@@ -63,7 +63,8 @@
             <p-step-panel [value]="4" data-testid="meeting-manage-panel-4">
               <ng-template #content let-activateCallback="activateCallback">
                 @if (meetingId()) {
-                  <lfx-meeting-registrants [meetingUid]="meetingId()!" [(registrantUpdates)]="registrantUpdates"> </lfx-meeting-registrants>
+                  <lfx-meeting-registrants [meetingUid]="meetingId()!" [(registrantUpdates)]="registrantUpdates" [refresh]="registrantUpdatesRefresh$">
+                  </lfx-meeting-registrants>
                 } @else {
                   <div class="text-center py-8 text-gray-500">
                     <p>Meeting must be created before managing guests.</p>
@@ -121,7 +122,8 @@
               <!-- Manage Guests Section -->
               <div class="border border-slate-200 rounded-lg p-6">
                 <h2 class="text-lg font-semibold text-slate-900 mb-4">Manage Guests</h2>
-                <lfx-meeting-registrants [meetingUid]="meetingId()!" [(registrantUpdates)]="registrantUpdates"> </lfx-meeting-registrants>
+                <lfx-meeting-registrants [meetingUid]="meetingId()!" [(registrantUpdates)]="registrantUpdates" [refresh]="registrantUpdatesRefresh$">
+                </lfx-meeting-registrants>
               </div>
             </p-tabpanel>
           </p-tabpanels>

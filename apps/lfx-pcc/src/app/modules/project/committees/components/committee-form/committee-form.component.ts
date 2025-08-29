@@ -24,7 +24,6 @@ import { map } from 'rxjs';
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, ButtonComponent, SelectComponent, InputTextComponent, TextareaComponent, ToggleComponent],
   templateUrl: './committee-form.component.html',
-  styleUrl: './committee-form.component.scss',
 })
 export class CommitteeFormComponent {
   private readonly config = inject(DynamicDialogConfig);

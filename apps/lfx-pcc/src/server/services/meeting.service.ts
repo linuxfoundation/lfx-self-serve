@@ -61,6 +61,7 @@ export class MeetingService {
         message: 'Meeting not found',
         statusCode: 404,
       };
+
       throw error;
     }
 

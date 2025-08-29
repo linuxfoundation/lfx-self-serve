@@ -48,7 +48,6 @@ import { RegistrantModalComponent } from '../registrant-modal/registrant-modal.c
   ],
   providers: [ConfirmationService],
   templateUrl: './meeting-card.component.html',
-  styleUrl: './meeting-card.component.scss',
 })
 export class MeetingCardComponent implements OnInit {
   private readonly projectService = inject(ProjectService);

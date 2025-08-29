@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  BatchRegistrantOperationResponse,
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
-  MeetingRegistrant,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-pcc/shared/interfaces';
@@ -238,7 +238,7 @@ export class MeetingController {
 
   /**
    * POST /meetings/:uid/registrants
-   * @description Adds one or more registrants
+   * @description Adds one or more registrants with partial success support
    */
   public async addMeetingRegistrants(req: Request, res: Response): Promise<void> {
     const { uid } = req.params;
@@ -272,33 +272,41 @@ export class MeetingController {
         return;
       }
 
-      // Attempt to add the first user to the meeting, if it fails, return the error
-      const firstRegistrant = registrantData[0];
-      const firstRegistrantResult = await this.meetingService.addMeetingRegistrant(req, firstRegistrant);
+      // Process registrants with fail-fast for 403 errors
+      const { results, shouldReturn } = await this.processRegistrantOperations(
+        req,
+        res,
+        startTime,
+        'add_meeting_registrants',
+        uid,
+        registrantData,
+        (registrant) => this.meetingService.addMeetingRegistrant(req, registrant),
+        (registrant) => registrant.email
+      );
 
-      let registrants: MeetingRegistrant[] = [firstRegistrantResult];
-      // Add the rest of the registrants in parallel
-      if (registrantData.length > 1) {
-        const requests = registrantData.slice(1).map((registrant) =>
-          this.meetingService.addMeetingRegistrant(req, registrant).catch((error) => {
-            Logger.error(req, 'add_meeting_registrants', startTime, error, {
-              meeting_uid: uid,
-              registrant_uid: registrant.email,
-            });
+      if (shouldReturn) return;
 
-            return Promise.reject(error);
-          })
-        );
-
-        registrants = [...registrants, ...(await Promise.all(requests))];
-      }
+      // Create batch response
+      const batchResponse = this.createBatchResponse(results, registrantData, req, startTime, 'add_meeting_registrants', uid, (registrant) => registrant.email);
 
       Logger.success(req, 'add_meeting_registrants', startTime, {
         meeting_uid: uid,
-        registrant_count: registrants.length,
+        total_count: registrantData.length,
+        successful_count: batchResponse.summary.successful,
+        failed_count: batchResponse.summary.failed,
       });
 
-      res.status(201).json(registrants);
+      // Set status based on results
+      let statusCode = 201; // Created - all successful
+      if (batchResponse.summary.failed > 0) {
+        if (batchResponse.summary.successful > 0) {
+          statusCode = 207; // Multi-Status - partial success
+        } else {
+          statusCode = 400; // Bad Request - all failed
+        }
+      }
+
+      res.status(statusCode).json(batchResponse);
     } catch (error) {
       Logger.error(req, 'add_meeting_registrants', startTime, error, {
         meeting_uid: uid,
@@ -310,7 +318,7 @@ export class MeetingController {
 
   /**
    * PUT /meetings/:uid/registrants
-   * @description Updates one or more registrants
+   * @description Updates one or more registrants with partial success support
    */
   public async updateMeetingRegistrants(req: Request, res: Response): Promise<void> {
     const { uid } = req.params;
@@ -359,33 +367,41 @@ export class MeetingController {
         return;
       }
 
-      // Attempt to update the first registrant, if it fails, return the error
-      const firstUpdate = updateData[0];
-      const firstRegistrantResult = await this.meetingService.updateMeetingRegistrant(req, uid, firstUpdate.uid, firstUpdate.changes);
+      // Process updates with fail-fast for 403 errors
+      const { results, shouldReturn } = await this.processRegistrantOperations(
+        req,
+        res,
+        startTime,
+        'update_meeting_registrants',
+        uid,
+        updateData,
+        (update) => this.meetingService.updateMeetingRegistrant(req, uid, update.uid, update.changes),
+        (update) => update.uid
+      );
 
-      let registrants: MeetingRegistrant[] = [firstRegistrantResult];
-      // Update the rest of the registrants in parallel
-      if (updateData.length > 1) {
-        const requests = updateData.slice(1).map((update) =>
-          this.meetingService.updateMeetingRegistrant(req, uid, update.uid, update.changes).catch((error) => {
-            Logger.error(req, 'update_meeting_registrants', startTime, error, {
-              meeting_uid: uid,
-              registrant_uid: update.uid,
-            });
+      if (shouldReturn) return;
 
-            return Promise.reject(error);
-          })
-        );
-
-        registrants = [...registrants, ...(await Promise.all(requests))];
-      }
+      // Create batch response
+      const batchResponse = this.createBatchResponse(results, updateData, req, startTime, 'update_meeting_registrants', uid, (update) => update.uid);
 
       Logger.success(req, 'update_meeting_registrants', startTime, {
         meeting_uid: uid,
-        registrant_count: registrants.length,
+        total_count: updateData.length,
+        successful_count: batchResponse.summary.successful,
+        failed_count: batchResponse.summary.failed,
       });
 
-      res.json(registrants);
+      // Set status based on results
+      let statusCode = 200; // OK - all successful
+      if (batchResponse.summary.failed > 0) {
+        if (batchResponse.summary.successful > 0) {
+          statusCode = 207; // Multi-Status - partial success
+        } else {
+          statusCode = 400; // Bad Request - all failed
+        }
+      }
+
+      res.status(statusCode).json(batchResponse);
     } catch (error) {
       Logger.error(req, 'update_meeting_registrants', startTime, error, {
         meeting_uid: uid,
@@ -397,15 +413,15 @@ export class MeetingController {
 
   /**
    * DELETE /meetings/:uid/registrants
-   * @description Deletes one or more registrants
+   * @description Deletes one or more registrants with partial success support
    */
   public async deleteMeetingRegistrants(req: Request, res: Response): Promise<void> {
     const { uid } = req.params;
-    const registrantUids: string[] = req.body || [];
+    const registrantsUid: string[] = req.body || [];
 
     const startTime = Logger.start(req, 'delete_meeting_registrants', {
       meeting_uid: uid,
-      registrant_count: registrantUids.length,
+      registrant_count: registrantsUid.length,
       body_size: JSON.stringify(req.body).length,
     });
 
@@ -419,7 +435,7 @@ export class MeetingController {
         return;
       }
 
-      if (!registrantUids.length) {
+      if (!registrantsUid.length) {
         Logger.error(req, 'delete_meeting_registrants', startTime, new Error('Empty registrant UIDs array'));
         Responder.badRequest(res, 'Empty registrant UIDs array', {
           code: 'MISSING_REGISTRANT_UIDS',
@@ -428,9 +444,9 @@ export class MeetingController {
       }
 
       // Basic validation - only check for non-empty array
-      if (!Array.isArray(registrantUids) || !registrantUids.length || !req.body.every((item: string) => typeof item === 'string')) {
+      if (!Array.isArray(registrantsUid) || !registrantsUid.length || !req.body.every((item: string) => typeof item === 'string')) {
         Logger.error(req, 'delete_meeting_registrants', startTime, new Error('Empty registrant UIDs array'), {
-          provided_count: registrantUids.length,
+          provided_count: registrantsUid.length,
         });
 
         Responder.badRequest(res, 'Array of registrant UIDs is required', {
@@ -439,39 +455,156 @@ export class MeetingController {
         return;
       }
 
-      // Attempt to delete the first registrant, if it fails, return the error
-      const firstRegistrantUid = registrantUids[0];
-      await this.meetingService.deleteMeetingRegistrant(req, uid, firstRegistrantUid);
+      // Process deletions with fail-fast for 403 errors
+      const { results, shouldReturn } = await this.processRegistrantOperations(
+        req,
+        res,
+        startTime,
+        'delete_meeting_registrants',
+        uid,
+        registrantsUid,
+        (registrantUid) => this.meetingService.deleteMeetingRegistrant(req, uid, registrantUid).then(() => registrantUid),
+        (registrantUid) => registrantUid
+      );
 
-      // Delete the rest of the registrants in parallel
-      if (registrantUids.length > 1) {
-        const requests = registrantUids.slice(1).map((registrantUid) =>
-          this.meetingService.deleteMeetingRegistrant(req, uid, registrantUid).catch((error) => {
-            Logger.error(req, 'delete_meeting_registrants', startTime, error, {
-              meeting_uid: uid,
-              registrant_uid: registrantUid,
-            });
+      if (shouldReturn) return;
 
-            return Promise.reject(error);
-          })
-        );
-
-        await Promise.all(requests);
-      }
+      // Create batch response
+      const batchResponse = this.createBatchResponse(
+        results,
+        registrantsUid,
+        req,
+        startTime,
+        'delete_meeting_registrants',
+        uid,
+        (registrantUid) => registrantUid
+      );
 
       Logger.success(req, 'delete_meeting_registrants', startTime, {
         meeting_uid: uid,
-        registrant_count: registrantUids.length,
-        status_code: 204,
+        total_count: registrantsUid.length,
+        successful_count: batchResponse.summary.successful,
+        failed_count: batchResponse.summary.failed,
       });
 
-      res.status(204).send();
+      // Set status based on results
+      let statusCode = 200; // OK - all successful
+      if (batchResponse.summary.failed > 0) {
+        if (batchResponse.summary.successful > 0) {
+          statusCode = 207; // Multi-Status - partial success
+        } else {
+          statusCode = 400; // Bad Request - all failed
+        }
+      }
+
+      res.status(statusCode).json(batchResponse);
     } catch (error) {
       Logger.error(req, 'delete_meeting_registrants', startTime, error, {
         meeting_uid: uid,
-        registrant_count: registrantUids.length,
+        registrant_count: registrantsUid.length,
       });
       Responder.handle(res, error, 'delete_meeting_registrants');
     }
+  }
+
+  /**
+   * Private helper to process registrant operations with fail-fast for 403 errors
+   */
+  private async processRegistrantOperations<T, R>(
+    req: Request,
+    res: Response,
+    startTime: number,
+    operationName: string,
+    meetingUid: string,
+    inputData: T[],
+    operation: (input: T) => Promise<R>,
+    getIdentifier: (input: T, index?: number) => string
+  ): Promise<{ results: PromiseSettledResult<R>[]; shouldReturn: boolean }> {
+    try {
+      const firstResult = await operation(inputData[0]);
+
+      // If first succeeds, process remaining in parallel
+      let results: PromiseSettledResult<R>[];
+      if (inputData.length > 1) {
+        const remainingResults = await Promise.allSettled(inputData.slice(1).map((input) => operation(input)));
+        results = [{ status: 'fulfilled', value: firstResult }, ...remainingResults];
+      } else {
+        results = [{ status: 'fulfilled', value: firstResult }];
+      }
+
+      return { results, shouldReturn: false };
+    } catch (error: any) {
+      // Check if it's a 403 error - if so, fail fast
+      if (error?.status === 403 || error?.statusCode === 403) {
+        Logger.error(req, operationName, startTime, error, {
+          meeting_uid: meetingUid,
+          identifier: getIdentifier(inputData[0], 0),
+          fail_fast: true,
+        });
+        Responder.handle(res, error, operationName);
+        return { results: [], shouldReturn: true };
+      }
+
+      // For other errors, continue processing remaining items
+      let results: PromiseSettledResult<R>[] = [{ status: 'rejected', reason: error }];
+
+      if (inputData.length > 1) {
+        const remainingResults = await Promise.allSettled(inputData.slice(1).map((input) => operation(input)));
+        results = [...results, ...remainingResults];
+      }
+
+      return { results, shouldReturn: false };
+    }
+  }
+
+  /**
+   * Private helper to create batch response from results
+   */
+  private createBatchResponse<T, I>(
+    results: PromiseSettledResult<T>[],
+    inputData: I[],
+    req: Request,
+    startTime: number,
+    operationName: string,
+    meetingUid: string,
+    getIdentifier: (input: I, index?: number) => string
+  ): BatchRegistrantOperationResponse<T> {
+    const successes: T[] = [];
+    const failures: Array<{
+      input: I;
+      error: { message: string; code?: string; details?: unknown };
+    }> = [];
+
+    results.forEach((result, index) => {
+      if (result.status === 'fulfilled') {
+        successes.push(result.value);
+      } else {
+        const error = result.reason;
+        failures.push({
+          input: inputData[index],
+          error: {
+            message: error?.message || 'Unknown error occurred',
+            code: error?.code,
+            details: error,
+          },
+        });
+
+        // Log individual failure
+        Logger.error(req, operationName, startTime, error, {
+          meeting_uid: meetingUid,
+          identifier: getIdentifier(inputData[index], index),
+        });
+      }
+    });
+
+    return {
+      successes,
+      failures,
+      summary: {
+        total: inputData.length,
+        successful: successes.length,
+        failed: failures.length,
+      },
+    };
   }
 }

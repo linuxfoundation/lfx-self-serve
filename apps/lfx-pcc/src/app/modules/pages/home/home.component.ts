@@ -16,7 +16,6 @@ import { catchError, debounceTime, distinctUntilChanged, of, startWith, switchMa
   selector: 'lfx-home',
   imports: [InputTextComponent, ProjectCardComponent, AnimateOnScrollModule, SkeletonModule],
   templateUrl: './home.component.html',
-  styleUrl: './home.component.scss',
 })
 export class HomeComponent {
   // 1. Injected services (readonly)

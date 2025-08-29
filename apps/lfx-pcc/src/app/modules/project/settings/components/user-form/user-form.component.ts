@@ -16,7 +16,7 @@ import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { map, take } from 'rxjs/operators';
+import { map, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-user-form',

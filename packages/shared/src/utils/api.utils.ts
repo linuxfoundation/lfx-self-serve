@@ -6,9 +6,7 @@ import { ApiError, ValidationApiError } from '../interfaces/api.interface';
 /**
  * Type guard to check if error is an ApiError
  */
-export function isApiError(error: unknown): error is ApiError {
-  if (!(error instanceof Error)) return false;
-
+export function isApiError(error: any): error is ApiError {
   return (
     ('status' in error && typeof error.status === 'number') ||
     ('statusCode' in error && typeof error.statusCode === 'number') ||

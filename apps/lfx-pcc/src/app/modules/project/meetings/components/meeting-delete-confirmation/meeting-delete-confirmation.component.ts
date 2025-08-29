@@ -11,7 +11,7 @@ import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { take } from 'rxjs/operators';
+import { take } from 'rxjs';
 
 export interface MeetingDeleteResult {
   confirmed: boolean;

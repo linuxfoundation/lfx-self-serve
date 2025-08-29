@@ -14,7 +14,6 @@ import pino from 'pino';
 import pinoHttp from 'pino-http';
 import pinoPretty from 'pino-pretty';
 
-import { extractBearerToken } from './middleware/auth-token.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { tokenRefreshMiddleware } from './middleware/token-refresh.middleware';
 import committeesRouter from './routes/committees.route';
@@ -158,9 +157,6 @@ const authConfig: ConfigParams = {
 app.use(auth(authConfig));
 
 app.use(tokenRefreshMiddleware);
-
-// Apply bearer token middleware to all API routes
-app.use('/api', extractBearerToken);
 
 // Mount API routes before Angular SSR
 app.use('/api/projects', projectsRouter);

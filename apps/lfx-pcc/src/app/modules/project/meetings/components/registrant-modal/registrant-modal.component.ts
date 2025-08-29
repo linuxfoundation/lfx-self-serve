@@ -3,10 +3,11 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, inject, output, signal, WritableSignal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
-import { CreateMeetingRegistrantRequest, MeetingRegistrant, UpdateMeetingRegistrantRequest } from '@lfx-pcc/shared/interfaces';
+import { MeetingRegistrant } from '@lfx-pcc/shared/interfaces';
+import { markFormControlsAsTouched } from '@lfx-pcc/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -18,7 +19,6 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, ButtonComponent, CheckboxComponent, RegistrantFormComponent],
   templateUrl: './registrant-modal.component.html',
-  styleUrl: './registrant-modal.component.scss',
 })
 export class RegistrantModalComponent {
   // Injected services
@@ -44,7 +44,7 @@ export class RegistrantModalComponent {
 
   public constructor() {
     this.submitting = signal<boolean>(false);
-    this.form = this.initializeForm();
+    this.form = this.meetingService.createRegistrantFormGroup(true); // Include add_more_registrants
 
     if (this.registrant) {
       this.form.patchValue({
@@ -70,15 +70,10 @@ export class RegistrantModalComponent {
 
       if (this.isEditMode) {
         // For edit mode, call update API
-        const updateData: UpdateMeetingRegistrantRequest = {
+        const updateData = this.meetingService.getChangedFields({
           meeting_uid: this.meetingId,
-          email: formValue.email,
-          first_name: formValue.first_name,
-          last_name: formValue.last_name,
-          job_title: formValue.job_title || null,
-          org_name: formValue.org_name || null,
-          host: formValue.host || false,
-        };
+          ...formValue,
+        });
 
         this.meetingService
           .updateMeetingRegistrants(this.meetingId, [
@@ -88,9 +83,13 @@ export class RegistrantModalComponent {
             },
           ])
           .subscribe({
-            next: (updatedRegistrants: MeetingRegistrant[]) => {
-              const updatedRegistrant = updatedRegistrants[0];
-              this.handleSuccess(updatedRegistrant, 'Registrant updated successfully');
+            next: (response) => {
+              if (response.summary.successful > 0) {
+                const updatedRegistrant = response.successes[0];
+                this.handleSuccess(updatedRegistrant, 'Registrant updated successfully');
+              } else {
+                this.handleError(response.failures[0]?.error, 'Failed to update registrant');
+              }
             },
             error: (error: any) => {
               this.handleError(error, 'Failed to update registrant');
@@ -98,20 +97,16 @@ export class RegistrantModalComponent {
           });
       } else {
         // For add mode, call add API
-        const createData: CreateMeetingRegistrantRequest = {
-          meeting_uid: this.meetingId,
-          email: formValue.email,
-          first_name: formValue.first_name,
-          last_name: formValue.last_name,
-          job_title: formValue.job_title || null,
-          org_name: formValue.org_name || null,
-          host: formValue.host || false,
-        };
+        const createData = this.meetingService.stripMetadata(this.meetingId, formValue);
 
         this.meetingService.addMeetingRegistrants(this.meetingId, [createData]).subscribe({
-          next: (newRegistrants: MeetingRegistrant[]) => {
-            const newRegistrant = newRegistrants[0];
-            this.handleSuccess(newRegistrant, 'Registrant added successfully');
+          next: (response) => {
+            if (response.summary.successful > 0) {
+              const newRegistrant = response.successes[0];
+              this.handleSuccess(newRegistrant, 'Registrant added successfully');
+            } else {
+              this.handleError(response.failures[0]?.error, 'Failed to add registrant');
+            }
           },
           error: (error: any) => {
             this.handleError(error, 'Failed to add registrant');
@@ -119,7 +114,7 @@ export class RegistrantModalComponent {
         });
       }
     } else {
-      this.markFormControlsAsTouched();
+      markFormControlsAsTouched(this.form);
     }
   }
 
@@ -197,26 +192,6 @@ export class RegistrantModalComponent {
       severity: 'error',
       summary: 'Error',
       detail: error?.error?.message || defaultMessage,
-    });
-  }
-
-  private markFormControlsAsTouched(): void {
-    Object.keys(this.form.controls).forEach((key) => {
-      this.form.get(key)?.markAsTouched();
-      this.form.get(key)?.markAsDirty();
-    });
-  }
-
-  // Private initialization methods
-  private initializeForm(): FormGroup {
-    return new FormGroup({
-      first_name: new FormControl(''),
-      last_name: new FormControl(''),
-      email: new FormControl('', [Validators.required, Validators.email]),
-      job_title: new FormControl(''),
-      org_name: new FormControl(''),
-      host: new FormControl(false),
-      add_more_registrants: new FormControl(false), // Only used in add mode
     });
   }
 }

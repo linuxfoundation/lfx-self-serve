@@ -11,7 +11,6 @@ import { MenuItem } from 'primeng/api';
   selector: 'lfx-mailing-list-dashboard',
   imports: [CardComponent, MenuComponent],
   templateUrl: './mailing-list-dashboard.component.html',
-  styleUrl: './mailing-list-dashboard.component.scss',
 })
 export class MailingListDashboardComponent {
   private readonly projectService = inject(ProjectService);

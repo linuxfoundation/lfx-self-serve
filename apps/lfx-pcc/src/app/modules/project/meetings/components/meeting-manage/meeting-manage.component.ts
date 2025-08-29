@@ -21,12 +21,13 @@ import {
 } from '@lfx-pcc/shared/constants';
 import { MeetingVisibility } from '@lfx-pcc/shared/enums';
 import {
-  CreateMeetingRegistrantRequest,
+  BatchRegistrantOperationResponse,
   CreateMeetingRequest,
   Meeting,
   MeetingAttachment,
+  MeetingRegistrant,
   PendingAttachment,
-  UpdateMeetingRegistrantRequest,
+  RegistrantPendingChanges,
   UpdateMeetingRequest,
 } from '@lfx-pcc/shared/interfaces';
 import {
@@ -44,8 +45,7 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
 import { TabsModule } from 'primeng/tabs';
-import { BehaviorSubject, concat, from, Observable, of } from 'rxjs';
-import { catchError, finalize, mergeMap, switchMap, take, toArray } from 'rxjs/operators';
+import { BehaviorSubject, catchError, concat, finalize, from, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
 
 import { MeetingDetailsComponent } from '../meeting-details/meeting-details.component';
 import { MeetingPlatformFeaturesComponent } from '../meeting-platform-features/meeting-platform-features.component';
@@ -85,11 +85,7 @@ export class MeetingManageComponent {
   public mode = signal<'create' | 'edit'>('create');
   public meetingId = signal<string | null>(null);
   public isEditMode = computed(() => this.mode() === 'edit');
-  public registrantUpdates = signal<{
-    toAdd: CreateMeetingRegistrantRequest[]; // registrants to add
-    toUpdate: { uid: string; changes: UpdateMeetingRegistrantRequest }[]; // uid of the registrant to update and the changes to make
-    toDelete: string[]; // uid of the registrant to delete
-  }>({
+  public registrantUpdates = signal<RegistrantPendingChanges>({
     toAdd: [],
     toUpdate: [],
     toDelete: [],
@@ -106,6 +102,8 @@ export class MeetingManageComponent {
   public form = signal<FormGroup>(this.createMeetingFormGroup());
   public submitting = signal<boolean>(false);
   public deletingAttachmentId = signal<string | null>(null);
+  // Registrant updates refresh
+  public registrantUpdatesRefresh$ = new BehaviorSubject<void>(undefined);
 
   // Get pending attachments from the form
   private get pendingAttachments(): PendingAttachment[] {
@@ -228,9 +226,8 @@ export class MeetingManageComponent {
   public onManageRegistrants(): void {
     this.submitting.set(true);
 
-    const registrantUpdates = this.registrantUpdates();
-    // Build an array of operations based on what data we have
-    const operations: Observable<any>[] = this.buildRegistrantOperations();
+    // Build an array of operations with result tracking
+    const operations: Observable<{ type: string; success: number; failed: number }>[] = this.buildRegistrantOperations();
 
     // If no operations, just complete
     if (operations.length === 0) {
@@ -245,38 +242,32 @@ export class MeetingManageComponent {
 
     // Execute operations sequentially using concat
     concat(...operations)
-      .pipe(finalize(() => this.submitting.set(false)))
+      .pipe(
+        toArray(),
+        finalize(() => this.submitting.set(false))
+      )
       .subscribe({
-        complete: () => {
-          // Build success message based on what was done
-          const actions: string[] = [];
-          if (registrantUpdates.toDelete.length > 0) {
-            actions.push(`deleted ${registrantUpdates.toDelete.length}`);
-          }
-          if (registrantUpdates.toUpdate.length > 0) {
-            actions.push(`updated ${registrantUpdates.toUpdate.length}`);
-          }
-          if (registrantUpdates.toAdd.length > 0) {
-            actions.push(`added ${registrantUpdates.toAdd.length}`);
-          }
+        next: (results) => {
+          // Calculate total successes and failures
+          const totalSuccess = results.reduce((sum, result) => sum + result.success, 0);
+          const totalFailed = results.reduce((sum, result) => sum + result.failed, 0);
+          const totalOperations = totalSuccess + totalFailed;
 
-          const message = `Successfully ${actions.join(', ')} registrant(s)`;
-
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: message,
-          });
+          // Show appropriate toast based on success/failure counts
+          this.showRegistrantOperationToast(totalSuccess, totalFailed, totalOperations);
 
           if (!this.isEditMode()) {
             this.router.navigate(['/project', this.projectService.project()?.slug, 'meetings']);
           } else {
-            // Reset registrant updates
-            this.registrantUpdates.set({
-              toAdd: [],
-              toUpdate: [],
-              toDelete: [],
-            });
+            this.registrantUpdatesRefresh$.next();
+            // Reset registrant updates only if there were some successes
+            if (totalSuccess > 0) {
+              this.registrantUpdates.set({
+                toAdd: [],
+                toUpdate: [],
+                toDelete: [],
+              });
+            }
           }
         },
       });
@@ -462,7 +453,18 @@ export class MeetingManageComponent {
           if (meetingId) {
             this.mode.set('edit');
             this.meetingId.set(meetingId);
-            return this.meetingService.getMeeting(meetingId);
+            return this.meetingService.getMeeting(meetingId).pipe(
+              catchError((error) => {
+                console.error('Error getting meeting:', error);
+                this.messageService.add({
+                  severity: 'error',
+                  summary: 'Error',
+                  detail: 'Meeting not found or you do not have permission to access it',
+                });
+                this.router.navigate(['/project', this.projectService.project()?.slug, 'meetings']);
+                return of(null);
+              })
+            );
           }
 
           this.mode.set('create');
@@ -689,8 +691,8 @@ export class MeetingManageComponent {
     );
   }
 
-  private buildRegistrantOperations(): Observable<any>[] {
-    const operations: Observable<any>[] = [];
+  private buildRegistrantOperations(): Observable<{ type: string; success: number; failed: number }>[] {
+    const operations: Observable<{ type: string; success: number; failed: number }>[] = [];
     const meetingId = this.meetingId()!;
     const registrantUpdates = this.registrantUpdates();
 
@@ -698,14 +700,12 @@ export class MeetingManageComponent {
     if (registrantUpdates.toDelete.length > 0) {
       operations.push(
         this.meetingService.deleteMeetingRegistrants(meetingId, registrantUpdates.toDelete).pipe(
+          switchMap((response: BatchRegistrantOperationResponse<string>) =>
+            of({ type: 'delete', success: response.summary.successful, failed: response.summary.failed })
+          ),
           catchError((error) => {
-            console.error('Error deleting registrants:', error);
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Delete Failed',
-              detail: `Failed to delete ${registrantUpdates.toDelete.length} registrant(s)`,
-            });
-            return of(null);
+            console.error('Error deleting guests:', error);
+            return of({ type: 'delete', success: 0, failed: registrantUpdates.toDelete.length });
           })
         )
       );
@@ -715,14 +715,12 @@ export class MeetingManageComponent {
     if (registrantUpdates.toUpdate.length > 0) {
       operations.push(
         this.meetingService.updateMeetingRegistrants(meetingId, registrantUpdates.toUpdate).pipe(
+          switchMap((response: BatchRegistrantOperationResponse<MeetingRegistrant>) =>
+            of({ type: 'update', success: response.summary.successful, failed: response.summary.failed })
+          ),
           catchError((error) => {
-            console.error('Error updating registrants:', error);
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Update Failed',
-              detail: `Failed to update ${registrantUpdates.toUpdate.length} registrant(s)`,
-            });
-            return of(null);
+            console.error('Error updating guests:', error);
+            return of({ type: 'update', success: 0, failed: registrantUpdates.toUpdate.length });
           })
         )
       );
@@ -732,19 +730,42 @@ export class MeetingManageComponent {
     if (registrantUpdates.toAdd.length > 0) {
       operations.push(
         this.meetingService.addMeetingRegistrants(meetingId, registrantUpdates.toAdd).pipe(
+          switchMap((response: BatchRegistrantOperationResponse<MeetingRegistrant>) =>
+            of({ type: 'add', success: response.summary.successful, failed: response.summary.failed })
+          ),
           catchError((error) => {
-            console.error('Error adding registrants:', error);
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Add Failed',
-              detail: `Failed to add ${registrantUpdates.toAdd.length} registrant(s)`,
-            });
-            return of(null);
+            console.error('Error inviting guests:', error);
+            return of({ type: 'add', success: 0, failed: registrantUpdates.toAdd.length });
           })
         )
       );
     }
 
     return operations;
+  }
+
+  private showRegistrantOperationToast(totalSuccess: number, totalFailed: number, totalOperations: number): void {
+    if (totalSuccess === totalOperations) {
+      // All successful
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Success',
+        detail: `Successfully updated ${totalSuccess} guests(s)`,
+      });
+    } else if (totalSuccess > 0 && totalFailed > 0) {
+      // Partial success
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Partial Success',
+        detail: `${totalSuccess} guests(s) updated successfully, ${totalFailed} failed`,
+      });
+    } else if (totalFailed === totalOperations) {
+      // All failed
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Operation Failed',
+        detail: `Failed to update ${totalFailed} guests(s)`,
+      });
+    }
   }
 }

@@ -18,7 +18,7 @@ import { ConfirmationService, MenuItem } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of } from 'rxjs';
-import { debounceTime, distinctUntilChanged, startWith, switchMap, tap } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, startWith, switchMap, tap } from 'rxjs';
 
 import { CommitteeFormComponent } from '../components/committee-form/committee-form.component';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
@@ -41,7 +41,6 @@ import { UpcomingCommitteeMeetingComponent } from '../components/upcoming-commit
   ],
   providers: [DialogService],
   templateUrl: './committee-dashboard.component.html',
-  styleUrl: './committee-dashboard.component.scss',
 })
 export class CommitteeDashboardComponent {
   // Injected services

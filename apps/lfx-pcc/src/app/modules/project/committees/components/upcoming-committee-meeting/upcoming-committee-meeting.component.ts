@@ -18,7 +18,6 @@ import { map, of } from 'rxjs';
   standalone: true,
   imports: [CommonModule, RouterLink, MeetingTimePipe, TooltipModule],
   templateUrl: './upcoming-committee-meeting.component.html',
-  styleUrl: './upcoming-committee-meeting.component.scss',
 })
 export class UpcomingCommitteeMeetingComponent implements OnInit {
   private readonly projectService = inject(ProjectService);

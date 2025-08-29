@@ -18,7 +18,7 @@ import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { debounceTime, distinctUntilChanged, startWith, take } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, startWith, take } from 'rxjs';
 
 import { MemberCardComponent } from '../member-card/member-card.component';
 import { MemberFormComponent } from '../member-form/member-form.component';

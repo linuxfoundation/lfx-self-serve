@@ -379,3 +379,44 @@ export interface RegistrantPendingChanges {
   /** Registrant UIDs to be deleted via API */
   toDelete: string[];
 }
+
+/**
+ * Individual operation result for batch operations
+ */
+export interface RegistrantOperationResult<T = unknown> {
+  /** Success indicator */
+  success: boolean;
+  /** Result data if successful */
+  data?: T;
+  /** Error information if failed */
+  error?: {
+    message: string;
+    code?: string;
+    details?: unknown;
+  };
+  /** Original input data for context */
+  input?: unknown;
+}
+
+/**
+ * Batch operation response for registrant operations
+ */
+export interface BatchRegistrantOperationResponse<T = unknown> {
+  /** Array of successful results */
+  successes: T[];
+  /** Array of failed operations with error details */
+  failures: Array<{
+    input: unknown;
+    error: {
+      message: string;
+      code?: string;
+      details?: unknown;
+    };
+  }>;
+  /** Summary counts */
+  summary: {
+    total: number;
+    successful: number;
+    failed: number;
+  };
+}

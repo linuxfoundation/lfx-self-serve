@@ -20,7 +20,7 @@ import { MenuItem } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of } from 'rxjs';
-import { debounceTime, distinctUntilChanged, startWith, switchMap, take, tap } from 'rxjs/operators';
+import { debounceTime, distinctUntilChanged, startWith, switchMap, take, tap } from 'rxjs';
 
 import { MeetingCardComponent } from '../components/meeting-card/meeting-card.component';
 import { MeetingModalComponent } from '../components/meeting-modal/meeting-modal.component';
@@ -42,7 +42,6 @@ import { MeetingModalComponent } from '../components/meeting-modal/meeting-modal
     AnimateOnScrollModule,
   ],
   templateUrl: './meeting-dashboard.component.html',
-  styleUrl: './meeting-dashboard.component.scss',
 })
 export class MeetingDashboardComponent {
   // Injected services

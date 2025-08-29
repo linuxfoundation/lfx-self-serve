@@ -29,7 +29,6 @@ interface CommitteeMemberDisplay extends CommitteeMember {
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, ButtonComponent, MultiSelectComponent, TableComponent, TooltipModule],
   templateUrl: './meeting-committee-modal.component.html',
-  styleUrl: './meeting-committee-modal.component.scss',
 })
 export class MeetingCommitteeModalComponent {
   // Injected services

@@ -15,8 +15,7 @@ import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { RippleModule } from 'primeng/ripple';
-import { of } from 'rxjs';
-import { catchError, debounceTime, distinctUntilChanged, startWith, switchMap } from 'rxjs/operators';
+import { of, catchError, debounceTime, distinctUntilChanged, startWith, switchMap } from 'rxjs';
 
 import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
 import { MenuComponent } from '../menu/menu.component';

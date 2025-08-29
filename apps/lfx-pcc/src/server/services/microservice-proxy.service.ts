@@ -27,7 +27,8 @@ export class MicroserviceProxyService {
     customHeaders?: Record<string, string>
   ): Promise<T> {
     try {
-      if (!req.bearerToken) {
+      const token = req.oidc?.accessToken?.access_token;
+      if (!req.oidc?.isAuthenticated() || !token || req.oidc?.accessToken?.isExpired()) {
         throw new Error('Bearer token not available on request');
       }
 
@@ -37,7 +38,6 @@ export class MicroserviceProxyService {
 
       const baseUrl = MICROSERVICE_URLS[service];
       const endpoint = `${baseUrl}${path}`;
-      const token = req.bearerToken;
 
       // Merge query parameters with defaults taking precedence
       // This ensures that default params cannot be overridden by the caller
@@ -55,7 +55,7 @@ export class MicroserviceProxyService {
           error: error instanceof Error ? error.message : error,
           stack: error instanceof Error && process.env['NODE_ENV'] !== 'production' ? error.stack : undefined,
           endpoint: `${service}${path}`,
-          has_bearer_token: !!req.bearerToken,
+          has_bearer_token: !!req.oidc.accessToken?.access_token,
         },
         'Microservice request failed'
       );
@@ -74,7 +74,7 @@ export class MicroserviceProxyService {
     customHeaders?: Record<string, string>
   ): Promise<ApiResponse<T>> {
     try {
-      if (!req.bearerToken) {
+      if (!req.oidc.accessToken?.access_token) {
         throw new Error('Bearer token not available on request');
       }
 
@@ -84,7 +84,7 @@ export class MicroserviceProxyService {
 
       const baseUrl = MICROSERVICE_URLS[service];
       const endpoint = `${baseUrl}${path}`;
-      const token = req.bearerToken;
+      const token = req.oidc.accessToken?.access_token;
 
       // Merge query parameters with defaults taking precedence
       // This ensures that default params cannot be overridden by the caller
@@ -102,7 +102,7 @@ export class MicroserviceProxyService {
           error: error instanceof Error ? error.message : error,
           stack: error instanceof Error && process.env['NODE_ENV'] !== 'production' ? error.stack : undefined,
           endpoint: `${service}${path}`,
-          has_bearer_token: !!req.bearerToken,
+          has_bearer_token: !!req.oidc.accessToken?.access_token,
         },
         'Microservice request failed'
       );

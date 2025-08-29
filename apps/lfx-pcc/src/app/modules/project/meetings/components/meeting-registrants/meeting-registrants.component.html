@@ -148,14 +148,7 @@
           dataTest="search-input">
         </lfx-input-text>
       </div>
-      <lfx-select
-        [form]="searchForm"
-        control="status"
-        [options]="statusOptions"
-        placeholder="Filter by status"
-        styleClass="w-full"
-        data-testid="status-filter"
-        (onChange)="onStatusFilterChange($event.value)">
+      <lfx-select [form]="searchForm" control="status" [options]="statusOptions" placeholder="Filter by status" styleClass="w-full" data-testid="status-filter">
       </lfx-select>
     </div>
 

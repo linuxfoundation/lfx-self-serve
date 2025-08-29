@@ -15,7 +15,7 @@ import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { take } from 'rxjs/operators';
+import { take } from 'rxjs';
 
 import { UserFormComponent } from '../user-form/user-form.component';
 
