@@ -106,3 +106,15 @@ Create the name of the external secrets secretstore to use
 {{- default "default" .Values.externalSecrets.name }}
 {{- end }}
 {{- end }}
+
+{{/*
+External secrets annotations
+*/}}
+{{- define "lfx-v2-ui.secretStoreAnnotations" -}}
+{{- with .Values.externalSecrets.annotations }}
+{{ toYaml . }}
+{{- end }}
+{{- with .Values.annotations }}
+{{ toYaml . }}
+{{- end }}
+{{- end }}

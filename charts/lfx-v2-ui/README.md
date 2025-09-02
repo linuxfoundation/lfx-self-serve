@@ -91,8 +91,9 @@ POSTGRES_API_KEY:
 
 ### ExternalSecrets Parameters
 
-| Parameter                    | Description                             | Default |
-| ---------------------------- | --------------------------------------- | ------- |
-| `externalSecrets.enabled`    | Enable external secrets                 | `false` |
-| `externalSecrets.name`       | Name of the external secrets store      | `""`    |
-| `externalSecrets.provider`   | External secrets provider configuration | `{}`    |
+| Parameter                     | Description                             | Default |
+| ----------------------------- | --------------------------------------- | ------- |
+| `externalSecrets.enabled`     | Enable external secrets                 | `false` |
+| `externalSecrets.name`        | Name of the external secrets store      | `""`    |
+| `externalSecrets.provider`    | External secrets provider configuration | `{}`    |
+| `externalSecrets.annotations` | SecretStore annotations                 | `{}`    |

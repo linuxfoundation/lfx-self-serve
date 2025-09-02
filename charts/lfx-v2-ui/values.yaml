@@ -27,6 +27,8 @@ externalSecrets:
   #          serviceAccountRef:
   #            name: lfx-v2-ui-sa
   enabled: false
+  # Annotations to add to the SecretStore
+  annotations: {}
   # The name of the secret store to use.
   # If not set and enabled is true, a name is generated using the fullname template
   name: ""
