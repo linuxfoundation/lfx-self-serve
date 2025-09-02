@@ -13,6 +13,24 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
+# External management of secrets
+#  Enabling this will create a secret store pulling external secrets
+#  from the provided provider
+externalSecrets:
+  # If enabled a provider configuration is required. For example:
+  #  provider:
+  #    aws:
+  #      service: SecretManager
+  #      region: us-east-1
+  #      auth:
+  #        jwt:
+  #          serviceAccountRef:
+  #            name: lfx-v2-ui-sa
+  enabled: false
+  # The name of the secret store to use.
+  # If not set and enabled is true, a name is generated using the fullname template
+  name: ""
+
 # Global annotations to add to all resources
 annotations: {}
 

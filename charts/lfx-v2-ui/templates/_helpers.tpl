@@ -95,3 +95,14 @@ Pod annotations
 {{ toYaml . }}
 {{- end }}
 {{- end }}
+
+{{/*
+Create the name of the external secrets secretstore to use
+*/}}
+{{- define "lfx-v2-ui.secretStoreName" -}}
+{{- if .Values.externalSecrets.enabled }}
+{{- default (include "lfx-v2-ui.fullname" .) .Values.externalSecrets.name }}
+{{- else }}
+{{- default "default" .Values.externalSecrets.name }}
+{{- end }}
+{{- end }}

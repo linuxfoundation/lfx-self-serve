@@ -88,3 +88,11 @@ POSTGRES_API_KEY:
 | `ingress.annotations` | Ingress annotations         | `{}`    |
 | `ingress.hosts`       | Ingress hosts configuration | `[]`    |
 | `ingress.tls`         | Ingress TLS configuration   | `[]`    |
+
+### ExternalSecrets Parameters
+
+| Parameter                    | Description                             | Default |
+| ---------------------------- | --------------------------------------- | ------- |
+| `externalSecrets.enabled`    | Enable external secrets                 | `false` |
+| `externalSecrets.name`       | Name of the external secrets store      | `""`    |
+| `externalSecrets.provider`   | External secrets provider configuration | `{}`    |
