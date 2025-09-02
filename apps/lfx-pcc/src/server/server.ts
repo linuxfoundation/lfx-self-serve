@@ -73,7 +73,10 @@ const serverLogger = pino(
   {
     level: process.env['LOG_LEVEL'] || 'info',
     redact: {
-      paths: ['access_token', 'refresh_token', 'authorization', 'cookie', 'req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
+      paths:
+        process.env['NODE_ENV'] !== 'production'
+          ? ['req.headers.*', 'res.headers.*', 'access_token', 'refresh_token', 'authorization', 'cookie']
+          : ['access_token', 'refresh_token', 'authorization', 'cookie', 'req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
       remove: true,
     },
     formatters: {
@@ -124,7 +127,10 @@ const httpLogger = pinoHttp({
     },
   },
   redact: {
-    paths: ['access_token', 'refresh_token', 'authorization', 'cookie', 'req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
+    paths:
+      process.env['NODE_ENV'] !== 'production'
+        ? ['req.headers.*', 'res.headers.*', 'access_token', 'refresh_token', 'authorization', 'cookie']
+        : ['access_token', 'refresh_token', 'authorization', 'cookie', 'req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
     remove: true,
   },
   level: process.env['LOG_LEVEL'] || 'info',
@@ -203,7 +209,6 @@ app.use('/**', (req: Request, res: Response, next: NextFunction) => {
         {
           error: error.message,
           code: error.code,
-          stack: process.env['NODE_ENV'] !== 'production' ? error.stack : undefined,
           url: req.url,
           method: req.method,
           user_agent: req.get('User-Agent'),

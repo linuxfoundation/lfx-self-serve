@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, Injector, input, OnInit, output, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, OnInit, output, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -50,7 +50,6 @@ export class CommitteeMembersComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
-  private readonly injector = inject(Injector);
 
   // Input signals
   public committee = input.required<Committee | null>();
@@ -162,7 +161,7 @@ export class CommitteeMembersComponent implements OnInit {
         closable: true,
         data: {
           isEditing: true,
-          memberId: member.id,
+          memberId: member.uid,
           member: member,
           committee: this.committee(),
           onCancel: () => {
@@ -207,7 +206,7 @@ export class CommitteeMembersComponent implements OnInit {
 
     this.isDeleting.set(true);
 
-    this.committeeService.deleteCommitteeMember(committee.uid, member.id).subscribe({
+    this.committeeService.deleteCommitteeMember(committee.uid, member.uid).subscribe({
       next: () => {
         this.isDeleting.set(false);
 
@@ -299,8 +298,8 @@ export class CommitteeMembersComponent implements OnInit {
       const roleSet = new Set<string>();
 
       members.forEach((member) => {
-        if (member.role) {
-          roleSet.add(member.role);
+        if (member.role?.name) {
+          roleSet.add(member.role.name);
         }
       });
 
@@ -321,8 +320,8 @@ export class CommitteeMembersComponent implements OnInit {
       const statusSet = new Set<string>();
 
       members.forEach((member) => {
-        if (member.voting_status) {
-          statusSet.add(member.voting_status);
+        if (member.voting?.status) {
+          statusSet.add(member.voting.status);
         }
       });
 
@@ -343,8 +342,8 @@ export class CommitteeMembersComponent implements OnInit {
       const orgSet = new Set<string>();
 
       members.forEach((member) => {
-        if (member.organization) {
-          orgSet.add(member.organization);
+        if (member.organization?.name) {
+          orgSet.add(member.organization.name);
         }
       });
 
@@ -371,7 +370,7 @@ export class CommitteeMembersComponent implements OnInit {
             member.first_name?.toLowerCase().includes(searchTerm) ||
             member.last_name?.toLowerCase().includes(searchTerm) ||
             member.email?.toLowerCase().includes(searchTerm) ||
-            member.organization?.toLowerCase().includes(searchTerm) ||
+            member.organization?.name?.toLowerCase().includes(searchTerm) ||
             member.job_title?.toLowerCase().includes(searchTerm)
         );
       }
@@ -379,19 +378,19 @@ export class CommitteeMembersComponent implements OnInit {
       // Apply role filter
       const roleFilter = this.roleFilter();
       if (roleFilter) {
-        filtered = filtered.filter((member) => member.role === roleFilter);
+        filtered = filtered.filter((member) => member.role?.name === roleFilter);
       }
 
       // Apply voting status filter
       const votingStatusFilter = this.votingStatusFilter();
       if (votingStatusFilter) {
-        filtered = filtered.filter((member) => member.voting_status === votingStatusFilter);
+        filtered = filtered.filter((member) => member.voting?.status === votingStatusFilter);
       }
 
       // Apply organization filter
       const organizationFilter = this.organizationFilter();
       if (organizationFilter) {
-        filtered = filtered.filter((member) => member.organization === organizationFilter);
+        filtered = filtered.filter((member) => member.organization?.name === organizationFilter);
       }
 
       return filtered;

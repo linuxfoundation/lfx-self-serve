@@ -39,54 +39,6 @@ export interface MicroserviceUrls {
 }
 
 /**
- * Extended error interface for API-specific errors
- * @description Comprehensive error information for debugging and handling
- */
-export interface ApiError extends Error {
-  /** HTTP status code (legacy field) */
-  status?: number;
-  /** HTTP status code */
-  statusCode?: number;
-  /** Error code for programmatic handling */
-  code?: string;
-  /** Service that generated the error */
-  service?: string;
-  /** API path that caused the error */
-  path?: string;
-  /** Original error message before transformation */
-  originalMessage?: string;
-  /** Error cause information */
-  cause?: { code?: string };
-  /** Full API response object */
-  response?: ApiResponse<any>;
-}
-
-/**
- * Options for creating API error instances
- * @description Constructor parameters for ApiError creation
- */
-export interface ApiErrorOptions {
-  /** Error message */
-  message: string;
-  /** HTTP status code (legacy field) */
-  status?: number;
-  /** HTTP status code */
-  statusCode?: number;
-  /** Error code for programmatic handling */
-  code?: string;
-  /** Service that generated the error */
-  service?: string;
-  /** API path that caused the error */
-  path?: string;
-  /** Original error message before transformation */
-  originalMessage?: string;
-  /** Original error that caused this error */
-  originalError?: Error;
-  /** Full API response object */
-  response?: ApiResponse<any>;
-}
-
-/**
  * Individual item in query service responses
  * @description Standardized structure for resource items
  */
@@ -136,16 +88,6 @@ export interface ETagError {
   headers?: Record<string, string>;
 }
 
-/**
- * Standard API error response interface
- */
-export interface ApiErrorResponse {
-  error: string;
-  code?: string;
-  errors?: ValidationError[];
-  details?: Record<string, any>;
-}
-
 export interface ValidationError {
   field: string;
   message: string;
@@ -159,13 +101,4 @@ export interface PaginationInfo {
   pages: number;
   hasNext: boolean;
   hasPrev: boolean;
-}
-
-/**
- * Enhanced validation error interface with proper status code
- */
-export interface ValidationApiError extends ApiError {
-  statusCode: 400;
-  code: 'VALIDATION_ERROR';
-  validationErrors: ValidationError[];
 }

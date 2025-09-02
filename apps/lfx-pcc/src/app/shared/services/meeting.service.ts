@@ -57,10 +57,9 @@ export class MeetingService {
   }
 
   public getUpcomingMeetingsByProject(projectId: string, limit: number = 3): Observable<Meeting[]> {
-    const now = new Date().toISOString();
     // TODO: Replace tags with parent when API supports it
     // TODO: Replace start_time_gte with start_time_gte when API supports it
-    let params = new HttpParams().set('tags', `${projectId}`).set('start_time_gte', now).set('order', 'start_time.asc');
+    let params = new HttpParams().set('tags', `${projectId}`);
 
     if (limit) {
       params = params.set('limit', limit.toString());
@@ -70,10 +69,9 @@ export class MeetingService {
   }
 
   public getPastMeetingsByProject(projectId: string, limit: number = 3): Observable<Meeting[]> {
-    const now = new Date().toISOString();
     // TODO: Create new past meetings endpoint when new indexer is added
     // TODO: Replace tags with parent when API supports it
-    let params = new HttpParams().set('tags', `${projectId}`).set('start_time_lt', now).set('order', 'start_time.desc');
+    let params = new HttpParams().set('tags', `${projectId}`);
 
     if (limit) {
       params = params.set('limit', limit.toString());

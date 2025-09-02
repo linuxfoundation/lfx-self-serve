@@ -91,15 +91,15 @@ export interface Meeting {
   /** UUID of the LF project */
   project_uid: string;
   /** Meeting start time in RFC3339 format */
-  start_time: string | null;
+  start_time: string;
   /** Meeting duration in minutes (0-600) */
-  duration: number | null;
+  duration: number;
   /** Meeting timezone (e.g., "America/New_York") */
-  timezone: string | null;
+  timezone: string;
   /** Meeting title */
-  title: string | null;
+  title: string;
   /** Meeting description */
-  description: string | null;
+  description: string;
 
   // Optional API fields
   /** Currently only "Zoom" is supported */

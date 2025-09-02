@@ -3,9 +3,7 @@
 
 import {
   Committee,
-  CommitteeMember,
   CommitteePermission,
-  CreateCommitteeMemberRequest,
   CreateMeetingAttachmentRequest,
   CreateUserPermissionRequest,
   MeetingAttachment,
@@ -19,8 +17,6 @@ import {
   UserPermissionSummary,
 } from '@lfx-pcc/shared/interfaces';
 import dotenv from 'dotenv';
-
-import { createApiError, createHttpError } from '../utils/api-error';
 
 dotenv.config();
 
@@ -74,152 +70,9 @@ export class SupabaseService {
     return committee;
   }
 
-  public async getCommitteeCountByProjectId(projectUid: string): Promise<number> {
+  public async getCommitteeMemberCountByCommitteeId(committeeUid: string): Promise<number> {
     const params = new URLSearchParams({
-      project_uid: `eq.${projectUid}`,
-      select: 'count',
-    });
-    const url = `${this.baseUrl}/committees?${params.toString()}`;
-    const headers = {
-      ...this.getHeaders(),
-      Prefer: 'count=exact',
-    };
-
-    const response = await fetch(url, {
-      method: 'HEAD',
-      headers,
-      signal: AbortSignal.timeout(this.timeout),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch committee count for project ${projectUid}: ${response.status} ${response.statusText}`);
-    }
-
-    const contentRange = response.headers.get('content-range');
-    if (contentRange) {
-      const match = contentRange.match(/\/(\d+)$/);
-      return match ? parseInt(match[1], 10) : 0;
-    }
-
-    return 0;
-  }
-
-  // Committee Members methods
-  public async getCommitteeMembers(committeeId: string, params?: Record<string, any>): Promise<CommitteeMember[]> {
-    const queryParams = {
-      committee_id: `eq.${committeeId}`,
-      ...params,
-    };
-    const queryString = new URLSearchParams(queryParams).toString();
-    const url = `${this.baseUrl}/committee_members?${queryString}`;
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: this.getHeaders(),
-      signal: AbortSignal.timeout(this.timeout),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch committee members: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data;
-  }
-
-  public async getCommitteeMemberById(committeeId: string, memberId: string): Promise<CommitteeMember | null> {
-    const params = {
-      id: `eq.${memberId}`,
-      committee_id: `eq.${committeeId}`,
-      limit: '1',
-    };
-    const queryString = new URLSearchParams(params).toString();
-    const url = `${this.baseUrl}/committee_members?${queryString}`;
-
-    const response = await fetch(url, {
-      method: 'GET',
-      headers: this.getHeaders(),
-      signal: AbortSignal.timeout(this.timeout),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to fetch committee member: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data?.[0] || null;
-  }
-
-  public async addCommitteeMember(committeeId: string, memberData: CreateCommitteeMemberRequest): Promise<CommitteeMember> {
-    const url = `${this.baseUrl}/committee_members`;
-    const payload = {
-      ...memberData,
-      committee_id: committeeId,
-    };
-
-    const response = await fetch(url, {
-      method: 'POST',
-      headers: this.getHeaders(),
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(this.timeout),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to add committee member: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data?.[0] || data;
-  }
-
-  public async updateCommitteeMember(committeeId: string, memberId: string, memberData: Partial<CreateCommitteeMemberRequest>): Promise<CommitteeMember> {
-    const params = new URLSearchParams({
-      id: `eq.${memberId}`,
-      committee_id: `eq.${committeeId}`,
-    });
-    const url = `${this.baseUrl}/committee_members?${params.toString()}`;
-
-    const payload = {
-      ...memberData,
-      updated_at: new Date().toISOString(),
-    };
-
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: this.getHeaders(),
-      body: JSON.stringify(payload),
-      signal: AbortSignal.timeout(this.timeout),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to update committee member: ${response.status} ${response.statusText}`);
-    }
-
-    const data = await response.json();
-    return data?.[0] || data;
-  }
-
-  public async removeCommitteeMember(committeeId: string, memberId: string): Promise<void> {
-    const params = new URLSearchParams({
-      id: `eq.${memberId}`,
-      committee_id: `eq.${committeeId}`,
-    });
-    const url = `${this.baseUrl}/committee_members?${params.toString()}`;
-
-    const response = await fetch(url, {
-      method: 'DELETE',
-      headers: this.getHeaders(),
-      signal: AbortSignal.timeout(this.timeout),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to remove committee member: ${response.status} ${response.statusText}`);
-    }
-  }
-
-  public async getCommitteeMemberCountByCommitteeId(committeeId: string): Promise<number> {
-    const params = new URLSearchParams({
-      committee_id: `eq.${committeeId}`,
+      committee_uid: `eq.${committeeUid}`,
       select: 'count',
     });
     const url = `${this.baseUrl}/committee_members?${params.toString()}`;
@@ -235,7 +88,7 @@ export class SupabaseService {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch member count for committee ${committeeId}: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to fetch member count for committee ${committeeUid}: ${response.status} ${response.statusText}`);
     }
 
     const contentRange = response.headers.get('content-range');
@@ -247,9 +100,9 @@ export class SupabaseService {
     return 0;
   }
 
-  public async getCommitteeVotingRepsCount(committeeId: string): Promise<number> {
+  public async getCommitteeVotingRepsCount(committeeUid: string): Promise<number> {
     const params = new URLSearchParams({
-      committee_id: `eq.${committeeId}`,
+      committee_uid: `eq.${committeeUid}`,
       voting_status: `in.(Voting Rep,Alternate Voting Rep)`,
       select: 'count',
     });
@@ -266,7 +119,7 @@ export class SupabaseService {
     });
 
     if (!response.ok) {
-      throw new Error(`Failed to fetch voting reps count for committee ${committeeId}: ${response.status} ${response.statusText}`);
+      throw new Error(`Failed to fetch voting reps count for committee ${committeeUid}: ${response.status} ${response.statusText}`);
     }
 
     const contentRange = response.headers.get('content-range');
@@ -746,125 +599,5 @@ export class SupabaseService {
     if (!response.ok) {
       throw new Error(`Failed to create committee permission: ${response.status} ${response.statusText}`);
     }
-  }
-
-  // Error handling helper methods
-  private parseSupabaseError(response: Response, errorText: string, operation: string) {
-    const status = response.status;
-
-    try {
-      // Try to parse JSON error response from Supabase
-      const errorJson = JSON.parse(errorText);
-
-      if (errorJson.message) {
-        // Supabase returns structured errors
-        let userMessage = errorJson.message;
-        let code = 'SUPABASE_ERROR';
-
-        // Parse common Supabase/PostgreSQL errors into user-friendly messages
-        if (errorJson.code) {
-          code = errorJson.code;
-          userMessage = this.parsePostgresError(errorJson.code, errorJson.message, errorJson.details);
-        } else if (errorJson.hint) {
-          userMessage = errorJson.hint;
-        }
-
-        return createApiError({
-          message: userMessage,
-          status,
-          code,
-          service: 'supabase',
-          originalMessage: errorJson.message,
-        });
-      }
-    } catch {
-      // Not valid JSON, treat as plain text error
-    }
-
-    // Handle HTTP status codes
-    if (status >= 400) {
-      return createHttpError(status, response.statusText, errorText);
-    }
-
-    // Fallback to generic error
-    return createApiError({
-      message: `${operation}: ${errorText}`,
-      status,
-      code: 'SUPABASE_ERROR',
-      service: 'supabase',
-      originalMessage: errorText,
-    });
-  }
-
-  private parsePostgresError(code: string, message: string, details?: string): string {
-    switch (code) {
-      case '23505': // unique_violation
-        if (message.includes('duplicate key')) {
-          // Parse specific constraint names for better user messages
-          if (message.includes('meetings_project_uid_topic_start_time_key')) {
-            return 'A meeting with this topic and start time already exists for this project';
-          }
-          if (message.includes('committees_project_uid_name_key')) {
-            return 'A committee with this name already exists for this project';
-          }
-          if (message.includes('users_email_key')) {
-            return 'An account with this email address already exists';
-          }
-          // Generic fallback
-          return 'This item already exists. Please use different values.';
-        }
-        return message;
-
-      case '23503': // foreign_key_violation
-        if (message.includes('project_uid')) {
-          return 'The specified project does not exist';
-        }
-        if (message.includes('user_id')) {
-          return 'The specified user does not exist';
-        }
-        if (message.includes('committee_id')) {
-          return 'The specified committee does not exist';
-        }
-        if (message.includes('meeting_id')) {
-          return 'The specified meeting does not exist';
-        }
-        return 'Referenced item does not exist';
-
-      case '23514': // check_violation
-        return 'Invalid data provided - please check your input values';
-
-      case '23502': // not_null_violation
-        if (details) {
-          // Extract field name from details
-          const fieldMatch = details.match(/column "([^"]+)"/);
-          if (fieldMatch) {
-            const field = fieldMatch[1].replace(/_/g, ' ');
-            return `Missing required field: ${field}`;
-          }
-        }
-        return 'Missing required information';
-
-      case '42501': // insufficient_privilege
-        return 'You do not have permission to perform this action';
-
-      case '42P01': // undefined_table
-        return 'System error: Database table not found';
-
-      case '42703': // undefined_column
-        return 'System error: Database column not found';
-
-      default:
-        // Return the original message for unknown codes
-        return message;
-    }
-  }
-
-  private createTimeoutError(operation: string) {
-    return createApiError({
-      message: `Request timeout while trying to ${operation}`,
-      status: 408,
-      code: 'TIMEOUT',
-      service: 'supabase',
-    });
   }
 }

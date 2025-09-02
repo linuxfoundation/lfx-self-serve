@@ -192,7 +192,6 @@ Pino-http automatically logs:
     {
       error: error.message,
       code: error.code,
-      stack: process.env['NODE_ENV'] !== 'production' ? error.stack : undefined,
       url: req.url,
       method: req.method,
       user_agent: req.get('User-Agent'),
@@ -219,7 +218,6 @@ export function apiErrorHandler(error: ApiError, req: Request, res: Response, ne
   req.log.error(
     {
       error: error.message,
-      stack: process.env['NODE_ENV'] !== 'production' ? error.stack : undefined,
       path: req.path,
       method: req.method,
       user_agent: req.get('User-Agent'),
@@ -352,13 +350,6 @@ const serverLogger = pino({
   level: process.env['LOG_LEVEL'] || 'info', // Configurable via environment
   // ... other config
 });
-```
-
-### Stack Trace Handling
-
-```typescript
-// Conditional stack trace inclusion based on environment
-stack: process.env['NODE_ENV'] !== 'production' ? error.stack : undefined,
 ```
 
 ### Logger Export and Reusability

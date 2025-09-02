@@ -46,7 +46,7 @@ export class MemberCardComponent {
   });
 
   public readonly roleBadgeSeverity = computed<'secondary' | 'success' | 'info' | 'warn' | 'danger' | 'contrast'>(() => {
-    const role = this.member().role?.toLowerCase();
+    const role = this.member().role?.name?.toLowerCase();
     if (role === 'chair' || role === 'chairperson') return 'info';
     if (role === 'vice chair' || role === 'vice-chair') return 'success';
     if (role === 'secretary') return 'contrast';
@@ -54,7 +54,7 @@ export class MemberCardComponent {
   });
 
   public readonly votingStatusBadgeSeverity = computed<'secondary' | 'success' | 'info' | 'warn' | 'danger' | 'contrast'>(() => {
-    const status = this.member().voting_status?.toLowerCase();
+    const status = this.member().voting?.status?.toLowerCase();
     if (status === 'voting') return 'success';
     if (status === 'non-voting') return 'warn';
     return 'secondary';

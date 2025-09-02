@@ -5,6 +5,7 @@ import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, sanitizeFilename } from '@lfx-
 import { NextFunction, Request, Response, Router } from 'express';
 
 import { MeetingController } from '../controllers/meeting.controller';
+import { ServiceValidationError } from '../errors';
 import { AiService } from '../services/ai.service';
 import { SupabaseService } from '../services/supabase.service';
 
@@ -15,31 +16,31 @@ const aiService = new AiService();
 const meetingController = new MeetingController();
 
 // GET /meetings - get all meetings
-router.get('/', (req, res) => meetingController.getMeetings(req, res));
+router.get('/', (req, res, next) => meetingController.getMeetings(req, res, next));
 
 // GET /meetings/:uid - get a single meeting
-router.get('/:uid', (req, res) => meetingController.getMeetingById(req, res));
+router.get('/:uid', (req, res, next) => meetingController.getMeetingById(req, res, next));
 
 // POST /meetings - create a new meeting
-router.post('/', (req, res) => meetingController.createMeeting(req, res));
+router.post('/', (req, res, next) => meetingController.createMeeting(req, res, next));
 
 // PUT /meetings/:uid - update a meeting
-router.put('/:uid', (req, res) => meetingController.updateMeeting(req, res));
+router.put('/:uid', (req, res, next) => meetingController.updateMeeting(req, res, next));
 
 // DELETE /meetings/:uid - delete a meeting
-router.delete('/:uid', (req, res) => meetingController.deleteMeeting(req, res));
+router.delete('/:uid', (req, res, next) => meetingController.deleteMeeting(req, res, next));
 
 // Registrant routes
-router.get('/:uid/registrants', (req, res) => meetingController.getMeetingRegistrants(req, res));
+router.get('/:uid/registrants', (req, res, next) => meetingController.getMeetingRegistrants(req, res, next));
 
 // POST /meetings/:uid/registrants - add registrants (handles single or multiple)
-router.post('/:uid/registrants', (req, res) => meetingController.addMeetingRegistrants(req, res));
+router.post('/:uid/registrants', (req, res, next) => meetingController.addMeetingRegistrants(req, res, next));
 
 // PUT /meetings/:uid/registrants - update registrants (handles single or multiple)
-router.put('/:uid/registrants', (req, res) => meetingController.updateMeetingRegistrants(req, res));
+router.put('/:uid/registrants', (req, res, next) => meetingController.updateMeetingRegistrants(req, res, next));
 
 // DELETE /meetings/:uid/registrants - delete registrants (handles single or multiple)
-router.delete('/:uid/registrants', (req, res) => meetingController.deleteMeetingRegistrants(req, res));
+router.delete('/:uid/registrants', (req, res, next) => meetingController.deleteMeetingRegistrants(req, res, next));
 
 router.post('/:uid/attachments/upload', async (req: Request, res: Response, next: NextFunction) => {
   const startTime = Date.now();
@@ -69,10 +70,13 @@ router.post('/:uid/attachments/upload', async (req: Request, res: Response, next
         'Bad request: Meeting ID validation failed'
       );
 
-      return res.status(400).json({
-        error: 'Meeting ID is required',
-        code: 'MISSING_MEETING_ID',
+      const validationError = ServiceValidationError.forField('uid', 'Meeting ID is required', {
+        operation: 'upload_meeting_attachment',
+        service: 'meetings_route',
+        path: req.path,
       });
+
+      return next(validationError);
     }
 
     if (!fileName || !fileData || !mimeType) {
@@ -91,10 +95,21 @@ router.post('/:uid/attachments/upload', async (req: Request, res: Response, next
         'Bad request: File data validation failed'
       );
 
-      return res.status(400).json({
-        error: 'fileName, fileData, and mimeType are required',
-        code: 'MISSING_FILE_DATA',
-      });
+      const validationError = ServiceValidationError.fromFieldErrors(
+        {
+          fileName: !fileName ? 'File name is required' : [],
+          fileData: !fileData ? 'File data is required' : [],
+          mimeType: !mimeType ? 'MIME type is required' : [],
+        },
+        'File data validation failed',
+        {
+          operation: 'upload_meeting_attachment',
+          service: 'meetings_route',
+          path: req.path,
+        }
+      );
+
+      return next(validationError);
     }
 
     // Validate file type
@@ -111,10 +126,13 @@ router.post('/:uid/attachments/upload', async (req: Request, res: Response, next
         'Bad request: File type validation failed'
       );
 
-      return res.status(400).json({
-        error: 'File type not supported',
-        code: 'UNSUPPORTED_FILE_TYPE',
+      const validationError = ServiceValidationError.forField('mimeType', 'File type not supported', {
+        operation: 'upload_meeting_attachment',
+        service: 'meetings_route',
+        path: req.path,
       });
+
+      return next(validationError);
     }
 
     // Convert base64 to buffer
@@ -134,10 +152,13 @@ router.post('/:uid/attachments/upload', async (req: Request, res: Response, next
         'Bad request: File size validation failed'
       );
 
-      return res.status(400).json({
-        error: 'File size too large (max 10MB)',
-        code: 'FILE_TOO_LARGE',
+      const validationError = ServiceValidationError.forField('fileData', 'File size too large (max 10MB)', {
+        operation: 'upload_meeting_attachment',
+        service: 'meetings_route',
+        path: req.path,
       });
+
+      return next(validationError);
     }
 
     // Generate unique file path: meetings/{meetingId}/{timestamp}_{filename}
@@ -279,10 +300,13 @@ router.post('/storage/upload', async (req: Request, res: Response, next: NextFun
 
     // Validate file type
     if (!ALLOWED_FILE_TYPES.includes(mimeType as (typeof ALLOWED_FILE_TYPES)[number])) {
-      return res.status(400).json({
-        error: 'File type not supported',
-        code: 'UNSUPPORTED_FILE_TYPE',
+      const validationError = ServiceValidationError.forField('mimeType', 'File type not supported', {
+        operation: 'upload_meeting_attachment',
+        service: 'meetings_route',
+        path: req.path,
       });
+
+      return next(validationError);
     }
 
     // Convert base64 to buffer
@@ -290,10 +314,13 @@ router.post('/storage/upload', async (req: Request, res: Response, next: NextFun
 
     // Validate file size (10MB limit)
     if (buffer.length > MAX_FILE_SIZE_BYTES) {
-      return res.status(400).json({
-        error: 'File size too large (max 10MB)',
-        code: 'FILE_TOO_LARGE',
+      const validationError = ServiceValidationError.forField('fileData', 'File size too large (max 10MB)', {
+        operation: 'upload_meeting_attachment',
+        service: 'meetings_route',
+        path: req.path,
       });
+
+      return next(validationError);
     }
 
     // Upload to Supabase Storage

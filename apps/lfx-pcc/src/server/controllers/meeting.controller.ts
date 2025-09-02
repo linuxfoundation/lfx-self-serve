@@ -8,10 +8,11 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-pcc/shared/interfaces';
-import { Request, Response } from 'express';
+import { NextFunction, Request, Response } from 'express';
 
+import { ServiceValidationError } from '../errors';
 import { Logger } from '../helpers/logger';
-import { Responder } from '../helpers/responder';
+import { validateUidParameter } from '../helpers/validation.helper';
 import { MeetingService } from '../services/meeting.service';
 
 /**
@@ -23,12 +24,13 @@ export class MeetingController {
   /**
    * GET /meetings
    */
-  public async getMeetings(req: Request, res: Response): Promise<void> {
+  public async getMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = Logger.start(req, 'get_meetings', {
       query_params: Logger.sanitize(req.query as Record<string, any>),
     });
 
     try {
+      // Get the meetings
       const meetings = await this.meetingService.getMeetings(req, req.query as Record<string, any>);
 
       // TODO: Remove this once we have a way to get the registrants count
@@ -42,57 +44,68 @@ export class MeetingController {
         m.individual_registrants_count = counts[i];
       });
 
+      // Log the success
       Logger.success(req, 'get_meetings', startTime, {
         meeting_count: meetings.length,
       });
 
+      // Send the meetings data to the client
       res.json(meetings);
     } catch (error) {
+      // Log the error
       Logger.error(req, 'get_meetings', startTime, error);
-      Responder.handle(res, error, 'get_meetings');
+      next(error);
     }
   }
 
   /**
    * GET /meetings/:uid
    */
-  public async getMeetingById(req: Request, res: Response): Promise<void> {
+  public async getMeetingById(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const startTime = Logger.start(req, 'get_meeting_by_id', {
       meeting_uid: uid,
     });
 
     try {
-      if (!uid) {
-        Logger.error(req, 'get_meeting_by_id', startTime, new Error('Missing meeting UID parameter'));
-
-        Responder.badRequest(res, 'Meeting UID is required', {
-          code: 'MISSING_MEETING_UID',
-        });
+      // Check if the meeting UID is provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_meeting_by_id',
+          service: 'meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
         return;
       }
 
+      // Get the meeting by ID
       const meeting = await this.meetingService.getMeetingById(req, uid);
 
+      // Log the success
       Logger.success(req, 'get_meeting_by_id', startTime, {
         meeting_uid: uid,
         project_uid: meeting.project_uid,
         title: meeting.title,
       });
 
+      // Send the meeting data to the client
       res.json(meeting);
     } catch (error) {
+      // Log the error
       Logger.error(req, 'get_meeting_by_id', startTime, error, {
         meeting_uid: uid,
       });
-      Responder.handle(res, error, 'get_meeting_by_id');
+
+      // Send the error to the next middleware
+      next(error);
     }
   }
 
   /**
    * POST /meetings
    */
-  public async createMeeting(req: Request, res: Response): Promise<void> {
+  public async createMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
     const meetingData: CreateMeetingRequest = req.body;
     const startTime = Logger.start(req, 'create_meeting', {
       project_uid: meetingData?.project_uid,
@@ -104,27 +117,33 @@ export class MeetingController {
     });
 
     try {
+      // Create the meeting
       const meeting = await this.meetingService.createMeeting(req, meetingData);
 
+      // Log the success
       Logger.success(req, 'create_meeting', startTime, {
         meeting_id: meeting.uid,
         project_uid: meeting.project_uid,
         title: meeting.title,
       });
 
+      // Send the new meeting data to the client
       res.status(201).json(meeting);
     } catch (error) {
+      // Log the error
       Logger.error(req, 'create_meeting', startTime, error, {
         project_uid: req.body?.project_uid,
       });
-      Responder.handle(res, error, 'create_meeting');
+
+      // Send the error to the next middleware
+      next(error);
     }
   }
 
   /**
    * PUT /meetings/:uid
    */
-  public async updateMeeting(req: Request, res: Response): Promise<void> {
+  public async updateMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const meetingData: UpdateMeetingRequest = req.body;
     const { editType } = req.query;
@@ -138,17 +157,21 @@ export class MeetingController {
     });
 
     try {
-      if (!uid) {
-        Logger.error(req, 'update_meeting', startTime, new Error('Missing meeting UID parameter'));
-
-        Responder.badRequest(res, 'Meeting UID is required', {
-          code: 'MISSING_MEETING_UID',
-        });
+      // Check if the meeting UID is provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'update_meeting',
+          service: 'meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
         return;
       }
 
+      // Update the meeting
       const meeting = await this.meetingService.updateMeeting(req, uid, meetingData, editType as 'single' | 'future');
 
+      // Log the success
       Logger.success(req, 'update_meeting', startTime, {
         meeting_uid: uid,
         project_uid: meeting.project_uid,
@@ -156,70 +179,85 @@ export class MeetingController {
         edit_type: editType || 'single',
       });
 
+      // Send the updated meeting data to the client
       res.json(meeting);
     } catch (error) {
+      // Log the error
       Logger.error(req, 'update_meeting', startTime, error, {
         meeting_uid: uid,
         edit_type: editType,
       });
-      Responder.handle(res, error, 'update_meeting');
+
+      // Send the error to the next middleware
+      next(error);
     }
   }
 
   /**
    * DELETE /meetings/:uid
    */
-  public async deleteMeeting(req: Request, res: Response): Promise<void> {
+  public async deleteMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const startTime = Logger.start(req, 'delete_meeting', {
       meeting_uid: uid,
     });
 
     try {
-      if (!uid) {
-        Logger.error(req, 'delete_meeting', startTime, new Error('Missing meeting UID parameter'));
-
-        Responder.badRequest(res, 'Meeting UID is required', {
-          code: 'MISSING_MEETING_UID',
-        });
+      // Check if the meeting UID is provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'delete_meeting',
+          service: 'meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
         return;
       }
 
+      // Delete the meeting
       await this.meetingService.deleteMeeting(req, uid);
 
+      // Log the success
       Logger.success(req, 'delete_meeting', startTime, {
         meeting_uid: uid,
         status_code: 204,
       });
 
+      // Send the response to the client
       res.status(204).send();
     } catch (error) {
+      // Log the error
       Logger.error(req, 'delete_meeting', startTime, error, {
         meeting_uid: uid,
       });
-      Responder.handle(res, error, 'delete_meeting');
+
+      // Send the error to the next middleware
+      next(error);
     }
   }
 
   /**
    * GET /meetings/:uid/registrants
    */
-  public async getMeetingRegistrants(req: Request, res: Response): Promise<void> {
+  public async getMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const startTime = Logger.start(req, 'get_meeting_registrants', {
       meeting_uid: uid,
     });
 
     try {
-      if (!uid) {
-        Logger.error(req, 'get_meeting_registrants', startTime, new Error('Missing meeting UID parameter'));
-
-        Responder.badRequest(res, 'Meeting UID is required', {
-          code: 'MISSING_MEETING_UID',
-        });
+      // Check if the meeting UID is provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_meeting_registrants',
+          service: 'meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
         return;
       }
 
+      // Get the meeting registrants
       const registrants = await this.meetingService.getMeetingRegistrants(req, uid);
 
       Logger.success(req, 'get_meeting_registrants', startTime, {
@@ -227,12 +265,16 @@ export class MeetingController {
         registrant_count: registrants.length,
       });
 
+      // Send the registrants data to the client
       res.json(registrants);
     } catch (error) {
+      // Log the error
       Logger.error(req, 'get_meeting_registrants', startTime, error, {
         meeting_uid: uid,
       });
-      Responder.handle(res, error, 'get_meeting_registrants');
+
+      // Send the error to the next middleware
+      next(error);
     }
   }
 
@@ -240,7 +282,7 @@ export class MeetingController {
    * POST /meetings/:uid/registrants
    * @description Adds one or more registrants with partial success support
    */
-  public async addMeetingRegistrants(req: Request, res: Response): Promise<void> {
+  public async addMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const registrantData: CreateMeetingRegistrantRequest[] =
       req.body?.map((registrant: CreateMeetingRegistrantRequest) => ({
@@ -255,27 +297,41 @@ export class MeetingController {
     });
 
     try {
+      // Check if the meeting UID is provided
       if (!uid) {
         Logger.error(req, 'add_meeting_registrants', startTime, new Error('Missing meeting UID parameter'));
 
-        Responder.badRequest(res, 'Meeting UID is required', {
-          code: 'MISSING_MEETING_UID',
+        const validationError = ServiceValidationError.forField('uid', 'Meeting UID is required', {
+          operation: 'add_meeting_registrants',
+          service: 'meeting_controller',
+          path: req.path,
         });
+
+        next(validationError);
         return;
       }
 
+      // Check if the registrants data is provided and is an array
       if (!Array.isArray(registrantData) || !registrantData.length) {
         Logger.error(req, 'add_meeting_registrants', startTime, new Error('No registrants provided'));
-        Responder.badRequest(res, 'No registrants provided', {
-          code: 'MISSING_REGISTRANT_DATA',
+
+        // Create a validation error
+        const validationError = ServiceValidationError.forField('registrants', 'No registrants provided', {
+          operation: 'add_meeting_registrants',
+          service: 'meeting_controller',
+          path: req.path,
         });
+
+        // Send the validation error to the next middleware
+        next(validationError);
         return;
       }
 
       // Process registrants with fail-fast for 403 errors
+      // This will stop the processing if a 403 error is encountered
       const { results, shouldReturn } = await this.processRegistrantOperations(
         req,
-        res,
+        next,
         startTime,
         'add_meeting_registrants',
         uid,
@@ -284,11 +340,13 @@ export class MeetingController {
         (registrant) => registrant.email
       );
 
+      // If the processing should return, return
       if (shouldReturn) return;
 
       // Create batch response
       const batchResponse = this.createBatchResponse(results, registrantData, req, startTime, 'add_meeting_registrants', uid, (registrant) => registrant.email);
 
+      // Log the success
       Logger.success(req, 'add_meeting_registrants', startTime, {
         meeting_uid: uid,
         total_count: registrantData.length,
@@ -296,7 +354,7 @@ export class MeetingController {
         failed_count: batchResponse.summary.failed,
       });
 
-      // Set status based on results
+      // Set the status code based on the results
       let statusCode = 201; // Created - all successful
       if (batchResponse.summary.failed > 0) {
         if (batchResponse.summary.successful > 0) {
@@ -306,13 +364,17 @@ export class MeetingController {
         }
       }
 
+      // Send the batch response to the client
       res.status(statusCode).json(batchResponse);
     } catch (error) {
+      // Log the error
       Logger.error(req, 'add_meeting_registrants', startTime, error, {
         meeting_uid: uid,
         registrant_count: registrantData.length,
       });
-      Responder.handle(res, error, 'add_meeting_registrants');
+
+      // Send the error to the next middleware
+      next(error);
     }
   }
 
@@ -320,7 +382,7 @@ export class MeetingController {
    * PUT /meetings/:uid/registrants
    * @description Updates one or more registrants with partial success support
    */
-  public async updateMeetingRegistrants(req: Request, res: Response): Promise<void> {
+  public async updateMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const updateData: { uid: string; changes: UpdateMeetingRegistrantRequest }[] =
       req.body?.map((update: { uid: string; changes: UpdateMeetingRegistrantRequest }) => ({
@@ -338,39 +400,54 @@ export class MeetingController {
     });
 
     try {
+      // Check if the meeting UID is provided
       if (!uid) {
         Logger.error(req, 'update_meeting_registrants', startTime, new Error('Missing meeting UID parameter'));
 
-        Responder.badRequest(res, 'Meeting UID is required', {
-          code: 'MISSING_MEETING_UID',
+        const validationError = ServiceValidationError.forField('uid', 'Meeting UID is required', {
+          operation: 'update_meeting_registrants',
+          service: 'meeting_controller',
+          path: req.path,
         });
+
+        next(validationError);
         return;
       }
 
+      // Check if the update data is provided and is an array
       if (!Array.isArray(updateData) || !updateData.length) {
         Logger.error(req, 'update_meeting_registrants', startTime, new Error('No registrants provided'));
-        Responder.badRequest(res, 'No registrants provided', {
-          code: 'MISSING_REGISTRANT_DATA',
+
+        const validationError = ServiceValidationError.forField('registrants', 'No registrants provided', {
+          operation: 'update_meeting_registrants',
+          service: 'meeting_controller',
+          path: req.path,
         });
+
+        next(validationError);
         return;
       }
 
-      // Basic validation - only check for registrant UIDs
+      // Check if the registrant UIDs are provided
       if (updateData.some((update) => !update.uid)) {
         Logger.error(req, 'update_meeting_registrants', startTime, new Error('Missing registrant UIDs for update'), {
           provided_uids: updateData.map((update) => update.uid).filter(Boolean),
         });
 
-        Responder.badRequest(res, 'One or more registrants are missing UID', {
-          code: 'MISSING_REGISTRANT_UID',
+        const validationError = ServiceValidationError.forField('registrants.uid', 'One or more registrants are missing UID', {
+          operation: 'update_meeting_registrants',
+          service: 'meeting_controller',
+          path: req.path,
         });
+
+        next(validationError);
         return;
       }
 
       // Process updates with fail-fast for 403 errors
       const { results, shouldReturn } = await this.processRegistrantOperations(
         req,
-        res,
+        next,
         startTime,
         'update_meeting_registrants',
         uid,
@@ -379,11 +456,13 @@ export class MeetingController {
         (update) => update.uid
       );
 
+      // If the processing should return, return
       if (shouldReturn) return;
 
-      // Create batch response
+      // Create the batch response
       const batchResponse = this.createBatchResponse(results, updateData, req, startTime, 'update_meeting_registrants', uid, (update) => update.uid);
 
+      // Log the success
       Logger.success(req, 'update_meeting_registrants', startTime, {
         meeting_uid: uid,
         total_count: updateData.length,
@@ -391,7 +470,7 @@ export class MeetingController {
         failed_count: batchResponse.summary.failed,
       });
 
-      // Set status based on results
+      // Set the status code based on the results
       let statusCode = 200; // OK - all successful
       if (batchResponse.summary.failed > 0) {
         if (batchResponse.summary.successful > 0) {
@@ -401,13 +480,17 @@ export class MeetingController {
         }
       }
 
+      // Send the batch response to the client
       res.status(statusCode).json(batchResponse);
     } catch (error) {
+      // Log the error
       Logger.error(req, 'update_meeting_registrants', startTime, error, {
         meeting_uid: uid,
         registrant_count: updateData.length,
       });
-      Responder.handle(res, error, 'update_meeting_registrants');
+
+      // Send the error to the next middleware
+      next(error);
     }
   }
 
@@ -415,7 +498,7 @@ export class MeetingController {
    * DELETE /meetings/:uid/registrants
    * @description Deletes one or more registrants with partial success support
    */
-  public async deleteMeetingRegistrants(req: Request, res: Response): Promise<void> {
+  public async deleteMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const registrantsUid: string[] = req.body || [];
 
@@ -426,39 +509,54 @@ export class MeetingController {
     });
 
     try {
+      // Check if the meeting UID is provided
       if (!uid) {
         Logger.error(req, 'delete_meeting_registrants', startTime, new Error('Missing meeting UID parameter'));
 
-        Responder.badRequest(res, 'Meeting UID is required', {
-          code: 'MISSING_MEETING_UID',
+        const validationError = ServiceValidationError.forField('uid', 'Meeting UID is required', {
+          operation: 'delete_meeting_registrants',
+          service: 'meeting_controller',
+          path: req.path,
         });
+
+        next(validationError);
         return;
       }
 
+      // Check if the registrant UIDs are provided
       if (!registrantsUid.length) {
         Logger.error(req, 'delete_meeting_registrants', startTime, new Error('Empty registrant UIDs array'));
-        Responder.badRequest(res, 'Empty registrant UIDs array', {
-          code: 'MISSING_REGISTRANT_UIDS',
+        const validationError = ServiceValidationError.forField('registrantUids', 'Empty registrant UIDs array', {
+          operation: 'delete_meeting_registrants',
+          service: 'meeting_controller',
+          path: req.path,
         });
+
+        next(validationError);
         return;
       }
 
-      // Basic validation - only check for non-empty array
+      // Check if the registrant UIDs are provided and is an array
       if (!Array.isArray(registrantsUid) || !registrantsUid.length || !req.body.every((item: string) => typeof item === 'string')) {
         Logger.error(req, 'delete_meeting_registrants', startTime, new Error('Empty registrant UIDs array'), {
           provided_count: registrantsUid.length,
         });
 
-        Responder.badRequest(res, 'Array of registrant UIDs is required', {
-          code: 'MISSING_REGISTRANT_UIDS',
+        const validationError = ServiceValidationError.forField('registrantUids', 'Array of registrant UIDs is required', {
+          operation: 'delete_meeting_registrants',
+          service: 'meeting_controller',
+          path: req.path,
         });
+
+        next(validationError);
         return;
       }
 
       // Process deletions with fail-fast for 403 errors
+      // This will stop the processing if a 403 error is encountered
       const { results, shouldReturn } = await this.processRegistrantOperations(
         req,
-        res,
+        next,
         startTime,
         'delete_meeting_registrants',
         uid,
@@ -467,9 +565,10 @@ export class MeetingController {
         (registrantUid) => registrantUid
       );
 
+      // If the processing should return, return
       if (shouldReturn) return;
 
-      // Create batch response
+      // Create the batch response
       const batchResponse = this.createBatchResponse(
         results,
         registrantsUid,
@@ -480,6 +579,7 @@ export class MeetingController {
         (registrantUid) => registrantUid
       );
 
+      // Log the success
       Logger.success(req, 'delete_meeting_registrants', startTime, {
         meeting_uid: uid,
         total_count: registrantsUid.length,
@@ -487,7 +587,7 @@ export class MeetingController {
         failed_count: batchResponse.summary.failed,
       });
 
-      // Set status based on results
+      // Set the status code based on the results
       let statusCode = 200; // OK - all successful
       if (batchResponse.summary.failed > 0) {
         if (batchResponse.summary.successful > 0) {
@@ -497,13 +597,17 @@ export class MeetingController {
         }
       }
 
+      // Send the batch response to the client
       res.status(statusCode).json(batchResponse);
     } catch (error) {
+      // Log the error
       Logger.error(req, 'delete_meeting_registrants', startTime, error, {
         meeting_uid: uid,
         registrant_count: registrantsUid.length,
       });
-      Responder.handle(res, error, 'delete_meeting_registrants');
+
+      // Send the error to the next middleware
+      next(error);
     }
   }
 
@@ -512,7 +616,7 @@ export class MeetingController {
    */
   private async processRegistrantOperations<T, R>(
     req: Request,
-    res: Response,
+    next: NextFunction,
     startTime: number,
     operationName: string,
     meetingUid: string,
@@ -521,9 +625,10 @@ export class MeetingController {
     getIdentifier: (input: T, index?: number) => string
   ): Promise<{ results: PromiseSettledResult<R>[]; shouldReturn: boolean }> {
     try {
+      // Process the first registrant
       const firstResult = await operation(inputData[0]);
 
-      // If first succeeds, process remaining in parallel
+      // If the first registrant succeeds, process the remaining in parallel
       let results: PromiseSettledResult<R>[];
       if (inputData.length > 1) {
         const remainingResults = await Promise.allSettled(inputData.slice(1).map((input) => operation(input)));
@@ -532,20 +637,24 @@ export class MeetingController {
         results = [{ status: 'fulfilled', value: firstResult }];
       }
 
+      // Return the results and shouldReturn flag
       return { results, shouldReturn: false };
     } catch (error: any) {
       // Check if it's a 403 error - if so, fail fast
+      // This will stop the processing if a 403 error is encountered
       if (error?.status === 403 || error?.statusCode === 403) {
         Logger.error(req, operationName, startTime, error, {
           meeting_uid: meetingUid,
           identifier: getIdentifier(inputData[0], 0),
           fail_fast: true,
         });
-        Responder.handle(res, error, operationName);
+
+        // Send the error to the next middleware
+        next(error);
         return { results: [], shouldReturn: true };
       }
 
-      // For other errors, continue processing remaining items
+      // For other errors, continue processing the remaining items
       let results: PromiseSettledResult<R>[] = [{ status: 'rejected', reason: error }];
 
       if (inputData.length > 1) {
@@ -553,6 +662,7 @@ export class MeetingController {
         results = [...results, ...remainingResults];
       }
 
+      // Return the results and shouldReturn flag
       return { results, shouldReturn: false };
     }
   }
@@ -569,12 +679,14 @@ export class MeetingController {
     meetingUid: string,
     getIdentifier: (input: I, index?: number) => string
   ): BatchRegistrantOperationResponse<T> {
+    // Initialize the successes and failures arrays
     const successes: T[] = [];
     const failures: Array<{
       input: I;
       error: { message: string; code?: string; details?: unknown };
     }> = [];
 
+    // Process the results
     results.forEach((result, index) => {
       if (result.status === 'fulfilled') {
         successes.push(result.value);
@@ -597,6 +709,7 @@ export class MeetingController {
       }
     });
 
+    // Return the batch response
     return {
       successes,
       failures,

@@ -254,12 +254,12 @@ export class MeetingCardComponent implements OnInit {
                   .filter((c) => c.length > 0)
                   .flatMap((c) => {
                     return c.map((m) => ({
-                      id: m.id,
+                      id: m.uid,
                       meeting_id: this.meeting().uid,
                       first_name: m.first_name,
                       last_name: m.last_name,
                       email: m.email,
-                      organization: m.organization,
+                      organization: m.organization?.name,
                       is_host: false,
                       type: 'committee',
                       invite_accepted: null,

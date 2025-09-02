@@ -11,10 +11,10 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { Committee, CommitteeMember } from '@lfx-pcc/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
-import { ConfirmationService, MenuItem } from 'primeng/api';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { BehaviorSubject, combineLatest, of, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, of, switchMap, throwError } from 'rxjs';
 
 import { CommitteeFormComponent } from '../components/committee-form/committee-form.component';
 import { CommitteeMembersComponent } from '../components/committee-members/committee-members.component';
@@ -44,6 +44,7 @@ export class CommitteeViewComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
 
   // Class variables with types
   private dialogRef: DynamicDialogRef | undefined;
@@ -120,6 +121,11 @@ export class CommitteeViewComponent {
       },
       error: (error) => {
         this.isDeleting.set(false);
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to delete committee',
+        });
         console.error('Failed to delete committee:', error);
       },
     });
@@ -154,7 +160,27 @@ export class CommitteeViewComponent {
             return of(null);
           }
 
-          return combineLatest([this.committeeService.getCommittee(committeeId), this.committeeService.getCommitteeMembers(committeeId)]).pipe(
+          const committeeQuery = this.committeeService.getCommittee(committeeId).pipe(
+            catchError(() => {
+              console.error('Failed to load committee');
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'Failed to load committee',
+              });
+              this.router.navigate(['/project', this.project()!.slug, 'committees']);
+              return throwError(() => new Error('Failed to load committee'));
+            })
+          );
+
+          const membersQuery = this.committeeService.getCommitteeMembers(committeeId).pipe(
+            catchError(() => {
+              console.error('Failed to load committee members');
+              return of([]);
+            })
+          );
+
+          return combineLatest([committeeQuery, membersQuery]).pipe(
             switchMap(([committee, members]) => {
               this.members.set(members);
               this.loading.set(false);

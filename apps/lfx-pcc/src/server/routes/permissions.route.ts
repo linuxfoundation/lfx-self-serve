@@ -4,6 +4,7 @@
 import { CreateUserPermissionRequest, UpdateUserPermissionRequest } from '@lfx-pcc/shared/interfaces';
 import { NextFunction, Request, Response, Router } from 'express';
 
+import { ServiceValidationError } from '../errors';
 import { SupabaseService } from '../services/supabase.service';
 
 const router = Router();
@@ -18,10 +19,13 @@ router.get('/:projectId/permissions', async (req: Request, res: Response, next: 
     const { projectId } = req.params;
 
     if (!projectId) {
-      return res.status(400).json({
-        error: 'Project ID is required',
-        code: 'MISSING_PROJECT_ID',
+      const validationError = ServiceValidationError.forField('projectId', 'Project ID is required', {
+        operation: 'get_project_permissions',
+        service: 'permissions_route',
+        path: req.path,
       });
+
+      return next(validationError);
     }
 
     req.log.info({ projectId }, 'Fetching project permissions');
@@ -45,10 +49,13 @@ router.post('/:projectId/permissions', async (req: Request, res: Response, next:
     const userData: CreateUserPermissionRequest = req.body;
 
     if (!projectId) {
-      return res.status(400).json({
-        error: 'Project ID is required',
-        code: 'MISSING_PROJECT_ID',
+      const validationError = ServiceValidationError.forField('projectId', 'Project ID is required', {
+        operation: 'get_project_permissions',
+        service: 'permissions_route',
+        path: req.path,
       });
+
+      return next(validationError);
     }
 
     // Validate required fields

@@ -4,6 +4,8 @@
 import { NextFunction, Request, Response, Router } from 'express';
 
 import { ProjectController } from '../controllers/project.controller';
+import { ServiceValidationError } from '../errors';
+import { Logger } from '../helpers/logger';
 import { SupabaseService } from '../services/supabase.service';
 
 const router = Router();
@@ -12,68 +14,45 @@ const supabaseService = new SupabaseService();
 const projectController = new ProjectController();
 
 // Project CRUD routes - using new controller pattern
-router.get('/', (req, res) => projectController.getProjects(req, res));
+router.get('/', (req, res, next) => projectController.getProjects(req, res, next));
 
-router.get('/search', (req, res) => projectController.searchProjects(req, res));
+router.get('/search', (req, res, next) => projectController.searchProjects(req, res, next));
 
-router.get('/:slug', (req, res) => projectController.getProjectBySlug(req, res));
+router.get('/:slug', (req, res, next) => projectController.getProjectBySlug(req, res, next));
 
 router.get('/:uid/recent-activity', async (req: Request, res: Response, next: NextFunction) => {
-  const startTime = Date.now();
   const projectUid = req.params['uid'];
-
-  req.log.info(
-    {
-      operation: 'fetch_project_recent_activity',
-      has_project_uid: !!projectUid,
-      query_params: req.query,
-    },
-    'Starting project recent activity fetch request'
-  );
+  const startTime = Logger.start(req, 'fetch_project_recent_activity', {
+    has_project_uid: !!projectUid,
+    query_params: Logger.sanitize(req.query as Record<string, any>),
+  });
 
   try {
     if (!projectUid) {
-      req.log.warn(
-        {
-          operation: 'fetch_project_recent_activity',
-          error: 'Missing project uid parameter',
-          status_code: 400,
-        },
-        'Bad request: Project uid validation failed'
-      );
+      Logger.error(req, 'fetch_project_recent_activity', startTime, new Error('Missing project uid parameter'));
 
-      return res.status(400).json({
-        error: 'Project uid is required',
-        code: 'MISSING_PROJECT_UID',
+      const validationError = ServiceValidationError.forField('uid', 'Project uid is required', {
+        operation: 'fetch_project_recent_activity',
+        service: 'projects_route',
+        path: req.path,
       });
+
+      return next(validationError);
     }
 
     const recentActivity = await supabaseService.getRecentActivityByProject(projectUid, req.query as Record<string, any>);
-    const duration = Date.now() - startTime;
 
-    req.log.info(
-      {
-        operation: 'fetch_project_recent_activity',
-        project_uid: projectUid,
-        activity_count: recentActivity.length,
-        duration,
-        status_code: 200,
-      },
-      'Successfully fetched project recent activity'
-    );
+    Logger.success(req, 'fetch_project_recent_activity', startTime, {
+      project_uid: projectUid,
+      activity_count: recentActivity.length,
+    });
 
-    return res.json(recentActivity);
+    res.json(recentActivity);
   } catch (error) {
-    const duration = Date.now() - startTime;
-    req.log.error(
-      {
-        error: error instanceof Error ? error.message : error,
-        operation: 'fetch_project_recent_activity',
-        duration,
-      },
-      'Failed to fetch recent activity for project'
-    );
-    return next(error);
+    Logger.error(req, 'fetch_project_recent_activity', startTime, error, {
+      project_uid: projectUid,
+    });
+    next(error);
   }
 });
 
