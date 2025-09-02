@@ -13,6 +13,7 @@ import { NextFunction, Request, Response } from 'express';
 import { ServiceValidationError } from '../errors';
 import { Logger } from '../helpers/logger';
 import { validateUidParameter } from '../helpers/validation.helper';
+import { CommitteeService } from '../services/committee.service';
 import { MeetingService } from '../services/meeting.service';
 
 /**
@@ -20,6 +21,7 @@ import { MeetingService } from '../services/meeting.service';
  */
 export class MeetingController {
   private meetingService: MeetingService = new MeetingService();
+  private committeeService: CommitteeService = new CommitteeService();
 
   /**
    * GET /meetings
@@ -37,11 +39,27 @@ export class MeetingController {
       const counts = await Promise.all(
         meetings.map(async (m) => {
           const registrants = await this.meetingService.getMeetingRegistrants(req, m.uid);
-          return registrants.length;
+          let committeeMembers = 0;
+
+          if (m.committees?.length) {
+            await Promise.all(
+              m.committees.map(async (c) => {
+                const members = await this.committeeService.getCommitteeMembers(req, c.uid);
+                committeeMembers += members.length;
+              })
+            );
+          }
+
+          return {
+            individual_registrants_count: registrants.length,
+            committee_members_count: committeeMembers,
+          };
         })
       );
+
       meetings.forEach((m, i) => {
-        m.individual_registrants_count = counts[i];
+        m.individual_registrants_count = counts[i].individual_registrants_count;
+        m.committee_members_count = counts[i].committee_members_count;
       });
 
       // Log the success
