@@ -23,7 +23,7 @@ jobs:
       - name: Check for deployment label
         id: check
         run: |
-          if [[ "${{ contains(github.event.pull_request.labels.*.name, 'branch-preview') }}" == "true" ]]; then
+          if [[ "${{ contains(github.event.pull_request.labels.*.name, 'deploy-preview') }}" == "true" ]]; then
             echo "should-deploy=true" >> $GITHUB_OUTPUT
             echo "✅ Deploy label found - will proceed with deployment"
           else
@@ -37,6 +37,7 @@ jobs:
       contents: read
       packages: write
       pull-requests: read
+      issues: write
     if: needs.check-label.outputs.should-deploy == 'true'
     runs-on: ubuntu-latest
     steps:
@@ -130,7 +131,7 @@ jobs:
             }
 
   cleanup-on-close:
-    if: github.event.action == 'closed' || (github.event.action == 'unlabeled' && github.event.label.name == 'branch-preview')
+    if: github.event.action == 'closed' || (github.event.action == 'unlabeled' && github.event.label.name == 'deploy-preview')
     runs-on: ubuntu-latest
     steps:
       - name: Comment removal on PR
