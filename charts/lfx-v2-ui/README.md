@@ -89,11 +89,77 @@ POSTGRES_API_KEY:
 | `ingress.hosts`       | Ingress hosts configuration | `[]`    |
 | `ingress.tls`         | Ingress TLS configuration   | `[]`    |
 
-### ExternalSecrets Parameters
+### External Secrets Operator Integration
 
-| Parameter                     | Description                             | Default |
-| ----------------------------- | --------------------------------------- | ------- |
-| `externalSecrets.enabled`     | Enable external secrets                 | `false` |
-| `externalSecrets.name`        | Name of the external secrets store      | `""`    |
-| `externalSecrets.provider`    | External secrets provider configuration | `{}`    |
-| `externalSecrets.annotations` | SecretStore annotations                 | `{}`    |
+This chart supports the [External Secrets Operator](https://external-secrets.io/) for managing secrets from external providers like AWS Secrets Manager, HashiCorp Vault, Azure Key Vault, etc.
+
+#### Prerequisites
+
+1. Install the External Secrets Operator in your cluster:
+
+   ```bash
+   helm repo add external-secrets https://charts.external-secrets.io
+   helm install external-secrets \
+     external-secrets/external-secrets \
+     -n external-secrets-system \
+     --create-namespace
+   ```
+
+2. Configure appropriate IRSA (AWS), Workload Identity (GCP/Azure), or service account credentials for accessing your secret provider.
+
+#### Configuration Parameters
+
+| Parameter                                  | Description                                          | Default        |
+| ------------------------------------------ | ---------------------------------------------------- | -------------- |
+| `externalSecrets.enabled`                  | Enable External Secrets integration                  | `false`        |
+| `externalSecrets.provider`                 | Provider configuration (required when enabled)       | `{}`           |
+| `externalSecrets.name`                     | Name of the ExternalSecret resource                  | Auto-generated |
+| `externalSecrets.target`                   | Target Kubernetes Secret name (required)             | `""`           |
+| `externalSecrets.refreshInterval`          | How often to sync secrets from provider              | `10m`          |
+| `externalSecrets.creationPolicy`           | Secret creation policy (Owner/Orphan/Merge/None)     | `Owner`        |
+| `externalSecrets.dataFrom`                 | Fetch multiple secrets using queries (required)      | `[]`           |
+| `externalSecrets.annotations`              | Annotations for ExternalSecret resource              | `{}`           |
+| `externalSecrets.secretStore.name`         | Name of the SecretStore resource                     | Auto-generated |
+| `externalSecrets.secretStore.annotations`  | Annotations for SecretStore resource                 | `{}`           |
+
+#### Usage Examples
+
+##### AWS Secrets Manager with IRSA
+
+```yaml
+externalSecrets:
+  enabled: true
+  provider:
+    aws:
+      service: SecretsManager
+      region: us-east-1
+      auth:
+        jwt:
+          serviceAccountRef:
+            name: lfx-v2-ui-sa  # ServiceAccount with IRSA annotation
+  dataFrom:
+    - find:
+        tags:
+          service: lfx-v2-ui
+      rewrite:
+        - merge: {}
+```
+
+#### Integration with Application
+
+When External Secrets is enabled, the chart will:
+
+1. Create a `SecretStore` resource configured with your provider
+2. Create an `ExternalSecret` resource that fetches and syncs secrets
+3. Generate a Kubernetes `Secret` with the fetched values
+
+The application can then reference these secrets in environment variables:
+
+```yaml
+environment:
+  PCC_AUTH0_CLIENT_SECRET:
+    valueFrom:
+      secretKeyRef:
+        name: lfx-v2-ui  # Or your custom target name
+        key: PCC_AUTH0_CLIENT_SECRET
+```

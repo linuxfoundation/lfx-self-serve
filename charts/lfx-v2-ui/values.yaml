@@ -13,25 +13,68 @@ imagePullSecrets: []
 nameOverride: ""
 fullnameOverride: ""
 
-# External management of secrets
-#  Enabling this will create a secret store pulling external secrets
-#  from the provided provider
+# External Secrets Operator configuration
+# Manages secrets from external providers (AWS Secrets Manager, HashiCorp Vault, etc.)
+# Requires the External Secrets Operator to be installed in the cluster
 externalSecrets:
-  # If enabled a provider configuration is required. For example:
-  #  provider:
-  #    aws:
-  #      service: SecretManager
-  #      region: us-east-1
-  #      auth:
-  #        jwt:
-  #          serviceAccountRef:
-  #            name: lfx-v2-ui-sa
+  # Enable ExternalSecrets integration
+  # When enabled, a SecretStore and ExternalSecret will be created
   enabled: false
-  # Annotations to add to the SecretStore
+
+  # Provider configuration (required)
+  # Defines which external secret provider to use and how to authenticate
+  # Examples:
+  #
+  # AWS Secrets Manager:
+  # provider:
+  #   aws:
+  #     service: SecretsManager
+  #     region: us-east-1
+  #     auth:
+  #       jwt:
+  #         serviceAccountRef:
+  #           name: lfx-v2-ui-sa
+  provider: {}
+
+  # Annotations to add to ExternalSecret resources
   annotations: {}
-  # The name of the secret store to use.
-  # If not set and enabled is true, a name is generated using the fullname template
+
+  # SecretStore-specific configuration
+  secretStore:
+    # Annotations specific to the SecretStore resource
+    annotations: {}
+    # Name of the SecretStore resource
+    # Defaults to the fullname template if not specified
+    name: ""
+
+  # Name of the ExternalSecret resource
+  # Defaults to the fullname template if not specified
   name: ""
+
+  # Target Kubernetes Secret name (required)
+  # This is the name of the Secret that will be created/managed
+  target: ""
+
+  # How frequently the secret should be refreshed from the external provider
+  # Format: 10s, 1m, 1h, etc. (default: 10m)
+  refreshInterval: "10m"
+
+  # Creation policy for the target Secret
+  # - Owner: ExternalSecret owns the Secret, deletion of ExternalSecret deletes the Secret
+  # - Orphan: Secret won't be deleted when ExternalSecret is deleted
+  # - Merge: Merge with existing Secret if it exists
+  # - None: Don't create or update the Secret
+  creationPolicy: "Owner"
+
+  # Fetch multiple secrets using queries (required)
+  # Example:
+  #   dataFrom:
+  #     - find:
+  #         tags:
+  #           service: "lfx-v2-ui"
+  #       rewrite:
+  #         - merge: {}
+  # dataFrom: []
 
 # Global annotations to add to all resources
 annotations: {}
