@@ -109,18 +109,18 @@ This chart supports the [External Secrets Operator](https://external-secrets.io/
 
 #### Configuration Parameters
 
-| Parameter                                  | Description                                          | Default        |
-| ------------------------------------------ | ---------------------------------------------------- | -------------- |
-| `externalSecrets.enabled`                  | Enable External Secrets integration                  | `false`        |
-| `externalSecrets.provider`                 | Provider configuration (required when enabled)       | `{}`           |
-| `externalSecrets.name`                     | Name of the ExternalSecret resource                  | Auto-generated |
-| `externalSecrets.target`                   | Target Kubernetes Secret name (required)             | `""`           |
-| `externalSecrets.refreshInterval`          | How often to sync secrets from provider              | `10m`          |
-| `externalSecrets.creationPolicy`           | Secret creation policy (Owner/Orphan/Merge/None)     | `Owner`        |
-| `externalSecrets.dataFrom`                 | Fetch multiple secrets using queries (required)      | `[]`           |
-| `externalSecrets.annotations`              | Annotations for ExternalSecret resource              | `{}`           |
-| `externalSecrets.secretStore.name`         | Name of the SecretStore resource                     | Auto-generated |
-| `externalSecrets.secretStore.annotations`  | Annotations for SecretStore resource                 | `{}`           |
+| Parameter                                 | Description                                      | Default        |
+| ----------------------------------------- | ------------------------------------------------ | -------------- |
+| `externalSecrets.enabled`                 | Enable External Secrets integration              | `false`        |
+| `externalSecrets.provider`                | Provider configuration (required when enabled)   | `{}`           |
+| `externalSecrets.name`                    | Name of the ExternalSecret resource              | Auto-generated |
+| `externalSecrets.target`                  | Target Kubernetes Secret name (required)         | `""`           |
+| `externalSecrets.refreshInterval`         | How often to sync secrets from provider          | `10m`          |
+| `externalSecrets.creationPolicy`          | Secret creation policy (Owner/Orphan/Merge/None) | `Owner`        |
+| `externalSecrets.dataFrom`                | Fetch multiple secrets using queries (required)  | `[]`           |
+| `externalSecrets.annotations`             | Annotations for ExternalSecret resource          | `{}`           |
+| `externalSecrets.secretStore.name`        | Name of the SecretStore resource                 | Auto-generated |
+| `externalSecrets.secretStore.annotations` | Annotations for SecretStore resource             | `{}`           |
 
 #### Usage Examples
 
@@ -136,7 +136,7 @@ externalSecrets:
       auth:
         jwt:
           serviceAccountRef:
-            name: lfx-v2-ui-sa  # ServiceAccount with IRSA annotation
+            name: lfx-v2-ui-sa # ServiceAccount with IRSA annotation
   dataFrom:
     - find:
         tags:
@@ -160,6 +160,6 @@ environment:
   PCC_AUTH0_CLIENT_SECRET:
     valueFrom:
       secretKeyRef:
-        name: lfx-v2-ui  # Or your custom target name
+        name: lfx-v2-ui # Or your custom target name
         key: PCC_AUTH0_CLIENT_SECRET
 ```
