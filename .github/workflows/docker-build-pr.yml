@@ -15,30 +15,19 @@ env:
   IMAGE_NAME: ${{ github.repository }}
 
 jobs:
-  check-label:
-    runs-on: ubuntu-latest
-    outputs:
-      should-deploy: ${{ steps.check.outputs.should-deploy }}
-    steps:
-      - name: Check for deployment label
-        id: check
-        run: |
-          if [[ "${{ contains(github.event.pull_request.labels.*.name, 'deploy-preview') }}" == "true" ]]; then
-            echo "should-deploy=true" >> $GITHUB_OUTPUT
-            echo "✅ Deploy label found - will proceed with deployment"
-          else
-            echo "should-deploy=false" >> $GITHUB_OUTPUT
-            echo "⏭️ No deploy label found - skipping deployment"
-          fi
-
   build-and-push:
-    needs: check-label
     permissions:
       contents: read
       packages: write
       pull-requests: write
       issues: write
-    if: needs.check-label.outputs.should-deploy == 'true'
+    # Only build a container if the PR is still open, it's labeled with
+    # 'deploy-preview' and does not come from a fork.
+    if: >
+      github.event.action != 'closed' &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.head.repo.fork == false &&
+      contains(github.event.pull_request.labels.*.name, 'deploy-preview')
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
@@ -92,28 +81,28 @@ jobs:
           script: |
             const deploymentUrl = `https://pcc-pr-${{ github.event.pull_request.number }}.dev.v2.cluster.linuxfound.info`;
             const comment = `## 🚀 Deployment Status
-            
+
             Your branch has been deployed to: ${deploymentUrl}
-            
+
             **Deployment Details:**
             - Environment: Development
             - Namespace: pcc-pr-${{ github.event.pull_request.number }}
             - ArgoCD App: pcc-pr-${{ github.event.pull_request.number }}
-            
+
             The deployment will be automatically removed when this PR is closed.`;
-            
+
             // Check if we already commented
             const comments = await github.rest.issues.listComments({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
             });
-            
-            const botComment = comments.data.find(comment => 
-              comment.user.type === 'Bot' && 
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
               comment.body.includes('## 🚀 Deployment Status')
             );
-            
+
             if (botComment) {
               await github.rest.issues.updateComment({
                 comment_id: botComment.id,
@@ -131,11 +120,12 @@ jobs:
             }
 
   cleanup-on-close:
-    if: github.event.action == 'closed' || (github.event.action == 'unlabeled' && github.event.label.name == 'deploy-preview')
+    if: >
+      github.event.action == 'closed' ||
+      (github.event.action == 'unlabeled' && github.event.label.name == 'deploy-preview')
     runs-on: ubuntu-latest
     steps:
       - name: Comment removal on PR
-        if: github.event.action == 'closed'
         uses: actions/github-script@v7
         with:
           script: |
