@@ -9,6 +9,9 @@ on:
 
 permissions:
   contents: read
+  packages: write
+  pull-requests: write
+  issues: write
 
 env:
   REGISTRY: ghcr.io
@@ -16,11 +19,6 @@ env:
 
 jobs:
   build-and-push:
-    permissions:
-      contents: read
-      packages: write
-      pull-requests: write
-      issues: write
     # Only build a container if the PR is still open, it's labeled with
     # 'deploy-preview' and does not come from a fork.
     if: >
