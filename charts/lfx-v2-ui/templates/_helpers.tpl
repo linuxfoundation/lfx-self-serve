@@ -123,7 +123,7 @@ SecretStore-specific annotations override global ones on key conflicts
 {{- if .Values.externalSecrets.secretStore }}
 {{- if .Values.externalSecrets.secretStore.annotations }}
 {{- /* secretStore annotations override global on key conflicts */ -}}
-{{- $notations = merge .Values.externalSecrets.secretStore.annotations $notations }}
+{{- $notations = merge $notations .Values.externalSecrets.secretStore.annotations }}
 {{- end }}
 {{- end }}
 {{- if $notations }}
@@ -143,7 +143,7 @@ ExternalSecret-specific annotations override global ones on key conflicts
 {{- end }}
 {{- if .Values.externalSecrets.annotations }}
 {{- /* externalSecrets annotations override global on key conflicts */ -}}
-{{- $notations = merge .Values.externalSecrets.annotations $notations }}
+{{- $notations = merge $notations .Values.externalSecrets.annotations }}
 {{- end }}
 {{- if $notations }}
 {{- toYaml $notations }}
