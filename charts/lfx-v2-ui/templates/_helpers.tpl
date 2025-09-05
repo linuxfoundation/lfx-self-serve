@@ -95,3 +95,57 @@ Pod annotations
 {{ toYaml . }}
 {{- end }}
 {{- end }}
+
+{{/*
+Create the name of the external secrets secretstore to use
+*/}}
+{{- define "lfx-v2-ui.secretStoreName" -}}
+{{- default (include "lfx-v2-ui.fullname" .) .Values.externalSecrets.secretStore.name }}
+{{- end }}
+
+{{/*
+Create the name of the external secret to use
+*/}}
+{{- define "lfx-v2-ui.externalSecretName" -}}
+{{- default (include "lfx-v2-ui.fullname" .) .Values.externalSecrets.name }}
+{{- end }}
+
+{{/*
+SecretStore annotations
+Merges global annotations with externalSecrets.secretStore.annotations
+SecretStore-specific annotations override global ones on key conflicts
+*/}}
+{{- define "lfx-v2-ui.secretStoreAnnotations" -}}
+{{- $notations := dict -}}
+{{- if .Values.annotations }}
+{{- $notations = merge $notations .Values.annotations }}
+{{- end }}
+{{- if .Values.externalSecrets.secretStore }}
+{{- if .Values.externalSecrets.secretStore.annotations }}
+{{- /* secretStore annotations override global on key conflicts */ -}}
+{{- $notations = merge $notations .Values.externalSecrets.secretStore.annotations }}
+{{- end }}
+{{- end }}
+{{- if $notations }}
+{{- toYaml $notations }}
+{{- end }}
+{{- end }}
+
+{{/*
+ExternalSecret annotations
+Merges global annotations with externalSecrets.annotations
+ExternalSecret-specific annotations override global ones on key conflicts
+*/}}
+{{- define "lfx-v2-ui.externalSecretAnnotations" -}}
+{{- $notations := dict -}}
+{{- if .Values.annotations }}
+{{- $notations = merge $notations .Values.annotations }}
+{{- end }}
+{{- if .Values.externalSecrets.annotations }}
+{{- /* externalSecrets annotations override global on key conflicts */ -}}
+{{- $notations = merge $notations .Values.externalSecrets.annotations }}
+{{- end }}
+{{- if $notations }}
+{{- toYaml $notations }}
+{{- end }}
+{{- end }}
