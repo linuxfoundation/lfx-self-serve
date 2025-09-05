@@ -23,14 +23,16 @@ export class ProjectService {
     );
   }
 
-  public getProject(slug: string): Observable<Project | null> {
+  public getProject(slug: string, current: boolean = true): Observable<Project | null> {
     return this.http.get<Project>(`/api/projects/${slug}`).pipe(
       catchError(() => {
         return of(null);
       }),
       tap((project) => {
-        this.project$.next(project);
-        this.project.set(project);
+        if (current) {
+          this.project$.next(project);
+          this.project.set(project);
+        }
       })
     );
   }

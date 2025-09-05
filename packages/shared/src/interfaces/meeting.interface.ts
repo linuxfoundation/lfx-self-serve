@@ -100,7 +100,6 @@ export interface Meeting {
   title: string;
   /** Meeting description */
   description: string;
-
   // Optional API fields
   /** Currently only "Zoom" is supported */
   platform?: string;
@@ -126,10 +125,14 @@ export interface Meeting {
   early_join_time_minutes?: number;
   /** Array of organizer usernames */
   organizers: string[];
+  /** Meeting access password for private/restricted meetings */
+  password?: string;
   /** Zoom-specific settings */
   zoom_config?: ZoomConfig | null;
 
   // Fields NOT in API - likely response-only
+  /** Meeting join URL */
+  join_url?: string;
   /** Full committee objects (response only) */
   meeting_committees?: MeetingCommittee[] | null;
   /** Count fields (response only) */

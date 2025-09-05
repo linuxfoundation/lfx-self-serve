@@ -9,7 +9,7 @@ import { Request } from 'express';
  */
 export async function getUsernameFromAuth(req: Request): Promise<string | null> {
   // Check if we have a bearer token
-  const token = req.oidc?.accessToken?.access_token;
+  const token = req.bearerToken;
   if (token) {
     // If token starts with "authelia", query the authelia userinfo endpoint
     if (token.startsWith('authelia')) {

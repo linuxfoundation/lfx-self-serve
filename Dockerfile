@@ -12,17 +12,23 @@ RUN corepack enable
 
 WORKDIR /app
 
-# Copy source code
-COPY . .
+# Copy package files ONLY for dependency installation (for better layer caching)
+COPY package.json yarn.lock turbo.json .yarnrc.yml ./
+COPY .yarn .yarn
+COPY apps/lfx-pcc/package.json ./apps/lfx-pcc/
+COPY packages/shared/package.json ./packages/shared/
 
-# Install dependencies
+# Install dependencies (this layer is cached when deps don't change)
 RUN yarn install --immutable
 
-# Build the application
-RUN yarn build
+# NOW copy source code (changes here won't invalidate the dependency layer)
+COPY . .
 
-# Expose port 4200
-EXPOSE 4200
+# Build the application with specified environment
+RUN yarn build:${BUILD_ENV}
+
+# Expose port 4000
+EXPOSE 4000
 
 # Start the SSR server directly from built artifacts
 CMD ["yarn", "workspace", "lfx-pcc", "start:server"]

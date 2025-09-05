@@ -1,283 +1,204 @@
-# SSR Server
+# SSR Server Architecture
 
 ## 🖥 Express.js with Angular 19 SSR
 
-The application uses Express.js as the server framework with Angular 19's built-in server-side rendering capabilities.
+The LFX application employs a hybrid architecture combining Express.js as the backend server with Angular 19's built-in server-side rendering capabilities. This design provides both traditional server functionality for API endpoints and modern client-side experience through SSR.
 
-### Main Server Configuration
+### Architectural Overview
 
-```typescript
-// src/server/server.ts
-import { APP_BASE_HREF } from '@angular/common';
-import { REQUEST } from '@angular/core';
-import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
-import { AuthContext, User } from '@lfx-pcc/shared/interfaces';
-import dotenv from 'dotenv';
-import express, { NextFunction, Request, Response } from 'express';
-import { auth, ConfigParams } from 'express-openid-connect';
-import { dirname, resolve } from 'node:path';
-import { fileURLToPath } from 'node:url';
-import pinoHttp from 'pino-http';
+The server architecture follows a **layered approach** where Express.js handles the HTTP layer while Angular Universal manages the application rendering. This separation allows for:
 
-// Middleware and route imports
-import { extractBearerToken } from './middleware/auth-token.middleware';
-import { apiErrorHandler } from './middleware/error-handler.middleware';
-import { tokenRefreshMiddleware } from './middleware/token-refresh.middleware';
-import projectsRouter from './routes/projects';
-import meetingsRouter from './routes/meetings';
+- **Clear separation of concerns** between server logic and client rendering
+- **Optimal performance** through static asset serving and SSR optimization
+- **Flexible authentication** that works for both API calls and page rendering
+- **Production-ready monitoring** with structured logging and health checks
 
-dotenv.config();
+### Server Initialization Strategy
 
-const serverDistFolder = dirname(fileURLToPath(import.meta.url));
-const browserDistFolder = resolve(serverDistFolder, '../browser');
+The server employs a **dual-mode startup strategy** that automatically detects its execution environment:
 
-const angularApp = new AngularNodeAppEngine();
-const app = express();
+- **Development Mode**: Integrates with Angular CLI dev server for hot module replacement
+- **Production Mode**: Runs as standalone Node.js application with PM2 process management
+- **Build Integration**: Provides request handler for Angular CLI build processes
 
-// Serve static files from /browser
-app.get(
-  '**',
-  express.static(browserDistFolder, {
-    maxAge: '1y',
-    index: 'index.html',
-  })
-);
-```
+This approach eliminates the need for separate server configurations across development and production environments.
 
 ## 🔧 Angular 19 SSR Integration
 
-### Health Check Endpoint
+### Static Asset Strategy
+
+The server implements an **aggressive caching strategy** for static assets, serving pre-built Angular browser bundles with long-term cache headers. This approach:
+
+- **Maximizes browser caching** with 1-year expiration for immutable assets
+- **Reduces server load** by serving static content directly from filesystem
+- **Improves performance** through efficient asset delivery before application logic
+
+### Health Monitoring Architecture
+
+The application includes **dedicated health endpoints** designed for load balancers and monitoring systems. These endpoints:
+
+- **Bypass authentication** to allow unrestricted health checks
+- **Exclude from logging** to prevent log noise from monitoring systems
+- **Provide immediate responses** without application dependency checks
+
+### Structured Logging Strategy
+
+The server implements **production-ready logging** using Pino for high-performance structured JSON logs. The logging architecture provides:
+
+- **Automatic request/response logging** with performance metrics and status codes
+- **Security-first redaction** automatically removes sensitive headers (authorization, cookies)
+- **Smart filtering** excludes health check endpoints from logs to reduce noise
+- **Configurable log levels** supporting development debugging and production monitoring
+
+### Authentication Architecture
+
+Authentication follows a **session-based approach** using Auth0 with express-openid-connect middleware. This design choice provides:
+
+- **Seamless user experience** through secure session management with encrypted cookies
+- **Automatic token refresh** to maintain user sessions without interruption
+- **Flexible scope management** supporting both UI access and API authentication
+- **Standards compliance** following OAuth 2.0 and OpenID Connect specifications
+
+The authentication layer operates at the Express middleware level, ensuring all routes benefit from consistent security policies.
+
+## 🚀 API Routes and Middleware Strategy
+
+### Middleware Pipeline Architecture
+
+The server employs a **carefully orchestrated middleware pipeline** that processes requests in specific order:
+
+1. **Static Asset Serving** - Fast path for pre-built resources
+2. **Health Monitoring** - Unobstructed monitoring endpoints
+3. **Structured Logging** - Request/response tracking and metrics
+4. **Authentication** - Session management and user context
+5. **API Routes** - Business logic endpoints with bearer token validation
+6. **Angular SSR** - Universal rendering for all remaining routes
+
+### Authentication Architecture
+
+The server implements selective authentication using Auth0/Authelia:
+
+**Configuration Location**: `apps/lfx-pcc/src/server/server.ts`
+
+Key features:
+
+- **Selective Authentication**: `authRequired: false` allows custom middleware control
+- **Custom Login Handler**: Disabled default login route for custom implementation
+- **Protected Routes Middleware**: Replaces global auth requirement with selective protection
 
 ```typescript
-// Health endpoint before logger middleware
-app.get('/health', (_req: Request, res: Response) => {
-  res.send('OK');
-});
-```
-
-### Logging Configuration
-
-```typescript
-const logger = pinoHttp({
-  autoLogging: {
-    ignore: (req: Request) => {
-      return req.url === '/health' || req.url === '/api/health';
-    },
-  },
-  redact: {
-    paths: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
-    remove: true,
-  },
-  level: 'info',
-});
-
-app.use(logger);
-```
-
-### Authentication with Auth0
-
-```typescript
+// Authentication configuration
 const authConfig: ConfigParams = {
-  authRequired: true,
+  authRequired: false, // Selective authentication
   auth0Logout: true,
-  baseURL: process.env['PCC_BASE_URL'] || 'http://localhost:4000',
-  clientID: process.env['PCC_AUTH0_CLIENT_ID'] || '1234',
-  issuerBaseURL: process.env['PCC_AUTH0_ISSUER_BASE_URL'] || 'https://example.com',
-  secret: process.env['PCC_AUTH0_SECRET'] || 'sufficiently-long-string',
-  idTokenSigningAlg: 'HS256',
-  authorizationParams: {
-    response_type: 'code',
-    audience: process.env['PCC_AUTH0_AUDIENCE'] || 'https://example.com',
-    scope: 'openid email profile api offline_access',
+  routes: {
+    login: false, // Custom login handler
   },
-  clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || 'bar',
+  // ... other configuration
 };
 
 app.use(auth(authConfig));
-app.use(tokenRefreshMiddleware);
+app.use(protectedRoutesMiddleware); // Selective route protection
 ```
 
-## 🚀 API Routes and Middleware
+### API Authentication Strategy
 
-### API Route Configuration
+API endpoints use **dual authentication modes**:
 
-```typescript
-// Apply bearer token middleware to all API routes
-app.use('/api', extractBearerToken);
+- **Session-based** for browser requests from authenticated users
+- **Bearer token** for programmatic API access and service-to-service communication
 
-// Mount API routes before Angular SSR
-app.use('/api/projects', projectsRouter);
-app.use('/api/meetings', meetingsRouter);
+This hybrid approach supports both interactive user sessions and automated system integrations.
 
-// Add API error handler middleware
-app.use('/api/*', apiErrorHandler);
-```
+## 🔄 Server-Side Rendering Integration
 
-### Angular SSR Request Handling
+### Authentication Context Injection
 
-```typescript
-// Handle all other requests by rendering the Angular application
-app.use('/**', (req: Request, res: Response, next: NextFunction) => {
-  const auth: AuthContext = {
-    authenticated: false,
-    user: null,
-  };
+The SSR integration represents the **fallback handler** in the middleware chain, ensuring:
 
-  if (req.oidc?.isAuthenticated()) {
-    auth.authenticated = true;
-    auth.user = req.oidc?.user as User;
-  }
+- **Universal application rendering** for all non-API routes
+- **Authentication context injection** making user state available during SSR
+- **Comprehensive error handling** with appropriate HTTP status codes
+- **SEO optimization** through server-side content generation
 
-  angularApp
-    .handle(req, {
-      auth,
-      providers: [
-        { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
-        { provide: REQUEST, useValue: req },
-        { provide: 'RESPONSE', useValue: res },
-      ],
-    })
-    .then((response) => {
-      if (response) {
-        return writeResponseToNodeResponse(response, res);
-      }
-      return next();
-    })
-    .catch((error) => {
-      req.log.error({ error }, 'Error rendering Angular application');
-      if (error.code === 'NOT_FOUND') {
-        res.status(404).send('Not Found');
-      } else if (error.code === 'UNAUTHORIZED') {
-        res.status(401).send('Unauthorized');
-      } else {
-        res.status(500).send('Internal Server Error');
-      }
-    });
-});
-```
+Angular's `AngularNodeAppEngine` receives the complete request context, including user authentication state, enabling fully personalized server-side rendering.
 
-## 🚀 Server Startup
+### Error Handling Strategy
 
-### Server Configuration
+The server implements **graceful degradation** for rendering errors:
+
+- **404 Not Found**: Proper HTTP status for missing routes
+- **401 Unauthorized**: Authentication-required responses
+- **500 Internal Server Error**: Comprehensive error logging with fallback responses
+
+## 🚀 Production Deployment Architecture
+
+### Process Management Strategy
+
+The server supports **multiple deployment scenarios** through environment detection:
+
+- **Development Mode**: Integrates with Angular CLI dev server for hot module replacement
+- **Production Mode**: Runs as standalone Node.js application with PM2 process management
+- **Build Integration**: Provides request handler for Angular CLI build processes
 
 ```typescript
-export function startServer() {
-  const port = process.env['PORT'] || 4000;
-  app.listen(port, () => {
-    logger.logger.info(`Node Express server listening on http://localhost:${port}`);
-  });
-}
-
-const metaUrl = import.meta.url;
-const isMain = isMainModule(metaUrl);
+// Environment detection enables seamless deployment
 const isPM2 = process.env['PM2'] === 'true';
-
-if (isMain || isPM2) {
-  startServer();
-}
-
-// The request handler used by the Angular CLI (dev-server and during build)
-export const reqHandler = createNodeRequestHandler(app);
+const isMain = isMainModule(import.meta.url);
 ```
 
-### Environment Variables
+This strategy eliminates the need for separate server configurations across environments.
 
-- **PCC_BASE_URL**: Base URL for the application (default: <http://localhost:4000>)
-- **PCC_AUTH0_CLIENT_ID**: Auth0 client ID
-- **PCC_AUTH0_ISSUER_BASE_URL**: Auth0 issuer base URL
-- **PCC_AUTH0_SECRET**: Auth0 secret for session encryption
-- **PCC_AUTH0_AUDIENCE**: Auth0 API audience
-- **PCC_AUTH0_CLIENT_SECRET**: Auth0 client secret
-- **PORT**: Server port (default: 4000)
-- **PM2**: Flag to indicate PM2 environment
+### Key Architectural Decisions and Trade-offs
 
-## 🔒 Security and Authentication
+#### 1. Hybrid Authentication Model
 
-### Auth0 Integration Features
+**Decision**: Implement both session-based and bearer token authentication
+**Trade-offs**:
 
-- **Session Management**: Secure session handling with encrypted cookies
-- **Token Refresh**: Automatic token refresh middleware for seamless authentication
-- **API Authentication**: Bearer token extraction for API routes
-- **User Context**: Authentication context passed to Angular SSR for server-side rendering
+- ✅ **Benefits**: Supports both browser users and API integrations seamlessly
+- ⚠️ **Complexity**: Requires maintaining two authentication paths
+- 🎯 **Rationale**: Enables flexible integration patterns while maintaining security
 
-### Middleware Stack
+#### 2. Middleware Pipeline Ordering
 
-1. **Static File Serving**: Serves pre-built Angular assets
-2. **Health Check**: Unauthenticated endpoint for monitoring
-3. **Logging**: Pino HTTP logger with request/response tracking
-4. **Authentication**: Auth0 middleware for session management
-5. **Token Refresh**: Keeps authentication tokens fresh
-6. **API Routes**: Protected API endpoints with bearer token validation
-7. **Angular SSR**: Server-side rendering with authentication context
+**Decision**: Static assets → Health → Logging → Auth → API → SSR
+**Trade-offs**:
 
-## 🔄 Server-Side Rendering Features
+- ✅ **Benefits**: Optimal performance with fast static asset serving
+- ✅ **Benefits**: Unobstructed health monitoring for production systems
+- ⚠️ **Complexity**: Pipeline order is critical for correct functionality
 
-### Authentication Context in SSR
+#### 3. Angular Universal Integration
 
-The server passes authentication context to Angular during SSR:
+**Decision**: Use Angular's built-in SSR engine rather than custom solution
+**Trade-offs**:
 
-```typescript
-const auth: AuthContext = {
-  authenticated: false,
-  user: null,
-};
+- ✅ **Benefits**: Official Angular support with automatic optimizations
+- ✅ **Benefits**: Seamless integration with Angular CLI development workflow
+- ⚠️ **Vendor Lock-in**: Tightly coupled to Angular ecosystem
 
-if (req.oidc?.isAuthenticated()) {
-  auth.authenticated = true;
-  auth.user = req.oidc?.user as User;
-}
+#### 4. Pino Logging Choice
 
-// Pass auth context to Angular
-angularApp.handle(req, {
-  auth,
-  providers: [
-    { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
-    { provide: REQUEST, useValue: req },
-    { provide: 'RESPONSE', useValue: res },
-  ],
-});
-```
+**Decision**: Structured JSON logging over traditional text logs
+**Trade-offs**:
 
-### Error Handling
+- ✅ **Benefits**: High performance, structured queries, security redaction
+- ⚠️ **Learning Curve**: Requires JSON log analysis tools for development debugging
 
-The server handles different error scenarios during SSR:
+## 📁 Modular Architecture
 
-- **404 Not Found**: Returns appropriate 404 response
-- **401 Unauthorized**: Returns unauthorized response
-- **500 Internal Server Error**: Generic error response with logging
+### Server Organization Strategy
 
-## 🔧 Key Features
+The server follows a **domain-driven structure** that separates concerns:
 
-### Production-Ready Features
+- **server.ts** - Core application bootstrap and middleware orchestration
+- **middleware/** - Reusable cross-cutting concerns (auth, logging, error handling)
+- **routes/** - Domain-specific API endpoint handlers (projects, meetings)
+- **services/** - Business logic and external integrations (AI, microservices)
 
-1. **Health Monitoring**: Dedicated `/health` endpoint for load balancers and monitoring
-2. **Structured Logging**: Pino logger with automatic request/response logging
-3. **Security**: Auth0 integration with secure session management
-4. **API Protection**: Bearer token validation for API routes
-5. **Error Handling**: Comprehensive error handling for both API and SSR routes
-6. **PM2 Support**: Built-in support for PM2 process management
+This organization enables **independent testing** and **scalable development** as the application grows.
 
-### Development Features
+### Environment Configuration
 
-1. **Angular CLI Integration**: Request handler for dev server and builds
-2. **Environment Configuration**: Dotenv support for local development
-3. **Hot Module Replacement**: Integrated with Angular's development server
-4. **Detailed Error Logging**: Enhanced error messages during development
-
-## 📁 Project Structure
-
-```text
-src/server/
-├── server.ts                    # Main server configuration
-├── middleware/
-│   ├── auth-token.middleware.ts # Bearer token extraction
-│   ├── error-handler.middleware.ts # API error handling
-│   └── token-refresh.middleware.ts # Auth0 token refresh
-├── routes/
-│   ├── projects.ts              # Project API routes
-│   └── meetings.ts              # Meeting API routes (including AI endpoints)
-└── services/
-    └── ai.service.ts            # AI integration service
-```
-
-This Express.js configuration provides a robust foundation for serving Angular 19 SSR applications with proper security, performance, and development features.
+The server uses **environment-aware configuration** supporting development, staging, and production deployment patterns with sensible defaults for local development.

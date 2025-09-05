@@ -27,17 +27,13 @@ export class MicroserviceProxyService {
     const operation = `${method.toLowerCase()}_${path.replace(/\//g, '_')}`;
 
     try {
-      const token = req.oidc?.accessToken?.access_token;
-      if (!req.oidc?.isAuthenticated() || !token || req.oidc?.accessToken?.isExpired()) {
-        throw new Error('Bearer token not available on request');
-      }
-
       const MICROSERVICE_URLS: MicroserviceUrls = {
         LFX_V2_SERVICE: process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local',
       };
 
       const baseUrl = MICROSERVICE_URLS[service];
       const endpoint = `${baseUrl}${path}`;
+      const token = req.bearerToken;
 
       // Merge query parameters with defaults taking precedence
       // This ensures that default params cannot be overridden by the caller
@@ -49,11 +45,6 @@ export class MicroserviceProxyService {
       // Transform HTTP errors from API client into MicroserviceError
       if (error.status && error.code) {
         throw MicroserviceError.fromMicroserviceResponse(error.status, error.message, error.errorBody, service, path, operation);
-      }
-
-      // Handle authentication errors
-      if (error.message?.includes('Bearer token not available')) {
-        throw new Error('Bearer token not available on request');
       }
 
       // Re-throw unexpected errors
@@ -73,17 +64,13 @@ export class MicroserviceProxyService {
     const operation = `${method.toLowerCase()}_${path.replace(/\//g, '_')}`;
 
     try {
-      if (!req.oidc.accessToken?.access_token) {
-        throw new Error('Bearer token not available on request');
-      }
-
       const MICROSERVICE_URLS: MicroserviceUrls = {
         LFX_V2_SERVICE: process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local',
       };
 
       const baseUrl = MICROSERVICE_URLS[service];
       const endpoint = `${baseUrl}${path}`;
-      const token = req.oidc.accessToken?.access_token;
+      const token = req.bearerToken;
 
       // Merge query parameters with defaults taking precedence
       // This ensures that default params cannot be overridden by the caller
@@ -97,11 +84,6 @@ export class MicroserviceProxyService {
         throw MicroserviceError.fromMicroserviceResponse(error.status, error.message, error.errorBody, service, path, operation);
       }
 
-      // Handle authentication errors
-      if (error.message?.includes('Bearer token not available')) {
-        throw new Error('Bearer token not available on request');
-      }
-
       // Re-throw unexpected errors
       throw error;
     }
@@ -110,7 +92,7 @@ export class MicroserviceProxyService {
   private async executeRequest<T>(
     method: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     endpoint: string,
-    bearerToken: string,
+    bearerToken?: string,
     query?: Record<string, any>,
     data?: any,
     customHeaders?: Record<string, string>

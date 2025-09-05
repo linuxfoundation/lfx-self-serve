@@ -318,6 +318,15 @@ export class MeetingCardComponent implements OnInit {
         });
 
         baseItems.push({
+          label: 'Join Meeting',
+          icon: 'fa-light fa-calendar',
+          routerLink: ['/meetings', this.meeting().uid],
+          queryParams: {
+            password: this.meeting().password,
+          },
+        });
+
+        baseItems.push({
           label: this.meeting().meeting_committees && this.meeting().meeting_committees!.length > 0 ? 'Manage Committees' : 'Connect Committees',
           icon: 'fa-light fa-people-group',
           command: () => this.openCommitteeModal(),

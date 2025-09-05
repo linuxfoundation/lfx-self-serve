@@ -20,7 +20,7 @@ export class ApiClientService {
   public request<T = any>(
     type: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
     url: string,
-    bearerToken: string,
+    bearerToken?: string,
     query?: Record<string, any>,
     data?: any,
     customHeaders?: Record<string, string>
@@ -34,7 +34,7 @@ export class ApiClientService {
     return this.makeRequest<T>(type, fullUrl, bearerToken, data, customHeaders);
   }
 
-  private async makeRequest<T>(method: string, url: string, bearerToken: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
+  private async makeRequest<T>(method: string, url: string, bearerToken?: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
     const requestInit: RequestInit = {
       method,
       headers: {

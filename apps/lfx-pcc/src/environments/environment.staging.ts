@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 export const environment = {
-  production: false,
+  production: true,
   urls: {
-    home: 'https://app.dev.lfx.dev',
-    profile: 'https://myprofile.dev.platform.linuxfoundation.org/',
+    profile: 'https://myprofile.staging.platform.linuxfoundation.org/',
   },
 };
