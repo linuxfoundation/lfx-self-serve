@@ -120,6 +120,15 @@ jobs:
               missing_secrets="$missing_secrets SUPABASE.url or SUPABASE.api_key (from AWS Secrets Manager)"
             fi
           fi
+          if [ -z "$AUTH" ]; then
+            missing_secrets="$missing_secrets AUTH (from AWS Secrets Manager)"
+          else
+            M2M_AUTH_CLIENT_ID=$(echo "$AUTH" | jq -r '.m2m_client_id // empty')
+            M2M_AUTH_CLIENT_SECRET=$(echo "$AUTH" | jq -r '.m2m_client_secret // empty')
+            if [ -z "$M2M_AUTH_CLIENT_ID" ] || [ -z "$M2M_AUTH_CLIENT_SECRET" ]; then
+              missing_secrets="$missing_secrets AUTH.m2m_client_id or AUTH.m2m_client_secret (from AWS Secrets Manager)"
+            fi
+          fi
 
           # Check GitHub secrets (fallback)
           if [ -z "${{ secrets.TEST_USERNAME }}" ]; then
@@ -153,6 +162,8 @@ jobs:
           echo "PCC_AUTH0_AUDIENCE=https://api-gw.dev.platform.linuxfoundation.org/" >> $GITHUB_ENV
           echo "LFX_V2_SERVICE=http://lfx-api.dev.v2.cluster.linuxfound.info" >> $GITHUB_ENV
           echo "NATS_URL=nats://lfx-platform-nats.lfx.svc.cluster.local:4222" >> $GITHUB_ENV
+          echo "M2M_AUTH_ISSUER_BASE_URL=https://linuxfoundation-dev.auth0.com/" >> $GITHUB_ENV
+          echo "M2M_AUTH_AUDIENCE=https://api-gw.dev.platform.linuxfoundation.org/" >> $GITHUB_ENV
           echo "CI=true" >> $GITHUB_ENV
 
       - name: Set up sensitive environment variables
@@ -172,6 +183,21 @@ jobs:
             echo "PCC_AUTH0_CLIENT_SECRET=$AUTH0_CLIENT_SECRET" >> $GITHUB_ENV
             echo "✅ AUTH0 secrets set as masked environment variables"
           fi
+
+          if [ -n "$AUTH" ]; then
+            M2M_AUTH_CLIENT_ID=$(echo "$AUTH" | jq -r '.m2m_client_id // empty')
+            M2M_AUTH_CLIENT_SECRET=$(echo "$AUTH" | jq -r '.m2m_client_secret // empty')
+
+            # Explicitly mask the values
+            echo "::add-mask::$M2M_AUTH_CLIENT_ID"
+            echo "::add-mask::$M2M_AUTH_CLIENT_SECRET"
+
+            # Set as environment variables
+            echo "M2M_AUTH_CLIENT_ID=$M2M_AUTH_CLIENT_ID" >> $GITHUB_ENV
+            echo "M2M_AUTH_CLIENT_SECRET=$M2M_AUTH_CLIENT_SECRET" >> $GITHUB_ENV
+            echo "✅ M2M_AUTH secrets set as masked environment variables"
+          fi
+
 
           # Parse and set SUPABASE secrets
           if [ -n "$SUPABASE" ]; then

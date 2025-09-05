@@ -14,6 +14,7 @@ import {
   MeetingAttachment,
   MeetingRegistrant,
   MeetingRegistrantWithState,
+  Project,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UploadFileResponse,
@@ -87,6 +88,15 @@ export class MeetingService {
         return throwError(() => error);
       }),
       tap((meeting) => this.meeting.set(meeting))
+    );
+  }
+
+  public getPublicMeeting(id: string): Observable<{ meeting: Meeting; project: Project }> {
+    return this.http.get<{ meeting: Meeting; project: Project }>(`/public/api/meetings/${id}`).pipe(
+      catchError((error) => {
+        console.error(`Failed to load public meeting ${id}:`, error);
+        return throwError(() => error);
+      })
     );
   }
 

@@ -74,6 +74,33 @@ The server employs a **carefully orchestrated middleware pipeline** that process
 5. **API Routes** - Business logic endpoints with bearer token validation
 6. **Angular SSR** - Universal rendering for all remaining routes
 
+### Authentication Architecture
+
+The server implements selective authentication using Auth0/Authelia:
+
+**Configuration Location**: `apps/lfx-pcc/src/server/server.ts`
+
+Key features:
+
+- **Selective Authentication**: `authRequired: false` allows custom middleware control
+- **Custom Login Handler**: Disabled default login route for custom implementation
+- **Protected Routes Middleware**: Replaces global auth requirement with selective protection
+
+```typescript
+// Authentication configuration
+const authConfig: ConfigParams = {
+  authRequired: false, // Selective authentication
+  auth0Logout: true,
+  routes: {
+    login: false, // Custom login handler
+  },
+  // ... other configuration
+};
+
+app.use(auth(authConfig));
+app.use(protectedRoutesMiddleware); // Selective route protection
+```
+
 ### API Authentication Strategy
 
 API endpoints use **dual authentication modes**:

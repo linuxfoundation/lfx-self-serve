@@ -35,7 +35,8 @@ The architecture employs a **dual strategy** for error handling:
 BaseApiError                    // Abstract foundation
 ├── MicroserviceError          // Backend service failures
 ├── ServiceValidationError     // Input validation failures
-└── ResourceNotFoundError      // Missing resource scenarios
+├── ResourceNotFoundError      // Missing resource scenarios
+└── AuthenticationError        // Authentication/authorization failures
 ```
 
 **Why This Structure**:
@@ -112,6 +113,19 @@ The architecture employs **layered information filtering**:
   request_id: "correlation-id"
 }
 ```
+
+### 5. Authentication Error Handling
+
+The `AuthenticationError` class handles authentication and authorization failures:
+
+**Key Features**:
+
+- **401 Status Code**: Indicates authentication required
+- **Public Endpoint Support**: Used for passcode validation on public meeting routes
+- **Session Management**: Works with protected routes middleware for session handling
+- **Clear Messaging**: Provides user-friendly authentication error messages
+
+**Implementation Location**: `apps/lfx-pcc/src/server/errors/authentication.error.ts`
 
 ## Design Patterns and Rationales
 

@@ -63,6 +63,6 @@ html {
   background-color: #f9fafb;
 }
 
-a {
+a:not([pButton]) {
   @apply font-sans text-primary-700 hover:text-primary-900;
 }

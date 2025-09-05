@@ -184,6 +184,15 @@ The application uses GitHub Actions for automated deployment to AWS ECS:
 
 ## ⚙️ Environment Variables
 
+### Authentication Architecture
+
+The application uses a dual authentication system:
+
+1. **User Authentication**: For protected routes requiring user login (Auth0/Authelia)
+2. **M2M Authentication**: For server-side API calls from public endpoints
+
+This allows public routes (like `/meetings/:id`) to serve content without user authentication while still making authenticated backend API calls.
+
 ### Required Production Variables
 
 ```bash
@@ -195,13 +204,20 @@ ENV=development
 PCC_BASE_URL=http://localhost:4200
 LOG_LEVEL=info
 
-# Auth0 Authentication Configuration
+# User Authentication Configuration (Auth0/Authelia)
 # Get these values from your Auth0 dashboard
 PCC_AUTH0_CLIENT_ID=your-auth0-client-id
 PCC_AUTH0_CLIENT_SECRET=your-auth0-client-secret
 PCC_AUTH0_ISSUER_BASE_URL=https://auth.k8s.orb.local
 PCC_AUTH0_AUDIENCE=http://lfx-api.k8s.orb.local/
 PCC_AUTH0_SECRET=sufficiently-long-string
+
+# Machine-to-Machine (M2M) Authentication
+# For server-side API calls from public endpoints
+M2M_AUTH_CLIENT_ID=your-m2m-client-id
+M2M_AUTH_CLIENT_SECRET=your-m2m-client-secret
+M2M_AUTH_ISSUER_BASE_URL=https://auth.k8s.orb.local
+M2M_AUTH_AUDIENCE=http://lfx-api.k8s.orb.local/
 
 # Microservice Configuration
 # URL and JWT token for the query service

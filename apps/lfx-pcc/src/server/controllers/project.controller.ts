@@ -107,7 +107,15 @@ export class ProjectController {
         return;
       }
 
-      // Get the project by slug
+      // Check if slug is a uuid
+      if (this.isUuid(slug)) {
+        // If the slug is a uuid, get the project by id
+        const project = await this.projectService.getProjectById(req, slug);
+        res.json(project);
+        return;
+      }
+
+      // If the slug is not a uuid, get the project by slug
       const project = await this.projectService.getProjectBySlug(req, slug);
 
       // Log the success
@@ -127,5 +135,9 @@ export class ProjectController {
       // Send the error to the next middleware
       next(error);
     }
+  }
+
+  private isUuid(slug: string): boolean {
+    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
   }
 }

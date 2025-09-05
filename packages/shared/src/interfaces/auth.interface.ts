@@ -50,3 +50,18 @@ export interface AuthContext {
   /** User profile data (null if not authenticated) */
   user: User | null;
 }
+
+/**
+ * Interface for M2M token response from Auth0
+ * @description Response structure for machine-to-machine authentication
+ */
+export interface M2MTokenResponse {
+  /** The access token for API calls */
+  access_token: string;
+  /** Type of token (typically "Bearer") */
+  token_type: string;
+  /** Token expiration time in seconds */
+  expires_in: number;
+  /** Optional scope for the token */
+  scope?: string;
+}
