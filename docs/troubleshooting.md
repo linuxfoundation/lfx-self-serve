@@ -2,346 +2,443 @@
 
 ## 🚀 Quick Fixes
 
-### First-Time Setup Issues
+### Development Server Issues
 
-**Recommended**: Use the interactive setup script for guided configuration:
-
-```bash
-yarn setup
-```
-
-This script will automatically:
-
-- Check Docker status
-- Start database services
-- Create your first manager account
-- Configure webhooks (optional)
-
-If you encounter issues during setup, try:
-
-```bash
-yarn docker:reset    # Complete reset
-yarn setup           # Run setup again
-```
-
-## 🔧 Common Issues
-
-### Docker Issues
-
-#### Docker Desktop Not Running
-
-```bash
-# If Docker Desktop isn't running:
-# 1. Start Docker Desktop from Applications
-# 2. Wait for it to fully load (whale icon in menu bar)
-# 3. Try yarn start again
-```
-
-#### Container Startup Failures
-
-```bash
-# If containers fail to start:
-yarn docker:reset               # Reset and restart containers
-
-# If ports are in use:
-yarn docker:down                # Stop existing containers
-docker compose ps               # Check no containers running
-
-# Manual Docker management:
-yarn docker:up                  # Start containers manually
-yarn start:frontend-only        # Then start Angular
-```
-
-#### Volume/Permission Issues
-
-```bash
-# Reset volumes and rebuild
-docker compose down -v
-docker compose build --no-cache
-docker compose up -d
-
-# Check container logs
-docker compose logs postgres
-docker compose logs postgrest
-```
-
-### Backend Connection Issues
-
-#### PostgreSQL Connection Problems
-
-```bash
-# Verify PostgreSQL is running
-docker compose ps
-
-# Check PostgreSQL logs
-docker compose logs postgres
-
-# Test direct connection
-docker compose exec postgres psql -U postgres -d changelog -c "SELECT version();"
-
-# Check if port is accessible
-telnet localhost 5432
-```
-
-#### PostgREST API Issues
-
-```bash
-# Check PostgREST health
-curl http://localhost:3000/
-
-# Verify PostgREST logs
-docker compose logs postgrest
-
-# Test specific endpoint
-curl http://localhost:3000/products
-
-# Check authentication
-curl -H "Authorization: Bearer your-jwt-token" http://localhost:3000/managers
-```
-
-#### Express Server Issues
-
-```bash
-# Verify Express server proxy
-curl http://localhost:4204/api/health
-
-# Check environment configuration
-cat src/environments/environment.development.ts
-
-# Test specific API endpoints
-curl http://localhost:4204/api/products
-curl http://localhost:4204/api/auth/status
-```
-
-### Frontend Issues
-
-#### Angular Build Problems
+If the development server won't start:
 
 ```bash
 # Clear Angular cache
-npx ng cache clean
+ng cache clean
 
 # Reinstall dependencies
 rm -rf node_modules yarn.lock
 yarn install
 
-# Check for TypeScript errors
-yarn build --verbose
+# Start development server
+yarn start
 ```
+
+## 🔧 Common Issues
+
+### Angular 19 Zoneless Issues
+
+#### Component Not Updating
+
+```typescript
+// Issue: Component not re-rendering with zoneless change detection
+// Solution: Ensure you're using Angular Signals
+
+// ❌ Wrong - RxJS Observable without proper change detection
+export class Component {
+  data$ = this.service.getData();
+}
+
+// ✅ Right - Angular Signals
+export class Component {
+  private readonly service = inject(DataService);
+  protected readonly data = this.service.data; // Signal from service
+}
+```
+
+#### Manual Change Detection
+
+```typescript
+// If you need manual change detection
+import { ChangeDetectorRef, inject } from '@angular/core';
+
+export class Component {
+  private readonly cdr = inject(ChangeDetectorRef);
+
+  onThirdPartyCallback() {
+    // Trigger change detection manually if needed
+    this.cdr.markForCheck();
+  }
+}
+```
+
+### PrimeNG Integration Issues
+
+#### CSS Layer Conflicts
+
+```scss
+// Issue: Tailwind utilities not overriding PrimeNG styles
+// Solution: Verify CSS layer order in styles.scss
+
+@layer tailwind-base, primeng, tailwind-utilities;
+
+@layer tailwind-base {
+  @tailwind base;
+}
+
+@layer tailwind-utilities {
+  @tailwind components;
+  @tailwind utilities;
+}
+```
+
+#### Theme Configuration Problems
+
+```typescript
+// Issue: PrimeNG components not using LFX theme
+// Solution: Check app.config.ts theme configuration
+
+providePrimeNG({
+  theme: {
+    preset: customPreset, // Ensure LFX preset is imported
+    options: {
+      prefix: 'p',
+      darkModeSelector: '.dark-mode',
+      cssLayer: {
+        name: 'primeng',
+        order: 'tailwind-base, primeng, tailwind-utilities',
+      },
+    },
+  },
+});
+```
+
+### SSR Server Issues
+
+#### Server Won't Start
+
+```bash
+# Check build output exists
+ls -la apps/lfx-pcc/dist/lfx-pcc/
+
+# Verify server file exists
+ls -la apps/lfx-pcc/dist/lfx-pcc/server/server.mjs
+
+# Check for build errors
+yarn build
+```
+
+#### Express Server Errors
+
+```bash
+# Check server logs
+yarn serve:ssr
+
+# Test health endpoint
+curl http://localhost:4200/health
+
+# Check environment variables
+echo $NODE_ENV
+echo $PORT
+```
+
+### Authentication Issues
+
+#### Auth0 Configuration Problems
+
+```bash
+# Verify Auth0 environment variables
+echo $PCC_AUTH0_CLIENT_ID
+echo $PCC_AUTH0_CLIENT_SECRET
+echo $PCC_AUTH0_ISSUER_BASE_URL
+echo $PCC_AUTH0_AUDIENCE
+
+# Test authentication endpoint
+curl -I http://localhost:4200/login
+```
+
+#### Session Issues
+
+```bash
+# Clear browser storage
+# 1. Open DevTools (F12)
+# 2. Application tab → Storage
+# 3. Clear cookies and localStorage
+
+# Check Auth0 session
+# Visit: http://localhost:4200/api/auth/me
+```
+
+### Build Issues
+
+#### TypeScript Errors
+
+```bash
+# Run TypeScript compiler directly
+npx tsc --noEmit
+
+# Check for missing types
+yarn add -D @types/node
+
+# Verify path mappings
+cat tsconfig.json | grep -A 10 "paths"
+```
+
+#### Turborepo Cache Issues
+
+```bash
+# Clear Turborepo cache
+npx turbo clean
+
+# Force rebuild without cache
+yarn build --force
+
+# Check turbo configuration
+cat turbo.json
+```
+
+### Environment Issues
+
+#### Node.js Version Problems
+
+```bash
+# Check Node.js version (requires 22+)
+node --version
+
+# Use correct Node.js version with nvm
+nvm use 22
+```
+
+#### Yarn Version Issues
+
+```bash
+# Check Yarn version (requires 4.9.2+)
+yarn --version
+
+# Enable Corepack if needed
+corepack enable
+
+# Update Yarn if necessary
+corepack prepare yarn@4.9.2 --activate
+```
+
+### Development Issues
 
 #### Hot Reload Not Working
 
 ```bash
 # Restart development server
-yarn start:frontend-only
+yarn start
 
-# Check if files are being watched
-# Ensure no symlinks in project path
-# Check file permissions
+# Check file watchers (Linux/WSL)
+echo fs.inotify.max_user_watches=524288 | sudo tee -a /etc/sysctl.conf
+sudo sysctl -p
+
+# Clear Angular cache
+ng cache clean
 ```
 
-#### Styling Issues
+#### Import Path Issues
 
-```bash
-# Rebuild Tailwind CSS
-yarn build:css
+```typescript
+// Issue: Import paths not resolving
+// Solution: Use configured path mappings
 
-# Check for PrimeNG theme conflicts
-# Verify Tailwind configuration
-# Clear browser cache
+// ❌ Wrong - relative imports
+import { Component } from '../../shared/components/component';
+
+// ✅ Right - path mapping
+import { Component } from '@lfx-pcc/shared/components';
 ```
 
-### Database Issues
+### Testing Issues
 
-#### Database Reset
+#### Playwright Test Failures
 
 ```bash
-# Complete database reset (removes all data)
-docker compose down -v
-docker compose up -d
+# Install browsers
+npx playwright install
 
-# Wait for initialization to complete
-docker compose logs -f postgres
+# Run tests in headed mode for debugging
+yarn e2e --headed
+
+# Run specific test file
+yarn e2e homepage.spec.ts
+
+# Generate test report
+yarn e2e --reporter=html
 ```
 
-#### Migration Issues
+#### Authentication in Tests
 
 ```bash
-# Check initialization logs
-docker compose logs postgres | grep -E "(ERROR|NOTICE)"
+# Check test authentication setup
+cat apps/lfx-pcc/e2e/helpers/global-setup.ts
 
-# Manually run specific migration
-docker compose exec postgres psql -U postgres -d changelog -f /docker-entrypoint-initdb.d/01-roles.sql
-
-# Check table existence
-docker compose exec postgres psql -U postgres -d changelog -c "\dt"
+# Verify test credentials
+echo $TEST_USERNAME
+echo $TEST_PASSWORD
 ```
 
-#### RLS Policy Issues
+### Production Issues
+
+#### PM2 Deployment Problems
 
 ```bash
-# Check RLS policies
-docker compose exec postgres psql -U postgres -d changelog -c "\d+ managers"
+# Check PM2 status
+pm2 status
 
-# Test RLS with specific user
-docker compose exec postgres psql -U postgres -d changelog -c "SET role authenticated; SELECT auth.is_manager();"
+# View application logs
+pm2 logs lfx-pcc-v2-ui
 
-# Debug auth functions
-docker compose exec postgres psql -U postgres -d changelog -c "SELECT auth.email(), auth.manager_id();"
-```
+# Restart application
+pm2 restart lfx-pcc-v2-ui
 
-### Authentication Issues
-
-#### Auth0 Configuration
-
-- Check browser console for authentication errors
-- Verify Auth0 configuration in Express server
-- Ensure CORS settings allow frontend origin
-- Check cookie settings for authentication
-
-```bash
-# Test Auth0 endpoints
-curl http://localhost:4204/api/auth/login
-curl http://localhost:4204/api/auth/status
-
-# Check environment variables
-echo $AUTH0_DOMAIN
-echo $AUTH0_CLIENT_ID
-```
-
-#### Manager Access Issues
-
-```bash
-# Check if user is in managers table
-docker compose exec postgres psql -U postgres -d changelog -c "SELECT * FROM managers WHERE email = 'your-email@example.com';"
-
-# Add user as manager
-docker compose exec postgres psql -U postgres -d changelog -c "SELECT * FROM setup_initial_manager('your-email@example.com');"
-
-# Check manager functions
-docker compose exec postgres psql -U postgres -d changelog -c "SELECT * FROM add_manager('new-manager@example.com');"
-```
-
-### Webhook Issues
-
-#### Slack Webhook Not Working
-
-```bash
-# Verify webhook URL is configured
-docker compose exec postgres psql -U postgres -d changelog -c "SELECT * FROM system_settings WHERE key = 'webhook_url';"
-
-# Check Express server accessibility from Docker
-docker compose exec postgres curl http://host.docker.internal:4204/api/webhooks/slack
-
-# Test webhook endpoint manually
-curl -X POST -H "Content-Type: application/json" -d '{"test": true}' http://localhost:4204/api/webhooks/slack
-
-# Check webhook trigger
-docker compose exec postgres psql -U postgres -d changelog -c "UPDATE changelog_entries SET status = 'published' WHERE id = 'some-id';"
-```
-
-#### Database Trigger Issues
-
-```bash
-# Check if trigger exists
-docker compose exec postgres psql -U postgres -d changelog -c "SELECT * FROM information_schema.triggers WHERE trigger_name = 'changelog_published_webhook';"
-
-# Check trigger function
-docker compose exec postgres psql -U postgres -d changelog -c "\df handle_changelog_webhook"
-
-# Test HTTP extension
-docker compose exec postgres psql -U postgres -d changelog -c "SELECT http_get('http://httpbin.org/get');"
-```
-
-### Build Issues
-
-#### TypeScript Compilation Errors
-
-```bash
-# Check TypeScript configuration
-npx tsc --noEmit
-
-# Verify all imports
-yarn build --verbose 2>&1 | grep -i error
-
-# Check for missing dependencies
-yarn install --check-files
-```
-
-#### Bundle Size Issues
-
-```bash
-# Analyze bundle size
-yarn build --analyze
-
-# Check for duplicate dependencies
-yarn dedupe
-
-# Optimize imports
-# Use lazy loading for heavy modules
-```
-
-### Performance Issues
-
-#### Slow Database Queries
-
-```bash
-# Enable query logging in PostgreSQL
-docker compose exec postgres psql -U postgres -d changelog -c "ALTER SYSTEM SET log_statement = 'all';"
-docker compose restart postgres
-
-# Check slow queries
-docker compose logs postgres | grep -E "(duration|slow)"
-
-# Analyze query plans
-docker compose exec postgres psql -U postgres -d changelog -c "EXPLAIN ANALYZE SELECT * FROM changelog_entries;"
+# Check ecosystem configuration
+cat ecosystem.config.js
 ```
 
 #### Memory Issues
 
 ```bash
-# Check container memory usage
-docker stats
-
-# Monitor Node.js memory
+# Monitor memory usage
 pm2 monit
 
-# Check for memory leaks in Angular
-# Use Chrome DevTools Memory tab
+# Check for memory leaks
+pm2 show lfx-pcc-v2-ui
+
+# Restart if memory limit exceeded
+pm2 restart lfx-pcc-v2-ui
 ```
 
-## 📝 Development Tips
+## 📊 Diagnostic Commands
 
-### Debugging Strategies
-
-1. **Start Simple**: Test each component individually
-2. **Check Logs**: Always check container logs first
-3. **Verify Connections**: Test database and API connections
-4. **Use Browser DevTools**: Network tab for API issues
-5. **Database Direct Access**: Test queries directly in PostgreSQL
-
-### Useful Commands
+### Health Checks
 
 ```bash
-# Complete environment reset
-yarn stop && yarn docker:reset && yarn start
+# Application health
+curl http://localhost:4200/health
 
-# Check all service health
-curl http://localhost:4204/api/health
-curl http://localhost:3000/
-docker compose exec postgres pg_isready
+# Check Angular build
+yarn build
 
-# Database shell access
-docker compose exec postgres psql -U postgres -d changelog
+# Verify dependencies
+yarn install --check-files
 
-# View all logs
-docker compose logs -f
+# Test SSR rendering
+yarn serve:ssr
+curl http://localhost:4200/
 ```
 
-### Log Locations
+### Performance Analysis
 
-- **Angular Development**: Browser console
-- **Express Server**: Terminal output when running `yarn start`
-- **PostgreSQL**: `docker compose logs postgres`
-- **PostgREST**: `docker compose logs postgrest`
-- **Production PM2**: `pm2 logs v1-changelog`
+```bash
+# Bundle analysis
+yarn build --analyze
+
+# Lighthouse audit
+npx lighthouse http://localhost:4200 --chrome-flags="--headless"
+
+# Memory profiling
+node --inspect apps/lfx-pcc/dist/lfx-pcc/server/server.mjs
+```
+
+## 🔍 Debugging Strategies
+
+### Angular Signals Debugging
+
+```typescript
+// Add effects to debug signal changes
+import { effect } from '@angular/core';
+
+export class Component {
+  constructor() {
+    effect(() => {
+      console.log('Data changed:', this.data());
+    });
+  }
+}
+```
+
+### Browser DevTools
+
+1. **Network Tab**: Check API calls and responses
+2. **Console Tab**: Look for JavaScript errors
+3. **Application Tab**: Inspect localStorage and cookies
+4. **Sources Tab**: Set breakpoints in TypeScript code
+
+### Server-Side Debugging
+
+```bash
+# Enable debug mode
+DEBUG=* yarn serve:ssr
+
+# Node.js inspector
+node --inspect-brk apps/lfx-pcc/dist/lfx-pcc/server/server.mjs
+
+# PM2 debug mode
+pm2 start ecosystem.config.js --debug
+```
+
+## 📝 Log Analysis
+
+### Client-Side Logs
+
+- **Browser Console**: Press F12, Console tab
+- **Network Errors**: F12, Network tab, filter by errors
+- **Service Worker**: F12, Application tab, Service Workers
+
+### Server-Side Logs
+
+```bash
+# Development server logs
+yarn start # Check terminal output
+
+# Production PM2 logs
+pm2 logs lfx-pcc-v2-ui
+
+# System logs (Linux)
+journalctl -u nodejs-app
+
+# Docker logs (if containerized)
+docker logs container-name
+```
+
+## 🚨 Emergency Procedures
+
+### Complete Environment Reset
+
+```bash
+# 1. Stop all processes
+pm2 stop all
+
+# 2. Clear all caches
+ng cache clean
+npx turbo clean
+rm -rf node_modules yarn.lock
+
+# 3. Reinstall dependencies
+yarn install
+
+# 4. Rebuild application
+yarn build
+
+# 5. Restart services
+yarn start
+```
+
+### Database Connection Issues (if applicable)
+
+```bash
+# Check microservice connectivity
+curl -I $LFX_V2_SERVICE/health
+
+# Test NATS connection
+# Check NATS_URL environment variable
+echo $NATS_URL
+
+# Verify network connectivity
+ping your-microservice-host
+```
+
+## 📚 Getting Help
+
+### Documentation Links
+
+- **[Architecture Guide](./architecture.md)** - System overview
+- **[Development Setup](../CLAUDE.md)** - Development environment
+- **[E2E Testing Guide](./architecture/testing/e2e-testing.md)** - Testing procedures
+
+### Support Channels
+
+- **JIRA Project**: LFXV2 - Create tickets for bugs and issues
+- **Architecture Questions**: Refer to architecture documentation
+- **Environment Issues**: Check environment configuration guide
+
+---
+
+_This troubleshooting guide is specific to LFX PCC v2 UI. For questions or additional issues, create a JIRA ticket using project key LFXV2._

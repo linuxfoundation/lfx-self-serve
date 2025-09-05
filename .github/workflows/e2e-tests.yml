@@ -54,20 +54,14 @@ on:
       test-results:
         description: 'Test results summary'
         value: ${{ jobs.e2e-tests.outputs.test-results }}
-      report-url:
-        description: 'URL to the test report artifact'
-        value: ${{ jobs.e2e-tests.outputs.report-url }}
 
 jobs:
   e2e-tests:
     name: Playwright E2E Tests
     runs-on: ubuntu-latest
     timeout-minutes: 30
-
     outputs:
       test-results: ${{ steps.test-results.outputs.results }}
-      report-url: ${{ steps.upload-report.outputs.artifact-url }}
-
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
@@ -101,16 +95,6 @@ jobs:
           secret-ids: |
             SUPABASE, /cloudops/managed-secrets/cloud/supabase/api_key
             AUTH0,  /cloudops/managed-secrets/auth0/LFX_V2_PCC
-      - name: Setup Turborepo cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            .turbo
-            node_modules/.cache/turbo
-          key: ${{ runner.os }}-turbo-${{ hashFiles('**/yarn.lock') }}-${{ hashFiles('**/*', '!**/node_modules/**', '!**/.turbo/**') }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-${{ hashFiles('**/yarn.lock') }}-
-            ${{ runner.os }}-turbo-
 
       - name: Validate required secrets for E2E testing
         id: validate-secrets

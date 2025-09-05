@@ -193,7 +193,7 @@ The application supports deployment with PM2:
 1. **Node.js with PM2**: Production process management with clustering and
    zero-downtime deployments
 
-See the [deployment documentation](docs/architecture/backend/deployment.md) for detailed instructions.
+See the [deployment documentation](docs/deployment.md) for detailed instructions.
 
 ## 📚 Documentation
 
@@ -214,7 +214,7 @@ Comprehensive documentation organized by domain:
 - **[SSR Server](docs/architecture/backend/ssr-server.md)** - Express.js configuration and Angular 19 SSR integration
 - **[Authentication](docs/architecture/backend/authentication.md)** - Auth0 integration with express-openid-connect
 - **[Logging & Monitoring](docs/architecture/backend/logging-monitoring.md)** - Pino logging, structured logs, and health monitoring
-- **[Deployment](docs/architecture/backend/deployment.md)** - PM2 configuration and production deployment
+- **[Deployment](docs/deployment.md)** - PM2 configuration and production deployment
 
 #### 📦 [Shared Architecture](docs/architecture/shared/)
 
@@ -223,14 +223,14 @@ Comprehensive documentation organized by domain:
 
 #### 🧪 [Testing Architecture](docs/architecture/testing/)
 
-- **[Unit Testing](docs/architecture/testing/unit-testing.md)** - Component and service testing with Angular Signals
-- **[Integration Testing](docs/architecture/testing/integration-testing.md)** - API testing and service integration patterns
 - **[E2E Testing](docs/architecture/testing/e2e-testing.md)** - Playwright configuration and user workflow testing
+- **[Testing Best Practices](docs/architecture/testing/testing-best-practices.md)** - Testing patterns and implementation guide
 
 ### Quick Start Guides
 
-- **[📋 Main Architecture Overview](docs/architecture/README.md)** - High-level system overview and navigation
+- **[📋 Architecture Navigation Hub](docs/architecture/README.md)** - Complete architecture documentation guide
 - **[⚡ Development Setup](CLAUDE.md)** - Claude Code assistant instructions and patterns
+- **[🧪 Testing Guide](docs/architecture/testing/e2e-testing.md)** - Comprehensive E2E testing with Playwright
 
 ## Development Workflow
 

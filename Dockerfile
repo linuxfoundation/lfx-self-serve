@@ -12,11 +12,17 @@ RUN corepack enable
 
 WORKDIR /app
 
-# Copy source code
-COPY . .
+# Copy package files ONLY for dependency installation (for better layer caching)
+COPY package.json yarn.lock turbo.json .yarnrc.yml ./
+COPY .yarn .yarn
+COPY apps/lfx-pcc/package.json ./apps/lfx-pcc/
+COPY packages/shared/package.json ./packages/shared/
 
-# Install dependencies
+# Install dependencies (this layer is cached when deps don't change)
 RUN yarn install --immutable
+
+# NOW copy source code (changes here won't invalidate the dependency layer)
+COPY . .
 
 # Build the application
 RUN yarn build
