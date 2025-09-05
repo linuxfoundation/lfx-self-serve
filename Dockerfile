@@ -24,11 +24,11 @@ RUN yarn install --immutable
 # NOW copy source code (changes here won't invalidate the dependency layer)
 COPY . .
 
-# Build the application
-RUN yarn build
+# Build the application with specified environment
+RUN yarn build:${BUILD_ENV}
 
-# Expose port 4200
-EXPOSE 4200
+# Expose port 4000
+EXPOSE 4000
 
 # Start the SSR server directly from built artifacts
 CMD ["yarn", "workspace", "lfx-pcc", "start:server"]

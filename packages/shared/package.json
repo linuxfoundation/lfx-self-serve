@@ -40,6 +40,9 @@
   },
   "scripts": {
     "build": "tsc",
+    "build:development": "tsc",
+    "build:production": "tsc",
+    "build:staging": "tsc",
     "watch": "tsc --watch",
     "check-types": "tsc --noEmit"
   },
