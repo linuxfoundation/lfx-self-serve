@@ -1,0 +1,139 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+---
+name: Deploy Branch to Development
+
+on:
+  pull_request:
+    types: [closed, labeled, unlabeled, synchronize]
+
+permissions:
+  contents: read
+  packages: write
+  pull-requests: write
+  issues: write
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }}
+
+jobs:
+  build-and-push:
+    # Only build a container if the PR is still open, it's labeled with
+    # 'deploy-preview' and does not come from a fork.
+    if: >
+      github.event.action != 'closed' &&
+      github.event.pull_request.state == 'open' &&
+      github.event.pull_request.head.repo.fork == false &&
+      contains(github.event.pull_request.labels.*.name, 'deploy-preview')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Log in to Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Extract metadata
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=ref,event=pr,prefix=pcc-pr-
+          labels: |
+            org.opencontainers.image.title=LFX PCC UI
+            org.opencontainers.image.description=Linux Foundation LFX Project Control Center UI application
+            org.opencontainers.image.vendor=The Linux Foundation
+            org.opencontainers.image.licenses=MIT
+            org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/main/README.md
+            org.opencontainers.image.source=https://github.com/${{ github.repository }}
+            com.github.actions.run_id=${{ github.run_id }}
+            com.github.actions.run_number=${{ github.run_number }}
+            com.github.actions.workflow=${{ github.workflow }}
+
+      - name: Build and push Docker image
+        id: docker-build
+        uses: docker/build-push-action@v5
+        with:
+          context: .
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          platforms: linux/amd64
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+          build-args: |
+            BUILD_ENV=development
+
+      - name: Comment deployment URL on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const deploymentUrl = `https://pcc-pr-${{ github.event.pull_request.number }}.dev.v2.cluster.linuxfound.info`;
+            const comment = `## 🚀 Deployment Status
+
+            Your branch has been deployed to: ${deploymentUrl}
+
+            **Deployment Details:**
+            - Environment: Development
+            - Namespace: pcc-pr-${{ github.event.pull_request.number }}
+            - ArgoCD App: pcc-pr-${{ github.event.pull_request.number }}
+
+            The deployment will be automatically removed when this PR is closed.`;
+
+            // Check if we already commented
+            const comments = await github.rest.issues.listComments({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+            });
+
+            const botComment = comments.data.find(comment =>
+              comment.user.type === 'Bot' &&
+              comment.body.includes('## 🚀 Deployment Status')
+            );
+
+            if (botComment) {
+              await github.rest.issues.updateComment({
+                comment_id: botComment.id,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            } else {
+              await github.rest.issues.createComment({
+                issue_number: context.issue.number,
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                body: comment
+              });
+            }
+
+  cleanup-on-close:
+    if: >
+      github.event.action == 'closed' ||
+      (github.event.action == 'unlabeled' && github.event.label.name == 'deploy-preview')
+    runs-on: ubuntu-latest
+    steps:
+      - name: Comment removal on PR
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const comment = `## 🧹 Deployment Removed
+
+            The deployment for PR #${{ github.event.pull_request.number }} has been removed.`;
+
+            await github.rest.issues.createComment({
+              issue_number: context.issue.number,
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              body: comment
+            });
