@@ -11,7 +11,7 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
  * Service for handling ETag-based operations with microservices
  */
 export class ETagService {
-  public constructor(private microserviceProxy: MicroserviceProxyService) {}
+  private microserviceProxy: MicroserviceProxyService = new MicroserviceProxyService();
 
   /**
    * Fetches a resource with ETag header for safe operations

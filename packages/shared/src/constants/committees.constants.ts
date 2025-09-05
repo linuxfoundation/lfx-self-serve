@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+
 /**
  * Available committee category types for classification
  * @description Standard categories used across the LFX platform for organizing committees
@@ -37,21 +39,20 @@ export const COMMITTEE_CATEGORIES = [
  * @readonly
  * @example
  * // Use for role assignment
- * const chairRole = MEMBER_ROLES.find(role => role.value === 'Chair');
+ * const chairRole = MEMBER_ROLES.find(role => role.value === CommitteeMemberRole.CHAIR);
  */
 export const MEMBER_ROLES = [
-  { label: 'Chair', value: 'Chair' },
-  { label: 'Counsel', value: 'Counsel' },
-  { label: 'Developer Seat', value: 'Developer Seat' },
-  { label: 'TAC/TOC Representative', value: 'TAC/TOC Representative' },
-  { label: 'Director', value: 'Director' },
-  { label: 'Lead', value: 'Lead' },
-  { label: 'None', value: 'None' },
-  { label: 'Secretary', value: 'Secretary' },
-  { label: 'Treasurer', value: 'Treasurer' },
-  { label: 'Vice Chair', value: 'Vice Chair' },
-  { label: 'LF Staff', value: 'LF Staff' },
-  { label: 'Technical Lead', value: 'Technical Lead' },
+  { label: 'Chair', value: CommitteeMemberRole.CHAIR },
+  { label: 'Counsel', value: CommitteeMemberRole.COUNSEL },
+  { label: 'Developer Seat', value: CommitteeMemberRole.DEVELOPER_SEAT },
+  { label: 'TAC/TOC Representative', value: CommitteeMemberRole.TAC_TOC_REPRESENTATIVE },
+  { label: 'Director', value: CommitteeMemberRole.DIRECTOR },
+  { label: 'Lead', value: CommitteeMemberRole.LEAD },
+  { label: 'None', value: CommitteeMemberRole.NONE },
+  { label: 'Secretary', value: CommitteeMemberRole.SECRETARY },
+  { label: 'Treasurer', value: CommitteeMemberRole.TREASURER },
+  { label: 'Vice Chair', value: CommitteeMemberRole.VICE_CHAIR },
+  { label: 'LF Staff', value: CommitteeMemberRole.LF_STAFF },
 ];
 
 /**
@@ -60,13 +61,14 @@ export const MEMBER_ROLES = [
  * @readonly
  * @example
  * // Check if member has voting rights
- * const canVote = ['Voting Rep', 'Alternate Voting Rep'].includes(member.votingStatus);
+ * const canVote = [CommitteeMemberVotingStatus.VOTING_REP, CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP].includes(member.voting?.status);
  */
 export const VOTING_STATUSES = [
-  { label: 'Alternate Voting Rep', value: 'Alternate Voting Rep' },
-  { label: 'Observer', value: 'Observer' },
-  { label: 'Voting Rep', value: 'Voting Rep' },
-  { label: 'Emeritus', value: 'Emeritus' },
+  { label: 'Alternate Voting Rep', value: CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP },
+  { label: 'Observer', value: CommitteeMemberVotingStatus.OBSERVER },
+  { label: 'Voting Rep', value: CommitteeMemberVotingStatus.VOTING_REP },
+  { label: 'Emeritus', value: CommitteeMemberVotingStatus.EMERITUS },
+  { label: 'None', value: CommitteeMemberVotingStatus.NONE },
 ];
 
 /**

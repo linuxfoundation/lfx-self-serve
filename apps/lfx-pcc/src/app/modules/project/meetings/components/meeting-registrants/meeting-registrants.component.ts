@@ -2,26 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, input, OnInit, output, Signal, signal, WritableSignal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, computed, DestroyRef, inject, input, OnInit, output, signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import {
-  CreateMeetingRegistrantRequest,
-  MeetingRegistrant,
-  MeetingRegistrantWithState,
-  RegistrantState,
-  UpdateMeetingRegistrantRequest,
-} from '@lfx-pcc/shared/interfaces';
+import { MeetingRegistrant, MeetingRegistrantWithState, RegistrantPendingChanges, RegistrantState } from '@lfx-pcc/shared/interfaces';
+import { generateTempId } from '@lfx-pcc/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { catchError, finalize, of, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, finalize, of, take, tap } from 'rxjs';
 
-import { RegistrantCardComponent } from './registrant-card/registrant-card.component';
-import { RegistrantFormComponent } from './registrant-form/registrant-form.component';
+import { RegistrantCardComponent } from '../registrant-card/registrant-card.component';
+import { RegistrantFormComponent } from '../registrant-form/registrant-form.component';
 
 @Component({
   selector: 'lfx-meeting-registrants',
@@ -38,97 +34,49 @@ import { RegistrantFormComponent } from './registrant-form/registrant-form.compo
   ],
   providers: [ConfirmationService],
   templateUrl: './meeting-registrants.component.html',
-  styleUrl: './meeting-registrants.component.scss',
 })
 export class MeetingRegistrantsComponent implements OnInit {
-  // Input signals
-  public meetingUid = input.required<string>();
-  public registrantUpdates = input.required<{
-    toAdd: CreateMeetingRegistrantRequest[];
-    toUpdate: { uid: string; changes: UpdateMeetingRegistrantRequest }[];
-    toDelete: string[];
-  }>();
-
-  // Output events for two-way binding
-  public readonly registrantUpdatesChange = output<{
-    toAdd: CreateMeetingRegistrantRequest[];
-    toUpdate: { uid: string; changes: UpdateMeetingRegistrantRequest }[];
-    toDelete: string[];
-  }>();
-
   // Injected services
   private readonly meetingService = inject(MeetingService);
   private readonly confirmationService = inject(ConfirmationService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  // State signals
+  // Input signals
+  public meetingUid = input.required<string>();
+  public registrantUpdates = input.required<RegistrantPendingChanges>();
+  public refresh = input.required<BehaviorSubject<void>>();
+
+  // Output events for two-way binding
+  public readonly registrantUpdatesChange = output<RegistrantPendingChanges>();
+
+  // Writable signals for state management
   public registrantsWithState: WritableSignal<MeetingRegistrantWithState[]> = signal([]);
   public loading: WritableSignal<boolean> = signal(true);
-  public searchForm: FormGroup;
-  public addRegistrantForm: FormGroup;
-  public registrants: Signal<MeetingRegistrant[]> = signal([]);
-
-  // Original data from API
-
-  // Component visibility states (following React pattern)
   public showAddForm = signal<boolean>(false);
-  public showImport = signal<boolean>(false); // Combined bulk add and CSV import
+  public showImport = signal<boolean>(false);
   public editingRegistrantId = signal<string | null>(null);
-
-  // Search and status filter signals (to avoid form reactivity issues)
   public searchTerm = signal<string>('');
   public statusFilter = signal<string | null>(null);
 
-  // Computed signals for display
-  public visibleRegistrants = computed(() => {
-    // Only show registrants that are not deleted
-    return this.registrantsWithState().filter((r) => r.state !== 'deleted');
-  });
+  // Simple computed signals
+  public readonly visibleRegistrants = computed(() => this.registrantsWithState().filter((r) => r.state !== 'deleted'));
+  public readonly registrantCount = computed(() => this.visibleRegistrants().length);
+  public readonly hostCount = computed(() => this.visibleRegistrants().filter((r) => r.host).length);
+  public readonly memberCount = computed(() => this.visibleRegistrants().filter((r) => r.org_is_member).length);
 
-  public filteredRegistrants = computed(() => {
-    let filtered = this.visibleRegistrants();
-    const search = this.searchTerm().toLowerCase();
-    const status = this.statusFilter();
+  // Complex computed signals (using private initializers)
+  public readonly registrants = signal<MeetingRegistrant[]>([]);
+  public readonly filteredRegistrants = this.initFilteredRegistrants();
 
-    // Apply search filter
-    if (search) {
-      filtered = filtered.filter(
-        (registrant) =>
-          registrant.first_name?.toLowerCase().includes(search) ||
-          registrant.last_name?.toLowerCase().includes(search) ||
-          registrant.email?.toLowerCase().includes(search) ||
-          registrant.org_name?.toLowerCase().includes(search)
-      );
-    }
+  // Form instances (initialized in constructor)
+  public searchForm: FormGroup;
+  public addRegistrantForm: FormGroup;
 
-    // Apply status filter
-    if (status) {
-      switch (status) {
-        case 'host':
-          filtered = filtered.filter((r) => r.host);
-          break;
-        case 'member':
-          filtered = filtered.filter((r) => r.org_is_member);
-          break;
-        case 'project_member':
-          filtered = filtered.filter((r) => r.org_is_project_member);
-          break;
-      }
-    }
-
-    return filtered;
-  });
-
-  // Computed counts
-  public registrantCount = computed(() => this.visibleRegistrants().length);
-  public hostCount = computed(() => this.visibleRegistrants().filter((r) => r.host).length);
-  public memberCount = computed(() => this.visibleRegistrants().filter((r) => r.org_is_member).length);
-
-  // Form options
+  // Static configuration
   public statusOptions = [
     { label: 'All Registrants', value: null },
     { label: 'Hosts Only', value: 'host' },
-    { label: 'LF Members', value: 'member' },
-    { label: 'Project Members', value: 'project_member' },
+    { label: 'Committee Members', value: 'member' },
   ];
 
   public constructor() {
@@ -137,7 +85,7 @@ export class MeetingRegistrantsComponent implements OnInit {
       status: new FormControl(null),
     });
 
-    this.addRegistrantForm = this.buildAddRegistrantForm();
+    this.addRegistrantForm = this.meetingService.createRegistrantFormGroup();
 
     // Subscribe to form changes and update signals
     this.searchForm.get('search')?.valueChanges.subscribe((value) => {
@@ -151,6 +99,12 @@ export class MeetingRegistrantsComponent implements OnInit {
 
   public ngOnInit(): void {
     this.initializeRegistrants();
+
+    this.refresh()
+      ?.pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        this.initializeRegistrants();
+      });
   }
 
   public onToggleAddRegistrant(): void {
@@ -161,10 +115,6 @@ export class MeetingRegistrantsComponent implements OnInit {
   public onBulkAdd(): void {
     this.showAddForm.set(false);
     this.showImport.set(true);
-  }
-
-  public refreshRegistrants(): void {
-    this.initializeRegistrants();
   }
 
   // Component handlers
@@ -202,58 +152,49 @@ export class MeetingRegistrantsComponent implements OnInit {
         username: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
+        type: 'individual',
+        invite_accepted: null,
+        attended: null,
       };
 
-      this.handleAddRegistrant(registrantData);
+      // Create new registrant with temporary ID for immediate UI updates
+      const newRegistrant: MeetingRegistrantWithState = {
+        ...registrantData,
+        meeting_uid: this.meetingUid(),
+        uid: '', // Will be assigned by API
+        state: 'new' as RegistrantState,
+        tempId: generateTempId(),
+        originalData: undefined,
+      };
+
+      // Add to local state for immediate UI feedback
+      this.registrantsWithState.update((registrants) => [...registrants, newRegistrant]);
+
+      // Emit updated registrant updates using the conversion logic
+      this.emitRegistrantUpdates();
+
+      // Reset and close form
+      this.addRegistrantForm.reset();
+      this.onCloseAddForm();
     }
-  }
-
-  public handleAddRegistrant(registrantData: MeetingRegistrant): void {
-    // Create new registrant with temporary ID for immediate UI updates
-    const newRegistrant: MeetingRegistrantWithState = {
-      ...registrantData,
-      meeting_uid: this.meetingUid(),
-      uid: '', // Will be assigned by API
-      state: 'new' as RegistrantState,
-      tempId: this.generateTempId(),
-      originalData: undefined,
-    };
-
-    // Add to local state for immediate UI feedback
-    this.registrantsWithState.update((registrants) => [...registrants, newRegistrant]);
-
-    // Emit updated registrant updates using the conversion logic
-    this.emitRegistrantUpdates();
-
-    // Reset and close form
-    this.addRegistrantForm.reset();
-    this.onCloseAddForm();
   }
 
   public handleBulkAdd(emailData: any): void {
     // TODO: Implement bulk add functionality
     console.info('Bulk add:', emailData);
     this.onCloseImport();
-    this.refreshRegistrants();
   }
 
   public handleImportCSV(csvData: any): void {
     // TODO: Implement CSV import functionality
     console.info('Import CSV:', csvData);
     this.onCloseImport();
-    this.refreshRegistrants();
   }
 
   public handleSaveEdit(registrantData: any): void {
     // TODO: Implement save edit functionality
     console.info('Save edit:', registrantData);
     this.onCancelEdit();
-    this.refreshRegistrants();
-  }
-
-  public onStatusFilterChange(value: string | null): void {
-    // Form control updates signal automatically via subscription
-    console.info('Status filter changed:', value);
   }
 
   // Simplified registrant event handlers (only receive validated data)
@@ -278,8 +219,8 @@ export class MeetingRegistrantsComponent implements OnInit {
 
   public handleRegistrantDelete(id: string): void {
     this.confirmationService.confirm({
-      message: 'Are you sure you want to remove this participant from the meeting?',
-      header: 'Remove Participant',
+      message: 'Are you sure you want to remove this guest from the meeting?',
+      header: 'Remove Guest',
       icon: 'fa-light fa-triangle-exclamation',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
       rejectButtonStyleClass: 'p-button-secondary p-button-sm',
@@ -307,8 +248,40 @@ export class MeetingRegistrantsComponent implements OnInit {
     });
   }
 
-  private generateTempId(): string {
-    return `temp_${Date.now()}_${Math.random().toString(36).substring(2, 11)}`;
+  private initFilteredRegistrants() {
+    return computed(() => {
+      let filtered = this.visibleRegistrants();
+      const search = this.searchTerm().toLowerCase();
+      const status = this.statusFilter();
+
+      // Apply search filter
+      if (search) {
+        filtered = filtered.filter(
+          (registrant) =>
+            registrant.first_name?.toLowerCase().includes(search) ||
+            registrant.last_name?.toLowerCase().includes(search) ||
+            registrant.email?.toLowerCase().includes(search) ||
+            registrant.org_name?.toLowerCase().includes(search)
+        );
+      }
+
+      // Apply status filter
+      if (status) {
+        switch (status) {
+          case 'host':
+            filtered = filtered.filter((r) => r.host);
+            break;
+          case 'member':
+            filtered = filtered.filter((r) => r.org_is_member);
+            break;
+          case 'project_member':
+            filtered = filtered.filter((r) => r.org_is_project_member);
+            break;
+        }
+      }
+
+      return filtered;
+    });
   }
 
   private createRegistrantWithState(registrant: MeetingRegistrant, state: RegistrantState = 'existing'): MeetingRegistrantWithState {
@@ -316,7 +289,7 @@ export class MeetingRegistrantsComponent implements OnInit {
       ...registrant,
       state: state,
       originalData: state === 'existing' ? { ...registrant } : undefined,
-      tempId: state === 'new' ? this.generateTempId() : undefined,
+      tempId: state === 'new' ? generateTempId() : undefined,
     };
   }
 
@@ -347,54 +320,18 @@ export class MeetingRegistrantsComponent implements OnInit {
       .subscribe();
   }
 
-  private buildAddRegistrantForm(): FormGroup {
-    return new FormGroup({
-      first_name: new FormControl('', [Validators.required, Validators.minLength(2)]),
-      last_name: new FormControl('', [Validators.required, Validators.minLength(2)]),
-      email: new FormControl('', [Validators.required, Validators.email]),
-      job_title: new FormControl(''),
-      org_name: new FormControl(''),
-      host: new FormControl(false),
-    });
-  }
-
   // Reuse the conversion logic from onRegistrantsUpdate
   private emitRegistrantUpdates(): void {
     const registrants = this.registrantsWithState();
     this.registrantUpdatesChange.emit({
-      toAdd: registrants.filter((r) => r.state === 'new').map((r) => this.stripMetadata(r)),
+      toAdd: registrants.filter((r) => r.state === 'new').map((r) => this.meetingService.stripMetadata(this.meetingUid(), r)),
       toUpdate: registrants
         .filter((r) => r.state === 'modified')
         .map((r) => ({
           uid: r.uid,
-          changes: this.getChangedFields(r),
+          changes: this.meetingService.getChangedFields(r),
         })),
       toDelete: registrants.filter((r) => r.state === 'deleted').map((r) => r.uid),
     });
-  }
-
-  private stripMetadata(registrant: MeetingRegistrantWithState): CreateMeetingRegistrantRequest {
-    return {
-      meeting_uid: this.meetingUid(),
-      email: registrant.email,
-      first_name: registrant.first_name,
-      last_name: registrant.last_name,
-      host: registrant.host || false,
-    };
-  }
-
-  private getChangedFields(registrant: MeetingRegistrantWithState): UpdateMeetingRegistrantRequest {
-    return {
-      meeting_uid: registrant.meeting_uid,
-      email: registrant.email,
-      first_name: registrant.first_name,
-      last_name: registrant.last_name,
-      host: registrant.host || false,
-      job_title: registrant.job_title || null,
-      org_name: registrant.org_name || null,
-      occurrence_id: registrant.occurrence_id || null,
-      avatar_url: registrant.avatar_url || null,
-      username: registrant.username || null,
-    };
   }
 }

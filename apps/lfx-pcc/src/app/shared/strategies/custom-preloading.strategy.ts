@@ -4,7 +4,7 @@
 import { Injectable, afterNextRender } from '@angular/core';
 import { PreloadingStrategy, Route } from '@angular/router';
 import { Observable, of, timer } from 'rxjs';
-import { mergeMap } from 'rxjs/operators';
+import { mergeMap } from 'rxjs';
 
 /**
  * Network Information API types for enhanced browser compatibility

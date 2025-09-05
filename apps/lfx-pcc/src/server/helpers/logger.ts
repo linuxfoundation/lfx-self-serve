@@ -57,7 +57,6 @@ export class Logger {
         operation,
         duration,
         error: error instanceof Error ? error.message : String(error),
-        stack: error instanceof Error ? error.stack : undefined,
         ...metadata,
         request_id: req.id,
       },

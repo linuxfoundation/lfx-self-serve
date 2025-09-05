@@ -92,12 +92,18 @@ lfx-v2-ui/
 - Metrics data is hardcoded but structured to match future API responses
 - All PrimeNG components are wrapped in LFX components for UI library independence
 - Always use direct imports for standalone components - no barrel exports
-- Authentication is handled by Auth0 with express-openid-connect middleware
+- **Authentication uses selective pattern** - public routes bypass auth, protected routes require authentication
+- **Public routes include** `/meeting` and `/public/api` endpoints
+- **M2M tokens are used** for server-side API calls from public endpoints
+- **Protected routes middleware** handles selective authentication logic
+- **Custom login handler** at `/login` with URL validation and secure redirects
+- Authentication is handled by Auth0/Authelia with express-openid-connect middleware
 - Logging uses Pino for structured JSON logs with sensitive data redaction
 - Health checks are available at /health and are not logged or authenticated
 - All shared types, interfaces, and constants are centralized in @lfx-pcc/shared package
 - **AI Service Integration**: Claude Sonnet 4 model via LiteLLM proxy for meeting agenda generation
 - **AI Environment Variables**: AI_PROXY_URL and AI_API_KEY required for AI functionality
+- **M2M Environment Variables**: M2M_AUTH_CLIENT_ID, M2M_AUTH_CLIENT_SECRET for machine-to-machine auth
 - Use TypeScript interfaces instead of union types for better maintainability
 - Shared package uses direct source imports during development for hot reloading
 - **Interfaces go into the shared packages**

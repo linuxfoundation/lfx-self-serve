@@ -67,4 +67,4 @@ jobs:
           cache-from: type=gha
           cache-to: type=gha,mode=max
           build-args: |
-            BUILD_ENV=production
+            BUILD_ENV=development

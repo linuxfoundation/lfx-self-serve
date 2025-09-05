@@ -14,13 +14,15 @@ import pino from 'pino';
 import pinoHttp from 'pino-http';
 import pinoPretty from 'pino-pretty';
 
+import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { extractBearerToken } from './middleware/auth-token.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
-import { tokenRefreshMiddleware } from './middleware/token-refresh.middleware';
+import { protectedRoutesMiddleware } from './middleware/protected-routes.middleware';
 import committeesRouter from './routes/committees.route';
 import meetingsRouter from './routes/meetings.route';
 import permissionsRouter from './routes/permissions.route';
 import projectsRouter from './routes/projects.route';
+import publicMeetingsRouter from './routes/public-meetings.route';
 
 if (process.env['NODE_ENV'] !== 'production') {
   dotenv.config();
@@ -74,7 +76,10 @@ const serverLogger = pino(
   {
     level: process.env['LOG_LEVEL'] || 'info',
     redact: {
-      paths: ['access_token', 'refresh_token', 'authorization', 'cookie', 'req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
+      paths:
+        process.env['NODE_ENV'] !== 'production'
+          ? ['req.headers.*', 'res.headers.*', 'access_token', 'refresh_token', 'authorization', 'cookie']
+          : ['access_token', 'refresh_token', 'authorization', 'cookie', 'req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
       remove: true,
     },
     formatters: {
@@ -125,7 +130,10 @@ const httpLogger = pinoHttp({
     },
   },
   redact: {
-    paths: ['access_token', 'refresh_token', 'authorization', 'cookie', 'req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
+    paths:
+      process.env['NODE_ENV'] !== 'production'
+        ? ['req.headers.*', 'res.headers.*', 'access_token', 'refresh_token', 'authorization', 'cookie']
+        : ['access_token', 'refresh_token', 'authorization', 'cookie', 'req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
     remove: true,
   },
   level: process.env['LOG_LEVEL'] || 'info',
@@ -141,7 +149,7 @@ const httpLogger = pinoHttp({
 app.use(httpLogger);
 
 const authConfig: ConfigParams = {
-  authRequired: true,
+  authRequired: false, // Disable global auth requirement to handle it in selective middleware
   auth0Logout: true,
   baseURL: process.env['PCC_BASE_URL'] || 'http://localhost:4000',
   clientID: process.env['PCC_AUTH0_CLIENT_ID'] || '1234',
@@ -153,16 +161,43 @@ const authConfig: ConfigParams = {
     scope: 'openid email profile access:api offline_access',
   },
   clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || 'bar',
+  routes: {
+    login: false,
+  },
 };
 
 app.use(auth(authConfig));
 
-app.use(tokenRefreshMiddleware);
+app.use('/login', (req: Request, res: Response) => {
+  if (req.oidc?.isAuthenticated()) {
+    const returnTo = req.query['returnTo'] as string;
+    const validatedReturnTo = validateAndSanitizeUrl(returnTo, [process.env['PCC_BASE_URL'] as string]);
+    if (validatedReturnTo) {
+      res.redirect(validatedReturnTo);
+    } else {
+      res.redirect('/');
+    }
+  } else {
+    const returnTo = req.query['returnTo'] as string;
+    const validatedReturnTo = validateAndSanitizeUrl(returnTo, [process.env['PCC_BASE_URL'] as string]);
+    if (validatedReturnTo) {
+      res.oidc.login({ returnTo: validatedReturnTo });
+    } else {
+      res.oidc.login({ returnTo: '/' });
+    }
+  }
+});
+
+app.use(protectedRoutesMiddleware);
+
+// Mount API routes before Angular SSR
+// Public API routes
+app.use('/public/api/meetings', publicMeetingsRouter);
 
 // Apply bearer token middleware to all API routes
 app.use('/api', extractBearerToken);
 
-// Mount API routes before Angular SSR
+// Protected API routes
 app.use('/api/projects', projectsRouter);
 app.use('/api/projects', permissionsRouter);
 app.use('/api/committees', committeesRouter);
@@ -175,7 +210,7 @@ app.use('/api/*', apiErrorHandler);
  * Handle all other requests by rendering the Angular application.
  * Require authentication for all non-API routes.
  */
-app.use('/**', (req: Request, res: Response, next: NextFunction) => {
+app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const auth: AuthContext = {
     authenticated: false,
     user: null,
@@ -183,7 +218,21 @@ app.use('/**', (req: Request, res: Response, next: NextFunction) => {
 
   if (req.oidc?.isAuthenticated()) {
     auth.authenticated = true;
-    auth.user = req.oidc?.user as User;
+    try {
+      // Fetch user info from OIDC
+      auth.user = (await req.oidc.fetchUserInfo()) ?? (req.oidc?.user as User);
+    } catch (error) {
+      // If userinfo fetch fails, fall back to basic user info from token
+      req.log.warn(
+        {
+          error: error instanceof Error ? error.message : String(error),
+          path: req.path,
+        },
+        'Failed to fetch user info, using basic user data'
+      );
+      // Fall back to basic user info from token
+      auth.user = req.oidc?.user as User;
+    }
   }
 
   angularApp
@@ -207,7 +256,6 @@ app.use('/**', (req: Request, res: Response, next: NextFunction) => {
         {
           error: error.message,
           code: error.code,
-          stack: process.env['NODE_ENV'] !== 'production' ? error.stack : undefined,
           url: req.url,
           method: req.method,
           user_agent: req.get('User-Agent'),
@@ -223,6 +271,18 @@ app.use('/**', (req: Request, res: Response, next: NextFunction) => {
         res.status(500).send('Internal Server Error');
       }
     });
+});
+
+// Global error handler for all routes (must be last)
+app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
+  // If response already sent, delegate to default Express error handler
+  if (res.headersSent) {
+    next(error);
+    return;
+  }
+
+  // Use the same error handler logic for all routes
+  apiErrorHandler(error, req, res, next);
 });
 
 /**

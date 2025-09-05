@@ -41,12 +41,16 @@
     @if (member().organization) {
       <div class="flex items-center gap-2">
         <i class="fa-light fa-building text-gray-400 w-4"></i>
-        @if (member().organization_url) {
-          <a [href]="member().organization_url" target="_blank" class="text-sm text-primary hover:text-primary-600 hover:underline">
-            {{ member().organization }}
+        @if (member().organization?.website) {
+          <a
+            [href]="member().organization?.website"
+            rel="noopener noreferrer"
+            target="_blank"
+            class="text-sm text-primary hover:text-primary-600 hover:underline">
+            {{ member().organization?.name || 'Not Set' }}
           </a>
         } @else {
-          <span class="text-sm text-gray-600">{{ member().organization }}</span>
+          <span class="text-sm text-gray-600">{{ member().organization?.name || 'Not Set' }}</span>
         }
       </div>
     }
@@ -55,10 +59,10 @@
   @if (enableVoting()) {
     <!-- Badges Section -->
     <div class="flex flex-wrap gap-2 pt-4 border-t border-gray-100">
-      <lfx-badge [value]="member().role || 'None'" [severity]="roleBadgeSeverity()" icon="fa-light fa-user-tie" pTooltip="Committee Role"> </lfx-badge>
+      <lfx-badge [value]="member().role?.name || 'None'" [severity]="roleBadgeSeverity()" icon="fa-light fa-user-tie" pTooltip="Committee Role"> </lfx-badge>
 
       <lfx-badge
-        [value]="member().voting_status || 'Observer'"
+        [value]="member().voting?.status || 'Observer'"
         [severity]="votingStatusBadgeSeverity()"
         icon="fa-light fa-check-to-slot"
         pTooltip="Voting Status">
@@ -66,18 +70,18 @@
     </div>
 
     <!-- Date Information -->
-    @if (member().role_start || member().role_end) {
+    @if (member().role?.start_date || member().role?.end_date) {
       <div class="mt-3 pt-3 border-t border-gray-100 text-xs text-gray-500">
-        @if (member().role_start) {
+        @if (member().role?.start_date) {
           <div class="flex items-center gap-1">
             <i class="fa-light fa-calendar-check text-gray-400"></i>
-            <span>Role since {{ member().role_start | date: 'MMM d, y' }}</span>
+            <span>Role since {{ member().role?.start_date | date: 'MMM d, y' }}</span>
           </div>
         }
-        @if (member().role_end) {
+        @if (member().role?.end_date) {
           <div class="flex items-center gap-1">
             <i class="fa-light fa-calendar-xmark text-gray-400"></i>
-            <span>Role until {{ member().role_end | date: 'MMM d, y' }}</span>
+            <span>Role until {{ member().role?.end_date | date: 'MMM d, y' }}</span>
           </div>
         }
       </div>

@@ -4,6 +4,7 @@
 export const environment = {
   production: false,
   urls: {
+    home: 'http://localhost:4200',
     profile: 'https://myprofile.dev.platform.linuxfoundation.org/',
   },
 };

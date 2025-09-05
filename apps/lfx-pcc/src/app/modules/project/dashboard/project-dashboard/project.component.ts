@@ -28,7 +28,6 @@ import { CommitteeFormComponent } from '../../committees/components/committee-fo
   selector: 'lfx-project',
   imports: [CardComponent, TableComponent, DatePipe, RouterModule, SkeletonModule, ButtonComponent, ChartComponent, MenuComponent, TooltipModule],
   templateUrl: './project.component.html',
-  styleUrl: './project.component.scss',
 })
 export class ProjectComponent {
   public readonly activatedRoute = inject(ActivatedRoute);

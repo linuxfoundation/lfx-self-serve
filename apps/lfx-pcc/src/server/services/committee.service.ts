@@ -1,21 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { getValidCommitteeCategories } from '@lfx-pcc/shared/constants';
 import {
   Committee,
   CommitteeCreateData,
+  CommitteeMember,
   CommitteeSettingsData,
   CommitteeUpdateData,
-  CommitteeValidationError,
-  CommitteeValidationResult,
-  ETagError,
+  CreateCommitteeMemberRequest,
   QueryServiceResponse,
-  ValidationApiError,
 } from '@lfx-pcc/shared/interfaces';
 import { Request } from 'express';
 
-import { createApiError } from '../utils/api-error';
+import { ResourceNotFoundError } from '../errors';
+import { Logger } from '../helpers/logger';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -28,7 +26,7 @@ export class CommitteeService {
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
-    this.etagService = new ETagService(this.microserviceProxy);
+    this.etagService = new ETagService();
   }
 
   /**
@@ -51,18 +49,17 @@ export class CommitteeService {
   public async getCommitteeById(req: Request, committeeId: string): Promise<Committee> {
     const params = {
       type: 'committee',
-      parent: `committee:${committeeId}`,
+      tags: `committee_uid:${committeeId}`,
     };
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
     if (!resources || resources.length === 0) {
-      const error: ETagError = {
-        code: 'NOT_FOUND',
-        message: 'Committee not found',
-        statusCode: 404,
-      };
-      throw error;
+      throw new ResourceNotFoundError('Committee', committeeId, {
+        operation: 'get_committee_by_id',
+        service: 'committee_service',
+        path: `/committees/${committeeId}`,
+      });
     }
 
     return resources[0].data;
@@ -72,18 +69,6 @@ export class CommitteeService {
    * Creates a new committee with optional settings
    */
   public async createCommittee(req: Request, data: CommitteeCreateData): Promise<Committee> {
-    // Validate input data
-    const validation = this.validateCommitteeData(data);
-    if (!validation.isValid) {
-      const validationError: ValidationApiError = createApiError({
-        message: `Validation failed: ${validation.errors.map((e) => e.message).join(', ')}`,
-        statusCode: 400,
-        code: 'VALIDATION_ERROR',
-      }) as ValidationApiError;
-      validationError.validationErrors = validation.errors;
-      throw validationError;
-    }
-
     // Extract settings fields
     const { business_email_required, is_audit_enabled, ...committeeData } = data;
 
@@ -126,18 +111,6 @@ export class CommitteeService {
    * Updates an existing committee using ETag for concurrency control
    */
   public async updateCommittee(req: Request, committeeId: string, data: CommitteeUpdateData): Promise<Committee> {
-    // Validate input data
-    const validation = this.validateCommitteeData(data, true);
-    if (!validation.isValid) {
-      const validationError: ValidationApiError = createApiError({
-        message: `Validation failed: ${validation.errors.map((e) => e.message).join(', ')}`,
-        statusCode: 400,
-        code: 'VALIDATION_ERROR',
-      }) as ValidationApiError;
-      validationError.validationErrors = validation.errors;
-      throw validationError;
-    }
-
     // Extract settings fields
     const { business_email_required, is_audit_enabled, ...committeeData } = data;
 
@@ -205,6 +178,144 @@ export class CommitteeService {
   }
 
   /**
+   * Fetches all members for a specific committee
+   */
+  public async getCommitteeMembers(req: Request, committeeId: string, query: Record<string, any> = {}): Promise<CommitteeMember[]> {
+    const params = {
+      ...query,
+      type: 'committee_member',
+      tags: `committee_uid:${committeeId}`,
+    };
+
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(
+      req,
+      'LFX_V2_SERVICE',
+      `/query/resources`,
+      'GET',
+      params
+    );
+
+    return resources.map((resource) => resource.data);
+  }
+
+  /**
+   * Fetches a single committee member by ID
+   */
+  public async getCommitteeMemberById(req: Request, committeeId: string, memberId: string): Promise<CommitteeMember> {
+    const params = {
+      type: 'committee_member',
+      parent: `committee_member:${memberId}`,
+      committee_uid: committeeId,
+    };
+
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params
+    );
+
+    if (!resources || resources.length === 0) {
+      throw new ResourceNotFoundError('Committee member', memberId, {
+        operation: 'get_committee_member_by_id',
+        service: 'committee_service',
+        path: `/committees/${committeeId}/members/${memberId}`,
+      });
+    }
+
+    return resources[0].data;
+  }
+
+  /**
+   * Creates a new committee member
+   */
+  public async createCommitteeMember(req: Request, committeeId: string, data: CreateCommitteeMemberRequest): Promise<CommitteeMember> {
+    const newMember = await this.microserviceProxy.proxyRequest<CommitteeMember>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/members`, 'POST', {}, data);
+
+    req.log.info(
+      Logger.sanitize({
+        operation: 'create_committee_member',
+        committee_id: committeeId,
+        member_id: newMember.uid,
+      }),
+      'Committee member created successfully'
+    );
+
+    return newMember;
+  }
+
+  /**
+   * Updates an existing committee member using ETag for concurrency control
+   */
+  public async updateCommitteeMember(
+    req: Request,
+    committeeId: string,
+    memberId: string,
+    data: Partial<CreateCommitteeMemberRequest>
+  ): Promise<CommitteeMember> {
+    // Validate committee exists first
+    await this.getCommitteeById(req, committeeId);
+
+    // Step 1: Fetch member with ETag
+    const { etag } = await this.etagService.fetchWithETag<CommitteeMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/members/${memberId}`,
+      'update_committee_member'
+    );
+
+    // Step 2: Update member with ETag
+    const updatedMember = await this.etagService.updateWithETag<CommitteeMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/members/${memberId}`,
+      etag,
+      data,
+      'update_committee_member'
+    );
+
+    req.log.info(
+      {
+        operation: 'update_committee_member',
+        committee_id: committeeId,
+        member_id: memberId,
+      },
+      'Committee member updated successfully'
+    );
+
+    return updatedMember;
+  }
+
+  /**
+   * Deletes a committee member using ETag for concurrency control
+   */
+  public async deleteCommitteeMember(req: Request, committeeId: string, memberId: string): Promise<void> {
+    // Validate committee exists first
+    await this.getCommitteeById(req, committeeId);
+
+    // Step 1: Fetch member with ETag
+    const { etag } = await this.etagService.fetchWithETag<CommitteeMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/members/${memberId}`,
+      'delete_committee_member'
+    );
+
+    // Step 2: Delete member with ETag
+    await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/members/${memberId}`, etag, 'delete_committee_member');
+
+    req.log.info(
+      {
+        operation: 'delete_committee_member',
+        committee_id: committeeId,
+        member_id: memberId,
+      },
+      'Committee member deleted successfully'
+    );
+  }
+
+  /**
    * Updates committee settings (business_email_required, is_audit_enabled)
    */
   private async updateCommitteeSettings(req: Request, committeeId: string, settings: CommitteeSettingsData): Promise<void> {
@@ -227,168 +338,5 @@ export class CommitteeService {
       },
       'Committee settings updated successfully'
     );
-  }
-
-  /**
-   * Validates committee data for create or update operations
-   */
-  private validateCommitteeData(data: CommitteeCreateData | CommitteeUpdateData, isUpdate = false): CommitteeValidationResult {
-    const errors: CommitteeValidationError[] = [];
-
-    // Required field validation for create operations
-    if (!isUpdate) {
-      if (!data.name || data.name.trim().length === 0) {
-        errors.push({
-          field: 'name',
-          message: 'Committee name is required',
-          code: 'REQUIRED_FIELD_MISSING',
-        });
-      }
-
-      if (!data.category || data.category.trim().length === 0) {
-        errors.push({
-          field: 'category',
-          message: 'Committee category is required',
-          code: 'REQUIRED_FIELD_MISSING',
-        });
-      }
-    }
-
-    // Name validation
-    if (data.name !== null && data.name !== undefined) {
-      if (typeof data.name !== 'string') {
-        errors.push({
-          field: 'name',
-          message: 'Committee name must be a string',
-          code: 'INVALID_TYPE',
-        });
-      } else if (data.name.trim().length === 0) {
-        errors.push({
-          field: 'name',
-          message: 'Committee name cannot be empty',
-          code: 'INVALID_VALUE',
-        });
-      } else if (data.name.length > 255) {
-        errors.push({
-          field: 'name',
-          message: 'Committee name cannot exceed 255 characters',
-          code: 'VALUE_TOO_LONG',
-        });
-      }
-    }
-
-    // Category validation
-    if (data.category !== null && data.category !== undefined) {
-      const validCategories = getValidCommitteeCategories();
-      if (typeof data.category !== 'string') {
-        errors.push({
-          field: 'category',
-          message: 'Committee category must be a string',
-          code: 'INVALID_TYPE',
-        });
-      } else if (!validCategories.includes(data.category)) {
-        errors.push({
-          field: 'category',
-          message: `Committee category must be one of: ${validCategories.join(', ')}`,
-          code: 'INVALID_VALUE',
-        });
-      }
-    }
-
-    // Description validation
-    if (data.description !== null) {
-      if (typeof data.description !== 'string') {
-        errors.push({
-          field: 'description',
-          message: 'Committee description must be a string',
-          code: 'INVALID_TYPE',
-        });
-      } else if (data.description.length > 2000) {
-        errors.push({
-          field: 'description',
-          message: 'Committee description cannot exceed 2000 characters',
-          code: 'VALUE_TOO_LONG',
-        });
-      }
-    }
-
-    // Display name validation
-    if (data.display_name !== null) {
-      if (typeof data.display_name !== 'string') {
-        errors.push({
-          field: 'display_name',
-          message: 'Display name must be a string',
-          code: 'INVALID_TYPE',
-        });
-      } else if (data.display_name.length > 255) {
-        errors.push({
-          field: 'display_name',
-          message: 'Display name cannot exceed 255 characters',
-          code: 'VALUE_TOO_LONG',
-        });
-      }
-    }
-
-    // Website validation
-    if (data.website !== null) {
-      if (typeof data.website !== 'string') {
-        errors.push({
-          field: 'website',
-          message: 'Website must be a string',
-          code: 'INVALID_TYPE',
-        });
-      } else if (data.website.trim().length > 0 && !this.isValidUrl(data.website)) {
-        errors.push({
-          field: 'website',
-          message: 'Website must be a valid URL',
-          code: 'INVALID_FORMAT',
-        });
-      }
-    }
-
-    // SSO group validation
-    if (data.sso_group_enabled === true && (!data.sso_group_name || data.sso_group_name.trim().length === 0)) {
-      errors.push({
-        field: 'sso_group_name',
-        message: 'SSO group name is required when SSO group is enabled',
-        code: 'CONDITIONAL_FIELD_MISSING',
-      });
-    }
-
-    // Boolean field validation
-    const booleanFields: (keyof CommitteeCreateData)[] = [
-      'enable_voting',
-      'public',
-      'sso_group_enabled',
-      'business_email_required',
-      'is_audit_enabled',
-      'joinable',
-    ];
-    booleanFields.forEach((field) => {
-      if (data[field] !== undefined && typeof data[field] !== 'boolean') {
-        errors.push({
-          field,
-          message: `${field} must be a boolean value`,
-          code: 'INVALID_TYPE',
-        });
-      }
-    });
-
-    return {
-      isValid: errors.length === 0,
-      errors,
-    };
-  }
-
-  /**
-   * Validates if a string is a valid URL
-   */
-  private isValidUrl(url: string): boolean {
-    try {
-      new URL(url);
-      return true;
-    } catch {
-      return false;
-    }
   }
 }

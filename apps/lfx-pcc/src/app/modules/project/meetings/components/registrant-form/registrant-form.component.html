@@ -5,7 +5,8 @@
   <form [formGroup]="form()" data-testid="registrant-form-element">
     <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" data-testid="registrant-form-fields-grid">
       <!-- First Name -->
-      <div data-testid="registrant-form-firstname-field">
+      <div data-testid="registrant-form-firstname-field" class="flex flex-col gap-1">
+        <label for="first_name" class="text-sm font-medium text-gray-700">First Name</label>
         <lfx-input-text
           size="small"
           [form]="form()"
@@ -17,7 +18,8 @@
       </div>
 
       <!-- Last Name -->
-      <div data-testid="registrant-form-lastname-field">
+      <div data-testid="registrant-form-lastname-field" class="flex flex-col gap-1">
+        <label for="last_name" class="text-sm font-medium text-gray-700">Last Name</label>
         <lfx-input-text
           size="small"
           [form]="form()"
@@ -29,7 +31,8 @@
       </div>
 
       <!-- Email -->
-      <div class="md:col-span-2" data-testid="registrant-form-email-field">
+      <div class="md:col-span-2 flex flex-col gap-1" data-testid="registrant-form-email-field">
+        <label for="email" class="text-sm font-medium text-gray-700">Email</label>
         <lfx-input-text
           size="small"
           [form]="form()"
@@ -39,10 +42,17 @@
           type="email"
           data-testid="registrant-form-email-input">
         </lfx-input-text>
+        @if (form().get('email')?.errors?.['required'] && form().get('email')?.touched && form().get('email')?.dirty) {
+          <p class="text-sm text-red-500">Email is required</p>
+        }
+        @if (form().get('email')?.errors?.['email'] && form().get('email')?.touched && form().get('email')?.dirty) {
+          <p class="text-sm text-red-500">Invalid email address</p>
+        }
       </div>
 
       <!-- Job Title -->
-      <div data-testid="registrant-form-jobtitle-field">
+      <div data-testid="registrant-form-jobtitle-field" class="flex flex-col gap-1">
+        <label for="job_title" class="text-sm font-medium text-gray-700">Job Title</label>
         <lfx-input-text
           size="small"
           [form]="form()"
@@ -54,7 +64,8 @@
       </div>
 
       <!-- Organization -->
-      <div data-testid="registrant-form-organization-field">
+      <div data-testid="registrant-form-organization-field" class="flex flex-col gap-1">
+        <label for="org_name" class="text-sm font-medium text-gray-700">Organization</label>
         <lfx-input-text
           size="small"
           [form]="form()"
@@ -66,7 +77,7 @@
       </div>
 
       <!-- Host Toggle -->
-      <div class="md:col-span-2" data-testid="registrant-form-host-field">
+      <div class="md:col-span-2 flex flex-col gap-1" data-testid="registrant-form-host-field">
         <lfx-checkbox [form]="form()" control="host" label="Meeting Host" [binary]="true" data-testid="registrant-form-host-checkbox"> </lfx-checkbox>
       </div>
     </div>

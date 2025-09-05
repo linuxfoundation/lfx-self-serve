@@ -96,9 +96,7 @@
                 <span class="text-sm font-sans text-gray-500">Role</span>
               </th>
               <th>
-                <div class="flex justify-center">
-                  <span class="text-sm font-sans text-gray-500">Voting Status</span>
-                </div>
+                <span class="text-sm font-sans text-gray-500">Voting Status</span>
               </th>
             }
             <th style="width: 80px">
@@ -120,20 +118,20 @@
               <span class="text-sm font-sans text-gray-500">{{ member.email || '-' }}</span>
             </td>
             <td>
-              @if (member.organization_url) {
-                <a [href]="member.organization_url" target="_blank" class="text-primary hover:text-primary-600 text-sm font-sans">
-                  {{ member.organization }}
+              @if (member.organization?.website) {
+                <a [href]="member.organization.website" target="_blank" class="text-primary hover:text-primary-600 text-sm font-sans">
+                  {{ member.organization.name }}
                 </a>
               } @else {
-                <span class="text-sm font-sans text-gray-500">{{ member.organization || '-' }}</span>
+                <span class="text-sm font-sans text-gray-500">{{ member.organization?.name || '-' }}</span>
               }
             </td>
             @if (committee()?.enable_voting) {
               <td>
-                <span class="text-sm font-sans text-gray-500">{{ member.role || 'None' }}</span>
+                <span class="text-sm font-sans text-gray-500">{{ member.role?.name || 'None' }}</span>
               </td>
-              <td class="text-center">
-                <span class="text-sm font-sans text-gray-500">{{ member.voting_status || 'Observer' }}</span>
+              <td>
+                <span class="text-sm font-sans text-gray-500">{{ member.voting?.status || 'None' }}</span>
               </td>
             }
             <td class="text-center relative">
@@ -178,7 +176,7 @@
     <!-- Card View -->
     @if (currentView() === 'cards') {
       <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        @for (member of filteredMembers(); track member.id) {
+        @for (member of filteredMembers(); track member.uid) {
           <lfx-member-card
             [member]="member"
             [actionMenuItems]="memberActionMenuItems"

@@ -11,7 +11,7 @@ import { ProjectService } from '@services/project.service';
 import { MenuItem } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, of } from 'rxjs';
-import { switchMap, take, tap } from 'rxjs/operators';
+import { switchMap, take, tap } from 'rxjs';
 
 import { PermissionsMatrixComponent } from '../components/permissions-matrix/permissions-matrix.component';
 import { UserFormComponent } from '../components/user-form/user-form.component';
@@ -21,7 +21,6 @@ import { UserPermissionsTableComponent } from '../components/user-permissions-ta
   selector: 'lfx-settings-dashboard',
   imports: [CardComponent, PermissionsMatrixComponent, UserPermissionsTableComponent, MenuComponent],
   templateUrl: './settings-dashboard.component.html',
-  styleUrl: './settings-dashboard.component.scss',
 })
 export class SettingsDashboardComponent {
   private readonly projectService = inject(ProjectService);

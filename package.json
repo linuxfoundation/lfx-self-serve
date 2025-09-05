@@ -5,6 +5,9 @@
   "private": true,
   "scripts": {
     "build": "turbo run build",
+    "build:development": "turbo run build:development",
+    "build:production": "turbo run build:production",
+    "build:staging": "turbo run build:staging",
     "start": "turbo run start",
     "lint": "turbo run lint",
     "test": "turbo run test",

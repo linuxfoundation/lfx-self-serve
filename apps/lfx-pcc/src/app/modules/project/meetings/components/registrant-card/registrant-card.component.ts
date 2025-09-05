@@ -16,7 +16,6 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, BadgeComponent, ButtonComponent, CardComponent, RegistrantFormComponent],
   templateUrl: './registrant-card.component.html',
-  styleUrl: './registrant-card.component.scss',
 })
 export class RegistrantCardComponent implements OnInit {
   // Inputs

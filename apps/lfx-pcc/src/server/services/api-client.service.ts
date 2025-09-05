@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { ApiClientConfig, ApiResponse } from '@lfx-pcc/shared/interfaces';
-import { extractErrorDetails } from '@lfx-pcc/shared/utils';
 
-import { serverLogger } from '../server';
-import { createHttpError, createNetworkError, createTimeoutError } from '../utils/api-error';
+import { MicroserviceError } from '../errors';
+import { getHttpErrorCode } from '../helpers/http-status.helper';
 
 export class ApiClientService {
   private readonly config: Required<ApiClientConfig>;
@@ -18,30 +17,24 @@ export class ApiClientService {
     };
   }
 
-  public async get<T = any>(url: string, bearerToken: string, params?: Record<string, any>, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
-    const queryString = params ? new URLSearchParams(params).toString() : '';
-    const fullUrl = queryString ? `${url}?${queryString}` : url;
+  public request<T = any>(
+    type: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE',
+    url: string,
+    bearerToken?: string,
+    query?: Record<string, any>,
+    data?: any,
+    customHeaders?: Record<string, string>
+  ): Promise<ApiResponse<T>> {
+    const fullUrl = this.getFullUrl(url, query);
 
-    return this.makeRequest<T>('GET', fullUrl, bearerToken, undefined, customHeaders);
+    if (['GET', 'DELETE'].includes(type)) {
+      return this.makeRequest<T>(type, fullUrl, bearerToken, undefined, customHeaders);
+    }
+
+    return this.makeRequest<T>(type, fullUrl, bearerToken, data, customHeaders);
   }
 
-  public async post<T = any>(url: string, bearerToken: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
-    return this.makeRequest<T>('POST', url, bearerToken, data, customHeaders);
-  }
-
-  public async put<T = any>(url: string, bearerToken: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
-    return this.makeRequest<T>('PUT', url, bearerToken, data, customHeaders);
-  }
-
-  public async patch<T = any>(url: string, bearerToken: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
-    return this.makeRequest<T>('PATCH', url, bearerToken, data, customHeaders);
-  }
-
-  public async delete<T = any>(url: string, bearerToken: string, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
-    return this.makeRequest<T>('DELETE', url, bearerToken, undefined, customHeaders);
-  }
-
-  private async makeRequest<T>(method: string, url: string, bearerToken: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
+  private async makeRequest<T>(method: string, url: string, bearerToken?: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
     const requestInit: RequestInit = {
       method,
       headers: {
@@ -58,111 +51,64 @@ export class ApiClientService {
       requestInit.body = JSON.stringify(data);
     }
 
-    return this.makeRequestWithRetry<T>(url, requestInit);
-  }
-
-  private async makeRequestWithRetry<T>(url: string, requestInit: RequestInit): Promise<ApiResponse<T>> {
-    let lastError: Error;
-
-    for (let attempt = 1; attempt <= this.config.retryAttempts; attempt++) {
-      try {
-        return await this.executeRequest<T>(url, requestInit);
-      } catch (error) {
-        lastError = error instanceof Error ? error : new Error(String(error));
-
-        if (attempt === this.config.retryAttempts) {
-          serverLogger.error(
-            {
-              url,
-              method: requestInit.method,
-              attempt,
-              max_attempts: this.config.retryAttempts,
-              error: lastError.message,
-              error_name: lastError.name,
-            },
-            'API request failed after all retry attempts'
-          );
-          break;
-        }
-
-        if (this.isRetryableError(error)) {
-          serverLogger.warn(
-            {
-              url,
-              method: requestInit.method,
-              attempt,
-              max_attempts: this.config.retryAttempts,
-              error: lastError.message,
-              retry_delay: this.config.retryDelay * attempt,
-              will_retry: true,
-            },
-            'API request failed, retrying'
-          );
-
-          await this.delay(this.config.retryDelay * attempt);
-          continue;
-        }
-
-        serverLogger.error(
-          {
-            url,
-            method: requestInit.method,
-            attempt,
-            error: lastError.message,
-            error_name: lastError.name,
-            will_retry: false,
-          },
-          'API request failed with non-retryable error'
-        );
-
-        throw lastError;
-      }
-    }
-
-    throw lastError!;
+    return this.executeRequest<T>(url, requestInit);
   }
 
   private async executeRequest<T>(url: string, requestInit: RequestInit): Promise<ApiResponse<T>> {
     try {
       const response = await fetch(url, requestInit);
 
-      // Convert Headers to record
-      const headers: Record<string, string> = {};
-      response.headers.forEach((value, key) => {
-        headers[key] = value;
-      });
+      if (!response.ok) {
+        // Try to parse error response body for additional details
+        let errorBody: any = null;
+        try {
+          const errorText = await response.text();
+          if (errorText) {
+            errorBody = JSON.parse(errorText);
+          }
+        } catch {
+          // If we can't parse the error body, we'll use the basic HTTP error
+        }
 
-      // Get response body
-      const text = await response.text();
-      let data: T;
+        const errorMessage = errorBody?.message || errorBody?.error || response.statusText;
 
-      try {
-        data = text ? JSON.parse(text) : null;
-      } catch {
-        throw new Error('Failed to parse response body');
+        throw new MicroserviceError(errorMessage, response.status, getHttpErrorCode(response.status), {
+          operation: 'api_client_request',
+          service: 'api_client_service',
+          path: url,
+          errorBody: errorBody,
+        });
       }
+
+      // If the response is text, parse it as JSON
+      const data = await response.text();
 
       const apiResponse: ApiResponse<T> = {
-        data,
+        data: data ? JSON.parse(data) : null,
         status: response.status,
         statusText: response.statusText,
-        headers,
+        headers: Object.fromEntries(response.headers.entries()),
       };
-
-      if (!response.ok) {
-        throw createHttpError(response.status, response.statusText, apiResponse);
-      }
 
       return apiResponse;
     } catch (error: unknown) {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
-          throw createTimeoutError(this.config.timeout);
+          throw new MicroserviceError(`Request timeout after ${this.config.timeout}ms`, 408, 'TIMEOUT', {
+            operation: 'api_client_timeout',
+            service: 'api_client_service',
+            path: url,
+          });
         }
 
         const errorWithCause = error as Error & { cause?: { code?: string } };
         if (errorWithCause.cause?.code) {
-          throw createNetworkError(error.message, errorWithCause.cause.code, error);
+          throw new MicroserviceError(`Request failed: ${error.message}`, 500, errorWithCause.cause.code || 'NETWORK_ERROR', {
+            operation: 'api_client_network_error',
+            service: 'api_client_service',
+            path: url,
+            originalError: error,
+          });
         }
       }
 
@@ -170,47 +116,8 @@ export class ApiClientService {
     }
   }
 
-  private isRetryableError(error: unknown): boolean {
-    const errorDetails = extractErrorDetails(error);
-
-    // Timeout errors
-    if (errorDetails.code === 'TIMEOUT' || (error instanceof Error && error.name === 'AbortError')) {
-      return true;
-    }
-
-    // Network errors - check if error has these specific codes
-    if (error && typeof error === 'object') {
-      const errorObj = error as Record<string, unknown>;
-      const errorCode = errorObj['code'];
-
-      if (errorCode === 'ECONNRESET' || errorCode === 'ENOTFOUND' || errorCode === 'ECONNREFUSED') {
-        return true;
-      }
-
-      // Fetch network errors
-      const cause = errorObj['cause'] as Record<string, unknown> | undefined;
-      if (cause && typeof cause === 'object') {
-        const causeCode = cause['code'];
-        if (causeCode === 'ECONNRESET' || causeCode === 'ENOTFOUND' || causeCode === 'ECONNREFUSED') {
-          return true;
-        }
-      }
-    }
-
-    // Server errors (5xx)
-    if (errorDetails.statusCode >= 500 && errorDetails.statusCode < 600) {
-      return true;
-    }
-
-    // Rate limiting
-    if (errorDetails.statusCode === 429) {
-      return true;
-    }
-
-    return false;
-  }
-
-  private delay(ms: number): Promise<void> {
-    return new Promise((resolve) => setTimeout(resolve, ms));
+  private getFullUrl(url: string, query?: Record<string, any>): string {
+    const queryString = query ? new URLSearchParams(query).toString() : '';
+    return queryString ? `${url}?${queryString}` : url;
   }
 }

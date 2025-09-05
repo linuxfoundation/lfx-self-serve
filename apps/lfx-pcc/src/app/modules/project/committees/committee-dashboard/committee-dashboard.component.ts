@@ -14,11 +14,10 @@ import { Committee } from '@lfx-pcc/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectService } from '@services/project.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
-import { ConfirmationService, MenuItem } from 'primeng/api';
+import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { BehaviorSubject, of } from 'rxjs';
-import { debounceTime, distinctUntilChanged, startWith, switchMap, tap } from 'rxjs/operators';
+import { BehaviorSubject, catchError, debounceTime, distinctUntilChanged, of, startWith, switchMap, tap } from 'rxjs';
 
 import { CommitteeFormComponent } from '../components/committee-form/committee-form.component';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
@@ -41,7 +40,6 @@ import { UpcomingCommitteeMeetingComponent } from '../components/upcoming-commit
   ],
   providers: [DialogService],
   templateUrl: './committee-dashboard.component.html',
-  styleUrl: './committee-dashboard.component.scss',
 })
 export class CommitteeDashboardComponent {
   // Injected services
@@ -50,6 +48,7 @@ export class CommitteeDashboardComponent {
   private readonly router = inject(Router);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
 
   // Class variables with types
   public project: typeof this.projectService.project;
@@ -196,8 +195,12 @@ export class CommitteeDashboardComponent {
       },
       error: (error) => {
         this.isDeleting.set(false);
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to delete committee',
+        });
         console.error('Failed to delete committee:', error);
-        // TODO: Show error toast/notification
       },
     });
   }
@@ -243,7 +246,15 @@ export class CommitteeDashboardComponent {
       this.project()
         ? this.refresh.pipe(
             tap(() => this.committeesLoading.set(true)),
-            switchMap(() => this.committeeService.getCommitteesByProject(this.project()!.uid).pipe(tap(() => this.committeesLoading.set(false))))
+            switchMap(() =>
+              this.committeeService.getCommitteesByProject(this.project()!.uid).pipe(
+                catchError(() => {
+                  console.error('Failed to load project committees');
+                  return of([]);
+                }),
+                tap(() => this.committeesLoading.set(false))
+              )
+            )
           )
         : of([]),
       { initialValue: [] }

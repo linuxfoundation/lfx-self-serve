@@ -78,11 +78,15 @@ environment:
     value: "https://linuxfoundation-dev.auth0.com/"
   PCC_AUTH0_AUDIENCE:
     value: "https://api-gw.dev.platform.linuxfoundation.org/"
-  
+  M2M_AUTH_ISSUER_BASE_URL:
+    value: "https://linuxfoundation-dev.auth0.com/"
+  M2M_AUTH_AUDIENCE:
+    value: "https://api-gw.dev.platform.linuxfoundation.org/"
+
   # Environment identifier
   ENV:
     value: "production"
-  
+
   # Query service configuration
   QUERY_SERVICE_URL:
     value: "http://query-service.default.svc.cluster.local/query/resources"
@@ -99,4 +103,22 @@ environment:
     value:
 
   POSTGRES_API_KEY:
+    value:
+
+  M2M_AUTH_CLIENT_ID:
+    value:
+
+  M2M_AUTH_CLIENT_SECRET:
+    value:
+
+  LFX_V2_SERVICE:
+    value:
+
+  NATS_URL:
+    value:
+
+  AI_PROXY_URL:
+    value:
+
+  AI_API_KEY:
     value:

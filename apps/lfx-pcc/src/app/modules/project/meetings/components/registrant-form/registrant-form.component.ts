@@ -13,7 +13,6 @@ import { MeetingRegistrant } from '@lfx-pcc/shared/interfaces';
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, InputTextComponent, CheckboxComponent],
   templateUrl: './registrant-form.component.html',
-  styleUrl: './registrant-form.component.scss',
 })
 export class RegistrantFormComponent {
   // Inputs

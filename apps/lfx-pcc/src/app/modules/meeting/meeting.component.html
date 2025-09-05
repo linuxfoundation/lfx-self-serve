@@ -1,0 +1,277 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (meeting()) {
+  <div class="min-h-screen bg-gray-50">
+    <!-- Main Content -->
+    <div class="container mx-auto py-6 px-8">
+      <div class="max-w-4xl mx-auto">
+        <!-- Meeting Information Card -->
+        <lfx-card class="mb-6" data-testid="meeting-info-card">
+          <!-- Header with badges -->
+          <div class="flex items-start justify-between mb-4" data-testid="meeting-details-header">
+            <div class="flex items-center gap-2 flex-wrap">
+              <!-- Privacy Badge -->
+              @if (meeting().visibility === 'private') {
+                <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-500 text-white">
+                  <i class="fa-light fa-shield"></i>
+                  <span>Private</span>
+                </div>
+              }
+
+              <!-- Meeting Type Badge -->
+              @if (meetingTypeBadge(); as badge) {
+                <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium" [class]="badge.badgeClass">
+                  @if (badge.icon) {
+                    <i [class]="badge.icon"></i>
+                  }
+                  <span>{{ badge.text }}</span>
+                </div>
+              }
+
+              <!-- Recurring Badge -->
+              @if (meeting().recurrence) {
+                <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-400 text-white">
+                  <i class="fa-light fa-repeat"></i>
+                  <span>Recurring</span>
+                </div>
+              }
+            </div>
+          </div>
+
+          <!-- Meeting Title and Date -->
+          <div class="flex items-start justify-between mb-4" data-testid="meeting-title-section">
+            <div class="flex-1 pr-4">
+              <h2 class="text-xl font-display font-semibold text-gray-900 mb-1 leading-tight" data-testid="meeting-title">
+                {{ meeting().title }}
+              </h2>
+            </div>
+            @if (meeting().start_time) {
+              <div class="flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded flex-shrink-0" data-testid="meeting-datetime">
+                <i class="fa-light fa-calendar-days text-gray-400"></i>
+                <span
+                  >{{ meeting()!.start_time | meetingTime: meeting()!.duration : 'date' }} •
+                  {{ meeting()!.start_time | meetingTime: meeting()!.duration : 'time' }}</span
+                >
+              </div>
+            }
+          </div>
+
+          <!-- Meeting Agenda -->
+          @if (meeting().description) {
+            <div class="mb-4" data-testid="meeting-description">
+              <div class="flex items-center gap-2 mb-2">
+                <i class="fa-light fa-file-lines text-gray-400"></i>
+                <span class="text-sm font-medium text-gray-700 font-sans">Meeting Description</span>
+              </div>
+              <lfx-expandable-text [maxHeight]="85">
+                <div class="text-sm text-gray-600 leading-relaxed bg-gray-50 rounded-lg p-3">
+                  <div [innerHTML]="meeting()!.description | linkify"></div>
+                </div>
+              </lfx-expandable-text>
+            </div>
+          }
+
+          <!-- Important Links -->
+          @if (importantLinks().length > 0) {
+            <div class="mb-4" data-testid="important-links">
+              <div class="flex items-center gap-2 mb-2">
+                <i class="fa-light fa-link text-gray-400"></i>
+                <span class="text-sm font-medium text-gray-700 font-sans">Important Links</span>
+              </div>
+              <div class="flex flex-wrap gap-2">
+                @for (link of importantLinks(); track link.url) {
+                  <a
+                    size="small"
+                    class="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-xs rounded transition-colors"
+                    [href]="link.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    [title]="link.url">
+                    <i class="fa-light fa-external-link"></i>
+                    {{ link.domain }}
+                  </a>
+                }
+              </div>
+            </div>
+          }
+
+          <!-- Meeting Info Cards -->
+          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 py-4 border-y border-gray-200 mb-4" data-testid="meeting-info-cards">
+            <!-- Attendees Card -->
+            <div class="bg-gray-50 rounded-lg p-3 space-y-2" data-testid="attendees-card">
+              <div class="flex items-center gap-2 text-xs text-gray-500">
+                <i class="fa-light fa-users text-gray-400"></i>
+                <span>Attendees</span>
+              </div>
+              <div class="space-y-2">
+                <div class="text-sm font-sans">{{ (meeting().individual_registrants_count || 0) + (meeting().committee_members_count || 0) }} invited</div>
+                <div class="flex items-center justify-between text-xs text-gray-500">
+                  <div class="flex items-center gap-1">
+                    <i class="fa-light fa-check-circle text-green-500"></i>
+                    <span>{{ meeting().registrants_accepted_count || 0 }} Yes</span>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <i class="fa-light fa-times-circle text-red-500"></i>
+                    <span>{{ meeting().registrants_declined_count || 0 }} No</span>
+                  </div>
+                  <div class="flex items-center gap-1">
+                    <i class="fa-light fa-question-circle text-amber-500"></i>
+                    <span>{{ meeting().registrants_pending_count || 0 }} Maybe</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <!-- Platform Card -->
+            <div class="bg-gray-50 rounded-lg p-3 space-y-2" data-testid="platform-card">
+              <div class="flex items-center gap-2 text-xs text-gray-500">
+                <i class="fa-light fa-video text-gray-400"></i>
+                <span>Platform</span>
+              </div>
+              <div class="text-sm font-sans">Zoom Meeting</div>
+              <div class="text-xs text-gray-500">Link will be sent via email</div>
+            </div>
+
+            <!-- Duration Card -->
+            <div class="bg-gray-50 rounded-lg p-3 space-y-2" data-testid="duration-card">
+              <div class="flex items-center gap-2 text-xs text-gray-500">
+                <i class="fa-light fa-clock text-gray-400"></i>
+                <span>Duration</span>
+              </div>
+              <div class="text-sm font-sans">{{ meeting().duration }}m</div>
+              <div class="text-xs text-gray-500">{{ meeting().start_time | meetingTime: meeting().duration : 'time' }}</div>
+            </div>
+          </div>
+
+          <!-- Join Section -->
+          <div data-testid="join-section">
+            <div class="flex items-center gap-2 mb-3">
+              <i class="fa-light fa-user-plus text-gray-400"></i>
+              <h3 class="text-lg font-display font-semibold text-gray-900">Join This Meeting</h3>
+            </div>
+
+            @if (authenticated() && user(); as user) {
+              <!-- Logged In State -->
+              <div class="space-y-3">
+                <div class="bg-green-50 border border-green-200 p-3 rounded-lg">
+                  <div class="flex items-start justify-between">
+                    <div class="flex items-center gap-3">
+                      <div class="w-8 h-8 bg-green-500 rounded-full flex items-center justify-center">
+                        <i class="fa-light fa-user text-white text-xs"></i>
+                      </div>
+                      <div>
+                        <h4 class="font-medium text-gray-900 font-sans">{{ user.name }}</h4>
+                        <p class="text-sm text-gray-600 font-sans">{{ user.email }}</p>
+                      </div>
+                    </div>
+                    <a href="/logout?returnTo={{ returnTo() }}" class="text-primary flex gap-2 items-center text-xs">
+                      <i class="fa-light fa-sign-out"></i>
+                      <span>Logout</span>
+                    </a>
+                  </div>
+                </div>
+
+                <div class="flex items-center justify-between bg-blue-50 border border-blue-200 p-3 rounded-lg">
+                  <div class="flex items-center gap-3 text-sm text-blue-700">
+                    <i class="fa-light fa-check-circle"></i>
+                    <span class="font-sans">Ready to join as {{ user.name }}</span>
+                  </div>
+                  <lfx-button size="small" [href]="meeting().join_url" severity="primary" label="Join Meeting" icon="fa-light fa-sign-in"
+                    >Join Meeting</lfx-button
+                  >
+                </div>
+
+                <div class="text-center">
+                  <p class="text-xs text-gray-500 font-sans flex gap-1 items-center justify-center">
+                    <span>Not you?</span>
+                    <a class="text-primary" href="/logout?returnTo={{ returnTo() }}"> Use a different account </a>
+                  </p>
+                </div>
+              </div>
+            } @else {
+              <!-- Not Logged In State -->
+              <div class="space-y-4">
+                <!-- Sign In Option -->
+                <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-3">
+                      <i class="fa-light fa-sign-in text-blue-600 text-lg"></i>
+                      <div>
+                        <h4 class="font-medium text-gray-900 font-sans">Sign in with your account</h4>
+                        <p class="text-sm text-gray-600 font-sans">Join quickly with your saved information</p>
+                      </div>
+                    </div>
+                    <a
+                      size="small"
+                      class="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-xs rounded transition-colors"
+                      [href]="'/login?returnTo=' + returnTo()">
+                      <i class="fa-light fa-sign-in"></i>
+                      <span>Sign In</span>
+                    </a>
+                  </div>
+                </div>
+
+                <!-- OR Divider -->
+                <div class="relative">
+                  <div class="absolute inset-0 flex items-center">
+                    <div class="w-full border-t border-gray-300"></div>
+                  </div>
+                  <div class="relative flex justify-center text-xs uppercase">
+                    <span class="bg-white px-2 text-gray-500 font-sans">OR</span>
+                  </div>
+                </div>
+
+                <!-- Manual Entry Form -->
+                <div class="space-y-3">
+                  <h4 class="font-medium text-gray-900 font-sans">Enter your information</h4>
+
+                  <form [formGroup]="joinForm" class="space-y-3">
+                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
+                      <div>
+                        <label for="fullName" class="flex items-center gap-1 text-sm font-medium text-gray-700 font-sans mb-1">
+                          <i class="fa-light fa-user text-xs"></i>
+                          Full Name
+                          <span class="text-red-500">*</span>
+                        </label>
+                        <lfx-input-text id="fullName" [form]="joinForm" control="fullName" placeholder="John Doe" styleClass="w-full" size="small">
+                        </lfx-input-text>
+                      </div>
+
+                      <div>
+                        <label for="email" class="flex items-center gap-1 text-sm font-medium text-gray-700 font-sans mb-1">
+                          <i class="fa-light fa-envelope text-xs"></i>
+                          Email
+                          <span class="text-red-500">*</span>
+                        </label>
+                        <lfx-input-text id="email" [form]="joinForm" control="email" placeholder="john.doe@example.com" styleClass="w-full" size="small">
+                        </lfx-input-text>
+                      </div>
+
+                      <div class="md:col-span-2">
+                        <label for="organization" class="flex items-center gap-1 text-sm font-medium text-gray-700 font-sans mb-1">
+                          <i class="fa-light fa-building text-xs"></i>
+                          Organization
+                        </label>
+                        <lfx-input-text id="organization" [form]="joinForm" control="organization" placeholder="Your Company" styleClass="w-full" size="small">
+                        </lfx-input-text>
+                      </div>
+                    </div>
+
+                    <div class="flex items-center justify-between pt-3">
+                      <p class="text-sm text-gray-500 font-sans">Meeting invites and updates will be sent to your email</p>
+                      <lfx-button size="small" [href]="meeting().join_url" severity="primary">Join Meeting</lfx-button>
+                    </div>
+                  </form>
+                </div>
+              </div>
+            }
+          </div>
+        </lfx-card>
+      </div>
+    </div>
+
+    <!-- Toast messages -->
+    <p-toast></p-toast>
+  </div>
+}

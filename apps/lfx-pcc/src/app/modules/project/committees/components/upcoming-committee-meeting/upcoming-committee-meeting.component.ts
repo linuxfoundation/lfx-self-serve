@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { HttpParams } from '@angular/common/http';
 import { Component, computed, inject, Injector, input, OnInit, runInInjectionContext, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
@@ -11,14 +10,13 @@ import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { map, of } from 'rxjs';
+import { filter, map, of } from 'rxjs';
 
 @Component({
   selector: 'lfx-upcoming-committee-meeting',
   standalone: true,
   imports: [CommonModule, RouterLink, MeetingTimePipe, TooltipModule],
   templateUrl: './upcoming-committee-meeting.component.html',
-  styleUrl: './upcoming-committee-meeting.component.scss',
 })
 export class UpcomingCommitteeMeetingComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
@@ -41,7 +39,7 @@ export class UpcomingCommitteeMeetingComponent implements OnInit {
   }
 
   private initializeUpcomingMeeting(): Signal<Meeting | null> {
-    return toSignal(this.project() ? this.getNextUpcomingCommitteeMeeting(this.project()!.uid.toString(), this.committeeId()) : of(null), {
+    return toSignal(this.project() ? this.getNextUpcomingCommitteeMeeting(this.project()!.uid, this.committeeId()) : of(null), {
       initialValue: null,
     });
   }
@@ -56,18 +54,34 @@ export class UpcomingCommitteeMeetingComponent implements OnInit {
   }
 
   private getNextUpcomingCommitteeMeeting(projectId: string, committeeId: string | null = null) {
-    const now = new Date().toISOString();
-    let params = new HttpParams().set('project_uid', `eq.${projectId}`).set('start_time', `gte.${now}`).set('order', 'start_time.asc').set('limit', '1');
+    return this.meetingService.getMeetingsByProject(projectId).pipe(
+      filter((meetings: Meeting[]) => {
+        // Return only meetings that have a start time in the future and has a committee value regardless of the committee id
+        return (
+          meetings.filter((meeting) => new Date(meeting.start_time).getTime() > new Date().getTime() && meeting.committees && meeting.committees?.length > 0)
+            .length > 0
+        );
+      }),
+      map((meetings: Meeting[]) => {
+        if (meetings.length > 0) {
+          if (committeeId) {
+            // Find the earliest upcoming meeting that has the committee id and return it
+            const committeeMeetings = meetings.filter(
+              (meeting) =>
+                new Date(meeting.start_time).getTime() > new Date().getTime() &&
+                meeting.committees &&
+                meeting.committees?.length > 0 &&
+                meeting.committees.some((c) => c.uid === committeeId)
+            );
 
-    // If a specific committee ID is provided, filter by that committee
-    if (committeeId) {
-      // Use PostgREST's array containment operator to check if the committee ID exists in the committees array
-      params = params.set('committees', `cs.{${committeeId}}`);
-    } else {
-      // If no specific committee, only show meetings that have committees
-      params = params.set('committees', `not.is.null`);
-    }
+            return committeeMeetings.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime())[0];
+          }
 
-    return this.meetingService.getMeetings(params).pipe(map((meetings: Meeting[]) => (meetings.length > 0 ? meetings[0] : null)));
+          // Return the next upcoming meeting by date in the future
+          return meetings.filter((meeting) => new Date(meeting.start_time).getTime() > new Date().getTime())[0];
+        }
+        return null;
+      })
+    );
   }
 }

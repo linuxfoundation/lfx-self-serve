@@ -4,7 +4,6 @@
 import {
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
-  ETagError,
   Meeting,
   MeetingRegistrant,
   QueryServiceResponse,
@@ -13,6 +12,7 @@ import {
 } from '@lfx-pcc/shared/interfaces';
 import { Request } from 'express';
 
+import { ResourceNotFoundError } from '../errors';
 import { Logger } from '../helpers/logger';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 import { ETagService } from './etag.service';
@@ -27,7 +27,7 @@ export class MeetingService {
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
-    this.etagService = new ETagService(this.microserviceProxy);
+    this.etagService = new ETagService();
   }
 
   /**
@@ -56,12 +56,11 @@ export class MeetingService {
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
     if (!resources || resources.length === 0) {
-      const error: ETagError = {
-        code: 'NOT_FOUND',
-        message: 'Meeting not found',
-        statusCode: 404,
-      };
-      throw error;
+      throw new ResourceNotFoundError('Meeting', meetingUid, {
+        operation: 'get_meeting_by_id',
+        service: 'meeting_service',
+        path: `/meetings/${meetingUid}`,
+      });
     }
 
     if (resources.length > 1) {

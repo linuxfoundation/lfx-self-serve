@@ -29,7 +29,6 @@ interface CommitteeMemberDisplay extends CommitteeMember {
   standalone: true,
   imports: [CommonModule, ReactiveFormsModule, ButtonComponent, MultiSelectComponent, TableComponent, TooltipModule],
   templateUrl: './meeting-committee-modal.component.html',
-  styleUrl: './meeting-committee-modal.component.scss',
 })
 export class MeetingCommitteeModalComponent {
   // Injected services
@@ -101,8 +100,8 @@ export class MeetingCommitteeModalComponent {
     });
 
     // Set initial selected committees
-    if (this.meeting.meeting_committees && this.meeting.meeting_committees.length > 0) {
-      const committeeIds = this.meeting.meeting_committees.map((c) => c.uid);
+    if (this.meeting.committees && this.meeting.committees.length > 0) {
+      const committeeIds = this.meeting.committees.map((c) => c.uid);
       this.selectedCommitteeIds.set(committeeIds);
       this.form.patchValue({ committees: committeeIds });
       // Load members for initially selected committees
@@ -127,7 +126,7 @@ export class MeetingCommitteeModalComponent {
     const selectedIds = this.form.value.committees as string[];
 
     // If no changes, just close
-    const currentIds = this.meeting.meeting_committees?.map((c) => c.uid) || [];
+    const currentIds = this.meeting.committees?.map((c) => c.uid) || [];
     if (JSON.stringify(selectedIds.sort()) === JSON.stringify(currentIds.sort())) {
       this.ref.close();
       return;

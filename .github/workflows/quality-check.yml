@@ -16,8 +16,6 @@ jobs:
     steps:
       - name: Checkout code
         uses: actions/checkout@v4
-        with:
-          fetch-depth: 0
 
       - name: Enable Corepack
         run: corepack enable
@@ -31,17 +29,6 @@ jobs:
       - name: Install dependencies
         run: yarn install --immutable
 
-      - name: Setup Turborepo cache
-        uses: actions/cache@v4
-        with:
-          path: |
-            .turbo
-            node_modules/.cache/turbo
-          key: ${{ runner.os }}-turbo-${{ hashFiles('**/yarn.lock') }}-${{ hashFiles('**/*', '!**/node_modules/**', '!**/.turbo/**') }}
-          restore-keys: |
-            ${{ runner.os }}-turbo-${{ hashFiles('**/yarn.lock') }}-
-            ${{ runner.os }}-turbo-
-
       - name: Check formatting
         run: yarn format:check
 
@@ -53,24 +40,6 @@ jobs:
 
       - name: Build project
         run: yarn build
-
-      - name: Upload build artifacts
-        uses: actions/upload-artifact@v4
-        if: success()
-        with:
-          name: build-artifacts-turbo
-          path: |
-            apps/lfx-pcc/dist/
-            !apps/lfx-pcc/dist/**/*.map
-          retention-days: 7
-
-      - name: Upload Turborepo cache summary
-        uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: turbo-cache-summary
-          path: .turbo/
-          retention-days: 1
 
   e2e-tests:
     name: E2E Tests

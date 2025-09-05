@@ -11,7 +11,7 @@ import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { take } from 'rxjs/operators';
+import { take } from 'rxjs';
 
 export interface MeetingDeleteResult {
   confirmed: boolean;
@@ -32,7 +32,7 @@ export class MeetingDeleteConfirmationComponent {
   private readonly messageService = inject(MessageService);
 
   public readonly meeting: Meeting = this.dialogConfig.data?.meeting;
-  public readonly participantCount: number = this.meeting.individual_participants_count + this.meeting.committee_members_count;
+  public readonly registrantCount: number = this.meeting.individual_registrants_count + this.meeting.committee_members_count;
   public readonly isRecurring: boolean = !!this.meeting.recurrence;
   public readonly isPastMeeting: boolean = this.meeting.start_time ? new Date(this.meeting.start_time) < new Date() : false;
   public readonly deleteForm: FormGroup = this.initializeDeleteForm();

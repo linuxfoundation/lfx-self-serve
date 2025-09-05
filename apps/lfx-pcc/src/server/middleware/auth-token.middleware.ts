@@ -5,16 +5,7 @@ import { NextFunction, Request, Response } from 'express';
 
 export function extractBearerToken(req: Request, _res: Response, next: NextFunction): void {
   try {
-    // For API routes, check Authorization header first
-    const authHeader = req.headers.authorization;
-    if (authHeader && authHeader.startsWith('Bearer ')) {
-      req.bearerToken = authHeader.substring(7);
-      req.log.debug({ has_token: true, token_source: 'header' }, 'Bearer token extracted from Authorization header');
-      return next();
-    }
-
-    // Fall back to OIDC session if available
-    if (req.oidc?.isAuthenticated()) {
+    if (req.oidc?.isAuthenticated() && !req.oidc.accessToken?.isExpired()) {
       const accessToken = req.oidc.accessToken?.access_token;
       if (accessToken && typeof accessToken === 'string') {
         req.bearerToken = accessToken;
@@ -41,7 +32,6 @@ export function extractBearerToken(req: Request, _res: Response, next: NextFunct
 
     req.log.warn(
       {
-        has_auth_header: !!authHeader,
         is_oidc_authenticated: req.oidc?.isAuthenticated(),
         url: req.url,
         method: req.method,

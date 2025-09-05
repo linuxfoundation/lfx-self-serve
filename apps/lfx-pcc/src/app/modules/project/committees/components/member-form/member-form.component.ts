@@ -9,7 +9,7 @@ import { CalendarComponent } from '@components/calendar/calendar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { MEMBER_ROLES, VOTING_STATUSES } from '@lfx-pcc/shared/constants';
-import { CommitteeMember } from '@lfx-pcc/shared/interfaces';
+import { CreateCommitteeMemberRequest } from '@lfx-pcc/shared/interfaces';
 import { formatDateToISOString, parseISODateString } from '@lfx-pcc/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MessageService } from 'primeng/api';
@@ -58,7 +58,7 @@ export class MemberFormComponent {
     if (this.form().valid) {
       this.submitting.set(true);
       const formValue = this.form().value;
-      const committeeId = this.committee().id;
+      const committeeId = this.committee().uid;
 
       if (!committeeId) {
         this.messageService.add({
@@ -70,18 +70,38 @@ export class MemberFormComponent {
         return;
       }
 
-      // Prepare member data using form values directly, with date formatting overrides
-      const memberData: Partial<CommitteeMember> = {
-        ...formValue,
-        // Override date fields to format them properly (convert Date objects to ISO date strings)
-        role_start: formatDateToISOString(formValue.role_start),
-        role_end: formatDateToISOString(formValue.role_end),
-        voting_status_start: formatDateToISOString(formValue.voting_status_start),
-        voting_status_end: formatDateToISOString(formValue.voting_status_end),
+      // Prepare member data using form values, mapping to new structure
+      const memberData: CreateCommitteeMemberRequest = {
+        first_name: formValue.first_name || null,
+        last_name: formValue.last_name || null,
+        email: formValue.email,
+        job_title: formValue.job_title || null,
+        appointed_by: formValue.appointed_by || null,
+        role: formValue.role
+          ? {
+              name: formValue.role,
+              start_date: formatDateToISOString(formValue.role_start) || null,
+              end_date: formatDateToISOString(formValue.role_end) || null,
+            }
+          : null,
+        voting: formValue.voting_status
+          ? {
+              status: formValue.voting_status,
+              start_date: formatDateToISOString(formValue.voting_status_start) || null,
+              end_date: formatDateToISOString(formValue.voting_status_end) || null,
+            }
+          : null,
+        organization:
+          formValue.organization || formValue.organization_url
+            ? {
+                name: formValue.organization,
+                website: formValue.organization_url,
+              }
+            : null,
       };
 
       const operation = this.isEditing()
-        ? this.committeeService.updateCommitteeMember(committeeId, this.memberId()!, memberData)
+        ? this.committeeService.updateCommitteeMember(committeeId, this.member()!.uid, memberData)
         : this.committeeService.createCommitteeMember(committeeId, memberData);
 
       operation.subscribe({
@@ -120,15 +140,15 @@ export class MemberFormComponent {
         last_name: member.last_name,
         email: member.email,
         job_title: member.job_title,
-        organization: member.organization,
-        organization_url: member.organization_url,
-        role: member.role,
-        voting_status: member.voting_status,
+        organization: member.organization?.name,
+        organization_url: member.organization?.website,
+        role: member.role?.name,
+        voting_status: member.voting?.status,
         appointed_by: member.appointed_by,
-        role_start: parseISODateString(member.role_start),
-        role_end: parseISODateString(member.role_end),
-        voting_status_start: parseISODateString(member.voting_status_start),
-        voting_status_end: parseISODateString(member.voting_status_end),
+        role_start: parseISODateString(member.role?.start_date),
+        role_end: parseISODateString(member.role?.end_date),
+        voting_status_start: parseISODateString(member.voting?.start_date),
+        voting_status_end: parseISODateString(member.voting?.end_date),
       });
     }
   }

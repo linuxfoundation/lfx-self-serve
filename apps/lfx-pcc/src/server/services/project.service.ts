@@ -4,7 +4,7 @@
 import { Project, QueryServiceResponse } from '@lfx-pcc/shared/interfaces';
 import { Request } from 'express';
 
-import { createApiError } from '../utils/api-error';
+import { ResourceNotFoundError } from '../errors';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NatsService } from './nats.service';
 
@@ -46,11 +46,10 @@ export class ProjectService {
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
     if (!resources || resources.length === 0) {
-      throw createApiError({
-        message: 'Project not found',
-        status: 404,
-        code: 'PROJECT_NOT_FOUND',
-        service: 'lfx-v2',
+      throw new ResourceNotFoundError('Project', projectId, {
+        operation: 'get_project_by_id',
+        service: 'project_service',
+        path: '/query/resources',
       });
     }
 
@@ -98,11 +97,10 @@ export class ProjectService {
     const natsResult = await this.natsService.getProjectIdBySlug(projectSlug);
 
     if (!natsResult.exists || !natsResult.projectId) {
-      throw createApiError({
-        message: 'Project not found',
-        status: 404,
-        code: 'PROJECT_NOT_FOUND',
-        service: 'nats',
+      throw new ResourceNotFoundError('Project', projectSlug, {
+        operation: 'get_project_by_slug_via_nats',
+        service: 'project_service',
+        path: '/nats/project-slug-lookup',
       });
     }
 

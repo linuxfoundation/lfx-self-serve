@@ -78,37 +78,6 @@ export interface MeetingCommitteePayload {
   allowed_voting_statuses: string[];
 }
 
-/**
- * Meeting participant information
- * @description Individual or committee member participating in a meeting
- */
-export interface MeetingParticipant {
-  /** Unique identifier for the participant */
-  id: string;
-  /** ID of the meeting this participant is associated with */
-  meeting_id: string;
-  /** Participant's first name */
-  first_name: string;
-  /** Participant's last name */
-  last_name: string;
-  /** Participant's email address */
-  email: string;
-  /** Participant's organization (if any) */
-  organization: string | null;
-  /** Whether this participant is a meeting host */
-  is_host: boolean;
-  /** Participant's job title (if provided) */
-  job_title: string | null;
-  /** Timestamp when participant was added */
-  created_at: string;
-  /** Timestamp when participant was last updated */
-  updated_at: string;
-  /** Type of participant (individual person or committee representative) */
-  type: 'individual' | 'committee';
-  invite_accepted: boolean | null;
-  attended: boolean | null;
-}
-
 export interface Meeting {
   // API Response fields - not in create payload
   /** UUID of the LFX Meeting */
@@ -122,16 +91,15 @@ export interface Meeting {
   /** UUID of the LF project */
   project_uid: string;
   /** Meeting start time in RFC3339 format */
-  start_time: string | null;
+  start_time: string;
   /** Meeting duration in minutes (0-600) */
-  duration: number | null;
+  duration: number;
   /** Meeting timezone (e.g., "America/New_York") */
-  timezone: string | null;
+  timezone: string;
   /** Meeting title */
-  title: string | null;
+  title: string;
   /** Meeting description */
-  description: string | null;
-
+  description: string;
   // Optional API fields
   /** Currently only "Zoom" is supported */
   platform?: string;
@@ -153,26 +121,30 @@ export interface Meeting {
   youtube_upload_enabled: boolean | null;
   /** Who can access meeting artifacts (recordings, transcripts, AI summaries) */
   artifact_visibility: ArtifactVisibility | null;
-  /** Minutes before meeting participants can join */
+  /** Minutes before meeting registrants can join */
   early_join_time_minutes?: number;
   /** Array of organizer usernames */
   organizers: string[];
+  /** Meeting access password for private/restricted meetings */
+  password?: string;
   /** Zoom-specific settings */
   zoom_config?: ZoomConfig | null;
 
   // Fields NOT in API - likely response-only
+  /** Meeting join URL */
+  join_url?: string;
   /** Full committee objects (response only) */
   meeting_committees?: MeetingCommittee[] | null;
   /** Count fields (response only) */
-  individual_participants_count: number;
+  individual_registrants_count: number;
   /** Count fields (response only) */
   committee_members_count: number;
   /** Count fields (response only) */
-  participants_accepted_count: number;
+  registrants_accepted_count: number;
   /** Count fields (response only) */
-  participants_declined_count: number;
+  registrants_declined_count: number;
   /** Count fields (response only) */
-  participants_pending_count: number;
+  registrants_pending_count: number;
 }
 
 export interface CreateMeetingRequest {
@@ -195,7 +167,7 @@ export interface CreateMeetingRequest {
   transcript_enabled?: boolean; // Enable transcription
   youtube_upload_enabled?: boolean; // YouTube upload integration
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
-  early_join_time_minutes?: number; // Minutes before meeting participants can join
+  early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
   zoom_config?: ZoomConfig; // Zoom-specific settings
 }
@@ -220,7 +192,7 @@ export interface UpdateMeetingRequest {
   transcript_enabled?: boolean; // Enable transcription
   youtube_upload_enabled?: boolean; // YouTube upload integration
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
-  early_join_time_minutes?: number; // Minutes before meeting participants can join
+  early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
   zoom_config?: ZoomConfig; // Zoom-specific settings
 }
@@ -299,6 +271,14 @@ export interface MeetingRegistrant {
   created_at: string;
   /** Last update timestamp */
   updated_at: string;
+
+  // Fields NOT in API - likely response-only
+  /** Registrant's type */
+  type: 'individual' | 'committee';
+  /** Registrant's invite accepted status */
+  invite_accepted: boolean | null;
+  /** Registrant's attended status */
+  attended: boolean | null;
 }
 
 /**
@@ -401,4 +381,45 @@ export interface RegistrantPendingChanges {
   toUpdate: { uid: string; changes: UpdateMeetingRegistrantRequest }[];
   /** Registrant UIDs to be deleted via API */
   toDelete: string[];
+}
+
+/**
+ * Individual operation result for batch operations
+ */
+export interface RegistrantOperationResult<T = unknown> {
+  /** Success indicator */
+  success: boolean;
+  /** Result data if successful */
+  data?: T;
+  /** Error information if failed */
+  error?: {
+    message: string;
+    code?: string;
+    details?: unknown;
+  };
+  /** Original input data for context */
+  input?: unknown;
+}
+
+/**
+ * Batch operation response for registrant operations
+ */
+export interface BatchRegistrantOperationResponse<T = unknown> {
+  /** Array of successful results */
+  successes: T[];
+  /** Array of failed operations with error details */
+  failures: Array<{
+    input: unknown;
+    error: {
+      message: string;
+      code?: string;
+      details?: unknown;
+    };
+  }>;
+  /** Summary counts */
+  summary: {
+    total: number;
+    successful: number;
+    failed: number;
+  };
 }

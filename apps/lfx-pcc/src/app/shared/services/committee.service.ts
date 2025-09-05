@@ -3,8 +3,8 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { Committee, CommitteeMember } from '@lfx-pcc/shared/interfaces';
-import { catchError, Observable, of, take, tap } from 'rxjs';
+import { Committee, CommitteeMember, CreateCommitteeMemberRequest } from '@lfx-pcc/shared/interfaces';
+import { catchError, Observable, of, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -23,31 +23,23 @@ export class CommitteeService {
     );
   }
 
-  public getCommitteesByProject(projectId: string, limit?: number, orderBy?: string): Observable<Committee[]> {
-    let params = new HttpParams().set('tags', `project_uid:${projectId}`);
-
-    if (limit) {
-      params = params.set('limit', limit.toString());
-    }
-
-    if (orderBy) {
-      params = params.set('order', orderBy);
-    }
+  public getCommitteesByProject(projectId: string): Observable<Committee[]> {
+    const params = new HttpParams().set('tags', `project_uid:${projectId}`);
 
     return this.getCommittees(params);
   }
 
-  public getRecentCommitteesByProject(projectId: string, limit: number = 3): Observable<Committee[]> {
-    return this.getCommitteesByProject(projectId, limit, 'updated_at.desc');
+  public getRecentCommitteesByProject(projectId: string): Observable<Committee[]> {
+    return this.getCommitteesByProject(projectId);
   }
 
   public getCommittee(id: string): Observable<Committee> {
     return this.http.get<Committee>(`/api/committees/${id}`).pipe(
       catchError((error) => {
         console.error(`Failed to load committee ${id}:`, error);
-        return of(error);
+        return throwError(() => new Error(`Failed to load committee ${id}`));
       }),
-      tap((committee) => this.committee.set(committee))
+      tap((committee) => this.committee.set(committee ?? null))
     );
   }
 
@@ -65,28 +57,18 @@ export class CommitteeService {
 
   // Committee Members methods
   public getCommitteeMembers(committeeId: string, params?: HttpParams): Observable<CommitteeMember[]> {
-    return this.http.get<CommitteeMember[]>(`/api/committees/${committeeId}/members`, { params }).pipe(
-      catchError((error) => {
-        console.error(`Failed to load members for committee ${committeeId}:`, error);
-        return of([]);
-      })
-    );
+    return this.http.get<CommitteeMember[]>(`/api/committees/${committeeId}/members`, { params });
   }
 
   public getCommitteeMember(committeeId: string, memberId: string): Observable<CommitteeMember | null> {
-    return this.http.get<CommitteeMember>(`/api/committees/${committeeId}/members/${memberId}`).pipe(
-      catchError((error) => {
-        console.error(`Failed to load member ${memberId} for committee ${committeeId}:`, error);
-        return of(null);
-      })
-    );
+    return this.http.get<CommitteeMember>(`/api/committees/${committeeId}/members/${memberId}`);
   }
 
-  public createCommitteeMember(committeeId: string, memberData: Partial<CommitteeMember>): Observable<CommitteeMember> {
+  public createCommitteeMember(committeeId: string, memberData: CreateCommitteeMemberRequest): Observable<CommitteeMember> {
     return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/members`, memberData).pipe(take(1));
   }
 
-  public updateCommitteeMember(committeeId: string, memberId: string, memberData: Partial<CommitteeMember>): Observable<CommitteeMember> {
+  public updateCommitteeMember(committeeId: string, memberId: string, memberData: CreateCommitteeMemberRequest): Observable<CommitteeMember> {
     return this.http.put<CommitteeMember>(`/api/committees/${committeeId}/members/${memberId}`, memberData).pipe(take(1));
   }
 

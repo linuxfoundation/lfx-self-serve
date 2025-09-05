@@ -4,13 +4,12 @@
 
 ### Backend Stack
 
-- **PostgreSQL 15**: Primary database with Row Level Security (RLS)
-- **PostgREST**: Auto-generated REST API from PostgreSQL schema
-- **Express.js**: BFF (Backend-For-Frontend) server with SSR, authentication, and AI services
-- **Auth0**: Authentication provider with OpenID Connect
+- **Express.js**: Server with Angular Universal SSR, authentication, and API proxy
+- **Auth0**: Authentication provider with OpenID Connect integration
 - **Pino**: Structured JSON logging with sensitive data redaction
-- **Docker**: Containerized PostgreSQL with custom extensions
-- **Database Triggers**: Webhook system for Slack notifications
+- **PM2**: Production process management with clustering
+- **Microservice Integration**: Proxy to LFX v2 services and NATS messaging
+- **AI Integration**: Claude Sonnet via LiteLLM proxy for intelligent features
 
 ### Frontend Stack
 
@@ -1109,7 +1108,7 @@ Features:
 ### Planned Enhancements
 
 1. **API Integration**:
-   - PostgreSQL + PostgREST backend
+   - Enhanced microservice integration
    - HTTP interceptors for authentication
    - Error handling and retry logic
 
