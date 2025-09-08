@@ -96,7 +96,7 @@ export class MeetingManageComponent {
   private attachmentsRefresh$ = new BehaviorSubject<void>(undefined);
   public attachments = this.initializeAttachments();
   // Stepper state
-  public currentStep = signal<number>(0);
+  public currentStep = signal<number>(1);
   public readonly totalSteps = TOTAL_STEPS;
   // Form state
   public form = signal<FormGroup>(this.createMeetingFormGroup());
@@ -113,10 +113,10 @@ export class MeetingManageComponent {
   // Validation signals for template
   public readonly canProceed = signal<boolean>(false);
   public readonly canGoNext = computed(() => this.currentStep() + 1 < this.totalSteps && this.canNavigateToStep(this.currentStep() + 1));
-  public readonly canGoPrevious = computed(() => this.currentStep() > 0);
-  public readonly isFirstStep = computed(() => this.currentStep() === 0);
-  public readonly isLastMeetingStep = computed(() => this.currentStep() === this.totalSteps - 2);
-  public readonly isLastStep = computed(() => this.currentStep() === this.totalSteps - 1);
+  public readonly canGoPrevious = computed(() => this.currentStep() > 1);
+  public readonly isFirstStep = computed(() => this.currentStep() === 1);
+  public readonly isLastMeetingStep = computed(() => this.currentStep() === this.totalSteps - 1);
+  public readonly isLastStep = computed(() => this.currentStep() === this.totalSteps);
   public readonly currentStepTitle = computed(() => this.getStepTitle(this.currentStep()));
   public readonly hasRegistrantUpdates = computed(
     () => this.registrantUpdates().toAdd.length > 0 || this.registrantUpdates().toUpdate.length > 0 || this.registrantUpdates().toDelete.length > 0
@@ -153,9 +153,9 @@ export class MeetingManageComponent {
 
   public nextStep(): void {
     const next = this.currentStep() + 1;
-    if (next < this.totalSteps && this.canNavigateToStep(next)) {
+    if (next <= this.totalSteps && this.canNavigateToStep(next)) {
       // Auto-generate title when moving from step 1 to step 2
-      if (this.currentStep() === 0 && next === 1) {
+      if (this.currentStep() === 1 && next === 2) {
         this.generateMeetingTitle();
       }
 
@@ -166,7 +166,7 @@ export class MeetingManageComponent {
 
   public previousStep(): void {
     const previous = this.currentStep() - 1;
-    if (previous >= 0) {
+    if (previous >= 1) {
       this.currentStep.set(previous);
       this.scrollToStepper();
     }
@@ -308,7 +308,7 @@ export class MeetingManageComponent {
     this.meetingId.set(meeting.uid);
 
     // If we're in create mode and not on the last step, continue to next step
-    if (!this.isEditMode() && this.currentStep() < this.totalSteps - 1) {
+    if (!this.isEditMode() && this.currentStep() < this.totalSteps) {
       this.nextStep();
       this.submitting.set(false);
       return;
@@ -526,7 +526,7 @@ export class MeetingManageComponent {
     }
 
     // For forward navigation, validate all previous steps
-    for (let i = 0; i < step; i++) {
+    for (let i = 1; i < step; i++) {
       if (!this.isStepValid(i)) {
         return false;
       }
@@ -543,10 +543,10 @@ export class MeetingManageComponent {
     const form = this.form();
 
     switch (step) {
-      case 0: // Meeting Type
+      case 1: // Meeting Type
         return !!form.get('meeting_type')?.value && form.get('meeting_type')?.value !== '';
 
-      case 1: // Meeting Details
+      case 2: // Meeting Details
         return !!(
           form.get('title')?.value &&
           form.get('description')?.value &&
@@ -559,13 +559,11 @@ export class MeetingManageComponent {
           !form.errors?.['futureDateTime']
         );
 
-      case 2: // Platform & Features
+      case 3: // Platform & Features
         return !!form.get('meetingTool')?.value;
 
-      case 3: // Resources & Summary (optional)
-        return true;
-
-      case 4: // Manage Guests (optional)
+      case 4: // Resources & Summary (optional)
+      case 5: // Manage Guests (optional)
         return true;
 
       default:

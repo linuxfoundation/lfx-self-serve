@@ -199,14 +199,16 @@
                         <i class="fa-light fa-calendar text-4xl text-gray-400 mb-4"></i>
                         <h3 class="text-lg font-medium text-gray-900 mb-2">No Upcoming Meetings</h3>
                         <p class="text-gray-600 mb-4 text-sm">There are no upcoming meetings scheduled.</p>
-                        <lfx-button
-                          label="Create Meeting"
-                          icon="fa-light fa-calendar-plus"
-                          severity="secondary"
-                          size="small"
-                          [routerLink]="['meetings/create']"
-                          [relativeTo]="activatedRoute">
-                        </lfx-button>
+                        @if (project()?.writer) {
+                          <lfx-button
+                            label="Create Meeting"
+                            icon="fa-light fa-calendar-plus"
+                            severity="secondary"
+                            size="small"
+                            [routerLink]="['meetings/create']"
+                            [relativeTo]="activatedRoute">
+                          </lfx-button>
+                        }
                       </div>
                     </div>
                   }

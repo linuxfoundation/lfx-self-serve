@@ -60,6 +60,8 @@ export interface Project {
   description: string;
   /** Project display name */
   name: string;
+  /** Write access permission for current user (response only) */
+  writer?: boolean;
   /** Whether project is publicly visible */
   public: boolean;
   /** Parent project UID (for subprojects) */

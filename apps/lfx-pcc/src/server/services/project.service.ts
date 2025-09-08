@@ -5,6 +5,7 @@ import { Project, QueryServiceResponse } from '@lfx-pcc/shared/interfaces';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { AccessCheckService } from './access-check.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NatsService } from './nats.service';
 
@@ -12,10 +13,12 @@ import { NatsService } from './nats.service';
  * Service for handling project business logic
  */
 export class ProjectService {
+  private accessCheckService: AccessCheckService;
   private microserviceProxy: MicroserviceProxyService;
   private natsService: NatsService;
 
   public constructor() {
+    this.accessCheckService = new AccessCheckService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.natsService = new NatsService();
   }
@@ -31,7 +34,10 @@ export class ProjectService {
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
-    return resources.map((resource) => resource.data);
+    const projects = resources.map((resource) => resource.data);
+
+    // Add writer access field to all projects
+    return await this.accessCheckService.addAccessToResources(req, projects, 'project');
   }
 
   /**
@@ -63,7 +69,10 @@ export class ProjectService {
       );
     }
 
-    return resources[0].data;
+    const project = resources[0].data;
+
+    // Add writer access field to the project
+    return await this.accessCheckService.addAccessToResource(req, project, 'project');
   }
 
   /**

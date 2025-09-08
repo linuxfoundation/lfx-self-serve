@@ -538,17 +538,23 @@ export class ProjectComponent {
   }
 
   private initializeQuickActionMenuItems(): MenuItem[] {
-    return [
-      {
-        label: 'Create Meeting',
-        icon: 'fa-light fa-calendar-plus text-sm',
-        routerLink: ['meetings/create'],
-      },
-      {
-        label: 'Create Committee',
-        icon: 'fa-light fa-people-group text-sm',
-        command: () => this.openCreateDialog(),
-      },
+    const items: MenuItem[] = [];
+    if (this.project()?.writer) {
+      items.push(
+        {
+          label: 'Create Meeting',
+          icon: 'fa-light fa-calendar-plus text-sm',
+          routerLink: ['meetings/create'],
+        },
+        {
+          label: 'Create Committee',
+          icon: 'fa-light fa-people-group text-sm',
+          command: () => this.openCreateDialog(),
+        }
+      );
+    }
+
+    items.push(
       {
         label: 'View All Committees',
         icon: 'fa-light fa-list text-sm',
@@ -558,7 +564,9 @@ export class ProjectComponent {
         label: 'View Calendar',
         icon: 'fa-light fa-calendar text-sm',
         routerLink: ['meetings'],
-      },
-    ];
+      }
+    );
+
+    return items;
   }
 }

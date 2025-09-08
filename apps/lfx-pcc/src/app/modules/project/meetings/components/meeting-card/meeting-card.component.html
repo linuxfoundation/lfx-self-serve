@@ -53,7 +53,7 @@
             data-testid="share-meeting-button"
             pTooltip="Share Meeting"></lfx-button>
         }
-        @if (project()?.slug) {
+        @if (project()?.slug && meeting().organizer) {
           <lfx-button
             icon="fa-light fa-edit"
             [text]="true"
@@ -62,15 +62,16 @@
             severity="secondary"
             data-testid="edit-meeting-button"
             [routerLink]="['/project', project()!.slug, 'meetings', meeting().uid, 'edit']"></lfx-button>
+
+          <lfx-button
+            [icon]="loading() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis'"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="meeting-actions-button"
+            (click)="actionMenu.toggle($event)"></lfx-button>
         }
-        <lfx-button
-          [icon]="loading() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis'"
-          [text]="true"
-          [rounded]="true"
-          size="small"
-          severity="secondary"
-          data-testid="meeting-actions-button"
-          (click)="actionMenu.toggle($event)"></lfx-button>
       </div>
     </div>
     <!-- Action Menu -->

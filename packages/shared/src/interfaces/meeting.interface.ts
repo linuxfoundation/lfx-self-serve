@@ -86,6 +86,8 @@ export interface Meeting {
   created_at: string;
   /** Timestamp when meeting was last updated */
   updated_at: string;
+  /** Write access permission for current user (response only) */
+  organizer?: boolean;
 
   // Required API fields
   /** UUID of the LF project */
@@ -274,7 +276,9 @@ export interface MeetingRegistrant {
 
   // Fields NOT in API - likely response-only
   /** Registrant's type */
-  type: 'individual' | 'committee';
+  type: 'direct' | 'committee';
+  /** Registrant Committee UID (if type is committee) */
+  committee_uid?: string | null;
   /** Registrant's invite accepted status */
   invite_accepted: boolean | null;
   /** Registrant's attended status */

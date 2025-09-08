@@ -45,3 +45,6 @@ export * from './nats.interface';
 
 // AI interfaces
 export * from './ai.interface';
+
+// Access check interfaces
+export * from './access-check.interface';

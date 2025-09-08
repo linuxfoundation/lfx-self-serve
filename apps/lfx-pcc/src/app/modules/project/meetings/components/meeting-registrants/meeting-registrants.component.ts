@@ -152,7 +152,7 @@ export class MeetingRegistrantsComponent implements OnInit {
         username: null,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
-        type: 'individual',
+        type: 'direct',
         invite_accepted: null,
         attended: null,
       };

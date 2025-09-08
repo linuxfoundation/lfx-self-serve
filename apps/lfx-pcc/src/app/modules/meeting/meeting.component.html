@@ -129,8 +129,9 @@
                 <i class="fa-light fa-video text-gray-400"></i>
                 <span>Platform</span>
               </div>
-              <div class="text-sm font-sans">Zoom Meeting</div>
-              <div class="text-xs text-gray-500">Link will be sent via email</div>
+              <div class="flex items-center gap-2">
+                <img src="/images/zoom-logo.svg" alt="Zoom" class="w-auto h-4 mt-2 object-contain" />
+              </div>
             </div>
 
             <!-- Duration Card -->
@@ -260,7 +261,9 @@
 
                     <div class="flex items-center justify-between pt-3">
                       <p class="text-sm text-gray-500 font-sans">Meeting invites and updates will be sent to your email</p>
-                      <lfx-button size="small" [href]="meeting().join_url" severity="primary">Join Meeting</lfx-button>
+                      <lfx-button size="small" [href]="meeting().join_url" severity="primary" label="Join Meeting" icon="fa-light fa-sign-in"
+                        >Join Meeting</lfx-button
+                      >
                     </div>
                   </form>
                 </div>

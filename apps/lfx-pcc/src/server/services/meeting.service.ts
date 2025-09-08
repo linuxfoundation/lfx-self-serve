@@ -15,6 +15,7 @@ import { Request } from 'express';
 import { ResourceNotFoundError } from '../errors';
 import { Logger } from '../helpers/logger';
 import { getUsernameFromAuth } from '../utils/auth-helper';
+import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -22,10 +23,12 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
  * Service for handling meeting business logic with microservice proxy
  */
 export class MeetingService {
+  private accessCheckService: AccessCheckService;
   private etagService: ETagService;
   private microserviceProxy: MicroserviceProxyService;
 
   public constructor() {
+    this.accessCheckService = new AccessCheckService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.etagService = new ETagService();
   }
@@ -41,7 +44,10 @@ export class MeetingService {
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
-    return resources.map((resource) => resource.data);
+    const meetings = resources.map((resource) => resource.data);
+
+    // Add writer access field to all meetings
+    return await this.accessCheckService.addAccessToResources(req, meetings, 'meeting', 'organizer');
   }
 
   /**
@@ -73,7 +79,10 @@ export class MeetingService {
       );
     }
 
-    return resources[0].data;
+    const meeting = resources[0].data;
+
+    // Add writer access field to the meeting
+    return await this.accessCheckService.addAccessToResource(req, meeting, 'meeting', 'organizer');
   }
 
   /**

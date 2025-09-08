@@ -14,6 +14,7 @@ import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
 import { Logger } from '../helpers/logger';
+import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -21,10 +22,12 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
  * Service for handling committee business logic
  */
 export class CommitteeService {
+  private accessCheckService: AccessCheckService;
   private etagService: ETagService;
   private microserviceProxy: MicroserviceProxyService;
 
   public constructor() {
+    this.accessCheckService = new AccessCheckService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.etagService = new ETagService();
   }
@@ -40,7 +43,10 @@ export class CommitteeService {
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
-    return resources.map((resource) => resource.data);
+    const committees = resources.map((resource) => resource.data);
+
+    // Add writer access field to all committees
+    return await this.accessCheckService.addAccessToResources(req, committees, 'committee');
   }
 
   /**
@@ -62,7 +68,10 @@ export class CommitteeService {
       });
     }
 
-    return resources[0].data;
+    const committee = resources[0].data;
+
+    // Add writer access field to the committee
+    return await this.accessCheckService.addAccessToResource(req, committee, 'committee');
   }
 
   /**

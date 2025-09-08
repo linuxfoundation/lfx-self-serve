@@ -113,15 +113,17 @@
         <!-- Actions column -->
         <td class="px-4 py-3">
           <div class="flex items-center justify-center gap-1">
-            <lfx-button
-              icon="fa-light fa-edit"
-              [text]="true"
-              [rounded]="true"
-              size="small"
-              severity="secondary"
-              styleClass="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
-              (onClick)="onEdit(committee)"
-              [attr.data-testid]="'committee-edit-' + committee.uid" />
+            @if (committee?.writer) {
+              <lfx-button
+                icon="fa-light fa-edit"
+                [text]="true"
+                [rounded]="true"
+                size="small"
+                severity="secondary"
+                styleClass="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
+                (onClick)="onEdit(committee)"
+                [attr.data-testid]="'committee-edit-' + committee.uid" />
+            }
             <lfx-button
               icon="fa-light fa-users"
               [text]="true"
@@ -130,22 +132,25 @@
               severity="secondary"
               styleClass="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
               (onClick)="onView(committee)"
-              [attr.data-testid]="'committee-members-' + committee.uid" />
-            <lfx-button
-              icon="fa-light fa-ellipsis"
-              [text]="true"
-              [rounded]="true"
-              size="small"
-              severity="secondary"
-              styleClass="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
-              (onClick)="toggleCommitteeActionMenu($event, committee, actionMenu)"
-              [attr.data-testid]="'committee-more-' + committee.uid" />
+              [attr.data-testid]="'committee-members-' + committee.uid"
+              pTooltip="View members" />
+            @if (committee?.writer) {
+              <lfx-button
+                icon="fa-light fa-ellipsis"
+                [text]="true"
+                [rounded]="true"
+                size="small"
+                severity="secondary"
+                styleClass="h-8 w-8 p-0 text-gray-500 hover:text-gray-700"
+                (onClick)="toggleCommitteeActionMenu($event, committee, actionMenu)"
+                [attr.data-testid]="'committee-more-' + committee.uid" />
+            }
           </div>
         </td>
       </tr>
     </ng-template>
 
-    <lfx-menu #actionMenu [model]="committeeActionMenuItems" [popup]="true" appendTo="body"></lfx-menu>
+    <lfx-menu #actionMenu [model]="committeeActionMenuItems()!" [popup]="true" appendTo="body"></lfx-menu>
 
     <!-- Empty message template -->
     <ng-template #emptymessage>

@@ -102,4 +102,12 @@
       }
     }
   }
+
+  .p-menu {
+    .p-menu-item-link {
+      .p-menu-item-icon {
+        @apply w-5;
+      }
+    }
+  }
 }

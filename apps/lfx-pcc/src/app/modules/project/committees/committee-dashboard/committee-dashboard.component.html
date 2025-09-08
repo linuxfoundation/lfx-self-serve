@@ -20,14 +20,16 @@
             Manage committees, their settings, and organizational structure. Sub-committees are indicated with indentation.
           </p>
         </div>
-        <lfx-button
-          label="New Committee"
-          icon="fa-light fa-plus"
-          severity="primary"
-          (onClick)="openCreateDialog()"
-          size="small"
-          data-testid="committee-new-cta">
-        </lfx-button>
+        @if (project()?.writer) {
+          <lfx-button
+            label="New Committee"
+            icon="fa-light fa-plus"
+            severity="primary"
+            (onClick)="openCreateDialog()"
+            size="small"
+            data-testid="committee-new-cta">
+          </lfx-button>
+        }
       </div>
 
       <!-- Statistics Cards -->

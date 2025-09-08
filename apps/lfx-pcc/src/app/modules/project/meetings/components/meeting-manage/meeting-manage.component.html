@@ -21,33 +21,33 @@
       @if (!isEditMode()) {
         <p-stepper [value]="currentStep()" [linear]="true" data-testid="meeting-manage-stepper">
           <p-step-list>
-            <p-step [value]="0" data-testid="meeting-manage-step-0"></p-step>
             <p-step [value]="1" data-testid="meeting-manage-step-1"></p-step>
             <p-step [value]="2" data-testid="meeting-manage-step-2"></p-step>
             <p-step [value]="3" data-testid="meeting-manage-step-3"></p-step>
             <p-step [value]="4" data-testid="meeting-manage-step-4"></p-step>
+            <p-step [value]="5" data-testid="meeting-manage-step-5"></p-step>
           </p-step-list>
 
           <p-step-panels>
-            <p-step-panel [value]="0" data-testid="meeting-manage-panel-0">
+            <p-step-panel [value]="1" data-testid="meeting-manage-panel-0">
               <ng-template #content let-activateCallback="activateCallback">
                 <lfx-meeting-type-selection [form]="form()"></lfx-meeting-type-selection>
               </ng-template>
             </p-step-panel>
 
-            <p-step-panel [value]="1" data-testid="meeting-manage-panel-1">
+            <p-step-panel [value]="2" data-testid="meeting-manage-panel-1">
               <ng-template #content let-activateCallback="activateCallback">
                 <lfx-meeting-details [form]="form()"></lfx-meeting-details>
               </ng-template>
             </p-step-panel>
 
-            <p-step-panel [value]="2" data-testid="meeting-manage-panel-2">
+            <p-step-panel [value]="3" data-testid="meeting-manage-panel-2">
               <ng-template #content let-activateCallback="activateCallback">
                 <lfx-meeting-platform-features [form]="form()"></lfx-meeting-platform-features>
               </ng-template>
             </p-step-panel>
 
-            <p-step-panel [value]="3" data-testid="meeting-manage-panel-3">
+            <p-step-panel [value]="4" data-testid="meeting-manage-panel-3">
               <ng-template #content let-activateCallback="activateCallback">
                 <lfx-meeting-resources-summary
                   [form]="form()"
@@ -60,7 +60,7 @@
               </ng-template>
             </p-step-panel>
 
-            <p-step-panel [value]="4" data-testid="meeting-manage-panel-4">
+            <p-step-panel [value]="5" data-testid="meeting-manage-panel-4">
               <ng-template #content let-activateCallback="activateCallback">
                 @if (meetingId()) {
                   <lfx-meeting-registrants [meetingUid]="meetingId()!" [(registrantUpdates)]="registrantUpdates" [refresh]="registrantUpdatesRefresh$">
@@ -80,11 +80,11 @@
       @if (isEditMode()) {
         <p-tabs [(value)]="currentStep">
           <p-tablist>
-            <p-tab [value]="0">Meeting Details</p-tab>
-            <p-tab [value]="1">Manage Guests</p-tab>
+            <p-tab [value]="1">Meeting Details</p-tab>
+            <p-tab [value]="2">Manage Guests</p-tab>
           </p-tablist>
           <p-tabpanels>
-            <p-tabpanel [value]="0">
+            <p-tabpanel [value]="1">
               <div class="space-y-8" data-testid="meeting-manage-single-page">
                 <!-- Meeting Type Section -->
                 <div class="border border-slate-200 rounded-lg p-6">
@@ -197,7 +197,7 @@
             }
           } @else {
             <!-- EDIT MODE: Update Button -->
-            @if (currentStep() === 0) {
+            @if (currentStep() === 1) {
               <lfx-button
                 label="Update Meeting"
                 icon="fa-light fa-check"

@@ -95,6 +95,7 @@ jobs:
           secret-ids: |
             SUPABASE, /cloudops/managed-secrets/cloud/supabase/api_key
             AUTH0,  /cloudops/managed-secrets/auth0/LFX_V2_PCC
+            AUTH,  /cloudops/managed-secrets/auth0/LFX_V2_Meeting_Join_M2M
 
       - name: Validate required secrets for E2E testing
         id: validate-secrets

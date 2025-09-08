@@ -106,8 +106,7 @@ export class MeetingService {
       catchError((error) => {
         console.error('Failed to create meeting:', error);
         return throwError(() => error);
-      }),
-      tap(console.log)
+      })
     );
   }
 

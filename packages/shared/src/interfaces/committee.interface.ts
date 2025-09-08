@@ -12,6 +12,8 @@ export interface Committee {
   name: string;
   /** Display name for UI presentation (optional override) */
   display_name?: string;
+  /** Write access permission for current user (response only) */
+  writer?: boolean;
   /** Committee category/type (e.g., "Technical", "Legal", "Board") */
   category: string;
   /** Optional description of the committee's purpose */

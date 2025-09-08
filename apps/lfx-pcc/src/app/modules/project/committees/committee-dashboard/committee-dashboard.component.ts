@@ -65,7 +65,6 @@ export class CommitteeDashboardComponent {
   public votingStatusOptions: Signal<{ label: string; value: string | null }[]>;
   public filteredCommittees: Signal<Committee[]>;
   public totalRecords: Signal<number>;
-  public menuItems: MenuItem[];
   public actionMenuItems: MenuItem[];
   public refresh: BehaviorSubject<void>;
   private searchTerm: Signal<string>;
@@ -94,7 +93,6 @@ export class CommitteeDashboardComponent {
     this.votingStatusOptions = this.initializeVotingStatusOptions();
     this.filteredCommittees = this.initializeFilteredCommittees();
     this.totalRecords = this.initializeTotalRecords();
-    this.menuItems = this.initializeMenuItems();
     this.actionMenuItems = this.initializeActionMenuItems();
   }
 
@@ -339,16 +337,6 @@ export class CommitteeDashboardComponent {
 
   private initializeTotalRecords(): Signal<number> {
     return computed(() => this.filteredCommittees().length);
-  }
-
-  private initializeMenuItems(): MenuItem[] {
-    return [
-      {
-        label: 'Create Committee',
-        icon: 'fa-light fa-users-medical text-sm',
-        command: () => this.openCreateDialog(),
-      },
-    ];
   }
 
   private initializeActionMenuItems(): MenuItem[] {

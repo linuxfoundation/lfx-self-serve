@@ -11,11 +11,12 @@ import { Committee } from '@lfx-pcc/shared/interfaces';
 import { CommitteeTypeColorPipe } from '@pipes/committee-type-colors.pipe';
 import { ProjectService } from '@services/project.service';
 import { MenuItem } from 'primeng/api';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-committee-table',
   standalone: true,
-  imports: [CommonModule, RouterLink, ButtonComponent, MenuComponent, TableComponent, CommitteeTypeColorPipe],
+  imports: [CommonModule, RouterLink, ButtonComponent, MenuComponent, TableComponent, CommitteeTypeColorPipe, TooltipModule],
   templateUrl: './committee-table.component.html',
 })
 export class CommitteeTableComponent {
@@ -32,7 +33,7 @@ export class CommitteeTableComponent {
   public selectedCommittee: WritableSignal<Committee | null> = signal(null);
 
   // Menu items for committee actions
-  public committeeActionMenuItems: MenuItem[] = this.initializeCommitteeActionMenuItems();
+  public committeeActionMenuItems: Signal<MenuItem[]> = computed(() => this.initializeCommitteeActionMenuItems());
 
   // Organize committees with hierarchy for display
   public readonly organizedCommittees: Signal<(Committee & { level?: number })[]> = computed(() => {
@@ -78,7 +79,7 @@ export class CommitteeTableComponent {
   }
 
   private initializeCommitteeActionMenuItems(): MenuItem[] {
-    return [
+    const items: MenuItem[] = [
       {
         label: 'View',
         icon: 'fa-light fa-eye',
@@ -89,20 +90,27 @@ export class CommitteeTableComponent {
           }
         },
       },
-      {
-        separator: true,
-      },
-      {
-        label: 'Delete',
-        icon: 'fa-light fa-trash',
-        styleClass: 'text-red-500',
-        command: () => {
-          const committee = this.selectedCommittee();
-          if (committee) {
-            this.onDelete(committee);
-          }
-        },
-      },
     ];
+
+    if (this.selectedCommittee()?.writer) {
+      items.push(
+        {
+          separator: true,
+        },
+        {
+          label: 'Delete',
+          icon: 'fa-light fa-trash',
+          styleClass: 'text-red-500',
+          command: () => {
+            const committee = this.selectedCommittee();
+            if (committee) {
+              this.onDelete(committee);
+            }
+          },
+        }
+      );
+    }
+
+    return items;
   }
 }

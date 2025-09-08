@@ -19,8 +19,7 @@ import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { MenuItem } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
-import { BehaviorSubject, of } from 'rxjs';
-import { debounceTime, distinctUntilChanged, startWith, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, debounceTime, distinctUntilChanged, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { MeetingCardComponent } from '../components/meeting-card/meeting-card.component';
 import { MeetingModalComponent } from '../components/meeting-modal/meeting-modal.component';
@@ -257,13 +256,16 @@ export class MeetingDashboardComponent {
   }
 
   private initializeMenuItems(): MenuItem[] {
-    const project = this.project();
-    return [
-      {
+    const items: MenuItem[] = [];
+    if (this.project()?.writer) {
+      items.push({
         label: 'Create Meeting',
         icon: 'fa-light fa-calendar-plus text-sm',
-        routerLink: project ? `/project/${project.slug}/meetings/create` : '#',
-      },
+        routerLink: this.project() ? `/project/${this.project()?.slug}/meetings/create` : '#',
+      });
+    }
+
+    items.push(
       {
         label: this.meetingListView() === 'past' ? 'Upcoming Meetings' : 'Meeting History',
         icon: 'fa-light fa-calendar-days text-sm',
@@ -272,8 +274,10 @@ export class MeetingDashboardComponent {
       {
         label: 'Public Calendar',
         icon: 'fa-light fa-calendar-check text-sm',
-      },
-    ];
+      }
+    );
+
+    return items;
   }
 
   private initializePublicMeetingsCount(): Signal<number> {

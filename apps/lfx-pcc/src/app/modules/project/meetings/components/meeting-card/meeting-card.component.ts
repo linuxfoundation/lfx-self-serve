@@ -199,7 +199,7 @@ export class MeetingCardComponent implements OnInit {
 
   private initRegistrantsLabel(): Signal<string> {
     return computed(() => {
-      if (this.meetingRegistrantCount() === 0) {
+      if (this.meetingRegistrantCount() === 0 && this.meeting()?.organizer) {
         return 'Add Guests';
       }
 
@@ -311,11 +311,26 @@ export class MeetingCardComponent implements OnInit {
 
       // Only add Edit option for upcoming meetings
       if (!this.pastMeeting()) {
-        baseItems.push({
-          label: 'Add Guests',
-          icon: 'fa-light fa-plus',
-          command: () => this.openAddRegistrantModal(),
-        });
+        if (this.meeting()?.organizer) {
+          baseItems.push({
+            label: 'Add Guests',
+            icon: 'fa-light fa-plus',
+            command: () => this.openAddRegistrantModal(),
+          });
+
+          baseItems.push({
+            label: this.meeting().meeting_committees && this.meeting().meeting_committees!.length > 0 ? 'Manage Committees' : 'Connect Committees',
+            icon: 'fa-light fa-people-group',
+            command: () => this.openCommitteeModal(),
+          });
+
+          const projectSlug = this.project()?.slug;
+          baseItems.push({
+            label: 'Edit',
+            icon: 'fa-light fa-edit',
+            routerLink: ['/project', projectSlug, 'meetings', this.meeting().uid, 'edit'],
+          });
+        }
 
         baseItems.push({
           label: 'Join Meeting',
@@ -327,31 +342,19 @@ export class MeetingCardComponent implements OnInit {
         });
 
         baseItems.push({
-          label: this.meeting().meeting_committees && this.meeting().meeting_committees!.length > 0 ? 'Manage Committees' : 'Connect Committees',
-          icon: 'fa-light fa-people-group',
-          command: () => this.openCommitteeModal(),
-        });
-
-        const projectSlug = this.project()?.slug;
-        if (projectSlug) {
-          baseItems.push({
-            label: 'Edit',
-            icon: 'fa-light fa-edit',
-            routerLink: ['/project', projectSlug, 'meetings', this.meeting().uid, 'edit'],
-          });
-        }
-        baseItems.push({
           separator: true,
         });
       }
 
-      // Add separator and delete option
-      baseItems.push({
-        label: 'Delete',
-        icon: 'fa-light fa-trash',
-        styleClass: 'text-red-600',
-        command: () => this.deleteMeeting(),
-      });
+      if (this.meeting()?.organizer) {
+        // Add separator and delete option
+        baseItems.push({
+          label: 'Delete',
+          icon: 'fa-light fa-trash',
+          styleClass: 'text-red-600',
+          command: () => this.deleteMeeting(),
+        });
+      }
 
       return baseItems;
     });
