@@ -56,7 +56,7 @@ export class MeetingService {
   public async getMeetingById(req: Request, meetingUid: string): Promise<Meeting> {
     const params = {
       type: 'meeting',
-      tags: meetingUid,
+      tags: `meeting_uid:${meetingUid}`,
     };
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
