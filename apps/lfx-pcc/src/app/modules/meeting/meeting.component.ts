@@ -154,7 +154,7 @@ export class MeetingComponent {
 
   private initializeReturnTo(): Signal<string | undefined> {
     return computed(() => {
-      return `${environment.urls.home}/meeting/${this.meeting().uid}`;
+      return `${environment.urls.home}/meetings/${this.meeting().uid}`;
     });
   }
 }

@@ -76,7 +76,7 @@ The meeting routes are configured to allow public access:
 ```typescript
 // apps/lfx-pcc/src/app/app.routes.ts
 {
-  path: 'meeting/:id',
+  path: 'meetings/:id',
   loadComponent: () => import('./modules/meetings/meeting.component').then(m => m.MeetingComponent),
 }
 ```
@@ -119,7 +119,7 @@ The protected routes middleware allows public meeting routes to bypass authentic
 
 **Location**: `apps/lfx-pcc/src/server/middleware/protected-routes.middleware.ts`
 
-- Uses an explicit allowlist for prefixes: `/public/api/meetings` (API) and SPA route `/meeting/:id`
+- Uses an explicit allowlist for prefixes: `/public/api/meetings` (API) and SPA route `/meetings/:id`
 - Bypasses only user–session auth for those allowlisted routes; server-to-server (M2M) calls still require auth
 - Applies standard authentication to all other routes (avoid loose regexes like `/meeting.*`)
 - Add unit tests verifying that only those exact prefixes bypass auth and that all similar prefixes remain protected

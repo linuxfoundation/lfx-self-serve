@@ -166,7 +166,7 @@ export class MeetingCommitteeModalComponent {
 
     // If no changes, just close
     const currentIds = this.meeting.committees?.map((c) => c.uid) || [];
-    const currentVotingStatuses = this.meeting.committees?.map((c) => c.allowed_voting_statuses) || [];
+    const currentVotingStatuses = this.meeting.committees?.flatMap((c) => c.allowed_voting_statuses || []) || [];
     if (
       JSON.stringify(selectedIds.sort()) === JSON.stringify(currentIds.sort()) &&
       JSON.stringify(selectedVotingStatuses.sort()) === JSON.stringify(currentVotingStatuses.sort())

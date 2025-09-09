@@ -387,11 +387,16 @@ export class MeetingService {
     // Get each committee
     const committees = await Promise.all(
       uniqueCommitteeUids.map(async (uid) => {
-        const committee = await this.committeeService.getCommitteeById(req, uid);
-        return {
-          uid: committee.uid,
-          name: committee.name,
-        };
+        try {
+          const committee = await this.committeeService.getCommitteeById(req, uid);
+          return { uid: committee.uid, name: committee.name };
+        } catch (error) {
+          req.log.warn(
+            { operation: 'get_meeting_committees', committee_uid: uid, error: error instanceof Error ? error.message : String(error) },
+            'Committee enrichment failed; continuing without name'
+          );
+          return { uid, name: undefined };
+        }
       })
     );
 

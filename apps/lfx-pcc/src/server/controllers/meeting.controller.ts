@@ -38,11 +38,10 @@ export class MeetingController {
       const counts = await Promise.all(
         meetings.map(async (m) => {
           const registrants = await this.meetingService.getMeetingRegistrants(req, m.uid);
-          const directRegistrants = registrants.filter((r) => r.type === 'direct').length ?? 0;
           const committeeMembers = registrants.filter((r) => r.type === 'committee').length ?? 0;
 
           return {
-            individual_registrants_count: directRegistrants,
+            individual_registrants_count: registrants.length - committeeMembers,
             committee_members_count: committeeMembers,
           };
         })
@@ -101,10 +100,9 @@ export class MeetingController {
       // TODO: Remove this once we have a way to get the registrants count
       try {
         const registrants = await this.meetingService.getMeetingRegistrants(req, meeting.uid);
-        const directRegistrants = registrants.filter((r) => r.type === 'direct').length ?? 0;
         const committeeMembers = registrants.filter((r) => r.type === 'committee').length ?? 0;
 
-        meeting.individual_registrants_count = directRegistrants;
+        meeting.individual_registrants_count = registrants.length - committeeMembers;
         meeting.committee_members_count = committeeMembers;
       } catch (error) {
         // Log the error

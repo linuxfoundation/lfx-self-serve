@@ -85,7 +85,7 @@ export class AccessCheckService {
         userAccessInfo.push({ resourceId: resource.id, username, hasAccess });
       }
 
-      req.log.info(
+      req.log.debug(
         Logger.sanitize({
           operation: 'check_access',
           request_count: resources.length,
