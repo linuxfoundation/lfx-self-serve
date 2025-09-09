@@ -47,7 +47,7 @@ jobs:
         with:
           images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
           tags: |
-            type=ref,event=pr,prefix=pcc-pr-
+            type=ref,event=pr,prefix=ui-pr-
           labels: |
             org.opencontainers.image.title=LFX PCC UI
             org.opencontainers.image.description=Linux Foundation LFX Project Control Center UI application
@@ -77,15 +77,15 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const deploymentUrl = `https://pcc-pr-${{ github.event.pull_request.number }}.dev.v2.cluster.linuxfound.info`;
+            const deploymentUrl = `https://ui-pr-${{ github.event.pull_request.number }}.dev.v2.cluster.linuxfound.info`;
             const comment = `## 🚀 Deployment Status
 
             Your branch has been deployed to: ${deploymentUrl}
 
             **Deployment Details:**
             - Environment: Development
-            - Namespace: pcc-pr-${{ github.event.pull_request.number }}
-            - ArgoCD App: pcc-pr-${{ github.event.pull_request.number }}
+            - Namespace: ui-pr-${{ github.event.pull_request.number }}
+            - ArgoCD App: ui-pr-${{ github.event.pull_request.number }}
 
             The deployment will be automatically removed when this PR is closed.`;
 
