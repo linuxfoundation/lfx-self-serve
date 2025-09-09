@@ -301,6 +301,7 @@ export class MeetingManageComponent {
       artifact_visibility: formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY,
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
+      committees: formValue.committees || [],
     };
   }
 
@@ -516,6 +517,7 @@ export class MeetingManageComponent {
       require_ai_summary_approval: meeting.zoom_config?.ai_summary_require_approval ?? false,
       artifact_visibility: meeting.artifact_visibility ?? DEFAULT_ARTIFACT_VISIBILITY,
       recurrence: recurrenceValue,
+      committees: meeting.committees || [],
     });
   }
 
@@ -606,6 +608,7 @@ export class MeetingManageComponent {
         // Step 4: Resources & Summary
         attachments: new FormControl<PendingAttachment[]>([]),
         important_links: new FormArray([]),
+        committees: new FormControl([]),
       },
       { validators: futureDateTimeValidator() }
     );

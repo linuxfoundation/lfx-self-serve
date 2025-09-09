@@ -22,7 +22,7 @@ import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, combineLatest, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 
 import { MeetingCommitteeModalComponent } from '../meeting-committee-modal/meeting-committee-modal.component';
 import { MeetingDeleteConfirmationComponent, MeetingDeleteResult } from '../meeting-delete-confirmation/meeting-delete-confirmation.component';
@@ -244,39 +244,21 @@ export class MeetingCardComponent implements OnInit {
         filter((refresh) => refresh),
         switchMap(() => {
           this.registrantsLoading.set(true);
-          return combineLatest([
-            this.meetingService.getMeetingRegistrants(this.meeting().uid).pipe(catchError(() => of([]))),
-            ...(this.meeting().committees?.map((c) => this.committeeService.getCommitteeMembers(c.uid).pipe(catchError(() => of([])))) ?? []),
-          ]).pipe(
-            map(([registrants, ...committeeMembers]) => {
-              return [
-                ...registrants,
-                ...committeeMembers
-                  .filter((c) => c.length > 0)
-                  .flatMap((c) => {
-                    return c.map((m) => ({
-                      id: m.uid,
-                      meeting_id: this.meeting().uid,
-                      first_name: m.first_name,
-                      last_name: m.last_name,
-                      email: m.email,
-                      organization: m.organization?.name,
-                      is_host: false,
-                      type: 'committee',
-                      invite_accepted: null,
-                      attended: true,
-                    }));
-                  }),
-              ];
-            }),
-            // Sort registrants by first name
-            map((registrants) => registrants.sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[]),
-            tap((registrants) => {
-              const baseCount = (this.meeting().individual_registrants_count || 0) + (this.meeting().committee_members_count || 0);
-              this.additionalRegistrantsCount.set(Math.max(0, (registrants?.length || 0) - baseCount));
-            }),
-            finalize(() => this.registrantsLoading.set(false))
-          );
+          return this.meetingService
+            .getMeetingRegistrants(this.meeting().uid)
+            .pipe(catchError(() => of([])))
+            .pipe(
+              map((registrants) => {
+                return registrants;
+              }),
+              // Sort registrants by first name
+              map((registrants) => registrants.sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[]),
+              tap((registrants) => {
+                const baseCount = (this.meeting().individual_registrants_count || 0) + (this.meeting().committee_members_count || 0);
+                this.additionalRegistrantsCount.set(Math.max(0, (registrants?.length || 0) - baseCount));
+              }),
+              finalize(() => this.registrantsLoading.set(false))
+            );
         })
       ),
       { initialValue: [] }

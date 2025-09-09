@@ -211,7 +211,7 @@ export class MeetingService {
         'GET',
         {
           type: 'meeting_registrant',
-          tags: meetingUid,
+          tags: `meeting_uid:${meetingUid}`,
         }
       );
 

@@ -329,7 +329,7 @@
                     <div class="absolute -top-1 -right-1">
                       @if (registrant.invite_accepted === false) {
                         <i class="fa-solid text-xs fa-times-circle text-red-500" pTooltip="Declined Invite"></i>
-                      } @else if (registrant.invite_accepted === null) {
+                      } @else if (!registrant.invite_accepted) {
                         <i class="fa-solid text-xs fa-circle-question text-amber-400" pTooltip="Pending Response"></i>
                       } @else {
                         <i class="fa-solid text-xs fa-check-circle text-green-500" pTooltip="Invite Accepted"></i>
