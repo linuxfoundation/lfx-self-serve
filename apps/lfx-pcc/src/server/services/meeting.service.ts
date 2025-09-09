@@ -16,6 +16,7 @@ import { ResourceNotFoundError } from '../errors';
 import { Logger } from '../helpers/logger';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
+import { CommitteeService } from './committee.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -26,11 +27,12 @@ export class MeetingService {
   private accessCheckService: AccessCheckService;
   private etagService: ETagService;
   private microserviceProxy: MicroserviceProxyService;
-
+  private committeeService: CommitteeService;
   public constructor() {
     this.accessCheckService = new AccessCheckService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.etagService = new ETagService();
+    this.committeeService = new CommitteeService();
   }
 
   /**
@@ -44,7 +46,13 @@ export class MeetingService {
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
-    const meetings = resources.map((resource) => resource.data);
+    let meetings = resources.map((resource) => resource.data);
+
+    req.log.debug({ meetings }, 'Meetings');
+    // Get committee data for each committee associated with the meeting
+    if (meetings.some((m) => m.committees && m.committees.length > 0)) {
+      meetings = await this.getMeetingCommittees(req, meetings);
+    }
 
     // Add writer access field to all meetings
     return await this.accessCheckService.addAccessToResources(req, meetings, 'meeting', 'organizer');
@@ -79,10 +87,14 @@ export class MeetingService {
       );
     }
 
-    const meeting = resources[0].data;
+    let meeting = resources.map((resource) => resource.data);
+
+    if (meeting[0].committees && meeting[0].committees.length > 0) {
+      meeting = await this.getMeetingCommittees(req, meeting);
+    }
 
     // Add writer access field to the meeting
-    return await this.accessCheckService.addAccessToResource(req, meeting, 'meeting', 'organizer');
+    return await this.accessCheckService.addAccessToResource(req, meeting[0], 'meeting', 'organizer');
   }
 
   /**
@@ -358,5 +370,45 @@ export class MeetingService {
       );
       throw error;
     }
+  }
+
+  private async getMeetingCommittees(req: Request, meetings: Meeting[]): Promise<Meeting[]> {
+    // Get unique committee UIDs
+    const uniqueCommitteeUids = [
+      ...new Set(
+        meetings
+          .filter((m) => m.committees && m.committees.length > 0)
+          .map((m) => m.committees)
+          .flat()
+          .map((c: { uid: string }) => c.uid)
+      ),
+    ];
+
+    // Get each committee
+    const committees = await Promise.all(
+      uniqueCommitteeUids.map(async (uid) => {
+        const committee = await this.committeeService.getCommitteeById(req, uid);
+        return {
+          uid: committee.uid,
+          name: committee.name,
+        };
+      })
+    );
+
+    // Add committee data to each meeting
+    meetings
+      .filter((m) => m.committees && m.committees.length > 0)
+      .forEach((m) => {
+        m.committees = m.committees.map((c) => {
+          const committee = committees.find((cc) => cc.uid === c.uid);
+          return {
+            uid: c.uid,
+            name: committee?.name,
+            allowed_voting_statuses: c.allowed_voting_statuses,
+          };
+        });
+      });
+
+    return meetings;
   }
 }

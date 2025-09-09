@@ -48,7 +48,7 @@ export class UpcomingCommitteeMeetingComponent implements OnInit {
     return computed(
       () =>
         this.upcomingMeeting()
-          ?.meeting_committees?.map((committee) => committee.name)
+          ?.committees?.map((committee) => committee.name)
           .join(', ') ?? ''
     );
   }

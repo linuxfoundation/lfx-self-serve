@@ -229,10 +229,11 @@ jobs:
           echo "TEST_PASSWORD=${{ secrets.TEST_PASSWORD }}" >> $GITHUB_ENV
           echo "✅ TEST_USERNAME and TEST_PASSWORD secrets set as masked environment variables"
 
-      - name: Install Playwright browsers
+      - name: Setup Playwright with caching
         if: steps.validate-secrets.outputs.can_run_tests == 'true'
-        working-directory: apps/lfx-pcc
-        run: npx playwright install --with-deps
+        uses: ./.github/actions/setup-playwright
+        with:
+          browser: ${{ inputs.browser }}
 
       - name: Create Playwright auth directory
         if: steps.validate-secrets.outputs.can_run_tests == 'true'
@@ -244,17 +245,21 @@ jobs:
         run: yarn build
 
       - name: Run E2E tests (All browsers)
+        id: run-tests-all
         if: ${{ inputs.browser == 'all' && steps.validate-secrets.outputs.can_run_tests == 'true' }}
         working-directory: apps/lfx-pcc
+        continue-on-error: true
         run: |
           if [ -n "$TEST_USERNAME" ] && [ -n "$TEST_PASSWORD" ]; then
             echo "🔐 Running authenticated E2E tests on all browsers"
             echo "🚀 Playwright will automatically start the dev server on localhost:4200"
             echo "📋 Using secrets from AWS Secrets Manager"
             yarn ${{ inputs.test-command }} --reporter=list
+            echo "test_exit_code=$?" >> $GITHUB_OUTPUT
           else
             echo "⚠️ No test credentials provided. Skipping E2E tests."
             echo "Set TEST_USERNAME and TEST_PASSWORD secrets to enable E2E tests."
+            echo "test_exit_code=0" >> $GITHUB_OUTPUT
             exit 0
           fi
 

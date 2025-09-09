@@ -14,7 +14,7 @@
 
     <lfx-select
       [form]="form()"
-      control="meetingTool"
+      control="platform"
       [options]="platformDropdownOptions"
       placeholder="Select meeting platform"
       styleClass="w-full"
@@ -22,7 +22,7 @@
       data-testid="meeting-platform-select">
     </lfx-select>
 
-    @if (form().get('meetingTool')?.errors?.['required'] && form().get('meetingTool')?.touched) {
+    @if (form().get('platform')?.errors?.['required'] && form().get('platform')?.touched) {
       <p class="mt-1 text-sm text-red-600" data-testid="platform-error">Please select a meeting platform</p>
     }
   </div>

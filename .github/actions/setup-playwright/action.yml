@@ -1,0 +1,51 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+# SPDX-License-Identifier: MIT
+
+name: Setup Playwright
+description: Install Playwright and cache browser dependencies
+inputs:
+  browser:
+    description: 'Browser to test (chromium, firefox, mobile-chrome, or all)'
+    required: false
+    default: 'all'
+runs:
+  using: "composite"
+  steps:
+    # Run npm ci and get Playwright version
+    - name: 🏗 Prepare Playwright env
+      shell: bash
+      run: |
+        PLAYWRIGHT_VERSION=$(npm ls --json @playwright/test | jq --raw-output '.dependencies["@playwright/test"].version')
+        echo "PLAYWRIGHT_VERSION=$PLAYWRIGHT_VERSION" >> $GITHUB_ENV
+
+    # Cache browser binaries, cache key is based on Playwright version and OS
+    - name: 🧰 Cache Playwright browser binaries
+      uses: actions/cache@v4
+      id: playwright-cache
+      with:
+        path: "~/.cache/ms-playwright"
+        key: "${{ runner.os }}-playwright-${{ env.PLAYWRIGHT_VERSION }}"
+        restore-keys: |
+          ${{ runner.os }}-playwright-
+
+    # Install browser binaries & OS dependencies if cache missed
+    - name: 🏗 Install Playwright browser binaries & OS dependencies
+      if: steps.playwright-cache.outputs.cache-hit != 'true'
+      shell: bash
+      run: |
+        if [ "${{ inputs.browser }}" == "all" ]; then
+          npm exec -- playwright install --with-deps
+        else
+          npm exec -- playwright install --with-deps ${{ inputs.browser }}
+        fi
+
+    # Install only the OS dependencies if cache hit
+    - name: 🏗 Install Playwright OS dependencies
+      if: steps.playwright-cache.outputs.cache-hit == 'true'
+      shell: bash
+      run: |
+        if [ "${{ inputs.browser }}" == "all" ]; then
+          npm exec -- playwright install-deps
+        else
+          npm exec -- playwright install-deps ${{ inputs.browser }}
+        fi

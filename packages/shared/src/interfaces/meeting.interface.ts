@@ -58,24 +58,18 @@ export interface ImportantLink {
  * Committee associated with a meeting
  * @description Basic committee information for meeting association
  */
-export interface MeetingCommittee {
-  /** Unique identifier for the committee */
-  uid: string;
-  /** Display name of the committee */
-  name: string;
-  /** Total number of members in the committee */
-  committee_total_members: number;
-}
 
 /**
  * Committee payload for meeting API requests
  * @description Committee structure used in create/update meeting requests
  */
-export interface MeetingCommitteePayload {
+export interface MeetingCommittee {
   /** Unique identifier for the committee */
   uid: string;
   /** Allowed voting statuses for committee members */
-  allowed_voting_statuses: string[];
+  allowed_voting_statuses?: string[];
+  /** Committee name */
+  name?: string;
 }
 
 export interface Meeting {
@@ -108,7 +102,7 @@ export interface Meeting {
   /** For recurring meetings */
   recurrence: MeetingRecurrence | null;
   /** Associated committees with voting statuses */
-  committees?: MeetingCommitteePayload[];
+  committees: MeetingCommittee[];
   /** "Board", "Maintainers", "Technical", etc. */
   meeting_type: string | null;
   /** "public" or "private" */
@@ -128,15 +122,13 @@ export interface Meeting {
   /** Array of organizer usernames */
   organizers: string[];
   /** Meeting access password for private/restricted meetings */
-  password?: string;
+  password: string | null;
   /** Zoom-specific settings */
   zoom_config?: ZoomConfig | null;
 
   // Fields NOT in API - likely response-only
   /** Meeting join URL */
   join_url?: string;
-  /** Full committee objects (response only) */
-  meeting_committees?: MeetingCommittee[] | null;
   /** Count fields (response only) */
   individual_registrants_count: number;
   /** Count fields (response only) */
@@ -161,7 +153,7 @@ export interface CreateMeetingRequest {
   // Optional API fields
   platform?: string; // Currently only "Zoom" is supported
   recurrence?: MeetingRecurrence; // For recurring meetings
-  committees?: MeetingCommitteePayload[]; // Associated committees with voting statuses
+  committees?: MeetingCommittee[]; // Associated committees with voting statuses
   meeting_type?: string; // "Board", "Maintainers", "Technical", etc.
   visibility?: MeetingVisibility; // "public" or "private"
   restricted?: boolean; // Boolean for invitation-only meetings
@@ -185,18 +177,18 @@ export interface UpdateMeetingRequest {
 
   // Optional API fields
   platform?: string; // Currently only "Zoom" is supported
-  recurrence?: MeetingRecurrence; // For recurring meetings
-  committees?: MeetingCommitteePayload[]; // Associated committees with voting statuses
-  meeting_type?: string; // "Board", "Maintainers", "Technical", etc.
-  visibility?: MeetingVisibility; // "public" or "private"
-  restricted?: boolean; // Boolean for invitation-only meetings
-  recording_enabled?: boolean; // Enable meeting recording
-  transcript_enabled?: boolean; // Enable transcription
-  youtube_upload_enabled?: boolean; // YouTube upload integration
-  artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
+  recurrence?: MeetingRecurrence | null; // For recurring meetings
+  committees?: MeetingCommittee[]; // Associated committees with voting statuses
+  meeting_type?: string | null; // "Board", "Maintainers", "Technical", etc.
+  visibility?: MeetingVisibility | null; // "public" or "private"
+  restricted?: boolean | null; // Boolean for invitation-only meetings
+  recording_enabled?: boolean | null; // Enable meeting recording
+  transcript_enabled?: boolean | null; // Enable transcription
+  youtube_upload_enabled?: boolean | null; // YouTube upload integration
+  artifact_visibility?: ArtifactVisibility | null; // Who can access meeting artifacts
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
-  zoom_config?: ZoomConfig; // Zoom-specific settings
+  zoom_config?: ZoomConfig | null; // Zoom-specific settings
 }
 
 export interface DeleteMeetingRequest {

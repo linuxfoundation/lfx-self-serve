@@ -253,16 +253,13 @@
     }
 
     <!-- Associated Committees -->
-    @if (meeting().meeting_committees && meeting().meeting_committees!.length > 0) {
+    @if (meeting().committees && meeting().committees!.length > 0) {
       <div class="flex items-start gap-2 mb-4">
-        <i class="fa-light fa-people-group text-gray-400 mt-0.5"></i>
+        <i class="fa-light fa-people-group text-green-500 mt-0.5"></i>
         <div class="flex flex-wrap gap-1">
           <div class="text-sm text-gray-600">
-            @for (committee of meeting().meeting_committees!; track committee.uid; let isLast = $last) {
-              <a
-                [routerLink]="['/project', project()?.slug, 'committees', committee.uid]"
-                class="text-primary hover:text-primary-600 hover:underline"
-                [title]="committee.committee_total_members + ' members'">
+            @for (committee of meeting().committees!; track committee.uid; let isLast = $last) {
+              <a [routerLink]="['/project', project()?.slug, 'committees', committee.uid]" class="text-primary hover:text-primary-600">
                 {{ committee.name }}
               </a>
               @if (!isLast) {

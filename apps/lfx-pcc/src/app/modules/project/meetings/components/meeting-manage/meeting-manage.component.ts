@@ -300,7 +300,7 @@ export class MeetingManageComponent {
       },
       artifact_visibility: formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY,
       recurrence: recurrenceObject,
-      platform: formValue.meetingTool || DEFAULT_MEETING_TOOL,
+      platform: formValue.platform || DEFAULT_MEETING_TOOL,
     };
   }
 
@@ -560,7 +560,7 @@ export class MeetingManageComponent {
         );
 
       case 3: // Platform & Features
-        return !!form.get('meetingTool')?.value;
+        return form.get('platform')?.valid ?? false;
 
       case 4: // Resources & Summary (optional)
       case 5: // Manage Guests (optional)
@@ -595,7 +595,7 @@ export class MeetingManageComponent {
         recurrence: new FormControl('none'),
 
         // Step 3: Platform & Features
-        meetingTool: new FormControl(DEFAULT_MEETING_TOOL, [Validators.required]),
+        platform: new FormControl(DEFAULT_MEETING_TOOL, [Validators.required]),
         recording_enabled: new FormControl(false),
         transcript_enabled: new FormControl({ value: false, disabled: true }),
         youtube_upload_enabled: new FormControl({ value: false, disabled: true }),

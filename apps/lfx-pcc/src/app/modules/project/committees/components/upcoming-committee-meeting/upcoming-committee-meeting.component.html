@@ -18,11 +18,11 @@
       </div>
     }
 
-    @if (upcomingMeeting()!.meeting_committees && upcomingMeeting()!.meeting_committees!.length > 0) {
+    @if (upcomingMeeting()!.committees && upcomingMeeting()!.committees!.length > 0) {
       <div class="text-xs text-gray-500">
-        Committee: {{ upcomingMeeting()!.meeting_committees![0].name }}
-        @if (upcomingMeeting()!.meeting_committees!.length > 1) {
-          <span [pTooltip]="committees()" tooltipPosition="top"> +{{ upcomingMeeting()!.meeting_committees!.length - 1 }} more</span>
+        Committee: {{ upcomingMeeting()!.committees![0].name }}
+        @if (upcomingMeeting()!.committees!.length > 1) {
+          <span [pTooltip]="committees()" tooltipPosition="top"> +{{ upcomingMeeting()!.committees!.length - 1 }} more</span>
         }
       </div>
     }

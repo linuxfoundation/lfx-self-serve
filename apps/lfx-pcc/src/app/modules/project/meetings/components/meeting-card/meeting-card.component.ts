@@ -139,9 +139,10 @@ export class MeetingCardComponent implements OnInit {
   }
 
   public openCommitteeModal(): void {
+    const header = this.meeting().committees && this.meeting().committees!.length > 0 ? 'Manage Committees' : 'Connect Committees';
     this.dialogService
       .open(MeetingCommitteeModalComponent, {
-        header: this.meeting().meeting_committees && this.meeting().meeting_committees!.length > 0 ? 'Manage Committees' : 'Connect Committees',
+        header,
         width: '950px',
         modal: true,
         closable: true,
@@ -319,7 +320,7 @@ export class MeetingCardComponent implements OnInit {
           });
 
           baseItems.push({
-            label: this.meeting().meeting_committees && this.meeting().meeting_committees!.length > 0 ? 'Manage Committees' : 'Connect Committees',
+            label: this.meeting().committees && this.meeting().committees!.length > 0 ? 'Manage Committees' : 'Connect Committees',
             icon: 'fa-light fa-people-group',
             command: () => this.openCommitteeModal(),
           });

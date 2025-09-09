@@ -25,17 +25,45 @@
         appendTo="body"
         styleClass="w-full"
         data-testid="meeting-committee-multi-select"></lfx-multi-select>
-      <p class="text-xs text-gray-500">
-        @if (selectedCommitteeIds().length === 0) {
-          Select committees to associate with this meeting. Committee members will automatically be added as guests.
-        } @else {
-          <strong>{{ selectedCommitteeIds().length }}</strong> committee(s) selected.
-          @if (committeeMembers().length > 0) {
-            <strong>{{ committeeMembers().length }}</strong> unique member(s) will be added to the meeting.
-          }
-        }
-      </p>
     </div>
+    @if (selectedCommitteeIds().length === 0) {
+      <p class="text-xs text-gray-500">Select committees to associate with this meeting. Committee members will automatically be added as guests.</p>
+    }
+
+    <!-- Voting Status Selection -->
+    @if (hasVotingEnabledCommittee()) {
+      <div class="flex flex-col gap-1">
+        <div class="flex items-center gap-1">
+          <label class="text-sm font-medium text-gray-700">Voting Status Selection</label>
+          <i
+            class="fa-light fa-info-circle text-xs text-gray-500"
+            pTooltip="Select which voting statuses committee members must have to participate in this meeting. Only members with the selected voting status(es) will be invited to the meeting."
+            [tooltipOptions]="{ appendTo: 'body' }"></i>
+        </div>
+        <lfx-multi-select
+          [form]="form"
+          control="votingStatuses"
+          [options]="votingStatusOptions"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Select voting statuses to allow"
+          [filter]="true"
+          filterPlaceHolder="Search voting statuses"
+          [showToggleAll]="true"
+          appendTo="body"
+          styleClass="w-full"
+          data-testid="meeting-voting-status-multi-select"></lfx-multi-select>
+      </div>
+    }
+
+    <p class="text-xs text-gray-500">
+      @if (selectedCommitteeIds().length > 0) {
+        <strong>{{ selectedCommitteeIds().length }}</strong> committee(s) selected.
+        @if (filteredCommitteeMembers().length > 0) {
+          <strong>{{ filteredCommitteeMembers().length }}</strong> unique member(s) will be added to the meeting.
+        }
+      }
+    </p>
   }
 
   <!-- Committee Members Section -->
@@ -56,11 +84,11 @@
         }
       </div>
 
-      @if (!membersLoading() && committeeMembers().length > 0) {
+      @if (!membersLoading() && filteredCommitteeMembers().length > 0) {
         <div class="border border-gray-200 p-4 rounded-lg overflow-hidden shadow-sm">
           <lfx-table
-            [value]="committeeMembers()"
-            [paginator]="committeeMembers().length > 5"
+            [value]="filteredCommitteeMembers()"
+            [paginator]="filteredCommitteeMembers().length > 5"
             [rows]="5"
             [rowsPerPageOptions]="[5, 10, 25, 50]"
             paginatorDropdownAppendTo="body"
@@ -111,15 +139,9 @@
                     <span class="text-sm text-gray-600">{{ member.role?.name || '-' }}</span>
                   </td>
                   <td>
-                    @if (member.voting_status?.status) {
-                      <span
-                        class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border"
-                        [ngClass]="{
-                          'bg-green-100 text-green-800 border-green-200': member.voting_status?.status === 'voting',
-                          'bg-gray-100 text-gray-800 border-gray-200': member.voting_status?.status === 'non-voting',
-                          'bg-amber-100 text-amber-800 border-amber-200': member.voting_status?.status === 'alternate',
-                        }">
-                        {{ member.voting_status?.status | titlecase }}
+                    @if (member.voting?.status) {
+                      <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border">
+                        {{ member.voting?.status | titlecase }}
                       </span>
                     } @else {
                       <span class="text-sm text-gray-400">-</span>
@@ -140,16 +162,26 @@
       }
 
       @if (!membersLoading()) {
-        @if (committeeMembers().length === 0) {
+        @if (filteredCommitteeMembers().length === 0) {
           <div class="bg-gray-50 rounded-lg p-4 text-center">
             <i class="fa-light fa-users text-2xl text-gray-400 mb-2"></i>
-            <p class="text-sm text-gray-500">No members found in the selected committees</p>
+            <p class="text-sm text-gray-500">
+              @if (hasVotingEnabledCommittee() && selectedVotingStatuses().length > 0) {
+                No members found with the selected voting statuses
+              } @else {
+                No members found in the selected committees
+              }
+            </p>
           </div>
         }
 
         <p class="text-xs text-gray-500 mt-2">
           <i class="fa-light fa-info-circle mr-1"></i>
-          Total members: {{ committeeMembers().length }}
+          @if (hasVotingEnabledCommittee() && selectedVotingStatuses().length > 0) {
+            Filtered members: {{ filteredCommitteeMembers().length }} / {{ committeeMembers().length }}
+          } @else {
+            Total members: {{ filteredCommitteeMembers().length }}
+          }
         </p>
       }
     </div>

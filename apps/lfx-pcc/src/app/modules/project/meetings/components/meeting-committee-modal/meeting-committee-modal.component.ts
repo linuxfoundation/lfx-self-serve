@@ -8,8 +8,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { TableComponent } from '@components/table/table.component';
-import { MIN_EARLY_JOIN_TIME } from '@lfx-pcc/shared';
-import { ArtifactVisibility, MeetingVisibility } from '@lfx-pcc/shared/enums';
+import { VOTING_STATUSES } from '@lfx-pcc/shared';
 import { Committee, CommitteeMember, Meeting } from '@lfx-pcc/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
@@ -46,13 +45,18 @@ export class MeetingCommitteeModalComponent {
   public saving: WritableSignal<boolean> = signal(false);
   public committeesLoading: WritableSignal<boolean> = signal(true);
   public selectedCommitteeIds: WritableSignal<string[]> = signal([]);
+  public selectedVotingStatuses: WritableSignal<string[]> = signal([]);
   public committeeMembers: WritableSignal<CommitteeMemberDisplay[]> = signal([]);
   public membersLoading: WritableSignal<boolean> = signal(false);
   public form: FormGroup;
+  public filteredCommitteeMembers: Signal<CommitteeMemberDisplay[]> = signal([]);
 
   // Track loaded committees to avoid duplicate API calls
   private loadedCommitteeIds: Set<string> = new Set();
   private committeesMembersCache: Map<string, CommitteeMemberDisplay[]> = new Map();
+
+  // Voting status options for dropdown
+  public readonly votingStatusOptions = VOTING_STATUSES;
 
   // Load committees using toSignal
   public committees: Signal<Committee[]> = toSignal(
@@ -97,13 +101,31 @@ export class MeetingCommitteeModalComponent {
   public constructor() {
     this.form = new FormGroup({
       committees: new FormControl([]),
+      votingStatuses: new FormControl([]),
     });
 
     // Set initial selected committees
     if (this.meeting.committees && this.meeting.committees.length > 0) {
       const committeeIds = this.meeting.committees.map((c) => c.uid);
       this.selectedCommitteeIds.set(committeeIds);
-      this.form.patchValue({ committees: committeeIds });
+
+      // Get initial voting statuses from meeting committees
+      const existingVotingStatuses: string[] = [];
+      this.meeting.committees.forEach((committee) => {
+        if (committee.allowed_voting_statuses) {
+          existingVotingStatuses.push(...committee.allowed_voting_statuses);
+        }
+      });
+
+      // Remove duplicates and set initial values
+      const uniqueVotingStatuses = [...new Set(existingVotingStatuses)];
+      this.selectedVotingStatuses.set(uniqueVotingStatuses);
+
+      this.form.patchValue({
+        committees: committeeIds,
+        votingStatuses: uniqueVotingStatuses,
+      });
+
       // Load members for initially selected committees
       this.loadCommitteeMembers(committeeIds);
     }
@@ -115,6 +137,22 @@ export class MeetingCommitteeModalComponent {
       .subscribe((committeeIds: string[]) => {
         this.selectedCommitteeIds.set(committeeIds || []);
         this.loadCommitteeMembers(committeeIds || []);
+
+        // Clear voting statuses if no committees with voting are selected
+        const committees = this.committees();
+        const hasVotingCommittees = committees.some((c) => (committeeIds || []).includes(c.uid) && c.enable_voting);
+        if (!hasVotingCommittees) {
+          this.form.patchValue({ votingStatuses: [] }, { emitEvent: false });
+          this.selectedVotingStatuses.set([]);
+        }
+      });
+
+    // Subscribe to voting status changes
+    this.form
+      .get('votingStatuses')
+      ?.valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((votingStatuses: string[]) => {
+        this.selectedVotingStatuses.set(votingStatuses || []);
       });
   }
 
@@ -124,40 +162,32 @@ export class MeetingCommitteeModalComponent {
 
   public onSave(): void {
     const selectedIds = this.form.value.committees as string[];
+    const selectedVotingStatuses = (this.form.value.votingStatuses as string[]) || [];
 
     // If no changes, just close
     const currentIds = this.meeting.committees?.map((c) => c.uid) || [];
-    if (JSON.stringify(selectedIds.sort()) === JSON.stringify(currentIds.sort())) {
+    const currentVotingStatuses = this.meeting.committees?.map((c) => c.allowed_voting_statuses) || [];
+    if (
+      JSON.stringify(selectedIds.sort()) === JSON.stringify(currentIds.sort()) &&
+      JSON.stringify(selectedVotingStatuses.sort()) === JSON.stringify(currentVotingStatuses.sort())
+    ) {
       this.ref.close();
       return;
     }
 
     this.saving.set(true);
 
+    // Determine voting statuses based on whether selected committees have voting enabled
+    const committees = this.committees();
+    const hasVotingCommittees = committees.some((c) => selectedIds.includes(c.uid) && c.enable_voting);
+    const allowedVotingStatuses = hasVotingCommittees ? selectedVotingStatuses : [];
+
     // Build update request with all existing meeting fields plus committees
     const updateRequest = {
-      project_uid: this.meeting.project_uid,
-      title: this.meeting.title || '',
-      description: this.meeting.description || undefined,
-      start_time: this.meeting.start_time || '',
-      duration: this.meeting.duration || 60,
-      timezone: this.meeting.timezone || 'UTC',
-      meeting_type: this.meeting.meeting_type || 'online',
-      early_join_time_minutes: this.meeting.early_join_time_minutes || MIN_EARLY_JOIN_TIME,
-      visibility: this.meeting.visibility || MeetingVisibility.PUBLIC,
-      recording_enabled: this.meeting.recording_enabled || false,
-      transcript_enabled: this.meeting.transcript_enabled || false,
-      youtube_upload_enabled: this.meeting.youtube_upload_enabled || false,
-      zoom_config: {
-        ai_companion_enabled: this.meeting.zoom_config?.ai_companion_enabled || false,
-        ai_summary_require_approval: this.meeting.zoom_config?.ai_summary_require_approval || false,
-      },
-      artifact_visibility: this.meeting.artifact_visibility || ArtifactVisibility.PUBLIC,
-      recurrence: this.meeting.recurrence || undefined,
-      restricted: this.meeting.restricted || false,
+      ...this.meeting,
       committees: selectedIds.map((uid) => ({
         uid,
-        allowed_voting_statuses: ['active', 'voting'],
+        allowed_voting_statuses: allowedVotingStatuses,
       })),
     };
 
@@ -218,6 +248,9 @@ export class MeetingCommitteeModalComponent {
           this.loadedCommitteeIds.add(id);
           return membersWithCommittee;
         }),
+        tap(() => {
+          this.filteredCommitteeMembers = this.initializeFilteredCommitteeMembers();
+        }),
         catchError((error) => {
           console.error(`Failed to load members for committee ${id}:`, error);
           // Mark as loaded even on error to avoid repeated failed requests
@@ -266,5 +299,23 @@ export class MeetingCommitteeModalComponent {
     }
 
     this.committeeMembers.set(Array.from(memberMap.values()));
+  }
+
+  private initializeFilteredCommitteeMembers(): Signal<CommitteeMemberDisplay[]> {
+    return computed(() => {
+      const members = this.committeeMembers();
+      const selectedVotingStatuses = this.selectedVotingStatuses();
+      const hasVotingCommittees = this.hasVotingEnabledCommittee();
+
+      // If no voting committees selected, show all members
+      if (!hasVotingCommittees || selectedVotingStatuses.length === 0) {
+        return members;
+      }
+
+      // Filter members by selected voting statuses
+      return members.filter((member) => {
+        return member.voting?.status && selectedVotingStatuses.includes(member.voting.status);
+      });
+    });
   }
 }

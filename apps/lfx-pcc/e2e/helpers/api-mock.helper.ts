@@ -13,8 +13,10 @@ export class ApiMockHelper {
   /**
    * Setup mock for the project slug endpoint only
    * @param page - Playwright page instance
+   * @param options - Optional configuration for the mock
+   * @param options.writer - Override the writer permission for the project
    */
-  static async setupProjectSlugMock(page: Page): Promise<void> {
+  static async setupProjectSlugMock(page: Page, options?: { writer?: boolean }): Promise<void> {
     // Mock individual project by slug endpoint (/api/projects/:slug)
     await page.route('**/api/projects/*', async (route) => {
       const url = route.request().url();
@@ -44,10 +46,16 @@ export class ApiMockHelper {
         return;
       }
 
+      // Apply writer permission override if provided
+      let finalProject = project;
+      if (options?.writer !== undefined) {
+        finalProject = { ...project, writer: options.writer };
+      }
+
       await route.fulfill({
         status: 200,
         contentType: 'application/json',
-        body: JSON.stringify(project),
+        body: JSON.stringify(finalProject),
       });
     });
   }

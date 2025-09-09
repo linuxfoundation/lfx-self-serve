@@ -9,7 +9,7 @@ import { ArtifactVisibility } from '../enums';
  */
 export const MEETING_PLATFORMS = [
   {
-    value: 'zoom',
+    value: 'Zoom',
     label: 'Zoom',
     description: 'Video conferencing with recording and chat features',
     available: true,
@@ -17,7 +17,7 @@ export const MEETING_PLATFORMS = [
     color: '#0094FF',
   },
   {
-    value: 'teams',
+    value: 'Microsoft Teams',
     label: 'Microsoft Teams',
     description: 'Integrated collaboration with Office 365',
     available: false,
@@ -25,7 +25,7 @@ export const MEETING_PLATFORMS = [
     color: '#6b7280',
   },
   {
-    value: 'in-person',
+    value: 'In-Person',
     label: 'In-Person',
     description: 'Physical meeting location',
     available: false,

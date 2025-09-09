@@ -206,8 +206,8 @@ export class MeetingDashboardComponent {
 
       // Extract unique committees from all meetings
       meetings.forEach((meeting) => {
-        meeting.meeting_committees?.forEach((committee) => {
-          committeeMap.set(committee.uid, committee.name);
+        meeting.committees?.forEach((committee) => {
+          committeeMap.set(committee.uid, committee.name || '');
         });
       });
 
@@ -235,7 +235,7 @@ export class MeetingDashboardComponent {
             meeting.title?.toLowerCase().includes(searchTerm) ||
             meeting.description?.toLowerCase().includes(searchTerm) ||
             meeting.meeting_type?.toLowerCase().includes(searchTerm) ||
-            meeting.meeting_committees?.some((committee) => committee.name.toLowerCase().includes(searchTerm))
+            meeting.committees?.some((committee) => committee.name?.toLowerCase().includes(searchTerm))
         );
       }
 
@@ -248,7 +248,7 @@ export class MeetingDashboardComponent {
       // Apply committee filter
       const committee = this.committeeFilter();
       if (committee) {
-        filtered = filtered.filter((meeting) => meeting.meeting_committees?.some((c) => c.uid === committee));
+        filtered = filtered.filter((meeting) => meeting.committees?.some((c) => c.uid === committee));
       }
 
       return filtered;
@@ -318,7 +318,7 @@ export class MeetingDashboardComponent {
         }
 
         // Create a more informative title
-        const committeeName = meeting.meeting_committees?.[0]?.name;
+        const committeeName = meeting.committees?.[0]?.name;
         const displayTitle = committeeName ? `${meeting.title || 'Meeting'} (${committeeName})` : meeting.title || 'Meeting';
 
         return {
@@ -333,7 +333,7 @@ export class MeetingDashboardComponent {
           extendedProps: {
             meetingId: meeting.uid,
             visibility: meeting.visibility || 'private',
-            committee: meeting.meeting_committees?.[0]?.name,
+            committee: meeting.committees?.[0]?.name,
             meetingType: meeting.meeting_type,
             description: meeting.description,
             title: meeting.title,

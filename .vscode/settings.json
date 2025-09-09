@@ -27,6 +27,7 @@
     "supabase",
     "timegrid",
     "Turborepo",
+    "Uids",
     "viewports"
   ],
   "scss.lint.unknownAtRules": "ignore",

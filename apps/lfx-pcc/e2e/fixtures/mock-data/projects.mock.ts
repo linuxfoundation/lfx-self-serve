@@ -33,6 +33,7 @@ export const mockProjects: Record<string, Project> = {
     committees_count: 5,
     meetings_count: 23,
     mailing_list_count: 8,
+    writer: true,
   },
   cncf: {
     uid: 'b09f1234-f567-4abc-b890-1234567890bc',
@@ -59,6 +60,7 @@ export const mockProjects: Record<string, Project> = {
     committees_count: 12,
     meetings_count: 156,
     mailing_list_count: 25,
+    writer: false,
   },
   kubernetes: {
     uid: 'c09f1234-f567-4abc-b890-1234567890cd',
@@ -84,6 +86,7 @@ export const mockProjects: Record<string, Project> = {
     committees_count: 8,
     meetings_count: 89,
     mailing_list_count: 15,
+    writer: false,
   },
 };
 
