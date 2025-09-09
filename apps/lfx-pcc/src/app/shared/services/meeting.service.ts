@@ -38,6 +38,15 @@ export class MeetingService {
     );
   }
 
+  public getPastMeetings(params?: HttpParams): Observable<Meeting[]> {
+    return this.http.get<Meeting[]>('/api/past-meetings', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to load past meetings:', error);
+        return of([]);
+      })
+    );
+  }
+
   public getMeetingsByProject(projectId: string, limit?: number, orderBy?: string): Observable<Meeting[]> {
     let params = new HttpParams().set('tags', `project_uid:${projectId}`);
 
@@ -70,18 +79,27 @@ export class MeetingService {
   public getPastMeetingsByProject(projectId: string, limit: number = 3): Observable<Meeting[]> {
     let params = new HttpParams().set('tags', `project_uid:${projectId}`);
 
-    // TODO: Add filter for past meetings
     if (limit) {
       params = params.set('limit', limit.toString());
     }
 
-    return this.getMeetings(params);
+    return this.getPastMeetings(params);
   }
 
   public getMeeting(id: string): Observable<Meeting> {
     return this.http.get<Meeting>(`/api/meetings/${id}`).pipe(
       catchError((error) => {
         console.error(`Failed to load meeting ${id}:`, error);
+        return throwError(() => error);
+      }),
+      tap((meeting) => this.meeting.set(meeting))
+    );
+  }
+
+  public getPastMeeting(id: string): Observable<Meeting> {
+    return this.http.get<Meeting>(`/api/past-meetings/${id}`).pipe(
+      catchError((error) => {
+        console.error(`Failed to load past meeting ${id}:`, error);
         return throwError(() => error);
       }),
       tap((meeting) => this.meeting.set(meeting))

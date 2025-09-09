@@ -38,10 +38,10 @@ export class MeetingService {
   /**
    * Fetches all meetings based on query parameters
    */
-  public async getMeetings(req: Request, query: Record<string, any> = {}): Promise<Meeting[]> {
+  public async getMeetings(req: Request, query: Record<string, any> = {}, meetingType: string = 'meeting'): Promise<Meeting[]> {
     const params = {
       ...query,
-      type: 'meeting',
+      type: meetingType,
     };
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
@@ -61,9 +61,9 @@ export class MeetingService {
   /**
    * Fetches a single meeting by UID
    */
-  public async getMeetingById(req: Request, meetingUid: string): Promise<Meeting> {
+  public async getMeetingById(req: Request, meetingUid: string, meetingType: string = 'meeting'): Promise<Meeting> {
     const params = {
-      type: 'meeting',
+      type: meetingType,
       tags: `meeting_uid:${meetingUid}`,
     };
 
