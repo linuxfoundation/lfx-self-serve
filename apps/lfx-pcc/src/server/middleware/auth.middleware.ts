@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AuthConfig, AuthDecision, AuthMiddlewareResult, RouteAuthConfig } from '@lfx-pcc/shared/interfaces';
+import { AuthConfig, AuthDecision, AuthMiddlewareResult, RouteAuthConfig, TokenExtractionResult } from '@lfx-pcc/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
@@ -83,7 +83,7 @@ function checkAuthentication(req: Request): boolean {
 /**
  * Extracts bearer token from OIDC session if available
  */
-async function extractBearerToken(req: Request): Promise<boolean> {
+async function extractBearerToken(req: Request): Promise<TokenExtractionResult> {
   try {
     req.log.debug(
       {
@@ -106,7 +106,7 @@ async function extractBearerToken(req: Request): Promise<boolean> {
           if (refreshedToken?.access_token) {
             req.bearerToken = refreshedToken.access_token;
             req.log.debug({ path: req.path }, 'Token refreshed successfully');
-            return true;
+            return { success: true, needsLogout: false };
           }
         } catch (refreshError) {
           req.log.warn(
@@ -114,10 +114,10 @@ async function extractBearerToken(req: Request): Promise<boolean> {
               error: refreshError instanceof Error ? refreshError.message : refreshError,
               path: req.path,
             },
-            'Token refresh failed'
+            'Token refresh failed - logging user out'
           );
           // Token refresh failed, user needs to re-authenticate
-          return false;
+          return { success: false, needsLogout: true };
         }
       } else if (req.oidc.accessToken?.access_token) {
         // Token exists and is not expired
@@ -125,7 +125,7 @@ async function extractBearerToken(req: Request): Promise<boolean> {
         if (typeof accessToken === 'string') {
           req.bearerToken = accessToken;
           req.log.debug({ path: req.path }, 'Bearer token successfully extracted');
-          return true;
+          return { success: true, needsLogout: false };
         }
       }
     }
@@ -140,14 +140,55 @@ async function extractBearerToken(req: Request): Promise<boolean> {
   }
 
   req.log.debug({ path: req.path }, 'No bearer token extracted');
-  return false;
+  return { success: false, needsLogout: false };
 }
 
 /**
  * Makes authentication decision based on route config and auth status
  */
 function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecision {
-  const { route, authenticated, hasToken } = result;
+  const { route, authenticated, hasToken, needsLogout } = result;
+
+  // If user needs logout due to failed token refresh
+  if (needsLogout) {
+    req.log.info(
+      {
+        path: req.path,
+        routeType: route.type,
+        method: req.method,
+      },
+      'Token refresh failed - determining response based on request type'
+    );
+
+    // For API routes or non-GET requests, return 401 instead of logout redirect
+    // This prevents breaking XHR/Fetch clients that can't handle HTML redirects
+    if (route.type === 'api' || req.method !== 'GET') {
+      req.log.info(
+        {
+          path: req.path,
+          routeType: route.type,
+          method: req.method,
+        },
+        'API route or non-GET request - returning 401 instead of logout redirect'
+      );
+      return {
+        action: 'error',
+        errorType: 'authentication',
+        statusCode: 401,
+      };
+    }
+
+    // For SSR GET requests, proceed with logout redirect
+    req.log.info(
+      {
+        path: req.path,
+        routeType: route.type,
+        method: req.method,
+      },
+      'SSR GET request - proceeding with logout redirect'
+    );
+    return { action: 'logout' };
+  }
 
   // Public routes - always allow
   if (route.auth === 'public') {
@@ -281,6 +322,18 @@ async function executeAuthDecision(decision: AuthDecision, req: Request, res: Re
       }
       break;
 
+    case 'logout':
+      // Log user out due to token refresh failure
+      req.log.info(
+        {
+          path: req.path,
+          originalUrl: req.originalUrl,
+        },
+        'Logging user out due to token refresh failure'
+      );
+      res.oidc.logout();
+      break;
+
     case 'error': {
       const error = new AuthenticationError(
         decision.errorType === 'authorization' ? 'Insufficient permissions to access this resource' : 'Authentication required to access this resource',
@@ -324,8 +377,11 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
 
       // 3. Token extraction (if needed)
       let hasToken = false;
+      let needsLogout = false;
       if (routeConfig.tokenRequired || routeConfig.auth === 'optional') {
-        hasToken = await extractBearerToken(req);
+        const tokenResult = await extractBearerToken(req);
+        hasToken = tokenResult.success;
+        needsLogout = tokenResult.needsLogout;
       }
 
       // 4. Authentication context is already available in req.oidc
@@ -335,6 +391,7 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
         route: routeConfig,
         authenticated,
         hasToken,
+        needsLogout,
       };
 
       // 6. Make authentication decision

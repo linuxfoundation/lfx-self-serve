@@ -12,9 +12,8 @@ import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
-import { extractUrlsWithDomains, Meeting, MeetingAttachment, MeetingRegistrant } from '@lfx-pcc/shared';
+import { extractUrlsWithDomains, Meeting, MeetingAttachment, MeetingOccurrence, MeetingRegistrant } from '@lfx-pcc/shared';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
-import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
@@ -52,12 +51,12 @@ import { RegistrantModalComponent } from '../registrant-modal/registrant-modal.c
 export class MeetingCardComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
-  private readonly committeeService = inject(CommitteeService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly injector = inject(Injector);
 
   public readonly meetingInput = input.required<Meeting>();
+  public readonly occurrenceInput = input<MeetingOccurrence | null>(null);
   public readonly pastMeeting = input<boolean>(false);
   public readonly loading = input<boolean>(false);
   public readonly showBorder = input<boolean>(false);
@@ -65,6 +64,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly registrantResponseBreakdown: Signal<string> = this.initRegistrantResponseBreakdown();
   public showRegistrants: WritableSignal<boolean> = signal(false);
   public meeting: WritableSignal<Meeting> = signal({} as Meeting);
+  public occurrence: WritableSignal<MeetingOccurrence | null> = signal(null);
   public registrantsLoading: WritableSignal<boolean> = signal(true);
   private refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
   public registrants = this.initRegistrantsList();
@@ -92,6 +92,9 @@ export class MeetingCardComponent implements OnInit {
   public constructor() {
     effect(() => {
       this.meeting.set(this.meetingInput());
+      if (this.occurrenceInput()) {
+        this.occurrence.set(this.occurrenceInput()!);
+      }
     });
   }
 

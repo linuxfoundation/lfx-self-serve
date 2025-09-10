@@ -4,11 +4,13 @@
 import { MeetingVisibility } from '@lfx-pcc/shared/enums';
 import { NextFunction, Request, Response } from 'express';
 
-import { AuthenticationError, ResourceNotFoundError } from '../errors';
+import { ResourceNotFoundError, ServiceValidationError } from '../errors';
+import { AuthorizationError } from '../errors/authentication.error';
 import { Logger } from '../helpers/logger';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { MeetingService } from '../services/meeting.service';
 import { ProjectService } from '../services/project.service';
+import { generateM2MToken } from '../utils/m2m-token.util';
 import { validatePassword } from '../utils/security.util';
 
 /**
@@ -29,20 +31,12 @@ export class PublicMeetingController {
 
     try {
       // Check if the meeting UID is provided
-      if (
-        !validateUidParameter(id, req, next, {
-          operation: 'get_public_meeting_by_id',
-          service: 'public_meeting_controller',
-          logStartTime: startTime,
-        })
-      ) {
+      if (!this.validateMeetingId(id, 'get_public_meeting_by_id', req, next, startTime)) {
         return;
       }
 
-      // TODO: Generate an M2M token
-
-      // Get the meeting by ID using the existing meeting service
-      const meeting = await this.meetingService.getMeetingById(req, id, 'meeting', false);
+      // Get the meeting by ID using M2M token
+      const meeting = await this.fetchMeetingWithM2M(req, id);
       const project = await this.projectService.getProjectById(req, meeting.project_uid, false);
 
       if (!project) {
@@ -60,81 +54,17 @@ export class PublicMeetingController {
         title: meeting.title,
       });
 
-      // Check if the meeting visibility is public, if so, get join URL and return the meeting and project
-      if (meeting.visibility === MeetingVisibility.PUBLIC) {
-        try {
-          // Get the meeting join URL for public meetings
-          req.log.debug(
-            Logger.sanitize({
-              meeting_uid: id,
-              isAuthenticated: req.oidc?.isAuthenticated(),
-              hasOidc: !!req.oidc,
-              user: req.oidc?.user,
-              accessToken: req.oidc?.accessToken ? 'present' : 'missing',
-              cookies: Object.keys(req.cookies || {}),
-              headers: {
-                cookie: req.headers.cookie ? 'present' : 'missing',
-              },
-            }),
-            'OIDC Authentication Debug - Getting join URL for public meeting'
-          );
-          const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
-          meeting.join_url = joinUrlData.join_url;
-
-          req.log.debug(
-            Logger.sanitize({
-              meeting_uid: id,
-              has_join_url: !!joinUrlData.join_url,
-            }),
-            'Fetched join URL for public meeting'
-          );
-        } catch (error) {
-          // Log the error but don't fail the request - join URL is optional
-          req.log.warn(
-            {
-              error: error instanceof Error ? error.message : error,
-              meeting_uid: id,
-              has_token: !!req.bearerToken,
-            },
-            'Failed to fetch join URL for public meeting, continuing without it'
-          );
-        }
-
+      // Check if the meeting visibility is public and not restricted, if so, get join URL and return the meeting and project
+      if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
+        await this.handleJoinUrlForPublicMeeting(req, meeting, id);
         res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url } });
         return;
       }
 
       // Check if the user has passed in a password, if so, check if it's correct
       const { password } = req.query;
-      if (!password || !validatePassword(password as string, meeting.password)) {
-        throw new AuthenticationError('Invalid password', {
-          operation: 'get_public_meeting_by_id',
-          service: 'public_meeting_controller',
-          path: `/meetings/${id}`,
-        });
-      }
-
-      // Get the meeting join URL for password-protected meetings
-      try {
-        const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
-        meeting.join_url = joinUrlData.join_url;
-
-        req.log.debug(
-          {
-            meeting_uid: id,
-            has_join_url: !!joinUrlData.join_url,
-          },
-          'Fetched join URL for password-protected meeting'
-        );
-      } catch (error) {
-        // Log the error but don't fail the request - join URL is optional
-        req.log.warn(
-          {
-            error: error instanceof Error ? error.message : error,
-            meeting_uid: id,
-          },
-          'Failed to fetch join URL for password-protected meeting, continuing without it'
-        );
+      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'get_public_meeting_by_id', req, next, startTime)) {
+        return;
       }
 
       // Send the meeting and project data to the client
@@ -147,6 +77,164 @@ export class PublicMeetingController {
 
       // Send the error to the next middleware
       next(error);
+    }
+  }
+
+  public async postMeetingJoinUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const { password } = req.query;
+    const email: string = req.oidc.user?.['email'] ?? req.body.email;
+    const startTime = Logger.start(req, 'post_meeting_join_url', {
+      meeting_uid: id,
+    });
+
+    try {
+      // Check if the meeting UID is provided
+      if (!this.validateMeetingId(id, 'post_meeting_join_url', req, next, startTime)) {
+        return;
+      }
+
+      const meeting = await this.fetchMeetingWithM2M(req, id);
+
+      if (!meeting) {
+        throw new ResourceNotFoundError('Meeting', id, {
+          operation: 'post_meeting_join_url',
+          service: 'public_meeting_controller',
+          path: `/meetings/${id}`,
+        });
+      }
+
+      // Check if the user has passed in a password, if so, check if it's correct
+      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_join_url', req, next, startTime)) {
+        return;
+      }
+
+      // Check that the user has access to the meeting by validating they were invited to the meeting
+      // Restricted meetings require an email to be provided
+      if (meeting.restricted) {
+        await this.restrictedMeetingCheck(req, next, email, id, startTime);
+      }
+
+      const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
+
+      // Log the success
+      Logger.success(req, 'post_meeting_join_url', startTime, {
+        meeting_uid: id,
+        project_uid: meeting.project_uid,
+        title: meeting.title,
+      });
+
+      res.json(joinUrlData);
+    } catch (error) {
+      // Log the error
+      Logger.error(req, 'post_meeting_join_url', startTime, error, {
+        meeting_uid: id,
+      });
+
+      // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * Sets up M2M token for API calls
+   */
+  private async setupM2MToken(req: Request): Promise<string> {
+    const m2mToken = await generateM2MToken(req);
+    req.bearerToken = m2mToken;
+    return m2mToken;
+  }
+
+  /**
+   * Validates meeting ID parameter
+   */
+  private validateMeetingId(id: string, operation: string, req: Request, next: NextFunction, startTime: number): boolean {
+    return validateUidParameter(id, req, next, {
+      operation,
+      service: 'public_meeting_controller',
+      logStartTime: startTime,
+    });
+  }
+
+  /**
+   * Validates meeting password
+   */
+  private validateMeetingPassword(password: string, meetingPassword: string, operation: string, req: Request, next: NextFunction, startTime: number): boolean {
+    if (!password || !validatePassword(password, meetingPassword)) {
+      Logger.error(req, operation, startTime, new Error('Invalid password parameter'));
+
+      const validationError = ServiceValidationError.forField('password', 'Invalid password', {
+        operation,
+        service: 'public_meeting_controller',
+        path: req.path,
+      });
+
+      next(validationError);
+      return false;
+    }
+    return true;
+  }
+
+  /**
+   * Fetches meeting with M2M token setup
+   */
+  private async fetchMeetingWithM2M(req: Request, id: string) {
+    await this.setupM2MToken(req);
+    return await this.meetingService.getMeetingById(req, id, 'meeting', false);
+  }
+
+  /**
+   * Handles join URL logic for public meetings
+   */
+  private async handleJoinUrlForPublicMeeting(req: Request, meeting: any, id: string): Promise<void> {
+    try {
+      const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
+      meeting.join_url = joinUrlData.join_url;
+
+      req.log.debug(
+        Logger.sanitize({
+          meeting_uid: id,
+          has_join_url: !!joinUrlData.join_url,
+        }),
+        'Fetched join URL for public meeting'
+      );
+    } catch (error) {
+      req.log.warn(
+        {
+          error: error instanceof Error ? error.message : error,
+          meeting_uid: id,
+          has_token: !!req.bearerToken,
+        },
+        'Failed to fetch join URL for public meeting, continuing without it'
+      );
+    }
+  }
+
+  private async restrictedMeetingCheck(req: Request, next: NextFunction, email: string, id: string, startTime: number): Promise<void> {
+    // Check that the user has access to the meeting by validating they were invited to the meeting
+    if (!email) {
+      // Log the error
+      Logger.error(req, 'post_meeting_join_url', startTime, new Error('Missing email parameter'));
+
+      // Create a validation error
+      const validationError = ServiceValidationError.forField('email', 'Email is required', {
+        operation: 'post_meeting_join_url',
+        service: 'public_meeting_controller',
+        path: req.path,
+      });
+
+      next(validationError);
+      return;
+    }
+
+    // Query the meeting registrants filtered by the user's email to validate if the user was invited to the meeting
+    const registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, id, email);
+    if (registrants.resources.length === 0) {
+      throw new AuthorizationError('The email address is not registered for this restricted meeting', {
+        operation: 'post_meeting_join_url',
+        service: 'public_meeting_controller',
+        path: `/meetings/${id}`,
+      });
     }
   }
 }

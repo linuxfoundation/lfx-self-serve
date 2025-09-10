@@ -247,6 +247,17 @@ export class MeetingService {
   }
 
   /**
+   * Fetches all registrants for a meeting by email
+   */
+  public async getMeetingRegistrantsByEmail(req: Request, meetingUid: string, email: string): Promise<QueryServiceResponse<MeetingRegistrant[]>> {
+    return await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant[]>>(req, 'LFX_V2_SERVICE', `/query/resources`, 'GET', {
+      type: 'meeting_registrant',
+      parent: `meeting:${meetingUid}`,
+      tags: `email:${email}`,
+    });
+  }
+
+  /**
    * Creates a new meeting registrant
    */
   public async addMeetingRegistrant(req: Request, registrantData: CreateMeetingRegistrantRequest): Promise<MeetingRegistrant> {

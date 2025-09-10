@@ -17,6 +17,7 @@ export class MeetingModalComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
 
   public readonly meeting = this.config.data?.meeting;
+  public readonly occurrence = this.config.data?.occurrence;
 
   public onDelete(): void {
     this.dialogRef.close(true);

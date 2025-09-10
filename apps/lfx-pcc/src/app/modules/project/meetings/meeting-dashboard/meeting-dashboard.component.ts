@@ -12,7 +12,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { MenuComponent } from '@components/menu/menu.component';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { CalendarEvent, Meeting } from '@lfx-pcc/shared/interfaces';
+import { CalendarEvent, Meeting, MeetingOccurrence } from '@lfx-pcc/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
@@ -55,6 +55,7 @@ export class MeetingDashboardComponent {
   public committeeFilter: WritableSignal<string | null>;
   public meetingsLoading: WritableSignal<boolean>;
   public meetings: Signal<Meeting[]>;
+  public upcomingMeetings: Signal<(MeetingOccurrence & { meeting: Meeting })[]>;
   public pastMeetingsLoading: WritableSignal<boolean>;
   public pastMeetings: Signal<Meeting[]>;
   public meetingListView: WritableSignal<'upcoming' | 'past'>;
@@ -78,6 +79,7 @@ export class MeetingDashboardComponent {
     this.pastMeetingsLoading = signal<boolean>(true);
     this.refresh = new BehaviorSubject<void>(undefined);
     this.meetings = this.initializeMeetings();
+    this.upcomingMeetings = this.initializeUpcomingMeetings();
     this.pastMeetings = this.initializePastMeetings();
     this.searchForm = this.initializeSearchForm();
     this.meetingListView = signal<'upcoming' | 'past'>('upcoming');
@@ -119,9 +121,9 @@ export class MeetingDashboardComponent {
   public onCalendarEventClick(eventInfo: any): void {
     const meetingId = eventInfo.event.extendedProps?.meetingId;
     if (meetingId) {
-      const meeting = this.meetings().find((m) => m.uid === meetingId);
-      if (meeting) {
-        this.openMeetingModal(meeting);
+      const occurrence = this.upcomingMeetings().find((m) => m.occurrence_id === meetingId);
+      if (occurrence) {
+        this.openMeetingModal(occurrence);
       }
     }
   }
@@ -132,7 +134,7 @@ export class MeetingDashboardComponent {
     this.refresh.next();
   }
 
-  private openMeetingModal(meeting: Meeting): void {
+  private openMeetingModal(meeting: MeetingOccurrence & { meeting: Meeting }): void {
     this.dialogService
       .open(MeetingModalComponent, {
         header: meeting.title || 'Meeting Details',
@@ -141,7 +143,8 @@ export class MeetingDashboardComponent {
         closable: true,
         dismissableMask: true,
         data: {
-          meeting,
+          meeting: meeting.meeting,
+          occurrence: meeting,
         },
       })
       .onClose.pipe(take(1))
@@ -176,6 +179,12 @@ export class MeetingDashboardComponent {
         initialValue: [],
       }
     );
+  }
+
+  private initializeUpcomingMeetings(): Signal<(MeetingOccurrence & { meeting: Meeting })[]> {
+    return computed(() => {
+      return this.meetings().flatMap((m) => m.occurrences.map((o) => ({ ...o, meeting: m })));
+    });
   }
 
   private initializePastMeetings(): Signal<Meeting[]> {
@@ -303,7 +312,38 @@ export class MeetingDashboardComponent {
 
   private initializeCalendarEvents(): Signal<CalendarEvent[]> {
     return computed(() => {
-      return [...this.meetings(), ...this.pastMeetings()].map((meeting): CalendarEvent => {
+      // For future meetings, we need to flat map meetings with their recurrence. The occurrences
+      // are available in the recurrence object of the main meeting. Instead of using the meeting details
+      // we would use the occurrences from the recurrence object. We should only use upcoming meetings for the calendar.
+      const meetings = this.meetings();
+      const upcomingEvents: CalendarEvent[] = meetings.flatMap((m) => {
+        return m.occurrences.map((meeting) => {
+          const startTime = meeting.start_time ? new Date(meeting.start_time) : new Date();
+          const duration = meeting.duration || 60; // Default 1 hour duration
+          const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
+
+          return {
+            id: meeting.occurrence_id,
+            title: meeting.title,
+            start: startTime.toISOString(),
+            end: endTime.toISOString(),
+            backgroundColor: m.visibility === 'public' ? '#3b82f6' : '#6b7280',
+            borderColor: m.visibility === 'public' ? '#1d4ed8' : '#374151',
+            textColor: '#ffffff',
+            classNames: ['meeting-event'],
+            extendedProps: {
+              meetingId: meeting.occurrence_id,
+              visibility: m.visibility || 'private',
+              committee: m.committees?.[0]?.name,
+              meetingType: m.meeting_type,
+              description: meeting.description,
+              title: meeting.title,
+            },
+          };
+        });
+      });
+
+      const pastEvents = this.pastMeetings().map((meeting): CalendarEvent => {
         const startTime = meeting.start_time ? new Date(meeting.start_time) : new Date();
         const duration = meeting.duration || 60; // Default 1 hour duration
         const endTime = new Date(startTime.getTime() + duration * 60 * 1000);
@@ -340,6 +380,8 @@ export class MeetingDashboardComponent {
           },
         };
       });
+
+      return [...upcomingEvents, ...pastEvents];
     });
   }
 }

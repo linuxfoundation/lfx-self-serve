@@ -12,6 +12,7 @@ import {
   GenerateAgendaResponse,
   Meeting,
   MeetingAttachment,
+  MeetingJoinURL,
   MeetingRegistrant,
   MeetingRegistrantWithState,
   Project,
@@ -106,10 +107,33 @@ export class MeetingService {
     );
   }
 
-  public getPublicMeeting(id: string): Observable<{ meeting: Meeting; project: Project }> {
-    return this.http.get<{ meeting: Meeting; project: Project }>(`/public/api/meetings/${id}`).pipe(
+  public getPublicMeeting(id: string, password: string | null): Observable<{ meeting: Meeting; project: Project }> {
+    let params = new HttpParams();
+    if (password) {
+      params = params.set('password', password);
+    }
+    return this.http.get<{ meeting: Meeting; project: Project }>(`/public/api/meetings/${id}`, { params }).pipe(
       catchError((error) => {
         console.error(`Failed to load public meeting ${id}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getPublicMeetingJoinUrl(
+    id: string,
+    password: string | null,
+    body?: { email?: string; name?: string; organization?: string }
+  ): Observable<MeetingJoinURL> {
+    let params = new HttpParams();
+
+    if (password) {
+      params = params.set('password', password);
+    }
+
+    return this.http.post<MeetingJoinURL>(`/public/api/meetings/${id}/join-url`, body, { params }).pipe(
+      catchError((error) => {
+        console.error(`Failed to load public meeting join url ${id}:`, error);
         return throwError(() => error);
       })
     );

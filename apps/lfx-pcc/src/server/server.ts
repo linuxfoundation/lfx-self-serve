@@ -215,7 +215,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     user: null,
   };
 
-  if (req.oidc?.isAuthenticated()) {
+  if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
     auth.authenticated = true;
     try {
       // Fetch user info from OIDC

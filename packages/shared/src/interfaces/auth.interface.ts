@@ -91,7 +91,7 @@ export type AuthLevel = 'required' | 'optional' | 'public';
  * Authentication decision actions
  * @description Actions the middleware can take based on authentication status
  */
-export type AuthAction = 'allow' | 'redirect' | 'error';
+export type AuthAction = 'allow' | 'redirect' | 'error' | 'logout';
 
 /**
  * Route authentication configuration
@@ -124,6 +124,17 @@ export interface AuthDecision {
 }
 
 /**
+ * Bearer token extraction result
+ * @description Result of bearer token extraction attempt
+ */
+export interface TokenExtractionResult {
+  /** Whether token extraction was successful */
+  success: boolean;
+  /** Whether user needs to be logged out due to refresh failure */
+  needsLogout: boolean;
+}
+
+/**
  * Authentication middleware result
  * @description Result of authentication check and token extraction
  */
@@ -134,6 +145,8 @@ export interface AuthMiddlewareResult {
   authenticated: boolean;
   /** Whether bearer token is available */
   hasToken: boolean;
+  /** Whether user needs to be logged out */
+  needsLogout?: boolean;
 }
 
 /**

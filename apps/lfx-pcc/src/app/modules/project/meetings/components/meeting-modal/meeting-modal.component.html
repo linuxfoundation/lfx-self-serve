@@ -4,6 +4,6 @@
 @if (meeting) {
   <div class="p-0">
     <!-- Show meeting card for view mode -->
-    <lfx-meeting-card [meetingInput]="meeting" [pastMeeting]="false" (meetingDeleted)="onDelete()"></lfx-meeting-card>
+    <lfx-meeting-card [meetingInput]="meeting" [occurrenceInput]="occurrence" [pastMeeting]="false" (meetingDeleted)="onDelete()"></lfx-meeting-card>
   </div>
 }
