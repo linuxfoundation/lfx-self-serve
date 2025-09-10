@@ -5,6 +5,7 @@ import {
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
   Meeting,
+  MeetingJoinURL,
   MeetingRegistrant,
   QueryServiceResponse,
   UpdateMeetingRegistrantRequest,
@@ -38,7 +39,7 @@ export class MeetingService {
   /**
    * Fetches all meetings based on query parameters
    */
-  public async getMeetings(req: Request, query: Record<string, any> = {}, meetingType: string = 'meeting'): Promise<Meeting[]> {
+  public async getMeetings(req: Request, query: Record<string, any> = {}, meetingType: string = 'meeting', access: boolean = true): Promise<Meeting[]> {
     const params = {
       ...query,
       type: meetingType,
@@ -48,20 +49,23 @@ export class MeetingService {
 
     let meetings = resources.map((resource) => resource.data);
 
-    req.log.debug({ meetings }, 'Meetings');
     // Get committee data for each committee associated with the meeting
     if (meetings.some((m) => m.committees && m.committees.length > 0)) {
       meetings = await this.getMeetingCommittees(req, meetings);
     }
 
-    // Add writer access field to all meetings
-    return await this.accessCheckService.addAccessToResources(req, meetings, 'meeting', 'organizer');
+    if (access) {
+      // Add writer access field to all meetings
+      return await this.accessCheckService.addAccessToResources(req, meetings, 'meeting', 'organizer');
+    }
+
+    return meetings;
   }
 
   /**
    * Fetches a single meeting by UID
    */
-  public async getMeetingById(req: Request, meetingUid: string, meetingType: string = 'meeting'): Promise<Meeting> {
+  public async getMeetingById(req: Request, meetingUid: string, meetingType: string = 'meeting', access: boolean = true): Promise<Meeting> {
     const params = {
       type: meetingType,
       tags: `meeting_uid:${meetingUid}`,
@@ -93,8 +97,12 @@ export class MeetingService {
       meeting = await this.getMeetingCommittees(req, meeting);
     }
 
-    // Add writer access field to the meeting
-    return await this.accessCheckService.addAccessToResource(req, meeting[0], 'meeting', 'organizer');
+    if (access) {
+      // Add writer access field to the meeting
+      return await this.accessCheckService.addAccessToResource(req, meeting[0], 'meeting', 'organizer');
+    }
+
+    return meeting[0];
   }
 
   /**
@@ -370,6 +378,13 @@ export class MeetingService {
       );
       throw error;
     }
+  }
+
+  /**
+   * Fetches meeting join URL by meeting UID
+   */
+  public async getMeetingJoinUrl(req: Request, meetingUid: string): Promise<MeetingJoinURL> {
+    return await this.microserviceProxy.proxyRequest<MeetingJoinURL>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/join_url`, 'GET');
   }
 
   private async getMeetingCommittees(req: Request, meetings: Meeting[]): Promise<Meeting[]> {

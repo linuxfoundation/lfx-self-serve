@@ -65,3 +65,86 @@ export interface M2MTokenResponse {
   /** Optional scope for the token */
   scope?: string;
 }
+
+/**
+ * Options for bearer token extraction middleware
+ * @description Configuration for how bearer tokens should be handled in requests
+ */
+export interface BearerTokenOptions {
+  /** Whether the token is optional (default: false) */
+  optional?: boolean;
+}
+
+/**
+ * Route type for authentication middleware
+ * @description Differentiates between SSR routes and API endpoints
+ */
+export type RouteType = 'ssr' | 'api';
+
+/**
+ * Authentication level for authentication middleware
+ * @description Different levels of authentication requirements
+ */
+export type AuthLevel = 'required' | 'optional' | 'public';
+
+/**
+ * Authentication decision actions
+ * @description Actions the middleware can take based on authentication status
+ */
+export type AuthAction = 'allow' | 'redirect' | 'error';
+
+/**
+ * Route authentication configuration
+ * @description Defines authentication requirements for specific route patterns
+ */
+export interface RouteAuthConfig {
+  /** Route pattern (string prefix or regex) */
+  pattern: string | RegExp;
+  /** Route type - SSR routes redirect on auth failure, API routes return errors */
+  type: RouteType;
+  /** Authentication level required */
+  auth: AuthLevel;
+  /** Whether bearer token is required (for API routes) */
+  tokenRequired?: boolean;
+}
+
+/**
+ * Authentication decision result
+ * @description Result of authentication decision making process
+ */
+export interface AuthDecision {
+  /** Action to take */
+  action: AuthAction;
+  /** Redirect URL if action is 'redirect' */
+  redirectUrl?: string;
+  /** Error type if action is 'error' */
+  errorType?: 'authentication' | 'authorization';
+  /** HTTP status code if action is 'error' */
+  statusCode?: number;
+}
+
+/**
+ * Authentication middleware result
+ * @description Result of authentication check and token extraction
+ */
+export interface AuthMiddlewareResult {
+  /** Matched route configuration */
+  route: RouteAuthConfig;
+  /** Whether user is authenticated */
+  authenticated: boolean;
+  /** Whether bearer token is available */
+  hasToken: boolean;
+}
+
+/**
+ * Configuration for authentication middleware
+ * @description Complete configuration for all authentication scenarios
+ */
+export interface AuthConfig {
+  /** Route-specific configurations */
+  routes: RouteAuthConfig[];
+  /** Default authentication level for unmatched routes */
+  defaultAuth: AuthLevel;
+  /** Default route type for unmatched routes */
+  defaultType: RouteType;
+}

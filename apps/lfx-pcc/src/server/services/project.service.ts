@@ -43,7 +43,7 @@ export class ProjectService {
   /**
    * Fetches a single project by ID
    */
-  public async getProjectById(req: Request, projectId: string): Promise<Project> {
+  public async getProjectById(req: Request, projectId: string, access: boolean = true): Promise<Project> {
     const params = {
       type: 'project',
       tags: projectId,
@@ -72,7 +72,11 @@ export class ProjectService {
     const project = resources[0].data;
 
     // Add writer access field to the project
-    return await this.accessCheckService.addAccessToResource(req, project, 'project');
+    if (access) {
+      return await this.accessCheckService.addAccessToResource(req, project, 'project');
+    }
+
+    return project;
   }
 
   /**

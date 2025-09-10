@@ -257,9 +257,14 @@
                       </div>
                     </div>
 
-                    <div class="flex items-center justify-between pt-3">
-                      <p class="text-sm text-gray-500 font-sans">Meeting invites and updates will be sent to your email</p>
-                      <lfx-button size="small" [href]="meeting().join_url" severity="primary" label="Join Meeting" icon="fa-light fa-sign-in"></lfx-button>
+                    <div class="flex items-center justify-end pt-3">
+                      <lfx-button
+                        size="small"
+                        [href]="meeting().join_url"
+                        severity="primary"
+                        label="Join Meeting"
+                        icon="fa-light fa-sign-in"
+                        [disabled]="joinForm.invalid"></lfx-button>
                     </div>
                   </form>
                 </div>

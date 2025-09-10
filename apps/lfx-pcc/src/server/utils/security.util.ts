@@ -63,15 +63,3 @@ export function constantTimeEquals(a: string | null | undefined, b: string | nul
 export function validatePassword(providedPassword: string | null | undefined, expectedPassword: string | null | undefined): boolean {
   return constantTimeEquals(providedPassword, expectedPassword);
 }
-
-/**
- * @deprecated Use validatePassword instead. This function is maintained for backward compatibility.
- * Validates that a passcode matches the expected value using cryptographically secure constant-time comparison.
- *
- * @param providedPasscode - The passcode provided by the user
- * @param expectedPasscode - The expected passcode value
- * @returns true if passcodes match, false otherwise
- */
-export function validatePasscode(providedPasscode: string | null | undefined, expectedPasscode: string | null | undefined): boolean {
-  return constantTimeEquals(providedPasscode, expectedPasscode);
-}

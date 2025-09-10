@@ -419,3 +419,12 @@ export interface BatchRegistrantOperationResponse<T = unknown> {
     failed: number;
   };
 }
+
+/**
+ * Response for meeting join URL endpoint
+ * @description Contains the join URL for a specific meeting
+ */
+export interface MeetingJoinURL {
+  /** Meeting join URL */
+  join_url: string;
+}

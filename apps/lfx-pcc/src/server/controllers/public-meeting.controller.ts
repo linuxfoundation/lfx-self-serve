@@ -9,7 +9,7 @@ import { Logger } from '../helpers/logger';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { MeetingService } from '../services/meeting.service';
 import { ProjectService } from '../services/project.service';
-import { validatePasscode } from '../utils/security.util';
+import { validatePassword } from '../utils/security.util';
 
 /**
  * Controller for handling public meeting HTTP requests (no authentication required)
@@ -42,8 +42,8 @@ export class PublicMeetingController {
       // TODO: Generate an M2M token
 
       // Get the meeting by ID using the existing meeting service
-      const meeting = await this.meetingService.getMeetingById(req, id);
-      const project = await this.projectService.getProjectById(req, meeting.project_uid);
+      const meeting = await this.meetingService.getMeetingById(req, id, 'meeting', false);
+      const project = await this.projectService.getProjectById(req, meeting.project_uid, false);
 
       if (!project) {
         throw new ResourceNotFoundError('Project', meeting.project_uid, {
@@ -60,20 +60,81 @@ export class PublicMeetingController {
         title: meeting.title,
       });
 
-      // Check if the meeting visibility is public, if so, return the meeting and project
+      // Check if the meeting visibility is public, if so, get join URL and return the meeting and project
       if (meeting.visibility === MeetingVisibility.PUBLIC) {
-        res.json({ meeting, project });
+        try {
+          // Get the meeting join URL for public meetings
+          req.log.debug(
+            Logger.sanitize({
+              meeting_uid: id,
+              isAuthenticated: req.oidc?.isAuthenticated(),
+              hasOidc: !!req.oidc,
+              user: req.oidc?.user,
+              accessToken: req.oidc?.accessToken ? 'present' : 'missing',
+              cookies: Object.keys(req.cookies || {}),
+              headers: {
+                cookie: req.headers.cookie ? 'present' : 'missing',
+              },
+            }),
+            'OIDC Authentication Debug - Getting join URL for public meeting'
+          );
+          const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
+          meeting.join_url = joinUrlData.join_url;
+
+          req.log.debug(
+            Logger.sanitize({
+              meeting_uid: id,
+              has_join_url: !!joinUrlData.join_url,
+            }),
+            'Fetched join URL for public meeting'
+          );
+        } catch (error) {
+          // Log the error but don't fail the request - join URL is optional
+          req.log.warn(
+            {
+              error: error instanceof Error ? error.message : error,
+              meeting_uid: id,
+              has_token: !!req.bearerToken,
+            },
+            'Failed to fetch join URL for public meeting, continuing without it'
+          );
+        }
+
+        res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url } });
         return;
       }
 
       // Check if the user has passed in a password, if so, check if it's correct
       const { password } = req.query;
-      if (!password || !validatePasscode(password as string, meeting.password)) {
+      if (!password || !validatePassword(password as string, meeting.password)) {
         throw new AuthenticationError('Invalid password', {
           operation: 'get_public_meeting_by_id',
           service: 'public_meeting_controller',
           path: `/meetings/${id}`,
         });
+      }
+
+      // Get the meeting join URL for password-protected meetings
+      try {
+        const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
+        meeting.join_url = joinUrlData.join_url;
+
+        req.log.debug(
+          {
+            meeting_uid: id,
+            has_join_url: !!joinUrlData.join_url,
+          },
+          'Fetched join URL for password-protected meeting'
+        );
+      } catch (error) {
+        // Log the error but don't fail the request - join URL is optional
+        req.log.warn(
+          {
+            error: error instanceof Error ? error.message : error,
+            meeting_uid: id,
+          },
+          'Failed to fetch join URL for password-protected meeting, continuing without it'
+        );
       }
 
       // Send the meeting and project data to the client

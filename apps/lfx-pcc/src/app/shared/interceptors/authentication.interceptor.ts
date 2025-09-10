@@ -16,7 +16,7 @@ export const authenticationInterceptor: HttpInterceptorFn = (req, next) => {
   const cookieService = inject(SsrCookieService);
   const userService = inject(UserService);
 
-  if (req.url.startsWith('/api/') && userService.authenticated()) {
+  if ((req.url.startsWith('/api/') || req.url.startsWith('/public/api/')) && userService.authenticated()) {
     const authenticatedReq = req.clone({
       withCredentials: true,
       headers: req.headers.append(
