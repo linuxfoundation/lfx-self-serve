@@ -5,7 +5,6 @@ import { CommonModule } from '@angular/common';
 import { Component, inject, signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
-import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { Meeting } from '@lfx-pcc/shared/interfaces';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
@@ -21,7 +20,7 @@ export interface MeetingDeleteResult {
 @Component({
   selector: 'lfx-meeting-delete-confirmation',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, RadioButtonComponent, MeetingTimePipe],
+  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, MeetingTimePipe],
   templateUrl: './meeting-delete-confirmation.component.html',
   styleUrl: './meeting-delete-confirmation.component.scss',
 })

@@ -19,7 +19,7 @@ import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
-import { combineLatest, map, of, switchMap } from 'rxjs';
+import { combineLatest, finalize, map, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting',
@@ -51,11 +51,12 @@ export class MeetingComponent {
   public authenticated: WritableSignal<boolean>;
   public user: Signal<User | null> = this.userService.user;
   public joinForm: FormGroup;
-  public project: Signal<Project | null> = signal<Project | null>(null);
+  public project: WritableSignal<Project | null> = signal<Project | null>(null);
   public meeting: Signal<Meeting & { project: Project }>;
   public meetingTypeBadge: Signal<{ badgeClass: string; icon?: string; text: string } | null>;
   public importantLinks: Signal<{ url: string; domain: string }[]>;
   public returnTo: Signal<string | undefined>;
+  public password: WritableSignal<string | null> = signal<string | null>(null);
 
   public constructor() {
     // Initialize all class variables
@@ -68,19 +69,42 @@ export class MeetingComponent {
     this.returnTo = this.initializeReturnTo();
   }
 
+  public onJoinMeeting(): void {
+    this.isJoining.set(true);
+
+    this.meetingService
+      .getPublicMeetingJoinUrl(this.meeting().uid, this.meeting().password, {
+        email: this.authenticated() ? this.user()?.email : this.joinForm.get('email')?.value,
+      })
+      .pipe(finalize(() => this.isJoining.set(false)))
+      .subscribe({
+        next: (res) => {
+          this.meeting().join_url = res.join_url;
+          window.open(this.meeting().join_url as string, '_blank');
+        },
+        error: ({ error }) => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: error.error });
+        },
+      });
+  }
+
   private initializeMeeting() {
     return toSignal<Meeting & { project: Project }>(
       combineLatest([this.activatedRoute.paramMap, this.activatedRoute.queryParamMap]).pipe(
-        switchMap(([params]) => {
+        switchMap(([params, queryParams]) => {
           const meetingId = params.get('id');
+          this.password.set(queryParams.get('password'));
           if (meetingId) {
-            return this.meetingService.getPublicMeeting(meetingId);
+            return this.meetingService.getPublicMeeting(meetingId, this.password());
           }
 
           // TODO: If no meeting ID, redirect to 404
           return of({} as { meeting: Meeting; project: Project });
         }),
-        map((res) => ({ ...res.meeting, project: res.project }))
+        map((res) => ({ ...res.meeting, project: res.project })),
+        tap((res) => {
+          this.project.set(res.project);
+        })
       )
     ) as Signal<Meeting & { project: Project }>;
   }
@@ -88,8 +112,8 @@ export class MeetingComponent {
   // Private initialization methods
   private initializeJoinForm(): FormGroup {
     return new FormGroup({
-      fullName: new FormControl<string>('', [Validators.required]),
-      email: new FormControl<string>('', [Validators.required, Validators.email]),
+      name: new FormControl<string>(this.user()?.name || '', [Validators.required]),
+      email: new FormControl<string>(this.user()?.email || '', [Validators.required, Validators.email]),
       organization: new FormControl<string>(''),
     });
   }
@@ -154,7 +178,7 @@ export class MeetingComponent {
 
   private initializeReturnTo(): Signal<string | undefined> {
     return computed(() => {
-      return `${environment.urls.home}/meetings/${this.meeting().uid}`;
+      return `${environment.urls.home}/meetings/${this.meeting().uid}?password=${this.password()}`;
     });
   }
 }

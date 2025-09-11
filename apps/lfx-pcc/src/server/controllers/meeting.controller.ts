@@ -634,6 +634,49 @@ export class MeetingController {
   }
 
   /**
+   * GET /meetings/:uid/join-url
+   */
+  public async getMeetingJoinUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = Logger.start(req, 'get_meeting_join_url', {
+      meeting_uid: uid,
+    });
+
+    try {
+      // Check if the meeting UID is provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_meeting_join_url',
+          service: 'meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      // Get the meeting join URL
+      const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, uid);
+
+      // Log the success
+      Logger.success(req, 'get_meeting_join_url', startTime, {
+        meeting_uid: uid,
+        has_join_url: !!joinUrlData.join_url,
+      });
+
+      // Send the join URL data to the client
+      res.json(joinUrlData);
+    } catch (error) {
+      // Log the error
+      Logger.error(req, 'get_meeting_join_url', startTime, error, {
+        meeting_uid: uid,
+      });
+
+      // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
    * Private helper to process registrant operations with fail-fast for 403 errors
    */
   private async processRegistrantOperations<T, R>(

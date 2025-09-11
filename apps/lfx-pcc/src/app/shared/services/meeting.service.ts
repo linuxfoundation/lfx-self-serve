@@ -12,6 +12,7 @@ import {
   GenerateAgendaResponse,
   Meeting,
   MeetingAttachment,
+  MeetingJoinURL,
   MeetingRegistrant,
   MeetingRegistrantWithState,
   Project,
@@ -33,6 +34,15 @@ export class MeetingService {
     return this.http.get<Meeting[]>('/api/meetings', { params }).pipe(
       catchError((error) => {
         console.error('Failed to load meetings:', error);
+        return of([]);
+      })
+    );
+  }
+
+  public getPastMeetings(params?: HttpParams): Observable<Meeting[]> {
+    return this.http.get<Meeting[]>('/api/past-meetings', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to load past meetings:', error);
         return of([]);
       })
     );
@@ -70,12 +80,11 @@ export class MeetingService {
   public getPastMeetingsByProject(projectId: string, limit: number = 3): Observable<Meeting[]> {
     let params = new HttpParams().set('tags', `project_uid:${projectId}`);
 
-    // TODO: Add filter for past meetings
     if (limit) {
       params = params.set('limit', limit.toString());
     }
 
-    return this.getMeetings(params);
+    return this.getPastMeetings(params);
   }
 
   public getMeeting(id: string): Observable<Meeting> {
@@ -88,10 +97,43 @@ export class MeetingService {
     );
   }
 
-  public getPublicMeeting(id: string): Observable<{ meeting: Meeting; project: Project }> {
-    return this.http.get<{ meeting: Meeting; project: Project }>(`/public/api/meetings/${id}`).pipe(
+  public getPastMeeting(id: string): Observable<Meeting> {
+    return this.http.get<Meeting>(`/api/past-meetings/${id}`).pipe(
+      catchError((error) => {
+        console.error(`Failed to load past meeting ${id}:`, error);
+        return throwError(() => error);
+      }),
+      tap((meeting) => this.meeting.set(meeting))
+    );
+  }
+
+  public getPublicMeeting(id: string, password: string | null): Observable<{ meeting: Meeting; project: Project }> {
+    let params = new HttpParams();
+    if (password) {
+      params = params.set('password', password);
+    }
+    return this.http.get<{ meeting: Meeting; project: Project }>(`/public/api/meetings/${id}`, { params }).pipe(
       catchError((error) => {
         console.error(`Failed to load public meeting ${id}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getPublicMeetingJoinUrl(
+    id: string,
+    password: string | null,
+    body?: { email?: string; name?: string; organization?: string }
+  ): Observable<MeetingJoinURL> {
+    let params = new HttpParams();
+
+    if (password) {
+      params = params.set('password', password);
+    }
+
+    return this.http.post<MeetingJoinURL>(`/public/api/meetings/${id}/join-url`, body, { params }).pipe(
+      catchError((error) => {
+        console.error(`Failed to load public meeting join url ${id}:`, error);
         return throwError(() => error);
       })
     );

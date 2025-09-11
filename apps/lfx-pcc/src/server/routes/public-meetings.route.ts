@@ -11,4 +11,7 @@ const publicMeetingController = new PublicMeetingController();
 // GET /public/api/meetings/:id - get a single meeting (public access, no authentication required)
 router.get('/:id', (req, res, next) => publicMeetingController.getMeetingById(req, res, next));
 
+// GET /public/api/meetings/:id/join-url - get the join URL for a meeting (public access, no authentication required)
+router.post('/:id/join-url', (req, res, next) => publicMeetingController.postMeetingJoinUrl(req, res, next));
+
 export default router;

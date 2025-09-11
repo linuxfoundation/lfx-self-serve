@@ -15,11 +15,11 @@ import pinoHttp from 'pino-http';
 import pinoPretty from 'pino-pretty';
 
 import { validateAndSanitizeUrl } from './helpers/url-validation';
-import { extractBearerToken } from './middleware/auth-token.middleware';
+import { authMiddleware } from './middleware/auth.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
-import { protectedRoutesMiddleware } from './middleware/protected-routes.middleware';
 import committeesRouter from './routes/committees.route';
 import meetingsRouter from './routes/meetings.route';
+import pastMeetingsRouter from './routes/past-meetings.route';
 import permissionsRouter from './routes/permissions.route';
 import projectsRouter from './routes/projects.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
@@ -188,20 +188,19 @@ app.use('/login', (req: Request, res: Response) => {
   }
 });
 
-app.use(protectedRoutesMiddleware);
+// Apply authentication middleware to all routes
+app.use(authMiddleware);
 
-// Mount API routes before Angular SSR
+// Mount API routes after authentication middleware
 // Public API routes
 app.use('/public/api/meetings', publicMeetingsRouter);
-
-// Apply bearer token middleware to all API routes
-app.use('/api', extractBearerToken);
 
 // Protected API routes
 app.use('/api/projects', projectsRouter);
 app.use('/api/projects', permissionsRouter);
 app.use('/api/committees', committeesRouter);
 app.use('/api/meetings', meetingsRouter);
+app.use('/api/past-meetings', pastMeetingsRouter);
 
 // Add API error handler middleware
 app.use('/api/*', apiErrorHandler);
@@ -216,11 +215,15 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     user: null,
   };
 
-  if (req.oidc?.isAuthenticated()) {
+  if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
     auth.authenticated = true;
     try {
       // Fetch user info from OIDC
-      auth.user = (await req.oidc.fetchUserInfo()) ?? (req.oidc?.user as User);
+      auth.user = req.oidc?.user as User;
+
+      if (!auth.user?.email) {
+        auth.user = await req.oidc.fetchUserInfo();
+      }
     } catch (error) {
       // If userinfo fetch fails, fall back to basic user info from token
       req.log.warn(

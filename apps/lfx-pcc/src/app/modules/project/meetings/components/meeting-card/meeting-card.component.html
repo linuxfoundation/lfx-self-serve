@@ -80,28 +80,29 @@
     <!-- Meeting Title and Date -->
     <div class="flex items-start justify-between mb-4" data-testid="meeting-title-section">
       <div class="flex-1 pr-4">
-        @if (meeting().title) {
+        @if (occurrence()?.title || meeting().title) {
           <h3 class="text-xl font-display font-semibold text-gray-900 mb-1 leading-tight" data-testid="meeting-title">
-            {{ meeting().title }}
+            {{ occurrence()?.title || meeting().title }}
           </h3>
         }
       </div>
-      @if (meeting().start_time) {
+      @if (occurrence()?.start_time || meeting().start_time) {
         <div class="flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded flex-shrink-0" data-testid="meeting-datetime">
           <i class="fa-light fa-calendar-days text-gray-400"></i>
           <span
-            >{{ meeting().start_time | meetingTime: meeting().duration : 'date' }} • {{ meeting().start_time | meetingTime: meeting().duration : 'time' }}</span
+            >{{ occurrence()?.start_time || meeting().start_time | meetingTime: meeting().duration : 'date' }} •
+            {{ occurrence()?.start_time || meeting().start_time | meetingTime: meeting().duration : 'time' }}</span
           >
         </div>
       }
     </div>
 
     <!-- Description Section -->
-    @if (meeting().description) {
+    @if (occurrence()?.description || meeting().description) {
       <div class="mb-4" data-testid="meeting-description">
         <lfx-expandable-text [maxHeight]="85">
           <div class="text-sm text-gray-600 leading-relaxed">
-            <div [innerHTML]="meeting().description | linkify"></div>
+            <div [innerHTML]="occurrence()?.description || meeting().description | linkify"></div>
           </div>
         </lfx-expandable-text>
       </div>
@@ -171,8 +172,8 @@
           <span>Details</span>
         </div>
         <div class="space-y-1">
-          @if (meeting().duration) {
-            <div class="text-sm">{{ meeting().duration }}m duration</div>
+          @if (occurrence()?.duration || meeting().duration) {
+            <div class="text-sm">{{ occurrence()?.duration || meeting().duration }}m duration</div>
           }
           <div class="text-xs text-gray-500">{{ enabledFeaturesCount() }} features enabled</div>
           <div class="text-xs text-gray-500">Updated {{ meeting().created_at | date: 'MMM d, y' }}</div>

@@ -14,6 +14,7 @@ import { Logger } from '../helpers/logger';
  * @throws MicroserviceError if token generation fails
  */
 export async function generateM2MToken(req: Request): Promise<string> {
+  // TODO: Cache the token
   const issuerBaseUrl = process.env['M2M_AUTH_ISSUER_BASE_URL'];
   const isAuthelia = issuerBaseUrl?.includes('auth.k8s.orb.local');
 

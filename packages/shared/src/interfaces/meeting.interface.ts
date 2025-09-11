@@ -139,6 +139,25 @@ export interface Meeting {
   registrants_declined_count: number;
   /** Count fields (response only) */
   registrants_pending_count: number;
+  /** Meeting occurrences */
+  occurrences: MeetingOccurrence[];
+}
+
+/**
+ * Meeting occurrence entity with meeting details
+ * @description Represents a specific occurrence of a recurring meeting
+ */
+export interface MeetingOccurrence {
+  /** Unique identifier for the occurrence */
+  occurrence_id: string;
+  /** Meeting title */
+  title: string;
+  /** Meeting description */
+  description: string;
+  /** Meeting start time in RFC3339 format */
+  start_time: string;
+  /** Meeting duration in minutes (0-600) */
+  duration: number;
 }
 
 export interface CreateMeetingRequest {
@@ -418,4 +437,13 @@ export interface BatchRegistrantOperationResponse<T = unknown> {
     successful: number;
     failed: number;
   };
+}
+
+/**
+ * Response for meeting join URL endpoint
+ * @description Contains the join URL for a specific meeting
+ */
+export interface MeetingJoinURL {
+  /** Meeting join URL */
+  join_url: string;
 }

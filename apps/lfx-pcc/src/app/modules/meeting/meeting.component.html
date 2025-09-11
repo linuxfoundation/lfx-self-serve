@@ -2,10 +2,15 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (meeting()) {
-  <div class="min-h-screen bg-gray-50">
+  <div class="bg-gray-50">
     <!-- Main Content -->
     <div class="container mx-auto py-6 px-8">
       <div class="max-w-4xl mx-auto">
+        <!-- Project Logo -->
+        @if (project()?.logo_url) {
+          <img src="{{ project()?.logo_url }}" alt="{{ project()?.name }}" class="w-full h-20 mb-6" />
+        }
+
         <!-- Meeting Information Card -->
         <lfx-card class="mb-6" data-testid="meeting-info-card">
           <!-- Header with badges -->
@@ -40,8 +45,8 @@
           </div>
 
           <!-- Meeting Title and Date -->
-          <div class="flex items-start justify-between mb-4" data-testid="meeting-title-section">
-            <div class="flex-1 pr-4">
+          <div class="flex sm:flex-row flex-col items-start justify-between mb-4" data-testid="meeting-title-section">
+            <div class="flex-1 pr-4 flex-grow">
               <h2 class="text-xl font-display font-semibold text-gray-900 mb-1 leading-tight" data-testid="meeting-title">
                 {{ meeting().title }}
               </h2>
@@ -178,7 +183,11 @@
                     <i class="fa-light fa-check-circle"></i>
                     <span class="font-sans">Ready to join as {{ user.name }}</span>
                   </div>
-                  <lfx-button size="small" [href]="meeting().join_url" severity="primary" label="Join Meeting" icon="fa-light fa-sign-in"></lfx-button>
+                  @if (meeting().join_url) {
+                    <lfx-button size="small" [href]="meeting().join_url" severity="primary" label="Join Meeting" icon="fa-light fa-sign-in"></lfx-button>
+                  } @else {
+                    <lfx-button size="small" severity="primary" label="Join Meeting" icon="fa-light fa-sign-in" (click)="onJoinMeeting()"></lfx-button>
+                  }
                 </div>
 
                 <div class="text-center">
@@ -228,13 +237,12 @@
                   <form [formGroup]="joinForm" class="space-y-3">
                     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
                       <div>
-                        <label for="fullName" class="flex items-center gap-1 text-sm font-medium text-gray-700 font-sans mb-1">
+                        <label for="name" class="flex items-center gap-1 text-sm font-medium text-gray-700 font-sans mb-1">
                           <i class="fa-light fa-user text-xs"></i>
                           Full Name
                           <span class="text-red-500">*</span>
                         </label>
-                        <lfx-input-text id="fullName" [form]="joinForm" control="fullName" placeholder="John Doe" styleClass="w-full" size="small">
-                        </lfx-input-text>
+                        <lfx-input-text id="name" [form]="joinForm" control="name" placeholder="John Doe" styleClass="w-full" size="small"> </lfx-input-text>
                       </div>
 
                       <div>
@@ -257,9 +265,24 @@
                       </div>
                     </div>
 
-                    <div class="flex items-center justify-between pt-3">
-                      <p class="text-sm text-gray-500 font-sans">Meeting invites and updates will be sent to your email</p>
-                      <lfx-button size="small" [href]="meeting().join_url" severity="primary" label="Join Meeting" icon="fa-light fa-sign-in"></lfx-button>
+                    <div class="flex items-center justify-end pt-3">
+                      @if (meeting().join_url) {
+                        <lfx-button
+                          size="small"
+                          [href]="joinForm.invalid ? undefined : meeting().join_url"
+                          severity="primary"
+                          label="Join Meeting"
+                          icon="fa-light fa-sign-in"
+                          [disabled]="joinForm.invalid"></lfx-button>
+                      } @else {
+                        <lfx-button
+                          size="small"
+                          severity="primary"
+                          label="Join Meeting"
+                          [disabled]="joinForm.invalid"
+                          icon="fa-light fa-sign-in"
+                          (click)="onJoinMeeting()"></lfx-button>
+                      }
                     </div>
                   </form>
                 </div>

@@ -35,15 +35,21 @@ export class ApiClientService {
   }
 
   private async makeRequest<T>(method: string, url: string, bearerToken?: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
+    const headers: Record<string, string> = {
+      ...customHeaders,
+      Accept: 'application/json',
+      ['Content-Type']: 'application/json',
+      ['User-Agent']: 'LFX-PCC-Server/1.0',
+    };
+
+    // Only add Authorization header if bearerToken is provided
+    if (bearerToken) {
+      headers['Authorization'] = `Bearer ${bearerToken}`;
+    }
+
     const requestInit: RequestInit = {
       method,
-      headers: {
-        ...customHeaders,
-        Authorization: `Bearer ${bearerToken}`,
-        Accept: 'application/json',
-        ['Content-Type']: 'application/json',
-        ['User-Agent']: 'LFX-PCC-Server/1.0',
-      },
+      headers,
       signal: AbortSignal.timeout(this.config.timeout),
     };
 

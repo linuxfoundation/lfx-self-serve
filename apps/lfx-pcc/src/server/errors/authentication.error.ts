@@ -20,3 +20,16 @@ export class AuthenticationError extends BaseApiError {
     super(message, 401, 'AUTHENTICATION_REQUIRED', options);
   }
 }
+
+export class AuthorizationError extends BaseApiError {
+  public constructor(
+    message = 'Authorization required',
+    options: {
+      operation?: string;
+      service?: string;
+      path?: string;
+    } = {}
+  ) {
+    super(message, 403, 'AUTHORIZATION_REQUIRED', options);
+  }
+}
