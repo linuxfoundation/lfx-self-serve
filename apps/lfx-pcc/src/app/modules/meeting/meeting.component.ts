@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
+import { HttpParams } from '@angular/common/http';
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -57,6 +58,11 @@ export class MeetingComponent {
   public importantLinks: Signal<{ url: string; domain: string }[]>;
   public returnTo: Signal<string | undefined>;
   public password: WritableSignal<string | null> = signal<string | null>(null);
+  public canJoinMeeting: Signal<boolean>;
+  public joinUrlWithParams: Signal<string | undefined>;
+
+  // Form value signals for reactivity
+  private formValues: Signal<{ name: string; email: string; organization: string }>;
 
   public constructor() {
     // Initialize all class variables
@@ -64,12 +70,24 @@ export class MeetingComponent {
     this.authenticated = this.userService.authenticated;
     this.meeting = this.initializeMeeting();
     this.joinForm = this.initializeJoinForm();
+    this.formValues = this.initializeFormValues();
     this.meetingTypeBadge = this.initializeMeetingTypeBadge();
     this.importantLinks = this.initializeImportantLinks();
     this.returnTo = this.initializeReturnTo();
+    this.canJoinMeeting = this.initializeCanJoinMeeting();
+    this.joinUrlWithParams = this.initializeJoinUrlWithParams();
   }
 
   public onJoinMeeting(): void {
+    if (!this.canJoinMeeting()) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Meeting Not Available',
+        detail: 'The meeting has not started yet.',
+      });
+      return;
+    }
+
     this.isJoining.set(true);
 
     this.meetingService
@@ -80,7 +98,8 @@ export class MeetingComponent {
       .subscribe({
         next: (res) => {
           this.meeting().join_url = res.join_url;
-          window.open(this.meeting().join_url as string, '_blank');
+          const joinUrlWithParams = this.buildJoinUrlWithParams(res.join_url);
+          window.open(joinUrlWithParams, '_blank');
         },
         error: ({ error }) => {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: error.error });
@@ -116,6 +135,25 @@ export class MeetingComponent {
       email: new FormControl<string>(this.user()?.email || '', [Validators.required, Validators.email]),
       organization: new FormControl<string>(''),
     });
+  }
+
+  private initializeFormValues(): Signal<{ name: string; email: string; organization: string }> {
+    return toSignal(
+      this.joinForm.valueChanges.pipe(
+        map(() => ({
+          name: this.joinForm.get('name')?.value || '',
+          email: this.joinForm.get('email')?.value || '',
+          organization: this.joinForm.get('organization')?.value || '',
+        }))
+      ),
+      {
+        initialValue: {
+          name: this.joinForm.get('name')?.value || '',
+          email: this.joinForm.get('email')?.value || '',
+          organization: this.joinForm.get('organization')?.value || '',
+        },
+      }
+    );
   }
 
   private initializeMeetingTypeBadge(): Signal<{ badgeClass: string; icon?: string; text: string } | null> {
@@ -180,5 +218,66 @@ export class MeetingComponent {
     return computed(() => {
       return `${environment.urls.home}/meetings/${this.meeting().uid}?password=${this.password()}`;
     });
+  }
+
+  private initializeCanJoinMeeting(): Signal<boolean> {
+    return computed(() => {
+      const meeting = this.meeting();
+      if (!meeting?.start_time) {
+        return false;
+      }
+
+      const now = new Date();
+      const startTime = new Date(meeting.start_time);
+      const earlyJoinMinutes = meeting.early_join_time_minutes || 10; // Default to 10 minutes
+      const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
+
+      return now >= earliestJoinTime;
+    });
+  }
+
+  private initializeJoinUrlWithParams(): Signal<string | undefined> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const joinUrl = meeting?.join_url;
+
+      if (!joinUrl) {
+        return undefined;
+      }
+
+      // Access form values to trigger reactivity
+      const formValues = this.formValues();
+      return this.buildJoinUrlWithParams(joinUrl, formValues);
+    });
+  }
+
+  private buildJoinUrlWithParams(joinUrl: string, formValues?: { name: string; email: string; organization: string }): string {
+    if (!joinUrl) {
+      return joinUrl;
+    }
+
+    // Get user name from authenticated user or form
+    const userName = this.authenticated() ? this.user()?.name : formValues?.name || this.joinForm.get('name')?.value;
+    const organization = this.authenticated() ? '' : formValues?.organization || this.joinForm.get('organization')?.value;
+
+    if (!userName) {
+      return joinUrl;
+    }
+
+    // Build the display name with organization if available
+    const displayName = organization ? `${userName} (${organization})` : userName;
+
+    // Create base64 encoded version
+    const encodedName = btoa(unescape(encodeURIComponent(displayName)));
+
+    // Build query parameters
+    const queryParams = new HttpParams().set('uname', displayName).set('un', encodedName);
+    const queryString = queryParams.toString();
+
+    // Append to URL, handling existing query strings
+    if (joinUrl.includes('?')) {
+      return `${joinUrl}&${queryString}`;
+    }
+    return `${joinUrl}?${queryString}`;
   }
 }

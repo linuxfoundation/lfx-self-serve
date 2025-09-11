@@ -38,6 +38,10 @@ export class PublicMeetingController {
       // Get the meeting by ID using M2M token
       const meeting = await this.fetchMeetingWithM2M(req, id);
       const project = await this.projectService.getProjectById(req, meeting.project_uid, false);
+      const registrants = await this.meetingService.getMeetingRegistrants(req, meeting.uid);
+      const committeeMembers = registrants.filter((r) => r.type === 'committee').length ?? 0;
+      meeting.individual_registrants_count = registrants.length - committeeMembers;
+      meeting.committee_members_count = committeeMembers;
 
       if (!project) {
         throw new ResourceNotFoundError('Project', meeting.project_uid, {
@@ -56,7 +60,10 @@ export class PublicMeetingController {
 
       // Check if the meeting visibility is public and not restricted, if so, get join URL and return the meeting and project
       if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
-        await this.handleJoinUrlForPublicMeeting(req, meeting, id);
+        // Only get join URL if within allowed join time window
+        if (this.isWithinJoinWindow(meeting)) {
+          await this.handleJoinUrlForPublicMeeting(req, meeting, id);
+        }
         res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url } });
         return;
       }
@@ -106,6 +113,22 @@ export class PublicMeetingController {
 
       // Check if the user has passed in a password, if so, check if it's correct
       if (!this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_join_url', req, next, startTime)) {
+        return;
+      }
+
+      // Check if the meeting is within the allowed join time window
+      if (!this.isWithinJoinWindow(meeting)) {
+        const earlyJoinMinutes = meeting.early_join_time_minutes || 10;
+
+        Logger.error(req, 'post_meeting_join_url', startTime, new Error('Meeting join not available yet'));
+
+        const validationError = ServiceValidationError.forField('timing', `You can join the meeting up to ${earlyJoinMinutes} minutes before the start time`, {
+          operation: 'post_meeting_join_url',
+          service: 'public_meeting_controller',
+          path: req.path,
+        });
+
+        next(validationError);
         return;
       }
 
@@ -208,6 +231,22 @@ export class PublicMeetingController {
         'Failed to fetch join URL for public meeting, continuing without it'
       );
     }
+  }
+
+  /**
+   * Checks if the current time is within the allowed join window for a meeting
+   */
+  private isWithinJoinWindow(meeting: any): boolean {
+    if (!meeting?.start_time) {
+      return false;
+    }
+
+    const now = new Date();
+    const startTime = new Date(meeting.start_time);
+    const earlyJoinMinutes = meeting.early_join_time_minutes || 10; // Default to 10 minutes
+    const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
+
+    return now >= earliestJoinTime;
   }
 
   private async restrictedMeetingCheck(req: Request, next: NextFunction, email: string, id: string, startTime: number): Promise<void> {
