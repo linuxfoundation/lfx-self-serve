@@ -29,7 +29,7 @@ export async function generateM2MToken(req: Request): Promise<string> {
 
     // Select the appropriate request configuration
     const config = isAuthelia ? AUTHELIA_TOKEN_REQUEST : AUTH0_TOKEN_REQUEST;
-    const tokenEndpoint = `${issuerBaseUrl}/${config.endpoint}`;
+    const tokenEndpoint = new URL(config.endpoint, issuerBaseUrl).toString();
 
     // Prepare request options based on auth provider
     const requestOptions = {
