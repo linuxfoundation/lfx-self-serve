@@ -22,4 +22,10 @@ export const routes: Routes = [
     canActivate: [authGuard],
     data: { preload: true, preloadDelay: 1000 }, // Preload after 1 second for likely navigation
   },
+  {
+    path: 'profile',
+    loadComponent: () => import('./layouts/profile-layout/profile-layout.component').then((m) => m.ProfileLayoutComponent),
+    loadChildren: () => import('./modules/profile/profile.routes').then((m) => m.PROFILE_ROUTES),
+    canActivate: [authGuard],
+  },
 ];

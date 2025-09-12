@@ -21,6 +21,7 @@ import committeesRouter from './routes/committees.route';
 import meetingsRouter from './routes/meetings.route';
 import pastMeetingsRouter from './routes/past-meetings.route';
 import permissionsRouter from './routes/permissions.route';
+import profileRouter from './routes/profile.route';
 import projectsRouter from './routes/projects.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
 
@@ -201,6 +202,7 @@ app.use('/api/projects', permissionsRouter);
 app.use('/api/committees', committeesRouter);
 app.use('/api/meetings', meetingsRouter);
 app.use('/api/past-meetings', pastMeetingsRouter);
+app.use('/api/profile', profileRouter);
 
 // Add API error handler middleware
 app.use('/api/*', apiErrorHandler);
@@ -221,7 +223,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       // Fetch user info from OIDC
       auth.user = req.oidc?.user as User;
 
-      if (!auth.user?.email) {
+      if (!auth.user?.name) {
         auth.user = await req.oidc.fetchUserInfo();
       }
     } catch (error) {

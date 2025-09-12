@@ -12,7 +12,7 @@ The application uses Auth0 for user authentication via `express-openid-connect` 
 # User Authentication (Auth0/Authelia)
 PCC_AUTH0_SECRET='your-auth0-secret'
 PCC_BASE_URL='http://localhost:4000'
-PCC_AUTH0_ISSUER_BASE_URL='https://your-domain.auth0.com'
+PCC_AUTH0_ISSUER_BASE_URL='https://your-domain.auth0.com/'
 PCC_AUTH0_CLIENT_ID='your-client-id'
 PCC_AUTH0_CLIENT_SECRET='your-client-secret'
 PCC_AUTH0_AUDIENCE='https://your-api-audience'
@@ -20,7 +20,7 @@ PCC_AUTH0_AUDIENCE='https://your-api-audience'
 # Machine-to-Machine (M2M) Token Authentication
 M2M_AUTH_CLIENT_ID='your-m2m-client-id'
 M2M_AUTH_CLIENT_SECRET='your-m2m-client-secret'
-M2M_AUTH_ISSUER_BASE_URL='https://auth.k8s.orb.local'
+M2M_AUTH_ISSUER_BASE_URL='https://auth.k8s.orb.local/'
 M2M_AUTH_AUDIENCE='http://lfx-api.k8s.orb.local/'
 ```
 

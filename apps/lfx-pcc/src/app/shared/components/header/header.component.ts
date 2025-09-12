@@ -15,7 +15,7 @@ import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { RippleModule } from 'primeng/ripple';
-import { of, catchError, debounceTime, distinctUntilChanged, startWith, switchMap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, of, startWith, switchMap } from 'rxjs';
 
 import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
 import { MenuComponent } from '../menu/menu.component';
@@ -53,8 +53,7 @@ export class HeaderComponent {
     {
       label: 'Profile',
       icon: 'fa-light fa-user',
-      url: environment.urls.profile,
-      target: '_blank',
+      routerLink: '/profile',
     },
     {
       label: 'Developer Settings',

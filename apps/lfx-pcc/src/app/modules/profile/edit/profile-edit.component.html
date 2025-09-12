@@ -1,0 +1,308 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto pb-8">
+  @if (isLoading()) {
+    <div class="flex flex-col gap-2 items-center justify-center py-12" data-testid="profile-edit-loading-container">
+      <i class="fa-light fa-circle-notch fa-spin text-4xl text-blue-400" data-testid="profile-edit-loading-spinner"></i>
+      <span class="ml-3 text-gray-600">Loading profile...</span>
+    </div>
+  } @else {
+    <form [formGroup]="profileForm" (ngSubmit)="onSubmit()">
+      <!-- Profile Benefits Info Banner -->
+      <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6">
+        <div class="flex items-start gap-3">
+          <i class="fa-light fa-info-circle text-blue-600 mt-0.5"></i>
+          <div>
+            <h5 class="text-sm font-semibold text-blue-800 mb-1">Complete Your Open Source Profile</h5>
+            <p class="text-sm text-blue-700">
+              A complete profile helps community members identify and connect with you, enables event organizers to plan in-person meetups, and ensures you
+              receive contributor recognition and swag. Your information builds trust and enhances collaboration in open source projects.
+            </p>
+          </div>
+        </div>
+      </div>
+
+      <lfx-card>
+        <div class="space-y-6">
+          <!-- Personal Information Section -->
+          <div class="flex flex-col gap-4">
+            <div>
+              <h3 class="text-base font-medium text-gray-900" data-testid="profile-edit-personal-heading">Personal Information</h3>
+              <p class="text-sm text-gray-500 mt-1">Helps community members identify and connect with you in discussions and contributions</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- First Name -->
+              <div>
+                <label for="first-name" class="block text-sm font-medium text-gray-700 mb-1">First Name</label>
+                <lfx-input-text
+                  size="small"
+                  [form]="profileForm"
+                  control="first_name"
+                  id="first-name"
+                  placeholder="Enter your first name"
+                  styleClass="w-full"
+                  data-testid="profile-edit-personal-first-name">
+                </lfx-input-text>
+              </div>
+
+              <!-- Last Name -->
+              <div>
+                <label for="last-name" class="block text-sm font-medium text-gray-700 mb-1">Last Name</label>
+                <lfx-input-text
+                  size="small"
+                  [form]="profileForm"
+                  control="last_name"
+                  id="last-name"
+                  placeholder="Enter your last name"
+                  styleClass="w-full"
+                  data-testid="profile-edit-personal-last-name">
+                </lfx-input-text>
+              </div>
+
+              <!-- Username -->
+              <div class="md:col-span-2">
+                <div class="flex items-center gap-1 mb-1">
+                  <label for="username" class="block text-sm font-medium text-gray-700">Username</label>
+                  <i
+                    class="fa-light fa-info-circle text-gray-400 cursor-help"
+                    pTooltip="Your username is used for @mentions in discussions and appears in contributor rankings and recognition"
+                    tooltipPosition="right"
+                    data-testid="profile-edit-personal-username-tooltip">
+                  </i>
+                </div>
+                <lfx-input-text
+                  size="small"
+                  [form]="profileForm"
+                  control="username"
+                  id="username"
+                  placeholder="Enter your username"
+                  styleClass="w-full"
+                  data-testid="profile-edit-personal-username">
+                </lfx-input-text>
+              </div>
+            </div>
+          </div>
+
+          <!-- Professional Information Section -->
+          <div class="flex flex-col gap-4">
+            <div>
+              <h3 class="text-base font-medium text-gray-900" data-testid="profile-edit-professional-heading">Professional Information</h3>
+              <p class="text-sm text-gray-500 mt-1">Showcase your expertise and affiliations to build credibility and unlock networking opportunities</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Title -->
+              <div>
+                <label for="job-title" class="block text-sm font-medium text-gray-700 mb-1">Job Title</label>
+                <lfx-input-text
+                  size="small"
+                  [form]="profileForm"
+                  control="title"
+                  id="job-title"
+                  placeholder="Enter your job title"
+                  styleClass="w-full"
+                  data-testid="profile-edit-professional-title">
+                </lfx-input-text>
+              </div>
+
+              <!-- Organization -->
+              <div>
+                <div class="flex items-center gap-1 mb-1">
+                  <label for="organization" class="block text-sm font-medium text-gray-700">Organization</label>
+                  <i
+                    class="fa-light fa-info-circle text-gray-400 cursor-help"
+                    pTooltip="Your organization appears in contributor rankings and helps maintainers understand your company's involvement in the project"
+                    tooltipPosition="right"
+                    data-testid="profile-edit-professional-organization-tooltip">
+                  </i>
+                </div>
+                <lfx-input-text
+                  size="small"
+                  [form]="profileForm"
+                  control="organization"
+                  id="organization"
+                  placeholder="Enter your organization"
+                  styleClass="w-full"
+                  data-testid="profile-edit-professional-organization">
+                </lfx-input-text>
+              </div>
+            </div>
+          </div>
+
+          <!-- Location Information Section -->
+          <div class="flex flex-col gap-4">
+            <div>
+              <h3 class="text-base font-medium text-gray-900" data-testid="profile-edit-location-heading">Location Information</h3>
+              <div class="bg-gray-50 border border-gray-200 p-3 rounded-lg mt-2">
+                <div class="flex items-start gap-2">
+                  <i class="fa-light fa-info-circle text-gray-600 mt-0.5 text-sm"></i>
+                  <p class="text-sm text-gray-600">
+                    <strong>Why we need this:</strong> Enables event organizers to plan in-person meetups, ship contributor swag to your location, and
+                    coordinate with team members across timezones for better collaboration.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- Country -->
+              <div>
+                <label for="country" class="block text-sm font-medium text-gray-700 mb-1">Country</label>
+                <lfx-select
+                  size="small"
+                  [form]="profileForm"
+                  control="country"
+                  [options]="countryOptions"
+                  id="country"
+                  placeholder="Select your country"
+                  styleClass="w-full"
+                  [filter]="true"
+                  data-testid="profile-edit-location-country">
+                </lfx-select>
+              </div>
+
+              <!-- State -->
+              <div>
+                <label for="state" class="block text-sm font-medium text-gray-700 mb-1">State/Province</label>
+                @if (isUSA()) {
+                  <lfx-select
+                    size="small"
+                    [form]="profileForm"
+                    control="state"
+                    [options]="stateOptions"
+                    id="state"
+                    placeholder="Select your state"
+                    styleClass="w-full"
+                    [filter]="true"
+                    data-testid="profile-edit-location-state-select">
+                  </lfx-select>
+                } @else {
+                  <lfx-input-text
+                    size="small"
+                    [form]="profileForm"
+                    control="state"
+                    id="state"
+                    placeholder="Enter your state or province"
+                    styleClass="w-full"
+                    data-testid="profile-edit-location-state-input">
+                  </lfx-input-text>
+                }
+              </div>
+
+              <!-- City -->
+              <div>
+                <label for="city" class="block text-sm font-medium text-gray-700 mb-1">City</label>
+                <lfx-input-text
+                  size="small"
+                  [form]="profileForm"
+                  control="city"
+                  id="city"
+                  placeholder="Enter your city"
+                  styleClass="w-full"
+                  data-testid="profile-edit-location-city">
+                </lfx-input-text>
+              </div>
+
+              <!-- Address -->
+              <div>
+                <label for="address" class="block text-sm font-medium text-gray-700 mb-1">Address</label>
+                <lfx-input-text
+                  size="small"
+                  [form]="profileForm"
+                  control="address"
+                  id="address"
+                  placeholder="Enter your address"
+                  styleClass="w-full"
+                  data-testid="profile-edit-location-address">
+                </lfx-input-text>
+              </div>
+
+              <!-- Zipcode -->
+              <div>
+                <label for="zipcode" class="block text-sm font-medium text-gray-700 mb-1">Postal/Zip Code</label>
+                <lfx-input-text
+                  size="small"
+                  [form]="profileForm"
+                  control="zipcode"
+                  id="zipcode"
+                  placeholder="Enter your postal or zip code"
+                  styleClass="w-full"
+                  data-testid="profile-edit-location-zipcode">
+                </lfx-input-text>
+              </div>
+
+              <!-- Phone Number -->
+              <div>
+                <label for="phone" class="block text-sm font-medium text-gray-700 mb-1">Phone Number</label>
+                <lfx-input-text
+                  size="small"
+                  [form]="profileForm"
+                  control="phone_number"
+                  id="phone"
+                  placeholder="Enter your phone number"
+                  styleClass="w-full"
+                  data-testid="profile-edit-location-phone">
+                </lfx-input-text>
+                <p class="text-xs text-gray-500 mt-1">Optional - Only used for urgent event notifications and is kept private</p>
+              </div>
+            </div>
+          </div>
+
+          <!-- Additional Information Section -->
+          <div class="flex flex-col gap-4">
+            <div>
+              <h3 class="text-base font-medium text-gray-900" data-testid="profile-edit-additional-heading">Additional Information</h3>
+              <p class="text-sm text-gray-500 mt-1">Helps us send you the right swag and plan for community events</p>
+            </div>
+
+            <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <!-- T-shirt Size -->
+              <div>
+                <div class="flex items-center gap-1 mb-1">
+                  <label for="tshirt-size" class="block text-sm font-medium text-gray-700">T-shirt Size</label>
+                  <i
+                    class="fa-light fa-info-circle text-gray-400 cursor-help"
+                    pTooltip="For community events, contributor appreciation swag, and conference giveaways"
+                    tooltipPosition="right"
+                    data-testid="profile-edit-additional-tshirt-tooltip">
+                  </i>
+                </div>
+                <lfx-select
+                  size="small"
+                  [form]="profileForm"
+                  control="tshirt_size"
+                  [options]="tshirtSizeOptions"
+                  id="tshirt-size"
+                  placeholder="Select your t-shirt size"
+                  styleClass="w-full"
+                  data-testid="profile-edit-additional-tshirt-size">
+                </lfx-select>
+              </div>
+            </div>
+          </div>
+
+          <!-- Form Actions -->
+          <div class="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+            <lfx-button type="button" variant="outlined" label="Reset" (onClick)="onReset()" size="small" data-testid="profile-edit-actions-reset-button">
+            </lfx-button>
+
+            <lfx-button
+              type="submit"
+              severity="primary"
+              [label]="isSaving() ? 'Saving...' : 'Save Changes'"
+              [loading]="isSaving()"
+              [disabled]="profileForm.invalid || isSaving()"
+              size="small"
+              data-testid="profile-edit-actions-save-button">
+            </lfx-button>
+          </div>
+        </div>
+      </lfx-card>
+    </form>
+  }
+</div>
+
+<!-- Toast Messages -->
+<p-toast></p-toast>

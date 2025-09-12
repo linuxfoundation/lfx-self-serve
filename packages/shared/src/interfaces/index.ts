@@ -48,3 +48,9 @@ export * from './ai.interface';
 
 // Access check interfaces
 export * from './access-check.interface';
+
+// User profile interfaces
+export * from './user-profile.interface';
+
+// User statistics interfaces
+export * from './user-statistics.interface';

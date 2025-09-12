@@ -1,0 +1,124 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="bg-white border-b border-gray-100 py-6 shadow-sm">
+  <div class="container mx-auto px-8">
+    <!-- Breadcrumb Navigation -->
+    <div class="mb-4">
+      <lfx-breadcrumb [model]="breadcrumbItems()">
+        <ng-template #item let-item>
+          <a [routerLink]="item.routerLink" class="flex items-center gap-2 text-sm font-medium text-gray-900 hover:text-gray-600 transition-colors">
+            @if (item.icon) {
+              <i [class]="item.icon" class="text-gray-500"></i>
+            }
+            {{ item.label }}
+          </a>
+        </ng-template>
+      </lfx-breadcrumb>
+    </div>
+
+    <div class="flex flex-col md:flex-row md:items-start justify-between mb-6">
+      <div class="flex items-start gap-6">
+        <!-- Profile Avatar -->
+        <lfx-avatar
+          [label]="userInitials()"
+          size="xlarge"
+          shape="circle"
+          [ariaLabel]="profileTitle() + ' avatar'"
+          styleClass="bg-blue-50 border border-gray-200 w-16 h-16"
+          data-testid="profile-avatar">
+        </lfx-avatar>
+
+        <div class="flex flex-col gap-1">
+          <!-- Profile Title -->
+          <h1 class="text-2xl font-display font-semibold text-gray-900 mb-0" data-testid="profile-title">
+            {{ profileTitle() }}
+          </h1>
+
+          <!-- Profile Subtitle (Title at Organization) -->
+          @if (profileSubtitle(); as subtitle) {
+            <p class="text-black-600 text-sm mb-2" data-testid="profile-subtitle">
+              {{ subtitle }}
+            </p>
+          }
+        </div>
+      </div>
+
+      <!-- Profile Links -->
+      <div class="flex items-start gap-6">
+        <!-- GitHub Profile -->
+        <a class="text-sm text-gray-600 flex items-center gap-2" data-testid="profile-github-profile">
+          <i class="fa-brands fa-github text-[#181717] text-2xl cursor-pointer"></i>
+        </a>
+
+        <!-- LinkedIn Profile -->
+        <a class="text-sm text-gray-600 flex items-center gap-2" data-testid="profile-linkedin-profile">
+          <i class="fa-brands fa-linkedin text-[#0077b5] text-2xl cursor-pointer"></i>
+        </a>
+      </div>
+    </div>
+
+    <!-- Menu Items Section -->
+    <div class="md:flex items-center justify-start md:justify-between">
+      <div class="flex items-center gap-3 flex-wrap">
+        @for (menu of menuItems(); track menu.label) {
+          <a
+            [routerLink]="menu.routerLink"
+            class="pill"
+            routerLinkActive="bg-blue-50 text-blue-600 border-0"
+            data-testid="profile-menu-item"
+            [attr.data-menu-item]="menu.label"
+            [routerLinkActiveOptions]="menu.routerLinkActiveOptions">
+            @if (menu.icon) {
+              <i [class]="menu.icon"></i>
+            }
+            {{ menu.label }}
+          </a>
+        }
+      </div>
+
+      <!-- Member Since and Last Active -->
+      @if (profile()?.user && memberSince() && lastActive()) {
+        <div class="flex items-center gap-6 mt-4 md:mt-0" data-testid="profile-layout-membership-info">
+          <!-- Member Since -->
+          <div class="flex items-center gap-2 text-sm text-gray-600" data-testid="profile-layout-member-since">
+            <i class="fa-light fa-calendar-check text-blue-500"></i>
+            <span class="font-medium">Member Since:</span>
+            <span>{{ memberSince() }}</span>
+          </div>
+
+          <!-- Last Active -->
+          <div class="flex items-center gap-2 text-sm text-gray-600" data-testid="profile-layout-last-active">
+            <i class="fa-light fa-clock text-green-500"></i>
+            <span class="font-medium">Last Active:</span>
+            <span>{{ lastActive() }}</span>
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+</div>
+
+<!-- Content Area -->
+@if (!loading()) {
+  <div class="container mx-auto px-8 py-8">
+    <div class="grid grid-cols-1 lg:grid-cols-4 gap-8">
+      <!-- Main Content (Left Side) -->
+      <div class="lg:col-span-3">
+        <router-outlet></router-outlet>
+      </div>
+
+      <!-- Statistics Sidebar (Right Side) -->
+      <div class="lg:col-span-1">
+        <lfx-profile-stats [profile]="profile()"></lfx-profile-stats>
+      </div>
+    </div>
+  </div>
+} @else {
+  <div class="container mx-auto px-8 py-8">
+    <div class="flex flex-col gap-2 items-center justify-center py-12" data-testid="profile-loading">
+      <i class="fa-light fa-circle-notch fa-spin text-4xl text-blue-400" data-testid="loading-spinner"></i>
+      <span class="ml-3 text-gray-600">Loading profile...</span>
+    </div>
+  </div>
+}

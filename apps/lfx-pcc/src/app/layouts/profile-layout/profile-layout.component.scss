@@ -1,0 +1,18 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Profile layout specific styles
+// Most styling comes from Tailwind classes in the template
+// This file is reserved for any custom styling that can't be achieved with Tailwind
+
+:host {
+  display: block;
+
+  .pill {
+    @apply inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full transition-colors text-gray-600 border border-gray-200 hover:bg-gray-50;
+  }
+
+  .profile-avatar-placeholder {
+    background: linear-gradient(135deg, #3b82f6 0%, #1d4ed8 100%);
+  }
+}

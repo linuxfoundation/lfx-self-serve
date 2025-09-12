@@ -208,7 +208,7 @@ LOG_LEVEL=info
 # Get these values from your Auth0 dashboard
 PCC_AUTH0_CLIENT_ID=your-auth0-client-id
 PCC_AUTH0_CLIENT_SECRET=your-auth0-client-secret
-PCC_AUTH0_ISSUER_BASE_URL=https://auth.k8s.orb.local
+PCC_AUTH0_ISSUER_BASE_URL=https://auth.k8s.orb.local/
 PCC_AUTH0_AUDIENCE=http://lfx-api.k8s.orb.local/
 PCC_AUTH0_SECRET=sufficiently-long-string
 
@@ -216,7 +216,7 @@ PCC_AUTH0_SECRET=sufficiently-long-string
 # For server-side API calls from public endpoints
 M2M_AUTH_CLIENT_ID=your-m2m-client-id
 M2M_AUTH_CLIENT_SECRET=your-m2m-client-secret
-M2M_AUTH_ISSUER_BASE_URL=https://auth.k8s.orb.local
+M2M_AUTH_ISSUER_BASE_URL=https://auth.k8s.orb.local/
 M2M_AUTH_AUDIENCE=http://lfx-api.k8s.orb.local/
 
 # Microservice Configuration

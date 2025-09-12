@@ -8,13 +8,17 @@ import {
   CreateUserPermissionRequest,
   MeetingAttachment,
   PermissionLevel,
+  ProfileDetails,
   ProjectPermission,
   ProjectSearchResult,
   RecentActivity,
+  UpdateProfileDetailsRequest,
   UpdateUserPermissionRequest,
+  UpdateUserProfileRequest,
   UploadFileResponse,
   User,
   UserPermissionSummary,
+  UserProfile,
 } from '@lfx-pcc/shared/interfaces';
 import dotenv from 'dotenv';
 
@@ -522,6 +526,149 @@ export class SupabaseService {
       const errorText = await response.text();
       throw new Error(`Failed to delete meeting attachment: ${response.status} ${response.statusText}: ${errorText}`);
     }
+  }
+
+  /**
+   * Get user profile data from public.users table
+   */
+  public async getUser(username: string): Promise<UserProfile | null> {
+    const params = new URLSearchParams({
+      username: `eq.${username}`,
+      limit: '1',
+    });
+    const url = `${this.baseUrl}/users?${params.toString()}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.getHeaders(),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch user profile: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data?.[0] || null;
+  }
+
+  /**
+   * Get profile details data from public.profiles table
+   */
+  public async getProfile(userUid: string): Promise<ProfileDetails | null> {
+    const params = new URLSearchParams({
+      user_id: `eq.${userUid}`,
+      limit: '1',
+    });
+    const url = `${this.baseUrl}/profiles?${params.toString()}`;
+
+    const response = await fetch(url, {
+      method: 'GET',
+      headers: this.getHeaders(),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to fetch profile details: ${response.status} ${response.statusText}`);
+    }
+
+    const data = await response.json();
+    return data?.[0] || null;
+  }
+
+  public async updateUser(username: string, data: UpdateUserProfileRequest): Promise<UserProfile> {
+    const url = `${this.baseUrl}/users`;
+    const params = new URLSearchParams({
+      username: `eq.${username}`,
+    });
+
+    const updateData = {
+      ...data,
+      username: username,
+      updated_at: new Date().toISOString(),
+    };
+
+    const response = await fetch(`${url}?${params.toString()}`, {
+      method: 'PATCH',
+      headers: this.getHeaders(),
+      body: JSON.stringify(updateData),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to update user: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result?.[0];
+  }
+
+  /**
+   * Update profile details data in public.profiles table
+   */
+  public async updateProfileDetails(username: string, data: UpdateProfileDetailsRequest): Promise<ProfileDetails> {
+    const user = await this.getUser(username);
+
+    if (!user) {
+      throw new Error(`User not found: ${username}`);
+    }
+
+    const params = new URLSearchParams({
+      user_id: `eq.${user.id}`,
+    });
+    const url = `${this.baseUrl}/profiles?${params.toString()}`;
+
+    const updateData = {
+      ...data,
+      updated_at: new Date().toISOString(),
+    };
+
+    const response = await fetch(url, {
+      method: 'PATCH',
+      headers: this.getHeaders(),
+      body: JSON.stringify(updateData),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to update profile details: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result?.[0];
+  }
+
+  /**
+   * Create profile record if it doesn't exist
+   */
+  public async createProfileIfNotExists(userUid: string): Promise<ProfileDetails> {
+    // First check if profile exists
+    const existing = await this.getProfile(userUid);
+    if (existing) {
+      return existing;
+    }
+
+    // Create new profile record
+    const url = `${this.baseUrl}/profiles`;
+    const newProfile = {
+      user_id: userUid,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    };
+
+    const response = await fetch(url, {
+      method: 'POST',
+      headers: this.getHeaders(),
+      body: JSON.stringify(newProfile),
+      signal: AbortSignal.timeout(this.timeout),
+    });
+
+    if (!response.ok) {
+      throw new Error(`Failed to create profile: ${response.status} ${response.statusText}`);
+    }
+
+    const result = await response.json();
+    return result?.[0];
   }
 
   private async fallbackProjectSearch(query: string): Promise<ProjectSearchResult[]> {

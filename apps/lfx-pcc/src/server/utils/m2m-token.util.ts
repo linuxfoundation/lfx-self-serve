@@ -29,7 +29,7 @@ export async function generateM2MToken(req: Request): Promise<string> {
 
     // Select the appropriate request configuration
     const config = isAuthelia ? AUTHELIA_TOKEN_REQUEST : AUTH0_TOKEN_REQUEST;
-    const tokenEndpoint = `${issuerBaseUrl}${config.endpoint}`;
+    const tokenEndpoint = `${issuerBaseUrl}/${config.endpoint}`;
 
     // Prepare request options based on auth provider
     const requestOptions = {
@@ -113,8 +113,8 @@ export async function generateM2MToken(req: Request): Promise<string> {
  * Request configuration for Auth0 M2M token generation
  */
 const AUTH0_TOKEN_REQUEST = {
-  endpoint: '/oauth/token',
-  method: 'POST' as const,
+  endpoint: 'oauth/token',
+  method: 'POST',
   createHeaders: () => ({
     ['Cache-Control']: 'no-cache',
     ['Content-Type']: 'application/json',
@@ -132,8 +132,8 @@ const AUTH0_TOKEN_REQUEST = {
  * Request configuration for Authelia M2M token generation
  */
 const AUTHELIA_TOKEN_REQUEST = {
-  endpoint: '/api/oidc/token',
-  method: 'POST' as const,
+  endpoint: 'api/oidc/token',
+  method: 'POST',
   createHeaders: () => {
     const clientId = process.env['M2M_AUTH_CLIENT_ID'];
     const clientSecret = process.env['M2M_AUTH_CLIENT_SECRET'];
