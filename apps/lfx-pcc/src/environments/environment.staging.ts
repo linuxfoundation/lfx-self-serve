@@ -4,6 +4,7 @@
 export const environment = {
   production: true,
   urls: {
-    profile: 'https://myprofile.staging.platform.linuxfoundation.org/',
+    home: 'https://app.staging.lfx.dev',
+    support: 'https://jira.linuxfoundation.org/plugins/servlet/desk',
   },
 };

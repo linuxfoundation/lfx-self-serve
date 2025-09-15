@@ -5,6 +5,6 @@ export const environment = {
   production: true,
   urls: {
     home: 'https://app.lfx.dev',
-    profile: 'https://openprofile.dev',
+    support: 'https://jira.linuxfoundation.org/plugins/servlet/desk',
   },
 };

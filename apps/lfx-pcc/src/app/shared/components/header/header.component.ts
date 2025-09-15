@@ -8,7 +8,6 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MenubarComponent } from '@components/menubar/menubar.component';
-import { environment } from '@environments/environment';
 import { Project } from '@lfx-pcc/shared/interfaces';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -58,7 +57,6 @@ export class HeaderComponent {
     {
       label: 'Developer Settings',
       icon: 'fa-light fa-cog',
-      url: environment.urls.profile + 'developer-settings',
       target: '_blank',
     },
     {

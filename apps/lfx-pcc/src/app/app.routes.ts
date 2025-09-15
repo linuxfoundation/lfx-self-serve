@@ -12,8 +12,8 @@ export const routes: Routes = [
     canActivate: [authGuard],
   },
   {
-    path: 'meetings/:id',
-    loadComponent: () => import('./modules/meeting/meeting.component').then((m) => m.MeetingComponent),
+    path: 'meetings',
+    loadChildren: () => import('./modules/meeting/meeting.routes').then((m) => m.MEETING_ROUTES),
   },
   {
     path: 'project/:slug',

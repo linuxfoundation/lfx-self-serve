@@ -6,8 +6,9 @@ import { HttpParams } from '@angular/common/http';
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { LinkifyPipe } from '@app/shared/pipes/linkify.pipe';
+import { RecurrenceSummaryPipe } from '@app/shared/pipes/recurrence-summary.pipe';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
@@ -20,10 +21,10 @@ import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
-import { combineLatest, finalize, map, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, finalize, map, of, switchMap, tap } from 'rxjs';
 
 @Component({
-  selector: 'lfx-meeting',
+  selector: 'lfx-meeting-join',
   standalone: true,
   imports: [
     CommonModule,
@@ -34,16 +35,18 @@ import { combineLatest, finalize, map, of, switchMap, tap } from 'rxjs';
     ToastModule,
     TooltipModule,
     MeetingTimePipe,
+    RecurrenceSummaryPipe,
     LinkifyPipe,
     ExpandableTextComponent,
   ],
   providers: [MessageService],
-  templateUrl: './meeting.component.html',
+  templateUrl: './meeting-join.component.html',
 })
-export class MeetingComponent {
+export class MeetingJoinComponent {
   // Injected services
   private readonly messageService = inject(MessageService);
   private readonly activatedRoute = inject(ActivatedRoute);
+  private readonly router = inject(Router);
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
 
@@ -114,10 +117,21 @@ export class MeetingComponent {
           const meetingId = params.get('id');
           this.password.set(queryParams.get('password'));
           if (meetingId) {
-            return this.meetingService.getPublicMeeting(meetingId, this.password());
+            return this.meetingService.getPublicMeeting(meetingId, this.password()).pipe(
+              catchError((error) => {
+                // If 404, navigate to not found page
+                if ([404, 403, 400].includes(error.status)) {
+                  this.router.navigate(['/meetings/not-found']);
+                  return of({} as { meeting: Meeting; project: Project });
+                }
+                // Re-throw other errors
+                throw error;
+              })
+            );
           }
 
-          // TODO: If no meeting ID, redirect to 404
+          // If no meeting ID, redirect to not found
+          this.router.navigate(['/meetings/not-found']);
           return of({} as { meeting: Meeting; project: Project });
         }),
         map((res) => ({ ...res.meeting, project: res.project })),
@@ -158,48 +172,24 @@ export class MeetingComponent {
 
   private initializeMeetingTypeBadge(): Signal<{ badgeClass: string; icon?: string; text: string } | null> {
     return computed(() => {
-      const meetingType = this.meeting()?.meeting_type || 'none';
-      const normalizedType = meetingType.toLowerCase();
+      const meetingType = this.meeting()?.meeting_type;
+      if (!meetingType) return null;
 
-      switch (normalizedType) {
+      const type = meetingType.toLowerCase();
+
+      switch (type) {
         case 'board':
-          return {
-            badgeClass: 'bg-meeting-board text-white',
-            icon: 'fa-light fa-user-check',
-            text: 'Board',
-          };
+          return { badgeClass: 'bg-red-100 text-red-500', icon: 'fa-light fa-user-check', text: meetingType };
         case 'maintainers':
-          return {
-            badgeClass: 'bg-meeting-maintainers text-white',
-            icon: 'fa-light fa-cog',
-            text: 'Maintainers',
-          };
+          return { badgeClass: 'bg-blue-100 text-blue-500', icon: 'fa-light fa-gear', text: meetingType };
         case 'marketing':
-          return {
-            badgeClass: 'bg-meeting-marketing text-white',
-            icon: 'fa-light fa-chart-line',
-            text: 'Marketing',
-          };
+          return { badgeClass: 'bg-green-100 text-green-500', icon: 'fa-light fa-chart-line-up', text: meetingType };
         case 'technical':
-          return {
-            badgeClass: 'bg-meeting-technical text-white',
-            icon: 'fa-light fa-code',
-            text: 'Technical',
-          };
+          return { badgeClass: 'bg-purple-100 text-purple-500', icon: 'fa-light fa-code', text: meetingType };
         case 'legal':
-          return {
-            badgeClass: 'bg-meeting-legal text-white',
-            icon: 'fa-light fa-balance-scale',
-            text: 'Legal',
-          };
-        case 'other':
-          return {
-            badgeClass: 'bg-meeting-other text-white',
-            icon: 'fa-light fa-folder',
-            text: 'Other',
-          };
+          return { badgeClass: 'bg-amber-100 text-amber-500', icon: 'fa-light fa-scale-balanced', text: meetingType };
         default:
-          return null;
+          return { badgeClass: 'bg-gray-100 text-gray-400', icon: 'fa-light fa-calendar-days', text: meetingType };
       }
     });
   }
