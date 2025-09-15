@@ -4,13 +4,7 @@
 @if (form() && control()) {
   <ng-container [formGroup]="form()!">
     <div class="flex items-center gap-2">
-      <p-radioButton
-        [formControlName]="control()!"
-        [name]="name()"
-        [value]="value()"
-        [disabled]="disabled()"
-        [inputId]="inputId() || control()!"
-        (onChange)="onRadioChange($event)">
+      <p-radioButton [formControlName]="control()!" [name]="name()" [value]="value()" [inputId]="inputId() || control()!" (onChange)="onRadioChange($event)">
       </p-radioButton>
       @if (label()) {
         <label [for]="inputId() || control()!" class="text-sm font-medium text-gray-700 cursor-pointer">
@@ -21,7 +15,7 @@
   </ng-container>
 } @else {
   <div class="flex items-center gap-2">
-    <p-radioButton [name]="name()" [value]="value()" [disabled]="disabled()" [inputId]="inputId()" (onChange)="onRadioChange($event)"> </p-radioButton>
+    <p-radioButton [name]="name()" [value]="value()" [inputId]="inputId()" (onChange)="onRadioChange($event)"> </p-radioButton>
     @if (label()) {
       <label [for]="inputId()" class="text-sm font-medium text-gray-700 cursor-pointer">
         {{ label() }}

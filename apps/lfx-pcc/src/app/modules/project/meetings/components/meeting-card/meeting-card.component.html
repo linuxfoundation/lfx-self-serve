@@ -28,7 +28,10 @@
 
         <!-- Recurring Badge -->
         @if (meeting().recurrence) {
-          <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-400 text-white">
+          <div
+            class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-400 text-white"
+            [pTooltip]="meeting().recurrence | recurrenceSummary"
+            data-testid="recurring-badge">
             <i class="fa-light fa-repeat"></i>
             <span>Recurring</span>
           </div>

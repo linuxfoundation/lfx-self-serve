@@ -4,4 +4,5 @@
 export * from './date-time.utils';
 export * from './file.utils';
 export * from './form.utils';
+export * from './meeting.utils';
 export * from './url.utils';

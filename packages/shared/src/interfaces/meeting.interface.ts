@@ -447,3 +447,31 @@ export interface MeetingJoinURL {
   /** Meeting join URL */
   join_url: string;
 }
+
+/**
+ * Extended recurrence pattern for UI form handling
+ * @description Extends MeetingRecurrence with UI-specific fields for custom pattern configuration
+ */
+export interface CustomRecurrencePattern extends MeetingRecurrence {
+  /** UI helper: Type of recurrence pattern for form display */
+  patternType?: 'daily' | 'weekly' | 'monthly';
+  /** UI helper: Selected days for weekly patterns (0=Sunday, 1=Monday, etc.) - converted to/from weekly_days */
+  weeklyDaysArray?: number[];
+  /** UI helper: Monthly recurrence type for form display */
+  monthlyType?: 'dayOfMonth' | 'dayOfWeek';
+  /** UI helper: When the recurrence should end for form display */
+  endType?: 'never' | 'date' | 'occurrences';
+}
+
+/**
+ * Recurrence summary for display purposes
+ * @description Human-readable description of the recurrence pattern
+ */
+export interface RecurrenceSummary {
+  /** Main description (e.g., "Every 2 weeks on Monday, Wednesday") */
+  description: string;
+  /** End description (e.g., "Until December 31, 2024" or "For 10 occurrences") */
+  endDescription: string;
+  /** Full summary combining both */
+  fullSummary: string;
+}

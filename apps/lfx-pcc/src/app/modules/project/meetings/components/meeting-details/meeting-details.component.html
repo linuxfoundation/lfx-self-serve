@@ -266,12 +266,19 @@
         <lfx-select
           size="small"
           [form]="form()"
-          control="recurrence"
+          control="recurrenceType"
           [options]="recurrenceOptions()"
           placeholder="Select recurrence"
           styleClass="w-full"
           id="recurrence"
           data-testid="meeting-details-recurrence-select"></lfx-select>
+      </div>
+    }
+
+    <!-- Custom Recurrence Pattern Component -->
+    @if (showCustomRecurrence()) {
+      <div class="mt-4">
+        <lfx-meeting-recurrence-pattern [form]="form()" data-testid="meeting-details-custom-recurrence"> </lfx-meeting-recurrence-pattern>
       </div>
     }
 

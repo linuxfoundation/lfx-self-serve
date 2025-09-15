@@ -18,7 +18,6 @@ export class RadioButtonComponent {
   public readonly name = input.required<string>();
   public readonly value = input.required<any>();
   public readonly label = input<string>('');
-  public readonly disabled = input<boolean>(false);
   public readonly inputId = input<string>();
 
   // Events

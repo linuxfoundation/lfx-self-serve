@@ -14,6 +14,7 @@ import { ExpandableTextComponent } from '@components/expandable-text/expandable-
 import { MenuComponent } from '@components/menu/menu.component';
 import { extractUrlsWithDomains, Meeting, MeetingAttachment, MeetingOccurrence, MeetingRegistrant } from '@lfx-pcc/shared';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
+import { RecurrenceSummaryPipe } from '@app/shared/pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
@@ -36,6 +37,7 @@ import { RegistrantModalComponent } from '../registrant-modal/registrant-modal.c
     ButtonComponent,
     MenuComponent,
     MeetingTimePipe,
+    RecurrenceSummaryPipe,
     AvatarComponent,
     TooltipModule,
     AnimateOnScrollModule,

@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { getCodeForStatus, getDefaultMessageForStatus } from '../helpers/http-status.helper';
 import { BaseApiError } from './base.error';
-import { getDefaultMessageForStatus, getCodeForStatus } from '../helpers/http-status.helper';
 
 /**
  * Error class for microservice-related failures

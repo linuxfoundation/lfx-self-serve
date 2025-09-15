@@ -7,7 +7,9 @@ import { FormArray, FormControl, FormGroup, FormsModule, ReactiveFormsModule } f
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-pcc/shared/constants';
-import { MeetingAttachment, PendingAttachment } from '@lfx-pcc/shared/interfaces';
+import { RecurrenceType } from '@lfx-pcc/shared/enums';
+import { CustomRecurrencePattern, MeetingAttachment, PendingAttachment } from '@lfx-pcc/shared/interfaces';
+import { buildRecurrenceSummary } from '@lfx-pcc/shared/utils';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -230,17 +232,62 @@ export class MeetingResourcesSummaryComponent implements OnInit {
   }
 
   private getRecurrenceLabel(): string {
-    const recurrence = this.form().get('recurrence')?.value;
-    if (!recurrence || recurrence === 'none') {
+    const recurrenceType = this.form().get('recurrenceType')?.value;
+    if (!recurrenceType || recurrenceType === 'none') {
       return 'One-time meeting';
     }
 
+    // Handle custom recurrence patterns with detailed summary
+    if (recurrenceType === 'custom') {
+      const recurrenceObject = this.form().get('recurrence')?.value;
+      if (recurrenceObject && recurrenceObject.type) {
+        // Convert the API object to CustomRecurrencePattern for summary generation
+        const customPattern = this.convertToCustomPattern(recurrenceObject);
+        const summary = buildRecurrenceSummary(customPattern);
+        return summary.fullSummary;
+      }
+      return 'Custom recurrence pattern';
+    }
+
+    // Handle simple recurrence patterns
     const labels: { [key: string]: string } = {
       daily: 'Daily',
       weekly: 'Weekly',
-      monthly: 'Monthly',
+      weekdays: 'Every weekday',
+      monthly_nth: 'Monthly',
+      monthly_last: 'Monthly',
     };
 
-    return labels[recurrence] || 'Custom';
+    return labels[recurrenceType] || 'Custom';
+  }
+
+  private convertToCustomPattern(recurrenceObject: any): CustomRecurrencePattern {
+    // Determine UI helper fields from API object
+    let patternType: 'daily' | 'weekly' | 'monthly' = 'weekly';
+    if (recurrenceObject.type === RecurrenceType.DAILY) patternType = 'daily';
+    else if (recurrenceObject.type === RecurrenceType.WEEKLY) patternType = 'weekly';
+    else if (recurrenceObject.type === RecurrenceType.MONTHLY) patternType = 'monthly';
+
+    let monthlyType: 'dayOfMonth' | 'dayOfWeek' = 'dayOfMonth';
+    if (recurrenceObject.monthly_day) monthlyType = 'dayOfMonth';
+    else if (recurrenceObject.monthly_week && recurrenceObject.monthly_week_day) monthlyType = 'dayOfWeek';
+
+    let endType: 'never' | 'date' | 'occurrences' = 'never';
+    if (recurrenceObject.end_date_time) endType = 'date';
+    else if (recurrenceObject.end_times) endType = 'occurrences';
+
+    // Convert weekly_days string to array if present
+    let weeklyDaysArray: number[] = [];
+    if (recurrenceObject.weekly_days) {
+      weeklyDaysArray = recurrenceObject.weekly_days.split(',').map((d: string) => parseInt(d.trim()) - 1);
+    }
+
+    return {
+      ...recurrenceObject,
+      patternType,
+      weeklyDaysArray,
+      monthlyType,
+      endType,
+    };
   }
 }

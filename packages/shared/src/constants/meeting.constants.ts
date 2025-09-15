@@ -261,6 +261,65 @@ export const RECURRENCE_MAPPINGS = {
 };
 
 // ============================================================================
+// Custom Recurrence Pattern Options
+// ============================================================================
+
+/**
+ * Pattern type options for custom recurrence
+ * @description Available recurrence patterns (daily, weekly, monthly)
+ */
+export const RECURRENCE_PATTERN_TYPE_OPTIONS = [
+  { label: 'Days', value: 'daily' },
+  { label: 'Weeks', value: 'weekly' },
+  { label: 'Months', value: 'monthly' },
+];
+
+/**
+ * End condition options for custom recurrence
+ * @description How the recurring meetings should end
+ */
+export const RECURRENCE_END_TYPE_OPTIONS = [
+  { label: 'Never', value: 'never' },
+  { label: 'On date', value: 'date' },
+  { label: 'After number of occurrences', value: 'occurrences' },
+];
+
+/**
+ * Monthly recurrence type options
+ * @description Whether to repeat by day of month or day of week
+ */
+export const RECURRENCE_MONTHLY_TYPE_OPTIONS = [
+  { label: 'Day of month', value: 'dayOfMonth' },
+  { label: 'Day of week', value: 'dayOfWeek' },
+];
+
+/**
+ * Days of the week for recurrence selection
+ * @description Complete list of weekdays with display labels and values
+ */
+export const RECURRENCE_DAYS_OF_WEEK = [
+  { label: 'Sun', value: 0, fullLabel: 'Sunday' },
+  { label: 'Mon', value: 1, fullLabel: 'Monday' },
+  { label: 'Tue', value: 2, fullLabel: 'Tuesday' },
+  { label: 'Wed', value: 3, fullLabel: 'Wednesday' },
+  { label: 'Thu', value: 4, fullLabel: 'Thursday' },
+  { label: 'Fri', value: 5, fullLabel: 'Friday' },
+  { label: 'Sat', value: 6, fullLabel: 'Saturday' },
+];
+
+/**
+ * Weekly ordinals for monthly recurrence patterns
+ * @description Which occurrence of the weekday in the month (1st, 2nd, 3rd, 4th, last)
+ */
+export const RECURRENCE_WEEKLY_ORDINALS = [
+  { label: '1st', value: 1 },
+  { label: '2nd', value: 2 },
+  { label: '3rd', value: 3 },
+  { label: '4th', value: 4 },
+  { label: 'Last', value: -1 },
+];
+
+// ============================================================================
 // Template Re-exports
 // ============================================================================
 

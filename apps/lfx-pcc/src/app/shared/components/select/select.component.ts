@@ -28,7 +28,6 @@ export class SelectComponent {
 
   // Display properties
   public readonly placeholder = input<string>('');
-  public readonly disabled = input<boolean>(false);
   public readonly readonly = input<boolean>(false);
   public readonly showClear = input<boolean>(false);
   public readonly size = input<'small' | 'large'>('small');

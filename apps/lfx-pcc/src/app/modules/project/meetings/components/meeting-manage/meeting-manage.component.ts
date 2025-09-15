@@ -278,7 +278,35 @@ export class MeetingManageComponent {
     const formValue = this.form().value;
     const duration = formValue.duration === 'custom' ? Number(formValue.customDuration) : Number(formValue.duration);
     const startDateTime = combineDateTime(formValue.startDate, formValue.startTime, formValue.timezone);
-    const recurrenceObject = generateRecurrenceObject(formValue.recurrence, formValue.startDate);
+
+    // Handle recurrence - use FormGroup value directly
+    let recurrenceObject: any = null;
+    if (formValue.recurrenceType === 'custom' && formValue.recurrence.type) {
+      // Filter out null values and UI helper controls from the recurrence FormGroup
+      recurrenceObject = Object.keys(formValue.recurrence)
+        .filter(
+          (key) => formValue.recurrence[key] !== null && formValue.recurrence[key] !== undefined && !key.endsWith('UI') // Exclude UI helper controls
+        )
+        .reduce((obj, key) => {
+          obj[key] = formValue.recurrence[key];
+          return obj;
+        }, {} as any);
+    } else if (formValue.recurrenceType && formValue.recurrenceType !== 'none') {
+      // For simple patterns, use the recurrence FormGroup if it has valid data
+      if (formValue.recurrence.type && formValue.recurrence.repeat_interval > 0) {
+        recurrenceObject = Object.keys(formValue.recurrence)
+          .filter(
+            (key) => formValue.recurrence[key] !== null && formValue.recurrence[key] !== undefined && !key.endsWith('UI') // Exclude UI helper controls
+          )
+          .reduce((obj, key) => {
+            obj[key] = formValue.recurrence[key];
+            return obj;
+          }, {} as any);
+      } else {
+        // Fallback to the old method for simple patterns
+        recurrenceObject = generateRecurrenceObject(formValue.recurrenceType, formValue.startDate);
+      }
+    }
 
     return {
       project_uid: project.uid,
@@ -492,6 +520,10 @@ export class MeetingManageComponent {
     // Map recurrence object back to form value
     const recurrenceValue = mapRecurrenceToFormValue(meeting.recurrence);
 
+    // Check if this is a complex recurrence that needs custom handling
+    const isCustomRecurrence = this.needsCustomRecurrence(meeting.recurrence);
+    const finalRecurrenceValue = isCustomRecurrence ? 'custom' : recurrenceValue;
+
     // If recording_enabled is true, enable controls for transcript_enabled and youtube_upload_enabled
     if (meeting.recording_enabled) {
       this.form().get('transcript_enabled')?.enable();
@@ -508,6 +540,7 @@ export class MeetingManageComponent {
       duration: meeting.duration || DEFAULT_DURATION,
       timezone: meeting.timezone || getUserTimezone(),
       early_join_time_minutes: meeting.early_join_time_minutes || DEFAULT_EARLY_JOIN_TIME,
+      isRecurring: Boolean(meeting.recurrence && finalRecurrenceValue !== 'none'),
       visibility: meeting.visibility || MeetingVisibility.PRIVATE,
       restricted: meeting.restricted ?? false,
       recording_enabled: meeting.recording_enabled || false,
@@ -516,9 +549,47 @@ export class MeetingManageComponent {
       zoom_ai_enabled: meeting.zoom_config?.ai_companion_enabled || false,
       require_ai_summary_approval: meeting.zoom_config?.ai_summary_require_approval ?? false,
       artifact_visibility: meeting.artifact_visibility ?? DEFAULT_ARTIFACT_VISIBILITY,
-      recurrence: recurrenceValue,
+      recurrenceType: finalRecurrenceValue,
       committees: meeting.committees || [],
     });
+
+    // Populate the recurrence FormGroup if there's recurrence data
+    if (meeting.recurrence) {
+      // Set up UI helpers based on recurrence data
+      let patternTypeUI = 'weekly';
+      if (meeting.recurrence.type === 1) patternTypeUI = 'daily';
+      else if (meeting.recurrence.type === 2) patternTypeUI = 'weekly';
+      else if (meeting.recurrence.type === 3) patternTypeUI = 'monthly';
+
+      let monthlyTypeUI = 'dayOfMonth';
+      if (meeting.recurrence.monthly_day) monthlyTypeUI = 'dayOfMonth';
+      else if (meeting.recurrence.monthly_week && meeting.recurrence.monthly_week_day) monthlyTypeUI = 'dayOfWeek';
+
+      let endTypeUI = 'never';
+      if (meeting.recurrence.end_date_time) endTypeUI = 'date';
+      else if (meeting.recurrence.end_times) endTypeUI = 'occurrences';
+
+      // Set the pattern type UI control if this is custom recurrence
+      if (isCustomRecurrence) {
+        this.form().get('patternTypeUI')?.setValue(patternTypeUI);
+      }
+
+      this.form()
+        .get('recurrence')
+        ?.patchValue({
+          type: meeting.recurrence.type || null,
+          repeat_interval: meeting.recurrence.repeat_interval || 1,
+          weekly_days: meeting.recurrence.weekly_days || null,
+          monthly_day: meeting.recurrence.monthly_day || null,
+          monthly_week: meeting.recurrence.monthly_week || null,
+          monthly_week_day: meeting.recurrence.monthly_week_day || null,
+          end_date_time: meeting.recurrence.end_date_time ? new Date(meeting.recurrence.end_date_time) : null,
+          end_times: meeting.recurrence.end_times || null,
+          // UI helper controls
+          monthlyTypeUI: monthlyTypeUI,
+          endTypeUI: endTypeUI,
+        });
+    }
   }
 
   private canNavigateToStep(step: number): boolean {
@@ -594,7 +665,21 @@ export class MeetingManageComponent {
         timezone: new FormControl(getUserTimezone(), [Validators.required]),
         early_join_time_minutes: new FormControl(DEFAULT_EARLY_JOIN_TIME, [Validators.min(MIN_EARLY_JOIN_TIME), Validators.max(MAX_EARLY_JOIN_TIME)]),
         isRecurring: new FormControl(false),
-        recurrence: new FormControl('none'),
+        recurrenceType: new FormControl('none'),
+        patternTypeUI: new FormControl('weekly'),
+        recurrence: new FormGroup({
+          type: new FormControl(null),
+          repeat_interval: new FormControl(1),
+          weekly_days: new FormControl(null),
+          monthly_day: new FormControl(null),
+          monthly_week: new FormControl(null),
+          monthly_week_day: new FormControl(null),
+          end_date_time: new FormControl(null),
+          end_times: new FormControl(null),
+          // UI helper controls
+          monthlyTypeUI: new FormControl('dayOfMonth'),
+          endTypeUI: new FormControl('never'),
+        }),
 
         // Step 3: Platform & Features
         platform: new FormControl(DEFAULT_MEETING_TOOL, [Validators.required]),
@@ -768,5 +853,23 @@ export class MeetingManageComponent {
         detail: `Failed to update ${totalFailed} guests(s)`,
       });
     }
+  }
+
+  private needsCustomRecurrence(recurrence: any): boolean {
+    if (!recurrence) return false;
+
+    // Check if this recurrence pattern requires custom handling
+    // (e.g., custom intervals, multiple days, complex monthly patterns, end conditions)
+
+    // Custom interval (not 1)
+    if (recurrence.repeat_interval && recurrence.repeat_interval !== 1) return true;
+
+    // Multiple days selected for weekly
+    if (recurrence.weekly_days && recurrence.weekly_days.split(',').length > 1) return true;
+
+    // End conditions (end date or occurrence count)
+    if (recurrence.end_date_time || recurrence.end_times) return true;
+
+    return false;
   }
 }
