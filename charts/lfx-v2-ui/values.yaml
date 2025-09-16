@@ -51,20 +51,35 @@ externalSecrets:
   # Defaults to the fullname template if not specified
   name: ""
 
-  # Target Kubernetes Secret name (required)
-  # This is the name of the Secret that will be created/managed
-  target: ""
-
   # How frequently the secret should be refreshed from the external provider
   # Format: 10s, 1m, 1h, etc. (default: 10m)
   refreshInterval: "10m"
 
-  # Creation policy for the target Secret
-  # - Owner: ExternalSecret owns the Secret, deletion of ExternalSecret deletes the Secret
-  # - Orphan: Secret won't be deleted when ExternalSecret is deleted
-  # - Merge: Merge with existing Secret if it exists
-  # - None: Don't create or update the Secret
-  creationPolicy: "Owner"
+  # Target Kubernetes Secret configuration
+  target:
+    # Name of the Secret that will be created/managed (required)
+    # This is the name of the Secret that will be created/managed
+    name: ""
+
+    # Creation policy for the target Secret
+    # - Owner: ExternalSecret owns the Secret, deletion of ExternalSecret deletes the Secret
+    # - Orphan: Secret won't be deleted when ExternalSecret is deleted
+    # - Merge: Merge with existing Secret if it exists
+    # - None: Don't create or update the Secret
+    creationPolicy: "Owner"
+
+    # Template for generating the Secret content
+    # Allows transformation of secret data before creating the Kubernetes Secret
+    # Example:
+    #   template:
+    #     engineVersion: v2
+    #     data:
+    #       config.json: |
+    #         {
+    #           "apiKey": "{{ .apiKey }}",
+    #           "secretKey": "{{ .secretKey }}"
+    #         }
+    template: {}
 
   # Fetch multiple secrets using queries (required)
   # Example:

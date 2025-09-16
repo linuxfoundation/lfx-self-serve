@@ -265,9 +265,10 @@ This chart supports the [External Secrets Operator](https://external-secrets.io/
 | `externalSecrets.enabled`                 | Enable External Secrets integration              | `false`        |
 | `externalSecrets.provider`                | Provider configuration (required when enabled)   | `{}`           |
 | `externalSecrets.name`                    | Name of the ExternalSecret resource              | Auto-generated |
-| `externalSecrets.target`                  | Target Kubernetes Secret name (required)         | `""`           |
+| `externalSecrets.target.name`             | Target Kubernetes Secret name (required)         | `""`           |
+| `externalSecrets.target.template`         | Template for generating the secret content       | `{}`           |
+| `externalSecrets.target.creationPolicy`   | Secret creation policy (Owner/Orphan/Merge/None) | `Owner`        |
 | `externalSecrets.refreshInterval`         | How often to sync secrets from provider          | `10m`          |
-| `externalSecrets.creationPolicy`          | Secret creation policy (Owner/Orphan/Merge/None) | `Owner`        |
 | `externalSecrets.dataFrom`                | Fetch multiple secrets using queries (required)  | `[]`           |
 | `externalSecrets.annotations`             | Annotations for ExternalSecret resource          | `{}`           |
 | `externalSecrets.secretStore.name`        | Name of the SecretStore resource                 | Auto-generated |
@@ -288,6 +289,8 @@ externalSecrets:
         jwt:
           serviceAccountRef:
             name: lfx-v2-ui-sa # ServiceAccount with IRSA annotation
+  target:
+    name: lfx-v2-ui
   dataFrom:
     - find:
         tags:
