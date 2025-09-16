@@ -63,9 +63,9 @@ The monorepo uses Turborepo for efficient task orchestration and caching across 
 ### Current Workspaces
 
 ```text
-lfx-pcc-v3/
+lfx-one/
 ├── apps/
-│   └── lfx-pcc/              # Angular application
+│   └── lfx-one/              # Angular application
 └── packages/
     └── shared/               # Shared interfaces and constants
 ```
@@ -237,13 +237,13 @@ Projects inherit from shared configuration:
 ### Application TypeScript Config
 
 ```json
-// apps/lfx-pcc/tsconfig.json
+// apps/lfx-one/tsconfig.json
 {
   "extends": "./tsconfig.app.json",
   "compilerOptions": {
     "paths": {
-      "@lfx-pcc/shared": ["../../packages/shared/src/index.ts"],
-      "@lfx-pcc/shared/*": ["../../packages/shared/src/*"]
+      "@lfx-one/shared": ["../../packages/shared/src/index.ts"],
+      "@lfx-one/shared/*": ["../../packages/shared/src/*"]
     }
   }
 }
@@ -270,10 +270,10 @@ Projects inherit from shared configuration:
 ### Workspace Dependencies
 
 ```json
-// apps/lfx-pcc/package.json
+// apps/lfx-one/package.json
 {
   "dependencies": {
-    "@lfx-pcc/shared": "workspace:*"
+    "@lfx-one/shared": "workspace:*"
   }
 }
 ```
@@ -387,7 +387,7 @@ npx turbo build --graph
 npx turbo build --verbose
 
 # Build specific package
-npx turbo build --filter=@lfx-pcc/shared
+npx turbo build --filter=@lfx-one/shared
 ```
 
 ## 📈 Monitoring and Analytics

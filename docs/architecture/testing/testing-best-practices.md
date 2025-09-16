@@ -2,7 +2,7 @@
 
 ## 🎯 Overview
 
-This guide outlines testing best practices for the LFX Projects Self-Service application, covering our dual testing architecture, data-testid conventions, and implementation guidelines.
+This guide outlines testing best practices for the LFX One application, covering our dual testing architecture, data-testid conventions, and implementation guidelines.
 
 ## 🏗 Dual Testing Architecture Principles
 

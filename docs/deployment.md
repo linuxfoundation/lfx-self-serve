@@ -9,7 +9,7 @@
 yarn build
 
 # Expected output structure
-dist/lfx-pcc/
+dist/lfx-one/
 ├── browser/          # Client-side assets
 │   ├── index.html
 │   ├── main.[hash].js
@@ -37,8 +37,8 @@ dist/lfx-pcc/
 module.exports = {
   apps: [
     {
-      name: 'lfx-pcc',
-      script: 'apps/lfx-pcc/dist/lfx-pcc/server/server.mjs',
+      name: 'lfx-one',
+      script: 'apps/lfx-one/dist/lfx-one/server/server.mjs',
       env: {
         PM2: 'true',
         NODE_ENV: 'production',
@@ -72,17 +72,17 @@ yarn start:server
 
 # Reload with zero downtime
 yarn reload:prod
-# Equivalent to: pm2 reload lfx-pcc
+# Equivalent to: pm2 reload lfx-one
 
 # View logs
 yarn logs:prod
-# Equivalent to: pm2 logs lfx-pcc
+# Equivalent to: pm2 logs lfx-one
 
 # Stop the application
-pm2 stop lfx-pcc
+pm2 stop lfx-one
 
 # Delete the process
-pm2 delete lfx-pcc
+pm2 delete lfx-one
 
 # Monitor processes
 pm2 monit
@@ -94,7 +94,7 @@ pm2 status
 #### Server Detection and Startup
 
 ```typescript
-// apps/lfx-pcc/src/server/server.ts
+// apps/lfx-one/src/server/server.ts
 const metaUrl = import.meta.url;
 const isMain = isMainModule(metaUrl);
 const isPM2 = process.env['PM2'] === 'true';
@@ -120,13 +120,13 @@ export function startServer() {
 ### 1. Node.js Server with SSR
 
 - **Build**: `yarn build`
-- **Start**: `yarn start:server` or `node dist/lfx-pcc/server/server.mjs`
+- **Start**: `yarn start:server` or `node dist/lfx-one/server/server.mjs`
 - **Features**: Includes Express server for API proxy and authentication
 - **Port**: Exposes port 4200
 
 ### 2. Docker Deployment
 
-The application uses a multi-stage Docker build process defined in `/Dockerfile-changelog`:
+The application uses a multi-stage Docker build process defined in `/Dockerfile`:
 
 **Build Process**:
 
@@ -145,13 +145,13 @@ The application uses a multi-stage Docker build process defined in `/Dockerfile-
 
 ```bash
 # Build the image
-docker build -f /path/to/Dockerfile-changelog -t lfx-pcc .
+docker build -f /path/to/Dockerfile -t lfx-one .
 
 # Run the container
-docker run -p 4000:4000 lfx-pcc
+docker run -p 4000:4000 lfx-one
 
 # Build for specific environment
-docker build --build-arg BUILD_ENV=prod -f Dockerfile-changelog -t lfx-pcc .
+docker build --build-arg BUILD_ENV=prod -f Dockerfile -t lfx-one .
 ```
 
 ### 3. CI/CD Pipeline (AWS ECS)
@@ -166,7 +166,7 @@ The application uses GitHub Actions for automated deployment to AWS ECS:
 - **ECS Deployment**: AWS Fargate for serverless container execution
 - **Environment Management**: Separate dev/prod deployments with AWS Secrets Manager
 
-**Deployment Workflow** (`.github/workflows/deploy-changelog-dev.yml`):
+**Deployment Workflow** (`.github/workflows/deploy-dev.yml`):
 
 1. **Build**: Multi-stage Docker build with environment-specific configurations
 2. **Security Scan**: TruffleHog analysis for embedded secrets
@@ -176,11 +176,11 @@ The application uses GitHub Actions for automated deployment to AWS ECS:
 
 **AWS Infrastructure**:
 
-- **ECS Cluster**: `lfx-pcc`
-- **ECS Service**: `lfx-pcc-service`
+- **ECS Cluster**: `lfx-one`
+- **ECS Service**: `lfx-one-service`
 - **Task Definition**: 1024 CPU, 2048 MB memory on Fargate
 - **Secrets Management**: AWS Secrets Manager for sensitive configuration
-- **Logging**: CloudWatch logs with `/ecs/lfx-pcc-logs` group
+- **Logging**: CloudWatch logs with `/ecs/lfx-one-logs` group
 
 ## ⚙️ Environment Variables
 
@@ -254,7 +254,7 @@ NODE_TLS_REJECT_UNAUTHORIZED=0
 ```bash
 # Clone repository
 git clone <your-repo>
-cd lfx-pcc
+cd lfx-one
 
 # Install dependencies
 yarn install

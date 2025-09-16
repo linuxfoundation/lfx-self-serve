@@ -1,5 +1,5 @@
 {
-  "name": "@lfx-pcc/shared",
+  "name": "@lfx-one/shared",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",

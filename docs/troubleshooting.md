@@ -103,10 +103,10 @@ providePrimeNG({
 
 ```bash
 # Check build output exists
-ls -la apps/lfx-pcc/dist/lfx-pcc/
+ls -la apps/lfx-one/dist/lfx-one/
 
 # Verify server file exists
-ls -la apps/lfx-pcc/dist/lfx-pcc/server/server.mjs
+ls -la apps/lfx-one/dist/lfx-one/server/server.mjs
 
 # Check for build errors
 yarn build
@@ -232,7 +232,7 @@ ng cache clean
 import { Component } from '../../shared/components/component';
 
 // ✅ Right - path mapping
-import { Component } from '@lfx-pcc/shared/components';
+import { Component } from '@lfx-one/shared/components';
 ```
 
 ### Testing Issues
@@ -257,7 +257,7 @@ yarn e2e --reporter=html
 
 ```bash
 # Check test authentication setup
-cat apps/lfx-pcc/e2e/helpers/global-setup.ts
+cat apps/lfx-one/e2e/helpers/global-setup.ts
 
 # Verify test credentials
 echo $TEST_USERNAME
@@ -273,10 +273,10 @@ echo $TEST_PASSWORD
 pm2 status
 
 # View application logs
-pm2 logs lfx-pcc-v2-ui
+pm2 logs lfx-one
 
 # Restart application
-pm2 restart lfx-pcc-v2-ui
+pm2 restart lfx-one
 
 # Check ecosystem configuration
 cat ecosystem.config.js
@@ -289,10 +289,10 @@ cat ecosystem.config.js
 pm2 monit
 
 # Check for memory leaks
-pm2 show lfx-pcc-v2-ui
+pm2 show lfx-one
 
 # Restart if memory limit exceeded
-pm2 restart lfx-pcc-v2-ui
+pm2 restart lfx-one
 ```
 
 ## 📊 Diagnostic Commands
@@ -324,7 +324,7 @@ yarn build --analyze
 npx lighthouse http://localhost:4200 --chrome-flags="--headless"
 
 # Memory profiling
-node --inspect apps/lfx-pcc/dist/lfx-pcc/server/server.mjs
+node --inspect apps/lfx-one/dist/lfx-one/server/server.mjs
 ```
 
 ## 🔍 Debugging Strategies
@@ -358,7 +358,7 @@ export class Component {
 DEBUG=* yarn serve:ssr
 
 # Node.js inspector
-node --inspect-brk apps/lfx-pcc/dist/lfx-pcc/server/server.mjs
+node --inspect-brk apps/lfx-one/dist/lfx-one/server/server.mjs
 
 # PM2 debug mode
 pm2 start ecosystem.config.js --debug
@@ -379,7 +379,7 @@ pm2 start ecosystem.config.js --debug
 yarn start # Check terminal output
 
 # Production PM2 logs
-pm2 logs lfx-pcc-v2-ui
+pm2 logs lfx-one
 
 # System logs (Linux)
 journalctl -u nodejs-app
@@ -441,4 +441,4 @@ ping your-microservice-host
 
 ---
 
-_This troubleshooting guide is specific to LFX PCC v2 UI. For questions or additional issues, create a JIRA ticket using project key LFXV2._
+_This troubleshooting guide is specific to LFX One. For questions or additional issues, create a JIRA ticket using project key LFXV2._

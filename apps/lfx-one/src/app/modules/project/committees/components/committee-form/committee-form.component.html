@@ -1,0 +1,178 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form()" (ngSubmit)="onSubmit()" class="space-y-6">
+  @if (!isEditing()) {
+    <div class="bg-blue-50 shadow-md p-3 rounded-md text-sm">
+      <p class="text-sm">
+        Committees are a great way to connect community members who have shared interests. There are common committees like governing boards and technical
+        oversight committees, but you can also create committees for special interest groups (SIGs) or working groups to tackle specific concerns for your
+        project community.
+      </p>
+    </div>
+  }
+  <!-- Basic Information Section -->
+  <div class="flex flex-col gap-3">
+    <h3 class="text-lg font-medium text-gray-900">Basic Information</h3>
+
+    <!-- Committee Name -->
+    <div>
+      <label for="committee-name" class="block text-sm font-medium text-gray-700 mb-1"> Committee Name <span class="text-red-500">*</span> </label>
+      <lfx-input-text size="small" [form]="form()" control="name" id="committee-name" placeholder="Enter committee name" styleClass="w-full"></lfx-input-text>
+      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('name')?.errors?.['required'] && form().get('name')?.touched">Committee name is required</p>
+    </div>
+
+    <!-- Category -->
+    <div>
+      <label for="committee-category" class="block text-sm font-medium text-gray-700 mb-1"> Category <span class="text-red-500">*</span> </label>
+      <lfx-select
+        size="small"
+        [form]="form()"
+        control="category"
+        [options]="categoryOptions"
+        placeholder="Select a category"
+        styleClass="w-full"
+        id="committee-category"></lfx-select>
+      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('category')?.errors?.['required'] && form().get('category')?.touched">Category is required</p>
+    </div>
+
+    <!-- Parent Committee -->
+    <div>
+      <label for="parent-committee" class="block text-sm font-medium text-gray-700 mb-1"> Parent Committee (Optional) </label>
+      <lfx-select
+        size="small"
+        [form]="form()"
+        control="parent_uid"
+        [options]="parentCommitteeOptions()"
+        placeholder="Select a parent committee"
+        styleClass="w-full"
+        id="parent-committee"
+        [showClear]="true"></lfx-select>
+      <p class="mt-1 text-sm text-gray-500">Select a parent committee to create a subcommittee. Leave empty for top-level committees.</p>
+    </div>
+
+    <!-- Description -->
+    <div>
+      <label for="committee-description" class="block text-sm font-medium text-gray-700 mb-1"> Description </label>
+      <lfx-textarea
+        [form]="form()"
+        control="description"
+        id="committee-description"
+        placeholder="Enter committee description"
+        [rows]="4"
+        styleClass="w-full"></lfx-textarea>
+    </div>
+  </div>
+
+  <!-- Settings Section -->
+  <div class="flex flex-col gap-3">
+    <h3 class="text-lg font-medium text-gray-900">Settings</h3>
+
+    <div class="flex flex-col gap-2">
+      <lfx-toggle
+        size="small"
+        [form]="form()"
+        control="business_email_required"
+        label="Business Email Required"
+        id="business-email-toggle"
+        tooltip="If enabled, public emails like Gmail or Yahoo will require confirmation before being saved to limit their presence in the committee"
+        tooltipPosition="right"></lfx-toggle>
+
+      <lfx-toggle
+        size="small"
+        [form]="form()"
+        control="enable_voting"
+        label="Enable Voting"
+        id="voting-toggle"
+        tooltip="Voting status for members can be enabled for the committee"
+        tooltipPosition="right"></lfx-toggle>
+
+      <lfx-toggle size="small" [form]="form()" control="is_audit_enabled" label="Enable Audit" id="audit-toggle"></lfx-toggle>
+
+      <lfx-toggle
+        size="small"
+        [form]="form()"
+        control="joinable"
+        label="Joinable"
+        id="joinable-toggle"
+        tooltip="When enabled, users are able to join the committee through LFX One"
+        tooltipPosition="right"></lfx-toggle>
+    </div>
+  </div>
+
+  <!-- Public Settings Section -->
+  <div class="flex flex-col gap-3">
+    <h3 class="text-lg font-medium text-gray-900">Public Settings</h3>
+
+    <lfx-toggle
+      size="small"
+      [form]="form()"
+      control="public"
+      label="Make Committee Public"
+      id="public-toggle"
+      tooltip="When enabled, the committee will be visible to the public on LFX tools like the public meeting calendar"
+      tooltipPosition="right"></lfx-toggle>
+
+    <!-- Conditional Public Name Field -->
+    <div *ngIf="form().get('public')?.value === true">
+      <label for="public-name" class="block text-sm font-medium text-gray-700 mb-1"> Public Name </label>
+      <lfx-input-text
+        size="small"
+        [form]="form()"
+        control="display_name"
+        id="public-name"
+        placeholder="Enter public display name"
+        styleClass="w-full"></lfx-input-text>
+    </div>
+  </div>
+
+  <!-- SSO Settings Section -->
+  <div class="flex flex-col gap-3">
+    <h3 class="text-lg font-medium text-gray-900">SSO Settings</h3>
+
+    <lfx-toggle [form]="form()" control="sso_group_enabled" label="Enable SSO Group" id="sso-toggle"></lfx-toggle>
+
+    <!-- Conditional SSO Group Name Field -->
+    @if (form().get('sso_group_enabled')?.value === true) {
+      <div>
+        <label for="sso-group-name" class="block text-sm font-medium text-gray-700 mb-1"> SSO Group Name </label>
+        <lfx-input-text
+          size="small"
+          [form]="form()"
+          control="sso_group_name"
+          id="sso-group-name"
+          placeholder="Enter SSO group name"
+          styleClass="w-full"></lfx-input-text>
+      </div>
+    }
+  </div>
+
+  <!-- Additional Information Section -->
+  <div class="flex flex-col gap-3">
+    <h3 class="text-lg font-medium text-gray-900">Additional Information</h3>
+
+    <div>
+      <label for="committee-website" class="block text-sm font-medium text-gray-700 mb-1"> Committee Website </label>
+      <lfx-input-text
+        size="small"
+        [form]="form()"
+        control="website"
+        id="committee-website"
+        type="url"
+        placeholder="https://example.com"
+        styleClass="w-full"></lfx-input-text>
+      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('website')?.errors?.['pattern'] && form().get('website')?.touched">Please enter a valid URL</p>
+    </div>
+  </div>
+
+  <!-- Form Actions -->
+  <div class="flex justify-end gap-3 pt-6 border-t">
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" (click)="onCancel()" size="small" type="button"></lfx-button>
+    <lfx-button
+      [label]="isEditing() ? 'Update Committee' : 'Create Committee'"
+      [loading]="loading()"
+      [disabled]="loading()"
+      type="submit"
+      size="small"></lfx-button>
+  </div>
+</form>

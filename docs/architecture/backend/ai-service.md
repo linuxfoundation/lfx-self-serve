@@ -2,7 +2,7 @@
 
 ## 🤖 Overview
 
-The LFX PCC AI Service provides intelligent meeting agenda generation using **Claude Sonnet 4** through a **LiteLLM proxy**. The service integrates with the meeting creation workflow to automatically generate professional, structured meeting agendas based on meeting type, context, and project information.
+The LFX One AI Service provides intelligent meeting agenda generation using **Claude Sonnet 4** through a **LiteLLM proxy**. The service integrates with the meeting creation workflow to automatically generate professional, structured meeting agendas based on meeting type, context, and project information.
 
 ## 🏗 Architecture
 
@@ -20,7 +20,7 @@ Frontend Request → Meeting API → AI Service → LiteLLM Proxy → Claude Son
 - **AI Service** (`/server/services/ai.service.ts`): Core business logic for AI integration
 - **Meeting API** (`/server/routes/meetings.ts`): HTTP endpoints for AI-powered features
 - **LiteLLM Proxy**: OpenAI-compatible proxy for Claude Sonnet model access
-- **Shared Interfaces** (`@lfx-pcc/shared`): Type-safe request/response contracts
+- **Shared Interfaces** (`@lfx-one/shared`): Type-safe request/response contracts
 
 ## 🔧 Implementation Details
 

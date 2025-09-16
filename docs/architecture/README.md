@@ -2,7 +2,7 @@
 
 ## 🏗 System Overview
 
-LFX PCC v2 UI is a modern Angular 19 SSR application built with experimental zoneless change detection, featuring a sophisticated backend architecture and comprehensive design system integration.
+LFX One is a modern Angular 19 SSR application built with experimental zoneless change detection, featuring a sophisticated backend architecture and comprehensive design system integration.
 
 ## 📖 Architecture Documentation Guide
 

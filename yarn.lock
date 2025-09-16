@@ -2867,9 +2867,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@lfx-pcc/shared@workspace:*, @lfx-pcc/shared@workspace:packages/shared":
+"@lfx-one/shared@workspace:*, @lfx-one/shared@workspace:packages/shared":
   version: 0.0.0-use.local
-  resolution: "@lfx-pcc/shared@workspace:packages/shared"
+  resolution: "@lfx-one/shared@workspace:packages/shared"
   dependencies:
     "@angular/forms": "npm:^19.0.0"
     "@fullcalendar/core": "npm:^6.1.19"
@@ -8851,32 +8851,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"lfx-pcc-v3@workspace:.":
+"lfx-one-ui@workspace:apps/lfx-one":
   version: 0.0.0-use.local
-  resolution: "lfx-pcc-v3@workspace:."
-  dependencies:
-    "@commitlint/cli": "npm:^19.8.1"
-    "@commitlint/config-angular": "npm:^19.8.1"
-    "@linuxfoundation/lfx-ui-core": "npm:^0.0.20"
-    "@types/node": "npm:^24.2.1"
-    "@typescript-eslint/eslint-plugin": "npm:^8.39.1"
-    "@typescript-eslint/parser": "npm:^8.39.1"
-    "@typescript-eslint/type-utils": "npm:^8.39.1"
-    "@typescript-eslint/types": "npm:^8.39.1"
-    "@typescript-eslint/utils": "npm:^8.39.1"
-    chart.js: "npm:^4.5.0"
-    husky: "npm:^9.1.7"
-    lint-staged: "npm:^16.1.5"
-    prettier: "npm:^3.6.2"
-    tslib: "npm:^2.8.1"
-    turbo: "npm:^2.5.5"
-    typescript: "npm:5.8.3"
-  languageName: unknown
-  linkType: soft
-
-"lfx-pcc@workspace:apps/lfx-pcc":
-  version: 0.0.0-use.local
-  resolution: "lfx-pcc@workspace:apps/lfx-pcc"
+  resolution: "lfx-one-ui@workspace:apps/lfx-one"
   dependencies:
     "@angular-devkit/build-angular": "npm:^19.2.15"
     "@angular-eslint/eslint-plugin": "npm:^19.8.1"
@@ -8902,7 +8879,7 @@ __metadata:
     "@fullcalendar/core": "npm:^6.1.19"
     "@fullcalendar/daygrid": "npm:^6.1.19"
     "@fullcalendar/timegrid": "npm:^6.1.19"
-    "@lfx-pcc/shared": "workspace:*"
+    "@lfx-one/shared": "workspace:*"
     "@linuxfoundation/lfx-ui-core": "npm:^0.0.20"
     "@playwright/test": "npm:^1.54.2"
     "@primeng/themes": "npm:^19.1.4"
@@ -8937,6 +8914,29 @@ __metadata:
     tailwindcss-primeui: "npm:^0.6.1"
     tslib: "npm:^2.8.1"
     typescript: "npm:~5.7.2"
+  languageName: unknown
+  linkType: soft
+
+"lfx-one@workspace:.":
+  version: 0.0.0-use.local
+  resolution: "lfx-one@workspace:."
+  dependencies:
+    "@commitlint/cli": "npm:^19.8.1"
+    "@commitlint/config-angular": "npm:^19.8.1"
+    "@linuxfoundation/lfx-ui-core": "npm:^0.0.20"
+    "@types/node": "npm:^24.2.1"
+    "@typescript-eslint/eslint-plugin": "npm:^8.39.1"
+    "@typescript-eslint/parser": "npm:^8.39.1"
+    "@typescript-eslint/type-utils": "npm:^8.39.1"
+    "@typescript-eslint/types": "npm:^8.39.1"
+    "@typescript-eslint/utils": "npm:^8.39.1"
+    chart.js: "npm:^4.5.0"
+    husky: "npm:^9.1.7"
+    lint-staged: "npm:^16.1.5"
+    prettier: "npm:^3.6.2"
+    tslib: "npm:^2.8.1"
+    turbo: "npm:^2.5.5"
+    typescript: "npm:5.8.3"
   languageName: unknown
   linkType: soft
 

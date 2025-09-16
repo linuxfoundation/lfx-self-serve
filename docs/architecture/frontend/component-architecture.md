@@ -7,7 +7,7 @@ The project follows a modular file organization pattern where components are org
 ### Module Structure
 
 ```text
-apps/lfx-pcc/src/app/modules/project/
+apps/lfx-one/src/app/modules/project/
 ├── dashboard/                  # Project overview section
 │   └── project-dashboard/      # Main dashboard route component
 ├── meetings/                   # Meetings management section
@@ -458,7 +458,7 @@ Before creating a wrapper, **always research the PrimeNG component thoroughly**:
 #### Step 1: Generate Component
 
 ```bash
-# In the apps/lfx-pcc directory
+# In the apps/lfx-one directory
 ng generate component shared/components/[component-name] --standalone --skip-tests
 ```
 
@@ -549,7 +549,7 @@ protected handleSelectionChange(event: SelectionChangeEvent): void {
 
 ### Code Quality
 
-- [ ] **Type Safety**: Import and use interfaces from `@lfx-pcc/shared` package
+- [ ] **Type Safety**: Import and use interfaces from `@lfx-one/shared` package
 - [ ] **Event Handling**: Proper event emission and parameter passing
 - [ ] **Error Handling**: Graceful handling of edge cases
 - [ ] **Accessibility**: Include ARIA labels and roles where applicable
@@ -565,7 +565,7 @@ protected handleSelectionChange(event: SelectionChangeEvent): void {
 
 ### Integration
 
-- [ ] **Shared Interfaces**: Add any new interfaces to `@lfx-pcc/shared/interfaces`
+- [ ] **Shared Interfaces**: Add any new interfaces to `@lfx-one/shared/interfaces`
 - [ ] **Export Path**: Ensure component is exported correctly
 - [ ] **Usage Guidelines**: Update project documentation
 - [ ] **Component Hierarchy**: Verify component fits properly in app structure

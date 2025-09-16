@@ -1,13 +1,13 @@
-# LFX PCC
+# LFX One
 
-This is a monorepo for the LFX PCC (Projects Self-Service) application, built
+This is a monorepo for the LFX One application, built
 with Angular 19 and experimental zoneless change detection.
 
 ## What's inside?
 
 ### Apps and Packages
 
-- `apps/lfx-pcc`: Angular 19 SSR application with zoneless change detection and
+- `apps/lfx-one`: Angular 19 SSR application with zoneless change detection and
   direct PrimeNG UI components
 
 The app is 100% [TypeScript](https://www.typescriptlang.org/).
@@ -54,7 +54,7 @@ of conduct, development process, and how to submit pull requests.
 1. **Copy the environment template:**
 
    ```bash
-   cp apps/lfx-pcc/.env.example apps/lfx-pcc/.env
+   cp apps/lfx-one/.env.example apps/lfx-one/.env
    ```
 
 2. **Configure required environment variables:**
@@ -151,24 +151,24 @@ You can run commands for the application using Turborepo filters:
 
 ```bash
 # Start the Angular app
-yarn start --filter=lfx-pcc
+yarn start --filter=lfx-one
 
 # Build the Angular app
-yarn build --filter=lfx-pcc
+yarn build --filter=lfx-one
 
 # Run tests for the app
-yarn test --filter=lfx-pcc
+yarn test --filter=lfx-one
 
 # Lint the app
-yarn lint --filter=lfx-pcc
+yarn lint --filter=lfx-one
 ```
 
 ## Project Structure
 
 ```text
-lfx-pcc-v3/
+lfx-one/
 ├── apps/
-│   └── lfx-pcc/              # Angular 19 SSR application
+│   └── lfx-one/              # Angular 19 SSR application
 │       ├── src/app/config/   # Tailwind custom configurations
 │       │   └── styles/       # Colors and font-size configurations
 │       ├── eslint.config.mjs # Angular-specific ESLint rules

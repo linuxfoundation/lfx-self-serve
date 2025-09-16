@@ -15,7 +15,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - [Angular 19 Development Patterns](#angular-19-development-patterns) - Zoneless change detection, signals, components
 - [Component Organization Pattern](#component-organization-pattern) - Standardized component structure
-- [Shared Package (@lfx-pcc/shared)](#shared-package-lfx-pccshared) - Types, interfaces, constants
+- [Shared Package (@lfx-one/shared)](#shared-package-lfx-oneshared) - Types, interfaces, constants
 - [PrimeNG Component Wrappers](#primeng-component-wrappers) - UI library abstraction
 - [Path Mappings](#path-mappings) - Import aliases and conventions
 
@@ -58,14 +58,14 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LFX PCC is a Turborepo monorepo containing an Angular 19 SSR application with experimental zoneless change detection and Express.js server.
+LFX One is a Turborepo monorepo containing an Angular 19 SSR application with experimental zoneless change detection and Express.js server.
 
 ## Monorepo Structure
 
 ```text
 lfx-v2-ui/
 ├── apps/
-│   └── lfx-pcc/              # Angular 19 SSR application with zoneless change detection
+│   └── lfx-one/              # Angular 19 SSR application with zoneless change detection
 │       ├── eslint.config.mjs # Angular-specific ESLint rules
 │       ├── .prettierrc       # Prettier configuration with Tailwind integration
 │       └── tailwind.config.js # Tailwind with PrimeUI plugin and LFX colors
@@ -100,7 +100,7 @@ lfx-v2-ui/
 - Authentication is handled by Auth0/Authelia with express-openid-connect middleware
 - Logging uses Pino for structured JSON logs with sensitive data redaction
 - Health checks are available at /health and are not logged or authenticated
-- All shared types, interfaces, and constants are centralized in @lfx-pcc/shared package
+- All shared types, interfaces, and constants are centralized in @lfx-one/shared package
 - **AI Service Integration**: Claude Sonnet 4 model via LiteLLM proxy for meeting agenda generation
 - **AI Environment Variables**: AI_PROXY_URL and AI_API_KEY required for AI functionality
 - **M2M Environment Variables**: M2M_AUTH_CLIENT_ID, M2M_AUTH_CLIENT_SECRET for machine-to-machine auth

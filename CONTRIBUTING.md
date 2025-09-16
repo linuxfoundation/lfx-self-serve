@@ -1,8 +1,8 @@
-# Contributing to LFX Projects Self-Service
+# Contributing to LFX One
 
 Contributions are what make the open-source community such an amazing place to learn, inspire, and create.
 
-Thank you for your interest in contributing to LFX PCC! This document provides guidelines and instructions for contributing to the project.
+Thank you for your interest in contributing to LFX One! This document provides guidelines and instructions for contributing to the project.
 
 ## Table of Contents
 
@@ -230,4 +230,4 @@ If you have questions about contributing, please:
 2. Open a new issue for clarification
 3. Join our community channels
 
-Thank you for contributing to LFX PCC!
+Thank you for contributing to LFX One!

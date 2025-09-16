@@ -78,7 +78,7 @@ The server employs a **carefully orchestrated middleware pipeline** that process
 
 The server implements selective authentication using Auth0/Authelia:
 
-**Configuration Location**: `apps/lfx-pcc/src/server/server.ts`
+**Configuration Location**: `apps/lfx-one/src/server/server.ts`
 
 Key features:
 

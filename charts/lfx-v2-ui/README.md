@@ -1,6 +1,6 @@
-# LFX V2 PCC UI Helm Chart
+# LFX One UI Helm Chart
 
-This Helm chart deploys the LFX V2 PCC UI application, which is an Angular SSR application with Express backend for the LFX Project Control Center.
+This Helm chart deploys the LFX One UI application, which is an Angular SSR application with Express backend for LFX One.
 
 ## Configuration
 

@@ -2,14 +2,14 @@
 
 ## 🚀 Overview
 
-The LFX PCC application integrates with **NATS** (Neural Autonomic Transport System) for high-performance inter-service messaging within the LFX microservices ecosystem. NATS provides lightweight, publish-subscribe, and request-reply communication patterns for distributed systems.
+The LFX One application integrates with **NATS** (Neural Autonomic Transport System) for high-performance inter-service messaging within the LFX microservices ecosystem. NATS provides lightweight, publish-subscribe, and request-reply communication patterns for distributed systems.
 
 ## 🏗 Architecture
 
 ### NATS Integration Pattern
 
 ```text
-LFX PCC ←→ NATS Server ←→ LFX Microservices
+LFX One ←→ NATS Server ←→ LFX Microservices
     ↓          ↓              ↓
   Client    Message         Project
   Requests   Broker         Services

@@ -2,7 +2,7 @@
 
 ## 🎨 Overview
 
-The LFX PCC frontend is built with Angular 19 using experimental zoneless change detection, Angular Signals for state management, and a comprehensive design system based on PrimeNG and Tailwind CSS.
+The LFX One frontend is built with Angular 19 using experimental zoneless change detection, Angular Signals for state management, and a comprehensive design system based on PrimeNG and Tailwind CSS.
 
 ## 🏗 Architecture Components
 

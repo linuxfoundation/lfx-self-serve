@@ -13,7 +13,7 @@ The application uses a dual logger architecture for optimal performance and flex
 #### Server Logger (Base Logger)
 
 ```typescript
-// apps/lfx-pcc/src/server/server.ts
+// apps/lfx-one/src/server/server.ts
 import pino from 'pino';
 
 /**
@@ -384,7 +384,7 @@ When running in containers, logs go to stdout/stderr:
 
 ```dockerfile
 # Dockerfile - logs to stdout
-CMD ["node", "dist/lfx-pcc/server/server.mjs"]
+CMD ["node", "dist/lfx-one/server/server.mjs"]
 ```
 
 ## 🎯 Request Correlation

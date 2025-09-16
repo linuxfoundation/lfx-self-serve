@@ -1,6 +1,6 @@
 # Error Handling Architecture
 
-This document explains the architectural philosophy and design decisions behind LFX PCC's error handling system, focusing on the reasoning and trade-offs that shaped the current implementation.
+This document explains the architectural philosophy and design decisions behind LFX One's error handling system, focusing on the reasoning and trade-offs that shaped the current implementation.
 
 ## Philosophy and Core Principles
 
@@ -125,7 +125,7 @@ The `AuthenticationError` class handles authentication and authorization failure
 - **Session Management**: Works with protected routes middleware for session handling
 - **Clear Messaging**: Provides user-friendly authentication error messages
 
-**Implementation Location**: `apps/lfx-pcc/src/server/errors/authentication.error.ts`
+**Implementation Location**: `apps/lfx-one/src/server/errors/authentication.error.ts`
 
 ## Design Patterns and Rationales
 

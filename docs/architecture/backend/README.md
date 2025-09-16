@@ -2,7 +2,7 @@
 
 ## 🖥 Overview
 
-The LFX PCC backend follows a modern **Controller-Service pattern** with Express.js server handling SSR, authentication, and API services. The architecture emphasizes separation of concerns, maintainability, and integration with microservices.
+The LFX One backend follows a modern **Controller-Service pattern** with Express.js server handling SSR, authentication, and API services. The architecture emphasizes separation of concerns, maintainability, and integration with microservices.
 
 ## 🏗 Architecture Components
 
@@ -237,7 +237,7 @@ export class CommitteeService {
 ## 📁 Directory Structure
 
 ```text
-apps/lfx-pcc/src/server/
+apps/lfx-one/src/server/
 ├── controllers/           # HTTP request handling layer
 │   └── committee.controller.ts
 ├── services/             # Business logic layer

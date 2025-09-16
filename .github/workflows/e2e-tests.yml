@@ -237,7 +237,7 @@ jobs:
 
       - name: Create Playwright auth directory
         if: steps.validate-secrets.outputs.can_run_tests == 'true'
-        working-directory: apps/lfx-pcc
+        working-directory: apps/lfx-one
         run: mkdir -p playwright/.auth
 
       - name: Build the application
@@ -247,7 +247,7 @@ jobs:
       - name: Run E2E tests (All browsers)
         id: run-tests-all
         if: ${{ inputs.browser == 'all' && steps.validate-secrets.outputs.can_run_tests == 'true' }}
-        working-directory: apps/lfx-pcc
+        working-directory: apps/lfx-one
         continue-on-error: true
         run: |
           if [ -n "$TEST_USERNAME" ] && [ -n "$TEST_PASSWORD" ]; then
@@ -265,7 +265,7 @@ jobs:
 
       - name: Run E2E tests (Specific browser)
         if: ${{ inputs.browser != 'all' && steps.validate-secrets.outputs.can_run_tests == 'true' }}
-        working-directory: apps/lfx-pcc
+        working-directory: apps/lfx-one
         run: |
           if [ -n "$TEST_USERNAME" ] && [ -n "$TEST_PASSWORD" ]; then
             echo "🔐 Running authenticated E2E tests on ${{ inputs.browser }}"
@@ -296,7 +296,7 @@ jobs:
       - name: Generate test results summary
         id: test-results
         if: always()
-        working-directory: apps/lfx-pcc
+        working-directory: apps/lfx-one
         run: |
           if [ "${{ steps.validate-secrets.outputs.can_run_tests }}" == "false" ]; then
             echo "⏭️ E2E tests skipped (missing required secrets)"

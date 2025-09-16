@@ -28,7 +28,7 @@ M2M_AUTH_AUDIENCE='http://lfx-api.k8s.orb.local/'
 
 The authentication configuration uses selective authentication (`authRequired: false`) with custom route protection middleware. This allows public routes to bypass authentication while maintaining protection for sensitive areas.
 
-**Configuration Location**: `apps/lfx-pcc/src/server/server.ts`
+**Configuration Location**: `apps/lfx-one/src/server/server.ts`
 
 ## 📋 User Interface
 
@@ -74,7 +74,7 @@ export interface M2MTokenResponse {
 The server creates an authentication context for each request and injects it into Angular's SSR:
 
 ```typescript
-// apps/lfx-pcc/src/server/server.ts
+// apps/lfx-one/src/server/server.ts
 app.use('/**', (req: Request, res: Response, next: NextFunction) => {
   const auth: AuthContext = {
     authenticated: false,
@@ -119,9 +119,9 @@ app.use('/**', (req: Request, res: Response, next: NextFunction) => {
 ### Simple Signal-Based State
 
 ```typescript
-// apps/lfx-pcc/src/app/shared/services/user.service.ts
+// apps/lfx-one/src/app/shared/services/user.service.ts
 import { Injectable, signal, WritableSignal } from '@angular/core';
-import { User } from '@lfx-pcc/shared/interfaces';
+import { User } from '@lfx-one/shared/interfaces';
 
 @Injectable({
   providedIn: 'root',
@@ -148,7 +148,7 @@ The application implements a sophisticated authentication system with multiple l
 
 ### Protected Routes Middleware
 
-A custom middleware (`apps/lfx-pcc/src/server/middleware/protected-routes.middleware.ts`) implements the selective authentication logic:
+A custom middleware (`apps/lfx-one/src/server/middleware/protected-routes.middleware.ts`) implements the selective authentication logic:
 
 - **Route Analysis**: Examines incoming requests to determine authentication requirements
 - **Public Route Bypass**: Allows specific routes to skip authentication
@@ -175,7 +175,7 @@ The M2M system enables server-side components to authenticate with external APIs
 - **Error Handling**: Comprehensive error management for token failures
 - **Logging**: Structured logging for token operations
 
-**Implementation**: `apps/lfx-pcc/src/server/utils/m2m-token.util.ts`
+**Implementation**: `apps/lfx-one/src/server/utils/m2m-token.util.ts`
 
 ### Public Endpoint Integration
 
@@ -185,7 +185,7 @@ Public endpoints use M2M tokens for backend API calls:
 - **API Authentication**: Backend services receive authenticated requests
 - **Transparent Operation**: Public endpoints remain unauthenticated for users while maintaining security for API calls
 
-**Example**: Public Meeting Controller (`apps/lfx-pcc/src/server/controllers/public-meeting.controller.ts`)
+**Example**: Public Meeting Controller (`apps/lfx-one/src/server/controllers/public-meeting.controller.ts`)
 
 ### Authentication Flow Diagram
 

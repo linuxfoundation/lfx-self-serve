@@ -259,7 +259,7 @@ Target performance scores:
 ```bash
 # Performance testing commands
 ng build --configuration=production
-ng run lfx-pcc:serve:production
+ng run lfx-one:serve:production
 
 # Lighthouse CI for automated testing
 npx @lhci/cli autorun
@@ -270,7 +270,7 @@ npx @lhci/cli autorun
 ```bash
 # Analyze bundle size
 ng build --stats-json
-npx webpack-bundle-analyzer dist/lfx-pcc/stats.json
+npx webpack-bundle-analyzer dist/lfx-one/stats.json
 ```
 
 This provides comprehensive performance optimization across the entire frontend stack, from build-time optimizations to runtime performance patterns.

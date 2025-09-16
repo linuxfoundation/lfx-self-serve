@@ -2,7 +2,7 @@
 
 ## 🏗 Overview
 
-Our E2E testing strategy employs a **dual architecture approach** combining content-based and structural tests to ensure comprehensive, maintainable, and reliable test coverage across the LFX Projects Self-Service application.
+Our E2E testing strategy employs a **dual architecture approach** combining content-based and structural tests to ensure comprehensive, maintainable, and reliable test coverage across the LFX One application.
 
 ## 🎯 Dual Testing Architecture
 

@@ -256,9 +256,9 @@ export class ExampleComponent {
 ## 📁 Project Structure
 
 ```text
-lfx-pcc-v3/
+lfx-one/
 ├── apps/
-│   └── lfx-pcc/                    # Angular 19 SSR application
+│   └── lfx-one/                    # Angular 19 SSR application
 │       ├── src/
 │       │   ├── app/
 │       │   │   ├── app.component.*        # Root component (lfx-root)
@@ -1131,7 +1131,7 @@ Features:
 
 ### Design Philosophy
 
-The `@lfx-pcc/shared` package follows a centralized approach to type safety and code reuse:
+The `@lfx-one/shared` package follows a centralized approach to type safety and code reuse:
 
 ```text
 Shared Package Strategy:
@@ -1176,8 +1176,8 @@ export interface AuthContext {
 ```typescript
 // Component implementation
 import { Component, input } from '@angular/core';
-import { BadgeProps } from '@lfx-pcc/shared/interfaces';
-import { lfxColors } from '@lfx-pcc/shared/constants';
+import { BadgeProps } from '@lfx-one/shared/interfaces';
+import { lfxColors } from '@lfx-one/shared/constants';
 
 @Component({
   selector: 'lfx-badge',
@@ -1227,4 +1227,4 @@ export class BadgeComponent {
 - **Type Safety**: Full IntelliSense and compile-time checking across packages
 - **Cache Efficiency**: Turbo caches shared package builds for faster CI/CD
 
-This architecture provides a modern, performant, and maintainable foundation for the LFX PCC application with clear patterns for scaling and future enhancements.
+This architecture provides a modern, performant, and maintainable foundation for the LFX One application with clear patterns for scaling and future enhancements.

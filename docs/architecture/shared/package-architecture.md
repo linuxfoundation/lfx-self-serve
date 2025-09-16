@@ -2,7 +2,7 @@
 
 ## 📦 Shared Package Structure
 
-The `@lfx-pcc/shared` package provides common interfaces, constants, and utilities used across the monorepo.
+The `@lfx-one/shared` package provides common interfaces, constants, and utilities used across the monorepo.
 
 ## 🏗 Directory Structure
 
@@ -31,7 +31,7 @@ packages/shared/
 
 ```json
 {
-  "name": "@lfx-pcc/shared",
+  "name": "@lfx-one/shared",
   "version": "0.1.0",
   "type": "module",
   "main": "./dist/index.js",
@@ -63,11 +63,11 @@ The package supports multiple import patterns for flexibility:
 
 ```typescript
 // Main export (all interfaces)
-import { User, AuthContext, AvatarProps } from '@lfx-pcc/shared';
+import { User, AuthContext, AvatarProps } from '@lfx-one/shared';
 
 // Specific exports
-import { User, AuthContext } from '@lfx-pcc/shared/interfaces';
-import { lfxColors } from '@lfx-pcc/shared/constants';
+import { User, AuthContext } from '@lfx-one/shared/interfaces';
+import { lfxColors } from '@lfx-one/shared/constants';
 ```
 
 ## 🔧 Interface Architecture
@@ -223,8 +223,8 @@ npm run check-types
 
 ```typescript
 // Angular component
-import { User, AvatarProps } from '@lfx-pcc/shared/interfaces';
-import { lfxColors } from '@lfx-pcc/shared/constants';
+import { User, AvatarProps } from '@lfx-one/shared/interfaces';
+import { lfxColors } from '@lfx-one/shared/constants';
 
 @Component({
   selector: 'lfx-user-card',
@@ -240,7 +240,7 @@ export class UserCardComponent {
 
 ```typescript
 // Express server
-import { User, AuthContext } from '@lfx-pcc/shared/interfaces';
+import { User, AuthContext } from '@lfx-one/shared/interfaces';
 
 app.use('/**', (req: Request, res: Response, next: NextFunction) => {
   const auth: AuthContext = {

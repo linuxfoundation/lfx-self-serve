@@ -16,7 +16,7 @@ The system exposes public endpoints that bypass user authentication:
 
 ### Controller Architecture
 
-**Location**: `apps/lfx-pcc/src/server/controllers/public-meeting.controller.ts`
+**Location**: `apps/lfx-one/src/server/controllers/public-meeting.controller.ts`
 
 The public meeting controller handles:
 
@@ -45,7 +45,7 @@ Public endpoints use machine-to-machine tokens for backend API authentication:
 3. **API Authentication**: Backend services receive authenticated requests
 4. **User Transparency**: End users don't need authentication
 
-**Implementation**: `apps/lfx-pcc/src/server/utils/m2m-token.util.ts`
+**Implementation**: `apps/lfx-one/src/server/utils/m2m-token.util.ts`
 
 ### Passcode Protection
 
@@ -59,7 +59,7 @@ For private meetings:
 
 ### Public Meeting Component
 
-**Location**: `apps/lfx-pcc/src/app/modules/meetings/meeting.component.ts`
+**Location**: `apps/lfx-one/src/app/modules/meetings/meeting.component.ts`
 
 The Angular component handles:
 
@@ -74,7 +74,7 @@ The Angular component handles:
 The meeting routes are configured to allow public access:
 
 ```typescript
-// apps/lfx-pcc/src/app/app.routes.ts
+// apps/lfx-one/src/app/app.routes.ts
 {
   path: 'meetings/:id',
   loadComponent: () => import('./modules/meetings/meeting.component').then(m => m.MeetingComponent),
@@ -117,7 +117,7 @@ The public meetings feature requires:
 
 The protected routes middleware allows public meeting routes to bypass authentication:
 
-**Location**: `apps/lfx-pcc/src/server/middleware/protected-routes.middleware.ts`
+**Location**: `apps/lfx-one/src/server/middleware/protected-routes.middleware.ts`
 
 - Uses an explicit allowlist for prefixes: `/public/api/meetings` (API) and SPA route `/meetings/:id`
 - Bypasses only user–session auth for those allowlisted routes; server-to-server (M2M) calls still require auth

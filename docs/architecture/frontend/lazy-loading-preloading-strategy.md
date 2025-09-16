@@ -1,6 +1,6 @@
 # Lazy Loading & Preloading Strategy
 
-**Overview**: Comprehensive guide to LFX PCC v3's intelligent lazy loading and preloading architecture for optimal performance in Angular 19.
+**Overview**: Comprehensive guide to LFX One's intelligent lazy loading and preloading architecture for optimal performance in Angular 19.
 
 ## Table of Contents
 
@@ -17,7 +17,7 @@
 
 ## Overview
 
-The LFX PCC v3 application implements an intelligent lazy loading and preloading strategy to optimize:
+The LFX One application implements an intelligent lazy loading and preloading strategy to optimize:
 
 - **Initial bundle size** - Reduced from potential 7.7MB to essential-only code
 - **Time to Interactive (TTI)** - Faster initial page loads
@@ -363,7 +363,7 @@ export const FEATURE_ROUTES: Routes = [
 ng build --stats-json
 
 # Analyze with webpack-bundle-analyzer
-npx webpack-bundle-analyzer dist/lfx-pcc/stats.json
+npx webpack-bundle-analyzer dist/lfx-one/stats.json
 ```
 
 #### Performance Monitoring
@@ -529,7 +529,7 @@ Cache Hit Rate: 85% (preloaded routes)
 ```bash
 # Bundle analysis
 ng build --stats-json
-npx webpack-bundle-analyzer dist/lfx-pcc/stats.json
+npx webpack-bundle-analyzer dist/lfx-one/stats.json
 
 # Check lazy loading in dev mode
 ng serve --verbose

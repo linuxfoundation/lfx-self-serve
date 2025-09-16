@@ -49,8 +49,8 @@ jobs:
           tags: |
             type=ref,event=pr,prefix=ui-pr-
           labels: |
-            org.opencontainers.image.title=LFX PCC UI
-            org.opencontainers.image.description=Linux Foundation LFX Project Control Center UI application
+            org.opencontainers.image.title=LFX One UI
+            org.opencontainers.image.description=Linux Foundation LFX One UI application
             org.opencontainers.image.vendor=The Linux Foundation
             org.opencontainers.image.licenses=MIT
             org.opencontainers.image.documentation=https://github.com/${{ github.repository }}/blob/main/README.md

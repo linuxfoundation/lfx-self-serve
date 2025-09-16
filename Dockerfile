@@ -15,7 +15,7 @@ WORKDIR /app
 # Copy package files ONLY for dependency installation (for better layer caching)
 COPY package.json yarn.lock turbo.json .yarnrc.yml ./
 COPY .yarn .yarn
-COPY apps/lfx-pcc/package.json ./apps/lfx-pcc/
+COPY apps/lfx-one/package.json ./apps/lfx-one/
 COPY packages/shared/package.json ./packages/shared/
 
 # Install dependencies (this layer is cached when deps don't change)
@@ -31,4 +31,4 @@ RUN yarn build:${BUILD_ENV}
 EXPOSE 4000
 
 # Start the SSR server directly from built artifacts
-CMD ["yarn", "workspace", "lfx-pcc", "start:server"]
+CMD ["yarn", "workspace", "lfx-one-ui", "start:server"]
