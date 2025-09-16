@@ -58,7 +58,6 @@ externalSecrets:
   # Target Kubernetes Secret configuration
   target:
     # Name of the Secret that will be created/managed (required)
-    # This is the name of the Secret that will be created/managed
     name: ""
 
     # Creation policy for the target Secret
