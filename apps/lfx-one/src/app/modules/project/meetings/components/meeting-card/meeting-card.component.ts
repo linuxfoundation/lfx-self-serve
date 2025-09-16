@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
 import { CommonModule } from '@angular/common';
 import { Component, computed, effect, inject, Injector, input, OnInit, output, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
@@ -13,6 +14,7 @@ import { AvatarComponent } from '@components/avatar/avatar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
+import { environment } from '@environments/environment';
 import { extractUrlsWithDomains, Meeting, MeetingAttachment, MeetingOccurrence, MeetingRegistrant } from '@lfx-one/shared';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
@@ -46,6 +48,7 @@ import { RegistrantModalComponent } from '../registrant-modal/registrant-modal.c
     LinkifyPipe,
     FileTypeIconPipe,
     FileSizePipe,
+    ClipboardModule,
   ],
   providers: [ConfirmationService],
   templateUrl: './meeting-card.component.html',
@@ -56,6 +59,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
   private readonly injector = inject(Injector);
+  private readonly clipboard = inject(Clipboard);
 
   public readonly meetingInput = input.required<Meeting>();
   public readonly occurrenceInput = input<MeetingOccurrence | null>(null);
@@ -197,6 +201,17 @@ export class MeetingCardComponent implements OnInit {
         }
       });
   }
+
+  public copyMeetingLink(): void {
+    const meetingLink = environment.urls.home + '/meetings/' + this.meeting().uid;
+    this.clipboard.copy(meetingLink);
+    this.messageService.add({
+      severity: 'success',
+      summary: 'Meeting Link Copied',
+      detail: 'The meeting link has been copied to your clipboard',
+    });
+  }
+
   private initMeetingRegistrantCount(): Signal<number> {
     return computed(
       () => (this.meeting()?.individual_registrants_count || 0) + (this.meeting()?.committee_members_count || 0) + (this.additionalRegistrantsCount() || 0)

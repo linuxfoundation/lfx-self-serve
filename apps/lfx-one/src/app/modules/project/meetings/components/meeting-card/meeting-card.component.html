@@ -45,6 +45,7 @@
           size="small"
           severity="secondary"
           data-testid="copy-meeting-button"
+          (click)="copyMeetingLink()"
           pTooltip="Copy Meeting"></lfx-button>
         @if (meeting().visibility === 'public') {
           <lfx-button
