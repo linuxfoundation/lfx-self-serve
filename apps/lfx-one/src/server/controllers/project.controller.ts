@@ -5,6 +5,8 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { Logger } from '../helpers/logger';
+import { CommitteeService } from '../services/committee.service';
+import { MeetingService } from '../services/meeting.service';
 import { ProjectService } from '../services/project.service';
 
 /**
@@ -12,6 +14,8 @@ import { ProjectService } from '../services/project.service';
  */
 export class ProjectController {
   private projectService: ProjectService = new ProjectService();
+  private meetingService: MeetingService = new MeetingService();
+  private committeeService: CommitteeService = new CommitteeService();
 
   /**
    * GET /projects
@@ -24,6 +28,15 @@ export class ProjectController {
     try {
       // Get the projects
       const projects = await this.projectService.getProjects(req, req.query as Record<string, any>);
+
+      // Add metrics to all projects
+      // TODO: Remove this once we have a way to get the metrics from the microservice
+      await Promise.all(
+        projects.map(async (project) => {
+          project.meetings_count = (await this.meetingService.getMeetings(req, { tags: `project_uid:${project.uid}` }).catch(() => [])).length;
+          project.committees_count = (await this.committeeService.getCommittees(req, { tags: `project_uid:${project.uid}` }).catch(() => [])).length;
+        })
+      );
 
       Logger.success(req, 'get_projects', startTime, {
         project_count: projects.length,
@@ -67,6 +80,15 @@ export class ProjectController {
 
       // Search for the projects
       const results = await this.projectService.searchProjects(req, q);
+
+      // Add metrics to all projects
+      // TODO: Remove this once we have a way to get the metrics from the microservice
+      await Promise.all(
+        results.map(async (project) => {
+          project.meetings_count = (await this.meetingService.getMeetings(req, { tags: `project_uid:${project.uid}` }).catch(() => [])).length;
+          project.committees_count = (await this.committeeService.getCommittees(req, { tags: `project_uid:${project.uid}` }).catch(() => [])).length;
+        })
+      );
 
       // Log the success
       Logger.success(req, 'search_projects', startTime, {

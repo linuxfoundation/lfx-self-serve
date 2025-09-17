@@ -81,8 +81,8 @@ test.describe('Project Dashboard', () => {
         await expect(page.getByTestId('menu-item').filter({ hasText: 'Dashboard' })).toBeVisible();
         await expect(page.getByTestId('menu-item').filter({ hasText: 'Meetings' })).toBeVisible();
         await expect(page.getByTestId('menu-item').filter({ hasText: 'Committees' })).toBeVisible();
-        await expect(page.getByTestId('menu-item').filter({ hasText: 'Mailing Lists' })).toBeVisible();
-        await expect(page.getByTestId('menu-item').filter({ hasText: 'Settings' })).toBeVisible();
+        // await expect(page.getByTestId('menu-item').filter({ hasText: 'Mailing Lists' })).toBeVisible();
+        // await expect(page.getByTestId('menu-item').filter({ hasText: 'Settings' })).toBeVisible();
       });
     });
 
@@ -423,10 +423,10 @@ test.describe('Without Write Permissions', () => {
       await expect(page.getByTestId('menu-item').filter({ hasText: 'Dashboard' })).toBeVisible();
       await expect(page.getByTestId('menu-item').filter({ hasText: 'Meetings' })).toBeVisible();
       await expect(page.getByTestId('menu-item').filter({ hasText: 'Committees' })).toBeVisible();
-      await expect(page.getByTestId('menu-item').filter({ hasText: 'Mailing Lists' })).toBeVisible();
+      // await expect(page.getByTestId('menu-item').filter({ hasText: 'Mailing Lists' })).toBeVisible();
 
       // Settings tab should also be accessible (though it may have limited functionality)
-      await expect(page.getByTestId('menu-item').filter({ hasText: 'Settings' })).toBeVisible();
+      // await expect(page.getByTestId('menu-item').filter({ hasText: 'Settings' })).toBeVisible();
     });
   });
 

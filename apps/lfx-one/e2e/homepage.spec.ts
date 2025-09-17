@@ -113,7 +113,6 @@ test.describe('Homepage', () => {
     // Check for metrics in project cards using data-testids
     await expect(firstCard.getByTestId('metric-label').filter({ hasText: 'Meetings' })).toBeVisible();
     await expect(firstCard.getByTestId('metric-label').filter({ hasText: 'Committees' })).toBeVisible();
-    await expect(firstCard.getByTestId('metric-label').filter({ hasText: 'Mailing Lists' })).toBeVisible();
   });
 
   test('should filter projects when searching', async ({ page }) => {

@@ -53,11 +53,6 @@ export class HomeComponent {
         value: project.committees_count,
         icon: 'fa-light fa-people-group text-green-500',
       },
-      {
-        label: 'Mailing Lists',
-        value: project.mailing_list_count,
-        icon: 'fa-light fa-envelope text-amber-500',
-      },
     ];
 
     return {

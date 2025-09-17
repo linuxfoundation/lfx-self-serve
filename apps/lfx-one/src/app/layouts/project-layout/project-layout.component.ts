@@ -71,12 +71,6 @@ export class ProjectLayoutComponent {
       routerLink: `/project/${this.projectSlug()}/committees`,
       routerLinkActiveOptions: { exact: false },
     },
-    {
-      label: 'Mailing Lists',
-      icon: 'fa-light fa-envelope text-amber-500',
-      routerLink: `/project/${this.projectSlug()}/mailing-lists`,
-      routerLinkActiveOptions: { exact: false },
-    },
   ]);
 
   public readonly metrics = computed(() => [

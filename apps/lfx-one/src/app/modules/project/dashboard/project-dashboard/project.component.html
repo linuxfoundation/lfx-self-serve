@@ -156,7 +156,7 @@
         </lfx-card>
 
         <!-- Original 3 cards row -->
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6 items-stretch">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-2 gap-6 items-stretch">
           <div class="items-stretch">
             @if (meetingsLoading()) {
               <div>
@@ -266,39 +266,6 @@
                 </div>
               </lfx-card>
             }
-          </div>
-          <div class="items-stretch">
-            <lfx-card header="Mailing Lists" styleClass="h-full" class="h-full">
-              <div class="flex flex-col gap-2">
-                <h3 class="text-sm font-display text-gray-500">Recently Joined Mailing Lists</h3>
-                <lfx-table [value]="mailingListTableData()" [scrollable]="false">
-                  <ng-template #header let-columns>
-                    <tr>
-                      <th>
-                        <span class="text-sm font-sans text-gray-500">Mailing List</span>
-                      </th>
-                      <th>
-                        <div class="flex justify-end">
-                          <span class="text-sm font-sans text-gray-500">Last Updated</span>
-                        </div>
-                      </th>
-                    </tr>
-                  </ng-template>
-                  <ng-template #body let-row>
-                    <tr>
-                      <td class="w-1/2 max-w-0">
-                        <a class="block truncate text-sm" [title]="row.title" [routerLink]="[row.url]" [relativeTo]="activatedRoute">{{ row.title }}</a>
-                      </td>
-                      <td class="w-1/2">
-                        <div class="flex justify-end whitespace-nowrap">
-                          <span class="text-sm font-sans"> {{ row.date | date: 'MMM d, yyyy @ h:mm a' }}</span>
-                        </div>
-                      </td>
-                    </tr>
-                  </ng-template>
-                </lfx-table>
-              </div>
-            </lfx-card>
           </div>
         </div>
       </div>

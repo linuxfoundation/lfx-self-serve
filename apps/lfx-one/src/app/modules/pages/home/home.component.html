@@ -40,7 +40,7 @@
 
 <div class="container mx-auto py-24 px-8" data-testid="projects-section">
   @if (projects().length > 0) {
-    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="projects-grid">
+    <div class="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6" data-testid="projects-grid">
       @for (project of filteredProjects(); track project.uid; let i = $index) {
         <div
           pAnimateOnScroll
@@ -55,7 +55,8 @@
             [description]="project.description ?? ''"
             [logo]="project.logo_url ?? ''"
             [url]="project.slug"
-            [metrics]="project.metrics"></lfx-project-card>
+            [metrics]="project.metrics"
+            class="h-full"></lfx-project-card>
         </div>
       }
     </div>
