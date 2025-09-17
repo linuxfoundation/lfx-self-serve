@@ -1,15 +1,258 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="container mx-auto px-8 py-8">
-  <div class="max-w-2xl mx-auto">
+<div class="container mx-auto pb-8">
+  @if (loading()) {
+    <div class="flex flex-col gap-2 items-center justify-center py-12" data-testid="profile-email-loading-container">
+      <i class="fa-light fa-circle-notch fa-spin text-4xl text-blue-400" data-testid="profile-email-loading-spinner"></i>
+      <span class="ml-3 text-gray-600">Loading email settings...</span>
+    </div>
+  } @else {
+    <!-- Email Management Info Banner -->
+    <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6">
+      <div class="flex items-start gap-3">
+        <i class="fa-light fa-info-circle text-blue-600 mt-0.5"></i>
+        <div>
+          <h5 class="text-sm font-semibold text-blue-800 mb-1">Manage Your Email Addresses</h5>
+          <p class="text-sm text-blue-700">
+            Add multiple email addresses to your account, set your primary email for account communications, and choose which emails receive specific types of
+            notifications. Verified emails can be used to sign in to your account.
+          </p>
+        </div>
+      </div>
+    </div>
+
     <lfx-card>
-      <div class="text-center py-12">
-        <h2 class="text-xl font-semibold text-gray-900 mb-4" data-testid="profile-email-heading">Email Settings</h2>
-        <p class="text-gray-600 mb-6" data-testid="profile-email-description">Email management functionality will be implemented in a future update.</p>
-        <div class="text-4xl text-gray-300 mb-4">📧</div>
-        <p class="text-sm text-gray-500" data-testid="profile-email-coming-soon">Coming Soon</p>
+      <div class="space-y-6">
+        <!-- Email Addresses Section -->
+        <div class="flex flex-col gap-4">
+          <div>
+            <h3 class="text-base font-medium text-gray-900" data-testid="email-addresses-heading">Email Addresses</h3>
+            <p class="text-sm text-gray-500 mt-1">Manage the email addresses associated with your account and set your primary email for communications</p>
+          </div>
+
+          @if (emailsWithMetadata().length > 0) {
+            <div class="space-y-3">
+              @for (email of emailsWithMetadata(); track email.id) {
+                <div class="flex items-center justify-between p-4 border border-gray-200 rounded-lg" [attr.data-testid]="'email-item-' + email.id">
+                  <!-- Email Info and Primary Icon -->
+                  <div class="flex items-center space-x-4 flex-1">
+                    <lfx-button
+                      type="button"
+                      (onClick)="setPrimary(email)"
+                      [disabled]="!email.canSetPrimary && !email.isPrimary"
+                      variant="text"
+                      size="small"
+                      [pTooltip]="email.isPrimary ? 'Primary email' : email.is_verified ? 'Set as primary email' : 'Verify email to set as primary'"
+                      tooltipPosition="top"
+                      [icon]="email.isPrimary ? 'fa-solid fa-star' : 'fa-regular fa-star'"
+                      [ngClass]="{
+                        'text-blue-600': email.isPrimary,
+                        'text-gray-400 hover:text-blue-500': email.canSetPrimary,
+                        'text-gray-300 cursor-not-allowed': !email.canSetPrimary && !email.isPrimary,
+                      }"
+                      [attr.data-testid]="'primary-icon-' + email.id"
+                      [attr.aria-label]="email.isPrimary ? 'Primary email' : email.is_verified ? 'Set as primary email' : 'Verify email to set as primary'">
+                    </lfx-button>
+
+                    <div class="flex-1">
+                      <div class="flex items-center space-x-2">
+                        <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'email-address-' + email.id">
+                          {{ email.email }}
+                        </span>
+                        @if (!email.is_verified) {
+                          <lfx-badge severity="warn" value="Unverified" size="small" [attr.data-testid]="'unverified-badge-' + email.id"> </lfx-badge>
+                        }
+                      </div>
+                    </div>
+                  </div>
+
+                  <!-- Action Buttons -->
+                  <div class="flex items-center gap-2">
+                    <!-- Resend Verification Button -->
+                    @if (!email.is_verified) {
+                      <lfx-button
+                        size="small"
+                        icon="fa-light fa-envelope"
+                        label="Resend verification"
+                        severity="secondary"
+                        variant="outlined"
+                        (onClick)="resendVerification(email)"
+                        [attr.data-testid]="'resend-verification-button-' + email.id"
+                        [attr.aria-label]="'Resend verification email to ' + email.email">
+                      </lfx-button>
+                    }
+
+                    <!-- Delete Button -->
+                    @if (email.canDelete) {
+                      <lfx-button
+                        size="small"
+                        icon="fa-light fa-trash"
+                        severity="danger"
+                        variant="outlined"
+                        (onClick)="deleteEmail(email)"
+                        [attr.data-testid]="'delete-button-' + email.id"
+                        [attr.aria-label]="'Delete ' + email.email">
+                      </lfx-button>
+                    }
+                  </div>
+                </div>
+              }
+            </div>
+          }
+
+          <!-- Add Email Section -->
+          <div class="mt-4">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Add New Email Address</label>
+            <form [formGroup]="addEmailForm" (ngSubmit)="addEmail()" class="flex gap-3">
+              <div class="flex-1">
+                <lfx-input-text
+                  control="email"
+                  [form]="addEmailForm"
+                  placeholder="Enter email address"
+                  type="email"
+                  size="small"
+                  styleClass="w-full"
+                  data-testid="add-email-input">
+                </lfx-input-text>
+                @if (addEmailForm.get('email')?.invalid && addEmailForm.get('email')?.touched) {
+                  <div class="text-red-600 text-xs mt-1" data-testid="add-email-error">
+                    @if (addEmailForm.get('email')?.errors?.['email']) {
+                      Please enter a valid email address
+                    }
+                  </div>
+                }
+              </div>
+              <lfx-button
+                size="small"
+                type="submit"
+                label="Add Email"
+                icon="fa-light fa-plus"
+                severity="primary"
+                [disabled]="addEmailForm.invalid || addingEmail()"
+                [loading]="addingEmail()"
+                data-testid="add-email-button">
+              </lfx-button>
+            </form>
+            <p class="text-xs text-gray-500 mt-1">You'll receive a verification email at the new address</p>
+          </div>
+        </div>
+
+        <!-- Email Preferences Section -->
+        @if (emailsWithMetadata().length > 0) {
+          <div class="flex flex-col gap-4 pt-6 border-t border-gray-200">
+            <div>
+              <h3 class="text-base font-medium text-gray-900" data-testid="email-preferences-heading">Notification Preferences</h3>
+              <div class="bg-gray-50 border border-gray-200 p-3 rounded-lg mt-2">
+                <div class="flex items-start gap-2">
+                  <i class="fa-light fa-info-circle text-gray-600 mt-0.5 text-sm"></i>
+                  <p class="text-sm text-gray-600">
+                    <strong>Why configure this:</strong> Different email addresses can receive specific types of notifications. This helps you organize
+                    communications and ensures important messages reach the right inbox. Only verified email addresses can be selected for notifications.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <form [formGroup]="preferencesForm" (ngSubmit)="updatePreferences()" class="space-y-4">
+              <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+                <!-- Notification Email Preference -->
+                <div>
+                  <div class="flex items-center gap-1 mb-1">
+                    <label for="notification-email" class="block text-sm font-medium text-gray-700">General Notifications</label>
+                    <i
+                      class="fa-light fa-info-circle text-gray-400 cursor-help"
+                      pTooltip="Email address for system updates and general communications"
+                      tooltipPosition="right"
+                      data-testid="notification-email-tooltip">
+                    </i>
+                  </div>
+                  <lfx-select
+                    control="notificationEmailId"
+                    [form]="preferencesForm"
+                    [options]="emailOptions()"
+                    optionLabel="label"
+                    optionValue="value"
+                    id="notification-email"
+                    placeholder="Select email"
+                    size="small"
+                    styleClass="w-full"
+                    data-testid="notification-email-select">
+                  </lfx-select>
+                </div>
+                <!-- Meeting Email Preference -->
+                <div>
+                  <div class="flex items-center gap-1 mb-1">
+                    <label for="meeting-email" class="block text-sm font-medium text-gray-700">Meeting Notifications</label>
+                    <i
+                      class="fa-light fa-info-circle text-gray-400 cursor-help"
+                      pTooltip="Email address for meeting invitations and reminders"
+                      tooltipPosition="right"
+                      data-testid="meeting-email-tooltip">
+                    </i>
+                  </div>
+                  <lfx-select
+                    control="meetingEmailId"
+                    [form]="preferencesForm"
+                    [options]="emailOptions()"
+                    optionLabel="label"
+                    optionValue="value"
+                    id="meeting-email"
+                    placeholder="Select email"
+                    size="small"
+                    styleClass="w-full"
+                    data-testid="meeting-email-select">
+                  </lfx-select>
+                </div>
+
+                <!-- Billing Email Preference -->
+                <div>
+                  <div class="flex items-center gap-1 mb-1">
+                    <label for="billing-email" class="block text-sm font-medium text-gray-700">Billing & Account</label>
+                    <i
+                      class="fa-light fa-info-circle text-gray-400 cursor-help"
+                      pTooltip="Email address for invoices, receipts, and billing notifications"
+                      tooltipPosition="right"
+                      data-testid="billing-email-tooltip">
+                    </i>
+                  </div>
+                  <lfx-select
+                    control="billingEmailId"
+                    [form]="preferencesForm"
+                    [options]="emailOptions()"
+                    optionLabel="label"
+                    optionValue="value"
+                    id="billing-email"
+                    placeholder="Select email"
+                    size="small"
+                    styleClass="w-full"
+                    data-testid="billing-email-select">
+                  </lfx-select>
+                </div>
+              </div>
+
+              <!-- Save Button -->
+              <div class="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+                <lfx-button
+                  size="small"
+                  type="submit"
+                  severity="primary"
+                  label="Save Preferences"
+                  [loading]="updatingPreferences()"
+                  [disabled]="updatingPreferences()"
+                  data-testid="save-preferences-button">
+                </lfx-button>
+              </div>
+            </form>
+          </div>
+        }
       </div>
     </lfx-card>
-  </div>
+  }
 </div>
+
+<!-- Toast messages -->
+<p-toast position="top-right" />
+
+<!-- Confirmation dialog -->
+<p-confirmDialog />

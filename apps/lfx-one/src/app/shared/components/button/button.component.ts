@@ -6,11 +6,12 @@ import { Component, input, output } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { ButtonProps } from '@lfx-one/shared/interfaces';
 import { ButtonModule } from 'primeng/button';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-button',
   standalone: true,
-  imports: [CommonModule, ButtonModule, RouterModule],
+  imports: [CommonModule, ButtonModule, RouterModule, TooltipModule],
   templateUrl: './button.component.html',
 })
 export class ButtonComponent {
@@ -57,6 +58,10 @@ export class ButtonComponent {
   public readonly onClick = output<MouseEvent>();
   public readonly onFocus = output<FocusEvent>();
   public readonly onBlur = output<FocusEvent>();
+
+  // Tooltip
+  public readonly pTooltip = input<string | undefined>(undefined);
+  public readonly tooltipPosition = input<string>('top');
 
   protected handleClick(event: MouseEvent): void {
     if (!this.disabled() && !this.loading()) {

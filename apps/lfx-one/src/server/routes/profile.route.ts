@@ -23,4 +23,24 @@ router.patch('/user', (req, res, next) => profileController.updateCurrentUser(re
 // PATCH /api/profile/details - Update profile table fields (title, organization, etc.)
 router.patch('/details', (req, res, next) => profileController.updateCurrentProfile(req, res, next));
 
+// Email management routes
+
+// GET /api/profile/emails - Get current user's email management data
+router.get('/emails', (req, res, next) => profileController.getUserEmails(req, res, next));
+
+// POST /api/profile/emails - Add new email for current user
+router.post('/emails', (req, res, next) => profileController.addUserEmail(req, res, next));
+
+// DELETE /api/profile/emails/:emailId - Delete user email
+router.delete('/emails/:emailId', (req, res, next) => profileController.deleteUserEmail(req, res, next));
+
+// PUT /api/profile/emails/:emailId/primary - Set email as primary
+router.put('/emails/:emailId/primary', (req, res, next) => profileController.setPrimaryEmail(req, res, next));
+
+// GET /api/profile/email-preferences - Get user email preferences
+router.get('/email-preferences', (req, res, next) => profileController.getEmailPreferences(req, res, next));
+
+// PUT /api/profile/email-preferences - Update user email preferences
+router.put('/email-preferences', (req, res, next) => profileController.updateEmailPreferences(req, res, next));
+
 export default router;
