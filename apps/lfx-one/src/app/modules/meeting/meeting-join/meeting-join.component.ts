@@ -14,7 +14,7 @@ import { CardComponent } from '@components/card/card.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { environment } from '@environments/environment';
-import { extractUrlsWithDomains, Meeting, Project, User } from '@lfx-one/shared';
+import { extractUrlsWithDomains, Meeting, MeetingOccurrence, Project, User } from '@lfx-one/shared';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -57,6 +57,7 @@ export class MeetingJoinComponent {
   public joinForm: FormGroup;
   public project: WritableSignal<Project | null> = signal<Project | null>(null);
   public meeting: Signal<Meeting & { project: Project }>;
+  public currentOccurrence: Signal<MeetingOccurrence | null>;
   public meetingTypeBadge: Signal<{ badgeClass: string; icon?: string; text: string } | null>;
   public importantLinks: Signal<{ url: string; domain: string }[]>;
   public returnTo: Signal<string | undefined>;
@@ -72,6 +73,7 @@ export class MeetingJoinComponent {
     this.isJoining = signal<boolean>(false);
     this.authenticated = this.userService.authenticated;
     this.meeting = this.initializeMeeting();
+    this.currentOccurrence = this.initializeCurrentOccurrence();
     this.joinForm = this.initializeJoinForm();
     this.formValues = this.initializeFormValues();
     this.meetingTypeBadge = this.initializeMeetingTypeBadge();
@@ -142,6 +144,38 @@ export class MeetingJoinComponent {
     ) as Signal<Meeting & { project: Project }>;
   }
 
+  private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+      if (!meeting?.occurrences || meeting.occurrences.length === 0) {
+        return null;
+      }
+
+      const now = new Date();
+      const earlyJoinMinutes = meeting.early_join_time_minutes || 10;
+
+      // Find the first occurrence that is currently joinable (within the join window)
+      const joinableOccurrence = meeting.occurrences.find((occurrence) => {
+        const startTime = new Date(occurrence.start_time);
+        const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
+        const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+
+        return now >= earliestJoinTime && now <= latestJoinTime;
+      });
+
+      if (joinableOccurrence) {
+        return joinableOccurrence;
+      }
+
+      // If no joinable occurrence, find the next future occurrence
+      const futureOccurrences = meeting.occurrences
+        .filter((occurrence) => new Date(occurrence.start_time) > now)
+        .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+      return futureOccurrences.length > 0 ? futureOccurrences[0] : null;
+    });
+  }
+
   // Private initialization methods
   private initializeJoinForm(): FormGroup {
     return new FormGroup({
@@ -197,10 +231,14 @@ export class MeetingJoinComponent {
   private initializeImportantLinks(): Signal<{ url: string; domain: string }[]> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!meeting?.description) {
+      const currentOccurrence = this.currentOccurrence();
+
+      // Use current occurrence description if available, otherwise fallback to meeting description
+      const description = currentOccurrence?.description || meeting?.description;
+      if (!description) {
         return [];
       }
-      return extractUrlsWithDomains(meeting.description);
+      return extractUrlsWithDomains(description);
     });
   }
 
@@ -213,6 +251,20 @@ export class MeetingJoinComponent {
   private initializeCanJoinMeeting(): Signal<boolean> {
     return computed(() => {
       const meeting = this.meeting();
+      const currentOccurrence = this.currentOccurrence();
+
+      // If we have an occurrence, use its timing
+      if (currentOccurrence) {
+        const now = new Date();
+        const startTime = new Date(currentOccurrence.start_time);
+        const earlyJoinMinutes = meeting.early_join_time_minutes || 10;
+        const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
+        const latestJoinTime = new Date(startTime.getTime() + currentOccurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+
+        return now >= earliestJoinTime && now <= latestJoinTime;
+      }
+
+      // Fallback to original meeting logic if no occurrences
       if (!meeting?.start_time) {
         return false;
       }
@@ -221,8 +273,9 @@ export class MeetingJoinComponent {
       const startTime = new Date(meeting.start_time);
       const earlyJoinMinutes = meeting.early_join_time_minutes || 10; // Default to 10 minutes
       const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
+      const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + 40 * 60000); // 40 minutes after end
 
-      return now >= earliestJoinTime;
+      return now >= earliestJoinTime && now <= latestJoinTime;
     });
   }
 
