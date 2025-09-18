@@ -5,7 +5,7 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, OnInit, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { COUNTRIES, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared';
+import { COUNTRIES, markFormControlsAsTouched, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared';
 import { CombinedProfile, UpdateProfileDetailsRequest, UpdateUserProfileRequest } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ButtonComponent } from '@shared/components/button/button.component';
@@ -119,7 +119,7 @@ export class ProfileEditComponent implements OnInit {
 
   public onSubmit(): void {
     if (this.profileForm.invalid) {
-      this.markFormGroupTouched(this.profileForm);
+      markFormControlsAsTouched(this.profileForm);
       return;
     }
 
@@ -239,12 +239,5 @@ export class ProfileEditComponent implements OnInit {
 
     // Set the initial country signal value
     this.selectedCountrySignal.set(countryValue);
-  }
-
-  private markFormGroupTouched(formGroup: FormGroup): void {
-    Object.keys(formGroup.controls).forEach((field) => {
-      const control = formGroup.get(field);
-      control?.markAsTouched({ onlySelf: true });
-    });
   }
 }

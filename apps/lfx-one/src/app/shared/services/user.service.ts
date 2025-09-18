@@ -5,10 +5,12 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import {
   AddEmailRequest,
+  ChangePasswordRequest,
   CombinedProfile,
   CreateUserPermissionRequest,
   EmailManagementData,
   EmailPreferences,
+  TwoFactorSettings,
   UpdateEmailPreferencesRequest,
   UpdateProfileDetailsRequest,
   UpdateUserProfileRequest,
@@ -97,5 +99,28 @@ export class UserService {
    */
   public updateEmailPreferences(preferences: UpdateEmailPreferencesRequest): Observable<EmailPreferences> {
     return this.http.put<EmailPreferences>('/api/profile/email-preferences', preferences).pipe(take(1));
+  }
+
+  // Password management methods
+
+  /**
+   * Change user password
+   */
+  public changePassword(data: ChangePasswordRequest): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>('/api/profile/change-password', data).pipe(take(1));
+  }
+
+  /**
+   * Send password reset email for current authenticated user
+   */
+  public sendPasswordResetEmail(): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>('/api/profile/reset-password', {}).pipe(take(1));
+  }
+
+  /**
+   * Get two-factor authentication settings
+   */
+  public getTwoFactorSettings(): Observable<TwoFactorSettings> {
+    return this.http.get<TwoFactorSettings>('/api/profile/2fa-settings').pipe(take(1));
   }
 }
