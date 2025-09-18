@@ -2,17 +2,15 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (visible()) {
-  <div class="mb-4 bg-gray-50 border border-gray-200 rounded-lg p-4" data-testid="template-selector-panel">
-    <div class="flex items-center gap-3 mb-4">
-      <div class="w-8 h-8 bg-gray-700 rounded-full flex items-center justify-center">
-        <i class="fa-light fa-list text-white text-sm"></i>
-      </div>
+  <lfx-message severity="secondary" icon="fa-light fa-list" styleClass="mb-4" data-testid="template-selector-panel">
+    <ng-template #content>
       <div>
-        <h3 class="text-base font-semibold text-gray-900">Agenda Templates</h3>
-        <p class="text-sm text-gray-600">Choose from common agenda templates for {{ meetingType().toLowerCase() }} meetings.</p>
+        <h3 class="text-base font-semibold mb-1">Agenda Templates</h3>
+        <p class="text-sm">Choose from common agenda templates for {{ meetingType().toLowerCase() }} meetings.</p>
       </div>
-    </div>
-
+    </ng-template>
+  </lfx-message>
+  <div>
     @if (displayTemplates().length > 0) {
       <div class="space-y-3 mb-4" data-testid="template-list">
         @for (template of displayTemplates(); track template.id) {

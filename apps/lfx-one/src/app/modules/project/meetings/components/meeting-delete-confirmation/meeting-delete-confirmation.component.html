@@ -75,23 +75,20 @@
   } -->
 
   <!-- Warning Message -->
-  <div class="mb-6 p-4 bg-red-50 border border-red-200 rounded-lg">
-    <div class="flex items-start gap-3">
-      <i class="fa-light fa-triangle-exclamation text-red-500 mt-0.5"></i>
-      <div>
-        <h4 class="font-medium text-red-900">Warning</h4>
-        <p class="text-sm text-red-700 mt-1">
-          @if (isRecurring && !isPastMeeting && deleteForm.get('deleteType')?.value === 'series') {
-            This will permanently delete all meetings in this series. This action cannot be undone.
-          } @else if (isRecurring && !isPastMeeting && deleteForm.get('deleteType')?.value === 'future') {
-            This will permanently delete this meeting and all future occurrences in the series. This action cannot be undone.
-          } @else {
-            This will permanently delete this meeting. This action cannot be undone.
-          }
-        </p>
-      </div>
-    </div>
-  </div>
+  <lfx-message severity="error" icon="fa-light fa-triangle-exclamation" styleClass="mb-6">
+    <ng-template #content>
+      <h4 class="font-medium mb-1">Warning</h4>
+      <p class="text-sm">
+        @if (isRecurring && !isPastMeeting && deleteForm.get('deleteType')?.value === 'series') {
+          This will permanently delete all meetings in this series. This action cannot be undone.
+        } @else if (isRecurring && !isPastMeeting && deleteForm.get('deleteType')?.value === 'future') {
+          This will permanently delete this meeting and all future occurrences in the series. This action cannot be undone.
+        } @else {
+          This will permanently delete this meeting. This action cannot be undone.
+        }
+      </p>
+    </ng-template>
+  </lfx-message>
 
   <!-- Action Buttons -->
   <div class="flex justify-end gap-3">

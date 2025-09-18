@@ -166,41 +166,46 @@
                   </div>
                 </div>
 
-                <div
-                  class="flex items-center justify-between p-3 rounded-lg"
-                  [ngClass]="{ 'bg-amber-50 border border-amber-200': !canJoinMeeting(), 'bg-blue-50 border border-blue-200': canJoinMeeting() }">
-                  <div class="flex items-center gap-3 text-sm" [ngClass]="{ 'text-blue-700': canJoinMeeting(), 'text-amber-700': !canJoinMeeting() }">
-                    @if (canJoinMeeting()) {
-                      <i class="fa-light fa-check-circle"></i>
-                      <span class="font-sans">Ready to join as {{ user.name }}</span>
-                    } @else {
-                      <i class="fa-light fa-clock text-amber-600"></i>
-                      <div class="flex flex-col">
-                        <span class="font-sans text-amber-700"
-                          >You may only join the meeting up to <span class="font-bold">{{ meeting().early_join_time_minutes || 10 }} minutes</span> before the
-                          start time.</span
-                        >
+                <lfx-message
+                  [severity]="canJoinMeeting() ? 'info' : 'warn'"
+                  [icon]="canJoinMeeting() ? 'fa-light fa-check-circle' : 'fa-light fa-clock'"
+                  styleClass="flex items-center justify-between">
+                  <ng-template #content>
+                    <div class="flex items-center justify-between w-full">
+                      <div class="flex items-center gap-3 text-sm">
+                        @if (canJoinMeeting()) {
+                          <span class="font-sans">Ready to join as {{ user.name }}</span>
+                        } @else {
+                          <div class="flex flex-col">
+                            <span class="font-sans"
+                              >You may only join the meeting up to <span class="font-bold">{{ meeting().early_join_time_minutes || 10 }} minutes</span> before
+                              the start time.</span
+                            >
+                          </div>
+                        }
                       </div>
-                    }
-                  </div>
-                  @if (meeting().join_url) {
-                    <lfx-button
-                      size="small"
-                      [href]="canJoinMeeting() ? joinUrlWithParams() : undefined"
-                      [disabled]="!canJoinMeeting()"
-                      severity="primary"
-                      label="Join Meeting"
-                      icon="fa-light fa-sign-in"></lfx-button>
-                  } @else {
-                    <lfx-button
-                      size="small"
-                      severity="primary"
-                      label="Join Meeting"
-                      [disabled]="!canJoinMeeting()"
-                      icon="fa-light fa-sign-in"
-                      (click)="onJoinMeeting()"></lfx-button>
-                  }
-                </div>
+                      <div class="ml-4">
+                        @if (meeting().join_url) {
+                          <lfx-button
+                            size="small"
+                            [href]="canJoinMeeting() ? joinUrlWithParams() : undefined"
+                            [disabled]="!canJoinMeeting()"
+                            severity="primary"
+                            label="Join Meeting"
+                            icon="fa-light fa-sign-in"></lfx-button>
+                        } @else {
+                          <lfx-button
+                            size="small"
+                            severity="primary"
+                            label="Join Meeting"
+                            [disabled]="!canJoinMeeting()"
+                            icon="fa-light fa-sign-in"
+                            (click)="onJoinMeeting()"></lfx-button>
+                        }
+                      </div>
+                    </div>
+                  </ng-template>
+                </lfx-message>
 
                 <div class="text-center">
                   <p class="text-xs text-gray-500 font-sans flex gap-1 items-center justify-center">
@@ -213,24 +218,23 @@
               <!-- Not Logged In State -->
               <div class="space-y-4">
                 <!-- Sign In Option -->
-                <div class="bg-blue-50 border border-blue-200 p-3 rounded-lg">
-                  <div class="flex items-center justify-between">
-                    <div class="flex items-center gap-3">
-                      <i class="fa-light fa-sign-in text-blue-600 text-lg"></i>
+                <lfx-message severity="info" icon="fa-light fa-sign-in">
+                  <ng-template #content>
+                    <div class="flex items-center justify-between w-full">
                       <div>
-                        <h4 class="font-medium text-gray-900 font-sans">Sign in with your LFX account</h4>
+                        <h4 class="font-medium text-gray-900 font-sans mb-1">Sign in with your LFX account</h4>
                         <p class="text-sm text-gray-600 font-sans">Join quickly with your saved information</p>
                       </div>
+                      <a
+                        size="small"
+                        class="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-xs rounded transition-colors ml-4"
+                        [href]="'/login?returnTo=' + returnTo()">
+                        <i class="fa-light fa-sign-in"></i>
+                        <span>Sign In</span>
+                      </a>
                     </div>
-                    <a
-                      size="small"
-                      class="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-xs rounded transition-colors"
-                      [href]="'/login?returnTo=' + returnTo()">
-                      <i class="fa-light fa-sign-in"></i>
-                      <span>Sign In</span>
-                    </a>
-                  </div>
-                </div>
+                  </ng-template>
+                </lfx-message>
 
                 <!-- OR Divider -->
                 <div class="relative">

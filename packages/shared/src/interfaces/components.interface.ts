@@ -195,3 +195,65 @@ export interface TimePickerProps {
   /** Input size variant */
   size?: TimePickerSizeOptions['size'];
 }
+
+/**
+ * Message severity level options
+ * @description Available severity levels for message components
+ */
+export interface MessageSeverityOptions {
+  /** Message severity level indicating urgency or type */
+  severity: 'info' | 'success' | 'warn' | 'error' | 'secondary' | 'contrast';
+}
+
+/**
+ * Message size options
+ * @description Available sizes for message components
+ */
+export interface MessageSizeOptions {
+  /** Message size variant */
+  size: 'small' | 'large';
+}
+
+/**
+ * Message variant style options
+ * @description Available visual styles for message components
+ */
+export interface MessageVariantOptions {
+  /** Message visual style variant */
+  variant: 'text' | 'outlined' | 'simple';
+}
+
+/**
+ * Complete message component properties
+ * @description Configuration for LFX message wrapper component
+ */
+export interface MessageProps {
+  /** Message severity level */
+  severity?: MessageSeverityOptions['severity'];
+  /** Message text content */
+  text?: string;
+  /** Whether message can be closed manually */
+  closable?: boolean;
+  /** Whether to escape HTML in message content */
+  escape?: boolean;
+  /** Message size variant */
+  size?: MessageSizeOptions['size'];
+  /** Visual style variant */
+  variant?: MessageVariantOptions['variant'];
+  /** Custom icon class or name */
+  icon?: string;
+  /** Close icon class or name */
+  closeIcon?: string;
+  /** Show animation transition options */
+  showTransitionOptions?: string;
+  /** Hide animation transition options */
+  hideTransitionOptions?: string;
+  /** Auto-dismiss time in milliseconds */
+  life?: number;
+  /** Inline styles object */
+  style?: Record<string, string | number> | null;
+  /** Additional CSS classes */
+  styleClass?: string;
+  /** Accessibility label */
+  ariaLabel?: string;
+}

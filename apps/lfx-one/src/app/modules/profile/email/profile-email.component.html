@@ -9,18 +9,16 @@
     </div>
   } @else {
     <!-- Email Management Info Banner -->
-    <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg mb-6">
-      <div class="flex items-start gap-3">
-        <i class="fa-light fa-info-circle text-blue-600 mt-0.5"></i>
-        <div>
-          <h5 class="text-sm font-semibold text-blue-800 mb-1">Manage Your Email Addresses</h5>
-          <p class="text-sm text-blue-700">
+    <lfx-message severity="info" icon="fa-light fa-info-circle" styleClass="mb-6" title="Manage Your Email Addresses">
+      <ng-template #content>
+        <div class="flex flex-col gap-1">
+          <p class="text-sm">
             Add multiple email addresses to your account, set your primary email for account communications, and choose which emails receive specific types of
             notifications. Verified emails can be used to sign in to your account.
           </p>
         </div>
-      </div>
-    </div>
+      </ng-template>
+    </lfx-message>
 
     <lfx-card>
       <div class="space-y-6">
@@ -143,15 +141,14 @@
           <div class="flex flex-col gap-4 pt-6 border-t border-gray-200">
             <div>
               <h3 class="text-base font-medium text-gray-900" data-testid="email-preferences-heading">Notification Preferences</h3>
-              <div class="bg-gray-50 border border-gray-200 p-3 rounded-lg mt-2">
-                <div class="flex items-start gap-2">
-                  <i class="fa-light fa-info-circle text-gray-600 mt-0.5 text-sm"></i>
-                  <p class="text-sm text-gray-600">
+              <lfx-message severity="secondary" icon="fa-light fa-info-circle" size="small" styleClass="mt-2">
+                <ng-template #content>
+                  <p class="text-sm">
                     <strong>Why configure this:</strong> Different email addresses can receive specific types of notifications. This helps you organize
                     communications and ensures important messages reach the right inbox. Only verified email addresses can be selected for notifications.
                   </p>
-                </div>
-              </div>
+                </ng-template>
+              </lfx-message>
             </div>
 
             <form [formGroup]="preferencesForm" (ngSubmit)="updatePreferences()" class="space-y-4">

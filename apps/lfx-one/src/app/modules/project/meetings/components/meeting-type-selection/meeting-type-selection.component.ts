@@ -4,6 +4,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { MessageComponent } from '@components/message/message.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { MeetingType } from '@lfx-one/shared/enums';
 import { TooltipModule } from 'primeng/tooltip';
@@ -18,7 +19,7 @@ interface MeetingTypeInfo {
 @Component({
   selector: 'lfx-meeting-type-selection',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ToggleComponent, TooltipModule],
+  imports: [CommonModule, ReactiveFormsModule, MessageComponent, ToggleComponent, TooltipModule],
   templateUrl: './meeting-type-selection.component.html',
 })
 export class MeetingTypeSelectionComponent {

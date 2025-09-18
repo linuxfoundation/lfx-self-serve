@@ -10,6 +10,7 @@ import { BadgeComponent } from '@shared/components/badge/badge.component';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { CardComponent } from '@shared/components/card/card.component';
 import { InputTextComponent } from '@shared/components/input-text/input-text.component';
+import { MessageComponent } from '@shared/components/message/message.component';
 import { SelectComponent } from '@shared/components/select/select.component';
 import { UserService } from '@shared/services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -31,6 +32,7 @@ interface EmailOption {
     ReactiveFormsModule,
     CardComponent,
     InputTextComponent,
+    MessageComponent,
     ButtonComponent,
     BadgeComponent,
     SelectComponent,

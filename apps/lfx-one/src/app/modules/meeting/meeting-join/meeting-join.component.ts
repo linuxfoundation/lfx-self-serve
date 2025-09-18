@@ -13,6 +13,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MessageComponent } from '@components/message/message.component';
 import { environment } from '@environments/environment';
 import { extractUrlsWithDomains, Meeting, MeetingOccurrence, Project, User } from '@lfx-one/shared';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -32,6 +33,7 @@ import { catchError, combineLatest, finalize, map, of, switchMap, tap } from 'rx
     ButtonComponent,
     CardComponent,
     InputTextComponent,
+    MessageComponent,
     ToastModule,
     TooltipModule,
     MeetingTimePipe,

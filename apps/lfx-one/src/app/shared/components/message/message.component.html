@@ -1,0 +1,36 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-message
+  [severity]="severity()"
+  [text]="text()"
+  [closable]="closable()"
+  [escape]="escape()"
+  [size]="size()"
+  [variant]="variant()"
+  [icon]="icon()"
+  [closeIcon]="closeIcon()"
+  [showTransitionOptions]="showTransitionOptions()"
+  [hideTransitionOptions]="hideTransitionOptions()"
+  [life]="life()"
+  [style]="style()"
+  [styleClass]="styleClass()"
+  [ariaLabel]="ariaLabel()"
+  (onClose)="handleClose($event.originalEvent)">
+  <!-- Custom content template -->
+  @if (contentTemplate) {
+    <div class="flex flex-col gap-1">
+      @if (title()) {
+        <h4 class="text-sm font-semibold mb-1">{{ title() }}</h4>
+      }
+      <ng-container [ngTemplateOutlet]="contentTemplate"></ng-container>
+    </div>
+  } @else if (!text()) {
+    <div class="flex flex-col gap-1">
+      @if (title()) {
+        <h4 class="text-sm font-semibold mb-1">{{ title() }}</h4>
+      }
+      <ng-content></ng-content>
+    </div>
+  }
+</p-message>

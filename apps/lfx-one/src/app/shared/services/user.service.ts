@@ -15,7 +15,7 @@ import {
   User,
   UserEmail,
 } from '@lfx-one/shared/interfaces';
-import { Observable } from 'rxjs';
+import { Observable, take } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -44,14 +44,14 @@ export class UserService {
    * Update user info fields (first_name, last_name, username)
    */
   public updateUserInfo(data: UpdateUserProfileRequest): Observable<User> {
-    return this.http.patch<User>('/api/profile/user', data);
+    return this.http.patch<User>('/api/profile/user', data).pipe(take(1));
   }
 
   /**
    * Update profile details fields (title, organization, location, etc.)
    */
   public updateProfileDetails(data: UpdateProfileDetailsRequest): Observable<any> {
-    return this.http.patch('/api/profile/details', data);
+    return this.http.patch('/api/profile/details', data).pipe(take(1));
   }
 
   // Email management methods
@@ -68,34 +68,34 @@ export class UserService {
    */
   public addEmail(email: string): Observable<UserEmail> {
     const data: AddEmailRequest = { email };
-    return this.http.post<UserEmail>('/api/profile/emails', data);
+    return this.http.post<UserEmail>('/api/profile/emails', data).pipe(take(1));
   }
 
   /**
    * Delete an email address
    */
   public deleteEmail(emailId: string): Observable<void> {
-    return this.http.delete<void>(`/api/profile/emails/${emailId}`);
+    return this.http.delete<void>(`/api/profile/emails/${emailId}`).pipe(take(1));
   }
 
   /**
    * Set an email as the primary email
    */
   public setPrimaryEmail(emailId: string): Observable<{ message: string }> {
-    return this.http.put<{ message: string }>(`/api/profile/emails/${emailId}/primary`, {});
+    return this.http.put<{ message: string }>(`/api/profile/emails/${emailId}/primary`, {}).pipe(take(1));
   }
 
   /**
    * Get email preferences
    */
   public getEmailPreferences(): Observable<EmailPreferences | null> {
-    return this.http.get<EmailPreferences | null>('/api/profile/email-preferences');
+    return this.http.get<EmailPreferences | null>('/api/profile/email-preferences').pipe(take(1));
   }
 
   /**
    * Update email preferences
    */
   public updateEmailPreferences(preferences: UpdateEmailPreferencesRequest): Observable<EmailPreferences> {
-    return this.http.put<EmailPreferences>('/api/profile/email-preferences', preferences);
+    return this.http.put<EmailPreferences>('/api/profile/email-preferences', preferences).pipe(take(1));
   }
 }

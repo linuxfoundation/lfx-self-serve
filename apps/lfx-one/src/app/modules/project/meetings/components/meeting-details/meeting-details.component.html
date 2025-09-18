@@ -224,18 +224,17 @@
     </div>
 
     <!-- Recurring Meeting Toggle -->
-    <div class="bg-gray-50 border border-gray-200 p-4 rounded-lg">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <i class="fa-light fa-repeat text-gray-500"></i>
+    <lfx-message severity="secondary" icon="fa-light fa-repeat">
+      <ng-template #content>
+        <div class="flex items-center justify-between w-full">
           <div>
             <label for="recurring-toggle" class="text-sm font-medium text-gray-900">Recurring Meeting</label>
             <p class="text-xs text-gray-500">This meeting repeats on a schedule</p>
           </div>
+          <lfx-toggle [form]="form()" control="isRecurring" id="recurring-toggle" data-testid="meeting-details-recurring-toggle"></lfx-toggle>
         </div>
-        <lfx-toggle [form]="form()" control="isRecurring" id="recurring-toggle" data-testid="meeting-details-recurring-toggle"></lfx-toggle>
-      </div>
-    </div>
+      </ng-template>
+    </lfx-message>
 
     @if (form().get('isRecurring')?.value) {
       <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg">
