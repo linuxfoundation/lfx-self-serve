@@ -117,3 +117,44 @@ export interface EmailManagementData {
   emails: UserEmail[];
   preferences: EmailPreferences | null;
 }
+
+/**
+ * Request to change user password
+ */
+export interface ChangePasswordRequest {
+  current_password: string;
+  new_password: string;
+}
+
+/**
+ * Request to send password reset email
+ */
+export interface PasswordResetRequest {
+  email: string;
+}
+
+/**
+ * Password strength analysis result
+ */
+export interface PasswordStrength {
+  score: number; // 0-4 (weak to strong)
+  label: 'weak' | 'fair' | 'good' | 'strong';
+  requirements: {
+    minLength: boolean;
+    hasLowercase: boolean;
+    hasUppercase: boolean;
+    hasNumbers: boolean;
+    hasSpecialChars: boolean;
+    meetsCriteria: boolean; // true if 3 of 4 character types are present
+  };
+}
+
+/**
+ * Two-factor authentication settings
+ */
+export interface TwoFactorSettings {
+  enabled: boolean;
+  method: 'app' | 'sms' | 'email' | null;
+  backup_codes_count: number;
+  last_used: string | null;
+}
