@@ -8,6 +8,7 @@ import { FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { TimePickerComponent } from '@components/time-picker/time-picker.component';
@@ -33,6 +34,7 @@ import { MeetingRecurrencePatternComponent } from '../meeting-recurrence-pattern
     ButtonComponent,
     CalendarComponent,
     InputTextComponent,
+    MessageComponent,
     SelectComponent,
     TextareaComponent,
     TimePickerComponent,

@@ -5,6 +5,7 @@ import { CommonModule } from '@angular/common';
 import { Component, DestroyRef, inject, input, OnInit } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { ARTIFACT_VISIBILITY_OPTIONS, MEETING_FEATURES, MEETING_PLATFORMS } from '@lfx-one/shared/constants';
@@ -13,7 +14,7 @@ import { TooltipModule } from 'primeng/tooltip';
 @Component({
   selector: 'lfx-meeting-platform-features',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, SelectComponent, ToggleComponent, TooltipModule],
+  imports: [CommonModule, ReactiveFormsModule, MessageComponent, SelectComponent, ToggleComponent, TooltipModule],
   templateUrl: './meeting-platform-features.component.html',
 })
 export class MeetingPlatformFeaturesComponent implements OnInit {

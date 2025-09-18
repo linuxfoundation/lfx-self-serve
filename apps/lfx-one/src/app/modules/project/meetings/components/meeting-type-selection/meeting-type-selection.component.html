@@ -7,20 +7,16 @@
     <p class="text-slate-500 text-base">What kind of meeting are you organizing for your open source project?</p>
   </div>
 
-  <div class="bg-blue-50 border border-blue-100 p-4 rounded-lg">
-    <div class="flex items-start gap-3">
-      <div class="bg-primary flex items-center justify-center px-1 py-1 rounded-full">
-        <i class="fa-light fa-info-circle text-white text-sm"></i>
-      </div>
-      <div>
-        <h4 class="text-sm font-semibold text-slate-900 mb-1">Why meetings matter for open source projects</h4>
-        <p class="text-sm text-slate-600">
+  <lfx-message severity="info" icon="fa-light fa-info-circle" title="Why meetings matter for open source projects">
+    <ng-template #content>
+      <div class="flex flex-col gap-1">
+        <p class="text-sm">
           Regular meetings help maintain project momentum, align contributors, make important decisions, and build community. They provide structure and
           transparency that keeps everyone on the same page.
         </p>
       </div>
-    </div>
-  </div>
+    </ng-template>
+  </lfx-message>
 
   <div class="space-y-6">
     <div>

@@ -11,6 +11,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
+import { MessageComponent } from '@components/message/message.component';
 import { COMMITTEE_CATEGORIES } from '@lfx-one/shared/constants';
 import { Committee } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
@@ -22,7 +23,7 @@ import { map } from 'rxjs';
 @Component({
   selector: 'lfx-committee-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, SelectComponent, InputTextComponent, TextareaComponent, ToggleComponent],
+  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, SelectComponent, InputTextComponent, TextareaComponent, ToggleComponent, MessageComponent],
   templateUrl: './committee-form.component.html',
 })
 export class CommitteeFormComponent {

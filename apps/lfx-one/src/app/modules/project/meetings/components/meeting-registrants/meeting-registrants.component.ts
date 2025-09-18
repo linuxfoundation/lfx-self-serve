@@ -8,6 +8,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
 import { MeetingRegistrant, MeetingRegistrantWithState, RegistrantPendingChanges, RegistrantState } from '@lfx-one/shared/interfaces';
 import { generateTempId } from '@lfx-one/shared/utils';
@@ -27,6 +28,7 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
     ButtonComponent,
     CardComponent,
     InputTextComponent,
+    MessageComponent,
     SelectComponent,
     ConfirmDialogModule,
     RegistrantCardComponent,

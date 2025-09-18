@@ -4,13 +4,14 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, input, OnInit, output } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
+import { MessageComponent } from '@components/message/message.component';
 import { MeetingTemplate, MeetingType } from '@lfx-one/shared';
 import { MEETING_TEMPLATES } from '@lfx-one/shared/constants';
 
 @Component({
   selector: 'lfx-agenda-template-selector',
   standalone: true,
-  imports: [CommonModule, ButtonComponent],
+  imports: [CommonModule, ButtonComponent, MessageComponent],
   templateUrl: './agenda-template-selector.component.html',
 })
 export class AgendaTemplateSelectorComponent implements OnInit {

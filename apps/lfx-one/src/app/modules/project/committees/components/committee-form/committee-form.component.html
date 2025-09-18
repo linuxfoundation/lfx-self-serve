@@ -3,13 +3,15 @@
 
 <form [formGroup]="form()" (ngSubmit)="onSubmit()" class="space-y-6">
   @if (!isEditing()) {
-    <div class="bg-blue-50 shadow-md p-3 rounded-md text-sm">
-      <p class="text-sm">
-        Committees are a great way to connect community members who have shared interests. There are common committees like governing boards and technical
-        oversight committees, but you can also create committees for special interest groups (SIGs) or working groups to tackle specific concerns for your
-        project community.
-      </p>
-    </div>
+    <lfx-message severity="info" icon="fa-light fa-info-circle">
+      <ng-template #content>
+        <p class="text-sm">
+          Committees are a great way to connect community members who have shared interests. There are common committees like governing boards and technical
+          oversight committees, but you can also create committees for special interest groups (SIGs) or working groups to tackle specific concerns for your
+          project community.
+        </p>
+      </ng-template>
+    </lfx-message>
   }
   <!-- Basic Information Section -->
   <div class="flex flex-col gap-3">
