@@ -26,12 +26,14 @@ export class PastMeetingController {
       const meetings = await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'past_meeting');
 
       // TODO: Remove this once we have a way to get the registrants count
-      // Process each meeting individually to add registrant counts
+      // Process each meeting individually to add registrant and participant counts
       await Promise.all(
         meetings.map(async (meeting) => {
-          const counts = await this.addRegistrantCounts(req, meeting.uid);
+          const counts = await this.addParticipantsCount(req, meeting.uid);
           meeting.individual_registrants_count = counts.individual_registrants_count;
           meeting.committee_members_count = counts.committee_members_count;
+          meeting.participant_count = counts.participant_count;
+          meeting.attended_count = counts.attended_count;
         })
       );
 
@@ -81,9 +83,11 @@ export class PastMeetingController {
       });
 
       // TODO: Remove this once we have a way to get the registrants count
-      const counts = await this.addRegistrantCounts(req, meeting.uid);
+      const counts = await this.addParticipantsCount(req, meeting.uid);
       meeting.individual_registrants_count = counts.individual_registrants_count;
       meeting.committee_members_count = counts.committee_members_count;
+      meeting.participant_count = counts.participant_count;
+      meeting.attended_count = counts.attended_count;
 
       // Send the meeting data to the client
       res.json(meeting);
@@ -99,29 +103,84 @@ export class PastMeetingController {
   }
 
   /**
-   * Helper method to add registrant counts to a meeting
-   * @param req - Express request object
-   * @param meetingUid - UID of the meeting
-   * @returns Promise with registrant counts or defaults to 0 on error
+   * GET /past-meetings/:uid/participants
    */
-  private async addRegistrantCounts(req: Request, meetingUid: string): Promise<{ individual_registrants_count: number; committee_members_count: number }> {
+  public async getPastMeetingParticipants(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = Logger.start(req, 'get_past_meeting_participants', {
+      past_meeting_uid: uid,
+    });
+
     try {
-      const registrants = await this.meetingService.getMeetingRegistrants(req, meetingUid);
-      const committeeMembers = registrants.filter((r) => r.type === 'committee').length ?? 0;
+      // Check if the past meeting UID is provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_past_meeting_participants',
+          service: 'past_meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      // Get the past meeting participants
+      const participants = await this.meetingService.getPastMeetingParticipants(req, uid);
+
+      // Log the success
+      Logger.success(req, 'get_past_meeting_participants', startTime, {
+        past_meeting_uid: uid,
+        participant_count: participants.length,
+      });
+
+      // Send the participants data to the client
+      res.json(participants);
+    } catch (error) {
+      // Log the error
+      Logger.error(req, 'get_past_meeting_participants', startTime, error, {
+        past_meeting_uid: uid,
+      });
+
+      // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * Helper method to add participant and registrant counts to a past meeting
+   * @param req - Express request object
+   * @param pastMeetingUid - UID of the past meeting
+   * @returns Promise with registrant and participant counts or defaults to 0 on error
+   */
+  private async addParticipantsCount(
+    req: Request,
+    pastMeetingUid: string
+  ): Promise<{ individual_registrants_count: number; committee_members_count: number; participant_count: number; attended_count: number }> {
+    try {
+      // Get all participants (contains both invited and attended information)
+      const participants = await this.meetingService.getPastMeetingParticipants(req, pastMeetingUid).catch(() => []);
+
+      // Calculate counts based on participant data
+      const invitedCount = participants.filter((p) => p.is_invited).length;
+      const attendedCount = participants.filter((p) => p.is_attended).length;
+      const totalParticipantCount = participants.length;
 
       return {
-        individual_registrants_count: registrants.length - committeeMembers,
-        committee_members_count: committeeMembers,
+        individual_registrants_count: invitedCount, // Count of people who were formally invited
+        committee_members_count: 0, // Not available in participant data, set to 0
+        participant_count: totalParticipantCount, // Total count of all participants
+        attended_count: attendedCount, // Count of people who actually attended
       };
     } catch (error) {
       // Log error but don't fail - default to 0 counts
-      Logger.error(req, 'add_registrant_counts', Date.now(), error, {
-        meeting_uid: meetingUid,
+      Logger.error(req, 'add_participant_counts', Date.now(), error, {
+        past_meeting_uid: pastMeetingUid,
       });
 
       return {
         individual_registrants_count: 0,
         committee_members_count: 0,
+        participant_count: 0,
+        attended_count: 0,
       };
     }
   }

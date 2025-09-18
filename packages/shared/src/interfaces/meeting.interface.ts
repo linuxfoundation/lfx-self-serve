@@ -139,6 +139,10 @@ export interface Meeting {
   registrants_declined_count: number;
   /** Count fields (response only) */
   registrants_pending_count: number;
+  /** Participant count for past meetings (response only) */
+  participant_count?: number;
+  /** Attended count for past meetings (response only) */
+  attended_count?: number;
   /** Meeting occurrences */
   occurrences: MeetingOccurrence[];
 }
@@ -474,4 +478,37 @@ export interface RecurrenceSummary {
   endDescription: string;
   /** Full summary combining both */
   fullSummary: string;
+}
+
+/**
+ * Past meeting participant information
+ * @description Individual participant who was invited/attended a past meeting
+ */
+export interface PastMeetingParticipant {
+  /** Unique identifier for the participant */
+  uid: string;
+  /** Original meeting UUID this participant belongs to */
+  meeting_uid: string;
+  /** Past meeting UUID for the specific occurrence */
+  past_meeting_uid: string;
+  /** Participant's email address */
+  email: string;
+  /** Participant's first name */
+  first_name: string;
+  /** Participant's last name */
+  last_name: string;
+  /** Whether participant has host access */
+  host: boolean;
+  /** Whether participant actually attended the meeting */
+  is_attended: boolean;
+  /** Whether participant was invited to the meeting */
+  is_invited: boolean;
+  /** LF membership status */
+  org_is_member: boolean;
+  /** Project membership status */
+  org_is_project_member: boolean;
+  /** Creation timestamp */
+  created_at: string;
+  /** Last update timestamp */
+  updated_at: string;
 }

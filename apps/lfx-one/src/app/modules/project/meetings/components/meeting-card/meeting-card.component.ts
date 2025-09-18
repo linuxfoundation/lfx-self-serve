@@ -15,7 +15,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { environment } from '@environments/environment';
-import { extractUrlsWithDomains, Meeting, MeetingAttachment, MeetingOccurrence, MeetingRegistrant } from '@lfx-one/shared';
+import { extractUrlsWithDomains, Meeting, MeetingAttachment, MeetingOccurrence, MeetingRegistrant, PastMeetingParticipant } from '@lfx-one/shared';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
@@ -74,8 +74,10 @@ export class MeetingCardComponent implements OnInit {
   public registrantsLoading: WritableSignal<boolean> = signal(true);
   private refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
   public registrants = this.initRegistrantsList();
+  public pastMeetingParticipants = this.initPastMeetingParticipantsList();
   public registrantsLabel: Signal<string> = this.initRegistrantsLabel();
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
+  public additionalParticipantsCount: WritableSignal<number> = signal(0);
   public actionMenuItems: Signal<MenuItem[]> = this.initializeActionMenuItems();
   public attachments: Signal<MeetingAttachment[]> = signal([]);
 
@@ -86,6 +88,9 @@ export class MeetingCardComponent implements OnInit {
   public readonly enabledFeaturesCount: Signal<number> = this.initEnabledFeaturesCount();
   public readonly meetingTypeBadge: Signal<{ badgeClass: string; icon?: string; text: string } | null> = this.initMeetingTypeBadge();
   public readonly containerClass: Signal<string> = this.initContainerClass();
+  public readonly attendedCount: Signal<number> = this.initAttendedCount();
+  public readonly notAttendedCount: Signal<number> = this.initNotAttendedCount();
+  public readonly participantCount: Signal<number> = this.initParticipantCount();
 
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
@@ -110,6 +115,18 @@ export class MeetingCardComponent implements OnInit {
 
   public onRegistrantsToggle(event: Event): void {
     event.stopPropagation();
+
+    if (this.pastMeeting()) {
+      // For past meetings, just show/hide participants
+      this.registrantsLoading.set(true);
+
+      if (!this.showRegistrants()) {
+        this.refresh$.next(true);
+      }
+
+      this.showRegistrants.set(!this.showRegistrants());
+      return;
+    }
 
     if (this.meetingRegistrantCount() === 0) {
       // Open add registrant modal
@@ -213,13 +230,30 @@ export class MeetingCardComponent implements OnInit {
   }
 
   private initMeetingRegistrantCount(): Signal<number> {
-    return computed(
-      () => (this.meeting()?.individual_registrants_count || 0) + (this.meeting()?.committee_members_count || 0) + (this.additionalRegistrantsCount() || 0)
-    );
+    return computed(() => {
+      if (this.pastMeeting()) {
+        // For past meetings, show total participant count
+        return this.meeting()?.participant_count || 0;
+      }
+
+      // For upcoming meetings, show registrant count
+      return (this.meeting()?.individual_registrants_count || 0) + (this.meeting()?.committee_members_count || 0) + (this.additionalRegistrantsCount() || 0);
+    });
   }
 
   private initRegistrantsLabel(): Signal<string> {
     return computed(() => {
+      if (this.pastMeeting()) {
+        const totalParticipants = this.meetingRegistrantCount();
+        if (totalParticipants === 0) {
+          return 'No Participants';
+        }
+        if (totalParticipants === 1) {
+          return '1 Participant';
+        }
+        return `${totalParticipants} Participants`;
+      }
+
       if (this.meetingRegistrantCount() === 0 && this.meeting()?.organizer) {
         return 'Add Guests';
       }
@@ -238,6 +272,27 @@ export class MeetingCardComponent implements OnInit {
     return computed(() => {
       const meeting = this.meeting();
       if (!meeting) return '';
+
+      if (this.pastMeeting()) {
+        // For past meetings, use counts from meeting object (calculated server-side)
+        const invitedCount = meeting.individual_registrants_count || 0;
+        const attendedCount = meeting.attended_count || 0;
+        const totalParticipants = meeting.participant_count || 0;
+        const didNotAttendCount = totalParticipants - attendedCount;
+
+        const parts: string[] = [];
+
+        // Show invited count if there were formal invitations
+        if (invitedCount > 0) {
+          parts.push(`${invitedCount} Invited`);
+        }
+
+        // Show attendance breakdown
+        if (attendedCount > 0) parts.push(`${attendedCount} Attended`);
+        if (didNotAttendCount > 0) parts.push(`${didNotAttendCount} Did Not Attend`);
+
+        return parts.join(', ');
+      }
 
       const accepted = meeting.registrants_accepted_count || 0;
       const declined = meeting.registrants_declined_count || 0;
@@ -261,7 +316,7 @@ export class MeetingCardComponent implements OnInit {
     return toSignal(
       this.refresh$.pipe(
         takeUntilDestroyed(),
-        filter((refresh) => refresh),
+        filter((refresh) => refresh && !this.pastMeeting()),
         switchMap(() => {
           this.registrantsLoading.set(true);
           return this.meetingService
@@ -277,6 +332,27 @@ export class MeetingCardComponent implements OnInit {
                 const baseCount = (this.meeting().individual_registrants_count || 0) + (this.meeting().committee_members_count || 0);
                 this.additionalRegistrantsCount.set(Math.max(0, (registrants?.length || 0) - baseCount));
               }),
+              finalize(() => this.registrantsLoading.set(false))
+            );
+        })
+      ),
+      { initialValue: [] }
+    );
+  }
+
+  private initPastMeetingParticipantsList() {
+    return toSignal(
+      this.refresh$.pipe(
+        takeUntilDestroyed(),
+        filter((refresh) => refresh && this.pastMeeting()),
+        switchMap(() => {
+          this.registrantsLoading.set(true);
+          return this.meetingService
+            .getPastMeetingParticipants(this.meeting().uid)
+            .pipe(catchError(() => of([])))
+            .pipe(
+              // Sort participants by first name
+              map((participants) => participants.sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as PastMeetingParticipant[]),
               finalize(() => this.registrantsLoading.set(false))
             );
         })
@@ -397,6 +473,13 @@ export class MeetingCardComponent implements OnInit {
 
   private initAttendancePercentage(): Signal<number> {
     return computed(() => {
+      if (this.pastMeeting()) {
+        // For past meetings, calculate attendance percentage from meeting object counts
+        const totalParticipants = this.meeting()?.participant_count || 0;
+        const attendedCount = this.meeting()?.attended_count || 0;
+        return totalParticipants > 0 ? Math.round((attendedCount / totalParticipants) * 100) : 0;
+      }
+
       const totalRegistrants = this.meetingRegistrantCount();
       const acceptedCount = this.meeting().registrants_accepted_count || 0;
       return totalRegistrants > 0 ? Math.round((acceptedCount / totalRegistrants) * 100) : 0;
@@ -494,6 +577,31 @@ export class MeetingCardComponent implements OnInit {
       }
 
       return `${baseClasses} ${borderClass}`;
+    });
+  }
+
+  private initAttendedCount(): Signal<number> {
+    return computed(() => {
+      if (!this.pastMeeting()) return 0;
+      // Use the attended_count from the meeting object (calculated server-side)
+      return this.meeting()?.attended_count || 0;
+    });
+  }
+
+  private initNotAttendedCount(): Signal<number> {
+    return computed(() => {
+      if (!this.pastMeeting()) return 0;
+      // Calculate not attended as total participants minus attended
+      const totalParticipants = this.meeting()?.participant_count || 0;
+      const attendedCount = this.meeting()?.attended_count || 0;
+      return totalParticipants - attendedCount;
+    });
+  }
+
+  private initParticipantCount(): Signal<number> {
+    return computed(() => {
+      if (!this.pastMeeting()) return 0;
+      return this.meeting()?.participant_count || 0;
     });
   }
 }

@@ -15,6 +15,7 @@ import {
   MeetingJoinURL,
   MeetingRegistrant,
   MeetingRegistrantWithState,
+  PastMeetingParticipant,
   Project,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
@@ -286,6 +287,15 @@ export class MeetingService {
     return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`).pipe(
       catchError((error) => {
         console.error(`Failed to load registrants for meeting ${meetingUid}:`, error);
+        return of([]);
+      })
+    );
+  }
+
+  public getPastMeetingParticipants(pastMeetingUid: string): Observable<PastMeetingParticipant[]> {
+    return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${pastMeetingUid}/participants`).pipe(
+      catchError((error) => {
+        console.error(`Failed to load participants for past meeting ${pastMeetingUid}:`, error);
         return of([]);
       })
     );

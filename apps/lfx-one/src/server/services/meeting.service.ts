@@ -7,6 +7,7 @@ import {
   Meeting,
   MeetingJoinURL,
   MeetingRegistrant,
+  PastMeetingParticipant,
   QueryServiceResponse,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
@@ -396,6 +397,37 @@ export class MeetingService {
    */
   public async getMeetingJoinUrl(req: Request, meetingUid: string): Promise<MeetingJoinURL> {
     return await this.microserviceProxy.proxyRequest<MeetingJoinURL>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/join_url`, 'GET');
+  }
+
+  /**
+   * Fetches past meeting participants by past meeting UID
+   */
+  public async getPastMeetingParticipants(req: Request, pastMeetingUid: string): Promise<PastMeetingParticipant[]> {
+    const params = {
+      type: 'past_meeting_participant',
+      tags: `past_meeting_uid:${pastMeetingUid}`,
+    };
+
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params
+    );
+
+    const participants = resources.map((resource) => resource.data);
+
+    req.log.info(
+      {
+        operation: 'get_past_meeting_participants',
+        past_meeting_uid: pastMeetingUid,
+        participant_count: participants.length,
+      },
+      'Past meeting participants retrieved successfully'
+    );
+
+    return participants;
   }
 
   private async getMeetingCommittees(req: Request, meetings: Meeting[]): Promise<Meeting[]> {
