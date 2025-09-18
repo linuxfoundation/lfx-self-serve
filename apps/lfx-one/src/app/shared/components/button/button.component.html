@@ -18,6 +18,8 @@
     [tabindex]="tabindex()"
     [fluid]="fluid()"
     [icon]="icon()!"
+    [pTooltip]="pTooltip()"
+    [tooltipPosition]="tooltipPosition()"
     [style]="style()">
     <ng-content></ng-content>
   </a>
@@ -47,6 +49,8 @@
     [variant]="variant()"
     [fluid]="fluid()"
     [style]="style()"
+    [pTooltip]="pTooltip()"
+    [tooltipPosition]="tooltipPosition()"
     (onClick)="handleClick($event)"
     [routerLink]="routerLink()">
     <ng-content></ng-content>

@@ -51,22 +51,22 @@
           <div class="flex sm:flex-row flex-col items-start justify-between mb-4" data-testid="meeting-title-section">
             <div class="flex-1 pr-4 flex-grow">
               <h2 class="text-xl font-display font-semibold text-gray-900 mb-1 leading-tight" data-testid="meeting-title">
-                {{ meeting().title }}
+                {{ currentOccurrence()?.title || meeting().title }}
               </h2>
             </div>
-            @if (meeting().start_time) {
+            @if (currentOccurrence()?.start_time || meeting().start_time; as startTime) {
               <div class="flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded flex-shrink-0" data-testid="meeting-datetime">
                 <i class="fa-light fa-calendar-days text-gray-400"></i>
                 <span
-                  >{{ meeting()!.start_time | meetingTime: meeting()!.duration : 'date' }} •
-                  {{ meeting()!.start_time | meetingTime: meeting()!.duration : 'time' }}</span
+                  >{{ startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'date' }} •
+                  {{ startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'time' }}</span
                 >
               </div>
             }
           </div>
 
           <!-- Meeting Agenda -->
-          @if (meeting().description) {
+          @if (currentOccurrence()?.description || meeting().description; as description) {
             <div class="mb-4" data-testid="meeting-description">
               <div class="flex items-center gap-2 mb-2">
                 <i class="fa-light fa-file-lines text-gray-400"></i>
@@ -74,7 +74,7 @@
               </div>
               <lfx-expandable-text [maxHeight]="85">
                 <div class="text-sm text-gray-600 leading-relaxed bg-gray-50 rounded-lg p-3">
-                  <div [innerHTML]="meeting()!.description | linkify"></div>
+                  <div [innerHTML]="description | linkify"></div>
                 </div>
               </lfx-expandable-text>
             </div>
@@ -134,7 +134,7 @@
                 <i class="fa-light fa-clock text-gray-400"></i>
                 <span>Duration</span>
               </div>
-              <div class="text-sm font-sans">{{ meeting().duration }} minutes</div>
+              <div class="text-sm font-sans">{{ currentOccurrence()?.duration || meeting().duration }} minutes</div>
             </div>
           </div>
 
