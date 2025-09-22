@@ -36,6 +36,52 @@ export function futureDateTimeValidator(): ValidatorFn {
 }
 
 /**
+ * Validator for edit mode - allows past dates only if they match the original meeting start time
+ */
+export function editModeDateTimeValidator(originalStartTime?: string): ValidatorFn {
+  return (control: AbstractControl): ValidationErrors | null => {
+    const formGroup = control as any; // FormGroup
+    const startDate = formGroup.get?.('startDate')?.value;
+    const startTime = formGroup.get?.('startTime')?.value;
+    const timezone = formGroup.get?.('timezone')?.value;
+
+    if (!startDate || !startTime || !timezone) {
+      return null; // Don't validate if values are not set
+    }
+
+    // Combine the date and time with timezone awareness
+    const combinedDateTime = combineDateTime(startDate, startTime, timezone);
+    if (!combinedDateTime) {
+      return null; // Invalid time format
+    }
+
+    // Check if the datetime is in the future for the specified timezone
+    const isInFuture = isDateTimeInFutureForTimezone(combinedDateTime, timezone);
+
+    if (!isInFuture) {
+      // If in the past, check if it matches the original start time
+      if (originalStartTime) {
+        // Compare the combined datetime with the original start time
+        const originalDate = new Date(originalStartTime);
+        const newDate = new Date(combinedDateTime);
+
+        // Allow past date only if it matches the original (within 1 minute to account for formatting differences)
+        const timeDifferenceMs = Math.abs(originalDate.getTime() - newDate.getTime());
+        const oneMinuteMs = 60 * 1000;
+
+        if (timeDifferenceMs <= oneMinuteMs) {
+          return null; // Allow the original date/time even if in the past
+        }
+      }
+
+      return { futureDateTime: true };
+    }
+
+    return null;
+  };
+}
+
+/**
  * Validator to check if a time string is in valid 12-hour format
  */
 export function timeFormatValidator(): ValidatorFn {

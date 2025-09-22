@@ -38,7 +38,7 @@ import {
   getUserTimezone,
   mapRecurrenceToFormValue,
 } from '@lfx-one/shared/utils';
-import { futureDateTimeValidator } from '@lfx-one/shared/validators';
+import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
@@ -85,6 +85,7 @@ export class MeetingManageComponent {
   public mode = signal<'create' | 'edit'>('create');
   public meetingId = signal<string | null>(null);
   public isEditMode = computed(() => this.mode() === 'edit');
+  public originalStartTime = signal<string | null>(null);
   public registrantUpdates = signal<RegistrantPendingChanges>({
     toAdd: [],
     toUpdate: [],
@@ -508,6 +509,9 @@ export class MeetingManageComponent {
   }
 
   private populateFormWithMeetingData(meeting: Meeting): void {
+    // Store the original start time for validation
+    this.originalStartTime.set(meeting.start_time);
+
     // Parse start_time to separate date and time
     let startDate = null;
     let startTime = '';
@@ -593,6 +597,9 @@ export class MeetingManageComponent {
           endTypeUI: endTypeUI,
         });
     }
+
+    // Update the form validator to use edit mode validator with original start time
+    this.updateFormValidator();
   }
 
   private canNavigateToStep(step: number): boolean {
@@ -874,5 +881,19 @@ export class MeetingManageComponent {
     if (recurrence.end_date_time || recurrence.end_times) return true;
 
     return false;
+  }
+
+  private updateFormValidator(): void {
+    const currentForm = this.form();
+
+    // Apply appropriate validator based on mode
+    if (this.isEditMode() && this.originalStartTime()) {
+      currentForm.setValidators(editModeDateTimeValidator(this.originalStartTime()!));
+    } else {
+      currentForm.setValidators(futureDateTimeValidator());
+    }
+
+    // Update form validity
+    currentForm.updateValueAndValidity();
   }
 }
