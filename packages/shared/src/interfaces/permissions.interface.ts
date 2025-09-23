@@ -139,6 +139,37 @@ export interface UpdateUserPermissionRequest {
 }
 
 /**
+ * Simplified user permission for display
+ * @description Simplified representation of user permissions for table display
+ */
+export interface ProjectPermissionUser {
+  /** Username identifier */
+  username: string;
+  /** Permission role - 'view' for auditors, 'manage' for writers */
+  role: 'view' | 'manage';
+}
+
+/**
+ * Request payload for adding user to project
+ * @description Data required to add a user to project writers or auditors
+ */
+export interface AddUserToProjectRequest {
+  /** Username to add */
+  username: string;
+  /** Role to assign - 'view' for auditors, 'manage' for writers */
+  role: 'view' | 'manage';
+}
+
+/**
+ * Request payload for updating user role in project
+ * @description Data required to change a user's role in project
+ */
+export interface UpdateUserRoleRequest {
+  /** New role to assign - 'view' for auditors, 'manage' for writers */
+  role: 'view' | 'manage';
+}
+
+/**
  * Permission matrix display item
  * @description UI representation of permission capabilities with visual styling
  */

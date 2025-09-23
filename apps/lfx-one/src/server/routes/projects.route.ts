@@ -20,6 +20,14 @@ router.get('/search', (req, res, next) => projectController.searchProjects(req, 
 
 router.get('/:slug', (req, res, next) => projectController.getProjectBySlug(req, res, next));
 
+router.get('/:uid/permissions', (req, res, next) => projectController.getProjectPermissions(req, res, next));
+
+router.post('/:uid/permissions', (req, res, next) => projectController.addUserToProjectPermissions(req, res, next));
+
+router.put('/:uid/permissions/:username', (req, res, next) => projectController.updateUserPermissionRole(req, res, next));
+
+router.delete('/:uid/permissions/:username', (req, res, next) => projectController.removeUserFromProjectPermissions(req, res, next));
+
 router.get('/:uid/recent-activity', async (req: Request, res: Response, next: NextFunction) => {
   const projectUid = req.params['uid'];
   const startTime = Logger.start(req, 'fetch_project_recent_activity', {

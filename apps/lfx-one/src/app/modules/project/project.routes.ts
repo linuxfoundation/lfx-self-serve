@@ -3,6 +3,8 @@
 
 import { Routes } from '@angular/router';
 
+import { writerGuard } from '../../shared/guards/writer.guard';
+
 export const PROJECT_ROUTES: Routes = [
   {
     path: '',
@@ -26,6 +28,7 @@ export const PROJECT_ROUTES: Routes = [
   {
     path: 'settings',
     loadComponent: () => import('./settings/settings-dashboard/settings-dashboard.component').then((m) => m.SettingsDashboardComponent),
+    canActivate: [writerGuard],
     data: { preload: false }, // Settings accessed less frequently, don't preload
   },
 ];

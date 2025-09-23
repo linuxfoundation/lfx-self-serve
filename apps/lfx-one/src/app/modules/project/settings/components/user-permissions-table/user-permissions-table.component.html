@@ -23,10 +23,8 @@
         currentPageReportTemplate="Showing {first} to {last} of {totalRecords} users">
         <ng-template #header>
           <tr>
-            <th><span class="text-sm font-sans text-gray-500">User</span></th>
-            <th><span class="text-sm font-sans text-gray-500">Permission Scope</span></th>
-            <th><span class="text-sm font-sans text-gray-500">Access Level</span></th>
-            <th><span class="text-sm font-sans text-gray-500">Details</span></th>
+            <th><span class="text-sm font-sans text-gray-500">Username</span></th>
+            <th><span class="text-sm font-sans text-gray-500">Role</span></th>
             <th class="text-center">
               <div class="flex justify-center">
                 <span class="text-sm font-sans text-gray-500">Actions</span>
@@ -35,76 +33,31 @@
           </tr>
         </ng-template>
 
-        <ng-template #body let-userPermission>
+        <ng-template #body let-user>
           <tr>
-            <!-- User Info Column -->
+            <!-- Username Column -->
             <td>
-              <div class="flex items-center gap-3">
-                <div>
-                  <div class="text-sm font-sans text-gray-900 font-medium">{{ userPermission.user.first_name }} {{ userPermission.user.last_name }}</div>
-                  <div class="text-sm font-sans text-gray-500">{{ userPermission.user.email }}</div>
-                </div>
-              </div>
+              <div class="text-sm font-sans text-gray-900 font-medium">{{ user.username }}</div>
             </td>
 
-            <!-- Permission Scope Column -->
+            <!-- Role Column -->
             <td>
-              @if (userPermission.projectPermission) {
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800"> Project </span>
-              } @else if (userPermission.committeePermissions?.length > 0) {
-                <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800"> Committee </span>
-              } @else {
-                <span class="text-sm font-sans text-gray-400">No Access</span>
-              }
-            </td>
-
-            <!-- Access Level Column -->
-            <td>
-              @if (userPermission.projectPermission) {
-                <span class="text-sm font-sans {{ userPermission.projectPermission.level === 'write' ? 'text-green-700 font-medium' : 'text-blue-600' }}">
-                  {{ userPermission.projectPermission.level === 'write' ? 'Manage' : 'View' }}
-                </span>
-              } @else if (userPermission.committeePermissions?.length > 0) {
-                <span class="text-sm font-sans {{ userPermission.committeePermissions[0].level === 'write' ? 'text-green-700 font-medium' : 'text-blue-600' }}">
-                  {{ userPermission.committeePermissions[0].level === 'write' ? 'Manage' : 'View' }}
-                </span>
-              } @else {
-                <span class="text-sm font-sans text-gray-400">-</span>
-              }
-            </td>
-
-            <!-- Details Column -->
-            <td>
-              @if (userPermission.projectPermission) {
-                <span class="text-sm font-sans text-gray-600">All committees, meetings, and mailing lists</span>
-              } @else if (userPermission.committeePermissions?.length > 0) {
-                <div class="text-sm font-sans text-gray-600">
-                  @if (userPermission.committeePermissions.length === 1) {
-                    {{ userPermission.committeePermissions[0].committee.name }}
-                  } @else {
-                    <span [pTooltip]="userPermission.committeePermissions | committeeNames" tooltipPosition="top">
-                      {{ userPermission.committeePermissions.length }} committees
-                    </span>
-                  }
-                </div>
-              } @else {
-                <span class="text-sm font-sans text-gray-400">-</span>
-              }
+              <span class="text-sm font-sans {{ user.role === 'manage' ? 'text-green-700 font-medium' : 'text-blue-600' }}">
+                {{ user.role === 'manage' ? 'Manage' : 'View' }}
+              </span>
             </td>
 
             <!-- Actions Column -->
             <td class="text-center relative">
               <lfx-menu #userActionMenu [model]="userActionMenuItems" [popup]="true" appendTo="body"></lfx-menu>
               <lfx-button
-                [icon]="
-                  isRemoving() === (userPermission.user.sid || userPermission.user.id) ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'
-                "
+                [icon]="isRemoving() === user.username ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'"
                 [text]="true"
                 [rounded]="true"
                 size="small"
                 severity="secondary"
-                [disabled]="isRemoving() === (userPermission.user.sid || userPermission.user.id)"
-                (onClick)="toggleUserActionMenu($event, userPermission, userActionMenu)"
+                [disabled]="isRemoving() === user.username"
+                (onClick)="toggleUserActionMenu($event, user, userActionMenu)"
                 data-testid="user-actions-menu">
               </lfx-button>
             </td>
@@ -113,7 +66,7 @@
 
         <ng-template #emptymessage>
           <tr>
-            <td colspan="6" class="text-center py-8">
+            <td colspan="3" class="text-center py-8">
               <div class="text-center py-8 text-gray-500">
                 <i class="fa-light fa-users text-4xl text-gray-400 mb-4"></i>
                 <h3 class="text-lg font-medium text-gray-900 mb-2">No User Permissions</h3>

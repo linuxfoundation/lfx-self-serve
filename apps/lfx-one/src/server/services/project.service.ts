@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Project, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import { Project, ProjectSettings, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
 import { AccessCheckService } from './access-check.service';
+import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NatsService } from './nats.service';
 
@@ -16,11 +17,13 @@ export class ProjectService {
   private accessCheckService: AccessCheckService;
   private microserviceProxy: MicroserviceProxyService;
   private natsService: NatsService;
+  private etagService: ETagService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.natsService = new NatsService();
+    this.etagService = new ETagService();
   }
 
   /**
@@ -129,5 +132,75 @@ export class ProjectService {
 
     // Now fetch the project using the resolved ID
     return this.getProjectById(req, natsResult.projectId);
+  }
+
+  public async getProjectSettings(req: Request, projectId: string): Promise<ProjectSettings> {
+    return await this.microserviceProxy.proxyRequest<ProjectSettings>(req, 'LFX_V2_SERVICE', `/projects/${projectId}/settings`, 'GET');
+  }
+
+  /**
+   * Unified method to update project permissions using ETag for safe updates
+   */
+  public async updateProjectPermissions(
+    req: Request,
+    projectId: string,
+    operation: 'add' | 'update' | 'remove',
+    username: string,
+    role?: 'view' | 'manage'
+  ): Promise<ProjectSettings> {
+    // Step 1: Fetch current settings with ETag
+    const { data: settings, etag } = await this.etagService.fetchWithETag<ProjectSettings>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectId}/settings`,
+      `${operation}_user_project_permissions`
+    );
+
+    // Step 2: Update the settings based on operation
+    const updatedSettings = { ...settings };
+
+    // Initialize arrays if they don't exist
+    if (!updatedSettings.writers) updatedSettings.writers = [];
+    if (!updatedSettings.auditors) updatedSettings.auditors = [];
+
+    // Remove user from both arrays first (for all operations)
+    updatedSettings.writers = updatedSettings.writers.filter((u) => u !== username);
+    updatedSettings.auditors = updatedSettings.auditors.filter((u) => u !== username);
+
+    // Add user to appropriate array based on operation and role
+    if (operation === 'add' || operation === 'update') {
+      if (!role) {
+        throw new Error('Role is required for add/update operations');
+      }
+
+      if (role === 'manage') {
+        updatedSettings.writers = [...new Set([...updatedSettings.writers, username])];
+      } else {
+        updatedSettings.auditors = [...new Set([...updatedSettings.auditors, username])];
+      }
+    }
+    // For 'remove' operation, user is already removed from both arrays above
+
+    // Step 3: Update settings with ETag
+    const result = await this.etagService.updateWithETag<ProjectSettings>(
+      req,
+      'LFX_V2_SERVICE',
+      `/projects/${projectId}/settings`,
+      etag,
+      updatedSettings,
+      `${operation}_user_project_permissions`
+    );
+
+    req.log.info(
+      {
+        operation: `${operation}_user_project_permissions`,
+        project_id: projectId,
+        username,
+        role: role || 'N/A',
+      },
+      `User ${operation} operation completed successfully`
+    );
+
+    return result;
   }
 }

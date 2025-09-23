@@ -116,3 +116,22 @@ export interface ProjectCard extends Partial<Project> {
  * @description Array of projects returned from API endpoints
  */
 export type ProjectQueryResponse = Project[];
+
+/**
+ * Project settings
+ * @description Project settings for the LFX platform
+ */
+export interface ProjectSettings {
+  /** Unique project identifier */
+  uid: string;
+  /** Project announcement date */
+  announcement_date: string;
+  /** Project writers */
+  writers: string[];
+  /** Project auditors */
+  auditors: string[];
+  /** Project created at */
+  created_at: string;
+  /** Project updated at */
+  updated_at: string;
+}

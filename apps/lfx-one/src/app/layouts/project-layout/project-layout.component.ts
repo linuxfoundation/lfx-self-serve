@@ -44,6 +44,7 @@ export class ProjectLayoutComponent {
   public readonly categoryLabel = computed(() => this.project()?.slug || '');
   public readonly projectSlug = computed(() => this.project()?.slug || '');
   public readonly projectLogo = computed(() => this.project()?.logo_url || '');
+  public readonly hasWriterAccess = computed(() => this.project()?.writer === true);
   public readonly breadcrumbItems = input<MenuItem[]>([
     {
       label: 'All Projects',

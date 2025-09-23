@@ -82,7 +82,21 @@ test.describe('Project Dashboard', () => {
         await expect(page.getByTestId('menu-item').filter({ hasText: 'Meetings' })).toBeVisible();
         await expect(page.getByTestId('menu-item').filter({ hasText: 'Committees' })).toBeVisible();
         // await expect(page.getByTestId('menu-item').filter({ hasText: 'Mailing Lists' })).toBeVisible();
-        // await expect(page.getByTestId('menu-item').filter({ hasText: 'Settings' })).toBeVisible();
+        await expect(page.getByTestId('menu-item').filter({ hasText: 'Settings' })).toBeVisible();
+      });
+
+      test('should display Settings menu for users with write permissions', async ({ page }) => {
+        // Settings should be visible in both desktop and mobile views for users with write permissions
+        const viewport = page.viewportSize();
+        const isMobile = viewport && viewport.width < 768;
+
+        if (isMobile) {
+          // On mobile, Settings should be visible as mobile-menu-item
+          await expect(page.getByTestId('mobile-menu-item').filter({ hasText: 'Settings' })).toBeVisible();
+        } else {
+          // On desktop, Settings should be visible as menu-item
+          await expect(page.getByTestId('menu-item').filter({ hasText: 'Settings' })).toBeVisible();
+        }
       });
     });
 
@@ -425,8 +439,22 @@ test.describe('Without Write Permissions', () => {
       await expect(page.getByTestId('menu-item').filter({ hasText: 'Committees' })).toBeVisible();
       // await expect(page.getByTestId('menu-item').filter({ hasText: 'Mailing Lists' })).toBeVisible();
 
-      // Settings tab should also be accessible (though it may have limited functionality)
-      // await expect(page.getByTestId('menu-item').filter({ hasText: 'Settings' })).toBeVisible();
+      // Settings tab should NOT be visible for users without write permissions
+      await expect(page.getByTestId('menu-item').filter({ hasText: 'Settings' })).not.toBeVisible();
+    });
+
+    test('should NOT display Settings menu for users without write permissions', async ({ page }) => {
+      // Settings should NOT be visible in either desktop or mobile views for users without write permissions
+      const viewport = page.viewportSize();
+      const isMobile = viewport && viewport.width < 768;
+
+      if (isMobile) {
+        // On mobile, Settings should NOT be visible as mobile-menu-item
+        await expect(page.getByTestId('mobile-menu-item').filter({ hasText: 'Settings' })).not.toBeVisible();
+      } else {
+        // On desktop, Settings should NOT be visible as menu-item
+        await expect(page.getByTestId('menu-item').filter({ hasText: 'Settings' })).not.toBeVisible();
+      }
     });
   });
 
@@ -455,6 +483,9 @@ test.describe('Without Write Permissions', () => {
       // Should only have 2 menu items on mobile for read-only users
       const quickActionsSection = page.getByText('Quick Actions').locator('..');
       await expect(quickActionsSection.getByRole('menuitem')).toHaveCount(2);
+
+      // Settings should NOT be visible on mobile for read-only users
+      await expect(page.getByTestId('mobile-menu-item').filter({ hasText: 'Settings' })).not.toBeVisible();
     });
   });
 });

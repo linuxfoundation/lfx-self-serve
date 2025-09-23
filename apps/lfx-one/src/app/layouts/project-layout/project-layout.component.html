@@ -56,31 +56,33 @@
             {{ menu.label }}
           </a>
         }
-        <div class="flex md:hidden">
+        @if (hasWriterAccess()) {
+          <div class="flex md:hidden">
+            <a
+              routerLink="/project/{{ projectSlug() }}/settings"
+              class="pill"
+              routerLinkActive="bg-blue-50 text-blue-600 border-0 block md:hidden"
+              data-testid="mobile-menu-item"
+              [routerLinkActiveOptions]="{ exact: true }">
+              <i class="fa-light fa-gear"></i>
+              <span>Settings</span>
+            </a>
+          </div>
+        }
+      </div>
+      @if (hasWriterAccess()) {
+        <div class="items-center gap-3 hidden md:flex">
           <a
             routerLink="/project/{{ projectSlug() }}/settings"
             class="pill"
-            routerLinkActive="bg-blue-50 text-blue-600 border-0 block md:hidden"
-            data-testid="mobile-menu-item"
+            routerLinkActive="bg-blue-50 text-blue-600 border-0"
+            data-testid="menu-item"
             [routerLinkActiveOptions]="{ exact: true }">
             <i class="fa-light fa-gear"></i>
             <span>Settings</span>
           </a>
         </div>
-      </div>
-      <!-- TODO: Add settings menu item back in
-      <div class="items-center gap-3 hidden md:flex">
-        <a
-          routerLink="/project/{{ projectSlug() }}/settings"
-          class="pill"
-          routerLinkActive="bg-blue-50 text-blue-600 border-0"
-          data-testid="menu-item"
-          [routerLinkActiveOptions]="{ exact: true }">
-          <i class="fa-light fa-gear"></i>
-          <span>Settings</span>
-        </a>
-      </div>
-      -->
+      }
     </div>
   </div>
 </div>

@@ -2,95 +2,34 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <form [formGroup]="form()" (ngSubmit)="onSubmit()" class="space-y-6">
-  <!-- Basic Information Section -->
+  <!-- User Information Section -->
   <div class="flex flex-col gap-3">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
-      <!-- First Name -->
-      <div>
-        <label for="first-name" class="block text-sm font-medium text-gray-700 mb-1"> First Name <span class="text-red-500">*</span> </label>
-        <lfx-input-text
-          size="small"
-          [form]="form()"
-          control="first_name"
-          id="first-name"
-          placeholder="Enter first name"
-          styleClass="w-full"
-          data-testid="settings-user-form-first-name"></lfx-input-text>
-        @if (form().get('first_name')?.errors?.['required'] && form().get('first_name')?.touched) {
-          <p class="mt-1 text-xs text-red-600">First name is required</p>
-        }
-      </div>
-
-      <!-- Last Name -->
-      <div>
-        <label for="last-name" class="block text-sm font-medium text-gray-700 mb-1"> Last Name <span class="text-red-500">*</span> </label>
-        <lfx-input-text
-          size="small"
-          [form]="form()"
-          control="last_name"
-          id="last-name"
-          placeholder="Enter last name"
-          styleClass="w-full"
-          data-testid="settings-user-form-last-name"></lfx-input-text>
-        @if (form().get('last_name')?.errors?.['required'] && form().get('last_name')?.touched) {
-          <p class="mt-1 text-xs text-red-600">Last name is required</p>
-        }
-      </div>
-    </div>
-
-    <!-- Email Address -->
+    <!-- Username -->
     <div>
-      <label for="email" class="block text-sm font-medium text-gray-700 mb-1"> Email Address <span class="text-red-500">*</span> </label>
+      <label for="username" class="block text-sm font-medium text-gray-700 mb-1"> Username <span class="text-red-500">*</span> </label>
       <lfx-input-text
         size="small"
         [form]="form()"
-        control="email"
-        id="email"
-        placeholder="Enter email address"
+        control="username"
+        id="username"
+        placeholder="Enter username"
         styleClass="w-full"
-        data-testid="settings-user-form-email"></lfx-input-text>
-      @if (form().get('email')?.errors?.['required'] && form().get('email')?.touched) {
-        <p class="mt-1 text-xs text-red-600">Email address is required</p>
-      }
-      @if (form().get('email')?.errors?.['email'] && form().get('email')?.touched) {
-        <p class="mt-1 text-xs text-red-600">Please enter a valid email address</p>
+        data-testid="settings-user-form-username"></lfx-input-text>
+      @if (form().get('username')?.errors?.['required'] && form().get('username')?.touched) {
+        <p class="mt-1 text-xs text-red-600">Username is required</p>
       }
     </div>
   </div>
 
   <!-- Permission Settings Section -->
   <div class="flex flex-col gap-3">
-    <!-- Permission Scope -->
+    <!-- Role Selection -->
     <div>
       <div class="flex items-center gap-2 mb-3">
-        <label class="block text-sm font-medium text-gray-700">Permission Scope</label>
+        <label class="block text-sm font-medium text-gray-700">Role</label>
         <i
           class="fa-light fa-info-circle text-gray-400 cursor-help"
-          [pTooltip]="scopeTooltip"
-          tooltipPosition="right"
-          [escape]="false"
-          tooltipStyleClass="text-xs max-w-sm"></i>
-      </div>
-      <div class="flex flex-col gap-2">
-        @for (option of permissionScopeOptions; track option.value) {
-          <lfx-radio-button
-            [form]="form()"
-            control="permission_scope"
-            name="permission_scope"
-            [inputId]="'scope-' + option.value"
-            [value]="option.value"
-            [label]="option.label"></lfx-radio-button>
-        }
-      </div>
-    </div>
-
-    <!-- Permission Level -->
-    <div>
-      <div class="flex items-center gap-2 mb-3">
-        <label class="block text-sm font-medium text-gray-700">Permission Level</label>
-        <i
-          class="fa-light fa-info-circle text-gray-400 cursor-help"
-          [pTooltip]="levelTooltip"
+          [pTooltip]="roleTooltip"
           tooltipPosition="right"
           [escape]="false"
           tooltipStyleClass="text-xs max-w-sm"></i>
@@ -99,50 +38,22 @@
         @for (option of permissionLevelOptions; track option.value) {
           <lfx-radio-button
             [form]="form()"
-            control="permission_level"
-            name="permission_level"
-            [inputId]="'level-' + option.value"
+            control="role"
+            name="role"
+            [inputId]="'role-' + option.value"
             [value]="option.value"
             [label]="option.label"></lfx-radio-button>
         }
       </div>
     </div>
 
-    <!-- Committee Selection (only when scope is committee) -->
-    @if (form().get('permission_scope')?.value === 'committee') {
-      <div>
-        <label for="committee-ids" class="block text-sm font-medium text-gray-700 mb-1">Select Committees <span class="text-red-500">*</span></label>
-        <p class="text-xs text-gray-500 mb-2">Choose which committees this user can access</p>
-        <lfx-multi-select
-          [form]="form()"
-          control="committee_ids"
-          [options]="committees()"
-          size="small"
-          placeholder="Select committees"
-          appendTo="body"
-          id="committee-ids"
-          data-testid="settings-user-form-committee-ids"
-          styleClass="w-full"></lfx-multi-select>
-        @if (form().get('committee_ids')?.errors?.['required'] && form().get('committee_ids')?.touched) {
-          <p class="mt-1 text-xs text-red-600">At least one committee must be selected</p>
-        }
-      </div>
-    }
-
     <!-- Permission Summary -->
     <div class="bg-gray-50 p-3 rounded-md text-sm">
       <div class="font-medium text-gray-700 mb-1">Permission Summary:</div>
-      @if (form().get('permission_scope')?.value === 'project') {
-        <div class="text-gray-600">
-          <strong>{{ form().get('permission_level')?.value === 'read' ? 'View-only' : 'Full' }}</strong> access to <strong>entire project</strong> including all
-          committees, meetings, and mailing lists.
-        </div>
-      } @else {
-        <div class="text-gray-600">
-          <strong>{{ form().get('permission_level')?.value === 'read' ? 'View-only' : 'Full' }}</strong> access to <strong>selected committees</strong> and
-          their associated meetings and mailing lists only.
-        </div>
-      }
+      <div class="text-gray-600">
+        <strong>{{ form().get('role')?.value === 'view' ? 'View-only' : 'Full management' }}</strong> access to the <strong>entire project</strong> including
+        all committees, meetings, and mailing lists.
+      </div>
     </div>
   </div>
 
@@ -166,16 +77,9 @@
   </div>
 </form>
 
-<ng-template #scopeTooltip>
+<ng-template #roleTooltip>
   <div class="flex flex-col">
-    <div><strong>Project:</strong> Access to entire project including all committees, meetings, and mailing lists</div>
-    <div><strong>Committee:</strong> Access limited to specific committees and their associated content only</div>
-  </div>
-</ng-template>
-
-<ng-template #levelTooltip>
-  <div class="flex flex-col">
-    <div><strong>View:</strong> Read-only access to view and browse content</div>
-    <div><strong>Manage:</strong> Full access to create, edit, delete, and manage content</div>
+    <div><strong>View:</strong> Read-only access to view and browse all project content</div>
+    <div><strong>Manage:</strong> Full access to create, edit, delete, and manage all project content</div>
   </div>
 </ng-template>

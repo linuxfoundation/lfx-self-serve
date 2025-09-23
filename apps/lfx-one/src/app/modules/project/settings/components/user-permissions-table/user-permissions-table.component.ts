@@ -3,12 +3,11 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, inject, input, output, signal, WritableSignal } from '@angular/core';
-import { CommitteeNamesPipe } from '@app/shared/pipes/committee-names.pipe';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TableComponent } from '@components/table/table.component';
-import { UserPermissionSummary } from '@lfx-one/shared/interfaces';
+import { ProjectPermissionUser } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectService } from '@services/project.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
@@ -22,7 +21,7 @@ import { UserFormComponent } from '../user-form/user-form.component';
 @Component({
   selector: 'lfx-user-permissions-table',
   standalone: true,
-  imports: [CommonModule, TableComponent, TooltipModule, CardComponent, ConfirmDialogModule, ButtonComponent, MenuComponent, CommitteeNamesPipe],
+  imports: [CommonModule, TableComponent, TooltipModule, CardComponent, ConfirmDialogModule, ButtonComponent, MenuComponent],
   templateUrl: './user-permissions-table.component.html',
 })
 export class UserPermissionsTableComponent {
@@ -33,18 +32,18 @@ export class UserPermissionsTableComponent {
   private readonly dialogService = inject(DialogService);
 
   // State signals
-  public users = input.required<UserPermissionSummary[]>();
+  public users = input.required<ProjectPermissionUser[]>();
   public loading = input<boolean>();
   public project = this.projectService.project;
   public isRemoving: WritableSignal<string | null> = signal(null);
-  public selectedUser: WritableSignal<UserPermissionSummary | null> = signal(null);
+  public selectedUser: WritableSignal<ProjectPermissionUser | null> = signal(null);
   public userActionMenuItems: MenuItem[] = this.initializeUserActionMenuItems();
 
   // Output events
   public readonly refresh = output<void>();
 
   // Event handlers
-  protected onEditUser(user: UserPermissionSummary): void {
+  protected onEditUser(user: ProjectPermissionUser): void {
     if (!user) return;
 
     this.dialogService
@@ -67,16 +66,16 @@ export class UserPermissionsTableComponent {
       });
   }
 
-  protected toggleUserActionMenu(event: Event, user: UserPermissionSummary, menuComponent: MenuComponent): void {
+  protected toggleUserActionMenu(event: Event, user: ProjectPermissionUser, menuComponent: MenuComponent): void {
     event.stopPropagation();
     this.selectedUser.set(user);
     menuComponent.toggle(event);
   }
 
-  protected onRemoveUser(user: UserPermissionSummary): void {
+  protected onRemoveUser(user: ProjectPermissionUser): void {
     if (!user) return;
 
-    const userName = user.user.name || `${user.user.first_name || ''} ${user.user.last_name || ''}`.trim() || user.user.email;
+    const userName = user.username;
 
     this.confirmationService.confirm({
       message: `Are you sure you want to remove ${userName} from this project? This will revoke all their permissions for this project
@@ -92,19 +91,13 @@ export class UserPermissionsTableComponent {
     });
   }
 
-  private removeUser(user: UserPermissionSummary): void {
+  private removeUser(user: ProjectPermissionUser): void {
     if (!this.project()) return;
 
-    const userId = user.user.sid || user.user.id;
-    if (!userId) {
-      console.error('User ID not found');
-      return;
-    }
-
-    this.isRemoving.set(userId);
+    this.isRemoving.set(user.username);
 
     this.permissionsService
-      .removeUserPermissions(this.project()!.uid, userId)
+      .removeUserFromProject(this.project()!.uid, user.username)
       .pipe(take(1))
       .subscribe({
         next: () => {

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { AddUserToProjectRequest, UpdateUserRoleRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -155,6 +156,265 @@ export class ProjectController {
       });
 
       // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * GET /projects/:uid/permissions
+   */
+  public async getProjectPermissions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = Logger.start(req, 'get_project_permissions', {
+      uid,
+    });
+
+    try {
+      // Check if the project uid is provided
+      if (!uid) {
+        Logger.error(req, 'get_project_permissions', startTime, new Error('Missing project uid parameter'));
+
+        // Create a validation error
+        const validationError = ServiceValidationError.forField('uid', 'Project uid is required', {
+          operation: 'get_project_permissions',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Get the project permissions
+      const settings = await this.projectService.getProjectSettings(req, uid);
+
+      // Log the success
+      Logger.success(req, 'get_project_permissions', startTime, {
+        uid,
+        project_uid: settings.uid,
+      });
+
+      // Send the permissions to the client
+      res.json(settings);
+    } catch (error) {
+      // Log the error
+      Logger.error(req, 'get_project_permissions', startTime, error, {
+        uid,
+      });
+
+      // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * POST /projects/:uid/permissions - Add user
+   */
+  public async addUserToProjectPermissions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = Logger.start(req, 'add_user_project_permissions', {
+      uid,
+    });
+
+    try {
+      // Validate project uid
+      if (!uid) {
+        Logger.error(req, 'add_user_project_permissions', startTime, new Error('Missing project uid parameter'));
+
+        const validationError = ServiceValidationError.forField('uid', 'Project uid is required', {
+          operation: 'add_user_project_permissions',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const userData: AddUserToProjectRequest = req.body;
+
+      // Validate required fields
+      if (!userData.username || !userData.role) {
+        Logger.error(req, 'add_user_project_permissions', startTime, new Error('Missing required fields'));
+
+        const validationError = ServiceValidationError.forField('body', 'Username and role are required', {
+          operation: 'add_user_project_permissions',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Validate role value
+      if (!['view', 'manage'].includes(userData.role)) {
+        Logger.error(req, 'add_user_project_permissions', startTime, new Error('Invalid role value'));
+
+        const validationError = ServiceValidationError.forField('role', 'Role must be either "view" or "manage"', {
+          operation: 'add_user_project_permissions',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const result = await this.projectService.updateProjectPermissions(req, uid, 'add', userData.username, userData.role);
+
+      Logger.success(req, 'add_user_project_permissions', startTime, {
+        uid,
+        username: userData.username,
+        role: userData.role,
+      });
+
+      res.status(201).json(result);
+    } catch (error) {
+      Logger.error(req, 'add_user_project_permissions', startTime, error, {
+        uid,
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /projects/:uid/permissions/:username - Update user role
+   */
+  public async updateUserPermissionRole(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, username } = req.params;
+    const startTime = Logger.start(req, 'update_user_role_project_permissions', {
+      uid,
+      username,
+    });
+
+    try {
+      // Validate parameters
+      if (!uid) {
+        Logger.error(req, 'update_user_role_project_permissions', startTime, new Error('Missing project uid parameter'));
+
+        const validationError = ServiceValidationError.forField('uid', 'Project uid is required', {
+          operation: 'update_user_role_project_permissions',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      if (!username) {
+        Logger.error(req, 'update_user_role_project_permissions', startTime, new Error('Missing username parameter'));
+
+        const validationError = ServiceValidationError.forField('username', 'Username is required', {
+          operation: 'update_user_role_project_permissions',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const roleData: UpdateUserRoleRequest = req.body;
+
+      // Validate required fields
+      if (!roleData.role) {
+        Logger.error(req, 'update_user_role_project_permissions', startTime, new Error('Missing role field'));
+
+        const validationError = ServiceValidationError.forField('role', 'Role is required', {
+          operation: 'update_user_role_project_permissions',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Validate role value
+      if (!['view', 'manage'].includes(roleData.role)) {
+        Logger.error(req, 'update_user_role_project_permissions', startTime, new Error('Invalid role value'));
+
+        const validationError = ServiceValidationError.forField('role', 'Role must be either "view" or "manage"', {
+          operation: 'update_user_role_project_permissions',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const result = await this.projectService.updateProjectPermissions(req, uid, 'update', username, roleData.role);
+
+      Logger.success(req, 'update_user_role_project_permissions', startTime, {
+        uid,
+        username,
+        new_role: roleData.role,
+      });
+
+      res.json(result);
+    } catch (error) {
+      Logger.error(req, 'update_user_role_project_permissions', startTime, error, {
+        uid,
+        username,
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /projects/:uid/permissions/:username - Remove user
+   */
+  public async removeUserFromProjectPermissions(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, username } = req.params;
+    const startTime = Logger.start(req, 'remove_user_project_permissions', {
+      uid,
+      username,
+    });
+
+    try {
+      // Validate parameters
+      if (!uid) {
+        Logger.error(req, 'remove_user_project_permissions', startTime, new Error('Missing project uid parameter'));
+
+        const validationError = ServiceValidationError.forField('uid', 'Project uid is required', {
+          operation: 'remove_user_project_permissions',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      if (!username) {
+        Logger.error(req, 'remove_user_project_permissions', startTime, new Error('Missing username parameter'));
+
+        const validationError = ServiceValidationError.forField('username', 'Username is required', {
+          operation: 'remove_user_project_permissions',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      await this.projectService.updateProjectPermissions(req, uid, 'remove', username);
+
+      Logger.success(req, 'remove_user_project_permissions', startTime, {
+        uid,
+        username,
+      });
+
+      res.status(204).send();
+    } catch (error) {
+      Logger.error(req, 'remove_user_project_permissions', startTime, error, {
+        uid,
+        username,
+      });
       next(error);
     }
   }

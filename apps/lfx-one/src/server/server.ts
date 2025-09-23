@@ -20,7 +20,6 @@ import { apiErrorHandler } from './middleware/error-handler.middleware';
 import committeesRouter from './routes/committees.route';
 import meetingsRouter from './routes/meetings.route';
 import pastMeetingsRouter from './routes/past-meetings.route';
-import permissionsRouter from './routes/permissions.route';
 import profileRouter from './routes/profile.route';
 import projectsRouter from './routes/projects.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
@@ -198,7 +197,6 @@ app.use('/public/api/meetings', publicMeetingsRouter);
 
 // Protected API routes
 app.use('/api/projects', projectsRouter);
-app.use('/api/projects', permissionsRouter);
 app.use('/api/committees', committeesRouter);
 app.use('/api/meetings', meetingsRouter);
 app.use('/api/past-meetings', pastMeetingsRouter);

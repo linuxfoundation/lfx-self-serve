@@ -5,7 +5,7 @@ import { Component, inject, signal, Signal, WritableSignal } from '@angular/core
 import { toSignal } from '@angular/core/rxjs-interop';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
-import { UserPermissionSummary } from '@lfx-one/shared';
+import { ProjectPermissionUser } from '@lfx-one/shared';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectService } from '@services/project.service';
 import { MenuItem } from 'primeng/api';
@@ -26,7 +26,7 @@ export class SettingsDashboardComponent {
   private readonly dialogService = inject(DialogService);
   private readonly permissionsService = inject(PermissionsService);
 
-  public users: Signal<UserPermissionSummary[]>;
+  public users: Signal<ProjectPermissionUser[]>;
   public loading: WritableSignal<boolean> = signal(true);
   public refresh: BehaviorSubject<void> = new BehaviorSubject<void>(undefined);
   public project = this.projectService.project;
