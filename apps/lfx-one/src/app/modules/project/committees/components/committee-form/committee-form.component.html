@@ -21,7 +21,9 @@
     <div>
       <label for="committee-name" class="block text-sm font-medium text-gray-700 mb-1"> Committee Name <span class="text-red-500">*</span> </label>
       <lfx-input-text size="small" [form]="form()" control="name" id="committee-name" placeholder="Enter committee name" styleClass="w-full"></lfx-input-text>
-      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('name')?.errors?.['required'] && form().get('name')?.touched">Committee name is required</p>
+      @if (form().get('name')?.errors?.['required'] && form().get('name')?.touched) {
+        <p class="mt-1 text-sm text-red-600">Committee name is required</p>
+      }
     </div>
 
     <!-- Category -->
@@ -35,7 +37,9 @@
         placeholder="Select a category"
         styleClass="w-full"
         id="committee-category"></lfx-select>
-      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('category')?.errors?.['required'] && form().get('category')?.touched">Category is required</p>
+      @if (form().get('category')?.errors?.['required'] && form().get('category')?.touched) {
+        <p class="mt-1 text-sm text-red-600">Category is required</p>
+      }
     </div>
 
     <!-- Parent Committee -->
@@ -116,16 +120,18 @@
       tooltipPosition="right"></lfx-toggle>
 
     <!-- Conditional Public Name Field -->
-    <div *ngIf="form().get('public')?.value === true">
-      <label for="public-name" class="block text-sm font-medium text-gray-700 mb-1"> Public Name </label>
-      <lfx-input-text
-        size="small"
-        [form]="form()"
-        control="display_name"
-        id="public-name"
-        placeholder="Enter public display name"
-        styleClass="w-full"></lfx-input-text>
-    </div>
+    @if (form().get('public')?.value === true) {
+      <div>
+        <label for="public-name" class="block text-sm font-medium text-gray-700 mb-1"> Public Name </label>
+        <lfx-input-text
+          size="small"
+          [form]="form()"
+          control="display_name"
+          id="public-name"
+          placeholder="Enter public display name"
+          styleClass="w-full"></lfx-input-text>
+      </div>
+    }
   </div>
 
   <!-- SSO Settings Section -->
@@ -163,7 +169,9 @@
         type="url"
         placeholder="https://example.com"
         styleClass="w-full"></lfx-input-text>
-      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('website')?.errors?.['pattern'] && form().get('website')?.touched">Please enter a valid URL</p>
+      @if (form().get('website')?.errors?.['pattern'] && form().get('website')?.touched) {
+        <p class="mt-1 text-sm text-red-600">Please enter a valid URL</p>
+      }
     </div>
   </div>
 

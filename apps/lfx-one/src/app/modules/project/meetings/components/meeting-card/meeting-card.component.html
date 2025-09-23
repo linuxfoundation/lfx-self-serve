@@ -38,15 +38,17 @@
         }
       </div>
       <div class="flex items-center gap-1">
-        <lfx-button
-          icon="fa-light fa-copy"
-          [text]="true"
-          [rounded]="true"
-          size="small"
-          severity="secondary"
-          data-testid="copy-meeting-button"
-          (click)="copyMeetingLink()"
-          pTooltip="Copy Meeting"></lfx-button>
+        @if (!pastMeeting()) {
+          <lfx-button
+            icon="fa-light fa-copy"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="copy-meeting-button"
+            (click)="copyMeetingLink()"
+            tooltip="Copy Meeting"></lfx-button>
+        }
         @if (meeting().visibility === 'public') {
           <lfx-button
             icon="fa-light fa-share"
@@ -55,7 +57,7 @@
             size="small"
             severity="secondary"
             data-testid="share-meeting-button"
-            pTooltip="Share Meeting"></lfx-button>
+            tooltip="Share Meeting"></lfx-button>
         }
         @if (project()?.slug && meeting().organizer) {
           <lfx-button
@@ -65,6 +67,7 @@
             size="small"
             severity="secondary"
             data-testid="edit-meeting-button"
+            tooltip="Edit Meeting"
             [routerLink]="['/project', project()!.slug, 'meetings', meeting().uid, 'edit']"></lfx-button>
 
           <lfx-button

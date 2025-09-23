@@ -60,7 +60,7 @@ export class ButtonComponent {
   public readonly onBlur = output<FocusEvent>();
 
   // Tooltip
-  public readonly pTooltip = input<string | undefined>(undefined);
+  public readonly tooltip = input<string | undefined>(undefined);
   public readonly tooltipPosition = input<string>('top');
 
   protected handleClick(event: MouseEvent): void {

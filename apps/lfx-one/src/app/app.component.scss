@@ -111,7 +111,11 @@
     }
   }
 
-  // .p-message-content {
-  //   @apply flex items-start;
-  // }
+  .p-message-content {
+    @apply w-full;
+
+    .p-message-text {
+      @apply w-full;
+    }
+  }
 }

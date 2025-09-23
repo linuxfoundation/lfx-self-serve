@@ -9,16 +9,18 @@
       <div>
         <label for="first-name" class="block text-sm font-medium text-gray-700 mb-1"> First Name <span class="text-red-500">*</span> </label>
         <lfx-input-text size="small" [form]="form()" control="first_name" id="first-name" placeholder="Enter first name" styleClass="w-full"></lfx-input-text>
-        <p class="mt-1 text-sm text-red-600" *ngIf="form().get('first_name')?.errors?.['required'] && form().get('first_name')?.touched">
-          First name is required
-        </p>
+        @if (form().get('first_name')?.errors?.['required'] && form().get('first_name')?.touched) {
+          <p class="mt-1 text-xs text-red-600">First name is required</p>
+        }
       </div>
 
       <!-- Last Name -->
       <div>
         <label for="last-name" class="block text-sm font-medium text-gray-700 mb-1"> Last Name <span class="text-red-500">*</span> </label>
         <lfx-input-text size="small" [form]="form()" control="last_name" id="last-name" placeholder="Enter last name" styleClass="w-full"></lfx-input-text>
-        <p class="mt-1 text-sm text-red-600" *ngIf="form().get('last_name')?.errors?.['required'] && form().get('last_name')?.touched">Last name is required</p>
+        @if (form().get('last_name')?.errors?.['required'] && form().get('last_name')?.touched) {
+          <p class="mt-1 text-xs text-red-600">Last name is required</p>
+        }
       </div>
     </div>
 
@@ -26,8 +28,12 @@
     <div>
       <label for="email" class="block text-sm font-medium text-gray-700 mb-1"> Email Address <span class="text-red-500">*</span> </label>
       <lfx-input-text size="small" [form]="form()" control="email" id="email" placeholder="Enter email address" styleClass="w-full"></lfx-input-text>
-      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('email')?.errors?.['required'] && form().get('email')?.touched">Email address is required</p>
-      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('email')?.errors?.['email'] && form().get('email')?.touched">Please enter a valid email address</p>
+      @if (form().get('email')?.errors?.['required'] && form().get('email')?.touched) {
+        <p class="mt-1 text-xs text-red-600">Email address is required</p>
+      }
+      @if (form().get('email')?.errors?.['email'] && form().get('email')?.touched) {
+        <p class="mt-1 text-xs text-red-600">Please enter a valid email address</p>
+      }
     </div>
   </div>
 
@@ -41,7 +47,12 @@
 
     <!-- Organization -->
     <div>
-      <label for="organization" class="block text-sm font-medium text-gray-700 mb-1"> Organization </label>
+      <label for="organization" class="block text-sm font-medium text-gray-700 mb-1">
+        Organization
+        @if (form().get('organization_url')?.value) {
+          <span class="text-red-500">*</span>
+        }
+      </label>
       <lfx-input-text
         size="small"
         [form]="form()"
@@ -49,11 +60,19 @@
         id="organization"
         placeholder="Enter organization name"
         styleClass="w-full"></lfx-input-text>
+      @if (form().errors?.['organizationRequired'] && form().get('organization')?.touched) {
+        <p class="mt-1 text-xs text-red-600">Organization name is required when organization URL is provided</p>
+      }
     </div>
 
     <!-- Organization URL -->
     <div>
-      <label for="organization-url" class="block text-sm font-medium text-gray-700 mb-1"> Organization URL </label>
+      <label for="organization-url" class="block text-sm font-medium text-gray-700 mb-1">
+        Organization URL
+        @if (form().get('organization')?.value) {
+          <span class="text-red-500">*</span>
+        }
+      </label>
       <lfx-input-text
         size="small"
         [form]="form()"
@@ -61,9 +80,12 @@
         id="organization-url"
         placeholder="https://example.com"
         styleClass="w-full"></lfx-input-text>
-      <p class="mt-1 text-sm text-red-600" *ngIf="form().get('organization_url')?.errors?.['pattern'] && form().get('organization_url')?.touched">
-        Please enter a valid URL
-      </p>
+      @if (form().get('organization_url')?.errors?.['pattern'] && form().get('organization_url')?.touched) {
+        <p class="mt-1 text-xs text-red-600">Please enter a valid URL</p>
+      }
+      @if (form().errors?.['organizationUrlRequired'] && form().get('organization_url')?.touched) {
+        <p class="mt-1 text-xs text-red-600">Organization URL is required when organization name is provided</p>
+      }
     </div>
   </div>
 

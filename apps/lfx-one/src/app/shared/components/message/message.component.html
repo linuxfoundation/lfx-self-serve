@@ -19,14 +19,14 @@
   (onClose)="handleClose($event.originalEvent)">
   <!-- Custom content template -->
   @if (contentTemplate) {
-    <div class="flex flex-col gap-1">
+    <div class="flex flex-col gap-1 w-full">
       @if (title()) {
         <h4 class="text-sm font-semibold mb-1">{{ title() }}</h4>
       }
       <ng-container [ngTemplateOutlet]="contentTemplate"></ng-container>
     </div>
   } @else if (!text()) {
-    <div class="flex flex-col gap-1">
+    <div class="flex flex-col gap-1 w-full">
       @if (title()) {
         <h4 class="text-sm font-semibold mb-1">{{ title() }}</h4>
       }
