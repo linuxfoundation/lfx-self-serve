@@ -15,7 +15,16 @@ import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { environment } from '@environments/environment';
-import { extractUrlsWithDomains, Meeting, MeetingAttachment, MeetingOccurrence, MeetingRegistrant, PastMeetingParticipant } from '@lfx-one/shared';
+import {
+  extractUrlsWithDomains,
+  getCurrentOrNextOccurrence,
+  Meeting,
+  MeetingAttachment,
+  MeetingOccurrence,
+  MeetingRegistrant,
+  PastMeeting,
+  PastMeetingParticipant,
+} from '@lfx-one/shared';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
@@ -61,7 +70,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly injector = inject(Injector);
   private readonly clipboard = inject(Clipboard);
 
-  public readonly meetingInput = input.required<Meeting>();
+  public readonly meetingInput = input.required<Meeting | PastMeeting>();
   public readonly occurrenceInput = input<MeetingOccurrence | null>(null);
   public readonly pastMeeting = input<boolean>(false);
   public readonly loading = input<boolean>(false);
@@ -69,7 +78,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly meetingRegistrantCount: Signal<number> = this.initMeetingRegistrantCount();
   public readonly registrantResponseBreakdown: Signal<string> = this.initRegistrantResponseBreakdown();
   public showRegistrants: WritableSignal<boolean> = signal(false);
-  public meeting: WritableSignal<Meeting> = signal({} as Meeting);
+  public meeting: WritableSignal<Meeting | PastMeeting> = signal({} as Meeting | PastMeeting);
   public occurrence: WritableSignal<MeetingOccurrence | null> = signal(null);
   public registrantsLoading: WritableSignal<boolean> = signal(true);
   private refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
@@ -91,6 +100,8 @@ export class MeetingCardComponent implements OnInit {
   public readonly attendedCount: Signal<number> = this.initAttendedCount();
   public readonly notAttendedCount: Signal<number> = this.initNotAttendedCount();
   public readonly participantCount: Signal<number> = this.initParticipantCount();
+  public readonly currentOccurrence: Signal<MeetingOccurrence | null> = this.initCurrentOccurrence();
+  public readonly meetingStartTime: Signal<string | null> = this.initMeetingStartTime();
 
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
@@ -103,8 +114,16 @@ export class MeetingCardComponent implements OnInit {
   public constructor() {
     effect(() => {
       this.meeting.set(this.meetingInput());
+      // Priority: explicit occurrenceInput > current occurrence for upcoming > null for past without input
       if (this.occurrenceInput()) {
+        // If explicitly passed an occurrence, always use it
         this.occurrence.set(this.occurrenceInput()!);
+      } else if (!this.pastMeeting()) {
+        // For upcoming meetings without explicit occurrence, use current occurrence
+        this.occurrence.set(this.currentOccurrence());
+      } else {
+        // For past meetings without occurrence input, set to null
+        this.occurrence.set(null);
       }
     });
   }
@@ -602,6 +621,45 @@ export class MeetingCardComponent implements OnInit {
     return computed(() => {
       if (!this.pastMeeting()) return 0;
       return this.meeting()?.participant_count || 0;
+    });
+  }
+
+  private initCurrentOccurrence(): Signal<MeetingOccurrence | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+      return getCurrentOrNextOccurrence(meeting);
+    });
+  }
+
+  private initMeetingStartTime(): Signal<string | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+
+      if (!this.pastMeeting()) {
+        // For upcoming meetings, use current occurrence (next upcoming occurrence) or meeting start_time
+        const currentOccurrence = this.occurrence();
+        if (currentOccurrence?.start_time) {
+          return currentOccurrence.start_time;
+        }
+        if (meeting?.start_time) {
+          return meeting.start_time;
+        }
+      } else {
+        // For past meetings, use occurrence input or fallback to scheduled_start_time/start_time
+        const occurrence = this.occurrence();
+        if (occurrence?.start_time) {
+          return occurrence.start_time;
+        }
+        if (meeting?.start_time) {
+          return meeting.start_time;
+        }
+        // Handle past meetings that use scheduled_start_time (type-safe check)
+        if ('scheduled_start_time' in meeting && meeting.scheduled_start_time) {
+          return meeting.scheduled_start_time;
+        }
+      }
+
+      return null;
     });
   }
 }

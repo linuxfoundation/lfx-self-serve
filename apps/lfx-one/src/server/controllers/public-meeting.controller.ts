@@ -203,7 +203,7 @@ export class PublicMeetingController {
    */
   private async fetchMeetingWithM2M(req: Request, id: string) {
     await this.setupM2MToken(req);
-    return await this.meetingService.getMeetingById(req, id, 'meeting', false);
+    return await this.meetingService.getMeetingById(req, id, 'meetings', false);
   }
 
   /**

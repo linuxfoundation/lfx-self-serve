@@ -15,7 +15,7 @@ import { ExpandableTextComponent } from '@components/expandable-text/expandable-
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { environment } from '@environments/environment';
-import { extractUrlsWithDomains, Meeting, MeetingOccurrence, Project, User } from '@lfx-one/shared';
+import { extractUrlsWithDomains, getCurrentOrNextOccurrence, Meeting, MeetingOccurrence, Project, User } from '@lfx-one/shared';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -149,32 +149,7 @@ export class MeetingJoinComponent {
   private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {
     return computed(() => {
       const meeting = this.meeting();
-      if (!meeting?.occurrences || meeting.occurrences.length === 0) {
-        return null;
-      }
-
-      const now = new Date();
-      const earlyJoinMinutes = meeting.early_join_time_minutes || 10;
-
-      // Find the first occurrence that is currently joinable (within the join window)
-      const joinableOccurrence = meeting.occurrences.find((occurrence) => {
-        const startTime = new Date(occurrence.start_time);
-        const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-        const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
-
-        return now >= earliestJoinTime && now <= latestJoinTime;
-      });
-
-      if (joinableOccurrence) {
-        return joinableOccurrence;
-      }
-
-      // If no joinable occurrence, find the next future occurrence
-      const futureOccurrences = meeting.occurrences
-        .filter((occurrence) => new Date(occurrence.start_time) > now)
-        .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
-
-      return futureOccurrences.length > 0 ? futureOccurrences[0] : null;
+      return getCurrentOrNextOccurrence(meeting);
     });
   }
 

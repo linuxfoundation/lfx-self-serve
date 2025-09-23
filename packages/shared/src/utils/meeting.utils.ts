@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
-import { CustomRecurrencePattern, RecurrenceSummary } from '../interfaces';
+import { CustomRecurrencePattern, Meeting, MeetingOccurrence, RecurrenceSummary } from '../interfaces';
 
 /**
  * Build a human-readable recurrence summary from custom recurrence pattern
@@ -101,4 +101,38 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
     endDescription,
     fullSummary,
   };
+}
+
+/**
+ * Get the current joinable occurrence or next upcoming occurrence for a meeting
+ * @param meeting The meeting object with occurrences
+ * @returns The current/next occurrence or null if none available
+ */
+export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence | null {
+  if (!meeting?.occurrences || meeting.occurrences.length === 0) {
+    return null;
+  }
+
+  const now = new Date();
+  const earlyJoinMinutes = meeting.early_join_time_minutes || 10;
+
+  // Find the first occurrence that is currently joinable (within the join window)
+  const joinableOccurrence = meeting.occurrences.find((occurrence) => {
+    const startTime = new Date(occurrence.start_time);
+    const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
+    const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
+
+    return now >= earliestJoinTime && now <= latestJoinTime;
+  });
+
+  if (joinableOccurrence) {
+    return joinableOccurrence;
+  }
+
+  // If no joinable occurrence, find the next future occurrence
+  const futureOccurrences = meeting.occurrences
+    .filter((occurrence) => new Date(occurrence.start_time) > now)
+    .sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+  return futureOccurrences.length > 0 ? futureOccurrences[0] : null;
 }

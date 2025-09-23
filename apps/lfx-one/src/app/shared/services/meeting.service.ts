@@ -15,6 +15,7 @@ import {
   MeetingJoinURL,
   MeetingRegistrant,
   MeetingRegistrantWithState,
+  PastMeeting,
   PastMeetingParticipant,
   Project,
   UpdateMeetingRegistrantRequest,
@@ -40,8 +41,8 @@ export class MeetingService {
     );
   }
 
-  public getPastMeetings(params?: HttpParams): Observable<Meeting[]> {
-    return this.http.get<Meeting[]>('/api/past-meetings', { params }).pipe(
+  public getPastMeetings(params?: HttpParams): Observable<PastMeeting[]> {
+    return this.http.get<PastMeeting[]>('/api/past-meetings', { params }).pipe(
       catchError((error) => {
         console.error('Failed to load past meetings:', error);
         return of([]);
@@ -78,7 +79,7 @@ export class MeetingService {
     return this.getMeetings(params);
   }
 
-  public getPastMeetingsByProject(projectId: string, limit: number = 3): Observable<Meeting[]> {
+  public getPastMeetingsByProject(projectId: string, limit: number = 3): Observable<PastMeeting[]> {
     let params = new HttpParams().set('tags', `project_uid:${projectId}`);
 
     if (limit) {
@@ -98,8 +99,8 @@ export class MeetingService {
     );
   }
 
-  public getPastMeeting(id: string): Observable<Meeting> {
-    return this.http.get<Meeting>(`/api/past-meetings/${id}`).pipe(
+  public getPastMeeting(id: string): Observable<PastMeeting> {
+    return this.http.get<PastMeeting>(`/api/past-meetings/${id}`).pipe(
       catchError((error) => {
         console.error(`Failed to load past meeting ${id}:`, error);
         return throwError(() => error);

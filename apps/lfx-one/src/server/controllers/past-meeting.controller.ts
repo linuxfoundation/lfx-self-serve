@@ -3,6 +3,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
+import { PastMeeting } from '@lfx-one/shared/interfaces';
 import { Logger } from '../helpers/logger';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { MeetingService } from '../services/meeting.service';
@@ -23,7 +24,7 @@ export class PastMeetingController {
 
     try {
       // Get the past meetings using meetingType 'past_meeting'
-      const meetings = await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'past_meeting');
+      const meetings = (await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'past_meeting')) as PastMeeting[];
 
       // TODO: Remove this once we have a way to get the registrants count
       // Process each meeting individually to add registrant and participant counts
@@ -73,7 +74,7 @@ export class PastMeetingController {
       }
 
       // Get the past meeting by ID using meetingType 'past_meeting'
-      const meeting = await this.meetingService.getMeetingById(req, uid, 'past_meeting');
+      const meeting = (await this.meetingService.getMeetingById(req, uid, 'past_meetings')) as PastMeeting;
 
       // Log the success
       Logger.success(req, 'get_past_meeting_by_id', startTime, {

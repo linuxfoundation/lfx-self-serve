@@ -481,6 +481,38 @@ export interface RecurrenceSummary {
 }
 
 /**
+ * Meeting session information
+ * @description Individual session within a meeting (typically for past meetings)
+ */
+export interface MeetingSession {
+  /** Session unique identifier */
+  uid: string;
+  /** Session start time */
+  start_time: string;
+  /** Session end time */
+  end_time: string;
+}
+
+/**
+ * Past meeting interface
+ * @description Extended meeting interface with additional fields specific to past meetings
+ */
+export interface PastMeeting extends Meeting {
+  /** Scheduled start time for past meetings */
+  scheduled_start_time: string;
+  /** Scheduled end time for past meetings */
+  scheduled_end_time: string;
+  /** Original meeting UID (different from uid which is the past meeting occurrence UID) */
+  meeting_uid: string;
+  /** The specific occurrence ID for recurring meetings */
+  occurrence_id: string;
+  /** Platform-specific meeting ID (e.g., Zoom meeting ID) */
+  platform_meeting_id: string;
+  /** Array of session objects with start/end times */
+  sessions: MeetingSession[];
+}
+
+/**
  * Past meeting participant information
  * @description Individual participant who was invited/attended a past meeting
  */

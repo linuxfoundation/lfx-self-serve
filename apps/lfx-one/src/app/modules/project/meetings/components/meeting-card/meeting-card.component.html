@@ -93,13 +93,10 @@
           </h3>
         }
       </div>
-      @if (occurrence()?.start_time || meeting().start_time) {
+      @if (meetingStartTime()) {
         <div class="flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded flex-shrink-0" data-testid="meeting-datetime">
           <i class="fa-light fa-calendar-days text-gray-400"></i>
-          <span
-            >{{ occurrence()?.start_time || meeting().start_time | meetingTime: meeting().duration : 'date' }} •
-            {{ occurrence()?.start_time || meeting().start_time | meetingTime: meeting().duration : 'time' }}</span
-          >
+          <span>{{ meetingStartTime() | meetingTime: meeting().duration : 'date' }} • {{ meetingStartTime() | meetingTime: meeting().duration : 'time' }}</span>
         </div>
       }
     </div>

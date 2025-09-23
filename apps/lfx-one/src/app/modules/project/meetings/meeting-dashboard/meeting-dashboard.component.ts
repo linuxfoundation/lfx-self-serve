@@ -12,7 +12,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { MenuComponent } from '@components/menu/menu.component';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { CalendarEvent, Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
+import { CalendarEvent, Meeting, MeetingOccurrence, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
@@ -57,11 +57,11 @@ export class MeetingDashboardComponent {
   public meetings: Signal<Meeting[]>;
   public upcomingMeetings: Signal<(MeetingOccurrence & { meeting: Meeting })[]>;
   public pastMeetingsLoading: WritableSignal<boolean>;
-  public pastMeetings: Signal<Meeting[]>;
+  public pastMeetings: Signal<PastMeeting[]>;
   public meetingListView: WritableSignal<'upcoming' | 'past'>;
   public visibilityOptions: Signal<{ label: string; value: string | null }[]>;
   public committeeOptions: Signal<{ label: string; value: string | null }[]>;
-  public filteredMeetings: Signal<Meeting[]>;
+  public filteredMeetings: Signal<Meeting[] | PastMeeting[]>;
   public publicMeetingsCount: Signal<number>;
   public privateMeetingsCount: Signal<number>;
   public menuItems: MenuItem[];
@@ -187,7 +187,7 @@ export class MeetingDashboardComponent {
     });
   }
 
-  private initializePastMeetings(): Signal<Meeting[]> {
+  private initializePastMeetings(): Signal<PastMeeting[]> {
     return toSignal(
       this.project()
         ? this.refresh.pipe(
