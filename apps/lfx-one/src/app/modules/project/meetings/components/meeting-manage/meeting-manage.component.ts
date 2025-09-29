@@ -3,7 +3,7 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -45,7 +45,7 @@ import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
 import { TabsModule } from 'primeng/tabs';
-import { BehaviorSubject, catchError, concat, finalize, from, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
+import { BehaviorSubject, catchError, concat, filter, finalize, from, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
 
 import { MeetingDetailsComponent } from '../meeting-details/meeting-details.component';
 import { MeetingPlatformFeaturesComponent } from '../meeting-platform-features/meeting-platform-features.component';
@@ -131,18 +131,23 @@ export class MeetingManageComponent {
         this.updateCanProceed();
       });
 
-    // Use effect to watch for step changes and re-validate
+    // Effect for step changes only - handles validation
     effect(() => {
       // Access the signal to create dependency
       this.currentStep();
       // Update validation when step changes
       this.updateCanProceed();
-
-      const meeting = this.meeting();
-      if (meeting && this.isEditMode()) {
-        this.populateFormWithMeetingData(meeting);
-      }
     });
+
+    // Separate subscription for meeting data changes - populates form only once
+    toObservable(this.meeting)
+      .pipe(
+        filter((meeting): meeting is Meeting => meeting !== null && this.isEditMode()),
+        take(1) // Only populate the form once
+      )
+      .subscribe((meeting) => {
+        this.populateFormWithMeetingData(meeting);
+      });
   }
 
   public goToStep(step: number | undefined): void {
@@ -218,7 +223,7 @@ export class MeetingManageComponent {
     const meetingId = this.meetingId();
     if (!meetingId) return;
 
-    const attachment = this.attachments().find((att) => att.id === attachmentId);
+    const attachment = this.attachments().find((att: MeetingAttachment) => att.id === attachmentId);
     const fileName = attachment?.file_name || 'this attachment';
 
     this.showDeleteAttachmentConfirmation(meetingId, attachmentId, fileName);
@@ -773,7 +778,7 @@ export class MeetingManageComponent {
   private initializeAttachments() {
     return toSignal(
       this.attachmentsRefresh$.pipe(
-        takeUntilDestroyed(),
+        takeUntilDestroyed(this.destroyRef),
         switchMap(() => this.route.paramMap),
         switchMap((params) => {
           const meetingId = params.get('id');
