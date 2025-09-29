@@ -18,11 +18,12 @@ import {
   PastMeeting,
   PastMeetingParticipant,
   Project,
+  QueryServiceCountResponse,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UploadFileResponse,
 } from '@lfx-one/shared/interfaces';
-import { catchError, defer, Observable, of, switchMap, take, tap, throwError } from 'rxjs';
+import { catchError, defer, Observable, of, map, switchMap, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -62,6 +63,22 @@ export class MeetingService {
     }
 
     return this.getMeetings(params);
+  }
+
+  public getMeetingsCountByProject(projectId: string): Observable<number> {
+    const params = new HttpParams().set('tags', `project_uid:${projectId}`);
+    return this.http
+      .get<QueryServiceCountResponse>('/api/meetings/count', { params })
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to load meetings count:', error);
+          return of({ count: 0 });
+        })
+      )
+      .pipe(
+        // Extract just the count number from the response
+        map((response) => response.count)
+      );
   }
 
   public getRecentMeetingsByProject(projectId: string, limit: number = 3): Observable<Meeting[]> {

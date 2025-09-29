@@ -18,6 +18,9 @@ const meetingController = new MeetingController();
 // GET /meetings - get all meetings
 router.get('/', (req, res, next) => meetingController.getMeetings(req, res, next));
 
+// GET /meetings/count - get meetings count
+router.get('/count', (req, res, next) => meetingController.getMeetingsCount(req, res, next));
+
 // GET /meetings/:uid - get a single meeting
 router.get('/:uid', (req, res, next) => meetingController.getMeetingById(req, res, next));
 

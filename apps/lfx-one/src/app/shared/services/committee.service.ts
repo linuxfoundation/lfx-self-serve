@@ -3,8 +3,8 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { Committee, CommitteeMember, CreateCommitteeMemberRequest } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, take, tap, throwError } from 'rxjs';
+import { Committee, CommitteeMember, CreateCommitteeMemberRequest, QueryServiceCountResponse } from '@lfx-one/shared/interfaces';
+import { catchError, Observable, of, map, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -27,6 +27,19 @@ export class CommitteeService {
     const params = new HttpParams().set('tags', `project_uid:${projectId}`);
 
     return this.getCommittees(params);
+  }
+
+  public getCommitteesCountByProject(projectId: string): Observable<number> {
+    const params = new HttpParams().set('tags', `project_uid:${projectId}`);
+    return this.http
+      .get<QueryServiceCountResponse>('/api/committees/count', { params })
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to load committees count:', error);
+          return of({ count: 0 });
+        })
+      )
+      .pipe(map((response) => response.count));
   }
 
   public getRecentCommitteesByProject(projectId: string): Observable<Committee[]> {

@@ -41,6 +41,8 @@ export class ProjectComponent {
   // Signals to hold data
   public allCommittees: Signal<Committee[]> = signal([]);
   public allMeetings: Signal<Meeting[]> = signal([]);
+  public meetingsCount: Signal<number> = signal(0);
+  public committeesCount: Signal<number> = signal(0);
   public committeesLoading: WritableSignal<boolean> = signal(true);
   public meetingsLoading: WritableSignal<boolean> = signal(true);
 
@@ -86,6 +88,8 @@ export class ProjectComponent {
     // Initialize data signals
     this.allCommittees = this.initializeAllCommittees();
     this.allMeetings = this.initializeAllMeetings();
+    this.meetingsCount = this.initializeMeetingsCount();
+    this.committeesCount = this.initializeCommitteesCount();
     this.recentActivity = this.initializeRecentActivity();
 
     // Initialize computed signals
@@ -167,6 +171,44 @@ export class ProjectComponent {
         })
       ),
       { initialValue: [] }
+    );
+  }
+
+  private initializeMeetingsCount(): Signal<number> {
+    return toSignal(
+      this.projectService.project$.pipe(
+        switchMap((project) => {
+          if (!project?.uid) {
+            return of(0);
+          }
+          return this.meetingService.getMeetingsCountByProject(project.uid).pipe(
+            catchError((error) => {
+              console.error('Error loading meetings count:', error);
+              return of(0);
+            })
+          );
+        })
+      ),
+      { initialValue: 0 }
+    );
+  }
+
+  private initializeCommitteesCount(): Signal<number> {
+    return toSignal(
+      this.projectService.project$.pipe(
+        switchMap((project) => {
+          if (!project?.uid) {
+            return of(0);
+          }
+          return this.committeeService.getCommitteesCountByProject(project.uid).pipe(
+            catchError((error) => {
+              console.error('Error loading committees count:', error);
+              return of(0);
+            })
+          );
+        })
+      ),
+      { initialValue: 0 }
     );
   }
 
@@ -277,20 +319,24 @@ export class ProjectComponent {
     return computed(() => {
       const committees = this.allCommittees();
       const meetings = this.allMeetings();
+      const meetingsCount = this.meetingsCount();
+      const committeesCount = this.committeesCount();
       const now = new Date();
 
       // Calculate total members from all committees
+      // TODO: Get this from the query service once committee members can be filted by project
       const totalMembers = committees.reduce((sum, committee) => sum + (committee.total_members || 0), 0);
 
       // Calculate meeting statistics
+      // TODO: Get this from the query service once the query service supports getting counts by a field date range
       const upcomingMeetingsCount = meetings.filter((m) => m.start_time && new Date(m.start_time) >= now).length;
       const publicMeetings = meetings.filter((m) => m.visibility === 'public').length;
       const privateMeetings = meetings.filter((m) => m.visibility === 'private').length;
 
       return {
         totalMembers,
-        totalCommittees: committees.length,
-        totalMeetings: meetings.length,
+        totalCommittees: committeesCount,
+        totalMeetings: meetingsCount,
         upcomingMeetings: upcomingMeetingsCount,
         publicMeetings,
         privateMeetings,

@@ -37,6 +37,28 @@ export class CommitteeController {
   }
 
   /**
+   * GET /committees/count
+   */
+  public async getCommitteesCount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_committees_count', {
+      query_params: Logger.sanitize(req.query as Record<string, any>),
+    });
+
+    try {
+      const count = await this.committeeService.getCommitteesCount(req, req.query);
+
+      Logger.success(req, 'get_committees_count', startTime, {
+        count,
+      });
+
+      res.json({ count });
+    } catch (error) {
+      Logger.error(req, 'get_committees_count', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
    * GET /committees/:id
    */
   public async getCommitteeById(req: Request, res: Response, next: NextFunction): Promise<void> {

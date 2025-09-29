@@ -61,6 +61,18 @@ export interface QueryServiceResponse<T = unknown> {
 }
 
 /**
+ * Query service count endpoint response wrapper
+ * @description Container for query service count endpoint response
+ */
+export interface QueryServiceCountResponse {
+  /** The count of resources */
+  count: number;
+  /** Whether there are more resources to fetch - if set to true, the
+   * query scope needs to be narrowed down */
+  has_more: boolean;
+}
+
+/**
  * ETag-enabled API response
  * @description Response with cache control information
  */

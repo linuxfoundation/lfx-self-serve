@@ -67,6 +67,32 @@ export class MeetingController {
   }
 
   /**
+   * GET /meetings/count
+   */
+  public async getMeetingsCount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_meetings_count', {
+      query_params: Logger.sanitize(req.query as Record<string, any>),
+    });
+
+    try {
+      // Get the meetings count
+      const count = await this.meetingService.getMeetingsCount(req, req.query as Record<string, any>);
+
+      // Log the success
+      Logger.success(req, 'get_meetings_count', startTime, {
+        count,
+      });
+
+      // Send the count to the client
+      res.json({ count });
+    } catch (error) {
+      // Log the error
+      Logger.error(req, 'get_meetings_count', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
    * GET /meetings/:uid
    */
   public async getMeetingById(req: Request, res: Response, next: NextFunction): Promise<void> {

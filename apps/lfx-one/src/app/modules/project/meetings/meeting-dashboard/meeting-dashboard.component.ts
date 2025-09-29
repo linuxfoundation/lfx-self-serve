@@ -55,6 +55,7 @@ export class MeetingDashboardComponent {
   public committeeFilter: WritableSignal<string | null>;
   public meetingsLoading: WritableSignal<boolean>;
   public meetings: Signal<Meeting[]>;
+  public meetingsCount: Signal<number>;
   public upcomingMeetings: Signal<(MeetingOccurrence & { meeting: Meeting })[]>;
   public pastMeetingsLoading: WritableSignal<boolean>;
   public pastMeetings: Signal<PastMeeting[]>;
@@ -79,6 +80,7 @@ export class MeetingDashboardComponent {
     this.pastMeetingsLoading = signal<boolean>(true);
     this.refresh = new BehaviorSubject<void>(undefined);
     this.meetings = this.initializeMeetings();
+    this.meetingsCount = this.initializeMeetingsCount();
     this.upcomingMeetings = this.initializeUpcomingMeetings();
     this.pastMeetings = this.initializePastMeetings();
     this.searchForm = this.initializeSearchForm();
@@ -179,6 +181,12 @@ export class MeetingDashboardComponent {
         initialValue: [],
       }
     );
+  }
+
+  private initializeMeetingsCount(): Signal<number> {
+    return toSignal(this.project() ? this.refresh.pipe(switchMap(() => this.meetingService.getMeetingsCountByProject(this.project()!.uid))) : of(0), {
+      initialValue: 0,
+    });
   }
 
   private initializeUpcomingMeetings(): Signal<(MeetingOccurrence & { meeting: Meeting })[]> {

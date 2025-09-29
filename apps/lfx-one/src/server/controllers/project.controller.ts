@@ -31,11 +31,10 @@ export class ProjectController {
       const projects = await this.projectService.getProjects(req, req.query as Record<string, any>);
 
       // Add metrics to all projects
-      // TODO: Remove this once we have a way to get the metrics from the microservice
       await Promise.all(
         projects.map(async (project) => {
-          project.meetings_count = (await this.meetingService.getMeetings(req, { tags: `project_uid:${project.uid}` }).catch(() => [])).length;
-          project.committees_count = (await this.committeeService.getCommittees(req, { tags: `project_uid:${project.uid}` }).catch(() => [])).length;
+          project.meetings_count = Number(await this.meetingService.getMeetingsCount(req, { tags: `project_uid:${project.uid}` }).catch(() => 0));
+          project.committees_count = Number(await this.committeeService.getCommitteesCount(req, { tags: `project_uid:${project.uid}` }).catch(() => 0));
         })
       );
 
@@ -83,11 +82,10 @@ export class ProjectController {
       const results = await this.projectService.searchProjects(req, q);
 
       // Add metrics to all projects
-      // TODO: Remove this once we have a way to get the metrics from the microservice
       await Promise.all(
         results.map(async (project) => {
-          project.meetings_count = (await this.meetingService.getMeetings(req, { tags: `project_uid:${project.uid}` }).catch(() => [])).length;
-          project.committees_count = (await this.committeeService.getCommittees(req, { tags: `project_uid:${project.uid}` }).catch(() => [])).length;
+          project.meetings_count = Number(await this.meetingService.getMeetingsCount(req, { tags: `project_uid:${project.uid}` }).catch(() => 0));
+          project.committees_count = Number(await this.committeeService.getCommitteesCount(req, { tags: `project_uid:${project.uid}` }).catch(() => 0));
         })
       );
 

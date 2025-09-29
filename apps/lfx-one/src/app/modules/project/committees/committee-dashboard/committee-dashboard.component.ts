@@ -71,7 +71,7 @@ export class CommitteeDashboardComponent {
   private dialogRef: DynamicDialogRef | undefined;
 
   // Statistics calculations
-  public totalCommittees: Signal<number> = computed(() => this.committees().length);
+  public totalCommittees: Signal<number>;
   public publicCommittees: Signal<number> = computed(() => this.committees().filter((c) => c.public).length);
   public activeVoting: Signal<number> = computed(() => this.committees().filter((c) => c.enable_voting).length);
 
@@ -85,6 +85,7 @@ export class CommitteeDashboardComponent {
     this.committeesLoading = signal<boolean>(true);
     this.refresh = new BehaviorSubject<void>(undefined);
     this.committees = this.initializeCommittees();
+    this.totalCommittees = this.initializeCommitteesCount();
     this.searchForm = this.initializeSearchForm();
     this.categoryFilter = signal<string | null>(null);
     this.votingStatusFilter = signal<string | null>(null);
@@ -257,6 +258,12 @@ export class CommitteeDashboardComponent {
         : of([]),
       { initialValue: [] }
     );
+  }
+
+  private initializeCommitteesCount(): Signal<number> {
+    return toSignal(this.project() ? this.refresh.pipe(switchMap(() => this.committeeService.getCommitteesCountByProject(this.project()!.uid))) : of(0), {
+      initialValue: 0,
+    });
   }
 
   private initializeCategories(): Signal<{ label: string; value: string | null }[]> {

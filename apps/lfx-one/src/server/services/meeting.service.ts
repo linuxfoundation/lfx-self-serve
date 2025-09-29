@@ -9,6 +9,7 @@ import {
   MeetingRegistrant,
   PastMeetingParticipant,
   QueryServiceResponse,
+  QueryServiceCountResponse,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
@@ -61,6 +62,20 @@ export class MeetingService {
     }
 
     return meetings;
+  }
+
+  /**
+   * Fetches the count of meetings based on query parameters
+   */
+  public async getMeetingsCount(req: Request, query: Record<string, any> = {}, meetingType: string = 'meeting'): Promise<number> {
+    const params = {
+      ...query,
+      type: meetingType,
+    };
+
+    const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', params);
+
+    return count;
   }
 
   /**

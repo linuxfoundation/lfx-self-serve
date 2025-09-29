@@ -8,6 +8,7 @@ import {
   CommitteeSettingsData,
   CommitteeUpdateData,
   CreateCommitteeMemberRequest,
+  QueryServiceCountResponse,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
@@ -47,6 +48,20 @@ export class CommitteeService {
 
     // Add writer access field to all committees
     return await this.accessCheckService.addAccessToResources(req, committees, 'committee');
+  }
+
+  /**
+   * Fetches the count of committees based on query parameters
+   */
+  public async getCommitteesCount(req: Request, query: Record<string, any> = {}): Promise<number> {
+    const params = {
+      ...query,
+      type: 'committee',
+    };
+
+    const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', params);
+
+    return count;
   }
 
   /**
