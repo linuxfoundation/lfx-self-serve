@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, OnInit, Signal, signal } from '@angular/core';
+import { Component, computed, ElementRef, inject, OnInit, Signal, signal, viewChild } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormBuilder, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
@@ -25,6 +25,7 @@ import { BehaviorSubject, catchError, finalize, of, switchMap } from 'rxjs';
   templateUrl: './profile-password.component.html',
 })
 export class ProfilePasswordComponent implements OnInit {
+  private readonly accountRecovery = viewChild<ElementRef>('accountRecovery');
   private readonly fb = inject(FormBuilder);
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
@@ -171,6 +172,16 @@ export class ProfilePasswordComponent implements OnInit {
     // For now, this will open an external link or show a message
     // In the future, this could navigate to a 2FA setup page
     window.open('https://docs.example.com/2fa-setup', '_blank');
+  }
+
+  public scrollToAccountRecovery(): void {
+    const accountRecoveryElement = this.accountRecovery()?.nativeElement;
+    if (accountRecoveryElement) {
+      accountRecoveryElement.scrollIntoView({
+        behavior: 'smooth',
+        block: 'start',
+      });
+    }
   }
 
   // Private helper methods
