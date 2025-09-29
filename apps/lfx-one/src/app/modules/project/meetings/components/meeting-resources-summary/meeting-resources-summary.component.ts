@@ -9,7 +9,7 @@ import { FileUploadComponent } from '@components/file-upload/file-upload.compone
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
 import { RecurrenceType } from '@lfx-one/shared/enums';
 import { CustomRecurrencePattern, MeetingAttachment, PendingAttachment } from '@lfx-one/shared/interfaces';
-import { buildRecurrenceSummary } from '@lfx-one/shared/utils';
+import { buildRecurrenceSummary, generateAcceptString } from '@lfx-one/shared/utils';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
@@ -51,6 +51,9 @@ export class MeetingResourcesSummaryComponent implements OnInit {
   // Navigation
   public readonly goToStep = output<number>();
   public readonly deleteAttachment = output<string>();
+
+  // File upload configuration
+  public readonly acceptString = generateAcceptString();
 
   public constructor() {}
 

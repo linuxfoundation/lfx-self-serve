@@ -15,7 +15,7 @@
 
       <lfx-file-upload
         [multiple]="true"
-        accept="pdf,doc,docx,ppt,pptx,xls,xlsx,txt,md,image/*"
+        [accept]="acceptString"
         [maxFileSize]="10485760"
         (onSelect)="onFileSelect($event)"
         [customUpload]="true"
