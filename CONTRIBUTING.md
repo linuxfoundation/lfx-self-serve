@@ -192,6 +192,8 @@ This adds a `Signed-off-by` line to your commit message.
 4. **License Headers**: Verify all new files have proper license headers
 5. **Clear Description**: Provide a clear description of changes in the PR
 6. **Link Issues**: Reference any related issues
+7. **Deploy Preview**: (Optional) Deploy and preview the feature or
+   change in a hosted environment
 
 ### PR Title Format
 
@@ -221,6 +223,17 @@ yarn e2e
 - All new features must include unit tests
 - Maintain or improve code coverage
 - E2E tests for critical user flows
+
+### Deploy Preview
+
+Contributors with write access to the repository have the option to add
+the **deploy-preview** label to their pull request. Adding this label will
+deploy the pull request to a hosted Kubernetes development cluster in an
+isolated namespace. A link to the hosted deployment will be added as a
+comment to the pull request.
+
+When the pull request is closed or the **deploy-preview** label is
+removed, the deployment will be removed.
 
 ## Questions?
 
