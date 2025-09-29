@@ -16,4 +16,8 @@ export const PROFILE_ROUTES: Routes = [
     path: 'email',
     loadComponent: () => import('./email/profile-email.component').then((m) => m.ProfileEmailComponent),
   },
+  {
+    path: 'developer',
+    loadComponent: () => import('./developer/profile-developer.component').then((m) => m.ProfileDeveloperComponent),
+  },
 ];

@@ -598,4 +598,66 @@ export class ProfileController {
       next(error);
     }
   }
+
+  /**
+   * GET /api/profile/developer - Get current user's developer token information
+   */
+  public async getDeveloperTokenInfo(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_developer_token_info');
+
+    try {
+      // Get user ID from auth context
+      const userId = await getUsernameFromAuth(req);
+
+      if (!userId) {
+        Logger.error(req, 'get_developer_token_info', startTime, new Error('User not authenticated or user ID not found'));
+
+        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
+          operation: 'get_developer_token_info',
+          service: 'profile_controller',
+          path: req.path,
+        });
+
+        return next(validationError);
+      }
+
+      // Extract the bearer token from the request (set by auth middleware)
+      const bearerToken = req.bearerToken;
+
+      if (!bearerToken) {
+        Logger.error(req, 'get_developer_token_info', startTime, new Error('No bearer token available'));
+
+        const validationError = ServiceValidationError.forField('token', 'No API token available for user', {
+          operation: 'get_developer_token_info',
+          service: 'profile_controller',
+          path: req.path,
+        });
+
+        return next(validationError);
+      }
+
+      // Return token information
+      const tokenInfo = {
+        token: bearerToken,
+        type: 'Bearer',
+      };
+
+      Logger.success(req, 'get_developer_token_info', startTime, {
+        user_id: userId,
+        token_length: bearerToken.length,
+      });
+
+      // Set cache headers to prevent caching of sensitive bearer tokens
+      res.set({
+        ['Cache-Control']: 'no-store, no-cache, must-revalidate, private',
+        Pragma: 'no-cache',
+        Expires: '0',
+      });
+
+      res.json(tokenInfo);
+    } catch (error) {
+      Logger.error(req, 'get_developer_token_info', startTime, error);
+      next(error);
+    }
+  }
 }

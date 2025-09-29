@@ -43,4 +43,7 @@ router.get('/email-preferences', (req, res, next) => profileController.getEmailP
 // PUT /api/profile/email-preferences - Update user email preferences
 router.put('/email-preferences', (req, res, next) => profileController.updateEmailPreferences(req, res, next));
 
+// GET /api/profile/developer - Get current user's developer token information
+router.get('/developer', (req, res, next) => profileController.getDeveloperTokenInfo(req, res, next));
+
 export default router;

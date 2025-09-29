@@ -57,7 +57,7 @@ export class HeaderComponent {
     {
       label: 'Developer Settings',
       icon: 'fa-light fa-cog',
-      target: '_blank',
+      routerLink: '/profile/developer',
     },
     {
       separator: true,

@@ -102,6 +102,12 @@ export class ProfileLayoutComponent {
         routerLink: '/profile/email',
         routerLinkActiveOptions: { exact: true },
       },
+      {
+        label: 'Developer Settings',
+        icon: 'fa-light fa-code text-purple-500',
+        routerLink: '/profile/developer',
+        routerLinkActiveOptions: { exact: true },
+      },
     ]);
   }
 

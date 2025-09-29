@@ -123,4 +123,11 @@ export class UserService {
   public getTwoFactorSettings(): Observable<TwoFactorSettings> {
     return this.http.get<TwoFactorSettings>('/api/profile/2fa-settings').pipe(take(1));
   }
+
+  /**
+   * Get developer token information
+   */
+  public getDeveloperTokenInfo(): Observable<{ token: string; type: string }> {
+    return this.http.get<{ token: string; type: string }>('/api/profile/developer').pipe(take(1));
+  }
 }
