@@ -117,7 +117,71 @@ export function extractUrlsWithDomains(text: string): { url: string; domain: str
 }
 
 /**
- * URL regex pattern for linkification (kept for backward compatibility)
+ * Checks if a string is a valid domain by attempting to create a URL
+ * @param domain - The domain string to validate
+ * @returns true if the domain is valid
+ */
+export function isValidDomain(domain: string): boolean {
+  if (!domain || typeof domain !== 'string') {
+    return false;
+  }
+
+  const trimmedDomain = domain.trim();
+  if (!trimmedDomain || trimmedDomain.length < 3) {
+    return false;
+  }
+
+  // Case-insensitive protocol detection
+  const hasProtocol = /^https?:\/\//i.test(trimmedDomain);
+
+  let candidateUrl: string;
+  if (hasProtocol) {
+    // Already has protocol, use as-is
+    candidateUrl = trimmedDomain;
+  } else {
+    // No protocol, build HTTPS candidate from host (with optional path)
+    candidateUrl = `https://${trimmedDomain}`;
+  }
+
+  // Try to create and validate the URL
+  try {
+    const url = new URL(candidateUrl);
+
+    // Check if hostname is valid and contains at least one dot (for TLD)
+    return url.hostname.length > 0 && url.hostname.includes('.');
+  } catch {
+    return false;
+  }
+}
+
+/**
+ * Converts a domain to a full URL or validates an existing URL
+ * @param input - The domain or URL string to process
+ * @returns A valid URL string or null if invalid
+ */
+export function normalizeToUrl(input: string): string | null {
+  if (!input || typeof input !== 'string') {
+    return null;
+  }
+
+  const trimmedInput = input.trim();
+
+  // If it already looks like a URL, validate it using existing function
+  if (trimmedInput.startsWith('http://') || trimmedInput.startsWith('https://')) {
+    return isValidUrl(trimmedInput) ? trimmedInput : null;
+  }
+
+  // If it's a valid domain, convert to HTTPS URL (preserve www if present)
+  if (isValidDomain(trimmedInput)) {
+    const url = `https://${trimmedInput}`;
+    return isValidUrl(url) ? url : null;
+  }
+
+  return null;
+}
+
+/**
+ * URL regex pattern for link creation (kept for backward compatibility)
  * @deprecated Use extractUrls() function instead for safer URL detection
  */
 export const URL_REGEX = URL_DETECTION_REGEX;

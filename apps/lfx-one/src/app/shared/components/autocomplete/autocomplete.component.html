@@ -19,6 +19,11 @@
     [autoOptionFocus]="autoOptionFocus()"
     [completeOnFocus]="completeOnFocus()"
     [panelStyleClass]="panelStyleClass()"
-    [autoHighlight]="autoHighlight()">
+    [autoHighlight]="autoHighlight()"
+    [appendTo]="appendTo()">
+    <!-- Empty message template -->
+    <ng-template pTemplate="empty" *ngIf="emptyTemplate">
+      <ng-container *ngTemplateOutlet="emptyTemplate"></ng-container>
+    </ng-template>
   </p-autocomplete>
 </ng-container>

@@ -3,10 +3,11 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
-import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectComponent } from '@components/select/select.component';
 import { MEMBER_ROLES, VOTING_STATUSES } from '@lfx-one/shared/constants';
 import { CreateCommitteeMemberRequest } from '@lfx-one/shared/interfaces';
@@ -18,7 +19,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 @Component({
   selector: 'lfx-member-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, SelectComponent, InputTextComponent, CalendarComponent],
+  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, SelectComponent, InputTextComponent, CalendarComponent, OrganizationSearchComponent],
   templateUrl: './member-form.component.html',
   styleUrl: './member-form.component.scss',
 })
@@ -154,55 +155,20 @@ export class MemberFormComponent {
   }
 
   private createMemberFormGroup(): FormGroup {
-    return new FormGroup(
-      {
-        first_name: new FormControl('', [Validators.required]),
-        last_name: new FormControl('', [Validators.required]),
-        email: new FormControl('', [Validators.required, Validators.email]),
-        job_title: new FormControl(''),
-        organization: new FormControl(''),
-        organization_url: new FormControl('', [Validators.pattern('^https?://.+')]),
-        role: new FormControl(''),
-        voting_status: new FormControl(''),
-        appointed_by: new FormControl(''),
-        role_start: new FormControl(null),
-        role_end: new FormControl(null),
-        voting_status_start: new FormControl(null),
-        voting_status_end: new FormControl(null),
-      },
-      { validators: this.organizationCrossFieldValidator() }
-    );
-  }
-
-  /**
-   * Custom validator that ensures if organization is provided, organization_url is also required and vice versa
-   */
-  private organizationCrossFieldValidator(): ValidatorFn {
-    return (control: AbstractControl): ValidationErrors | null => {
-      if (!control) {
-        return null;
-      }
-
-      const organization = control.get('organization')?.value;
-      const organizationUrl = control.get('organization_url')?.value;
-
-      // If both are empty, that's valid
-      if (!organization && !organizationUrl) {
-        return null;
-      }
-
-      // If organization is provided but URL is missing
-      if (organization && !organizationUrl) {
-        return { organizationUrlRequired: true };
-      }
-
-      // If URL is provided but organization is missing
-      if (organizationUrl && !organization) {
-        return { organizationRequired: true };
-      }
-
-      // Both provided, validation passes
-      return null;
-    };
+    return new FormGroup({
+      first_name: new FormControl('', [Validators.required]),
+      last_name: new FormControl('', [Validators.required]),
+      email: new FormControl('', [Validators.required, Validators.email]),
+      job_title: new FormControl(''),
+      organization: new FormControl(''),
+      organization_url: new FormControl(''),
+      role: new FormControl(''),
+      voting_status: new FormControl(''),
+      appointed_by: new FormControl(''),
+      role_start: new FormControl(null),
+      role_end: new FormControl(null),
+      voting_status_start: new FormControl(null),
+      voting_status_end: new FormControl(null),
+    });
   }
 }

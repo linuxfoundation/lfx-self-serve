@@ -10,6 +10,9 @@ export * from './committee.interface';
 // Member interfaces
 export * from './member.interface';
 
+// Organization interfaces
+export * from './organization.interface';
+
 // Component interfaces
 export * from './components.interface';
 

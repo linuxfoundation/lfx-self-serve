@@ -6,12 +6,13 @@ import { Component, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { MeetingRegistrant } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-registrant-form',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, InputTextComponent, CheckboxComponent],
+  imports: [CommonModule, ReactiveFormsModule, InputTextComponent, CheckboxComponent, OrganizationSearchComponent],
   templateUrl: './registrant-form.component.html',
 })
 export class RegistrantFormComponent {

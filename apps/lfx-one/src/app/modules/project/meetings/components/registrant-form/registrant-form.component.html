@@ -66,14 +66,15 @@
       <!-- Organization -->
       <div data-testid="registrant-form-organization-field" class="flex flex-col gap-1">
         <label for="org_name" class="text-sm font-medium text-gray-700">Organization</label>
-        <lfx-input-text
-          size="small"
+        <lfx-organization-search
           [form]="form()"
-          control="org_name"
-          label="Organization"
-          placeholder="Enter organization"
-          data-testid="registrant-form-organization-input">
-        </lfx-input-text>
+          nameControl="org_name"
+          placeholder="Search organizations..."
+          styleClass="w-full"
+          inputStyleClass="text-sm w-full"
+          panelStyleClass="text-sm w-full"
+          dataTestId="registrant-form-organization-input">
+        </lfx-organization-search>
       </div>
 
       <!-- Host Toggle -->
