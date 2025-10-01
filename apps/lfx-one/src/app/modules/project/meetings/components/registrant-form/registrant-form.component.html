@@ -3,84 +3,132 @@
 
 <div class="registrant-form" data-testid="registrant-form-container">
   <form [formGroup]="form()" data-testid="registrant-form-element">
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" data-testid="registrant-form-fields-grid">
-      <!-- First Name -->
-      <div data-testid="registrant-form-firstname-field" class="flex flex-col gap-1">
-        <label for="first_name" class="text-sm font-medium text-gray-700">First Name</label>
-        <lfx-input-text
-          size="small"
-          [form]="form()"
-          control="first_name"
-          label="First Name"
-          placeholder="Enter first name"
-          data-testid="registrant-form-firstname-input">
-        </lfx-input-text>
+    <!-- User Search (shown when not in individual fields mode) -->
+    @if (!showIndividualFields()) {
+      <div class="flex flex-col gap-2">
+        <div data-testid="registrant-form-search-container">
+          <div class="flex items-center justify-between mb-2">
+            <label class="text-sm font-medium text-gray-700">Search for User</label>
+          </div>
+          <lfx-user-search
+            [form]="form()"
+            searchType="committee_member"
+            emailControl="email"
+            firstNameControl="first_name"
+            lastNameControl="last_name"
+            jobTitleControl="job_title"
+            organizationNameControl="org_name"
+            placeholder="Search user..."
+            styleClass="w-full"
+            class="w-full"
+            inputStyleClass="text-sm w-full"
+            panelStyleClass="text-sm w-full"
+            dataTestId="registrant-form-user-search"
+            (onUserSelect)="handleUserSelection()"
+            (onManualEntry)="switchToManualEntry()">
+          </lfx-user-search>
+        </div>
+        <div class="flex items-center justify-center gap-3 mt-3">
+          <span class="flex-1 border-t border-gray-200"></span>
+          <span class="text-xs text-gray-500 uppercase tracking-wider">or</span>
+          <span class="flex-1 border-t border-gray-200"></span>
+        </div>
+        <div class="text-center">
+          <button type="button" class="text-sm text-primary hover:text-primary-dark hover:underline transition-colors" (click)="switchToManualEntry()">
+            Enter details manually
+          </button>
+        </div>
       </div>
+    }
 
-      <!-- Last Name -->
-      <div data-testid="registrant-form-lastname-field" class="flex flex-col gap-1">
-        <label for="last_name" class="text-sm font-medium text-gray-700">Last Name</label>
-        <lfx-input-text
-          size="small"
-          [form]="form()"
-          control="last_name"
-          label="Last Name"
-          placeholder="Enter last name"
-          data-testid="registrant-form-lastname-input">
-        </lfx-input-text>
-      </div>
-
-      <!-- Email -->
-      <div class="md:col-span-2 flex flex-col gap-1" data-testid="registrant-form-email-field">
-        <label for="email" class="text-sm font-medium text-gray-700">Email</label>
-        <lfx-input-text
-          size="small"
-          [form]="form()"
-          control="email"
-          label="Email"
-          placeholder="Enter email address"
-          type="email"
-          data-testid="registrant-form-email-input">
-        </lfx-input-text>
-        @if (form().get('email')?.errors?.['required'] && form().get('email')?.touched && form().get('email')?.dirty) {
-          <p class="text-sm text-red-500">Email is required</p>
+    <!-- Individual Fields (shown when in individual fields mode) -->
+    @if (showIndividualFields()) {
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4" data-testid="registrant-form-fields-grid">
+        <!-- Back to Search Button -->
+        @if (!registrant()) {
+          <div class="md:col-span-2">
+            <button type="button" class="text-sm text-primary hover:underline" (click)="backToSearch()">← Back to search</button>
+          </div>
         }
-        @if (form().get('email')?.errors?.['email'] && form().get('email')?.touched && form().get('email')?.dirty) {
-          <p class="text-sm text-red-500">Invalid email address</p>
-        }
-      </div>
 
-      <!-- Job Title -->
-      <div data-testid="registrant-form-jobtitle-field" class="flex flex-col gap-1">
-        <label for="job_title" class="text-sm font-medium text-gray-700">Job Title</label>
-        <lfx-input-text
-          size="small"
-          [form]="form()"
-          control="job_title"
-          label="Job Title"
-          placeholder="Enter job title"
-          data-testid="registrant-form-jobtitle-input">
-        </lfx-input-text>
-      </div>
+        <!-- First Name -->
+        <div data-testid="registrant-form-firstname-field" class="flex flex-col gap-1">
+          <label for="first_name" class="text-sm font-medium text-gray-700">First Name</label>
+          <lfx-input-text
+            size="small"
+            [form]="form()"
+            control="first_name"
+            label="First Name"
+            placeholder="Enter first name"
+            data-testid="registrant-form-firstname-input">
+          </lfx-input-text>
+        </div>
 
-      <!-- Organization -->
-      <div data-testid="registrant-form-organization-field" class="flex flex-col gap-1">
-        <label for="org_name" class="text-sm font-medium text-gray-700">Organization</label>
-        <lfx-organization-search
-          [form]="form()"
-          nameControl="org_name"
-          placeholder="Search organizations..."
-          styleClass="w-full"
-          inputStyleClass="text-sm w-full"
-          panelStyleClass="text-sm w-full"
-          dataTestId="registrant-form-organization-input">
-        </lfx-organization-search>
-      </div>
+        <!-- Last Name -->
+        <div data-testid="registrant-form-lastname-field" class="flex flex-col gap-1">
+          <label for="last_name" class="text-sm font-medium text-gray-700">Last Name</label>
+          <lfx-input-text
+            size="small"
+            [form]="form()"
+            control="last_name"
+            label="Last Name"
+            placeholder="Enter last name"
+            data-testid="registrant-form-lastname-input">
+          </lfx-input-text>
+        </div>
 
-      <!-- Host Toggle -->
-      <div class="md:col-span-2 flex flex-col gap-1" data-testid="registrant-form-host-field">
-        <lfx-checkbox [form]="form()" control="host" label="Meeting Host" [binary]="true" data-testid="registrant-form-host-checkbox"> </lfx-checkbox>
+        <!-- Email -->
+        <div class="md:col-span-2 flex flex-col gap-1" data-testid="registrant-form-email-field">
+          <label for="email" class="text-sm font-medium text-gray-700">Email</label>
+          <lfx-input-text
+            size="small"
+            [form]="form()"
+            control="email"
+            label="Email"
+            placeholder="Enter email address"
+            type="email"
+            data-testid="registrant-form-email-input">
+          </lfx-input-text>
+          @if (form().get('email')?.errors?.['required'] && form().get('email')?.touched && form().get('email')?.dirty) {
+            <p class="text-sm text-red-500">Email is required</p>
+          }
+          @if (form().get('email')?.errors?.['email'] && form().get('email')?.touched && form().get('email')?.dirty) {
+            <p class="text-sm text-red-500">Invalid email address</p>
+          }
+        </div>
+
+        <!-- Job Title -->
+        <div data-testid="registrant-form-jobtitle-field" class="flex flex-col gap-1">
+          <label for="job_title" class="text-sm font-medium text-gray-700">Job Title</label>
+          <lfx-input-text
+            size="small"
+            [form]="form()"
+            control="job_title"
+            label="Job Title"
+            placeholder="Enter job title"
+            data-testid="registrant-form-jobtitle-input">
+          </lfx-input-text>
+        </div>
+
+        <!-- Organization -->
+        <div data-testid="registrant-form-organization-field" class="flex flex-col gap-1">
+          <label for="org_name" class="text-sm font-medium text-gray-700">Organization</label>
+          <lfx-organization-search
+            [form]="form()"
+            nameControl="org_name"
+            placeholder="Search organizations..."
+            styleClass="w-full"
+            inputStyleClass="text-sm w-full"
+            panelStyleClass="text-sm w-full"
+            dataTestId="registrant-form-organization-input">
+          </lfx-organization-search>
+        </div>
+
+        <!-- Host Toggle -->
+        <div class="md:col-span-2 flex flex-col gap-1" data-testid="registrant-form-host-field">
+          <lfx-checkbox [form]="form()" control="host" label="Meeting Host" [binary]="true" data-testid="registrant-form-host-checkbox"> </lfx-checkbox>
+        </div>
       </div>
-    </div>
+    }
   </form>
 </div>

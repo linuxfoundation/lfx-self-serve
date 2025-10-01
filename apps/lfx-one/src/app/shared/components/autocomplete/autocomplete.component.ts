@@ -14,6 +14,9 @@ import { AutoCompleteCompleteEvent, AutoCompleteModule, AutoCompleteSelectEvent 
 export class AutocompleteComponent {
   // Template reference for content projection
   @ContentChild('empty', { static: false, descendants: false }) public emptyTemplate?: TemplateRef<any>;
+  @ContentChild('item', { static: false, descendants: false }) public itemTemplate?: TemplateRef<any>;
+  @ContentChild('footer', { static: false, descendants: false }) public footerTemplate?: TemplateRef<any>;
+
   public form = input.required<FormGroup>();
   public control = input.required<string>();
   public placeholder = input<string>();
@@ -21,7 +24,7 @@ export class AutocompleteComponent {
   public styleClass = input<string>();
   public inputStyleClass = input<string>();
   public panelStyleClass = input<string>();
-  public delay = input<number>();
+  public delay = input<number>(300);
   public minLength = input<number>(1);
   public dataTestId = input<string>();
   public optionLabel = input<string>();

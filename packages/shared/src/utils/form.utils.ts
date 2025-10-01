@@ -13,7 +13,17 @@ export function generateTempId(): string {
 /**
  * Marks all form controls as touched to trigger validation display
  */
-export function markFormControlsAsTouched(form: FormGroup): void {
+export function markFormControlsAsTouched(form: FormGroup, onlySelf: boolean = false, emitEvent: boolean = false): void {
   form.markAllAsTouched();
-  form.updateValueAndValidity({ onlySelf: false, emitEvent: false });
+  form.updateValueAndValidity({ onlySelf, emitEvent });
+}
+
+/**
+ * Update value and validity of all form controls
+ */
+export function updateFormControls(form: FormGroup, onlySelf: boolean = false, emitEvent: boolean = false): void {
+  Object.keys(form.controls).forEach((key) => {
+    const control = form.get(key);
+    control?.updateValueAndValidity({ onlySelf, emitEvent });
+  });
 }

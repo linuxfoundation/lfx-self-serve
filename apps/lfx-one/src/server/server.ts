@@ -24,6 +24,7 @@ import pastMeetingsRouter from './routes/past-meetings.route';
 import profileRouter from './routes/profile.route';
 import projectsRouter from './routes/projects.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
+import searchRouter from './routes/search.route';
 
 if (process.env['NODE_ENV'] !== 'production') {
   dotenv.config();
@@ -203,6 +204,7 @@ app.use('/api/meetings', meetingsRouter);
 app.use('/api/organizations', organizationsRouter);
 app.use('/api/past-meetings', pastMeetingsRouter);
 app.use('/api/profile', profileRouter);
+app.use('/api/search', searchRouter);
 
 // Add API error handler middleware
 app.use('/api/*', apiErrorHandler);

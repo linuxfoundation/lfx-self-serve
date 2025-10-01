@@ -1,0 +1,45 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-autocomplete
+  [form]="userSearchForm"
+  control="userSearch"
+  [placeholder]="placeholder()"
+  [suggestions]="suggestions()"
+  [styleClass]="styleClass()"
+  [inputStyleClass]="inputStyleClass()"
+  [panelStyleClass]="panelStyleClass()"
+  [dataTestId]="dataTestId()"
+  optionLabel="displayName"
+  size="small"
+  appendTo="body"
+  (completeMethod)="onSearchComplete($event)"
+  (onSelect)="onUserSelected($event)"
+  (onClear)="onSearchClear()">
+  <ng-template #item let-user>
+    <div class="w-full flex justify-between items-center gap-2">
+      <div class="flex flex-col">
+        <div class="text-sm flex gap-1 items-center">
+          <span> {{ user.first_name }} {{ user.last_name }} </span>
+          @if (user.organization?.name) {
+            <span class="text-xs text-gray-500"> ({{ user.organization?.name }}) </span>
+          }
+        </div>
+        <span class="text-xs text-gray-500">{{ user.email }}</span>
+      </div>
+    </div>
+  </ng-template>
+  <!-- Empty template -->
+  <ng-template #empty>
+    <div class="p-3 text-center">
+      <p class="text-sm text-gray-600">No users found</p>
+    </div>
+  </ng-template>
+
+  <!-- Footer template - always shown -->
+  <ng-template #footer>
+    <div class="p-2 border-t border-gray-200 text-center">
+      <button type="button" class="text-sm text-primary hover:underline" (click)="onEnterManually()">Enter details manually</button>
+    </div>
+  </ng-template>
+</lfx-autocomplete>

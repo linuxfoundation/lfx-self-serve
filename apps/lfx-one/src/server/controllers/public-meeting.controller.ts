@@ -36,27 +36,47 @@ export class PublicMeetingController {
       }
 
       // Get the meeting by ID using M2M token
+      Logger.start(req, 'get_public_meeting_by_id_fetch_meeting', { meeting_uid: id });
       const meeting = await this.fetchMeetingWithM2M(req, id);
-      const project = await this.projectService.getProjectById(req, meeting.project_uid, false);
-      const registrants = await this.meetingService.getMeetingRegistrants(req, meeting.uid);
-      const committeeMembers = registrants.filter((r) => r.type === 'committee').length ?? 0;
-      meeting.individual_registrants_count = registrants.length - committeeMembers;
-      meeting.committee_members_count = committeeMembers;
+      if (!meeting) {
+        // Log the error
+        Logger.error(req, 'get_public_meeting_by_id_fetch_meeting', startTime, new Error('Meeting not found'));
 
+        // Throw a resource not found error
+        throw new ResourceNotFoundError('Meeting', id, {
+          operation: 'get_public_meeting_by_id',
+          service: 'public_meeting_controller',
+          path: `/meetings/${id}`,
+        });
+      }
+      Logger.success(req, 'get_public_meeting_by_id_fetch_meeting', startTime, { meeting_uid: id });
+
+      // Fetch the project
+      Logger.start(req, 'get_public_meeting_by_id_fetch_project', { meeting_uid: id, project_uid: meeting.project_uid });
+      const project = await this.projectService.getProjectById(req, meeting.project_uid, false);
       if (!project) {
+        // Log the error
+        Logger.error(req, 'get_public_meeting_by_id_fetch_project', startTime, new Error('Project not found'));
+
+        // Throw a resource not found error
         throw new ResourceNotFoundError('Project', meeting.project_uid, {
           operation: 'get_public_meeting_by_id',
           service: 'public_meeting_controller',
           path: `/projects/${meeting.project_uid}`,
         });
       }
+      Logger.success(req, 'get_public_meeting_by_id_fetch_project', startTime, { meeting_uid: id, project_uid: project.uid });
+
+      // Fetch the registrants
+      Logger.start(req, 'get_public_meeting_by_id_fetch_registrants', { meeting_uid: id, project_uid: meeting.project_uid });
+      const registrants = await this.meetingService.getMeetingRegistrants(req, meeting.uid);
+      Logger.success(req, 'get_public_meeting_by_id_fetch_registrants', startTime, { meeting_uid: id, registrant_count: registrants.length });
+      const committeeMembers = registrants.filter((r) => r.type === 'committee').length ?? 0;
+      meeting.individual_registrants_count = (registrants?.length ?? 0) - (committeeMembers ?? 0);
+      meeting.committee_members_count = committeeMembers ?? 0;
 
       // Log the success
-      Logger.success(req, 'get_public_meeting_by_id', startTime, {
-        meeting_uid: id,
-        project_uid: meeting.project_uid,
-        title: meeting.title,
-      });
+      Logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_uid: id, project_uid: meeting.project_uid, title: meeting.title });
 
       // Check if the meeting visibility is public and not restricted, if so, get join URL and return the meeting and project
       if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {

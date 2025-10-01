@@ -25,5 +25,15 @@
     <ng-template pTemplate="empty" *ngIf="emptyTemplate">
       <ng-container *ngTemplateOutlet="emptyTemplate"></ng-container>
     </ng-template>
+
+    <!-- Item template -->
+    <ng-template pTemplate="item" let-item *ngIf="itemTemplate">
+      <ng-container *ngTemplateOutlet="itemTemplate; context: { $implicit: item }"></ng-container>
+    </ng-template>
+
+    <!-- Footer template -->
+    <ng-template pTemplate="footer" *ngIf="footerTemplate">
+      <ng-container *ngTemplateOutlet="footerTemplate"></ng-container>
+    </ng-template>
   </p-autocomplete>
 </ng-container>
