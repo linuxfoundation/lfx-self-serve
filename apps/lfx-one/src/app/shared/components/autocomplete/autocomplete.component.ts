@@ -21,7 +21,7 @@ export class AutocompleteComponent {
   public styleClass = input<string>();
   public inputStyleClass = input<string>();
   public panelStyleClass = input<string>();
-  public delay = input<number>(300);
+  public delay = input<number>();
   public minLength = input<number>(1);
   public dataTestId = input<string>();
   public optionLabel = input<string>();

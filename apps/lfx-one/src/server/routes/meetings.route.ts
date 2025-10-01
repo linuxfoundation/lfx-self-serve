@@ -24,9 +24,6 @@ router.get('/count', (req, res, next) => meetingController.getMeetingsCount(req,
 // GET /meetings/:uid - get a single meeting
 router.get('/:uid', (req, res, next) => meetingController.getMeetingById(req, res, next));
 
-// GET /meetings/:uid/join-url - get meeting join URL
-router.get('/:uid/join-url', (req, res, next) => meetingController.getMeetingJoinUrl(req, res, next));
-
 // POST /meetings - create a new meeting
 router.post('/', (req, res, next) => meetingController.createMeeting(req, res, next));
 
