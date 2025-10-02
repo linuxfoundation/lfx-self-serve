@@ -1,10 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Project, ProjectSettings, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import { NATS_CONFIG } from '@lfx-one/shared/constants';
+import { NatsSubjects } from '@lfx-one/shared/enums';
+import { Project, ProjectSettings, ProjectSlugToIdResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { serverLogger } from '../server';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -110,7 +113,7 @@ export class ProjectService {
       'Resolving project slug to ID via NATS'
     );
 
-    const natsResult = await this.natsService.getProjectIdBySlug(projectSlug);
+    const natsResult = await this.getProjectIdBySlug(projectSlug);
 
     if (!natsResult.exists || !natsResult.projectId) {
       throw new ResourceNotFoundError('Project', projectSlug, {
@@ -202,5 +205,50 @@ export class ProjectService {
     );
 
     return result;
+  }
+
+  /**
+   * Get project ID by slug using NATS request-reply pattern
+   * @private
+   */
+  private async getProjectIdBySlug(slug: string): Promise<ProjectSlugToIdResponse> {
+    const codec = this.natsService.getCodec();
+
+    try {
+      const response = await this.natsService.request(NatsSubjects.PROJECT_SLUG_TO_UID, codec.encode(slug), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+
+      const projectId = codec.decode(response.data);
+
+      // Check if we got a valid project ID
+      if (!projectId || projectId.trim() === '') {
+        serverLogger.info({ slug }, 'Project slug not found via NATS');
+        return {
+          projectId: '',
+          slug,
+          exists: false,
+        };
+      }
+
+      serverLogger.info({ slug, project_id: projectId }, 'Successfully resolved project slug to ID');
+
+      return {
+        projectId: projectId.trim(),
+        slug,
+        exists: true,
+      };
+    } catch (error) {
+      serverLogger.error({ error: error instanceof Error ? error.message : error, slug }, 'Failed to resolve project slug via NATS');
+
+      // If it's a timeout or no responder error, treat as not found
+      if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
+        return {
+          projectId: '',
+          slug,
+          exists: false,
+        };
+      }
+
+      throw error;
+    }
   }
 }

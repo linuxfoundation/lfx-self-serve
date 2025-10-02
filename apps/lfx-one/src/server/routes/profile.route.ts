@@ -17,11 +17,8 @@ const profileController = new ProfileController();
 // GET /api/profile - Get current user's combined profile data
 router.get('/', (req, res, next) => profileController.getCurrentUserProfile(req, res, next));
 
-// PATCH /api/profile/user - Update user table fields (first_name, last_name, username)
-router.patch('/user', (req, res, next) => profileController.updateCurrentUser(req, res, next));
-
-// PATCH /api/profile/details - Update profile table fields (title, organization, etc.)
-router.patch('/details', (req, res, next) => profileController.updateCurrentProfile(req, res, next));
+// PATCH /api/profile - Update user metadata via NATS (replaces separate user and details endpoints)
+router.patch('/', (req, res, next) => profileController.updateUserMetadata(req, res, next));
 
 // Email management routes
 

@@ -2,17 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Project slug to ID response payload
- */
-export interface ProjectSlugToIdResponse {
-  projectId: string;
-  slug: string;
-  exists: boolean;
-}
-
-/**
  * NATS message subjects enum
  */
 export enum NatsSubjects {
   PROJECT_SLUG_TO_UID = 'lfx.projects-api.slug_to_uid',
+  USER_METADATA_UPDATE = 'lfx.auth-service.user_metadata.update',
 }

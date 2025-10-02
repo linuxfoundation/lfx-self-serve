@@ -10,10 +10,9 @@ import {
   CreateUserPermissionRequest,
   EmailManagementData,
   EmailPreferences,
+  ProfileUpdateRequest,
   TwoFactorSettings,
   UpdateEmailPreferencesRequest,
-  UpdateProfileDetailsRequest,
-  UpdateUserProfileRequest,
   User,
   UserEmail,
 } from '@lfx-one/shared/interfaces';
@@ -43,17 +42,11 @@ export class UserService {
   }
 
   /**
-   * Update user info fields (first_name, last_name, username)
+   * Update user profile metadata via unified NATS endpoint
+   * Only sends user_metadata - username and email are extracted from OIDC claim on backend
    */
-  public updateUserInfo(data: UpdateUserProfileRequest): Observable<User> {
-    return this.http.patch<User>('/api/profile/user', data).pipe(take(1));
-  }
-
-  /**
-   * Update profile details fields (title, organization, location, etc.)
-   */
-  public updateProfileDetails(data: UpdateProfileDetailsRequest): Observable<any> {
-    return this.http.patch('/api/profile/details', data).pipe(take(1));
+  public updateUserProfile(data: ProfileUpdateRequest): Observable<any> {
+    return this.http.patch('/api/profile', data).pipe(take(1));
   }
 
   // Email management methods

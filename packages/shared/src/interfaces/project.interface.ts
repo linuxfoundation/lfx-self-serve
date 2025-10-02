@@ -135,3 +135,12 @@ export interface ProjectSettings {
   /** Project updated at */
   updated_at: string;
 }
+
+/**
+ * Project slug to ID response payload
+ */
+export interface ProjectSlugToIdResponse {
+  projectId: string;
+  slug: string;
+  exists: boolean;
+}

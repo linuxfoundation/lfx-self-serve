@@ -10,17 +10,15 @@ import {
   EmailPreferences,
   MeetingAttachment,
   PermissionLevel,
-  ProfileDetails,
   ProjectPermission,
   ProjectSearchResult,
   RecentActivity,
   UpdateEmailPreferencesRequest,
-  UpdateProfileDetailsRequest,
   UpdateUserPermissionRequest,
-  UpdateUserProfileRequest,
   UploadFileResponse,
   User,
   UserEmail,
+  UserMetadata,
   UserPermissionSummary,
   UserProfile,
 } from '@lfx-one/shared/interfaces';
@@ -559,7 +557,7 @@ export class SupabaseService {
   /**
    * Get profile details data from public.profiles table
    */
-  public async getProfile(userUid: string): Promise<ProfileDetails | null> {
+  public async getProfile(userUid: string): Promise<UserMetadata | null> {
     const params = new URLSearchParams({
       user_id: `eq.${userUid}`,
       limit: '1',
@@ -580,72 +578,10 @@ export class SupabaseService {
     return data?.[0] || null;
   }
 
-  public async updateUser(username: string, data: UpdateUserProfileRequest): Promise<UserProfile> {
-    const url = `${this.baseUrl}/users`;
-    const params = new URLSearchParams({
-      username: `eq.${username}`,
-    });
-
-    const updateData = {
-      ...data,
-      username: username,
-      updated_at: new Date().toISOString(),
-    };
-
-    const response = await fetch(`${url}?${params.toString()}`, {
-      method: 'PATCH',
-      headers: this.getHeaders(),
-      body: JSON.stringify(updateData),
-      signal: AbortSignal.timeout(this.timeout),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to update user: ${response.status} ${response.statusText}`);
-    }
-
-    const result = await response.json();
-    return result?.[0];
-  }
-
-  /**
-   * Update profile details data in public.profiles table
-   */
-  public async updateProfileDetails(username: string, data: UpdateProfileDetailsRequest): Promise<ProfileDetails> {
-    const user = await this.getUser(username);
-
-    if (!user) {
-      throw new Error(`User not found: ${username}`);
-    }
-
-    const params = new URLSearchParams({
-      user_id: `eq.${user.id}`,
-    });
-    const url = `${this.baseUrl}/profiles?${params.toString()}`;
-
-    const updateData = {
-      ...data,
-      updated_at: new Date().toISOString(),
-    };
-
-    const response = await fetch(url, {
-      method: 'PATCH',
-      headers: this.getHeaders(),
-      body: JSON.stringify(updateData),
-      signal: AbortSignal.timeout(this.timeout),
-    });
-
-    if (!response.ok) {
-      throw new Error(`Failed to update profile details: ${response.status} ${response.statusText}`);
-    }
-
-    const result = await response.json();
-    return result?.[0];
-  }
-
   /**
    * Create profile record if it doesn't exist
    */
-  public async createProfileIfNotExists(userUid: string): Promise<ProfileDetails> {
+  public async createProfileIfNotExists(userUid: string): Promise<UserMetadata> {
     // First check if profile exists
     const existing = await this.getProfile(userUid);
     if (existing) {

@@ -239,8 +239,9 @@ export class MeetingCardComponent implements OnInit {
   }
 
   public copyMeetingLink(): void {
-    const meetingLink = environment.urls.home + '/meetings/' + this.meeting().uid;
-    this.clipboard.copy(meetingLink);
+    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + this.meeting().uid);
+    meetingUrl.searchParams.set('password', this.meeting().password || '');
+    this.clipboard.copy(meetingUrl.toString());
     this.messageService.add({
       severity: 'success',
       summary: 'Meeting Link Copied',

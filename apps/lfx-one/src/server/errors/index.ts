@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 export { BaseApiError } from './base.error';
-export { AuthenticationError } from './authentication.error';
+export { AuthenticationError, AuthorizationError } from './authentication.error';
 export { MicroserviceError } from './microservice.error';
 export { ServiceValidationError, ResourceNotFoundError } from './service-validation.error';
 

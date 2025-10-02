@@ -6,7 +6,7 @@ import { Component, computed, inject, OnInit, Signal, signal } from '@angular/co
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { COUNTRIES, markFormControlsAsTouched, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared';
-import { CombinedProfile, UpdateProfileDetailsRequest, UpdateUserProfileRequest } from '@lfx-one/shared/interfaces';
+import { CombinedProfile, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ButtonComponent } from '@shared/components/button/button.component';
 import { CardComponent } from '@shared/components/card/card.component';
@@ -16,7 +16,7 @@ import { SelectComponent } from '@shared/components/select/select.component';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, finalize, forkJoin, of, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, finalize, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-profile-edit',
@@ -78,23 +78,23 @@ export class ProfileEditComponent implements OnInit {
     return this.selectedCountrySignal() === 'United States';
   });
 
-  // Profile form
+  // Profile form with backend-aligned field names
   public profileForm: FormGroup = this.fb.group({
-    // User table fields
-    first_name: ['', [Validators.maxLength(50)]],
-    last_name: ['', [Validators.maxLength(50)]],
+    // Direct user fields
     username: [{ value: '', disabled: true }, [Validators.required, Validators.minLength(3), Validators.maxLength(30)]],
 
-    // Profile table fields
-    title: ['', [Validators.maxLength(100)]],
+    // User metadata fields
+    given_name: ['', [Validators.maxLength(50)]],
+    family_name: ['', [Validators.maxLength(50)]],
+    job_title: ['', [Validators.maxLength(100)]],
     organization: ['', [Validators.maxLength(100)]],
     country: ['', [Validators.maxLength(50)]],
-    state: ['', [Validators.maxLength(50)]],
+    state_province: ['', [Validators.maxLength(50)]],
     city: ['', [Validators.maxLength(50)]],
     address: ['', [Validators.maxLength(200)]],
-    zipcode: ['', [Validators.maxLength(20)]],
+    postal_code: ['', [Validators.maxLength(20)]],
     phone_number: ['', [Validators.maxLength(20)]],
-    tshirt_size: ['', []],
+    t_shirt_size: ['', []],
   });
 
   public constructor() {
@@ -106,9 +106,9 @@ export class ProfileEditComponent implements OnInit {
       .subscribe((country: string) => {
         this.selectedCountrySignal.set(country || '');
 
-        // Clear state field when country changes to avoid invalid state/country combinations
+        // Clear state_province field when country changes to avoid invalid state/country combinations
         if (country !== 'United States') {
-          this.profileForm.get('state')?.setValue('');
+          this.profileForm.get('state_province')?.setValue('');
         }
       });
   }
@@ -137,28 +137,29 @@ export class ProfileEditComponent implements OnInit {
 
     this.savingSignal.set(true);
 
-    // Prepare user update data
-    const userUpdate: UpdateUserProfileRequest = {
-      first_name: formValue.first_name || null,
-      last_name: formValue.last_name || null,
-      username: formValue.username || null,
+    // Build user_metadata only if there are fields to update
+    const userMetadata: Partial<UserMetadata> = {
+      given_name: formValue.given_name || undefined,
+      family_name: formValue.family_name || undefined,
+      job_title: formValue.job_title || undefined,
+      organization: formValue.organization || undefined,
+      country: formValue.country || undefined,
+      state_province: formValue.state_province || undefined,
+      city: formValue.city || undefined,
+      address: formValue.address || undefined,
+      postal_code: formValue.postal_code || undefined,
+      phone_number: formValue.phone_number || undefined,
+      t_shirt_size: formValue.t_shirt_size || undefined,
     };
 
-    // Prepare profile update data
-    const profileUpdate: UpdateProfileDetailsRequest = {
-      title: formValue.title || null,
-      organization: formValue.organization || null,
-      country: formValue.country || null,
-      state: formValue.state || null,
-      city: formValue.city || null,
-      address: formValue.address || null,
-      zipcode: formValue.zipcode || null,
-      phone_number: formValue.phone_number || null,
-      tshirt_size: formValue.tshirt_size || null,
+    // Prepare update data - only send user_metadata
+    const updateData: ProfileUpdateRequest = {
+      user_metadata: userMetadata as UserMetadata,
     };
 
-    // Update both user and profile data in parallel using forkJoin
-    forkJoin([this.userService.updateUserInfo(userUpdate), this.userService.updateProfileDetails(profileUpdate)])
+    // Update profile via unified endpoint
+    this.userService
+      .updateUserProfile(updateData)
       .pipe(finalize(() => this.savingSignal.set(false)))
       .subscribe({
         next: () => {
@@ -220,21 +221,18 @@ export class ProfileEditComponent implements OnInit {
     const countryValue = profile.profile?.country || '';
 
     this.profileForm.patchValue({
-      // User fields
-      first_name: profile.user.first_name || '',
-      last_name: profile.user.last_name || '',
+      given_name: profile.user.first_name || '',
+      family_name: profile.user.last_name || '',
       username: profile.user.username || '',
-
-      // Profile fields
-      title: profile.profile?.title || '',
+      job_title: profile.profile?.job_title || '',
       organization: profile.profile?.organization || '',
       country: countryValue,
-      state: profile.profile?.state || '',
+      state_province: profile.profile?.state_province || '',
       city: profile.profile?.city || '',
       address: profile.profile?.address || '',
-      zipcode: profile.profile?.zipcode || '',
+      postal_code: profile.profile?.postal_code || '',
       phone_number: profile.profile?.phone_number || '',
-      tshirt_size: profile.profile?.tshirt_size || '',
+      t_shirt_size: profile.profile?.t_shirt_size || '',
     });
 
     // Set the initial country signal value

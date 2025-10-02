@@ -145,7 +145,7 @@ export class ProfileLayoutComponent {
       const profile = this.profile();
       if (!profile?.profile) return '';
 
-      return profile.profile.title || '';
+      return profile.profile.job_title || '';
     });
   }
 
@@ -156,7 +156,7 @@ export class ProfileLayoutComponent {
 
       const parts = [];
       if (profile.profile.city) parts.push(profile.profile.city);
-      if (profile.profile.state) parts.push(profile.profile.state);
+      if (profile.profile.state_province) parts.push(profile.profile.state_province);
       if (profile.profile.country) parts.push(profile.profile.country);
 
       return parts.join(', ');

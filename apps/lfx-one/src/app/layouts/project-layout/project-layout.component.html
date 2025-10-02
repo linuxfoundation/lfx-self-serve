@@ -17,25 +17,27 @@
       </lfx-breadcrumb>
     </div>
 
-    <div class="flex flex-col md:flex-row md:items-center justify-between">
-      <div class="flex flex-col items-start gap-3">
+    <div class="flex flex-col md:flex-row md:items-center justify-between w-full">
+      <div class="flex justify-between items-start gap-3 w-full">
+        <div class="flex flex-col gap-1 w-full">
+          <!-- Project Title -->
+          <h1 class="text-2xl font-display font-semibold text-gray-900 mb-3">
+            {{ projectTitle() }}
+          </h1>
+
+          <!-- Project Description -->
+          @if (projectDescription(); as description) {
+            <p class="text-gray-600 text-sm mb-6 max-w-3xl leading-relaxed">
+              {{ description }}
+            </p>
+          }
+        </div>
+
         <!-- Category Badge -->
         @if (categoryLabel(); as category) {
           <div class="flex justify-start">
-            <img [src]="projectLogo()" class="h-10 w-full" />
+            <img [src]="projectLogo()" class="h-16 w-full" />
           </div>
-        }
-
-        <!-- Project Title -->
-        <h1 class="text-2xl font-display font-semibold text-gray-900 mb-3">
-          {{ projectTitle() }}
-        </h1>
-
-        <!-- Project Description -->
-        @if (projectDescription(); as description) {
-          <p class="text-gray-600 text-sm mb-6 max-w-3xl leading-relaxed">
-            {{ description }}
-          </p>
         }
       </div>
     </div>

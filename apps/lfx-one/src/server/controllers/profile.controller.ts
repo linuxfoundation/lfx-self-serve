@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AddEmailRequest, CombinedProfile, UpdateEmailPreferencesRequest } from '@lfx-one/shared/interfaces';
+import { AddEmailRequest, CombinedProfile, ProfileUpdateRequest, UpdateEmailPreferencesRequest, UserMetadataUpdateRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { ServiceValidationError } from '../errors';
+import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { Logger } from '../helpers/logger';
 import { SupabaseService } from '../services/supabase.service';
+import { UserService } from '../services/user.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 
 /**
@@ -14,6 +15,7 @@ import { getUsernameFromAuth } from '../utils/auth-helper';
  */
 export class ProfileController {
   private supabaseService: SupabaseService = new SupabaseService();
+  private userService: UserService = new UserService();
 
   /**
    * GET /api/profile - Get current user's combined profile
@@ -83,22 +85,36 @@ export class ProfileController {
   }
 
   /**
-   * PATCH /api/profile/user - Update user table fields
+   * PATCH /api/profile - Update user metadata via NATS
+   * Handles all user profile fields including personal info and profile details
    */
-  public async updateCurrentUser(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'update_current_user', {
+  public async updateUserMetadata(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'update_user_metadata_nats', {
       request_body_keys: Object.keys(req.body),
     });
 
     try {
-      // Get user ID from auth context
+      // Get the bearer token from the request (set by auth middleware) or OIDC access token
+      const token = req.bearerToken || req.oidc?.accessToken?.access_token;
+      if (!token) {
+        Logger.error(req, 'update_user_metadata_nats', startTime, new Error('No authentication token found'));
+
+        const validationError = ServiceValidationError.forField('token', 'Authentication token required', {
+          operation: 'update_user_metadata_nats',
+          service: 'profile_controller',
+          path: req.path,
+        });
+
+        return next(validationError);
+      }
+
+      // Get username from auth context for user_id
       const username = await getUsernameFromAuth(req);
-
       if (!username) {
-        Logger.error(req, 'update_current_user', startTime, new Error('User not authenticated or user ID not found'));
+        Logger.error(req, 'update_user_metadata_nats', startTime, new Error('User not authenticated'));
 
         const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'update_current_user',
+          operation: 'update_user_metadata_nats',
           service: 'profile_controller',
           path: req.path,
         });
@@ -106,100 +122,118 @@ export class ProfileController {
         return next(validationError);
       }
 
-      // Validate request body contains valid user profile fields
-      const allowedFields = ['first_name', 'last_name', 'username'];
-      const updateData: any = {};
+      // Extract and validate request body
+      const { user_metadata }: ProfileUpdateRequest = req.body;
 
-      for (const [key, value] of Object.entries(req.body)) {
-        if (allowedFields.includes(key)) {
-          updateData[key] = value;
+      // Validate at least one field to update is provided
+      if (!user_metadata) {
+        Logger.error(req, 'update_user_metadata_nats', startTime, new Error('No update data provided'));
+
+        const validationError = ServiceValidationError.forField('body', 'At least one field to update must be provided', {
+          operation: 'update_user_metadata_nats',
+          service: 'profile_controller',
+          path: req.path,
+        });
+
+        return next(validationError);
+      }
+
+      // Validate user metadata if provided
+      if (user_metadata) {
+        try {
+          this.userService.validateUserMetadata(user_metadata);
+        } catch (validationError) {
+          Logger.error(req, 'update_user_metadata_nats', startTime, validationError);
+
+          const error = ServiceValidationError.forField('user_metadata', validationError instanceof Error ? validationError.message : 'Invalid user metadata', {
+            operation: 'update_user_metadata_nats',
+            service: 'profile_controller',
+            path: req.path,
+          });
+
+          return next(error);
         }
       }
 
-      if (Object.keys(updateData).length === 0) {
-        Logger.error(req, 'update_current_user', startTime, new Error('No valid fields provided for update'));
+      // Prepare the update request
+      const updateRequest: UserMetadataUpdateRequest = {
+        token,
+        username,
+        user_metadata: user_metadata,
+      };
 
-        const validationError = ServiceValidationError.forField('request_body', 'No valid fields provided for update', {
-          operation: 'update_current_user',
-          service: 'profile_controller',
-          path: req.path,
+      // Call the user service to update via NATS
+      const response = await this.userService.updateUserMetadata(req, updateRequest);
+
+      // Handle response
+      if (response.success) {
+        Logger.success(req, 'update_user_metadata_nats', startTime, {
+          user_id: username,
+          updated_fields: response.updated_fields,
         });
 
-        return next(validationError);
-      }
-
-      // Update user
-      const updatedUser = await this.supabaseService.updateUser(username, updateData);
-
-      Logger.success(req, 'update_current_user', startTime, {
-        username: username,
-        updated_fields: Object.keys(updateData),
-      });
-
-      res.json(updatedUser);
-    } catch (error) {
-      Logger.error(req, 'update_current_user', startTime, error);
-      next(error);
-    }
-  }
-
-  /**
-   * PATCH /api/profile/details - Update profile details table fields
-   */
-  public async updateCurrentProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'update_current_profile_details', {
-      request_body_keys: Object.keys(req.body),
-    });
-
-    try {
-      // Get user ID from auth context
-      const userId = await getUsernameFromAuth(req);
-
-      if (!userId) {
-        Logger.error(req, 'update_current_profile_details', startTime, new Error('User not authenticated or user ID not found'));
-
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'update_current_profile_details',
-          service: 'profile_controller',
-          path: req.path,
+        res.status(200).json({
+          success: true,
+          message: response.message || 'User metadata updated successfully',
+          updated_fields: response.updated_fields,
         });
+      } else {
+        Logger.error(req, 'update_user_metadata_nats', startTime, new Error(response.error || 'Update failed'));
 
-        return next(validationError);
-      }
+        // Create appropriate error based on error type
+        let error: any;
 
-      // Validate request body contains valid profile detail fields
-      const allowedFields = ['title', 'organization', 'country', 'state', 'city', 'address', 'zipcode', 'phone_number', 'tshirt_size'];
-      const updateData: any = {};
-
-      for (const [key, value] of Object.entries(req.body)) {
-        if (allowedFields.includes(key)) {
-          updateData[key] = value;
+        if (response.error === 'Service temporarily unavailable') {
+          // Service unavailable error
+          error = new MicroserviceError(response.message || 'Authentication service temporarily unavailable', 503, 'SERVICE_UNAVAILABLE', {
+            operation: 'update_user_metadata_nats',
+            service: 'auth-service',
+            path: req.path,
+            errorBody: { error: response.error, message: response.message },
+          });
+        } else if (response.error?.includes('authentication') || response.error?.includes('token')) {
+          // Authentication error
+          error = new AuthenticationError(response.message || 'Authentication failed', {
+            operation: 'update_user_metadata_nats',
+            service: 'profile_controller',
+            path: req.path,
+            metadata: { error: response.error },
+          });
+        } else if (response.error?.includes('permission') || response.error?.includes('forbidden')) {
+          // Authorization error
+          error = new AuthorizationError(response.message || 'Insufficient permissions to update user metadata', {
+            operation: 'update_user_metadata_nats',
+            service: 'profile_controller',
+            path: req.path,
+          });
+        } else if (response.error?.includes('not found')) {
+          // Resource not found error
+          error = new ResourceNotFoundError('User', username, {
+            operation: 'update_user_metadata_nats',
+            service: 'profile_controller',
+            path: req.path,
+          });
+        } else if (response.error?.includes('validation') || response.error?.includes('invalid')) {
+          // Validation error
+          error = ServiceValidationError.forField('user_metadata', response.message || response.error || 'Invalid user metadata', {
+            operation: 'update_user_metadata_nats',
+            service: 'profile_controller',
+            path: req.path,
+          });
+        } else {
+          // Generic microservice error
+          error = new MicroserviceError(response.message || response.error || 'Failed to update user metadata', 500, 'INTERNAL_ERROR', {
+            operation: 'update_user_metadata_nats',
+            service: 'auth-service',
+            path: req.path,
+            errorBody: { error: response.error, message: response.message },
+          });
         }
+
+        return next(error);
       }
-
-      if (Object.keys(updateData).length === 0) {
-        Logger.error(req, 'update_current_profile_details', startTime, new Error('No valid fields provided for update'));
-
-        const validationError = ServiceValidationError.forField('request_body', 'No valid fields provided for update', {
-          operation: 'update_current_profile_details',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      // Update profile details
-      const updatedProfile = await this.supabaseService.updateProfileDetails(userId, updateData);
-
-      Logger.success(req, 'update_current_profile_details', startTime, {
-        user_id: userId,
-        updated_fields: Object.keys(updateData),
-      });
-
-      res.json(updatedProfile);
     } catch (error) {
-      Logger.error(req, 'update_current_profile_details', startTime, error);
+      Logger.error(req, 'update_user_metadata_nats', startTime, error);
       next(error);
     }
   }

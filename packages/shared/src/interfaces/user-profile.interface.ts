@@ -15,55 +15,11 @@ export interface UserProfile {
 }
 
 /**
- * Profile details data from public.profiles table
- */
-export interface ProfileDetails {
-  id: number;
-  user_id: string; // UUID reference to auth.users.id
-  title: string | null;
-  organization: string | null;
-  country: string | null;
-  state: string | null;
-  city: string | null;
-  address: string | null;
-  zipcode: string | null;
-  phone_number: string | null;
-  tshirt_size: string | null;
-  created_at: string;
-  updated_at: string;
-}
-
-/**
  * Combined user profile and details
  */
 export interface CombinedProfile {
   user: UserProfile;
-  profile: ProfileDetails | null;
-}
-
-/**
- * Update request for user profile data
- */
-export interface UpdateUserProfileRequest {
-  first_name?: string | null;
-  last_name?: string | null;
-  username?: string | null;
-  // Note: email updates may require special handling/verification
-}
-
-/**
- * Update request for profile details data
- */
-export interface UpdateProfileDetailsRequest {
-  title?: string | null;
-  organization?: string | null;
-  country?: string | null;
-  state?: string | null;
-  city?: string | null;
-  address?: string | null;
-  zipcode?: string | null;
-  phone_number?: string | null;
-  tshirt_size?: string | null;
+  profile: UserMetadata | null;
 }
 
 /**
@@ -157,4 +113,52 @@ export interface TwoFactorSettings {
   method: 'app' | 'sms' | 'email' | null;
   backup_codes_count: number;
   last_used: string | null;
+}
+
+/**
+ * User metadata object for profile updates
+ */
+export interface UserMetadata {
+  name?: string;
+  given_name?: string;
+  family_name?: string;
+  job_title?: string;
+  organization?: string;
+  country?: string;
+  state_province?: string;
+  city?: string;
+  address?: string;
+  postal_code?: string;
+  phone_number?: string;
+  t_shirt_size?: string;
+  picture?: string;
+  zoneinfo?: string;
+}
+
+/**
+ * Frontend request for updating user profile via NATS
+ * Only contains user_metadata - backend extracts token/user_id from OIDC
+ */
+export interface ProfileUpdateRequest {
+  user_metadata: UserMetadata;
+}
+
+/**
+ * User metadata update request payload
+ */
+export interface UserMetadataUpdateRequest {
+  token: string;
+  username: string;
+  user_metadata?: UserMetadata;
+}
+
+/**
+ * User metadata update response payload
+ */
+export interface UserMetadataUpdateResponse {
+  success: boolean;
+  username: string;
+  message?: string;
+  updated_fields?: string[];
+  error?: string;
 }
