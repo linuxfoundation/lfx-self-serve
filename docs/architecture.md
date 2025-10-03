@@ -919,7 +919,7 @@ const authConfig: ConfigParams = {
   authorizationParams: {
     response_type: 'code',
     audience: process.env['PCC_AUTH0_AUDIENCE'] || 'https://example.com',
-    scope: 'openid email profile api offline_access',
+    scope: 'openid email profile api offline_access update:current_user_metadata',
   },
   clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || 'bar',
 };
