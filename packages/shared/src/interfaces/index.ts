@@ -54,3 +54,6 @@ export * from './user-profile.interface';
 
 // User statistics interfaces
 export * from './user-statistics.interface';
+
+// Analytics interfaces
+export * from './analytics.interface';
