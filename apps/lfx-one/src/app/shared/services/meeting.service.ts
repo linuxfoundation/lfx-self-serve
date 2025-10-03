@@ -409,6 +409,16 @@ export class MeetingService {
     return new FormGroup(controls);
   }
 
+  public resendMeetingInvitation(meetingUid: string, registrantId: string): Observable<{ message: string }> {
+    return this.http.post<{ message: string }>(`/api/meetings/${meetingUid}/registrants/${registrantId}/resend`, {}).pipe(
+      take(1),
+      catchError((error) => {
+        console.error('Failed to resend meeting invitation:', error);
+        return throwError(() => error);
+      })
+    );
+  }
+
   private readFileAsBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();

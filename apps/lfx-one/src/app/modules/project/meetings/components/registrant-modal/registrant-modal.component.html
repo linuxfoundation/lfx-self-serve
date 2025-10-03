@@ -8,14 +8,27 @@
   <!-- Action Buttons -->
   <div class="flex border-t border-gray-200 pt-4 justify-between items-center" data-testid="registrant-modal-actions">
     @if (isEditMode) {
-      <lfx-button
-        label="Delete Registrant"
-        severity="danger"
-        size="small"
-        type="button"
-        (onClick)="onDeleteRegistrant()"
-        data-testid="registrant-modal-delete-button">
-      </lfx-button>
+      <div class="flex gap-2 items-center">
+        <lfx-button
+          label="Delete Registrant"
+          severity="danger"
+          size="small"
+          type="button"
+          (onClick)="onDeleteRegistrant()"
+          data-testid="registrant-modal-delete-button">
+        </lfx-button>
+        <lfx-button
+          label="Resend Invitation"
+          icon="fa-light fa-paper-plane"
+          severity="secondary"
+          size="small"
+          type="button"
+          [loading]="resendingInvitation()"
+          [disabled]="resendingInvitation()"
+          (onClick)="onResendInvitation()"
+          data-testid="registrant-modal-resend-button">
+        </lfx-button>
+      </div>
     } @else {
       <!-- Add More Registrants Option (only in add mode) -->
       <lfx-checkbox

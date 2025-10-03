@@ -45,6 +45,9 @@ router.put('/:uid/registrants', (req, res, next) => meetingController.updateMeet
 // DELETE /meetings/:uid/registrants - delete registrants (handles single or multiple)
 router.delete('/:uid/registrants', (req, res, next) => meetingController.deleteMeetingRegistrants(req, res, next));
 
+// POST /meetings/:uid/registrants/:registrantId/resend - resend invitation to specific registrant
+router.post('/:uid/registrants/:registrantId/resend', (req, res, next) => meetingController.resendMeetingInvitation(req, res, next));
+
 router.post('/:uid/attachments/upload', async (req: Request, res: Response, next: NextFunction) => {
   const startTime = Date.now();
   const meetingId = req.params['uid'];

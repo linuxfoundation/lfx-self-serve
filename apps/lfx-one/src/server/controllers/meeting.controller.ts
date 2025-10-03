@@ -660,6 +660,70 @@ export class MeetingController {
   }
 
   /**
+   * POST /meetings/:uid/registrants/:registrantId/resend
+   */
+  public async resendMeetingInvitation(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, registrantId } = req.params;
+    const startTime = Logger.start(req, 'resend_meeting_invitation', {
+      meeting_uid: uid,
+      registrant_id: registrantId,
+    });
+
+    try {
+      // Validate meeting ID parameter
+      if (!uid) {
+        Logger.error(req, 'resend_meeting_invitation', startTime, new Error('Missing meeting ID parameter'));
+
+        const validationError = ServiceValidationError.forField('uid', 'Meeting ID is required', {
+          operation: 'resend_meeting_invitation',
+          service: 'meeting_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Validate registrant ID parameter
+      if (!registrantId) {
+        Logger.error(req, 'resend_meeting_invitation', startTime, new Error('Missing registrant ID parameter'));
+
+        const validationError = ServiceValidationError.forField('registrantId', 'Registrant ID is required', {
+          operation: 'resend_meeting_invitation',
+          service: 'meeting_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Call the meeting service to resend the invitation
+      await this.meetingService.resendMeetingInvitation(req, uid, registrantId);
+
+      // Log the success
+      Logger.success(req, 'resend_meeting_invitation', startTime, {
+        meeting_uid: uid,
+        registrant_id: registrantId,
+      });
+
+      // Send success response
+      res.status(200).json({
+        message: 'Invitation resent successfully',
+      });
+    } catch (error) {
+      // Log the error
+      Logger.error(req, 'resend_meeting_invitation', startTime, error, {
+        meeting_uid: uid,
+        registrant_id: registrantId,
+      });
+
+      // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
    * Private helper to process registrant operations with fail-fast for 403 errors
    */
   private async processRegistrantOperations<T, R>(

@@ -392,6 +392,28 @@ export class MeetingService {
   }
 
   /**
+   * Resends a meeting invitation to a specific registrant
+   */
+  public async resendMeetingInvitation(req: Request, meetingUid: string, registrantId: string): Promise<void> {
+    try {
+      // Call the LFX API endpoint for resending invitation
+      await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/registrants/${registrantId}/resend`, 'POST');
+
+      // Log the successful operation
+      Logger.success(req, 'resend_meeting_invitation', Date.now(), {
+        meeting_uid: meetingUid,
+        registrant_id: registrantId,
+      });
+    } catch (error) {
+      Logger.error(req, 'resend_meeting_invitation', Date.now(), error, {
+        meeting_uid: meetingUid,
+        registrant_id: registrantId,
+      });
+      throw error;
+    }
+  }
+
+  /**
    * Fetches meeting join URL by meeting UID
    */
   public async getMeetingJoinUrl(req: Request, meetingUid: string): Promise<MeetingJoinURL> {

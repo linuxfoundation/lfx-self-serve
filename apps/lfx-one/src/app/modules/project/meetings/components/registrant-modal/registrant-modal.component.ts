@@ -39,11 +39,13 @@ export class RegistrantModalComponent {
 
   // Class variables with explicit types
   public submitting: WritableSignal<boolean>;
+  public resendingInvitation: WritableSignal<boolean>;
   public form: FormGroup;
   public isEditMode = !!this.registrant;
 
   public constructor() {
     this.submitting = signal<boolean>(false);
+    this.resendingInvitation = signal<boolean>(false);
     this.form = this.meetingService.createRegistrantFormGroup(true); // Include add_more_registrants
 
     if (this.registrant) {
@@ -146,6 +148,43 @@ export class RegistrantModalComponent {
           },
           error: (error: any) => {
             this.handleError(error, 'Failed to delete registrant');
+          },
+        });
+      },
+    });
+  }
+
+  public onResendInvitation(): void {
+    if (!this.registrant || this.resendingInvitation()) {
+      return;
+    }
+
+    this.confirmationService.confirm({
+      message: `Resend invitation to ${this.registrant.first_name} ${this.registrant.last_name}?`,
+      header: 'Resend Invitation',
+      acceptLabel: 'Yes, Resend',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-sm p-button-primary',
+      rejectButtonStyleClass: 'p-button-sm p-button-secondary',
+      accept: () => {
+        this.resendingInvitation.set(true);
+
+        this.meetingService.resendMeetingInvitation(this.meetingId, this.registrant!.uid).subscribe({
+          next: () => {
+            this.resendingInvitation.set(false);
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Success',
+              detail: `Invitation resent successfully to ${this.registrant!.email}`,
+            });
+          },
+          error: (error: any) => {
+            this.resendingInvitation.set(false);
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: error?.error?.message || 'Failed to resend invitation',
+            });
           },
         });
       },
