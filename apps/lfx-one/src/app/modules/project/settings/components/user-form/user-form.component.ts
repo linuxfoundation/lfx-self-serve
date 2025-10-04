@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -92,13 +93,29 @@ export class UserFormComponent {
         });
         this.dialogRef.close(true);
       },
-      error: (error: any) => {
+      error: (error: HttpErrorResponse) => {
         console.error('Error saving user:', error);
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Error',
-          detail: `Failed to ${this.isEditing() ? 'update' : 'add'} user. Please try again.`,
-        });
+
+        // Check if it's a 404 error for email not found
+        if (error.status === 404 && error.error?.code === 'NOT_FOUND') {
+          const usernameValue = formValue.username;
+          const isEmail = usernameValue.includes('@');
+
+          this.messageService.add({
+            severity: 'error',
+            summary: 'User Not Found',
+            detail: isEmail
+              ? `No user found with email address "${usernameValue}". Please verify the email address and try again.`
+              : error.error?.message || 'User not found',
+          });
+        } else {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: error.error?.message || `Failed to ${this.isEditing() ? 'update' : 'add'} user. Please try again.`,
+          });
+        }
+
         this.submitting.set(false);
       },
     });

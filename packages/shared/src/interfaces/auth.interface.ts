@@ -161,3 +161,14 @@ export interface AuthConfig {
   /** Default route type for unmatched routes */
   defaultType: RouteType;
 }
+
+/**
+ * Error response from email to username NATS lookup
+ * @description Response structure when user email is not found
+ */
+export interface EmailToUsernameErrorResponse {
+  /** Success flag - always false for error responses */
+  success: false;
+  /** Error message describing the failure */
+  error: string;
+}

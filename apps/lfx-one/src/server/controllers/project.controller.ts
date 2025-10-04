@@ -259,12 +259,39 @@ export class ProjectController {
         return;
       }
 
-      const result = await this.projectService.updateProjectPermissions(req, uid, 'add', userData.username, userData.role);
+      // Detect if input is email or username
+      const isEmail = userData.username.includes('@');
+      let username = userData.username;
+
+      if (isEmail) {
+        req.log.info(
+          {
+            email: userData.username,
+            operation: 'add_user_project_permissions',
+          },
+          'Email detected, resolving to username via NATS'
+        );
+
+        // Resolve email to username via NATS
+        username = await this.projectService.resolveEmailToUsername(req, userData.username);
+
+        req.log.info(
+          {
+            email: userData.username,
+            username,
+            operation: 'add_user_project_permissions',
+          },
+          'Successfully resolved email to username'
+        );
+      }
+
+      const result = await this.projectService.updateProjectPermissions(req, uid, 'add', username, userData.role);
 
       Logger.success(req, 'add_user_project_permissions', startTime, {
         uid,
-        username: userData.username,
+        username,
         role: userData.role,
+        resolved_from_email: isEmail,
       });
 
       res.status(201).json(result);
