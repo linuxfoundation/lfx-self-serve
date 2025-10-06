@@ -285,7 +285,21 @@ export class ProjectController {
         );
       }
 
-      const result = await this.projectService.updateProjectPermissions(req, uid, 'add', username, userData.role);
+      // Check if manual user data is provided (for users not found in directory)
+      let manualUserInfo: { name: string; email: string; username: string; avatar?: string } | undefined;
+      if (userData.name || userData.email || userData.avatar) {
+        manualUserInfo = {
+          name: userData.name || '',
+          email: userData.email || '',
+          username,
+        };
+        // Only include avatar if it's not empty
+        if (userData.avatar) {
+          manualUserInfo.avatar = userData.avatar;
+        }
+      }
+
+      const result = await this.projectService.updateProjectPermissions(req, uid, 'add', username, userData.role, manualUserInfo);
 
       Logger.success(req, 'add_user_project_permissions', startTime, {
         uid,

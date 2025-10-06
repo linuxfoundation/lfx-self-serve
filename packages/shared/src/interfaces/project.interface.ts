@@ -118,6 +118,21 @@ export interface ProjectCard extends Partial<Project> {
 export type ProjectQueryResponse = Project[];
 
 /**
+ * User information for project permissions
+ * @description Complete user profile data for project writers and auditors
+ */
+export interface UserInfo {
+  /** User's full name */
+  name: string;
+  /** User's email address */
+  email: string;
+  /** User's username/LFID */
+  username: string;
+  /** URL to user's avatar image (optional) */
+  avatar?: string;
+}
+
+/**
  * Project settings
  * @description Project settings for the LFX platform
  */
@@ -126,10 +141,10 @@ export interface ProjectSettings {
   uid: string;
   /** Project announcement date */
   announcement_date: string;
-  /** Project writers */
-  writers: string[];
-  /** Project auditors */
-  auditors: string[];
+  /** Project writers with full user information */
+  writers: UserInfo[];
+  /** Project auditors with full user information */
+  auditors: UserInfo[];
   /** Project created at */
   created_at: string;
   /** Project updated at */

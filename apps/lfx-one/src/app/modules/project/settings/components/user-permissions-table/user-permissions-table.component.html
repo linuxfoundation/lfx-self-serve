@@ -23,7 +23,10 @@
         currentPageReportTemplate="Showing {first} to {last} of {totalRecords} users">
         <ng-template #header>
           <tr>
+            <th class="w-16"><span class="text-sm font-sans text-gray-500">Avatar</span></th>
+            <th><span class="text-sm font-sans text-gray-500">Name</span></th>
             <th><span class="text-sm font-sans text-gray-500">Username</span></th>
+            <th><span class="text-sm font-sans text-gray-500">Email</span></th>
             <th><span class="text-sm font-sans text-gray-500">Role</span></th>
             <th class="text-center">
               <div class="flex justify-center">
@@ -35,9 +38,32 @@
 
         <ng-template #body let-user>
           <tr>
+            <!-- Avatar Column -->
+            <td>
+              <div class="flex items-center justify-center">
+                @if (user.avatar) {
+                  <img [src]="user.avatar" [alt]="user.name" class="w-8 h-8 rounded-full object-cover" />
+                } @else {
+                  <div class="w-8 h-8 rounded-full bg-blue-600 flex items-center justify-center text-white text-xs font-medium">
+                    {{ getUserInitials(user.name) }}
+                  </div>
+                }
+              </div>
+            </td>
+
+            <!-- Name Column -->
+            <td>
+              <div class="text-sm font-sans text-gray-900 font-medium">{{ user.name }}</div>
+            </td>
+
             <!-- Username Column -->
             <td>
-              <div class="text-sm font-sans text-gray-900 font-medium">{{ user.username }}</div>
+              <div class="text-sm font-sans text-gray-700">{{ user.username }}</div>
+            </td>
+
+            <!-- Email Column -->
+            <td>
+              <div class="text-sm font-sans text-gray-600">{{ user.email }}</div>
             </td>
 
             <!-- Role Column -->
@@ -66,7 +92,7 @@
 
         <ng-template #emptymessage>
           <tr>
-            <td colspan="3" class="text-center py-8">
+            <td colspan="6" class="text-center py-8">
               <div class="text-center py-8 text-gray-500">
                 <i class="fa-light fa-users text-4xl text-gray-400 mb-4"></i>
                 <h3 class="text-lg font-medium text-gray-900 mb-2">No User Permissions</h3>

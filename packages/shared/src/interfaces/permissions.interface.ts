@@ -143,8 +143,14 @@ export interface UpdateUserPermissionRequest {
  * @description Simplified representation of user permissions for table display
  */
 export interface ProjectPermissionUser {
+  /** User's full name */
+  name: string;
+  /** User's email address */
+  email: string;
   /** Username identifier */
   username: string;
+  /** URL to user's avatar image (optional) */
+  avatar?: string;
   /** Permission role - 'view' for auditors, 'manage' for writers */
   role: 'view' | 'manage';
 }
@@ -152,12 +158,19 @@ export interface ProjectPermissionUser {
 /**
  * Request payload for adding user to project
  * @description Data required to add a user to project writers or auditors
+ * Can include optional manual entry fields when user is not found in directory
  */
 export interface AddUserToProjectRequest {
   /** Username to add */
   username: string;
   /** Role to assign - 'view' for auditors, 'manage' for writers */
   role: 'view' | 'manage';
+  /** User's full name (optional, for manual entry when user not found) */
+  name?: string;
+  /** User's email address (optional, for manual entry when user not found) */
+  email?: string;
+  /** User's avatar URL (optional, for manual entry when user not found) */
+  avatar?: string;
 }
 
 /**

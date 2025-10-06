@@ -149,7 +149,8 @@ export class ProjectService {
     projectId: string,
     operation: 'add' | 'update' | 'remove',
     username: string,
-    role?: 'view' | 'manage'
+    role?: 'view' | 'manage',
+    manualUserInfo?: { name: string; email: string; username: string; avatar?: string }
   ): Promise<ProjectSettings> {
     // Step 1: Fetch current settings with ETag
     const { data: settings, etag } = await this.etagService.fetchWithETag<ProjectSettings>(
@@ -167,24 +168,75 @@ export class ProjectService {
     if (!updatedSettings.auditors) updatedSettings.auditors = [];
 
     // Remove user from both arrays first (for all operations)
-    updatedSettings.writers = updatedSettings.writers.filter((u) => u !== username);
-    updatedSettings.auditors = updatedSettings.auditors.filter((u) => u !== username);
+    // Compare by username property since writers/auditors are now UserInfo objects
+    updatedSettings.writers = updatedSettings.writers.filter((u) => u.username !== username);
+    updatedSettings.auditors = updatedSettings.auditors.filter((u) => u.username !== username);
 
-    // Add user to appropriate array based on operation and role
+    // For 'add' or 'update', we need to add the user back with full UserInfo
     if (operation === 'add' || operation === 'update') {
       if (!role) {
         throw new Error('Role is required for add/update operations');
       }
 
-      if (role === 'manage') {
-        updatedSettings.writers = [...new Set([...updatedSettings.writers, username])];
+      // Use manual user info if provided, otherwise fetch from NATS
+      let userInfo: { name: string; email: string; username: string; avatar?: string };
+      if (manualUserInfo) {
+        req.log.info(
+          {
+            username,
+            operation: `${operation}_user_project_permissions`,
+          },
+          'Using manually provided user info'
+        );
+        userInfo = {
+          name: manualUserInfo.name,
+          email: manualUserInfo.email,
+          username: manualUserInfo.username,
+        };
+        // Only include avatar if it's provided and not empty
+        if (manualUserInfo.avatar) {
+          userInfo.avatar = manualUserInfo.avatar;
+        }
       } else {
-        updatedSettings.auditors = [...new Set([...updatedSettings.auditors, username])];
+        // Fetch user info from user service via NATS
+        userInfo = await this.getUserInfo(req, username);
+      }
+
+      if (role === 'manage') {
+        updatedSettings.writers = [...updatedSettings.writers, userInfo];
+      } else {
+        updatedSettings.auditors = [...updatedSettings.auditors, userInfo];
       }
     }
     // For 'remove' operation, user is already removed from both arrays above
 
-    // Step 3: Update settings with ETag
+    // Step 3: Clean up empty avatar fields before sending to API
+    // The API validation doesn't accept empty strings for avatar URLs
+    updatedSettings.writers = updatedSettings.writers.map((user) => {
+      const cleanUser: any = {
+        name: user.name,
+        email: user.email,
+        username: user.username,
+      };
+      if (user.avatar && user.avatar.trim() !== '') {
+        cleanUser.avatar = user.avatar;
+      }
+      return cleanUser;
+    });
+
+    updatedSettings.auditors = updatedSettings.auditors.map((user) => {
+      const cleanUser: any = {
+        name: user.name,
+        email: user.email,
+        username: user.username,
+      };
+      if (user.avatar && user.avatar.trim() !== '') {
+        cleanUser.avatar = user.avatar;
+      }
+      return cleanUser;
+    });
+
+    // Step 4: Update settings with ETag
     const result = await this.etagService.updateWithETag<ProjectSettings>(
       req,
       'LFX_V2_SERVICE',
@@ -211,7 +263,7 @@ export class ProjectService {
    * Resolve email address to username using NATS request-reply pattern
    * @param req - Express request object for logging
    * @param email - Email address to lookup
-   * @returns Username associated with the email
+   * @returns Username (sub) associated with the email
    * @throws ResourceNotFoundError if user not found
    */
   public async resolveEmailToUsername(req: Request, email: string): Promise<string> {
@@ -221,9 +273,9 @@ export class ProjectService {
     const normalizedEmail = email.trim().toLowerCase();
 
     try {
-      req.log.info({ email: normalizedEmail }, 'Resolving email to username via NATS');
+      req.log.info({ email: normalizedEmail }, 'Resolving email to sub via NATS');
 
-      const response = await this.natsService.request(NatsSubjects.EMAIL_TO_USERNAME, codec.encode(normalizedEmail), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+      const response = await this.natsService.request(NatsSubjects.EMAIL_TO_SUB, codec.encode(normalizedEmail), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
 
       const responseText = codec.decode(response.data);
 
@@ -237,14 +289,14 @@ export class ProjectService {
           req.log.info({ email: normalizedEmail, error: parsed.error }, 'User email not found via NATS');
 
           throw new ResourceNotFoundError('User', normalizedEmail, {
-            operation: 'resolve_email_to_username',
+            operation: 'resolve_email_to_sub',
             service: 'project_service',
-            path: '/nats/email-to-username',
+            path: '/nats/email-to-sub',
           });
         }
 
-        // Extract username from JSON success response or JSON string
-        username = typeof parsed === 'string' ? parsed : parsed.username;
+        // Extract sub (username) from JSON success response or JSON string
+        username = typeof parsed === 'string' ? parsed : parsed.sub || parsed.username;
       } catch (parseError) {
         // Re-throw ResourceNotFoundError as-is
         if (parseError instanceof ResourceNotFoundError) {
@@ -255,20 +307,20 @@ export class ProjectService {
         username = responseText;
       }
 
-      // Trim and validate username
+      // Trim and validate sub (username)
       username = username.trim();
 
       if (!username || username === '') {
-        req.log.info({ email: normalizedEmail }, 'Empty username returned from NATS');
+        req.log.info({ email: normalizedEmail }, 'Empty sub returned from NATS');
 
         throw new ResourceNotFoundError('User', normalizedEmail, {
-          operation: 'resolve_email_to_username',
+          operation: 'resolve_email_to_sub',
           service: 'project_service',
-          path: '/nats/email-to-username',
+          path: '/nats/email-to-sub',
         });
       }
 
-      req.log.info({ email: normalizedEmail, username }, 'Successfully resolved email to username');
+      req.log.info({ email: normalizedEmail, sub: username }, 'Successfully resolved email to sub');
 
       return username;
     } catch (error) {
@@ -277,14 +329,94 @@ export class ProjectService {
         throw error;
       }
 
-      req.log.error({ error: error instanceof Error ? error.message : error, email: normalizedEmail }, 'Failed to resolve email to username via NATS');
+      req.log.error({ error: error instanceof Error ? error.message : error, email: normalizedEmail }, 'Failed to resolve email to sub via NATS');
 
       // If it's a timeout or no responder error, treat as not found
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         throw new ResourceNotFoundError('User', normalizedEmail, {
-          operation: 'resolve_email_to_username',
+          operation: 'resolve_email_to_sub',
           service: 'project_service',
-          path: '/nats/email-to-username',
+          path: '/nats/email-to-sub',
+        });
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch user information by username using NATS request-reply pattern
+   * The username can be an email or actual username - if email, it will be resolved first
+   * @param req - Express request object for logging
+   * @param usernameOrEmail - Username or email to lookup
+   * @returns UserInfo object with name, email, username, and optional avatar
+   * @throws ResourceNotFoundError if user not found
+   */
+  public async getUserInfo(req: Request, usernameOrEmail: string): Promise<{ name: string; email: string; username: string; avatar?: string }> {
+    const codec = this.natsService.getCodec();
+
+    // First, check if input is an email and resolve to username if needed
+    let username = usernameOrEmail.trim();
+    if (usernameOrEmail.includes('@')) {
+      username = await this.resolveEmailToUsername(req, usernameOrEmail);
+    }
+
+    try {
+      req.log.info({ username }, 'Fetching user info via NATS');
+
+      const response = await this.natsService.request(NatsSubjects.USERNAME_TO_USER_INFO, codec.encode(username), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+
+      const responseText = codec.decode(response.data);
+      const userInfo = JSON.parse(responseText);
+
+      // Validate response structure
+      if (!userInfo || typeof userInfo !== 'object') {
+        throw new ResourceNotFoundError('User', username, {
+          operation: 'get_user_info',
+          service: 'project_service',
+          path: '/nats/username-to-user-info',
+        });
+      }
+
+      // Check if it's an error response
+      if (userInfo.success === false) {
+        req.log.info({ username, error: userInfo.error }, 'User not found via NATS');
+
+        throw new ResourceNotFoundError('User', username, {
+          operation: 'get_user_info',
+          service: 'project_service',
+          path: '/nats/username-to-user-info',
+        });
+      }
+
+      req.log.info({ username }, 'Successfully fetched user info');
+
+      const result: { name: string; email: string; username: string; avatar?: string } = {
+        name: userInfo.name || '',
+        email: userInfo.email || '',
+        username: userInfo.username || username,
+      };
+
+      // Only include avatar if it exists and is not empty
+      if (userInfo.avatar && userInfo.avatar.trim() !== '') {
+        result.avatar = userInfo.avatar;
+      }
+
+      return result;
+    } catch (error) {
+      // Re-throw ResourceNotFoundError as-is
+      if (error instanceof ResourceNotFoundError) {
+        throw error;
+      }
+
+      req.log.error({ error: error instanceof Error ? error.message : error, username }, 'Failed to fetch user info via NATS');
+
+      // If it's a timeout or no responder error, treat as not found
+      if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
+        throw new ResourceNotFoundError('User', username, {
+          operation: 'get_user_info',
+          service: 'project_service',
+          path: '/nats/username-to-user-info',
         });
       }
 
