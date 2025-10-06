@@ -5,6 +5,14 @@
   <!-- Use the existing registrant form component -->
   <lfx-registrant-form [form]="form" [registrant]="registrant" data-testid="registrant-modal-form-component"> </lfx-registrant-form>
 
+  <!-- Informational Message for Committee Members -->
+  @if (isCommitteeMember) {
+    <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700" data-testid="registrant-modal-committee-info">
+      <i class="fa-light fa-info-circle mr-2"></i>
+      This is a committee member. To update their details or remove them, please edit the individual committee(s).
+    </div>
+  }
+
   <!-- Action Buttons -->
   <div class="flex border-t border-gray-200 pt-4 justify-between items-center" data-testid="registrant-modal-actions">
     @if (isEditMode) {
@@ -14,6 +22,9 @@
           severity="danger"
           size="small"
           type="button"
+          [disabled]="isCommitteeMember"
+          [tooltip]="isCommitteeMember ? 'Committee members must be removed via the committee' : ''"
+          tooltipPosition="top"
           (onClick)="onDeleteRegistrant()"
           data-testid="registrant-modal-delete-button">
         </lfx-button>
@@ -53,7 +64,9 @@
       <lfx-button
         [label]="isEditMode ? 'Update Registrant' : 'Add Registrant'"
         [loading]="submitting()"
-        [disabled]="form.invalid || submitting()"
+        [disabled]="form.invalid || submitting() || isCommitteeMember"
+        [tooltip]="isCommitteeMember ? 'Committee member details must be updated via the committee' : ''"
+        tooltipPosition="top"
         type="submit"
         size="small"
         data-testid="registrant-modal-submit-button">
