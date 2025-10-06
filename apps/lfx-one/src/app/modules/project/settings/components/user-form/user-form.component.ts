@@ -10,7 +10,8 @@ import { RadioButtonComponent } from '@components/radio-button/radio-button.comp
 import { AddUserToProjectRequest, ProjectPermissionUser, UpdateUserRoleRequest } from '@lfx-one/shared';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectService } from '@services/project.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { take } from 'rxjs';
@@ -18,7 +19,7 @@ import { take } from 'rxjs';
 @Component({
   selector: 'lfx-user-form',
   standalone: true,
-  imports: [ReactiveFormsModule, InputTextComponent, ButtonComponent, RadioButtonComponent, TooltipModule],
+  imports: [ReactiveFormsModule, InputTextComponent, ButtonComponent, RadioButtonComponent, TooltipModule, ConfirmDialogModule],
   templateUrl: './user-form.component.html',
 })
 export class UserFormComponent {
@@ -27,9 +28,13 @@ export class UserFormComponent {
   private readonly projectService = inject(ProjectService);
   private readonly messageService = inject(MessageService);
   private readonly permissionsService = inject(PermissionsService);
+  private readonly confirmationService = inject(ConfirmationService);
 
   // Loading state for form submissions
   public submitting = signal<boolean>(false);
+
+  // Track if user confirmed manual entry after email not found
+  public showManualFields = signal<boolean>(false);
 
   // Create form group internally
   public form = signal<FormGroup>(this.createUserFormGroup());
@@ -75,50 +80,73 @@ export class UserFormComponent {
     this.submitting.set(true);
     const formValue = this.form().value;
 
-    const operation = this.isEditing()
-      ? this.permissionsService.updateUserRole(project.uid, this.user()!.username, {
+    // For editing, update role only
+    if (this.isEditing()) {
+      this.permissionsService
+        .updateUserRole(project.uid, this.user()!.username, {
           role: formValue.role,
         } as UpdateUserRoleRequest)
-      : this.permissionsService.addUserToProject(project.uid, {
-          username: formValue.username,
-          role: formValue.role,
-        } as AddUserToProjectRequest);
-
-    operation.pipe(take(1)).subscribe({
-      next: () => {
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Success',
-          detail: `User ${this.isEditing() ? 'updated' : 'added'} successfully`,
+        .pipe(take(1))
+        .subscribe({
+          next: () => {
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Success',
+              detail: 'User updated successfully',
+            });
+            this.dialogRef.close(true);
+          },
+          error: (error: HttpErrorResponse) => {
+            console.error('Error updating user:', error);
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: error.error?.message || 'Failed to update user. Please try again.',
+            });
+            this.submitting.set(false);
+          },
         });
-        this.dialogRef.close(true);
-      },
-      error: (error: HttpErrorResponse) => {
-        console.error('Error saving user:', error);
+      return;
+    }
 
-        // Check if it's a 404 error for email not found
-        if (error.status === 404 && error.error?.code === 'NOT_FOUND') {
-          const usernameValue = formValue.username;
-          const isEmail = usernameValue.includes('@');
+    // For adding: if manual fields not shown yet, try to lookup user by email first
+    if (!this.showManualFields()) {
+      // Try to add user with just email (backend will resolve to username)
+      this.permissionsService
+        .addUserToProject(project.uid, {
+          username: formValue.email, // Pass email as username, backend will resolve
+          role: formValue.role,
+        } as AddUserToProjectRequest)
+        .pipe(take(1))
+        .subscribe({
+          next: () => {
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Success',
+              detail: 'User added successfully',
+            });
+            this.dialogRef.close(true);
+          },
+          error: (error: HttpErrorResponse) => {
+            console.error('Error adding user:', error);
 
-          this.messageService.add({
-            severity: 'error',
-            summary: 'User Not Found',
-            detail: isEmail
-              ? `No user found with email address "${usernameValue}". Please verify the email address and try again.`
-              : error.error?.message || 'User not found',
-          });
-        } else {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: error.error?.message || `Failed to ${this.isEditing() ? 'update' : 'add'} user. Please try again.`,
-          });
-        }
-
-        this.submitting.set(false);
-      },
-    });
+            // Check if it's a 404 error for user not found
+            if (error.status === 404 && error.error?.code === 'NOT_FOUND') {
+              this.handleUserNotFound(formValue);
+            } else {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: error.error?.message || 'Failed to add user. Please try again.',
+              });
+              this.submitting.set(false);
+            }
+          },
+        });
+    } else {
+      // Manual fields are shown, submit with all data
+      this.addUserWithManualData(formValue);
+    }
   }
 
   public onCancel(): void {
@@ -126,9 +154,104 @@ export class UserFormComponent {
   }
 
   // Private methods
+  private handleUserNotFound(formValue: any): void {
+    const emailValue = formValue.email;
+
+    // Show confirmation dialog
+    const message =
+      `No user found with email address "${emailValue}". ` +
+      `The system could not locate this user in the directory.\n\n` +
+      `Would you like to add them to this project anyway? You will need to manually enter their details.`;
+
+    this.confirmationService.confirm({
+      header: 'User Not Found',
+      message,
+      icon: 'pi pi-exclamation-triangle',
+      acceptLabel: 'Yes, Continue',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-sm',
+      rejectButtonStyleClass: 'p-button-secondary p-button-sm p-button-outlined',
+      accept: () => {
+        // User confirmed - show manual entry fields and enable required validation
+        this.showManualFields.set(true);
+        this.submitting.set(false);
+
+        // Add validators to name and username fields
+        this.form().get('name')?.setValidators([Validators.required]);
+        this.form().get('username')?.setValidators([Validators.required]);
+        this.form().get('name')?.updateValueAndValidity();
+        this.form().get('username')?.updateValueAndValidity();
+
+        // Close the confirmation dialog
+        this.confirmationService.close();
+      },
+      reject: () => {
+        // User cancelled - reset submitting state
+        this.submitting.set(false);
+
+        // Close the confirmation dialog
+        this.confirmationService.close();
+      },
+    });
+  }
+
+  private addUserWithManualData(formValue: any): void {
+    const project = this.projectService.project();
+    if (!project) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Project information is required.',
+      });
+      this.submitting.set(false);
+      return;
+    }
+
+    // Create user data with manually entered information
+    const userData: any = {
+      name: formValue.name,
+      email: formValue.email,
+      username: formValue.username,
+      role: formValue.role,
+    };
+
+    // Only include avatar if it's not empty
+    if (formValue.avatar) {
+      userData.avatar = formValue.avatar;
+    }
+
+    // Since the user doesn't exist in the system, we need to send the full user data
+    // The backend should handle this case by accepting UserInfo objects
+    this.permissionsService
+      .addUserToProject(project.uid, userData as any)
+      .pipe(take(1))
+      .subscribe({
+        next: () => {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: 'User added successfully with manual information',
+          });
+          this.dialogRef.close(true);
+        },
+        error: (error: HttpErrorResponse) => {
+          console.error('Error adding user with manual data:', error);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: error.error?.message || 'Failed to add user. Please try again.',
+          });
+          this.submitting.set(false);
+        },
+      });
+  }
+
   private createUserFormGroup(): FormGroup {
     return new FormGroup({
-      username: new FormControl('', [Validators.required]),
+      email: new FormControl('', [Validators.required, Validators.email]),
+      name: new FormControl(''),
+      username: new FormControl(''),
+      avatar: new FormControl(''),
       role: new FormControl('view', [Validators.required]),
     });
   }
@@ -137,13 +260,22 @@ export class UserFormComponent {
     if (this.isEditing() && this.user()) {
       const user = this.user()!;
 
+      // Show all fields when editing
+      this.showManualFields.set(true);
+
       this.form().patchValue({
+        name: user.name,
+        email: user.email,
         username: user.username,
+        avatar: user.avatar,
         role: user.role,
       });
 
-      // Disable username field when editing
+      // Disable username, name, email, and avatar fields when editing (user info is immutable)
       this.form().get('username')?.disable();
+      this.form().get('name')?.disable();
+      this.form().get('email')?.disable();
+      this.form().get('avatar')?.disable();
     }
   }
 }

@@ -36,8 +36,11 @@ export class PermissionsService {
         // Add auditors (view permissions)
         if (settings.auditors) {
           users.push(
-            ...settings.auditors.map((username) => ({
-              username,
+            ...settings.auditors.map((userInfo) => ({
+              name: userInfo.name,
+              email: userInfo.email,
+              username: userInfo.username,
+              avatar: userInfo.avatar,
               role: 'view' as const,
             }))
           );
@@ -46,8 +49,11 @@ export class PermissionsService {
         // Add writers (manage permissions)
         if (settings.writers) {
           users.push(
-            ...settings.writers.map((username) => ({
-              username,
+            ...settings.writers.map((userInfo) => ({
+              name: userInfo.name,
+              email: userInfo.email,
+              username: userInfo.username,
+              avatar: userInfo.avatar,
               role: 'manage' as const,
             }))
           );

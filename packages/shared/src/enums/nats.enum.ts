@@ -8,4 +8,6 @@ export enum NatsSubjects {
   PROJECT_SLUG_TO_UID = 'lfx.projects-api.slug_to_uid',
   USER_METADATA_UPDATE = 'lfx.auth-service.user_metadata.update',
   EMAIL_TO_USERNAME = 'lfx.auth-service.email_to_username',
+  EMAIL_TO_SUB = 'lfx.auth-service.email_to_sub',
+  USERNAME_TO_USER_INFO = 'lfx.auth-service.username_to_user_info',
 }
