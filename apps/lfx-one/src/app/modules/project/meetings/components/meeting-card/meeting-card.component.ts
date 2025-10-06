@@ -207,26 +207,17 @@ export class MeetingCardComponent implements OnInit {
   public onRegistrantEdit(registrant: MeetingRegistrant, event: Event): void {
     event.stopPropagation();
 
-    // Don't allow editing committee members - show informational message
-    if (registrant.type === 'committee') {
-      this.messageService.add({
-        severity: 'info',
-        summary: 'Committee Member',
-        detail: 'This is a committee member. To update their details, please edit them in the individual committee(s)',
-      });
-      return;
-    }
-
     this.dialogService
       .open(RegistrantModalComponent, {
-        header: 'Edit Guest',
+        header: registrant.type === 'committee' ? 'Committee Member' : 'Edit Guest',
         width: '650px',
         modal: true,
         closable: true,
         dismissableMask: true,
         data: {
           meetingId: this.meeting().uid,
-          registrant: registrant, // Edit mode
+          registrant: registrant,
+          isCommitteeMember: registrant.type === 'committee',
         },
       })
       .onClose.pipe(take(1))

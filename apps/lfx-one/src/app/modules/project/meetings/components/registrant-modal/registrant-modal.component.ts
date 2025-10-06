@@ -31,6 +31,7 @@ export class RegistrantModalComponent {
   // Inputs
   public readonly meetingId = this.config.data.meetingId;
   public readonly registrant = this.config.data.registrant;
+  public readonly isCommitteeMember = this.config.data.isCommitteeMember || false;
 
   // Outputs
   public readonly registrantSaved = output<MeetingRegistrant>();
@@ -57,6 +58,15 @@ export class RegistrantModalComponent {
         org_name: this.registrant.org_name || '',
         host: this.registrant.host || false,
       });
+
+      // For committee members, disable all form controls except host
+      if (this.isCommitteeMember) {
+        Object.keys(this.form.controls).forEach((key) => {
+          if (key !== 'add_more_registrants') {
+            this.form.get(key)?.disable();
+          }
+        });
+      }
     }
   }
 
