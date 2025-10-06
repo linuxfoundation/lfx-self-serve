@@ -148,11 +148,19 @@ export class ProjectService {
     req: Request,
     projectId: string,
     operation: 'add' | 'update' | 'remove',
-    username: string,
+    usernameOrEmail: string,
     role?: 'view' | 'manage',
     manualUserInfo?: { name: string; email: string; username: string; avatar?: string }
   ): Promise<ProjectSettings> {
-    // Step 1: Fetch current settings with ETag
+    // Step 1: Determine the appropriate identifier for backend operations
+    // For emails, use the sub; for usernames, use the username directly
+    let backendIdentifier = usernameOrEmail.trim();
+    if (usernameOrEmail.includes('@')) {
+      // For emails, get the sub for backend operations
+      backendIdentifier = await this.resolveEmailToSub(req, usernameOrEmail);
+    }
+
+    // Step 2: Fetch current settings with ETag
     const { data: settings, etag } = await this.etagService.fetchWithETag<ProjectSettings>(
       req,
       'LFX_V2_SERVICE',
@@ -160,7 +168,7 @@ export class ProjectService {
       `${operation}_user_project_permissions`
     );
 
-    // Step 2: Update the settings based on operation
+    // Step 3: Update the settings based on operation
     const updatedSettings = { ...settings };
 
     // Initialize arrays if they don't exist
@@ -169,8 +177,9 @@ export class ProjectService {
 
     // Remove user from both arrays first (for all operations)
     // Compare by username property since writers/auditors are now UserInfo objects
-    updatedSettings.writers = updatedSettings.writers.filter((u) => u.username !== username);
-    updatedSettings.auditors = updatedSettings.auditors.filter((u) => u.username !== username);
+    // Use backendIdentifier (sub) for comparison to ensure proper removal
+    updatedSettings.writers = updatedSettings.writers.filter((u) => u.username !== backendIdentifier);
+    updatedSettings.auditors = updatedSettings.auditors.filter((u) => u.username !== backendIdentifier);
 
     // For 'add' or 'update', we need to add the user back with full UserInfo
     if (operation === 'add' || operation === 'update') {
@@ -183,7 +192,7 @@ export class ProjectService {
       if (manualUserInfo) {
         req.log.info(
           {
-            username,
+            username: backendIdentifier,
             operation: `${operation}_user_project_permissions`,
           },
           'Using manually provided user info'
@@ -191,15 +200,20 @@ export class ProjectService {
         userInfo = {
           name: manualUserInfo.name,
           email: manualUserInfo.email,
-          username: manualUserInfo.username,
+          username: backendIdentifier, // Use the sub for backend consistency
         };
         // Only include avatar if it's provided and not empty
         if (manualUserInfo.avatar) {
           userInfo.avatar = manualUserInfo.avatar;
         }
       } else {
-        // Fetch user info from user service via NATS
-        userInfo = await this.getUserInfo(req, username);
+        // Fetch user info from user service via NATS using the original input
+        const fetchedUserInfo = await this.getUserInfo(req, usernameOrEmail);
+        // Use the backend identifier (sub) for the username in the stored UserInfo for backend consistency
+        userInfo = {
+          ...fetchedUserInfo,
+          username: backendIdentifier, // Use the sub for backend consistency
+        };
       }
 
       if (role === 'manage') {
@@ -250,7 +264,7 @@ export class ProjectService {
       {
         operation: `${operation}_user_project_permissions`,
         project_id: projectId,
-        username,
+        username: backendIdentifier,
         role: role || 'N/A',
       },
       `User ${operation} operation completed successfully`
@@ -260,13 +274,13 @@ export class ProjectService {
   }
 
   /**
-   * Resolve email address to username using NATS request-reply pattern
+   * Resolve email address to sub using NATS request-reply pattern
    * @param req - Express request object for logging
    * @param email - Email address to lookup
-   * @returns Username (sub) associated with the email
+   * @returns Sub associated with the email (used for backend auditors/writers)
    * @throws ResourceNotFoundError if user not found
    */
-  public async resolveEmailToUsername(req: Request, email: string): Promise<string> {
+  public async resolveEmailToSub(req: Request, email: string): Promise<string> {
     const codec = this.natsService.getCodec();
 
     // Normalize email input
@@ -345,8 +359,93 @@ export class ProjectService {
   }
 
   /**
-   * Fetch user information by username using NATS request-reply pattern
-   * The username can be an email or actual username - if email, it will be resolved first
+   * Resolve email address to username using NATS request-reply pattern
+   * @param req - Express request object for logging
+   * @param email - Email address to lookup
+   * @returns Username associated with the email (used for display purposes)
+   * @throws ResourceNotFoundError if user not found
+   */
+  public async resolveEmailToUsername(req: Request, email: string): Promise<string> {
+    const codec = this.natsService.getCodec();
+
+    // Normalize email input
+    const normalizedEmail = email.trim().toLowerCase();
+
+    try {
+      req.log.info({ email: normalizedEmail }, 'Resolving email to username via NATS');
+
+      const response = await this.natsService.request(NatsSubjects.EMAIL_TO_USERNAME, codec.encode(normalizedEmail), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+
+      const responseText = codec.decode(response.data);
+
+      // Parse once and branch on the result shape
+      let username: string;
+      try {
+        const parsed = JSON.parse(responseText);
+
+        // Check if it's an error response
+        if (typeof parsed === 'object' && parsed !== null && parsed.success === false) {
+          req.log.info({ email: normalizedEmail, error: parsed.error }, 'User email not found via NATS');
+
+          throw new ResourceNotFoundError('User', normalizedEmail, {
+            operation: 'resolve_email_to_username',
+            service: 'project_service',
+            path: '/nats/email-to-username',
+          });
+        }
+
+        // Extract username from JSON success response or JSON string
+        username = typeof parsed === 'string' ? parsed : parsed.username;
+      } catch (parseError) {
+        // Re-throw ResourceNotFoundError as-is
+        if (parseError instanceof ResourceNotFoundError) {
+          throw parseError;
+        }
+
+        // JSON parsing failed - use raw text as username
+        username = responseText;
+      }
+
+      // Trim and validate username
+      username = username.trim();
+
+      if (!username || username === '') {
+        req.log.info({ email: normalizedEmail }, 'Empty username returned from NATS');
+
+        throw new ResourceNotFoundError('User', normalizedEmail, {
+          operation: 'resolve_email_to_username',
+          service: 'project_service',
+          path: '/nats/email-to-username',
+        });
+      }
+
+      req.log.info({ email: normalizedEmail, username }, 'Successfully resolved email to username');
+
+      return username;
+    } catch (error) {
+      // Re-throw ResourceNotFoundError as-is
+      if (error instanceof ResourceNotFoundError) {
+        throw error;
+      }
+
+      req.log.error({ error: error instanceof Error ? error.message : error, email: normalizedEmail }, 'Failed to resolve email to username via NATS');
+
+      // If it's a timeout or no responder error, treat as not found
+      if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
+        throw new ResourceNotFoundError('User', normalizedEmail, {
+          operation: 'resolve_email_to_username',
+          service: 'project_service',
+          path: '/nats/email-to-username',
+        });
+      }
+
+      throw error;
+    }
+  }
+
+  /**
+   * Fetch user information by username or email using NATS request-reply pattern
+   * For emails, it resolves to username first, then uses the username for user metadata lookup
    * @param req - Express request object for logging
    * @param usernameOrEmail - Username or email to lookup
    * @returns UserInfo object with name, email, username, and optional avatar
@@ -355,51 +454,65 @@ export class ProjectService {
   public async getUserInfo(req: Request, usernameOrEmail: string): Promise<{ name: string; email: string; username: string; avatar?: string }> {
     const codec = this.natsService.getCodec();
 
-    // First, check if input is an email and resolve to username if needed
-    let username = usernameOrEmail.trim();
+    // For emails, resolve to username for the NATS lookup
+    // For usernames, use them directly
+    let usernameForLookup = usernameOrEmail.trim();
+    let originalEmail = '';
+
     if (usernameOrEmail.includes('@')) {
-      username = await this.resolveEmailToUsername(req, usernameOrEmail);
+      originalEmail = usernameOrEmail;
+      // First confirm the user exists with email_to_sub
+      await this.resolveEmailToSub(req, usernameOrEmail);
+      // Then get the username for user metadata lookup
+      usernameForLookup = await this.resolveEmailToUsername(req, usernameOrEmail);
+      req.log.info({ email: originalEmail, resolvedUsername: usernameForLookup }, 'Resolved email to username for user metadata lookup');
     }
 
     try {
-      req.log.info({ username }, 'Fetching user info via NATS');
+      req.log.info({ username: usernameForLookup }, 'Fetching user metadata via NATS');
 
-      const response = await this.natsService.request(NatsSubjects.USERNAME_TO_USER_INFO, codec.encode(username), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+      const response = await this.natsService.request(NatsSubjects.USER_METADATA_READ, codec.encode(usernameForLookup), {
+        timeout: NATS_CONFIG.REQUEST_TIMEOUT,
+      });
 
       const responseText = codec.decode(response.data);
-      const userInfo = JSON.parse(responseText);
+      const userMetadata = JSON.parse(responseText);
 
       // Validate response structure
-      if (!userInfo || typeof userInfo !== 'object') {
-        throw new ResourceNotFoundError('User', username, {
+      if (!userMetadata || typeof userMetadata !== 'object') {
+        throw new ResourceNotFoundError('User', usernameForLookup, {
           operation: 'get_user_info',
           service: 'project_service',
-          path: '/nats/username-to-user-info',
+          path: '/nats/user-metadata-read',
         });
       }
 
       // Check if it's an error response
-      if (userInfo.success === false) {
-        req.log.info({ username, error: userInfo.error }, 'User not found via NATS');
+      if (userMetadata.success === false) {
+        req.log.info({ username: usernameForLookup, error: userMetadata.error }, 'User metadata not found via NATS');
 
-        throw new ResourceNotFoundError('User', username, {
+        throw new ResourceNotFoundError('User', usernameForLookup, {
           operation: 'get_user_info',
           service: 'project_service',
-          path: '/nats/username-to-user-info',
+          path: '/nats/user-metadata-read',
         });
       }
 
-      req.log.info({ username }, 'Successfully fetched user info');
+      req.log.info({ username: usernameForLookup }, 'Successfully fetched user metadata');
+
+      const userData = userMetadata.data || {};
 
       const result: { name: string; email: string; username: string; avatar?: string } = {
-        name: userInfo.name || '',
-        email: userInfo.email || '',
-        username: userInfo.username || username,
+        // Use the name from metadata, fallback to constructed name from given_name/family_name
+        name: userData.name || `${userData.given_name || ''} ${userData.family_name || ''}`.trim() || usernameForLookup,
+        // Use the original email if we had one, otherwise leave empty
+        email: originalEmail || '',
+        username: usernameForLookup,
       };
 
-      // Only include avatar if it exists and is not empty
-      if (userInfo.avatar && userInfo.avatar.trim() !== '') {
-        result.avatar = userInfo.avatar;
+      // Use picture field as avatar if available
+      if (userData.picture && userData.picture.trim() !== '') {
+        result.avatar = userData.picture;
       }
 
       return result;
@@ -409,14 +522,14 @@ export class ProjectService {
         throw error;
       }
 
-      req.log.error({ error: error instanceof Error ? error.message : error, username }, 'Failed to fetch user info via NATS');
+      req.log.error({ error: error instanceof Error ? error.message : error, username: usernameForLookup }, 'Failed to fetch user metadata via NATS');
 
       // If it's a timeout or no responder error, treat as not found
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
-        throw new ResourceNotFoundError('User', username, {
+        throw new ResourceNotFoundError('User', usernameForLookup, {
           operation: 'get_user_info',
           service: 'project_service',
-          path: '/nats/username-to-user-info',
+          path: '/nats/user-metadata-read',
         });
       }
 

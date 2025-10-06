@@ -261,29 +261,6 @@ export class ProjectController {
 
       // Detect if input is email or username
       const isEmail = userData.username.includes('@');
-      let username = userData.username;
-
-      if (isEmail) {
-        req.log.info(
-          {
-            email: userData.username,
-            operation: 'add_user_project_permissions',
-          },
-          'Email detected, resolving to username via NATS'
-        );
-
-        // Resolve email to username via NATS
-        username = await this.projectService.resolveEmailToUsername(req, userData.username);
-
-        req.log.info(
-          {
-            email: userData.username,
-            username,
-            operation: 'add_user_project_permissions',
-          },
-          'Successfully resolved email to username'
-        );
-      }
 
       // Check if manual user data is provided (for users not found in directory)
       let manualUserInfo: { name: string; email: string; username: string; avatar?: string } | undefined;
@@ -291,7 +268,7 @@ export class ProjectController {
         manualUserInfo = {
           name: userData.name || '',
           email: userData.email || '',
-          username,
+          username: userData.username, // Keep the original input for manual user info
         };
         // Only include avatar if it's not empty
         if (userData.avatar) {
@@ -299,13 +276,15 @@ export class ProjectController {
         }
       }
 
-      const result = await this.projectService.updateProjectPermissions(req, uid, 'add', username, userData.role, manualUserInfo);
+      // Pass the original input (email or username) to updateProjectPermissions
+      // The service will handle the email_to_sub -> email_to_username flow internally
+      const result = await this.projectService.updateProjectPermissions(req, uid, 'add', userData.username, userData.role, manualUserInfo);
 
       Logger.success(req, 'add_user_project_permissions', startTime, {
         uid,
-        username,
+        username: userData.username,
         role: userData.role,
-        resolved_from_email: isEmail,
+        is_email: isEmail,
       });
 
       res.status(201).json(result);
