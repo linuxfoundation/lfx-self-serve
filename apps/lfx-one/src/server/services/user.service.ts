@@ -28,20 +28,13 @@ export class UserService {
    * @returns UserMetadataUpdateResponse object with success, data, and error
    * @throws ResourceNotFoundError if user not found
    */
-  public async getUserInfo(
-    req: Request,
-    userArg: string
-  ): Promise<UserMetadataUpdateResponse> {
+  public async getUserInfo(req: Request, userArg: string): Promise<UserMetadataUpdateResponse> {
     const codec = this.natsService.getCodec();
 
     try {
       req.log.info({ userArg: userArg }, 'Fetching user metadata via NATS');
 
-      const response = await this.natsService.request(
-        NatsSubjects.USER_METADATA_READ,
-        codec.encode(userArg),
-        { timeout: NATS_CONFIG.REQUEST_TIMEOUT }
-      );
+      const response = await this.natsService.request(NatsSubjects.USER_METADATA_READ, codec.encode(userArg), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
 
       const responseText = codec.decode(response.data);
 
@@ -61,10 +54,7 @@ export class UserService {
         throw error;
       }
 
-      req.log.error(
-        { error: error instanceof Error ? error.message : error, userArg: userArg },
-        'Failed to fetch user metadata via NATS'
-      );
+      req.log.error({ error: error instanceof Error ? error.message : error, userArg: userArg }, 'Failed to fetch user metadata via NATS');
 
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         throw new ResourceNotFoundError('User', userArg, {

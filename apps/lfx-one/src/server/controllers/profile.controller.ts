@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AddEmailRequest, CombinedProfile, ProfileUpdateRequest, UpdateEmailPreferencesRequest, UserMetadata, UserMetadataUpdateRequest } from '@lfx-one/shared/interfaces';
+import {
+  AddEmailRequest,
+  CombinedProfile,
+  ProfileUpdateRequest,
+  UpdateEmailPreferencesRequest,
+  UserMetadata,
+  UserMetadataUpdateRequest,
+} from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -46,7 +53,7 @@ export class ProfileController {
       try {
         const natsResponse = await this.userService.getUserInfo(req, userId);
         req.log.info({ userId, natsSuccess: natsResponse.success }, 'Fetched user data from NATS');
-        
+
         if (natsResponse.success && natsResponse.data) {
           natsUserData = natsResponse.data;
         }
