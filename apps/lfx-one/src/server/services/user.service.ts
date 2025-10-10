@@ -7,6 +7,7 @@ import { UserMetadata, UserMetadataUpdateRequest, UserMetadataUpdateResponse } f
 import { Request } from 'express';
 
 import { serverLogger } from '../server';
+import { ResourceNotFoundError } from '../errors';
 import { NatsService } from './nats.service';
 
 /**
@@ -17,6 +18,64 @@ export class UserService {
 
   public constructor() {
     this.natsService = new NatsService();
+  }
+
+  /**
+   * Fetch user information by username or email using NATS request-reply pattern
+   * For emails, it resolves to username first, then uses the username for user metadata lookup
+   * @param req - Express request object for logging
+   * @param usernameOrEmail - Username or email to lookup
+   * @returns UserInfo object with name, email, username, and optional avatar
+   * @throws ResourceNotFoundError if user not found
+   */
+  public async getUserInfo(
+    req: Request,
+    userArg: string
+  ): Promise<UserMetadataUpdateResponse> {
+    const codec = this.natsService.getCodec();
+
+    try {
+      req.log.info({ userArg: userArg }, 'Fetching user metadata via NATS');
+
+      const response = await this.natsService.request(
+        NatsSubjects.USER_METADATA_READ,
+        codec.encode(userArg),
+        { timeout: NATS_CONFIG.REQUEST_TIMEOUT }
+      );
+
+      const responseText = codec.decode(response.data);
+
+      const userMetadata: UserMetadataUpdateResponse = JSON.parse(responseText);
+
+      if (!userMetadata || typeof userMetadata !== 'object') {
+        throw new ResourceNotFoundError('User', userArg, {
+          operation: 'get_user_info',
+          service: 'user_service',
+          path: '/nats/user-metadata-read',
+        });
+      }
+
+      return userMetadata;
+    } catch (error) {
+      if (error instanceof ResourceNotFoundError) {
+        throw error;
+      }
+
+      req.log.error(
+        { error: error instanceof Error ? error.message : error, userArg: userArg },
+        'Failed to fetch user metadata via NATS'
+      );
+
+      if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
+        throw new ResourceNotFoundError('User', userArg, {
+          operation: 'get_user_info',
+          service: 'user_service',
+          path: '/nats/user-metadata-read',
+        });
+      }
+
+      throw error;
+    }
   }
 
   /**
