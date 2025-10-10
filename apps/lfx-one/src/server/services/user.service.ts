@@ -22,10 +22,10 @@ export class UserService {
 
   /**
    * Fetch user information by username or email using NATS request-reply pattern
-   * For emails, it resolves to username first, then uses the username for user metadata lookup
+   * The userArg is either a username or a sub (subject) or a user's token
    * @param req - Express request object for logging
-   * @param usernameOrEmail - Username or email to lookup
-   * @returns UserInfo object with name, email, username, and optional avatar
+   * @param userArg - Username, sub, or token
+   * @returns UserMetadataUpdateResponse object with success, data, and error
    * @throws ResourceNotFoundError if user not found
    */
   public async getUserInfo(
