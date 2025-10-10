@@ -32,7 +32,7 @@ export class UserService {
     const codec = this.natsService.getCodec();
 
     try {
-      req.log.info({ userArg: userArg }, 'Fetching user metadata via NATS');
+      req.log.info({ userArgProvided: !!userArg }, 'Fetching user metadata via NATS');
 
       const response = await this.natsService.request(NatsSubjects.USER_METADATA_READ, codec.encode(userArg), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
 
@@ -41,7 +41,7 @@ export class UserService {
       const userMetadata: UserMetadataUpdateResponse = JSON.parse(responseText);
 
       if (!userMetadata || typeof userMetadata !== 'object') {
-        throw new ResourceNotFoundError('User', userArg, {
+        throw new ResourceNotFoundError('User', undefined, {
           operation: 'get_user_info',
           service: 'user_service',
           path: '/nats/user-metadata-read',
@@ -54,10 +54,10 @@ export class UserService {
         throw error;
       }
 
-      req.log.error({ error: error instanceof Error ? error.message : error, userArg: userArg }, 'Failed to fetch user metadata via NATS');
+      req.log.error({ error: error instanceof Error ? error.message : error, userArgProvided: !!userArg }, 'Failed to fetch user metadata via NATS');
 
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
-        throw new ResourceNotFoundError('User', userArg, {
+        throw new ResourceNotFoundError('User', undefined, {
           operation: 'get_user_info',
           service: 'user_service',
           path: '/nats/user-metadata-read',

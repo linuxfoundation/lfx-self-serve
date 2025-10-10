@@ -127,9 +127,10 @@ export class ProfileController {
           'zoneinfo',
         ];
 
+        const natsData = natsUserData;
         fieldsToMerge.forEach((field) => {
-          if (natsUserData![field] !== undefined && natsUserData![field] !== null) {
-            (combinedProfile.profile as any)[field] = natsUserData![field];
+          if (natsData[field] !== undefined && natsData[field] !== null) {
+            (combinedProfile.profile as UserMetadata)[field] = natsData[field];
           }
         });
       }
