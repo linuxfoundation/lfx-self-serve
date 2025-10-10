@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AddEmailRequest, CombinedProfile, ProfileUpdateRequest, UpdateEmailPreferencesRequest, UserMetadataUpdateRequest } from '@lfx-one/shared/interfaces';
+import {
+  AddEmailRequest,
+  CombinedProfile,
+  ProfileUpdateRequest,
+  UpdateEmailPreferencesRequest,
+  UserMetadata,
+  UserMetadataUpdateRequest,
+} from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -41,7 +48,27 @@ export class ProfileController {
 
       let combinedProfile: CombinedProfile | null = null;
 
-      // Get combined profile using JOIN
+      // Step 1: Try to get user metadata from NATS first (authoritative source)
+      let natsUserData: UserMetadata | null = null;
+      try {
+        const natsResponse = await this.userService.getUserInfo(req, userId);
+        req.log.info({ userId, natsSuccess: natsResponse.success }, 'Fetched user data from NATS');
+
+        if (natsResponse.success && natsResponse.data) {
+          natsUserData = natsResponse.data;
+        }
+      } catch (error) {
+        // Log but don't fail - we'll fall back to Supabase
+        req.log.warn(
+          {
+            userId,
+            error: error instanceof Error ? error.message : error,
+          },
+          'Failed to fetch user data from NATS, will use Supabase as fallback'
+        );
+      }
+
+      // Step 2: Get user from Supabase
       const user = await this.supabaseService.getUser(userId);
 
       if (!user) {
@@ -54,12 +81,20 @@ export class ProfileController {
         return next(validationError);
       }
 
+      // Step 3: Merge NATS data into Supabase user if available
+      if (natsUserData) {
+        // Merge fields from NATS, preferring NATS data when available
+        if (natsUserData.given_name) user.first_name = natsUserData.given_name;
+        if (natsUserData.family_name) user.last_name = natsUserData.family_name;
+        // Note: email and username are not part of UserMetadata, they come from the user table
+      }
+
       combinedProfile = {
         user,
         profile: null,
       };
 
-      // Get profile details
+      // Step 4: Get profile details from Supabase
       const profile = await this.supabaseService.getProfile(user.id);
 
       // If no profile details exist, create them
@@ -72,9 +107,38 @@ export class ProfileController {
         combinedProfile.profile = profile;
       }
 
+      // Step 5: Merge NATS metadata into profile if available
+      if (natsUserData && combinedProfile.profile) {
+        // Merge all available fields from NATS into the profile
+        const fieldsToMerge: (keyof UserMetadata)[] = [
+          'name',
+          'given_name',
+          'family_name',
+          'picture',
+          'phone_number',
+          'address',
+          'city',
+          'state_province',
+          'postal_code',
+          'country',
+          'organization',
+          'job_title',
+          't_shirt_size',
+          'zoneinfo',
+        ];
+
+        const natsData = natsUserData;
+        fieldsToMerge.forEach((field) => {
+          if (natsData[field] !== undefined && natsData[field] !== null) {
+            (combinedProfile.profile as UserMetadata)[field] = natsData[field];
+          }
+        });
+      }
+
       Logger.success(req, 'get_current_user_profile', startTime, {
         user_id: user.id,
         has_profile_details: !!combinedProfile.profile,
+        used_nats_data: !!natsUserData,
       });
 
       res.json(combinedProfile);
