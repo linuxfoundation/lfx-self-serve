@@ -70,7 +70,9 @@ export class MeetingJoinComponent implements OnDestroy {
   public joinUrlWithParams: Signal<string | undefined>;
   public attachments: Signal<MeetingAttachment[]>;
   public hasAutoJoined: WritableSignal<boolean> = signal<boolean>(false);
-  private autoJoinTimeout: any = null;
+  private autoJoinTimeout: ReturnType<typeof setTimeout> | null = null;
+  public messageSeverity: Signal<'success' | 'info' | 'warn'>;
+  public messageIcon: Signal<string>;
 
   // Form value signals for reactivity
   private formValues: Signal<{ name: string; email: string; organization: string }>;
@@ -89,38 +91,34 @@ export class MeetingJoinComponent implements OnDestroy {
     this.canJoinMeeting = this.initializeCanJoinMeeting();
     this.joinUrlWithParams = this.initializeJoinUrlWithParams();
     this.attachments = this.initializeAttachments();
+    this.messageSeverity = this.initializeMessageSeverity();
+    this.messageIcon = this.initializeMessageIcon();
 
     // Auto-join effect for signed-in users - use allowSignalWrites for state updates
-    effect(() => {
-      const authenticated = this.authenticated();
-      const user = this.user();
-      const canJoinMeeting = this.canJoinMeeting();
-      const hasAutoJoined = this.hasAutoJoined();
-      const meeting = this.meeting();
+    effect(
+      () => {
+        const authenticated = this.authenticated();
+        const user = this.user();
+        const canJoinMeeting = this.canJoinMeeting();
+        const hasAutoJoined = this.hasAutoJoined();
+        const meeting = this.meeting();
 
-      // Clear any existing timeout
-      if (this.autoJoinTimeout) {
-        clearTimeout(this.autoJoinTimeout);
-        this.autoJoinTimeout = null;
-      }
+        // Clear any existing timeout
+        if (this.autoJoinTimeout) {
+          clearTimeout(this.autoJoinTimeout);
+          this.autoJoinTimeout = null;
+        }
 
-      // Schedule auto-join only if conditions are met
-      if (
-        authenticated && 
-        user && 
-        user.email && 
-        canJoinMeeting && 
-        !hasAutoJoined && 
-        meeting && 
-        meeting.uid &&
-        !this.isJoining()
-      ) {
-        // Set a timeout to prevent rapid-fire execution
-        this.autoJoinTimeout = setTimeout(() => {
-          this.performAutoJoin();
-        }, 500); // Small delay to let all signals settle
-      }
-    }, { allowSignalWrites: true });
+        // Schedule auto-join only if conditions are met
+        if (authenticated && user && user.email && canJoinMeeting && !hasAutoJoined && meeting && meeting.uid && !this.isJoining()) {
+          // Set a timeout to prevent rapid-fire execution
+          this.autoJoinTimeout = setTimeout(() => {
+            this.performAutoJoin();
+          }, 500); // Small delay to let all signals settle
+        }
+      },
+      { allowSignalWrites: true }
+    );
   }
 
   public ngOnDestroy(): void {
@@ -152,7 +150,7 @@ export class MeetingJoinComponent implements OnDestroy {
         next: (res) => {
           this.meeting().join_url = res.join_url;
           const joinUrlWithParams = this.buildJoinUrlWithParams(res.join_url);
-          window.open(joinUrlWithParams, '_blank');
+          this.openMeetingSecurely(joinUrlWithParams);
         },
         error: ({ error }) => {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: error.error });
@@ -168,21 +166,12 @@ export class MeetingJoinComponent implements OnDestroy {
     const hasAutoJoined = this.hasAutoJoined();
     const meeting = this.meeting();
 
-    if (
-      !authenticated || 
-      !user || 
-      !user.email || 
-      !canJoinMeeting || 
-      hasAutoJoined || 
-      !meeting || 
-      !meeting.uid ||
-      this.isJoining()
-    ) {
+    if (!authenticated || !user || !user.email || !canJoinMeeting || hasAutoJoined || !meeting || !meeting.uid || this.isJoining()) {
       return; // Conditions no longer met, abort
     }
 
     // Auto-joining meeting for authenticated user
-    
+
     // Mark as auto-joined immediately to prevent multiple attempts
     this.hasAutoJoined.set(true);
 
@@ -197,7 +186,7 @@ export class MeetingJoinComponent implements OnDestroy {
     // If meeting has a direct join URL, use it
     if (meeting.join_url) {
       const joinUrlWithParams = this.buildJoinUrlWithParams(meeting.join_url);
-      window.open(joinUrlWithParams, '_blank');
+      this.openMeetingSecurely(joinUrlWithParams);
     } else {
       // Otherwise, fetch the join URL first
       this.meetingService
@@ -209,7 +198,7 @@ export class MeetingJoinComponent implements OnDestroy {
             if (res.join_url) {
               meeting.join_url = res.join_url;
               const joinUrlWithParams = this.buildJoinUrlWithParams(res.join_url);
-              window.open(joinUrlWithParams, '_blank');
+              this.openMeetingSecurely(joinUrlWithParams);
             } else {
               throw new Error('No join URL received');
             }
@@ -413,6 +402,58 @@ export class MeetingJoinComponent implements OnDestroy {
       return `${joinUrl}&${queryString}`;
     }
     return `${joinUrl}?${queryString}`;
+  }
+
+  private initializeMessageSeverity(): Signal<'success' | 'info' | 'warn'> {
+    return computed(() => {
+      const hasAutoJoined = this.hasAutoJoined();
+      const canJoinMeeting = this.canJoinMeeting();
+
+      if (hasAutoJoined) {
+        return 'success';
+      }
+      if (canJoinMeeting) {
+        return 'info';
+      }
+      return 'warn';
+    });
+  }
+
+  private initializeMessageIcon(): Signal<string> {
+    return computed(() => {
+      const hasAutoJoined = this.hasAutoJoined();
+      const canJoinMeeting = this.canJoinMeeting();
+
+      if (hasAutoJoined) {
+        return 'fa-light fa-external-link';
+      }
+      if (canJoinMeeting) {
+        return 'fa-light fa-check-circle';
+      }
+      return 'fa-light fa-clock';
+    });
+  }
+
+  private openMeetingSecurely(url: string): void {
+    // Try to open the meeting URL securely
+    const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
+
+    // Handle popup blocker scenarios
+    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+      // Popup was blocked, show user message with manual link
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Popup Blocked',
+        detail: 'Your browser blocked the meeting popup. Please allow popups for this site and try again, or click the Join Meeting button.',
+        life: 8000,
+      });
+
+      // Reset auto-join flag so user can try manually
+      this.hasAutoJoined.set(false);
+    } else {
+      // Clear opener reference for security (prevent tabnabbing)
+      newWindow.opener = null;
+    }
   }
 
   private initializeAttachments(): Signal<MeetingAttachment[]> {

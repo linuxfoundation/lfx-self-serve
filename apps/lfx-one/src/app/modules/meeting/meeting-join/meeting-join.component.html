@@ -211,9 +211,10 @@
                 </div>
 
                 <lfx-message
-                  [severity]="hasAutoJoined() ? 'success' : (canJoinMeeting() ? 'info' : 'warn')"
-                  [icon]="hasAutoJoined() ? 'fa-light fa-external-link' : (canJoinMeeting() ? 'fa-light fa-check-circle' : 'fa-light fa-clock')"
-                  styleClass="flex items-center justify-between w-full">
+                  [severity]="messageSeverity()"
+                  [icon]="messageIcon()"
+                  styleClass="flex items-center justify-between w-full"
+                  [attr.data-testid]="'join-status-message'">
                   <ng-template #content>
                     <div class="flex items-center justify-between w-full">
                       <div class="flex items-center gap-3 text-sm">
@@ -238,7 +239,8 @@
                             [disabled]="!canJoinMeeting()"
                             severity="primary"
                             label="Join Meeting"
-                            icon="fa-light fa-sign-in"></lfx-button>
+                            icon="fa-light fa-sign-in"
+                            [attr.data-testid]="'join-meeting-button-authenticated'"></lfx-button>
                         } @else {
                           <lfx-button
                             size="small"
@@ -246,6 +248,7 @@
                             label="Join Meeting"
                             [disabled]="!canJoinMeeting()"
                             icon="fa-light fa-sign-in"
+                            [attr.data-testid]="'join-meeting-button-authenticated'"
                             (click)="onJoinMeeting()"></lfx-button>
                         }
                       </div>
@@ -347,7 +350,8 @@
                             severity="primary"
                             label="Join Meeting"
                             icon="fa-light fa-sign-in"
-                            [disabled]="joinForm.invalid || !canJoinMeeting()"></lfx-button>
+                            [disabled]="joinForm.invalid || !canJoinMeeting()"
+                            [attr.data-testid]="'join-meeting-button-form'"></lfx-button>
                         } @else {
                           <lfx-button
                             size="small"
@@ -355,6 +359,7 @@
                             label="Join Meeting"
                             [disabled]="joinForm.invalid || !canJoinMeeting()"
                             icon="fa-light fa-sign-in"
+                            [attr.data-testid]="'join-meeting-button-form'"
                             (click)="onJoinMeeting()"></lfx-button>
                         }
                       </div>
