@@ -110,7 +110,7 @@ export class MeetingJoinComponent implements OnDestroy {
         }
 
         // Schedule auto-join only if conditions are met
-        if (authenticated && user && user.email && canJoinMeeting && !hasAutoJoined && meeting && meeting.uid && !this.isJoining()) {
+        if (authenticated && user && user.email && canJoinMeeting && !hasAutoJoined && meeting && meeting.uid) {
           // Set a timeout to prevent rapid-fire execution
           this.autoJoinTimeout = setTimeout(() => {
             this.performAutoJoin();
@@ -166,7 +166,7 @@ export class MeetingJoinComponent implements OnDestroy {
     const hasAutoJoined = this.hasAutoJoined();
     const meeting = this.meeting();
 
-    if (!authenticated || !user || !user.email || !canJoinMeeting || hasAutoJoined || !meeting || !meeting.uid || this.isJoining()) {
+    if (!authenticated || !user || !user.email || !canJoinMeeting || hasAutoJoined || !meeting || !meeting.uid) {
       return; // Conditions no longer met, abort
     }
 
@@ -210,8 +210,7 @@ export class MeetingJoinComponent implements OnDestroy {
               detail: 'Could not automatically join the meeting. Please use the Join Meeting button.',
               life: 5000,
             });
-            // Reset auto-join flag so user can try manually
-            this.hasAutoJoined.set(false);
+            // Don't reset auto-join flag - we should only try once automatically
           },
         });
     }
@@ -435,23 +434,16 @@ export class MeetingJoinComponent implements OnDestroy {
   }
 
   private openMeetingSecurely(url: string): void {
+    // Check if we're running in the browser (not SSR)
+    if (typeof window === 'undefined') {
+      return;
+    }
+
     // Try to open the meeting URL securely
     const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
 
-    // Handle popup blocker scenarios
-    if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
-      // Popup was blocked, show user message with manual link
-      this.messageService.add({
-        severity: 'warn',
-        summary: 'Popup Blocked',
-        detail: 'Your browser blocked the meeting popup. Please allow popups for this site and try again, or click the Join Meeting button.',
-        life: 8000,
-      });
-
-      // Reset auto-join flag so user can try manually
-      this.hasAutoJoined.set(false);
-    } else {
-      // Clear opener reference for security (prevent tabnabbing)
+    // Clear opener reference for security (prevent tabnabbing)
+    if (newWindow) {
       newWindow.opener = null;
     }
   }

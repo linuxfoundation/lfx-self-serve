@@ -232,25 +232,14 @@
                         }
                       </div>
                       <div class="ml-4">
-                        @if (meeting().join_url) {
-                          <lfx-button
-                            size="small"
-                            [href]="canJoinMeeting() ? joinUrlWithParams() : undefined"
-                            [disabled]="!canJoinMeeting()"
-                            severity="primary"
-                            label="Join Meeting"
-                            icon="fa-light fa-sign-in"
-                            [attr.data-testid]="'join-meeting-button-authenticated'"></lfx-button>
-                        } @else {
-                          <lfx-button
-                            size="small"
-                            severity="primary"
-                            label="Join Meeting"
-                            [disabled]="!canJoinMeeting()"
-                            icon="fa-light fa-sign-in"
-                            [attr.data-testid]="'join-meeting-button-authenticated'"
-                            (click)="onJoinMeeting()"></lfx-button>
-                        }
+                        <lfx-button
+                          size="small"
+                          severity="primary"
+                          label="Join Meeting"
+                          [disabled]="!canJoinMeeting()"
+                          icon="fa-light fa-sign-in"
+                          [attr.data-testid]="'join-meeting-button-authenticated'"
+                          (click)="onJoinMeeting()"></lfx-button>
                       </div>
                     </div>
                   </ng-template>
@@ -343,25 +332,14 @@
                         </div>
                       }
                       <div class="flex items-center">
-                        @if (meeting().join_url) {
-                          <lfx-button
-                            size="small"
-                            [href]="joinForm.invalid || !canJoinMeeting() ? undefined : joinUrlWithParams()"
-                            severity="primary"
-                            label="Join Meeting"
-                            icon="fa-light fa-sign-in"
-                            [disabled]="joinForm.invalid || !canJoinMeeting()"
-                            [attr.data-testid]="'join-meeting-button-form'"></lfx-button>
-                        } @else {
-                          <lfx-button
-                            size="small"
-                            severity="primary"
-                            label="Join Meeting"
-                            [disabled]="joinForm.invalid || !canJoinMeeting()"
-                            icon="fa-light fa-sign-in"
-                            [attr.data-testid]="'join-meeting-button-form'"
-                            (click)="onJoinMeeting()"></lfx-button>
-                        }
+                        <lfx-button
+                          size="small"
+                          severity="primary"
+                          label="Join Meeting"
+                          [disabled]="joinForm.invalid || !canJoinMeeting()"
+                          icon="fa-light fa-sign-in"
+                          [attr.data-testid]="'join-meeting-button-form'"
+                          (click)="onJoinMeeting()"></lfx-button>
                       </div>
                     </div>
                   </form>
