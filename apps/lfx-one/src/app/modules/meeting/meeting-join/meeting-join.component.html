@@ -211,13 +211,15 @@
                 </div>
 
                 <lfx-message
-                  [severity]="canJoinMeeting() ? 'info' : 'warn'"
-                  [icon]="canJoinMeeting() ? 'fa-light fa-check-circle' : 'fa-light fa-clock'"
+                  [severity]="hasAutoJoined() ? 'success' : (canJoinMeeting() ? 'info' : 'warn')"
+                  [icon]="hasAutoJoined() ? 'fa-light fa-external-link' : (canJoinMeeting() ? 'fa-light fa-check-circle' : 'fa-light fa-clock')"
                   styleClass="flex items-center justify-between w-full">
                   <ng-template #content>
                     <div class="flex items-center justify-between w-full">
                       <div class="flex items-center gap-3 text-sm">
-                        @if (canJoinMeeting()) {
+                        @if (hasAutoJoined()) {
+                          <span class="font-sans">Meeting opened in a new tab. If it didn't open, use the button to join manually.</span>
+                        } @else if (canJoinMeeting()) {
                           <span class="font-sans">Ready to join as {{ user.name }}</span>
                         } @else {
                           <div class="flex flex-col">

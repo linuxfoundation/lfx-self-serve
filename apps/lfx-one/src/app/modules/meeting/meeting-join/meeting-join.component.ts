@@ -3,7 +3,7 @@
 
 import { CommonModule } from '@angular/common';
 import { HttpParams } from '@angular/common/http';
-import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, effect, inject, OnDestroy, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -46,7 +46,7 @@ import { catchError, combineLatest, finalize, map, of, switchMap, tap } from 'rx
   providers: [],
   templateUrl: './meeting-join.component.html',
 })
-export class MeetingJoinComponent {
+export class MeetingJoinComponent implements OnDestroy {
   // Injected services
   private readonly messageService = inject(MessageService);
   private readonly activatedRoute = inject(ActivatedRoute);
@@ -69,6 +69,8 @@ export class MeetingJoinComponent {
   public canJoinMeeting: Signal<boolean>;
   public joinUrlWithParams: Signal<string | undefined>;
   public attachments: Signal<MeetingAttachment[]>;
+  public hasAutoJoined: WritableSignal<boolean> = signal<boolean>(false);
+  private autoJoinTimeout: any = null;
 
   // Form value signals for reactivity
   private formValues: Signal<{ name: string; email: string; organization: string }>;
@@ -87,6 +89,46 @@ export class MeetingJoinComponent {
     this.canJoinMeeting = this.initializeCanJoinMeeting();
     this.joinUrlWithParams = this.initializeJoinUrlWithParams();
     this.attachments = this.initializeAttachments();
+
+    // Auto-join effect for signed-in users - use allowSignalWrites for state updates
+    effect(() => {
+      const authenticated = this.authenticated();
+      const user = this.user();
+      const canJoinMeeting = this.canJoinMeeting();
+      const hasAutoJoined = this.hasAutoJoined();
+      const meeting = this.meeting();
+
+      // Clear any existing timeout
+      if (this.autoJoinTimeout) {
+        clearTimeout(this.autoJoinTimeout);
+        this.autoJoinTimeout = null;
+      }
+
+      // Schedule auto-join only if conditions are met
+      if (
+        authenticated && 
+        user && 
+        user.email && 
+        canJoinMeeting && 
+        !hasAutoJoined && 
+        meeting && 
+        meeting.uid &&
+        !this.isJoining()
+      ) {
+        // Set a timeout to prevent rapid-fire execution
+        this.autoJoinTimeout = setTimeout(() => {
+          this.performAutoJoin();
+        }, 500); // Small delay to let all signals settle
+      }
+    }, { allowSignalWrites: true });
+  }
+
+  public ngOnDestroy(): void {
+    // Cleanup timeout on component destroy
+    if (this.autoJoinTimeout) {
+      clearTimeout(this.autoJoinTimeout);
+      this.autoJoinTimeout = null;
+    }
   }
 
   public onJoinMeeting(): void {
@@ -116,6 +158,74 @@ export class MeetingJoinComponent {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: error.error });
         },
       });
+  }
+
+  private performAutoJoin(): void {
+    // Double-check conditions before performing auto-join
+    const authenticated = this.authenticated();
+    const user = this.user();
+    const canJoinMeeting = this.canJoinMeeting();
+    const hasAutoJoined = this.hasAutoJoined();
+    const meeting = this.meeting();
+
+    if (
+      !authenticated || 
+      !user || 
+      !user.email || 
+      !canJoinMeeting || 
+      hasAutoJoined || 
+      !meeting || 
+      !meeting.uid ||
+      this.isJoining()
+    ) {
+      return; // Conditions no longer met, abort
+    }
+
+    // Auto-joining meeting for authenticated user
+    
+    // Mark as auto-joined immediately to prevent multiple attempts
+    this.hasAutoJoined.set(true);
+
+    // Show a notification that we're auto-joining
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Auto-joining Meeting',
+      detail: 'Automatically opening the meeting for you...',
+      life: 3000,
+    });
+
+    // If meeting has a direct join URL, use it
+    if (meeting.join_url) {
+      const joinUrlWithParams = this.buildJoinUrlWithParams(meeting.join_url);
+      window.open(joinUrlWithParams, '_blank');
+    } else {
+      // Otherwise, fetch the join URL first
+      this.meetingService
+        .getPublicMeetingJoinUrl(meeting.uid, meeting.password, {
+          email: user.email,
+        })
+        .subscribe({
+          next: (res) => {
+            if (res.join_url) {
+              meeting.join_url = res.join_url;
+              const joinUrlWithParams = this.buildJoinUrlWithParams(res.join_url);
+              window.open(joinUrlWithParams, '_blank');
+            } else {
+              throw new Error('No join URL received');
+            }
+          },
+          error: () => {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Auto-join Failed',
+              detail: 'Could not automatically join the meeting. Please use the Join Meeting button.',
+              life: 5000,
+            });
+            // Reset auto-join flag so user can try manually
+            this.hasAutoJoined.set(false);
+          },
+        });
+    }
   }
 
   private initializeMeeting() {
