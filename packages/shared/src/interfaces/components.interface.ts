@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ChartData, ChartOptions } from 'chart.js';
+
 /**
  * Badge severity level options
  * @description Available color schemes for badge components
@@ -256,4 +258,164 @@ export interface MessageProps {
   styleClass?: string;
   /** Accessibility label */
   ariaLabel?: string;
+}
+
+/**
+ * Sidebar menu item configuration
+ * @description Structure for sidebar navigation menu items
+ */
+export interface SidebarMenuItem {
+  /** Display label for menu item */
+  label: string;
+  /** Icon class or name */
+  icon: string;
+  /** Router link path */
+  routerLink?: string;
+  /** External URL */
+  url?: string;
+  /** Badge content for notifications */
+  badge?: string | number;
+  /** Badge severity for styling */
+  badgeSeverity?: BadgeSeverityOptions['severity'];
+  /** Whether item is disabled */
+  disabled?: boolean;
+  /** Command to execute on click */
+  command?: () => void;
+  /** Child menu items for nested navigation */
+  items?: SidebarMenuItem[];
+  /** Test ID for e2e testing (computed from label if not provided) */
+  testId?: string;
+}
+
+/**
+ * Sidebar component properties
+ * @description Configuration for LFX sidebar navigation component
+ */
+export interface SidebarProps {
+  /** Menu items to display */
+  items: SidebarMenuItem[];
+  /** Whether sidebar is collapsed */
+  collapsed?: boolean;
+  /** Additional CSS classes */
+  styleClass?: string;
+}
+
+/**
+ * Progress item for dashboard metrics
+ * @description Structure for progress tracking items
+ */
+export interface ProgressItem {
+  /** Metric label */
+  label: string;
+  /** Metric value */
+  value: string;
+  /** Trend direction indicator */
+  trend: 'up' | 'down';
+}
+
+/**
+ * Progress item with chart data for dashboard metrics
+ * @description Extended progress item with Chart.js configuration
+ * @note ChartData and ChartOptions types should be imported from chart.js
+ */
+export interface ProgressItemWithChart extends ProgressItem {
+  /** Chart.js data configuration */
+  chartData: ChartData<'line'>;
+  /** Chart.js options configuration */
+  chartOptions: ChartOptions<'line'>;
+  /** Optional subtitle text displayed below the value */
+  subtitle?: string;
+}
+
+/**
+ * Pending action item for task list
+ * @description Structure for pending action items
+ */
+export interface PendingActionItem {
+  /** Action type (e.g., Issue, PR, Review) */
+  type: string;
+  /** Project or repository badge */
+  badge: string;
+  /** Action description text */
+  text: string;
+  /** Icon class for the action type */
+  icon: string;
+  /** Color theme for the action */
+  color: 'amber' | 'blue' | 'green' | 'purple';
+  /** Button text */
+  buttonText: string;
+}
+
+/**
+ * Meeting item for schedule display
+ * @description Structure for meeting information
+ */
+export interface MeetingItem {
+  /** Meeting title */
+  title: string;
+  /** Meeting time/date */
+  time: string;
+  /** Number of attendees */
+  attendees: number;
+}
+
+/**
+ * Project item for project list
+ * @description Structure for project information
+ */
+export interface ProjectItem {
+  /** Project name */
+  name: string;
+  /** Project logo URL */
+  logo?: string;
+  /** User's role in project */
+  role: string;
+  /** User's affiliations */
+  affiliations: string[];
+  /** Code activity data for chart */
+  codeActivities: number[];
+  /** Non-code activity data for chart */
+  nonCodeActivities: number[];
+  /** Project status */
+  status: 'active' | 'archived';
+}
+
+/**
+ * Dashboard meeting card feature flags
+ * @description Enabled features for a meeting displayed on dashboard
+ */
+export interface DashboardMeetingFeatures {
+  /** YouTube auto-upload enabled */
+  youtubeAutoUploads?: boolean;
+  /** Recording enabled */
+  recordingEnabled: boolean;
+  /** Transcripts enabled */
+  transcriptsEnabled?: boolean;
+  /** AI summary enabled */
+  aiSummary?: boolean;
+  /** Chat enabled */
+  chatEnabled?: boolean;
+}
+
+/**
+ * Dashboard meeting card properties
+ * @description Configuration for dashboard meeting card component
+ */
+export interface DashboardMeetingCardProps {
+  /** Unique meeting identifier */
+  id: string;
+  /** Meeting title */
+  title: string;
+  /** Meeting date string */
+  date: string;
+  /** Meeting time string */
+  time: string;
+  /** Meeting type category */
+  meetingType: string;
+  /** Whether meeting is private */
+  isPrivate: boolean;
+  /** Enabled meeting features */
+  features: DashboardMeetingFeatures;
+  /** Project name (optional) */
+  project?: string;
 }

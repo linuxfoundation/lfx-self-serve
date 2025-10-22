@@ -1,0 +1,82 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<aside
+  class="h-[calc(100vh-8rem)] bg-white transition-all duration-300 w-64 ml-4 flex flex-col"
+  style="
+    border-radius: 12px;
+    box-shadow:
+      rgba(0, 0, 0, 0.1) 0px 1px 3px 0px,
+      rgba(0, 0, 0, 0.1) 0px 1px 2px -1px;
+  "
+  data-testid="sidebar">
+  <!-- Main Navigation -->
+  <nav class="flex flex-col py-3 flex-grow overflow-y-auto">
+    @for (item of itemsWithTestIds(); track item.label) {
+      <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
+    }
+  </nav>
+
+  <!-- Footer Navigation -->
+  @if (footerItems().length > 0) {
+    <nav class="flex flex-col py-3 border-t border-gray-200">
+      @for (item of footerItemsWithTestIds(); track item.label) {
+        <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
+      }
+    </nav>
+  }
+</aside>
+
+<!-- Menu Item Template -->
+<ng-template #menuItem let-item>
+  @if (item.routerLink) {
+    <a
+      [routerLink]="item.routerLink"
+      routerLinkActive="!bg-blue-600 !text-white"
+      [routerLinkActiveOptions]="{ exact: true }"
+      class="flex items-center px-4 py-3 mx-2 rounded-lg transition-colors cursor-pointer group text-sm"
+      [class.opacity-50]="item.disabled"
+      [class.pointer-events-none]="item.disabled"
+      [attr.data-testid]="item.testId">
+      <i [ngClass]="[item.icon, 'w-6', 'text-center']"></i>
+      <span class="ml-3 font-medium">{{ item.label }}</span>
+
+      @if (item.badge) {
+        <lfx-badge [value]="item.badge" [severity]="item.badgeSeverity || 'info'" size="small" styleClass="ml-auto"></lfx-badge>
+      }
+    </a>
+  }
+
+  @if (item.url) {
+    <a
+      [href]="item.url"
+      class="flex items-center px-4 py-3 mx-2 rounded-lg transition-colors cursor-pointer group text-sm"
+      [class.opacity-50]="item.disabled"
+      [class.pointer-events-none]="item.disabled"
+      [attr.data-testid]="item.testId">
+      <i [ngClass]="[item.icon, 'w-6', 'text-center']"></i>
+      <span class="ml-3 font-medium">{{ item.label }}</span>
+
+      @if (item.badge) {
+        <lfx-badge [value]="item.badge" [severity]="item.badgeSeverity || 'info'" size="small" styleClass="ml-auto"></lfx-badge>
+      }
+    </a>
+  }
+
+  @if (item.command && !item.routerLink && !item.url) {
+    <button
+      type="button"
+      (click)="item.command()"
+      class="flex items-center px-4 py-3 mx-2 rounded-lg transition-colors cursor-pointer group w-full text-left text-sm"
+      [class.opacity-50]="item.disabled"
+      [disabled]="item.disabled"
+      [attr.data-testid]="item.testId">
+      <i [ngClass]="[item.icon, 'w-6', 'text-center']"></i>
+      <span class="ml-3 font-medium">{{ item.label }}</span>
+
+      @if (item.badge) {
+        <lfx-badge [value]="item.badge" [severity]="item.badgeSeverity || 'info'" size="small" styleClass="ml-auto"></lfx-badge>
+      }
+    </button>
+  }
+</ng-template>

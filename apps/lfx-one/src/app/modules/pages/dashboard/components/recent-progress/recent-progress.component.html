@@ -1,0 +1,63 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section data-testid="dashboard-recent-progress-section">
+  <div class="flex items-center justify-between mb-4">
+    <div>
+      <h2 class="font-['Roboto_Slab'] font-semibold text-[16px]">Recent Progress</h2>
+    </div>
+
+    <div class="flex items-center gap-3">
+      <!-- View Profile Button -->
+      <button
+        type="button"
+        class="text-sm px-3 py-1 rounded hover:bg-gray-100 text-gray-700 hover:text-gray-900 flex items-center gap-1 transition-colors"
+        data-testid="dashboard-recent-progress-view-profile"
+        aria-label="View Profile">
+        View Profile
+        <i class="fa-light fa-chevron-right text-xs"></i>
+      </button>
+
+      <!-- Carousel Controls -->
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          (click)="scrollLeft()"
+          class="h-8 w-8 p-0 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 hover:border-gray-400 transition-colors"
+          data-testid="dashboard-recent-progress-scroll-left"
+          aria-label="Scroll left">
+          <i class="fa-light fa-chevron-left"></i>
+        </button>
+        <button
+          type="button"
+          (click)="scrollRight()"
+          class="h-8 w-8 p-0 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 hover:border-gray-400 transition-colors"
+          data-testid="dashboard-recent-progress-scroll-right"
+          aria-label="Scroll right">
+          <i class="fa-light fa-chevron-right"></i>
+        </button>
+      </div>
+    </div>
+  </div>
+
+  <div class="overflow-hidden">
+    <div #progressScroll class="flex gap-4 overflow-x-auto pb-2 hide-scrollbar scroll-smooth" data-testid="dashboard-recent-progress-items">
+      @for (item of progressItems; track item.label) {
+        <div class="p-4 bg-white rounded-lg border border-slate-200 flex-shrink-0 w-80" [attr.data-testid]="'dashboard-recent-progress-item-' + item.label">
+          <div class="space-y-3">
+            <h5 class="text-sm font-medium w-full">{{ item.label }}</h5>
+            <div class="w-full h-8">
+              <lfx-chart type="line" [data]="item.chartData" [options]="item.chartOptions" height="100%"></lfx-chart>
+            </div>
+            <div class="space-y-1">
+              <div class="text-xl font-medium">{{ item.value }}</div>
+              @if (item.subtitle) {
+                <div class="text-xs text-gray-500">{{ item.subtitle }}</div>
+              }
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  </div>
+</section>

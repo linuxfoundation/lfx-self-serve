@@ -8,8 +8,24 @@ import { authGuard } from './shared/guards/auth.guard';
 export const routes: Routes = [
   {
     path: '',
-    loadComponent: () => import('./modules/pages/home/home.component').then((m) => m.HomeComponent),
     canActivate: [authGuard],
+    loadComponent: () => import('./layouts/main-layout/main-layout.component').then((m) => m.MainLayoutComponent),
+    children: [
+      {
+        path: '',
+        loadComponent: () => import('./modules/pages/dashboard/dashboard.component').then((m) => m.DashboardComponent),
+      },
+      {
+        path: 'projects',
+        loadComponent: () => import('./modules/pages/home/home.component').then((m) => m.HomeComponent),
+      },
+    ],
+  },
+  // Old UI route - shows when "Old UI" persona is selected
+  {
+    path: 'old-ui',
+    canActivate: [authGuard],
+    loadComponent: () => import('./modules/pages/home/home.component').then((m) => m.HomeComponent),
   },
   {
     path: 'meetings',

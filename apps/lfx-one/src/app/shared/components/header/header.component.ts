@@ -2,13 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, ElementRef, inject, Signal, signal, viewChild, WritableSignal } from '@angular/core';
+import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, ElementRef, inject, Signal, signal, viewChild, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MenubarComponent } from '@components/menubar/menubar.component';
-import { Project } from '@lfx-one/shared/interfaces';
+import { PersonaSelectorComponent } from '@components/persona-selector/persona-selector.component';
+import { AppService } from '@app/shared/services/app.service';
+import { CombinedProfile, Project } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MenuItem } from 'primeng/api';
@@ -22,7 +24,17 @@ import { MenuComponent } from '../menu/menu.component';
 @Component({
   selector: 'lfx-header',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, MenubarComponent, RippleModule, RouterModule, AvatarComponent, MenuComponent, AutocompleteComponent],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    MenubarComponent,
+    RippleModule,
+    RouterModule,
+    AvatarComponent,
+    MenuComponent,
+    AutocompleteComponent,
+    PersonaSelectorComponent,
+  ],
   templateUrl: './header.component.html',
   styleUrl: './header.component.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -33,11 +45,16 @@ import { MenuComponent } from '../menu/menu.component';
 export class HeaderComponent {
   private readonly router = inject(Router);
   private readonly projectService = inject(ProjectService);
+  private readonly appService = inject(AppService);
   public readonly userService = inject(UserService);
 
   // Mobile search state
   public showMobileSearch: WritableSignal<boolean> = signal(false);
   private readonly mobileSearchInput = viewChild<ElementRef>('mobileSearchInput');
+
+  public userProfile: Signal<CombinedProfile | null> = this.initializeUserProfile();
+  public initials = computed(() => this.userProfile()?.user.first_name?.slice(0, 1));
+  public fullName = computed(() => this.userProfile()?.user.first_name + ' ' + this.userProfile()?.user?.last_name);
 
   // Search form
   protected readonly searchForm = new FormGroup({
@@ -137,5 +154,13 @@ export class HeaderComponent {
 
   protected closeMobileSearch(): void {
     this.showMobileSearch.set(false);
+  }
+
+  protected toggleMobileSidebar(): void {
+    this.appService.toggleMobileSidebar();
+  }
+
+  private initializeUserProfile(): Signal<CombinedProfile | null> {
+    return toSignal(this.userService.getCurrentUserProfile(), { initialValue: null });
   }
 }

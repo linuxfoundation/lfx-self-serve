@@ -3,10 +3,10 @@
 
 name: Quality Checks
 
+# DISABLED: Moving away from old UI - quality checks no longer needed
+# Changed to manual trigger only - will not run automatically on PRs
 on:
-  pull_request:
-    branches: [main]
-    types: [opened, synchronize, reopened]
+  workflow_dispatch:
 
 jobs:
   quality-checks:
@@ -23,8 +23,8 @@ jobs:
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
-          node-version: '22'
-          cache: 'yarn'
+          node-version: "22"
+          cache: "yarn"
 
       - name: Install dependencies
         run: yarn install --immutable
@@ -46,9 +46,9 @@ jobs:
     needs: quality-checks
     uses: ./.github/workflows/e2e-tests.yml
     with:
-      node-version: '22'
-      test-command: 'e2e'
-      browser: 'chromium'  # Use only Chromium for PR testing for faster feedback
+      node-version: "22"
+      test-command: "e2e"
+      browser: "chromium" # Use only Chromium for PR testing for faster feedback
       skip-build: false
     secrets:
       TEST_USERNAME: ${{ secrets.TEST_USERNAME }}

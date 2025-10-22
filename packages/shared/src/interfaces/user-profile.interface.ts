@@ -1,9 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/**
- * User profile data from public.users table
- */
 export interface UserProfile {
   id: string;
   email: string;
@@ -122,7 +119,7 @@ export interface UserMetadata {
   name?: string;
   given_name?: string;
   family_name?: string;
-  job_title?: string;
+  title?: string;
   organization?: string;
   country?: string;
   state_province?: string;

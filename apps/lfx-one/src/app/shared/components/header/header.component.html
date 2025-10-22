@@ -2,20 +2,51 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="sticky top-0 z-50 bg-white border-b border-gray-100">
-  <div class="container mx-auto">
+  <div class="mx-auto">
     <lfx-menubar styleClass="border-none">
       <ng-template #start>
-        <button type="button" class="flex items-center space-x-2 hover:opacity-80 transition-opacity p-2" routerLink="/" aria-label="Go to home page">
-          <div class="border-r border-solid border-gray-200 pr-2">
-            <img src="/images/lfx-logo.svg" alt="LFX Logo" class="w-auto h-5" />
-          </div>
-          <span class="text-xl font-display text-gray-900 hidden md:block" data-testid="header-projects-text">One</span>
-        </button>
+        <div class="flex items-center lg:gap-32">
+          <!-- Mobile Menu Toggle -->
+          <button
+            type="button"
+            class="lg:hidden hover:opacity-80 transition-opacity p-2"
+            (click)="toggleMobileSidebar()"
+            aria-label="Toggle menu"
+            data-testid="mobile-menu-toggle">
+            <i class="fa-light fa-bars text-gray-600 text-xl"></i>
+          </button>
+
+          <button type="button" class="flex items-center space-x-2 hover:opacity-80 transition-opacity p-2" routerLink="/" aria-label="Go to home page">
+            <div class="lg:border-r border-solid border-gray-200 pr-2">
+              <img src="/images/lfx-logo.svg" alt="LFX Logo" class="w-auto h-5" />
+            </div>
+            <span class="text-xl font-display text-gray-900 hidden md:block" data-testid="header-projects-text">One</span>
+          </button>
+
+          @if (userService.authenticated()) {
+            <div class="items-center gap-3 hidden lg:flex">
+              <lfx-avatar
+                [label]="initials()"
+                [size]="'large'"
+                [shape]="'circle'"
+                styleClass="bg-blue-50 border border-gray-200"
+                [ariaLabel]="fullName() + ' avatar'">
+              </lfx-avatar>
+
+              <div class="flex flex-col gap-1">
+                <span class="text-sm font-semibold">{{ userProfile()?.user?.first_name }} {{ userProfile()?.user?.last_name }}</span>
+                <span class="text-xs text-gray-500"
+                  >{{ userProfile()?.profile?.title }} at <span class="text-primary">{{ userProfile()?.profile?.organization }}</span></span
+                >
+              </div>
+            </div>
+          }
+        </div>
       </ng-template>
 
       <ng-template #end>
         <div class="flex items-center gap-4">
-          <lfx-tools kit="736c27f195" product="projects"></lfx-tools>
+          <lfx-persona-selector></lfx-persona-selector>
           <div class="flex items-center gap-6">
             <!-- Mobile Search Toggle -->
             <button

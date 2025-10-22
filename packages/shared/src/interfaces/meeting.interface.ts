@@ -145,6 +145,8 @@ export interface Meeting {
   attended_count?: number;
   /** Meeting occurrences */
   occurrences: MeetingOccurrence[];
+  /** Project name */
+  project_name: string;
 }
 
 /**

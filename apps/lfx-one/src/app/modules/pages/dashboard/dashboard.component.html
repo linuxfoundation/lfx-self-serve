@@ -1,0 +1,22 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="dashboard-container">
+  <!-- Dashboard Sections -->
+  <div class="flex flex-col gap-6" data-testid="dashboard-sections-grid">
+    <!-- Recent Progress - Full Width -->
+    <lfx-recent-progress />
+
+    <!-- Middle Row - Two Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+      <!-- Pending Actions -->
+      <lfx-pending-actions class="h-full" />
+
+      <!-- My Meetings -->
+      <lfx-my-meetings class="h-full" />
+    </div>
+
+    <!-- My Projects - Full Width -->
+    <lfx-my-projects />
+  </div>
+</div>
