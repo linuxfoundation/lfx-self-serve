@@ -1,0 +1,127 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div data-testid="dashboard-my-projects-section">
+  <div class="flex items-center justify-between mb-4">
+    <h2 class="font-display font-semibold text-[16px]">My Projects</h2>
+  </div>
+
+  <div class="rounded-lg border border-gray-200 overflow-hidden">
+    <div class="overflow-x-auto">
+      <lfx-table [value]="projects" data-testid="dashboard-my-projects-table">
+        <ng-template #header>
+          <tr class="border-b border-border">
+            <th class="text-left py-2 px-6 text-xs font-medium text-muted-foreground w-1/4">Project</th>
+            <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground w-1/4">Affiliation(s)</th>
+            <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground w-1/4">
+              <div class="flex items-center gap-1">
+                Code Activities
+                <i class="fa-light fa-circle-question text-[12px]"></i>
+              </div>
+            </th>
+            <th class="text-left py-2 px-3 text-xs font-medium text-muted-foreground w-1/4">
+              <div class="flex items-center gap-1">
+                Non-Code Activities
+                <i class="fa-light fa-circle-question text-[12px]"></i>
+              </div>
+            </th>
+          </tr>
+        </ng-template>
+
+        <ng-template #body let-project let-rowIndex="rowIndex">
+          <tr [attr.data-testid]="'dashboard-my-projects-row-' + rowIndex">
+            <!-- Project Name and Logo -->
+            <td class="py-2 px-6 border-t border-gray-200">
+              <div class="flex items-center gap-3">
+                <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
+                  @if (project.logo) {
+                    <img [src]="project.logo" [alt]="project.name + ' logo'" class="w-full h-full object-cover" data-testid="dashboard-my-projects-logo" />
+                  } @else {
+                    <div class="w-full h-full bg-gray-300 flex items-center justify-center">
+                      <i class="fa-light fa-folder text-gray-600 text-sm"></i>
+                    </div>
+                  }
+                </div>
+                <div class="min-w-0">
+                  <div class="font-medium text-sm text-[#009aff] truncate">{{ project.name }}</div>
+                  <div class="text-xs text-muted-foreground truncate">{{ project.role }}</div>
+                </div>
+              </div>
+            </td>
+
+            <!-- Affiliations -->
+            <td class="py-2 px-3 border-t border-gray-200">
+              <div class="text-sm">{{ project.affiliations.join(', ') }}</div>
+            </td>
+
+            <!-- Code Activities Chart -->
+            <td class="py-2 px-3 border-t border-gray-200">
+              <div class="h-12 w-[12.5rem]">
+                <lfx-chart
+                  type="line"
+                  [data]="{
+                    labels: generateLabels(project.codeActivities.length),
+                    datasets: [
+                      {
+                        data: project.codeActivities,
+                        borderColor: '#009AFF',
+                        backgroundColor: 'rgba(0, 154, 255, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 2,
+                        pointRadius: 0,
+                      },
+                    ],
+                  }"
+                  [options]="{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                    scales: {
+                      x: { display: false },
+                      y: { display: false },
+                    },
+                  }"
+                  height="100%">
+                </lfx-chart>
+              </div>
+            </td>
+
+            <!-- Non-Code Activities Chart -->
+            <td class="py-2 px-3 border-t border-gray-200">
+              <div class="h-12 w-[12.5rem]">
+                <lfx-chart
+                  type="line"
+                  [data]="{
+                    labels: generateLabels(project.nonCodeActivities.length),
+                    datasets: [
+                      {
+                        data: project.nonCodeActivities,
+                        borderColor: '#10b981',
+                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
+                        fill: true,
+                        tension: 0.4,
+                        borderWidth: 2,
+                        pointRadius: 0,
+                      },
+                    ],
+                  }"
+                  [options]="{
+                    responsive: true,
+                    maintainAspectRatio: false,
+                    plugins: { legend: { display: false }, tooltip: { enabled: false } },
+                    scales: {
+                      x: { display: false },
+                      y: { display: false },
+                    },
+                  }"
+                  height="100%">
+                </lfx-chart>
+              </div>
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+    </div>
+  </div>
+</div>

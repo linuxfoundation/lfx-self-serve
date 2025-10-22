@@ -2879,6 +2879,7 @@ __metadata:
   peerDependencies:
     "@angular/forms": ^19.0.0
     "@fullcalendar/core": ^6.1.19
+    chart.js: ^4.5.0
   languageName: unknown
   linkType: soft
 

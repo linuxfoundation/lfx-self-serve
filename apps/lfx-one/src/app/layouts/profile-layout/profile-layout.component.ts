@@ -145,7 +145,7 @@ export class ProfileLayoutComponent {
       const profile = this.profile();
       if (!profile?.profile) return '';
 
-      return profile.profile.job_title || '';
+      return profile.profile.title || '';
     });
   }
 

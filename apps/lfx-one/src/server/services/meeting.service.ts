@@ -8,8 +8,8 @@ import {
   MeetingJoinURL,
   MeetingRegistrant,
   PastMeetingParticipant,
-  QueryServiceResponse,
   QueryServiceCountResponse,
+  QueryServiceResponse,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
@@ -22,6 +22,7 @@ import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { ProjectService } from './project.service';
 
 /**
  * Service for handling meeting business logic with microservice proxy
@@ -31,11 +32,14 @@ export class MeetingService {
   private etagService: ETagService;
   private microserviceProxy: MicroserviceProxyService;
   private committeeService: CommitteeService;
+  private projectService: ProjectService;
+
   public constructor() {
     this.accessCheckService = new AccessCheckService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.etagService = new ETagService();
     this.committeeService = new CommitteeService();
+    this.projectService = new ProjectService();
   }
 
   /**
@@ -50,6 +54,9 @@ export class MeetingService {
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
     let meetings = resources.map((resource) => resource.data);
+
+    // Get project name for each meeting
+    meetings = await this.getMeetingProjectName(req, meetings);
 
     // Get committee data for each committee associated with the meeting
     if (meetings.some((m) => m.committees && m.committees.length > 0)) {
@@ -494,5 +501,16 @@ export class MeetingService {
       });
 
     return meetings;
+  }
+
+  private async getMeetingProjectName(req: Request, meetings: Meeting[]): Promise<Meeting[]> {
+    const projectUids = [...new Set(meetings.map((m) => m.project_uid))];
+    const projects = await Promise.all(
+      projectUids.map(async (uid) => {
+        return await this.projectService.getProjectById(req, uid).catch(() => null);
+      })
+    );
+
+    return meetings.map((m) => ({ ...m, project_name: projects.find((p) => p?.uid === m.project_uid)?.name || '' }));
   }
 }

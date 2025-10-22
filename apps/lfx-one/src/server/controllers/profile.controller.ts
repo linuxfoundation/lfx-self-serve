@@ -122,7 +122,7 @@ export class ProfileController {
           'postal_code',
           'country',
           'organization',
-          'job_title',
+          'title',
           't_shirt_size',
           'zoneinfo',
         ];

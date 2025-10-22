@@ -1,0 +1,114 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Card wrapper with border and shadow -->
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow" data-testid="dashboard-meeting-card">
+  <div class="p-4 space-y-3">
+    <!-- Header with meeting type and feature icons -->
+    <div class="flex items-start justify-between gap-2">
+      <div class="flex items-center gap-2 flex-wrap">
+        <span [class]="meetingTypeInfo().className + ' text-xs px-2 py-1 font-medium rounded'" data-testid="dashboard-meeting-card-type-badge">
+          {{ meetingTypeInfo().label }}
+        </span>
+        @if (meeting().project_name) {
+          <span class="border border-gray-300 bg-white text-gray-700 text-xs px-2 py-1 font-medium rounded" data-testid="dashboard-meeting-card-project-badge">
+            {{ meeting().project_name }}
+          </span>
+        }
+      </div>
+      <div class="flex items-center gap-1">
+        @if (hasYoutubeUploads()) {
+          <div
+            class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center"
+            pTooltip="YouTube Auto-Upload Enabled"
+            tooltipPosition="top"
+            data-testid="dashboard-meeting-card-youtube-icon">
+            <i class="fa-light fa-upload text-xs text-gray-800"></i>
+          </div>
+        }
+        @if (hasRecording()) {
+          <div
+            class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center"
+            pTooltip="Recording Enabled"
+            tooltipPosition="top"
+            data-testid="dashboard-meeting-card-recording-icon">
+            <i class="fa-light fa-video text-xs text-gray-800"></i>
+          </div>
+        }
+        @if (hasTranscripts()) {
+          <div
+            class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center"
+            pTooltip="Transcripts Enabled"
+            tooltipPosition="top"
+            data-testid="dashboard-meeting-card-transcript-icon">
+            <i class="fa-light fa-file-lines text-xs text-gray-800"></i>
+          </div>
+        }
+        @if (hasAiSummary()) {
+          <div
+            class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center"
+            pTooltip="AI Summary Enabled"
+            tooltipPosition="top"
+            data-testid="dashboard-meeting-card-ai-icon">
+            <i class="fa-light fa-sparkles text-xs text-gray-800"></i>
+          </div>
+        }
+        @if (!isPrivate()) {
+          <div
+            class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center"
+            pTooltip="Public Meeting"
+            tooltipPosition="top"
+            data-testid="dashboard-meeting-card-public-icon">
+            <i class="fa-light fa-users text-xs text-gray-800"></i>
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Meeting title -->
+    <div class="flex items-start justify-between gap-2">
+      <h4 class="line-clamp-2 text-sm leading-5 flex-1 font-medium text-gray-900" data-testid="dashboard-meeting-card-title">
+        {{ meetingTitle() }}
+      </h4>
+      <div class="flex items-center gap-1 flex-shrink-0 mt-0.5">
+        <div
+          class="w-6 h-6 rounded bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors cursor-pointer"
+          data-testid="dashboard-meeting-card-file-icon-1">
+          <i class="fa-light fa-file text-xs text-gray-500"></i>
+        </div>
+        <div
+          class="w-6 h-6 rounded bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors cursor-pointer"
+          data-testid="dashboard-meeting-card-file-icon-2">
+          <i class="fa-light fa-file text-xs text-gray-500"></i>
+        </div>
+      </div>
+    </div>
+
+    <!-- Meeting time and actions -->
+    <div class="space-y-2">
+      <div class="flex items-center justify-between">
+        <div class="flex items-center gap-1 text-gray-600" data-testid="dashboard-meeting-card-time">
+          <i class="fa-light fa-clock text-xs"></i>
+          <span class="text-xs">{{ formattedTime() }}</span>
+        </div>
+        <lfx-button
+          label="See Meeting"
+          icon="fa-light fa-arrow-right"
+          iconPos="right"
+          (onClick)="handleSeeMeeting()"
+          styleClass="text-[#0094FF] hover:text-[#0094FF] hover:bg-blue-50 !h-7 !px-2 !text-xs !font-normal"
+          [text]="true"
+          data-testid="dashboard-meeting-card-see-button" />
+      </div>
+
+      <!-- Join Meeting button for today's meetings -->
+      @if (isTodayMeeting()) {
+        <lfx-button
+          label="Join Meeting"
+          [routerLink]="['/meetings', meeting().uid]"
+          styleClass="w-full mt-1 bg-emerald-500 hover:bg-emerald-600 text-white h-7 text-xs font-semibold"
+          data-testid="dashboard-meeting-card-join-button" />
+      }
+    </div>
+  </div>
+</div>

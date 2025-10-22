@@ -86,7 +86,7 @@ export class ProfileEditComponent implements OnInit {
     // User metadata fields
     given_name: ['', [Validators.maxLength(50)]],
     family_name: ['', [Validators.maxLength(50)]],
-    job_title: ['', [Validators.maxLength(100)]],
+    title: ['', [Validators.maxLength(100)]],
     organization: ['', [Validators.maxLength(100)]],
     country: ['', [Validators.maxLength(50)]],
     state_province: ['', [Validators.maxLength(50)]],
@@ -141,7 +141,7 @@ export class ProfileEditComponent implements OnInit {
     const userMetadata: Partial<UserMetadata> = {
       given_name: formValue.given_name || undefined,
       family_name: formValue.family_name || undefined,
-      job_title: formValue.job_title || undefined,
+      title: formValue.title || undefined,
       organization: formValue.organization || undefined,
       country: formValue.country || undefined,
       state_province: formValue.state_province || undefined,
@@ -224,7 +224,7 @@ export class ProfileEditComponent implements OnInit {
       given_name: profile.user.first_name || '',
       family_name: profile.user.last_name || '',
       username: profile.user.username || '',
-      job_title: profile.profile?.job_title || '',
+      title: profile.profile?.title || '',
       organization: profile.profile?.organization || '',
       country: countryValue,
       state_province: profile.profile?.state_province || '',

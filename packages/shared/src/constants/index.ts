@@ -9,6 +9,7 @@ export * from './countries.constants';
 export * from './file-upload.constants';
 export * from './font-sizes.constants';
 export * from './meeting.constants';
+export * from './persona.constants';
 export * from './server.constants';
 export * from './states.constants';
 export * from './timezones.constants';
