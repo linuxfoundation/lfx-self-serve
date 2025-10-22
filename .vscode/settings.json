@@ -20,6 +20,8 @@
     "litellm",
     "networkidle",
     "nonexistentproject",
+    "noopener",
+    "noreferrer",
     "PostgreSQL",
     "PostgREST",
     "primeng",

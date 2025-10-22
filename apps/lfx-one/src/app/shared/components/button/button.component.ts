@@ -53,6 +53,8 @@ export class ButtonComponent {
   // Navigation
   public readonly routerLink = input<string | string[] | undefined>(undefined);
   public readonly href = input<string | undefined>(undefined);
+  public readonly target = input<string | undefined>(undefined);
+  public readonly rel = input<string | undefined>(undefined);
 
   // Events
   public readonly onClick = output<MouseEvent>();

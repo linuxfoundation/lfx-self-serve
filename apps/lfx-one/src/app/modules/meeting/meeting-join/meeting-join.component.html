@@ -8,7 +8,9 @@
       <div class="max-w-4xl mx-auto">
         <!-- Project Logo -->
         @if (project()?.logo_url) {
-          <img src="{{ project()?.logo_url }}" alt="{{ project()?.name }}" class="w-full h-20 mb-6" />
+          <div class="flex items-center justify-center">
+            <img src="{{ project()?.logo_url }}" alt="{{ project()?.name }}" class="w-auto h-20 mb-6" />
+          </div>
         }
 
         <!-- Meeting Information Card -->
@@ -210,40 +212,55 @@
                   </div>
                 </div>
 
-                <lfx-message
-                  [severity]="messageSeverity()"
-                  [icon]="messageIcon()"
-                  styleClass="flex items-center justify-between w-full"
-                  [attr.data-testid]="'join-status-message'">
-                  <ng-template #content>
-                    <div class="flex items-center justify-between w-full">
-                      <div class="flex items-center gap-3 text-sm">
-                        @if (hasAutoJoined()) {
-                          <span class="font-sans">Meeting opened in a new tab. If it didn't open, use the button to join manually.</span>
-                        } @else if (canJoinMeeting()) {
-                          <span class="font-sans">Ready to join as {{ user.name }}</span>
-                        } @else {
-                          <div class="flex flex-col">
-                            <span class="font-sans"
-                              >You may only join the meeting up to <span class="font-bold">{{ meeting().early_join_time_minutes || 10 }} minutes</span> before
-                              the start time.</span
-                            >
+                @if (joinUrlError()) {
+                  <lfx-message severity="error" icon="fa-light fa-circle-exclamation" styleClass="w-full" [attr.data-testid]="'join-url-error-message'">
+                    <ng-template #content>
+                      <span class="font-sans text-sm">{{ joinUrlError() }}</span>
+                    </ng-template>
+                  </lfx-message>
+                } @else {
+                  <lfx-message
+                    [severity]="messageSeverity()"
+                    [icon]="messageIcon()"
+                    styleClass="flex items-center justify-between w-full"
+                    [attr.data-testid]="'join-status-message'">
+                    <ng-template #content>
+                      <div class="flex items-center justify-between w-full">
+                        <div class="flex items-center gap-3 text-sm">
+                          @if (isLoadingJoinUrl()) {
+                            <div class="flex items-center gap-2">
+                              <i class="fa-light fa-spinner-third fa-spin text-primary"></i>
+                              <span class="text-sm text-gray-600">Loading meeting link...</span>
+                            </div>
+                          } @else if (canJoinMeeting()) {
+                            <span class="font-sans">Ready to join as {{ user.name }}</span>
+                          } @else {
+                            <div class="flex flex-col">
+                              <span class="font-sans"
+                                >You may only join the meeting up to <span class="font-bold">{{ meeting().early_join_time_minutes || 10 }} minutes</span> before
+                                the start time.</span
+                              >
+                            </div>
+                          }
+                        </div>
+                        @if (!isLoadingJoinUrl() && !joinUrlError()) {
+                          <div class="ml-4">
+                            <lfx-button
+                              size="small"
+                              severity="primary"
+                              label="Join Meeting"
+                              [href]="fetchedJoinUrl()"
+                              [disabled]="!fetchedJoinUrl()"
+                              icon="fa-light fa-sign-in"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              [attr.data-testid]="'join-meeting-button-authenticated'"></lfx-button>
                           </div>
                         }
                       </div>
-                      <div class="ml-4">
-                        <lfx-button
-                          size="small"
-                          severity="primary"
-                          label="Join Meeting"
-                          [disabled]="!canJoinMeeting()"
-                          icon="fa-light fa-sign-in"
-                          [attr.data-testid]="'join-meeting-button-authenticated'"
-                          (click)="onJoinMeeting()"></lfx-button>
-                      </div>
-                    </div>
-                  </ng-template>
-                </lfx-message>
+                    </ng-template>
+                  </lfx-message>
+                }
 
                 <div class="text-center">
                   <p class="text-xs text-gray-500 font-sans flex gap-1 items-center justify-center">
@@ -332,15 +349,20 @@
                           </div>
                         </div>
                       }
-                      <div class="flex items-center">
+                      <div class="flex items-center gap-2">
+                        @if (joinUrlError()) {
+                          <span class="text-xs text-red-500" [attr.data-testid]="'join-url-error-form'">{{ joinUrlError() }}</span>
+                        }
                         <lfx-button
                           size="small"
                           severity="primary"
                           label="Join Meeting"
-                          [disabled]="joinForm.invalid || !canJoinMeeting()"
-                          icon="fa-light fa-sign-in"
-                          [attr.data-testid]="'join-meeting-button-form'"
-                          (click)="onJoinMeeting()"></lfx-button>
+                          [href]="fetchedJoinUrl()"
+                          [disabled]="!fetchedJoinUrl() || isLoadingJoinUrl()"
+                          [icon]="isLoadingJoinUrl() ? 'fa-light fa-spinner-third fa-spin' : 'fa-light fa-sign-in'"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          [attr.data-testid]="'join-meeting-button-form'"></lfx-button>
                       </div>
                     </div>
                   </form>
