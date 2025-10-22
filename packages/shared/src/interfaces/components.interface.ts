@@ -319,10 +319,12 @@ export interface ProgressItem {
  * @note ChartData and ChartOptions types should be imported from chart.js
  */
 export interface ProgressItemWithChart extends ProgressItem {
-  /** Chart.js data configuration */
-  chartData: ChartData<'line'>;
-  /** Chart.js options configuration */
-  chartOptions: ChartOptions<'line'>;
+  /** Chart type - line or bar */
+  chartType: 'line' | 'bar';
+  /** Chart.js data configuration - supports line and bar charts */
+  chartData: ChartData<'line' | 'bar'>;
+  /** Chart.js options configuration - supports line and bar charts */
+  chartOptions: ChartOptions<'line' | 'bar'>;
   /** Optional subtitle text displayed below the value */
   subtitle?: string;
 }

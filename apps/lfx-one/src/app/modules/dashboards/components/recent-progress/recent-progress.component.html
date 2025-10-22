@@ -42,12 +42,12 @@
 
   <div class="overflow-hidden">
     <div #progressScroll class="flex gap-4 overflow-x-auto pb-2 hide-scrollbar scroll-smooth" data-testid="dashboard-recent-progress-items">
-      @for (item of progressItems; track item.label) {
+      @for (item of progressItems(); track item.label) {
         <div class="p-4 bg-white rounded-lg border border-slate-200 flex-shrink-0 w-80" [attr.data-testid]="'dashboard-recent-progress-item-' + item.label">
           <div class="space-y-3">
             <h5 class="text-sm font-medium w-full">{{ item.label }}</h5>
             <div class="w-full h-8">
-              <lfx-chart type="line" [data]="item.chartData" [options]="item.chartOptions" height="100%"></lfx-chart>
+              <lfx-chart [type]="item.chartType" [data]="item.chartData" [options]="item.chartOptions" height="100%"></lfx-chart>
             </div>
             <div class="space-y-1">
               <div class="text-xl font-medium">{{ item.value }}</div>
