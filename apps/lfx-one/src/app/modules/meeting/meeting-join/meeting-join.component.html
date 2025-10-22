@@ -263,13 +263,14 @@
                         <h4 class="font-medium text-gray-900 font-sans mb-1">Sign in with your LFX account</h4>
                         <p class="text-sm text-gray-600 font-sans">Join quickly with your saved information</p>
                       </div>
-                      <a
+                      <lfx-button
                         size="small"
-                        class="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-xs rounded transition-colors ml-4"
-                        [href]="'/login?returnTo=' + returnTo()">
-                        <i class="fa-light fa-sign-in"></i>
-                        <span>Sign In</span>
-                      </a>
+                        severity="primary"
+                        label="Sign In"
+                        icon="fa-light fa-sign-in"
+                        [href]="'/login?returnTo=' + returnTo()"
+                        styleClass="ml-4">
+                      </lfx-button>
                     </div>
                   </ng-template>
                 </lfx-message>
