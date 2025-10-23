@@ -237,8 +237,9 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
         },
         'Failed to fetch user info, using basic user data'
       );
-      // Fall back to basic user info from token
-      auth.user = req.oidc?.user as User;
+
+      res.oidc.logout();
+      return;
     }
   }
 

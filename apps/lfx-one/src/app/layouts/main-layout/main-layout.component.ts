@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, inject } from '@angular/core';
+import { Component, CUSTOM_ELEMENTS_SCHEMA, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { AppService } from '@app/shared/services/app.service';
@@ -16,6 +16,7 @@ import { filter } from 'rxjs';
   imports: [CommonModule, RouterModule, SidebarComponent],
   templateUrl: './main-layout.component.html',
   styleUrl: './main-layout.component.scss',
+  schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 export class MainLayoutComponent {
   private readonly router = inject(Router);

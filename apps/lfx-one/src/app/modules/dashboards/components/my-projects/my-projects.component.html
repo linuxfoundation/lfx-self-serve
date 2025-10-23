@@ -57,66 +57,14 @@
             <!-- Code Activities Chart -->
             <td class="py-2 px-3 border-t border-gray-200">
               <div class="h-12 w-[12.5rem]">
-                <lfx-chart
-                  type="line"
-                  [data]="{
-                    labels: generateLabels(project.codeActivities.length),
-                    datasets: [
-                      {
-                        data: project.codeActivities,
-                        borderColor: '#009AFF',
-                        backgroundColor: 'rgba(0, 154, 255, 0.1)',
-                        fill: true,
-                        tension: 0.4,
-                        borderWidth: 2,
-                        pointRadius: 0,
-                      },
-                    ],
-                  }"
-                  [options]="{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false }, tooltip: { enabled: false } },
-                    scales: {
-                      x: { display: false },
-                      y: { display: false },
-                    },
-                  }"
-                  height="100%">
-                </lfx-chart>
+                <lfx-chart type="line" [data]="project.codeActivitiesChartData" [options]="chartOptions" height="100%"></lfx-chart>
               </div>
             </td>
 
             <!-- Non-Code Activities Chart -->
             <td class="py-2 px-3 border-t border-gray-200">
               <div class="h-12 w-[12.5rem]">
-                <lfx-chart
-                  type="line"
-                  [data]="{
-                    labels: generateLabels(project.nonCodeActivities.length),
-                    datasets: [
-                      {
-                        data: project.nonCodeActivities,
-                        borderColor: '#10b981',
-                        backgroundColor: 'rgba(16, 185, 129, 0.1)',
-                        fill: true,
-                        tension: 0.4,
-                        borderWidth: 2,
-                        pointRadius: 0,
-                      },
-                    ],
-                  }"
-                  [options]="{
-                    responsive: true,
-                    maintainAspectRatio: false,
-                    plugins: { legend: { display: false }, tooltip: { enabled: false } },
-                    scales: {
-                      x: { display: false },
-                      y: { display: false },
-                    },
-                  }"
-                  height="100%">
-                </lfx-chart>
+                <lfx-chart type="line" [data]="project.nonCodeActivitiesChartData" [options]="chartOptions" height="100%"></lfx-chart>
               </div>
             </td>
           </tr>

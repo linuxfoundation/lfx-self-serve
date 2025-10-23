@@ -6,7 +6,16 @@ import { Component } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TableComponent } from '@components/table/table.component';
 
+import type { ChartData, ChartOptions } from 'chart.js';
 import type { ProjectItem } from '@lfx-one/shared/interfaces';
+
+/**
+ * Extended project item with pre-generated chart data
+ */
+interface ProjectItemWithCharts extends ProjectItem {
+  codeActivitiesChartData: ChartData<'line'>;
+  nonCodeActivitiesChartData: ChartData<'line'>;
+}
 
 @Component({
   selector: 'lfx-my-projects',
@@ -16,42 +25,96 @@ import type { ProjectItem } from '@lfx-one/shared/interfaces';
   styleUrl: './my-projects.component.scss',
 })
 export class MyProjectsComponent {
-  protected readonly projects: ProjectItem[] = [
-    {
-      name: 'Kubernetes',
-      logo: 'https://avatars.githubusercontent.com/u/13455738?s=280&v=4',
-      role: 'Maintainer',
-      affiliations: ['CNCF', 'Google'],
-      codeActivities: [28, 32, 30, 35, 38, 40, 42],
-      nonCodeActivities: [8, 10, 12, 11, 13, 14, 15],
-      status: 'active',
+  /**
+   * Chart options for activity charts
+   */
+  protected readonly chartOptions: ChartOptions<'line'> = {
+    responsive: true,
+    maintainAspectRatio: false,
+    plugins: { legend: { display: false }, tooltip: { enabled: false } },
+    scales: {
+      x: { display: false },
+      y: { display: false },
     },
-    {
-      name: 'Linux Kernel',
-      logo: 'https://upload.wikimedia.org/wikipedia/commons/3/35/Tux.svg',
-      role: 'Contributor',
-      affiliations: ['Linux Foundation'],
-      codeActivities: [15, 18, 20, 22, 24, 26, 28],
-      nonCodeActivities: [3, 4, 5, 6, 7, 7, 8],
-      status: 'active',
-    },
-    {
-      name: 'Node.js',
-      logo: 'https://nodejs.org/static/logos/nodejsHex.svg',
-      role: 'Reviewer',
-      affiliations: ['OpenJS Foundation'],
-      codeActivities: [18, 16, 15, 14, 13, 12, 12],
-      nonCodeActivities: [8, 7, 6, 6, 5, 5, 5],
-      status: 'archived',
-    },
-  ];
+  };
 
   /**
-   * Generates labels for chart based on data length
-   * @param length - Number of data points
-   * @returns Array of empty strings for chart labels
+   * Projects with pre-generated chart data
    */
-  protected generateLabels(length: number): string[] {
-    return Array.from({ length }, () => '');
+  protected readonly projects: ProjectItemWithCharts[];
+
+  public constructor() {
+    // Initialize projects with randomized chart data
+    const baseProjects: ProjectItem[] = [
+      {
+        name: 'Kubernetes',
+        logo: 'https://avatars.githubusercontent.com/u/13455738?s=280&v=4',
+        role: 'Maintainer',
+        affiliations: ['CNCF', 'Google'],
+        codeActivities: this.generateRandomData(7, 25, 45),
+        nonCodeActivities: this.generateRandomData(7, 8, 16),
+        status: 'active',
+      },
+      {
+        name: 'Linux Kernel',
+        logo: 'https://upload.wikimedia.org/wikipedia/commons/3/35/Tux.svg',
+        role: 'Contributor',
+        affiliations: ['Linux Foundation'],
+        codeActivities: this.generateRandomData(7, 12, 30),
+        nonCodeActivities: this.generateRandomData(7, 3, 9),
+        status: 'active',
+      },
+      {
+        name: 'Node.js',
+        logo: 'https://nodejs.org/static/logos/nodejsHex.svg',
+        role: 'Reviewer',
+        affiliations: ['OpenJS Foundation'],
+        codeActivities: this.generateRandomData(7, 10, 20),
+        nonCodeActivities: this.generateRandomData(7, 4, 10),
+        status: 'archived',
+      },
+    ];
+
+    // Generate chart data for each project
+    this.projects = baseProjects.map((project) => ({
+      ...project,
+      codeActivitiesChartData: this.createChartData(project.codeActivities, '#009AFF', 'rgba(0, 154, 255, 0.1)'),
+      nonCodeActivitiesChartData: this.createChartData(project.nonCodeActivities, '#10b981', 'rgba(16, 185, 129, 0.1)'),
+    }));
+  }
+
+  /**
+   * Generates random data array
+   * @param length - Number of data points
+   * @param min - Minimum value
+   * @param max - Maximum value
+   * @returns Array of random numbers
+   */
+  private generateRandomData(length: number, min: number, max: number): number[] {
+    return Array.from({ length }, () => Math.floor(Math.random() * (max - min + 1)) + min);
+  }
+
+  /**
+   * Creates chart data configuration
+   * @param data - Array of values
+   * @param borderColor - Chart border color
+   * @param backgroundColor - Chart background color
+   * @returns Chart.js data configuration
+   */
+  private createChartData(data: number[], borderColor: string, backgroundColor: string): ChartData<'line'> {
+    return {
+      labels: Array.from({ length: data.length }, () => ''),
+      datasets: [
+        {
+          data,
+          borderColor,
+          backgroundColor,
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+        },
+      ],
+    };
   }
 }

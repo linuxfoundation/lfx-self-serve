@@ -18,8 +18,8 @@ export const PERSONA_OPTIONS: PersonaOption[] = [
     description: 'Project maintainer focused experience',
   },
   {
-    value: 'old-ui',
-    label: 'Old UI',
+    value: 'projects',
+    label: 'Projects',
     description: 'Classic LFX interface',
   },
 ];

@@ -6,10 +6,10 @@ import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, ElementRef, inject, Signal
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
+import { AppService } from '@app/shared/services/app.service';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MenubarComponent } from '@components/menubar/menubar.component';
 import { PersonaSelectorComponent } from '@components/persona-selector/persona-selector.component';
-import { AppService } from '@app/shared/services/app.service';
 import { CombinedProfile, Project } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -161,6 +161,13 @@ export class HeaderComponent {
   }
 
   private initializeUserProfile(): Signal<CombinedProfile | null> {
-    return toSignal(this.userService.getCurrentUserProfile(), { initialValue: null });
+    return toSignal(
+      this.userService.getCurrentUserProfile().pipe(
+        catchError(() => {
+          return of(null);
+        })
+      ),
+      { initialValue: null }
+    );
   }
 }

@@ -82,6 +82,10 @@ export class AnalyticsService {
    * @param auth0User Auth0 user object
    */
   public identifyUser(auth0User: unknown): void {
+    if (!auth0User) {
+      return;
+    }
+
     // If analytics is not ready yet, queue the identify call
     if (!this.analyticsReady || !this.analytics) {
       this.identifyQueue.push({ user: auth0User });
@@ -132,7 +136,7 @@ export class AnalyticsService {
     let attempts = 0;
 
     while (attempts < maxAttempts) {
-      if (window.LfxAnalytics?.LfxSegmentsAnalytics) {
+      if (window?.LfxAnalytics?.LfxSegmentsAnalytics) {
         this.analytics = window.LfxAnalytics.LfxSegmentsAnalytics.getInstance();
 
         try {

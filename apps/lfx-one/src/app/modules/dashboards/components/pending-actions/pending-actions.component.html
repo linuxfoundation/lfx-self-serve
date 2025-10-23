@@ -17,7 +17,7 @@
   </div>
 
   <!-- Scrollable Content -->
-  <div class="flex flex-col flex-1">
+  <div class="flex flex-col flex-1 max-h-[28.125rem] overflow-y-auto">
     <div class="flex flex-col gap-3" data-testid="dashboard-pending-actions-list">
       @for (item of pendingActions(); track item.text) {
         <div

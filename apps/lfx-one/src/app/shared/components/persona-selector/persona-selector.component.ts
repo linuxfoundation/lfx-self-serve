@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, effect, inject } from '@angular/core';
+import { Component, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { PERSONA_OPTIONS } from '@lfx-one/shared/constants';
@@ -25,13 +25,7 @@ export class PersonaSelectorComponent {
 
   public constructor() {
     this.form = new FormGroup({
-      persona: new FormControl<PersonaType>('core-developer', [Validators.required]),
-    });
-
-    effect(() => {
-      if (this.form.get('persona')?.value !== this.personaService.currentPersona()) {
-        this.form.get('persona')?.setValue(this.personaService.currentPersona());
-      }
+      persona: new FormControl<PersonaType>(this.personaService.currentPersona(), [Validators.required]),
     });
 
     this.form

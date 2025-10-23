@@ -70,18 +70,22 @@
       <h4 class="line-clamp-2 text-sm leading-5 flex-1 font-medium text-gray-900" data-testid="dashboard-meeting-card-title">
         {{ meetingTitle() }}
       </h4>
-      <div class="flex items-center gap-1 flex-shrink-0 mt-0.5">
-        <div
-          class="w-6 h-6 rounded bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors cursor-pointer"
-          data-testid="dashboard-meeting-card-file-icon-1">
-          <i class="fa-light fa-file text-xs text-gray-500"></i>
+      @if (attachments().length > 0) {
+        <div class="flex items-center gap-1 flex-shrink-0 mt-0.5">
+          @for (attachment of attachments(); track attachment.id; let index = $index) {
+            <a
+              [href]="attachment.file_url"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="w-6 h-6 rounded bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+              [attr.data-testid]="'dashboard-meeting-card-file-icon-' + (index + 1)"
+              [pTooltip]="attachment.file_name"
+              tooltipPosition="top">
+              <i [class]="(attachment.mime_type || '' | fileTypeIcon) + ' text-xs text-gray-500'"></i>
+            </a>
+          }
         </div>
-        <div
-          class="w-6 h-6 rounded bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors cursor-pointer"
-          data-testid="dashboard-meeting-card-file-icon-2">
-          <i class="fa-light fa-file text-xs text-gray-500"></i>
-        </div>
-      </div>
+      }
     </div>
 
     <!-- Meeting time and actions -->
@@ -106,6 +110,10 @@
         <lfx-button
           label="Join Meeting"
           [routerLink]="['/meetings', meeting().uid]"
+          [queryParams]="{ password: meeting().password || '' }"
+          target="_blank"
+          type="button"
+          rel="noopener noreferrer"
           styleClass="w-full mt-1 bg-emerald-500 hover:bg-emerald-600 text-white h-7 text-xs font-semibold"
           data-testid="dashboard-meeting-card-join-button" />
       }

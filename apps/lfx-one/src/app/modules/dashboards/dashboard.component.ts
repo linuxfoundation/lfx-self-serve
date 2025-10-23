@@ -1,8 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, Signal } from '@angular/core';
 import { PersonaService } from '@app/shared/services/persona.service';
+import { PersonaType } from '@lfx-one/shared/interfaces';
+
+import { HomeComponent } from '../pages/home/home.component';
 import { CoreDeveloperDashboardComponent } from './core-developer/core-developer-dashboard.component';
 import { MaintainerDashboardComponent } from './maintainer/maintainer-dashboard.component';
 
@@ -13,7 +16,7 @@ import { MaintainerDashboardComponent } from './maintainer/maintainer-dashboard.
 @Component({
   selector: 'lfx-dashboard',
   standalone: true,
-  imports: [CoreDeveloperDashboardComponent, MaintainerDashboardComponent],
+  imports: [CoreDeveloperDashboardComponent, MaintainerDashboardComponent, HomeComponent],
   templateUrl: './dashboard.component.html',
 })
 export class DashboardComponent {
@@ -23,9 +26,8 @@ export class DashboardComponent {
    * Computed signal that determines which dashboard to display
    * based on the current persona selection
    */
-  protected readonly dashboardType = computed(() => {
+  protected readonly dashboardType: Signal<PersonaType> = computed(() => {
     const persona = this.personaService.currentPersona();
-    // Filter out 'old-ui' as it has its own route
-    return persona === 'old-ui' ? 'core-developer' : persona;
+    return persona;
   });
 }

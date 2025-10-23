@@ -21,12 +21,6 @@ export const routes: Routes = [
       },
     ],
   },
-  // Old UI route - shows when "Old UI" persona is selected
-  {
-    path: 'old-ui',
-    canActivate: [authGuard],
-    loadComponent: () => import('./modules/pages/home/home.component').then((m) => m.HomeComponent),
-  },
   {
     path: 'meetings',
     loadChildren: () => import('./modules/meeting/meeting.routes').then((m) => m.MEETING_ROUTES),

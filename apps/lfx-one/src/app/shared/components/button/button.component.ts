@@ -55,6 +55,7 @@ export class ButtonComponent {
   public readonly href = input<string | undefined>(undefined);
   public readonly target = input<string | undefined>(undefined);
   public readonly rel = input<string | undefined>(undefined);
+  public readonly queryParams = input<Record<string, string>>({});
 
   // Events
   public readonly onClick = output<MouseEvent>();

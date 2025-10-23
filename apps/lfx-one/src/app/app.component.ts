@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, inject, makeStateKey, REQUEST_CONTEXT, TransferState } from '@angular/core';
+import { Component, inject, makeStateKey, REQUEST_CONTEXT, TransferState } from '@angular/core';
 import { RouterOutlet } from '@angular/router';
 import { AuthContext } from '@lfx-one/shared/interfaces';
 import { ToastModule } from 'primeng/toast';
@@ -16,7 +16,6 @@ import { UserService } from './shared/services/user.service';
   imports: [RouterOutlet, HeaderComponent, CommonModule, ToastModule],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
-  schemas: [CUSTOM_ELEMENTS_SCHEMA],
 })
 export class AppComponent {
   private readonly userService = inject(UserService);

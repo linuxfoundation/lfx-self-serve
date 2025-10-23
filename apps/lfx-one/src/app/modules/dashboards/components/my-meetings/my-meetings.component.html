@@ -17,7 +17,7 @@
   </div>
 
   <!-- Scrollable Content -->
-  <div class="flex flex-col flex-1">
+  <div class="flex flex-col flex-1 max-h-[28.125rem] overflow-y-auto">
     <div class="flex flex-col gap-6" data-testid="dashboard-my-meetings-list">
       @if (todayMeetings().length > 0 || upcomingMeetings().length > 0) {
         <!-- TODAY Section - only show if there are meetings today -->

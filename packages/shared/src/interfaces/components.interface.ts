@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChartData, ChartOptions } from 'chart.js';
+import { ChartData, ChartOptions, ChartType } from 'chart.js';
 
 /**
  * Badge severity level options
@@ -320,11 +320,11 @@ export interface ProgressItem {
  */
 export interface ProgressItemWithChart extends ProgressItem {
   /** Chart type - line or bar */
-  chartType: 'line' | 'bar';
+  chartType: ChartType;
   /** Chart.js data configuration - supports line and bar charts */
-  chartData: ChartData<'line' | 'bar'>;
+  chartData: ChartData<ChartType>;
   /** Chart.js options configuration - supports line and bar charts */
-  chartOptions: ChartOptions<'line' | 'bar'>;
+  chartOptions: ChartOptions<ChartType>;
   /** Optional subtitle text displayed below the value */
   subtitle?: string;
 }

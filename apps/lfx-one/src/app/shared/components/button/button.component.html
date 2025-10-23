@@ -54,7 +54,9 @@
     [pTooltip]="tooltip()"
     [tooltipPosition]="tooltipPosition()"
     (onClick)="handleClick($event)"
-    [routerLink]="routerLink()">
+    [routerLink]="routerLink()"
+    [queryParams]="queryParams()"
+    [target]="target()">
     <ng-content></ng-content>
   </p-button>
 }

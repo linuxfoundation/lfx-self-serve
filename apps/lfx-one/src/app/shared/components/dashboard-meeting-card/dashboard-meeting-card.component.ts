@@ -1,11 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ClipboardModule } from '@angular/cdk/clipboard';
 import { CommonModule } from '@angular/common';
-import { Component, computed, input, output, Signal } from '@angular/core';
+import { Component, computed, inject, input, output, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { FileTypeIconPipe } from '@app/shared/pipes/file-type-icon.pipe';
 import { ButtonComponent } from '@components/button/button.component';
-import { Meeting, MeetingOccurrence } from '@lfx-one/shared';
+import { Meeting, MeetingAttachment, MeetingOccurrence } from '@lfx-one/shared';
+import { MeetingService } from '@services/meeting.service';
 import { TooltipModule } from 'primeng/tooltip';
+import { catchError, of, switchMap } from 'rxjs';
 
 interface MeetingTypeBadge {
   label: string;
@@ -15,13 +20,17 @@ interface MeetingTypeBadge {
 @Component({
   selector: 'lfx-dashboard-meeting-card',
   standalone: true,
-  imports: [CommonModule, ButtonComponent, TooltipModule],
+  imports: [CommonModule, ButtonComponent, TooltipModule, ClipboardModule, FileTypeIconPipe],
   templateUrl: './dashboard-meeting-card.component.html',
 })
 export class DashboardMeetingCardComponent {
+  private readonly meetingService = inject(MeetingService);
+
   public readonly meeting = input.required<Meeting>();
   public readonly occurrence = input<MeetingOccurrence | null>(null);
   public readonly onSeeMeeting = output<string>();
+
+  public readonly attachments: Signal<MeetingAttachment[]>;
 
   // Computed values
   public readonly meetingTypeInfo: Signal<MeetingTypeBadge> = computed(() => {
@@ -135,6 +144,21 @@ export class DashboardMeetingCardComponent {
     // Use occurrence title if available, otherwise use meeting title
     return occurrence?.title || meeting.title;
   });
+
+  public constructor() {
+    // Convert meeting input signal to observable and create reactive attachment stream
+    const meeting$ = toObservable(this.meeting);
+    const attachments$ = meeting$.pipe(
+      switchMap((meeting) => {
+        if (meeting.uid) {
+          return this.meetingService.getMeetingAttachments(meeting.uid).pipe(catchError(() => of([])));
+        }
+        return of([]);
+      })
+    );
+
+    this.attachments = toSignal(attachments$, { initialValue: [] });
+  }
 
   public handleSeeMeeting(): void {
     this.onSeeMeeting.emit(this.meeting().uid);
