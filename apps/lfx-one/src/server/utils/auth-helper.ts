@@ -13,35 +13,7 @@ export async function getUsernameFromAuth(req: Request): Promise<string | null> 
   if (token) {
     // If token starts with "authelia", query the authelia userinfo endpoint
     if (token.startsWith('authelia')) {
-      try {
-        const response = await fetch('https://auth.k8s.orb.local/api/oidc/userinfo', {
-          headers: {
-            Authorization: `Bearer ${token}`,
-            ['Content-Type']: 'application/json',
-          },
-        });
-
-        if (response.ok) {
-          const userInfo = await response.json();
-          return userInfo.preferred_username || userInfo.username || null;
-        }
-        req.log.warn(
-          {
-            status: response.status,
-            statusText: response.statusText,
-          },
-          'Failed to fetch authelia userinfo'
-        );
-        return null;
-      } catch (error) {
-        req.log.warn(
-          {
-            error: error instanceof Error ? error.message : error,
-          },
-          'Error fetching authelia userinfo'
-        );
-        return null;
-      }
+      return req.oidc?.user?.['preferred_username'] || null;
     }
   }
 

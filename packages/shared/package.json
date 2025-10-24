@@ -54,7 +54,8 @@
   "peerDependencies": {
     "@angular/forms": "^19.0.0",
     "@fullcalendar/core": "^6.1.19",
-    "chart.js": "^4.5.0"
+    "chart.js": "^4.5.0",
+    "snowflake-sdk": "^2.3.1"
   },
   "dependencies": {
     "date-fns": "^4.1.0",

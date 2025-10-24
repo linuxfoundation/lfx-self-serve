@@ -54,7 +54,9 @@ export class HeaderComponent {
 
   public userProfile: Signal<CombinedProfile | null> = this.initializeUserProfile();
   public initials = computed(() => this.userProfile()?.user.first_name?.slice(0, 1));
-  public fullName = computed(() => this.userProfile()?.user.first_name + ' ' + this.userProfile()?.user?.last_name);
+  public fullName = computed(() => {
+    return this.userProfile()?.user.first_name + ' ' + this.userProfile()?.user?.last_name;
+  });
 
   // Search form
   protected readonly searchForm = new FormGroup({

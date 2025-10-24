@@ -119,7 +119,7 @@ export interface UserMetadata {
   name?: string;
   given_name?: string;
   family_name?: string;
-  title?: string;
+  job_title?: string;
   organization?: string;
   country?: string;
   state_province?: string;

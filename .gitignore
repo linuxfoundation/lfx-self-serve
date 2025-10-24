@@ -36,6 +36,9 @@ npm-debug.log*
 yarn-debug.log*
 yarn-error.log*
 
+# Snowflake SDK logs
+snowflake.log
+
 # Misc
 .DS_Store
 *.pem

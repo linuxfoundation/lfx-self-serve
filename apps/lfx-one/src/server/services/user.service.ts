@@ -6,8 +6,8 @@ import { NatsSubjects } from '@lfx-one/shared/enums';
 import { UserMetadata, UserMetadataUpdateRequest, UserMetadataUpdateResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { serverLogger } from '../server';
 import { ResourceNotFoundError } from '../errors';
+import { serverLogger } from '../server';
 import { NatsService } from './nats.service';
 
 /**
@@ -205,7 +205,7 @@ export class UserService {
     }
 
     // Validate job title if provided (basic length check)
-    if (metadata?.title && metadata.title.length > 200) {
+    if (metadata?.job_title && metadata.job_title.length > 200) {
       throw new Error('Job title is too long');
     }
 

@@ -8,6 +8,7 @@ import {
   UpdateEmailPreferencesRequest,
   UserMetadata,
   UserMetadataUpdateRequest,
+  UserProfile,
 } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
@@ -26,16 +27,17 @@ export class ProfileController {
 
   /**
    * GET /api/profile - Get current user's combined profile
+   * Uses NATS as the sole authoritative source for user metadata
    */
   public async getCurrentUserProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = Logger.start(req, 'get_current_user_profile');
 
     try {
-      // Get user ID from auth context
-      const userId = await getUsernameFromAuth(req);
+      // Get username from auth context
+      const username = await getUsernameFromAuth(req);
 
-      if (!userId) {
-        Logger.error(req, 'get_current_user_profile', startTime, new Error('User not authenticated or user ID not found'));
+      if (!username) {
+        Logger.error(req, 'get_current_user_profile', startTime, new Error('User not authenticated or username not found'));
 
         const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
           operation: 'get_current_user_profile',
@@ -46,33 +48,13 @@ export class ProfileController {
         return next(validationError);
       }
 
-      let combinedProfile: CombinedProfile | null = null;
+      // Get OIDC user data to construct UserProfile
+      const oidcUser = req.oidc?.user;
 
-      // Step 1: Try to get user metadata from NATS first (authoritative source)
-      let natsUserData: UserMetadata | null = null;
-      try {
-        const natsResponse = await this.userService.getUserInfo(req, userId);
-        req.log.info({ userId, natsSuccess: natsResponse.success }, 'Fetched user data from NATS');
+      if (!oidcUser) {
+        Logger.error(req, 'get_current_user_profile', startTime, new Error('OIDC user data not available'));
 
-        if (natsResponse.success && natsResponse.data) {
-          natsUserData = natsResponse.data;
-        }
-      } catch (error) {
-        // Log but don't fail - we'll fall back to Supabase
-        req.log.warn(
-          {
-            userId,
-            error: error instanceof Error ? error.message : error,
-          },
-          'Failed to fetch user data from NATS, will use Supabase as fallback'
-        );
-      }
-
-      // Step 2: Get user from Supabase
-      const user = await this.supabaseService.getUser(userId);
-
-      if (!user) {
-        const validationError = ServiceValidationError.forField('user_id', 'User profile not found', {
+        const validationError = ServiceValidationError.forField('user_id', 'User authentication data not available', {
           operation: 'get_current_user_profile',
           service: 'profile_controller',
           path: req.path,
@@ -81,64 +63,54 @@ export class ProfileController {
         return next(validationError);
       }
 
-      // Step 3: Merge NATS data into Supabase user if available
-      if (natsUserData) {
-        // Merge fields from NATS, preferring NATS data when available
-        if (natsUserData.given_name) user.first_name = natsUserData.given_name;
-        if (natsUserData.family_name) user.last_name = natsUserData.family_name;
-        // Note: email and username are not part of UserMetadata, they come from the user table
+      // Get user metadata from NATS (authoritative source)
+      let natsUserData: UserMetadata | null = null;
+      try {
+        const natsResponse = await this.userService.getUserInfo(req, username);
+        req.log.info({ username, natsSuccess: natsResponse.success }, 'Fetched user metadata from NATS');
+
+        if (natsResponse.success && natsResponse.data) {
+          natsUserData = natsResponse.data;
+        } else {
+          req.log.warn(
+            {
+              username,
+              error: natsResponse.error,
+            },
+            'Failed to fetch user metadata from NATS'
+          );
+        }
+      } catch (error) {
+        req.log.warn(
+          {
+            username,
+            error: error instanceof Error ? error.message : error,
+          },
+          'Exception while fetching user metadata from NATS'
+        );
       }
 
-      combinedProfile = {
-        user,
-        profile: null,
+      // Construct UserProfile from OIDC token data
+      const userProfile: UserProfile = {
+        id: oidcUser['sub'] as string,
+        email: oidcUser['email'] as string,
+        first_name: (natsUserData?.given_name || oidcUser['given_name'] || oidcUser['first_name'] || null) as string | null,
+        last_name: (natsUserData?.family_name || oidcUser['family_name'] || oidcUser['last_name'] || null) as string | null,
+        username: (oidcUser['username'] || oidcUser['preferred_username'] || username) as string,
+        created_at: (oidcUser['created_at'] || new Date().toISOString()) as string,
+        updated_at: (oidcUser['updated_at'] || new Date().toISOString()) as string,
       };
 
-      // Step 4: Get profile details from Supabase
-      const profile = await this.supabaseService.getProfile(user.id);
-
-      // If no profile details exist, create them
-      if (!profile) {
-        await this.supabaseService.createProfileIfNotExists(user.id);
-        // Refetch the combined profile with the newly created profile
-        const updatedProfile = await this.supabaseService.getProfile(user.id);
-        combinedProfile.profile = updatedProfile || null;
-      } else {
-        combinedProfile.profile = profile;
-      }
-
-      // Step 5: Merge NATS metadata into profile if available
-      if (natsUserData && combinedProfile.profile) {
-        // Merge all available fields from NATS into the profile
-        const fieldsToMerge: (keyof UserMetadata)[] = [
-          'name',
-          'given_name',
-          'family_name',
-          'picture',
-          'phone_number',
-          'address',
-          'city',
-          'state_province',
-          'postal_code',
-          'country',
-          'organization',
-          'title',
-          't_shirt_size',
-          'zoneinfo',
-        ];
-
-        const natsData = natsUserData;
-        fieldsToMerge.forEach((field) => {
-          if (natsData[field] !== undefined && natsData[field] !== null) {
-            (combinedProfile.profile as UserMetadata)[field] = natsData[field];
-          }
-        });
-      }
+      // Build CombinedProfile response
+      const combinedProfile: CombinedProfile = {
+        user: userProfile,
+        profile: natsUserData,
+      };
 
       Logger.success(req, 'get_current_user_profile', startTime, {
-        user_id: user.id,
-        has_profile_details: !!combinedProfile.profile,
-        used_nats_data: !!natsUserData,
+        user_id: userProfile.id,
+        username,
+        has_metadata: !!natsUserData,
       });
 
       res.json(combinedProfile);

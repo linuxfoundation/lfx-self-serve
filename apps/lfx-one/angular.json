@@ -51,7 +51,9 @@
             "outputMode": "server",
             "ssr": {
               "entry": "src/server/server.ts"
-            }
+            },
+            "allowedCommonJsDependencies": ["@linuxfoundation/lfx-ui-core"],
+            "externalDependencies": ["snowflake-sdk"]
           },
           "configurations": {
             "production": {

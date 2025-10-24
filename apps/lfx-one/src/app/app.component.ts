@@ -8,7 +8,7 @@ import { AuthContext } from '@lfx-one/shared/interfaces';
 import { ToastModule } from 'primeng/toast';
 
 import { HeaderComponent } from './shared/components/header/header.component';
-import { AnalyticsService } from './shared/services/analytics.service';
+import { SegmentService } from './shared/services/segment.service';
 import { UserService } from './shared/services/user.service';
 
 @Component({
@@ -19,15 +19,15 @@ import { UserService } from './shared/services/user.service';
 })
 export class AppComponent {
   private readonly userService = inject(UserService);
-  private readonly analyticsService = inject(AnalyticsService);
+  private readonly segmentService = inject(SegmentService);
 
   public auth: AuthContext | undefined;
   public transferState = inject(TransferState);
   public serverKey = makeStateKey<AuthContext>('auth');
 
   public constructor() {
-    // Initialize Segment analytics
-    this.analyticsService.initialize();
+    // Initialize Segment tracking
+    this.segmentService.initialize();
 
     const reqContext = inject(REQUEST_CONTEXT, { optional: true }) as {
       auth: AuthContext;
@@ -51,8 +51,8 @@ export class AppComponent {
       this.userService.authenticated.set(true);
       this.userService.user.set(this.auth.user);
 
-      // Identify user with Segment analytics (pass entire Auth0 user object)
-      this.analyticsService.identifyUser(this.auth.user);
+      // Identify user with Segment tracking (pass entire Auth0 user object)
+      this.segmentService.identifyUser(this.auth.user);
     }
   }
 }

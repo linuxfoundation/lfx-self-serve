@@ -17,6 +17,7 @@ import pinoPretty from 'pino-pretty';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { authMiddleware } from './middleware/auth.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
+import analyticsRouter from './routes/analytics.route';
 import committeesRouter from './routes/committees.route';
 import meetingsRouter from './routes/meetings.route';
 import organizationsRouter from './routes/organizations.route';
@@ -160,7 +161,7 @@ const authConfig: ConfigParams = {
   authorizationParams: {
     response_type: 'code',
     audience: process.env['PCC_AUTH0_AUDIENCE'] || 'https://example.com',
-    scope: 'openid email profile access:api offline_access',
+    scope: 'openid email profile access:api offline_access update:current_user_metadata',
   },
   clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || 'bar',
   routes: {
@@ -205,6 +206,7 @@ app.use('/api/organizations', organizationsRouter);
 app.use('/api/past-meetings', pastMeetingsRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/search', searchRouter);
+app.use('/api/analytics', analyticsRouter);
 
 // Add API error handler middleware
 app.use('/api/*', apiErrorHandler);

@@ -48,3 +48,10 @@ Thumbs.db
 /playwright/.auth/
 /playwright-report/
 /test-results/
+
+# Snowflake
+rsa_key.p8
+rsa_key.pub
+
+# Logs
+snowflake.log
