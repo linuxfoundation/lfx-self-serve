@@ -383,6 +383,17 @@ export interface ProjectItem {
 }
 
 /**
+ * Project item with pre-generated chart data for dashboard
+ * @description Extended project item with Chart.js line chart configurations
+ */
+export interface ProjectItemWithCharts extends ProjectItem {
+  /** Chart.js data configuration for code activities line chart */
+  codeActivitiesChartData: ChartData<'line'>;
+  /** Chart.js data configuration for non-code activities line chart */
+  nonCodeActivitiesChartData: ChartData<'line'>;
+}
+
+/**
  * Dashboard meeting card feature flags
  * @description Enabled features for a meeting displayed on dashboard
  */

@@ -2,20 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TableComponent } from '@components/table/table.component';
+import { AnalyticsService } from '@services/analytics.service';
+import { BehaviorSubject, finalize, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type { ProjectItem } from '@lfx-one/shared/interfaces';
-
-/**
- * Extended project item with pre-generated chart data
- */
-interface ProjectItemWithCharts extends ProjectItem {
-  codeActivitiesChartData: ChartData<'line'>;
-  nonCodeActivitiesChartData: ChartData<'line'>;
-}
+import type { LazyLoadEvent } from 'primeng/api';
+import type { ProjectItemWithCharts } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-my-projects',
@@ -25,10 +21,11 @@ interface ProjectItemWithCharts extends ProjectItem {
   styleUrl: './my-projects.component.scss',
 })
 export class MyProjectsComponent {
-  /**
-   * Chart options for activity charts
-   */
-  protected readonly chartOptions: ChartOptions<'line'> = {
+  private readonly analyticsService = inject(AnalyticsService);
+  private readonly paginationState$ = new BehaviorSubject({ page: 1, limit: 10 });
+  protected readonly loading = signal(true);
+
+  public readonly chartOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
     plugins: { legend: { display: false }, tooltip: { enabled: false } },
@@ -38,69 +35,35 @@ export class MyProjectsComponent {
     },
   };
 
-  /**
-   * Projects with pre-generated chart data
-   */
-  protected readonly projects: ProjectItemWithCharts[];
+  public readonly rows = signal(10);
 
-  public constructor() {
-    // Initialize projects with randomized chart data
-    const baseProjects: ProjectItem[] = [
-      {
-        name: 'Kubernetes',
-        logo: 'https://avatars.githubusercontent.com/u/13455738?s=280&v=4',
-        role: 'Maintainer',
-        affiliations: ['CNCF', 'Google'],
-        codeActivities: this.generateRandomData(7, 25, 45),
-        nonCodeActivities: this.generateRandomData(7, 8, 16),
-        status: 'active',
-      },
-      {
-        name: 'Linux Kernel',
-        logo: 'https://upload.wikimedia.org/wikipedia/commons/3/35/Tux.svg',
-        role: 'Contributor',
-        affiliations: ['Linux Foundation'],
-        codeActivities: this.generateRandomData(7, 12, 30),
-        nonCodeActivities: this.generateRandomData(7, 3, 9),
-        status: 'active',
-      },
-      {
-        name: 'Node.js',
-        logo: 'https://nodejs.org/static/logos/nodejsHex.svg',
-        role: 'Reviewer',
-        affiliations: ['OpenJS Foundation'],
-        codeActivities: this.generateRandomData(7, 10, 20),
-        nonCodeActivities: this.generateRandomData(7, 4, 10),
-        status: 'archived',
-      },
-    ];
+  private readonly projectsResponse = toSignal(
+    this.paginationState$.pipe(
+      tap(() => this.loading.set(true)),
+      switchMap(({ page, limit }) => this.analyticsService.getMyProjects(page, limit).pipe(finalize(() => this.loading.set(false))))
+    ),
+    {
+      initialValue: { data: [], totalProjects: 0 },
+    }
+  );
 
-    // Generate chart data for each project
-    this.projects = baseProjects.map((project) => ({
+  public readonly projects = computed<ProjectItemWithCharts[]>(() => {
+    const response = this.projectsResponse();
+    return response.data.map((project) => ({
       ...project,
       codeActivitiesChartData: this.createChartData(project.codeActivities, '#009AFF', 'rgba(0, 154, 255, 0.1)'),
       nonCodeActivitiesChartData: this.createChartData(project.nonCodeActivities, '#10b981', 'rgba(16, 185, 129, 0.1)'),
     }));
+  });
+
+  public readonly totalRecords = computed(() => this.projectsResponse().totalProjects);
+
+  public onPageChange(event: LazyLoadEvent): void {
+    const page = Math.floor((event.first ?? 0) / (event.rows ?? 10)) + 1;
+    this.rows.set(event.rows ?? 10);
+    this.paginationState$.next({ page, limit: event.rows ?? 10 });
   }
 
-  /**
-   * Generates random data array
-   * @param length - Number of data points
-   * @param min - Minimum value
-   * @param max - Maximum value
-   * @returns Array of random numbers
-   */
-  private generateRandomData(length: number, min: number, max: number): number[] {
-    return Array.from({ length }, () => Math.floor(Math.random() * (max - min + 1)) + min);
-  }
-
-  /**
-   * Creates chart data configuration
-   * @param data - Array of values
-   * @param borderColor - Chart border color
-   * @param backgroundColor - Chart background color
-   * @returns Chart.js data configuration
-   */
   private createChartData(data: number[], borderColor: string, backgroundColor: string): ChartData<'line'> {
     return {
       labels: Array.from({ length: data.length }, () => ''),

@@ -4,8 +4,11 @@
 import {
   ActiveWeeksStreakResponse,
   ActiveWeeksStreakRow,
+  ProjectItem,
   UserCodeCommitsResponse,
   UserCodeCommitsRow,
+  UserProjectActivityRow,
+  UserProjectsResponse,
   UserPullRequestsResponse,
   UserPullRequestsRow,
 } from '@lfx-one/shared/interfaces';
@@ -114,7 +117,7 @@ export class AnalyticsController {
           ACTIVITY_DATE,
           DAILY_COUNT,
           SUM(DAILY_COUNT) OVER () as TOTAL_COUNT
-        FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM_LFX_ONE.USER_PULL_REQUESTS
+        FROM ANALYTICS.PLATINUM_LFX_ONE.USER_PULL_REQUESTS
         WHERE EMAIL = ?
           AND ACTIVITY_DATE >= DATEADD(DAY, -30, CURRENT_DATE())
         ORDER BY ACTIVITY_DATE ASC
@@ -177,7 +180,7 @@ export class AnalyticsController {
           ACTIVITY_DATE,
           DAILY_COUNT,
           SUM(DAILY_COUNT) OVER () as TOTAL_COUNT
-        FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM_LFX_ONE.USER_CODE_COMMITS
+        FROM ANALYTICS.PLATINUM_LFX_ONE.USER_CODE_COMMITS
         WHERE EMAIL = ?
           AND ACTIVITY_DATE >= DATEADD(DAY, -30, CURRENT_DATE())
         ORDER BY ACTIVITY_DATE ASC
@@ -211,6 +214,127 @@ export class AnalyticsController {
       res.json(response);
     } catch (error) {
       Logger.error(req, 'get_code_commits', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/my-projects
+   * Get user's projects with activity data for the last 30 days
+   * Supports pagination via query parameters: page (default 1) and limit (default 10)
+   */
+  public async getMyProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_my_projects');
+
+    try {
+      // Get user email from authenticated session (commented for future implementation)
+      // const userEmail = req.oidc?.user?.['email'];
+      // if (!userEmail) {
+      //   throw new AuthenticationError('User email not found in authentication context', {
+      //     operation: 'get_my_projects',
+      //   });
+      // }
+
+      // Parse pagination parameters
+      const page = Math.max(1, parseInt(req.query['page'] as string, 10) || 1);
+      const limit = Math.max(1, Math.min(100, parseInt(req.query['limit'] as string, 10) || 10));
+      const offset = (page - 1) * limit;
+
+      // First, get total count of unique projects
+      const countQuery = `
+        SELECT COUNT(DISTINCT PROJECT_ID) as TOTAL_PROJECTS
+        FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM.PROJECT_CODE_ACTIVITY
+        WHERE ACTIVITY_DATE >= DATEADD(DAY, -30, CURRENT_DATE())
+      `;
+
+      // eslint-disable-next-line @typescript-eslint/naming-convention
+      const countResult = await this.getSnowflakeService().execute<{ TOTAL_PROJECTS: number }>(countQuery, []);
+      const totalProjects = countResult.rows[0]?.TOTAL_PROJECTS || 0;
+
+      // If no projects found, return empty response
+      if (totalProjects === 0) {
+        Logger.success(req, 'get_my_projects', startTime, {
+          page,
+          limit,
+          total_projects: 0,
+        });
+
+        res.json({
+          data: [],
+          totalProjects: 0,
+        });
+        return;
+      }
+
+      // Get paginated projects with all their activity data
+      // Use CTE to first get paginated project list, then join for activity data
+      const query = `
+        WITH PaginatedProjects AS (
+          SELECT DISTINCT PROJECT_ID, PROJECT_NAME, PROJECT_SLUG
+          FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM.PROJECT_CODE_ACTIVITY
+          WHERE ACTIVITY_DATE >= DATEADD(DAY, -30, CURRENT_DATE())
+          ORDER BY PROJECT_NAME, PROJECT_ID
+          LIMIT ? OFFSET ?
+        )
+        SELECT
+          p.PROJECT_ID,
+          p.PROJECT_NAME,
+          p.PROJECT_SLUG,
+          a.ACTIVITY_DATE,
+          a.DAILY_TOTAL_ACTIVITIES,
+          a.DAILY_CODE_ACTIVITIES,
+          a.DAILY_NON_CODE_ACTIVITIES
+        FROM PaginatedProjects p
+        JOIN ANALYTICS_DEV.DEV_JEVANS_PLATINUM.PROJECT_CODE_ACTIVITY a
+          ON p.PROJECT_ID = a.PROJECT_ID
+        WHERE a.ACTIVITY_DATE >= DATEADD(DAY, -30, CURRENT_DATE())
+        ORDER BY p.PROJECT_NAME, p.PROJECT_ID, a.ACTIVITY_DATE ASC
+      `;
+
+      const result = await this.getSnowflakeService().execute<UserProjectActivityRow>(query, [limit, offset]);
+
+      // Group rows by PROJECT_ID and transform into ProjectItem[]
+      const projectsMap = new Map<string, ProjectItem>();
+
+      for (const row of result.rows) {
+        if (!projectsMap.has(row.PROJECT_ID)) {
+          // Initialize new project with placeholder values
+          projectsMap.set(row.PROJECT_ID, {
+            name: row.PROJECT_NAME,
+            logo: undefined, // Component will show default icon
+            role: 'Member', // Placeholder
+            affiliations: [], // Placeholder
+            codeActivities: [],
+            nonCodeActivities: [],
+            status: 'active', // Placeholder
+          });
+        }
+
+        // Add daily activity values to arrays
+        const project = projectsMap.get(row.PROJECT_ID)!;
+        project.codeActivities.push(row.DAILY_CODE_ACTIVITIES);
+        project.nonCodeActivities.push(row.DAILY_NON_CODE_ACTIVITIES);
+      }
+
+      // Convert map to array
+      const projects = Array.from(projectsMap.values());
+
+      // Build response
+      const response: UserProjectsResponse = {
+        data: projects,
+        totalProjects,
+      };
+
+      Logger.success(req, 'get_my_projects', startTime, {
+        page,
+        limit,
+        returned_projects: projects.length,
+        total_projects: totalProjects,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_my_projects', startTime, error);
       next(error);
     }
   }

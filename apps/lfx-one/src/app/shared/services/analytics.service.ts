@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { ActiveWeeksStreakResponse, UserCodeCommitsResponse, UserPullRequestsResponse } from '@lfx-one/shared/interfaces';
+import { ActiveWeeksStreakResponse, UserCodeCommitsResponse, UserProjectsResponse, UserPullRequestsResponse } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of } from 'rxjs';
 
 /**
@@ -62,6 +62,25 @@ export class AnalyticsService {
           data: [],
           totalCommits: 0,
           totalDays: 0,
+        });
+      })
+    );
+  }
+
+  /**
+   * Get user's projects with activity data
+   * @param page - Page number (1-based)
+   * @param limit - Number of projects per page
+   * @returns Observable of user projects response
+   */
+  public getMyProjects(page: number = 1, limit: number = 10): Observable<UserProjectsResponse> {
+    const params = { page: page.toString(), limit: limit.toString() };
+    return this.http.get<UserProjectsResponse>('/api/analytics/my-projects', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch my projects:', error);
+        return of({
+          data: [],
+          totalProjects: 0,
         });
       })
     );

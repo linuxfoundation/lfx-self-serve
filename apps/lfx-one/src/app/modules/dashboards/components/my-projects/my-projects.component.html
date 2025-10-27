@@ -6,9 +6,27 @@
     <h2 class="font-display font-semibold text-[16px]">My Projects</h2>
   </div>
 
-  <div class="rounded-lg border border-gray-200 overflow-hidden">
+  <div class="rounded-lg border border-gray-200 overflow-hidden relative">
+    @if (loading()) {
+      <div class="absolute inset-0 bg-white/60 flex items-center justify-center z-10" data-testid="dashboard-my-projects-loading">
+        <div class="flex flex-col items-center gap-2">
+          <i class="fa-solid fa-spinner fa-spin text-[#009aff] text-2xl"></i>
+          <span class="text-sm text-gray-600">Loading...</span>
+        </div>
+      </div>
+    }
     <div class="overflow-x-auto">
-      <lfx-table [value]="projects" data-testid="dashboard-my-projects-table">
+      <lfx-table
+        [value]="projects()"
+        [lazy]="true"
+        [paginator]="true"
+        [rows]="rows()"
+        [totalRecords]="totalRecords()"
+        [rowsPerPageOptions]="[5, 10, 20, 50]"
+        [showCurrentPageReport]="true"
+        [currentPageReportTemplate]="'Showing {first} to {last} of {totalRecords} projects'"
+        (onLazyLoad)="onPageChange($event)"
+        data-testid="dashboard-my-projects-table">
         <ng-template #header>
           <tr class="border-b border-border">
             <th class="text-left py-2 px-6 text-xs font-medium text-muted-foreground w-1/4">Project</th>
