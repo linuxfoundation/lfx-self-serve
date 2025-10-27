@@ -8,10 +8,13 @@ import {
   MeetingJoinURL,
   MeetingRegistrant,
   PastMeetingParticipant,
-  QueryServiceCountResponse,
+  PastMeetingRecording,
+  PastMeetingSummary,
   QueryServiceResponse,
+  QueryServiceCountResponse,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
+  UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -456,6 +459,175 @@ export class MeetingService {
     );
 
     return participants;
+  }
+
+  /**
+   * Fetches past meeting recording by past meeting UID
+   */
+  public async getPastMeetingRecording(req: Request, pastMeetingUid: string): Promise<PastMeetingRecording | null> {
+    try {
+      const params = {
+        type: 'past_meeting_recording',
+        tags: `past_meeting_uid:${pastMeetingUid}`,
+      };
+
+      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingRecording>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        params
+      );
+
+      if (!resources || resources.length === 0) {
+        req.log.info(
+          {
+            operation: 'get_past_meeting_recording',
+            past_meeting_uid: pastMeetingUid,
+          },
+          'No recording found for past meeting'
+        );
+        return null;
+      }
+
+      const recording = resources[0].data;
+
+      req.log.info(
+        {
+          operation: 'get_past_meeting_recording',
+          past_meeting_uid: pastMeetingUid,
+          recording_uid: recording.uid,
+          recording_count: recording.recording_count,
+          session_count: recording.sessions?.length || 0,
+        },
+        'Past meeting recording retrieved successfully'
+      );
+
+      return recording;
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'get_past_meeting_recording',
+          past_meeting_uid: pastMeetingUid,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to retrieve past meeting recording'
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Fetches past meeting summary by past meeting UID
+   */
+  public async getPastMeetingSummary(req: Request, pastMeetingUid: string): Promise<PastMeetingSummary | null> {
+    try {
+      const params = {
+        type: 'past_meeting_summary',
+        tags: `past_meeting_uid:${pastMeetingUid}`,
+      };
+
+      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingSummary>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        params
+      );
+
+      if (!resources || resources.length === 0) {
+        req.log.info(
+          {
+            operation: 'get_past_meeting_summary',
+            past_meeting_uid: pastMeetingUid,
+          },
+          'No summary found for past meeting'
+        );
+        return null;
+      }
+
+      const summary = resources[0].data;
+
+      req.log.info(
+        {
+          operation: 'get_past_meeting_summary',
+          past_meeting_uid: pastMeetingUid,
+          summary_uid: summary.uid,
+          approved: summary.approved,
+          requires_approval: summary.requires_approval,
+        },
+        'Past meeting summary retrieved successfully'
+      );
+
+      return summary;
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'get_past_meeting_summary',
+          past_meeting_uid: pastMeetingUid,
+          error: error instanceof Error ? error.message : String(error),
+        },
+        'Failed to retrieve past meeting summary'
+      );
+      return null;
+    }
+  }
+
+  /**
+   * Updates past meeting summary edited content using ETag for concurrency control
+   */
+  public async updatePastMeetingSummary(
+    req: Request,
+    pastMeetingUid: string,
+    summaryUid: string,
+    updateData: UpdatePastMeetingSummaryRequest
+  ): Promise<PastMeetingSummary> {
+    try {
+      // Step 1: Fetch summary with ETag
+      const { etag } = await this.etagService.fetchWithETag<PastMeetingSummary>(
+        req,
+        'LFX_V2_SERVICE',
+        `/past_meetings/${pastMeetingUid}/summaries/${summaryUid}`,
+        'update_past_meeting_summary'
+      );
+
+      const sanitizedPayload = Logger.sanitize({ updateData });
+      req.log.info(sanitizedPayload, 'Updating past meeting summary payload');
+
+      // Step 2: Update summary with ETag
+      const updatedSummary = await this.etagService.updateWithETag<PastMeetingSummary>(
+        req,
+        'LFX_V2_SERVICE',
+        `/past_meetings/${pastMeetingUid}/summaries/${summaryUid}`,
+        etag,
+        updateData,
+        'update_past_meeting_summary'
+      );
+
+      req.log.info(
+        {
+          operation: 'update_past_meeting_summary',
+          past_meeting_uid: pastMeetingUid,
+          summary_uid: summaryUid,
+          has_edited_content: !!updateData.edited_content,
+          has_approved: updateData.approved !== undefined,
+        },
+        'Past meeting summary updated successfully'
+      );
+
+      return updatedSummary;
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'update_past_meeting_summary',
+          past_meeting_uid: pastMeetingUid,
+          summary_uid: summaryUid,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to update past meeting summary'
+      );
+      throw error;
+    }
   }
 
   private async getMeetingCommittees(req: Request, meetings: Meeting[]): Promise<Meeting[]> {

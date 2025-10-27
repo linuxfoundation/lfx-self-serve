@@ -1,0 +1,62 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="space-y-4" data-testid="summary-modal-container">
+  <!-- Meeting Title -->
+  <div class="mb-4">
+    <h4 class="text-lg font-semibold text-gray-900 mb-1">{{ meetingTitle }}</h4>
+    <p class="text-sm text-gray-600">AI-generated meeting summary</p>
+  </div>
+
+  <!-- Summary Content Display -->
+  @if (isEditMode()) {
+    <div class="bg-gray-50 rounded-lg p-4 border border-gray-200" data-testid="summary-edit-container">
+      <label class="block text-sm font-medium text-gray-700 mb-2">Edit Summary</label>
+      <lfx-textarea
+        [form]="editForm"
+        control="content"
+        [rows]="20"
+        [autoResize]="false"
+        placeholder="Edit the meeting summary..."
+        styleClass="w-full font-mono"
+        dataTest="summary-edit-textarea"></lfx-textarea>
+    </div>
+  } @else {
+    <div class="bg-gray-50 rounded-lg p-6 border border-gray-200 max-h-[500px] overflow-y-auto" data-testid="summary-content-container">
+      <div class="prose prose-sm max-w-none text-gray-900 whitespace-pre-wrap" [innerHTML]="summaryContent()" data-testid="summary-content"></div>
+    </div>
+  }
+
+  <!-- Action Buttons -->
+  <div class="flex justify-between gap-2 mt-6">
+    @if (isEditMode()) {
+      <div class="flex gap-2">
+        <lfx-button label="Cancel" size="small" severity="secondary" data-testid="cancel-edit-button" (click)="cancelEdit()"></lfx-button>
+      </div>
+      <lfx-button label="Save" size="small" severity="primary" [loading]="isSaving()" data-testid="save-edit-button" (click)="saveEdit()"></lfx-button>
+    } @else {
+      <div class="flex gap-2">
+        <lfx-button label="Edit" icon="fa-light fa-pen" size="small" severity="secondary" data-testid="edit-button" (click)="enterEditMode()"></lfx-button>
+        @if (!isApproved()) {
+          <lfx-button
+            label="Approve"
+            icon="fa-light fa-check"
+            size="small"
+            severity="success"
+            [loading]="isApproving()"
+            data-testid="approve-button"
+            (click)="approve()"></lfx-button>
+        } @else {
+          <lfx-button
+            label="Approved"
+            icon="fa-light fa-check-circle"
+            size="small"
+            severity="success"
+            [disabled]="true"
+            data-testid="approved-badge"></lfx-button>
+        }
+      </div>
+      <lfx-button label="Close" size="small" severity="secondary" data-testid="close-button" (click)="onClose()"></lfx-button>
+    }
+  </div>
+</div>

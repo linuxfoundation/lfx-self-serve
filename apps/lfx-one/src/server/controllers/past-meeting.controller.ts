@@ -3,7 +3,7 @@
 
 import { NextFunction, Request, Response } from 'express';
 
-import { PastMeeting } from '@lfx-one/shared/interfaces';
+import { PastMeeting, PastMeetingRecording, PastMeetingSummary, UpdatePastMeetingSummaryRequest } from '@lfx-one/shared/interfaces';
 import { Logger } from '../helpers/logger';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { MeetingService } from '../services/meeting.service';
@@ -139,6 +139,175 @@ export class PastMeetingController {
       // Log the error
       Logger.error(req, 'get_past_meeting_participants', startTime, error, {
         past_meeting_uid: uid,
+      });
+
+      // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * GET /past-meetings/:uid/recording
+   */
+  public async getPastMeetingRecording(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = Logger.start(req, 'get_past_meeting_recording', {
+      past_meeting_uid: uid,
+    });
+
+    try {
+      // Check if the past meeting UID is provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_past_meeting_recording',
+          service: 'past_meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      // Get the past meeting recording
+      const recording: PastMeetingRecording | null = await this.meetingService.getPastMeetingRecording(req, uid);
+
+      // If no recording found, return 404
+      if (!recording) {
+        res.status(404).json({
+          error: 'Not Found',
+          message: `No recording found for past meeting ${uid}`,
+        });
+        return;
+      }
+
+      // Log the success
+      Logger.success(req, 'get_past_meeting_recording', startTime, {
+        past_meeting_uid: uid,
+        recording_uid: recording.uid,
+        recording_count: recording.recording_count,
+        session_count: recording.sessions?.length || 0,
+      });
+
+      // Send the recording data to the client
+      res.json(recording);
+    } catch (error) {
+      // Log the error
+      Logger.error(req, 'get_past_meeting_recording', startTime, error, {
+        past_meeting_uid: uid,
+      });
+
+      // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * GET /past-meetings/:uid/summary
+   */
+  public async getPastMeetingSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = Logger.start(req, 'get_past_meeting_summary', {
+      past_meeting_uid: uid,
+    });
+
+    try {
+      // Check if the past meeting UID is provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_past_meeting_summary',
+          service: 'past_meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      // Get the past meeting summary
+      const summary: PastMeetingSummary | null = await this.meetingService.getPastMeetingSummary(req, uid);
+
+      // If no summary found, return 404
+      if (!summary) {
+        res.status(404).json({
+          error: 'Not Found',
+          message: `No summary found for past meeting ${uid}`,
+        });
+        return;
+      }
+
+      // Log the success
+      Logger.success(req, 'get_past_meeting_summary', startTime, {
+        past_meeting_uid: uid,
+        summary_uid: summary.uid,
+        approved: summary.approved,
+        requires_approval: summary.requires_approval,
+      });
+
+      // Send the summary data to the client
+      res.json(summary);
+    } catch (error) {
+      // Log the error
+      Logger.error(req, 'get_past_meeting_summary', startTime, error, {
+        past_meeting_uid: uid,
+      });
+
+      // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /past-meetings/:uid/summary/:summaryUid
+   */
+  public async updatePastMeetingSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, summaryUid } = req.params;
+    const startTime = Logger.start(req, 'update_past_meeting_summary', {
+      past_meeting_uid: uid,
+      summary_uid: summaryUid,
+    });
+
+    try {
+      // Check if the past meeting UID and summary UID are provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'update_past_meeting_summary',
+          service: 'past_meeting_controller',
+          logStartTime: startTime,
+        }) ||
+        !validateUidParameter(summaryUid, req, next, {
+          operation: 'update_past_meeting_summary',
+          service: 'past_meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      const body = req.body as UpdatePastMeetingSummaryRequest;
+
+      // Validate request body - at least one field must be provided
+      if (!body.edited_content && body.approved === undefined) {
+        res.status(400).json({
+          error: 'Bad Request',
+          message: 'Either edited_content or approved must be provided',
+        });
+        return;
+      }
+
+      // Update the summary
+      const updatedSummary = await this.meetingService.updatePastMeetingSummary(req, uid, summaryUid, body);
+
+      // Log the success
+      Logger.success(req, 'update_past_meeting_summary', startTime, {
+        past_meeting_uid: uid,
+        summary_uid: summaryUid,
+      });
+
+      // Send the updated summary data to the client
+      res.json(updatedSummary);
+    } catch (error) {
+      // Log the error
+      Logger.error(req, 'update_past_meeting_summary', startTime, error, {
+        past_meeting_uid: uid,
+        summary_uid: summaryUid,
       });
 
       // Send the error to the next middleware

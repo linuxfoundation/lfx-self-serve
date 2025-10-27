@@ -17,10 +17,13 @@ import {
   MeetingRegistrantWithState,
   PastMeeting,
   PastMeetingParticipant,
+  PastMeetingRecording,
+  PastMeetingSummary,
   Project,
   QueryServiceCountResponse,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
+  UpdatePastMeetingSummaryRequest,
   UploadFileResponse,
 } from '@lfx-one/shared/interfaces';
 import { catchError, defer, Observable, of, map, switchMap, take, tap, throwError } from 'rxjs';
@@ -317,6 +320,22 @@ export class MeetingService {
         return of([]);
       })
     );
+  }
+
+  public getPastMeetingRecording(pastMeetingUid: string): Observable<PastMeetingRecording> {
+    return this.http.get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`);
+  }
+
+  public getPastMeetingSummary(pastMeetingUid: string): Observable<PastMeetingSummary> {
+    return this.http.get<PastMeetingSummary>(`/api/past-meetings/${pastMeetingUid}/summary`);
+  }
+
+  public updatePastMeetingSummary(pastMeetingUid: string, summaryUid: string, updateData: UpdatePastMeetingSummaryRequest): Observable<PastMeetingSummary> {
+    return this.http.put<PastMeetingSummary>(`/api/past-meetings/${pastMeetingUid}/summary/${summaryUid}`, updateData);
+  }
+
+  public approvePastMeetingSummary(pastMeetingUid: string, summaryUid: string): Observable<PastMeetingSummary> {
+    return this.updatePastMeetingSummary(pastMeetingUid, summaryUid, { approved: true });
   }
 
   public addMeetingRegistrants(

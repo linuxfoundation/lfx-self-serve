@@ -73,6 +73,7 @@
               <div class="grid grid-cols-1 gap-4">
                 @for (meeting of filteredMeetings(); track meeting.uid) {
                   <lfx-meeting-card
+                    [attr.id]="'meeting-' + meeting.uid"
                     [meetingInput]="meeting"
                     (meetingUpdated)="refreshMeetings()"
                     (meetingDeleted)="refreshMeetings()"

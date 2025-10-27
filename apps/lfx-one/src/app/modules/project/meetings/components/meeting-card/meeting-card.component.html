@@ -49,6 +49,28 @@
             (click)="copyMeetingLink()"
             tooltip="Copy Meeting"></lfx-button>
         }
+        @if (pastMeeting() && hasRecording()) {
+          <lfx-button
+            icon="fa-light fa-video"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="view-recording-button"
+            (click)="openRecordingModal()"
+            tooltip="View Recording"></lfx-button>
+        }
+        @if (pastMeeting() && hasSummary()) {
+          <lfx-button
+            icon="fa-light fa-file-lines"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="view-summary-button"
+            (click)="openSummaryModal()"
+            tooltip="View Summary"></lfx-button>
+        }
         @if (meeting().visibility === 'public') {
           <lfx-button
             icon="fa-light fa-share"

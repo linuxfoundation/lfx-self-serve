@@ -17,4 +17,13 @@ router.get('/:uid', (req, res, next) => pastMeetingController.getPastMeetingById
 // Get past meeting participants by UID
 router.get('/:uid/participants', (req, res, next) => pastMeetingController.getPastMeetingParticipants(req, res, next));
 
+// Get past meeting recording by UID
+router.get('/:uid/recording', (req, res, next) => pastMeetingController.getPastMeetingRecording(req, res, next));
+
+// Get past meeting summary by UID
+router.get('/:uid/summary', (req, res, next) => pastMeetingController.getPastMeetingSummary(req, res, next));
+
+// Update past meeting summary
+router.put('/:uid/summary/:summaryUid', (req, res, next) => pastMeetingController.updatePastMeetingSummary(req, res, next));
+
 export default router;

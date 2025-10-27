@@ -546,3 +546,144 @@ export interface PastMeetingParticipant {
   /** Last update timestamp */
   updated_at: string;
 }
+
+/**
+ * Recording session information
+ * @description Individual session within a past meeting recording
+ */
+export interface RecordingSession {
+  /** Session start time */
+  start_time: string;
+  /** Shareable URL for the recording */
+  share_url: string;
+  /** Total size of the session in bytes */
+  total_size: number;
+  /** Session UUID */
+  uuid: string;
+}
+
+/**
+ * Recording file information
+ * @description Individual recording file from a meeting session
+ */
+export interface RecordingFile {
+  /** Unique identifier for the recording file */
+  id: string;
+  /** Download URL for the recording file */
+  download_url: string;
+  /** Play URL for the recording file */
+  play_url: string;
+  /** File size in bytes */
+  file_size: number;
+  /** File type (e.g., MP4, M4A, CHAT, TRANSCRIPT) */
+  file_type: string;
+  /** Recording type (e.g., shared_screen_with_speaker_view, audio_only) */
+  recording_type: string;
+  /** Recording start time */
+  recording_start: string;
+  /** Recording end time */
+  recording_end: string;
+  /** Recording status */
+  status: string;
+  /** Platform-specific meeting ID */
+  platform_meeting_id: string;
+}
+
+/**
+ * Past meeting recording information
+ * @description Recording data for a completed past meeting
+ */
+export interface PastMeetingRecording {
+  /** Unique identifier for the recording */
+  uid: string;
+  /** Past meeting UID this recording belongs to */
+  past_meeting_uid: string;
+  /** Platform (e.g., Zoom) */
+  platform: string;
+  /** Platform-specific meeting ID */
+  platform_meeting_id: string;
+  /** Number of recording files */
+  recording_count: number;
+  /** Array of recording files */
+  recording_files: RecordingFile[];
+  /** Array of recording sessions */
+  sessions: RecordingSession[];
+  /** Total size of all recordings in bytes */
+  total_size: number;
+  /** Creation timestamp */
+  created_at: string;
+  /** Last update timestamp */
+  updated_at: string;
+}
+
+/**
+ * Summary data for a past meeting
+ * @description Contains the AI-generated summary content and metadata
+ */
+export interface SummaryData {
+  /** Summary title */
+  title: string;
+  /** AI-generated summary content in markdown format */
+  content: string;
+  /** User-edited summary content (can be empty) */
+  edited_content: string;
+  /** Zoom document URL for the summary */
+  doc_url: string;
+  /** Summary generation start time */
+  start_time: string;
+  /** Summary generation end time */
+  end_time: string;
+}
+
+/**
+ * Zoom configuration for meeting summary
+ * @description Platform-specific configuration for Zoom summaries
+ */
+export interface ZoomSummaryConfig {
+  /** Zoom meeting ID */
+  meeting_id: string;
+  /** Zoom meeting UUID */
+  meeting_uuid: string;
+}
+
+/**
+ * Past meeting summary information
+ * @description AI-generated summary data for a completed past meeting
+ */
+export interface PastMeetingSummary {
+  /** Unique identifier for the summary */
+  uid: string;
+  /** Original meeting UID */
+  meeting_uid: string;
+  /** Past meeting UID this summary belongs to */
+  past_meeting_uid: string;
+  /** Platform (e.g., Zoom) */
+  platform: string;
+  /** Whether the summary has been approved */
+  approved: boolean;
+  /** Whether the summary requires approval before viewing */
+  requires_approval: boolean;
+  /** Whether notification email was sent */
+  email_sent: boolean;
+  /** Access password for the summary */
+  password: string;
+  /** Summary content and metadata */
+  summary_data: SummaryData;
+  /** Zoom-specific configuration (optional) */
+  zoom_config?: ZoomSummaryConfig;
+  /** Creation timestamp */
+  created_at: string;
+  /** Last update timestamp */
+  updated_at: string;
+}
+
+/**
+ * Update past meeting summary request
+ * @description Request payload for updating a past meeting summary's edited content and approval status
+ */
+export interface UpdatePastMeetingSummaryRequest {
+  /** Updated summary content (HTML/text) - optional when only approving */
+  edited_content?: string;
+  /** Approval status - optional when only editing content */
+  approved?: boolean;
+}
