@@ -45,6 +45,24 @@ environment:
     value: 'https://api.openai.com/v1/chat/completions'
   AI_API_KEY:
     value: 'your-openai-api-key'
+
+  # Required: Snowflake Analytics configuration
+  SNOWFLAKE_ACCOUNT:
+    value: 'your-org-account'
+  SNOWFLAKE_USERNAME:
+    value: 'your-username'
+  SNOWFLAKE_ROLE:
+    value: 'your-read-role'
+  SNOWFLAKE_DATABASE:
+    value: 'your-database'
+  SNOWFLAKE_WAREHOUSE:
+    value: 'your-warehouse'
+  SNOWFLAKE_API_KEY:
+    value: 'your-private-key'
+
+  # Required: Auth0 session secret
+  PCC_AUTH0_SECRET:
+    value: 'sufficiently-long-random-string'
 ```
 
 #### Using Kubernetes Secrets
@@ -116,12 +134,13 @@ environment:
 
 #### Auth0 Configuration (User Authentication)
 
-| Parameter                               | Description                   | Required | Default                                            |
-| --------------------------------------- | ----------------------------- | -------- | -------------------------------------------------- |
-| `environment.PCC_AUTH0_ISSUER_BASE_URL` | Auth0 issuer base URL         | No       | `https://linuxfoundation-dev.auth0.com/`           |
-| `environment.PCC_AUTH0_AUDIENCE`        | Auth0 API audience identifier | No       | `https://api-gw.dev.platform.linuxfoundation.org/` |
-| `environment.PCC_AUTH0_CLIENT_ID`       | Auth0 client ID (secret)      | **Yes**  | -                                                  |
-| `environment.PCC_AUTH0_CLIENT_SECRET`   | Auth0 client secret (secret)  | **Yes**  | -                                                  |
+| Parameter                               | Description                              | Required | Default                                            |
+| --------------------------------------- | ---------------------------------------- | -------- | -------------------------------------------------- |
+| `environment.PCC_AUTH0_ISSUER_BASE_URL` | Auth0 issuer base URL                    | No       | `https://linuxfoundation-dev.auth0.com/`           |
+| `environment.PCC_AUTH0_AUDIENCE`        | Auth0 API audience identifier            | No       | `https://api-gw.dev.platform.linuxfoundation.org/` |
+| `environment.PCC_AUTH0_CLIENT_ID`       | Auth0 client ID (secret)                 | **Yes**  | -                                                  |
+| `environment.PCC_AUTH0_CLIENT_SECRET`   | Auth0 client secret (secret)             | **Yes**  | -                                                  |
+| `environment.PCC_AUTH0_SECRET`          | Auth0 session secret (sufficiently long) | **Yes**  | -                                                  |
 
 #### LFX Auth Configuration (Service-to-Service)
 
@@ -154,6 +173,23 @@ environment:
 | -------------------------- | ---------------------------------------- | -------- | ------- |
 | `environment.AI_PROXY_URL` | AI service proxy URL (OpenAI compatible) | **Yes**  | -       |
 | `environment.AI_API_KEY`   | API key for AI service                   | **Yes**  | -       |
+
+#### Snowflake Analytics Configuration
+
+Required for analytics endpoints (active-weeks-streak, pull-requests-merged, code-commits):
+
+| Parameter                               | Description                                      | Required | Default  |
+| --------------------------------------- | ------------------------------------------------ | -------- | -------- |
+| `environment.SNOWFLAKE_ACCOUNT`         | Snowflake account identifier (org-account)       | **Yes**  | -        |
+| `environment.SNOWFLAKE_USERNAME`        | Snowflake service user for read-only queries     | **Yes**  | -        |
+| `environment.SNOWFLAKE_ROLE`            | Snowflake user role with SELECT-only permissions | **Yes**  | -        |
+| `environment.SNOWFLAKE_DATABASE`        | Snowflake analytics database name                | **Yes**  | -        |
+| `environment.SNOWFLAKE_WAREHOUSE`       | Snowflake warehouse for query execution          | **Yes**  | -        |
+| `environment.SNOWFLAKE_API_KEY`         | Snowflake private key for authentication         | **Yes**  | -        |
+| `environment.SNOWFLAKE_LOG_LEVEL`       | Snowflake SDK log level                          | No       | `ERROR`  |
+| `environment.SNOWFLAKE_LOCK_STRATEGY`   | Lock strategy for query deduplication            | No       | `memory` |
+| `environment.SNOWFLAKE_MIN_CONNECTIONS` | Minimum connection pool size                     | No       | `2`      |
+| `environment.SNOWFLAKE_MAX_CONNECTIONS` | Maximum connection pool size                     | No       | `10`     |
 
 #### Logging Configuration
 

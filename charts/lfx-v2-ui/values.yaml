@@ -168,12 +168,19 @@ environment:
   QUERY_SERVICE_URL:
     value: "http://query-service.default.svc.cluster.local/query/resources"
 
+  # Optional configuration with defaults
+  LOG_LEVEL:
+    value: "info"
+
   # required environment variable secrets
 
   PCC_AUTH0_CLIENT_ID:
     value:
 
   PCC_AUTH0_CLIENT_SECRET:
+    value:
+
+  PCC_AUTH0_SECRET:
     value:
 
   SUPABASE_URL:
@@ -199,3 +206,36 @@ environment:
 
   AI_API_KEY:
     value:
+
+  # Snowflake Analytics Configuration
+  # Required for analytics endpoints: active-weeks-streak, pull-requests-merged, code-commits
+  SNOWFLAKE_ACCOUNT:
+    value:
+
+  SNOWFLAKE_USERNAME:
+    value:
+
+  SNOWFLAKE_ROLE:
+    value:
+
+  SNOWFLAKE_DATABASE:
+    value:
+
+  SNOWFLAKE_WAREHOUSE:
+    value:
+
+  SNOWFLAKE_API_KEY:
+    value:
+
+  # Optional Snowflake configuration
+  SNOWFLAKE_LOG_LEVEL:
+    value: "ERROR"
+
+  SNOWFLAKE_LOCK_STRATEGY:
+    value: "memory"
+
+  SNOWFLAKE_MIN_CONNECTIONS:
+    value: "2"
+
+  SNOWFLAKE_MAX_CONNECTIONS:
+    value: "10"
