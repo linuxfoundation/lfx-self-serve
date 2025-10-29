@@ -253,7 +253,7 @@ export class SnowflakeService {
 
     const connectionOptions: ConnectionOptions = {
       account: process.env['SNOWFLAKE_ACCOUNT'] as string,
-      username: process.env['SNOWFLAKE_USERNAME'] as string,
+      username: process.env['SNOWFLAKE_USER'] as string,
       role: process.env['SNOWFLAKE_ROLE'] as string,
       authenticator: 'SNOWFLAKE_JWT',
       privateKey: privateKey,

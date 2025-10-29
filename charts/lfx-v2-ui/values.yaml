@@ -212,7 +212,7 @@ environment:
   SNOWFLAKE_ACCOUNT:
     value:
 
-  SNOWFLAKE_USERNAME:
+  SNOWFLAKE_USER:
     value:
 
   SNOWFLAKE_ROLE:

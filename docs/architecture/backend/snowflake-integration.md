@@ -85,7 +85,7 @@ private async createPool(): Promise<Pool<Connection>> {
 
   const connectionOptions: ConnectionOptions = {
     account: process.env['SNOWFLAKE_ACCOUNT'] as string,
-    username: process.env['SNOWFLAKE_USERNAME'] as string,
+    username: process.env['SNOWFLAKE_USER'] as string,
     role: process.env['SNOWFLAKE_ROLE'] as string,
     authenticator: 'SNOWFLAKE_JWT',
     privateKey: privateKey,
@@ -500,11 +500,11 @@ SNOWFLAKE_PRIVATE_KEY_PASSPHRASE = your_passphrase;
 ############### SNOWFLAKE CONFIG ###############
 # Snowflake Connection Configuration
 # Account identifier in format: orgname-accountname
-SNOWFLAKE_ACCOUNT=jnmhvwd-xpb85243
-SNOWFLAKE_USERNAME=DEV_ADESILVA
-SNOWFLAKE_WAREHOUSE=LF_DEVELOPMENT_WH
-SNOWFLAKE_DATABASE=ANALYTICS
-SNOWFLAKE_ROLE=LF_DEVELOPER_R_ROLE
+SNOWFLAKE_ACCOUNT=
+SNOWFLAKE_USER=
+SNOWFLAKE_WAREHOUSE=
+SNOWFLAKE_DATABASE=
+SNOWFLAKE_ROLE=
 
 # Snowflake Authentication (choose one method)
 # Method 1: Direct API Key (recommended for containers/Docker)
@@ -812,11 +812,11 @@ For local development, ensure you have:
 
 ```bash
 # .env (development example)
-SNOWFLAKE_ACCOUNT=jnmhvwd-xpb85243
-SNOWFLAKE_USERNAME=DEV_ADESILVA
-SNOWFLAKE_WAREHOUSE=LF_DEVELOPMENT_WH
-SNOWFLAKE_DATABASE=ANALYTICS
-SNOWFLAKE_ROLE=LF_DEVELOPER_R_ROLE
+SNOWFLAKE_ACCOUNT=
+SNOWFLAKE_USER=
+SNOWFLAKE_WAREHOUSE=
+SNOWFLAKE_DATABASE=
+SNOWFLAKE_ROLE=
 
 # Authentication Method 1: Direct API Key (recommended for containers)
 SNOWFLAKE_API_KEY=your-private-key-here

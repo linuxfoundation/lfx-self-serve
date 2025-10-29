@@ -49,7 +49,7 @@ environment:
   # Required: Snowflake Analytics configuration
   SNOWFLAKE_ACCOUNT:
     value: 'your-org-account'
-  SNOWFLAKE_USERNAME:
+  SNOWFLAKE_USER:
     value: 'your-username'
   SNOWFLAKE_ROLE:
     value: 'your-read-role'
@@ -181,7 +181,7 @@ Required for analytics endpoints (active-weeks-streak, pull-requests-merged, cod
 | Parameter                               | Description                                      | Required | Default  |
 | --------------------------------------- | ------------------------------------------------ | -------- | -------- |
 | `environment.SNOWFLAKE_ACCOUNT`         | Snowflake account identifier (org-account)       | **Yes**  | -        |
-| `environment.SNOWFLAKE_USERNAME`        | Snowflake service user for read-only queries     | **Yes**  | -        |
+| `environment.SNOWFLAKE_USER`            | Snowflake service user for read-only queries     | **Yes**  | -        |
 | `environment.SNOWFLAKE_ROLE`            | Snowflake user role with SELECT-only permissions | **Yes**  | -        |
 | `environment.SNOWFLAKE_DATABASE`        | Snowflake analytics database name                | **Yes**  | -        |
 | `environment.SNOWFLAKE_WAREHOUSE`       | Snowflake warehouse for query execution          | **Yes**  | -        |
