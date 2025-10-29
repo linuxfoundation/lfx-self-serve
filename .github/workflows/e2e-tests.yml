@@ -94,7 +94,7 @@ jobs:
         with:
           secret-ids: |
             SUPABASE, /cloudops/managed-secrets/cloud/supabase/api_key
-            AUTH0,  /cloudops/managed-secrets/auth0/LFX_V2_PCC
+            AUTH0,  /cloudops/managed-secrets/auth0/LFX_ONE
             AUTH,  /cloudops/managed-secrets/auth0/LFX_V2_Meeting_Join_M2M
 
       - name: Validate required secrets for E2E testing
@@ -285,7 +285,7 @@ jobs:
           echo "Configure the following secrets to enable E2E testing:"
           echo ""
           echo "AWS Secrets Manager (required):"
-          echo "  - /cloudops/managed-secrets/auth0/LFX_V2_PCC (AUTH0 configuration)"
+          echo "  - /cloudops/managed-secrets/auth0/LFX_ONE (AUTH0 configuration)"
           echo "  - /cloudops/managed-secrets/cloud/supabase/api_key (SUPABASE configuration)"
           echo "  - /cloudops/managed-secrets/ai/ai_config (AI configuration)"
           echo ""
