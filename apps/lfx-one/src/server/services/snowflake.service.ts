@@ -6,6 +6,7 @@ import { SnowflakeLockStrategy } from '@lfx-one/shared/enums';
 import { LockStats, SnowflakePoolStats, SnowflakeQueryOptions, SnowflakeQueryResult } from '@lfx-one/shared/interfaces';
 import snowflakeSdk from 'snowflake-sdk';
 
+import { MicroserviceError } from '../errors';
 import { serverLogger } from '../server';
 import { LockManager } from '../utils/lock-manager';
 
@@ -115,18 +116,28 @@ export class SnowflakeService {
         return result as SnowflakeQueryResult<T>;
       } catch (error) {
         const duration = Date.now() - startTime;
+        const errorMessage = error instanceof Error ? error.message : String(error);
 
         serverLogger.error(
           {
             query_hash: queryHash,
             duration_ms: duration,
-            error: error instanceof Error ? error.message : error,
+            error: errorMessage,
             sql_preview: sqlText.substring(0, 100),
           },
           'Snowflake query execution failed'
         );
 
-        throw error;
+        // Wrap Snowflake SDK errors in MicroserviceError for proper error handling
+        throw new MicroserviceError(`Snowflake query execution failed: ${errorMessage}`, 500, 'SNOWFLAKE_QUERY_ERROR', {
+          operation: 'snowflake_query_execution',
+          service: 'snowflake',
+          errorBody: {
+            query_hash: queryHash,
+            duration_ms: duration,
+          },
+          originalError: error instanceof Error ? error : undefined,
+        });
       }
     });
   }
@@ -238,13 +249,40 @@ export class SnowflakeService {
   private async createPool(): Promise<Pool<Connection>> {
     serverLogger.info('Creating Snowflake connection pool');
 
-    // Get private key from environment variable
-    const privateKey: string | undefined = process.env['SNOWFLAKE_API_KEY'];
+    // Validate all required environment variables
+    const requiredEnvVars = {
+      SNOWFLAKE_ACCOUNT: process.env['SNOWFLAKE_ACCOUNT'],
+      SNOWFLAKE_USER: process.env['SNOWFLAKE_USER'],
+      SNOWFLAKE_ROLE: process.env['SNOWFLAKE_ROLE'],
+      SNOWFLAKE_DATABASE: process.env['SNOWFLAKE_DATABASE'],
+      SNOWFLAKE_WAREHOUSE: process.env['SNOWFLAKE_WAREHOUSE'],
+      SNOWFLAKE_API_KEY: process.env['SNOWFLAKE_API_KEY'],
+    };
 
-    if (!privateKey) {
-      throw new Error('Snowflake authentication failed: SNOWFLAKE_API_KEY environment variable must be set');
+    const missingVars = Object.entries(requiredEnvVars)
+      .filter(([, value]) => !value)
+      .map(([key]) => key);
+
+    if (missingVars.length > 0) {
+      const errorMessage = `Snowflake configuration error: Missing required environment variables: ${missingVars.join(', ')}`;
+      serverLogger.error(
+        {
+          missing_variables: missingVars,
+          all_required: Object.keys(requiredEnvVars),
+        },
+        errorMessage
+      );
+      throw new MicroserviceError(errorMessage, 500, 'SNOWFLAKE_CONFIG_ERROR', {
+        operation: 'snowflake_pool_creation',
+        service: 'snowflake',
+        errorBody: {
+          missing_variables: missingVars,
+          all_required: Object.keys(requiredEnvVars),
+        },
+      });
     }
 
+    const privateKey = requiredEnvVars.SNOWFLAKE_API_KEY!;
     serverLogger.info('Using SNOWFLAKE_API_KEY from environment variable');
 
     // Pool configuration
@@ -252,20 +290,30 @@ export class SnowflakeService {
     const maxConnections = Number(process.env['SNOWFLAKE_MAX_CONNECTIONS']) || SNOWFLAKE_CONFIG.MAX_CONNECTIONS;
 
     const connectionOptions: ConnectionOptions = {
-      account: process.env['SNOWFLAKE_ACCOUNT'] as string,
-      username: process.env['SNOWFLAKE_USER'] as string,
-      role: process.env['SNOWFLAKE_ROLE'] as string,
+      account: requiredEnvVars.SNOWFLAKE_ACCOUNT!,
+      username: requiredEnvVars.SNOWFLAKE_USER!,
+      role: requiredEnvVars.SNOWFLAKE_ROLE!,
       authenticator: 'SNOWFLAKE_JWT',
       privateKey: privateKey,
       schema: 'PUBLIC',
-      database: process.env['SNOWFLAKE_DATABASE'] as string,
-      warehouse: process.env['SNOWFLAKE_WAREHOUSE'] as string,
+      database: requiredEnvVars.SNOWFLAKE_DATABASE!,
+      warehouse: requiredEnvVars.SNOWFLAKE_WAREHOUSE!,
       timeout: SNOWFLAKE_CONFIG.CONNECTION_TIMEOUT,
     };
 
     const poolOptions: PoolOptions = {
       max: maxConnections,
       min: minConnections,
+      // Validate connections before borrowing from pool to catch terminated connections
+      testOnBorrow: true,
+      // Check for idle connections every 30 seconds
+      evictionRunIntervalMillis: 30000,
+      // Close idle connections after 10 minutes
+      idleTimeoutMillis: SNOWFLAKE_CONFIG.IDLE_TIMEOUT,
+      // Maximum waiting clients when pool is exhausted
+      maxWaitingClients: 10,
+      // Timeout for acquiring a connection from pool
+      acquireTimeoutMillis: SNOWFLAKE_CONFIG.CONNECTION_ACQUIRE_TIMEOUT,
     };
 
     try {
@@ -275,23 +323,35 @@ export class SnowflakeService {
         {
           min_connections: minConnections,
           max_connections: maxConnections,
-          account: process.env['SNOWFLAKE_ACCOUNT'],
-          warehouse: process.env['SNOWFLAKE_WAREHOUSE'],
-          database: process.env['SNOWFLAKE_DATABASE'],
+          idle_timeout_ms: SNOWFLAKE_CONFIG.IDLE_TIMEOUT,
+          acquire_timeout_ms: SNOWFLAKE_CONFIG.CONNECTION_ACQUIRE_TIMEOUT,
+          test_on_borrow: true,
+          account: requiredEnvVars.SNOWFLAKE_ACCOUNT,
+          warehouse: requiredEnvVars.SNOWFLAKE_WAREHOUSE,
+          database: requiredEnvVars.SNOWFLAKE_DATABASE,
         },
         'Snowflake connection pool created successfully'
       );
 
       return pool;
     } catch (error) {
+      const errorMessage = error instanceof Error ? error.message : String(error);
       serverLogger.error(
         {
-          error: error instanceof Error ? error.message : error,
-          account: process.env['SNOWFLAKE_ACCOUNT'],
+          error: errorMessage,
+          account: requiredEnvVars.SNOWFLAKE_ACCOUNT,
         },
         'Failed to create Snowflake connection pool'
       );
-      throw error;
+      // Wrap SDK errors in MicroserviceError for proper error handling
+      throw new MicroserviceError(`Snowflake connection pool creation failed: ${errorMessage}`, 500, 'SNOWFLAKE_CONNECTION_ERROR', {
+        operation: 'snowflake_pool_creation',
+        service: 'snowflake',
+        errorBody: {
+          account: requiredEnvVars.SNOWFLAKE_ACCOUNT,
+        },
+        originalError: error instanceof Error ? error : undefined,
+      });
     }
   }
 

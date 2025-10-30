@@ -62,3 +62,25 @@ export const MAINTAINER_ACTION_ITEMS: PendingActionItem[] = [
     buttonText: 'Review Report',
   },
 ];
+
+/**
+ * Board Member action items
+ */
+export const BOARD_MEMBER_ACTION_ITEMS: PendingActionItem[] = [
+  {
+    type: 'Review Meeting Materials',
+    badge: 'Q4 Board',
+    text: 'Review Q4 Board Meeting Agenda and Materials',
+    icon: 'fa-light fa-file-check',
+    color: 'blue',
+    buttonText: 'Review',
+  },
+  {
+    type: 'Submit Survey',
+    badge: 'Due Today',
+    text: 'Submit Quarterly NPS Survey',
+    icon: 'fa-light fa-chart-line',
+    color: 'amber',
+    buttonText: 'Submit',
+  },
+];

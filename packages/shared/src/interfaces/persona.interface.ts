@@ -5,7 +5,7 @@
  * Available persona types for UI customization
  * @description Defines the different user personas that can be selected
  */
-export type PersonaType = 'core-developer' | 'maintainer' | 'projects';
+export type PersonaType = 'core-developer' | 'maintainer' | 'projects' | 'board-member';
 
 /**
  * Persona option configuration

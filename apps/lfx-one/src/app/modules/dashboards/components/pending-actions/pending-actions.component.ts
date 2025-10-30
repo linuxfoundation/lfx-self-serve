@@ -5,7 +5,7 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, output } from '@angular/core';
 import { PersonaService } from '@app/shared/services/persona.service';
 import { ButtonComponent } from '@components/button/button.component';
-import { CORE_DEVELOPER_ACTION_ITEMS, MAINTAINER_ACTION_ITEMS } from '@lfx-one/shared/constants';
+import { BOARD_MEMBER_ACTION_ITEMS, CORE_DEVELOPER_ACTION_ITEMS, MAINTAINER_ACTION_ITEMS } from '@lfx-one/shared/constants';
 
 import type { PendingActionItem } from '@lfx-one/shared/interfaces';
 
@@ -31,6 +31,8 @@ export class PendingActionsComponent {
     switch (persona) {
       case 'maintainer':
         return MAINTAINER_ACTION_ITEMS;
+      case 'board-member':
+        return BOARD_MEMBER_ACTION_ITEMS;
       case 'core-developer':
       default:
         return CORE_DEVELOPER_ACTION_ITEMS;

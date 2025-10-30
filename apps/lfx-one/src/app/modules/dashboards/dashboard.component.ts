@@ -6,6 +6,7 @@ import { PersonaService } from '@app/shared/services/persona.service';
 import { PersonaType } from '@lfx-one/shared/interfaces';
 
 import { HomeComponent } from '../pages/home/home.component';
+import { BoardMemberDashboardComponent } from './board-member/board-member-dashboard.component';
 import { CoreDeveloperDashboardComponent } from './core-developer/core-developer-dashboard.component';
 import { MaintainerDashboardComponent } from './maintainer/maintainer-dashboard.component';
 
@@ -16,7 +17,7 @@ import { MaintainerDashboardComponent } from './maintainer/maintainer-dashboard.
 @Component({
   selector: 'lfx-dashboard',
   standalone: true,
-  imports: [CoreDeveloperDashboardComponent, MaintainerDashboardComponent, HomeComponent],
+  imports: [CoreDeveloperDashboardComponent, MaintainerDashboardComponent, BoardMemberDashboardComponent, HomeComponent],
   templateUrl: './dashboard.component.html',
 })
 export class DashboardComponent {

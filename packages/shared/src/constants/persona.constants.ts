@@ -22,4 +22,9 @@ export const PERSONA_OPTIONS: PersonaOption[] = [
     label: 'Projects',
     description: 'Classic LFX interface',
   },
+  {
+    value: 'board-member',
+    label: 'Board Member',
+    description: 'Board member focused experience',
+  },
 ];

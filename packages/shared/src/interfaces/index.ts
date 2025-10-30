@@ -64,3 +64,6 @@ export * from './persona.interface';
 
 // Snowflake interfaces
 export * from './snowflake.interface';
+
+// Account interfaces
+export * from './account.interface';

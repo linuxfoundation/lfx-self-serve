@@ -176,3 +176,231 @@ export interface UserProjectsResponse {
    */
   totalProjects: number;
 }
+
+/**
+ * API response for Organization Maintainers query
+ * Provides organization-level maintainer and project statistics
+ */
+export interface OrganizationMaintainersResponse {
+  /**
+   * Total number of distinct maintainers in the organization
+   */
+  maintainers: number;
+
+  /**
+   * Total number of distinct projects with maintainers
+   */
+  projects: number;
+
+  /**
+   * Salesforce account ID for the organization
+   */
+  accountId: string;
+}
+
+/**
+ * API response for Membership Tier query
+ * Provides organization membership details including tier, dates, and pricing
+ */
+export interface MembershipTierResponse {
+  /**
+   * Membership tier level (e.g., "Platinum", "Gold", "Silver")
+   */
+  tier: string;
+
+  /**
+   * Start date of current membership period (YYYY-MM-DD format)
+   */
+  membershipStartDate: string;
+
+  /**
+   * End date of current membership period (YYYY-MM-DD format)
+   */
+  membershipEndDate: string;
+
+  /**
+   * Annual membership price in dollars
+   */
+  membershipPrice: number;
+
+  /**
+   * Membership status (e.g., "Active", "Pending", "Expired")
+   */
+  membershipStatus: string;
+
+  /**
+   * Salesforce account ID for the organization
+   */
+  accountId: string;
+}
+
+/**
+ * API response for Organization Contributors query
+ * Provides total count of active contributors for the organization
+ */
+export interface OrganizationContributorsResponse {
+  /**
+   * Total number of active contributors in the organization
+   */
+  contributors: number;
+
+  /**
+   * Salesforce account ID for the organization
+   */
+  accountId: string;
+
+  /**
+   * Organization/account name
+   */
+  accountName: string;
+
+  /**
+   * Total number of projects with contributors
+   */
+  projects: number;
+}
+
+/**
+ * Snowflake row from MEMBER_DASHBOARD_MAINTAINERS query
+ * Raw response with Snowflake naming conventions (ALL_CAPS)
+ */
+export interface MemberDashboardMaintainersRow {
+  MAINTAINERS: number;
+  PROJECTS: number;
+  ACCOUNT_ID: string;
+  ACCOUNT_NAME: string;
+}
+
+/**
+ * Snowflake row from MEMBER_DASHBOARD_MEMBERSHIP_TIER query
+ * Raw response with Snowflake naming conventions (ALL_CAPS)
+ */
+export interface MembershipTierRow {
+  PROJECT_ID: string;
+  PROJECT_NAME: string;
+  IS_PROJECT_ACTIVE: boolean;
+  ACCOUNT_ID: string;
+  ACCOUNT_NAME: string;
+  MEMBERSHIP_TIER: string;
+  MEMBERSHIP_PRICE: number;
+  CURRENT_MEMBERSHIP_START_DATE: string;
+  CURRENT_MEMBERSHIP_END_DATE: string;
+  RENEWAL_PRICE: number;
+  MEMBERSHIP_STATUS: string;
+}
+
+/**
+ * Snowflake row from MEMBER_DASHBOARD_CONTRIBUTORS query
+ * Raw response with Snowflake naming conventions (ALL_CAPS)
+ */
+export interface OrganizationContributorsRow {
+  CONTRIBUTORS: number;
+  ACCOUNT_ID: string;
+  ACCOUNT_NAME: string;
+  PROJECTS: number;
+}
+
+/**
+ * Snowflake row from project count query
+ * Raw response with Snowflake naming conventions (ALL_CAPS)
+ */
+export interface ProjectCountRow {
+  TOTAL_PROJECTS: number;
+}
+
+/**
+ * Snowflake row from MEMBER_DASHBOARD_EVENT_ATTENDANCE query
+ * Raw response with Snowflake naming conventions (ALL_CAPS)
+ */
+export interface MemberDashboardEventAttendanceRow {
+  EVENT_NAME: string;
+  EVENT_END_DATE: string;
+  ACCOUNT_ID: string;
+  ACCOUNT_NAME: string;
+  ATTENDEES: number;
+  SPEAKERS: number;
+}
+
+/**
+ * Snowflake aggregated row from MEMBER_DASHBOARD_EVENT_ATTENDANCE query
+ * Raw response with Snowflake naming conventions (ALL_CAPS) for aggregated sums
+ */
+export interface OrganizationEventAttendanceRow {
+  TOTAL_ATTENDEES: number;
+  TOTAL_SPEAKERS: number;
+  TOTAL_EVENTS: number;
+  ACCOUNT_ID: string;
+  ACCOUNT_NAME: string;
+}
+
+/**
+ * API response for Organization Event Attendance query
+ * Provides aggregated event attendance statistics
+ */
+export interface OrganizationEventAttendanceResponse {
+  /**
+   * Total number of event attendees across all events
+   */
+  totalAttendees: number;
+
+  /**
+   * Total number of speakers across all events
+   */
+  totalSpeakers: number;
+
+  /**
+   * Total number of events with participation
+   */
+  totalEvents: number;
+
+  /**
+   * Salesforce account ID for the organization
+   */
+  accountId: string;
+
+  /**
+   * Organization/account name
+   */
+  accountName: string;
+}
+
+/**
+ * Snowflake row from TECHNICAL_COMMITTEE_MEMBER_COUNT query
+ * Raw response with Snowflake naming conventions (ALL_CAPS)
+ */
+export interface TechnicalCommitteeMemberCountRow {
+  PROJECT_ID: string;
+  ACCOUNT_ID: string;
+  COUNT: number;
+}
+
+/**
+ * Snowflake aggregated row from TECHNICAL_COMMITTEE_MEMBER_COUNT query
+ * Raw response with Snowflake naming conventions (ALL_CAPS) for aggregated sum
+ */
+export interface OrganizationTechnicalCommitteeRow {
+  TOTAL_REPRESENTATIVES: number;
+  TOTAL_PROJECTS: number;
+  ACCOUNT_ID: string;
+}
+
+/**
+ * API response for Organization Technical Committee Participation query
+ * Provides total count of TOC/TSC/TAG representatives
+ */
+export interface OrganizationTechnicalCommitteeResponse {
+  /**
+   * Total number of technical committee representatives across all projects
+   */
+  totalRepresentatives: number;
+
+  /**
+   * Total number of projects with technical committee participation
+   */
+  totalProjects: number;
+
+  /**
+   * Salesforce account ID for the organization
+   */
+  accountId: string;
+}

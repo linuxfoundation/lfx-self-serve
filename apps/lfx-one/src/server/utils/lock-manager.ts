@@ -162,10 +162,9 @@ export class LockManager {
       const result = await promise;
       return result;
     } finally {
-      // Clean up lock after execution with buffer time
-      setTimeout(() => {
-        this.memoryLocks.delete(key);
-      }, SNOWFLAKE_CONFIG.LOCK_TTL_BUFFER);
+      // Remove lock immediately after execution completes
+      // No buffer time needed since we're not caching results
+      this.memoryLocks.delete(key);
     }
   }
 

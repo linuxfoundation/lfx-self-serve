@@ -3,7 +3,17 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { ActiveWeeksStreakResponse, UserCodeCommitsResponse, UserProjectsResponse, UserPullRequestsResponse } from '@lfx-one/shared/interfaces';
+import {
+  ActiveWeeksStreakResponse,
+  MembershipTierResponse,
+  OrganizationContributorsResponse,
+  OrganizationEventAttendanceResponse,
+  OrganizationMaintainersResponse,
+  OrganizationTechnicalCommitteeResponse,
+  UserCodeCommitsResponse,
+  UserProjectsResponse,
+  UserPullRequestsResponse,
+} from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of } from 'rxjs';
 
 /**
@@ -81,6 +91,107 @@ export class AnalyticsService {
         return of({
           data: [],
           totalProjects: 0,
+        });
+      })
+    );
+  }
+
+  /**
+   * Get organization-level maintainer and project statistics
+   * @param accountId - Optional account ID to filter by specific organization
+   * @returns Observable of organization maintainers response
+   */
+  public getOrganizationMaintainers(accountId?: string): Observable<OrganizationMaintainersResponse> {
+    const options = accountId ? { params: { accountId } } : {};
+    return this.http.get<OrganizationMaintainersResponse>('/api/analytics/organization-maintainers', options).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch organization maintainers:', error);
+        return of({
+          maintainers: 0,
+          projects: 0,
+          accountId: '',
+        });
+      })
+    );
+  }
+
+  /**
+   * Get organization-level contributor statistics
+   * @param accountId - Optional account ID to filter by specific organization
+   * @returns Observable of organization contributors response
+   */
+  public getOrganizationContributors(accountId?: string): Observable<OrganizationContributorsResponse> {
+    const options = accountId ? { params: { accountId } } : {};
+    return this.http.get<OrganizationContributorsResponse>('/api/analytics/organization-contributors', options).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch organization contributors:', error);
+        return of({
+          contributors: 0,
+          accountId: '',
+          accountName: '',
+          projects: 0,
+        });
+      })
+    );
+  }
+
+  /**
+   * Get organization membership tier details
+   * @param accountId - Optional account ID to filter by specific organization
+   * @returns Observable of membership tier response
+   */
+  public getMembershipTier(accountId?: string): Observable<MembershipTierResponse> {
+    const options = accountId ? { params: { accountId } } : {};
+    return this.http.get<MembershipTierResponse>('/api/analytics/membership-tier', options).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch membership tier:', error);
+        return of({
+          tier: '',
+          membershipStartDate: '',
+          membershipEndDate: '',
+          membershipPrice: 0,
+          membershipStatus: '',
+          accountId: '',
+        });
+      })
+    );
+  }
+
+  /**
+   * Get organization-level event attendance statistics
+   * @param accountId - Optional account ID to filter by specific organization
+   * @returns Observable of organization event attendance response
+   */
+  public getOrganizationEventAttendance(accountId?: string): Observable<OrganizationEventAttendanceResponse> {
+    const options = accountId ? { params: { accountId } } : {};
+    return this.http.get<OrganizationEventAttendanceResponse>('/api/analytics/organization-event-attendance', options).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch organization event attendance:', error);
+        return of({
+          totalAttendees: 0,
+          totalSpeakers: 0,
+          totalEvents: 0,
+          accountId: '',
+          accountName: '',
+        });
+      })
+    );
+  }
+
+  /**
+   * Get organization-level technical committee participation statistics
+   * @param accountId - Optional account ID to filter by specific organization
+   * @returns Observable of organization technical committee response
+   */
+  public getOrganizationTechnicalCommittee(accountId?: string): Observable<OrganizationTechnicalCommitteeResponse> {
+    const options = accountId ? { params: { accountId } } : {};
+    return this.http.get<OrganizationTechnicalCommitteeResponse>('/api/analytics/organization-technical-committee', options).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch organization technical committee:', error);
+        return of({
+          totalRepresentatives: 0,
+          totalProjects: 0,
+          accountId: '',
         });
       })
     );

@@ -4,6 +4,17 @@
 import {
   ActiveWeeksStreakResponse,
   ActiveWeeksStreakRow,
+  MemberDashboardMaintainersRow,
+  MembershipTierResponse,
+  MembershipTierRow,
+  OrganizationContributorsResponse,
+  OrganizationContributorsRow,
+  OrganizationEventAttendanceResponse,
+  OrganizationEventAttendanceRow,
+  OrganizationMaintainersResponse,
+  OrganizationTechnicalCommitteeResponse,
+  OrganizationTechnicalCommitteeRow,
+  ProjectCountRow,
   ProjectItem,
   UserCodeCommitsResponse,
   UserCodeCommitsRow,
@@ -247,8 +258,7 @@ export class AnalyticsController {
         WHERE ACTIVITY_DATE >= DATEADD(DAY, -30, CURRENT_DATE())
       `;
 
-      // eslint-disable-next-line @typescript-eslint/naming-convention
-      const countResult = await this.getSnowflakeService().execute<{ TOTAL_PROJECTS: number }>(countQuery, []);
+      const countResult = await this.getSnowflakeService().execute<ProjectCountRow>(countQuery, []);
       const totalProjects = countResult.rows[0]?.TOTAL_PROJECTS || 0;
 
       // If no projects found, return empty response
@@ -335,6 +345,275 @@ export class AnalyticsController {
       res.json(response);
     } catch (error) {
       Logger.error(req, 'get_my_projects', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/organization-maintainers
+   * Get organization-level maintainer and project statistics
+   * Query params: accountId (optional) - Organization account ID
+   */
+  public async getOrganizationMaintainers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_organization_maintainers');
+
+    try {
+      // Get accountId from query params, fallback to default Microsoft Corporation
+      const accountId = (req.query['accountId'] as string) || '0014100000Te0OKAAZ';
+
+      const query = `
+        SELECT MAINTAINERS, PROJECTS, ACCOUNT_ID, ACCOUNT_NAME
+        FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MAINTAINERS
+        WHERE ACCOUNT_ID = ?
+        LIMIT 1
+      `;
+
+      const result = await this.getSnowflakeService().execute<MemberDashboardMaintainersRow>(query, [accountId]);
+
+      if (result.rows.length === 0) {
+        throw new ResourceNotFoundError('Organization maintainers data', accountId, {
+          operation: 'get_organization_maintainers',
+        });
+      }
+
+      const row = result.rows[0];
+      const response: OrganizationMaintainersResponse = {
+        maintainers: row.MAINTAINERS,
+        projects: row.PROJECTS,
+        accountId: row.ACCOUNT_ID,
+      };
+
+      Logger.success(req, 'get_organization_maintainers', startTime, {
+        account_id: accountId,
+        maintainers: response.maintainers,
+        projects: response.projects,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_organization_maintainers', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/membership-tier
+   * Get organization membership tier details including dates and pricing
+   * Query params: accountId (optional) - Organization account ID
+   */
+  public async getMembershipTier(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_membership_tier');
+
+    try {
+      // Get accountId from query params, fallback to default Microsoft Corporation
+      // TODO: Get PROJECT_ID from user profile or session
+      const projectId = 'a0941000002wBz9AAE';
+      const accountId = (req.query['accountId'] as string) || '0014100000Te0OKAAZ';
+
+      // Query for membership tier information from consolidated dashboard table
+      const query = `
+        SELECT *
+        FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
+        WHERE ACCOUNT_ID = ?
+          AND PROJECT_ID = ?
+        LIMIT 1
+      `;
+
+      const result = await this.getSnowflakeService().execute<MembershipTierRow>(query, [accountId, projectId]);
+
+      // If no data found, return 404
+      if (result.rows.length === 0) {
+        throw new ResourceNotFoundError('Membership tier data', accountId, {
+          operation: 'get_membership_tier',
+        });
+      }
+
+      const row = result.rows[0];
+
+      // Extract tier name (remove " Membership" suffix if present)
+      const tier = row.MEMBERSHIP_TIER.replace(' Membership', '');
+
+      // Build response
+      const response: MembershipTierResponse = {
+        tier,
+        membershipStartDate: row.CURRENT_MEMBERSHIP_START_DATE,
+        membershipEndDate: row.CURRENT_MEMBERSHIP_END_DATE,
+        membershipPrice: row.MEMBERSHIP_PRICE,
+        membershipStatus: row.MEMBERSHIP_STATUS,
+        accountId: row.ACCOUNT_ID,
+      };
+
+      Logger.success(req, 'get_membership_tier', startTime, {
+        account_id: accountId,
+        project_id: projectId,
+        tier: response.tier,
+        status: response.membershipStatus,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_membership_tier', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/organization-contributors
+   * Get organization-level contributor statistics
+   * Query params: accountId (optional) - Organization account ID
+   */
+  public async getOrganizationContributors(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_organization_contributors');
+
+    try {
+      // Get accountId from query params, fallback to default Microsoft Corporation
+      const accountId = (req.query['accountId'] as string) || '0014100000Te0OKAAZ';
+
+      // Query for organization contributors
+      const query = `
+        SELECT CONTRIBUTORS, ACCOUNT_ID, ACCOUNT_NAME, PROJECTS
+        FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_CONTRIBUTORS
+        WHERE ACCOUNT_ID = ?
+        LIMIT 1
+      `;
+
+      const result = await this.getSnowflakeService().execute<OrganizationContributorsRow>(query, [accountId]);
+
+      // If no data found, return 404
+      if (result.rows.length === 0) {
+        throw new ResourceNotFoundError('Organization contributors data', accountId, {
+          operation: 'get_organization_contributors',
+        });
+      }
+
+      const row = result.rows[0];
+
+      // Build response
+      const response: OrganizationContributorsResponse = {
+        contributors: row.CONTRIBUTORS,
+        accountId: row.ACCOUNT_ID,
+        accountName: row.ACCOUNT_NAME,
+        projects: row.PROJECTS,
+      };
+
+      Logger.success(req, 'get_organization_contributors', startTime, {
+        account_id: accountId,
+        contributors: response.contributors,
+        projects: response.projects,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_organization_contributors', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/organization-event-attendance
+   * Get organization event attendance statistics (total attendees and speakers)
+   * Query params: accountId (optional) - Organization account ID
+   */
+  public async getOrganizationEventAttendance(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_organization_event_attendance');
+
+    try {
+      // Get accountId from query params, fallback to default Microsoft Corporation
+      const accountId = (req.query['accountId'] as string) || '0014100000Te0OKAAZ';
+
+      const query = `
+        SELECT
+          SUM(ATTENDEES) AS TOTAL_ATTENDEES,
+          SUM(SPEAKERS) AS TOTAL_SPEAKERS,
+          COUNT(*) AS TOTAL_EVENTS,
+          MAX(ACCOUNT_ID) AS ACCOUNT_ID,
+          MAX(ACCOUNT_NAME) AS ACCOUNT_NAME
+        FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_EVENT_ATTENDANCE
+        WHERE ACCOUNT_ID = ?
+        GROUP BY ACCOUNT_ID
+      `;
+
+      const result = await this.getSnowflakeService().execute<OrganizationEventAttendanceRow>(query, [accountId]);
+
+      if (result.rows.length === 0) {
+        throw new ResourceNotFoundError('Organization event attendance data', accountId, {
+          operation: 'get_organization_event_attendance',
+        });
+      }
+
+      const row = result.rows[0];
+      const response: OrganizationEventAttendanceResponse = {
+        totalAttendees: row.TOTAL_ATTENDEES,
+        totalSpeakers: row.TOTAL_SPEAKERS,
+        totalEvents: row.TOTAL_EVENTS,
+        accountId: row.ACCOUNT_ID,
+        accountName: row.ACCOUNT_NAME,
+      };
+
+      Logger.success(req, 'get_organization_event_attendance', startTime, {
+        account_id: accountId,
+        total_attendees: response.totalAttendees,
+        total_speakers: response.totalSpeakers,
+        total_events: response.totalEvents,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_organization_event_attendance', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/organization-technical-committee
+   * Get organization-level technical committee participation (TOC/TSC/TAG representatives)
+   * Query params: accountId (optional) - Organization account ID
+   */
+  public async getOrganizationTechnicalCommittee(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_organization_technical_committee');
+
+    try {
+      // Get accountId from query params, fallback to default Microsoft Corporation
+      const accountId = (req.query['accountId'] as string) || '0014100000Te0OKAAZ';
+
+      // Query with SQL aggregation for better performance
+      const query = `
+        SELECT
+          SUM(COUNT) AS TOTAL_REPRESENTATIVES,
+          COUNT(DISTINCT PROJECT_ID) AS TOTAL_PROJECTS,
+          MAX(ACCOUNT_ID) AS ACCOUNT_ID
+        FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM_LFX_ONE.TECHNICAL_COMMITTEE_MEMBER_COUNT
+        WHERE ACCOUNT_ID = ?
+        GROUP BY ACCOUNT_ID
+      `;
+
+      const result = await this.getSnowflakeService().execute<OrganizationTechnicalCommitteeRow>(query, [accountId]);
+
+      // If no data found, return 404
+      if (result.rows.length === 0) {
+        throw new ResourceNotFoundError('Organization technical committee data', accountId, {
+          operation: 'get_organization_technical_committee',
+        });
+      }
+
+      const row = result.rows[0];
+
+      // Build response
+      const response: OrganizationTechnicalCommitteeResponse = {
+        totalRepresentatives: row.TOTAL_REPRESENTATIVES,
+        totalProjects: row.TOTAL_PROJECTS,
+        accountId: row.ACCOUNT_ID,
+      };
+
+      Logger.success(req, 'get_organization_technical_committee', startTime, {
+        account_id: accountId,
+        total_representatives: response.totalRepresentatives,
+        total_projects: response.totalProjects,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_organization_technical_committee', startTime, error);
       next(error);
     }
   }
