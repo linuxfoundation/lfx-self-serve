@@ -179,9 +179,3 @@ export function normalizeToUrl(input: string): string | null {
 
   return null;
 }
-
-/**
- * URL regex pattern for link creation (kept for backward compatibility)
- * @deprecated Use extractUrls() function instead for safer URL detection
- */
-export const URL_REGEX = URL_DETECTION_REGEX;

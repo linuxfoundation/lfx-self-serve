@@ -18,45 +18,50 @@
 
   <!-- Scrollable Content -->
   <div class="flex flex-col flex-1">
-    <div class="flex flex-col gap-6 overflow-scroll max-h-[30rem]" data-testid="dashboard-my-meetings-list">
-      @if (todayMeetings().length > 0 || upcomingMeetings().length > 0) {
-        <!-- TODAY Section - only show if there are meetings today -->
-        @if (todayMeetings().length > 0) {
-          <div>
-            <h4 class="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wide">Today</h4>
-            <div class="flex flex-col gap-3">
-              @for (item of todayMeetings(); track item.meeting.uid) {
-                <lfx-dashboard-meeting-card
-                  [meeting]="item.meeting"
-                  [occurrence]="item.occurrence"
-                  (onSeeMeeting)="handleSeeMeeting($event)"
-                  [attr.data-testid]="'dashboard-my-meetings-today-item-' + item.meeting.uid" />
-              }
+    @if (loading()) {
+      <div class="flex flex-col gap-3" data-testid="dashboard-my-meetings-loading">
+        <p-skeleton width="100%" height="140px"></p-skeleton>
+        <p-skeleton width="100%" height="140px"></p-skeleton>
+      </div>
+    } @else {
+      <div class="flex flex-col gap-6 overflow-scroll max-h-[30rem]" data-testid="dashboard-my-meetings-list">
+        @if (todayMeetings().length > 0 || upcomingMeetings().length > 0) {
+          <!-- TODAY Section - only show if there are meetings today -->
+          @if (todayMeetings().length > 0) {
+            <div>
+              <h4 class="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wide">Today</h4>
+              <div class="flex flex-col gap-3">
+                @for (item of todayMeetings(); track item.meeting.uid) {
+                  <lfx-dashboard-meeting-card
+                    [meeting]="item.meeting"
+                    [occurrence]="item.occurrence"
+                    [attr.data-testid]="'dashboard-my-meetings-today-item-' + item.meeting.uid" />
+                }
+              </div>
             </div>
-          </div>
-        }
+          }
 
-        <!-- UPCOMING Section - only show if there are upcoming meetings -->
-        @if (upcomingMeetings().length > 0) {
-          <div>
-            <h4 class="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wide">Upcoming</h4>
-            <div class="flex flex-col gap-3">
-              @for (item of upcomingMeetings(); track item.meeting.uid) {
-                <lfx-dashboard-meeting-card
-                  [meeting]="item.meeting"
-                  [occurrence]="item.occurrence"
-                  (onSeeMeeting)="handleSeeMeeting($event)"
-                  [attr.data-testid]="'dashboard-my-meetings-upcoming-item-' + item.meeting.uid" />
-              }
+          <!-- UPCOMING Section - only show if there are upcoming meetings -->
+          @if (upcomingMeetings().length > 0) {
+            <div>
+              <h4 class="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wide">Upcoming</h4>
+              <div class="flex flex-col gap-3">
+                @for (item of upcomingMeetings(); track item.meeting.uid) {
+                  <lfx-dashboard-meeting-card
+                    [meeting]="item.meeting"
+                    [occurrence]="item.occurrence"
+                    [attr.data-testid]="'dashboard-my-meetings-upcoming-item-' + item.meeting.uid" />
+                }
+              </div>
             </div>
+          }
+        } @else {
+          <!-- Global empty state - only shows when no meetings at all -->
+          <div class="text-xs text-gray-500 py-8 text-center border-2 border-dashed border-gray-300 rounded-lg" data-testid="dashboard-my-meetings-empty">
+            No meetings scheduled
           </div>
         }
-      } @else {
-        <!-- Global empty state - only shows when no meetings at all -->
-        <div class="text-xs text-gray-500 py-8 text-center border-2 border-dashed border-gray-300 rounded-lg" data-testid="dashboard-my-meetings-empty">
-          No meetings scheduled
-        </div>
-      }
-    </div>
+      </div>
+    }
   </div>
 </section>

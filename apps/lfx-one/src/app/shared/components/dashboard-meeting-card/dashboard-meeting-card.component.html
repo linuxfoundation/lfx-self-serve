@@ -2,74 +2,77 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Card wrapper with border and shadow -->
-<div class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow" data-testid="dashboard-meeting-card">
+<div class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow relative" data-testid="dashboard-meeting-card">
+  <!-- Colored left border overlay -->
+  <div aria-hidden="true" class="absolute border border-l-4 border-solid inset-0 pointer-events-none rounded-xl" [ngClass]="borderColorClass()"></div>
   <div class="p-4 space-y-3">
-    <!-- Header with meeting type and feature icons -->
-    <div class="flex items-start justify-between gap-2">
-      <div class="flex items-center gap-2 flex-wrap">
-        <span [class]="meetingTypeInfo().className + ' text-xs px-2 py-1 font-medium rounded'" data-testid="dashboard-meeting-card-type-badge">
-          {{ meetingTypeInfo().label }}
-        </span>
-        @if (meeting().project_name) {
-          <span class="border border-gray-300 bg-white text-gray-700 text-xs px-2 py-1 font-medium rounded" data-testid="dashboard-meeting-card-project-badge">
-            {{ meeting().project_name }}
-          </span>
-        }
-      </div>
-      <div class="flex items-center gap-1">
-        @if (hasYoutubeUploads()) {
-          <div
-            class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center"
-            pTooltip="YouTube Auto-Upload Enabled"
-            tooltipPosition="top"
-            data-testid="dashboard-meeting-card-youtube-icon">
-            <i class="fa-light fa-upload text-xs text-gray-800"></i>
-          </div>
-        }
-        @if (hasRecording()) {
-          <div
-            class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center"
-            pTooltip="Recording Enabled"
-            tooltipPosition="top"
-            data-testid="dashboard-meeting-card-recording-icon">
-            <i class="fa-light fa-video text-xs text-gray-800"></i>
-          </div>
-        }
-        @if (hasTranscripts()) {
-          <div
-            class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center"
-            pTooltip="Transcripts Enabled"
-            tooltipPosition="top"
-            data-testid="dashboard-meeting-card-transcript-icon">
-            <i class="fa-light fa-file-lines text-xs text-gray-800"></i>
-          </div>
-        }
-        @if (hasAiSummary()) {
-          <div
-            class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center"
-            pTooltip="AI Summary Enabled"
-            tooltipPosition="top"
-            data-testid="dashboard-meeting-card-ai-icon">
-            <i class="fa-light fa-sparkles text-xs text-gray-800"></i>
-          </div>
-        }
-        @if (!isPrivate()) {
-          <div
-            class="w-6 h-6 rounded-full bg-gray-100 flex items-center justify-center"
-            pTooltip="Public Meeting"
-            tooltipPosition="top"
-            data-testid="dashboard-meeting-card-public-icon">
-            <i class="fa-light fa-users text-xs text-gray-800"></i>
-          </div>
-        }
-      </div>
+    <!-- Header with meeting type and project badges -->
+    <div class="flex items-center gap-2 flex-wrap">
+      <span class="text-xs px-2 py-1 font-medium rounded" [ngClass]="meetingTypeInfo().className" data-testid="dashboard-meeting-card-type-badge">
+        {{ meetingTypeInfo().label }}
+      </span>
     </div>
 
-    <!-- Meeting title -->
+    <!-- Meeting title with file icons -->
     <div class="flex items-start justify-between gap-2">
-      <h4 class="line-clamp-2 text-sm leading-5 flex-1 font-medium text-gray-900" data-testid="dashboard-meeting-card-title">
-        {{ meetingTitle() }}
-      </h4>
+      <div class="flex flex-col gap-1">
+        <h4 class="line-clamp-2 text-sm leading-tight font-medium text-gray-900" data-testid="dashboard-meeting-card-title">
+          {{ meetingTitle() }}
+        </h4>
+        <!-- Date/time with feature icons - directly under title -->
+        <div class="flex items-center gap-2 flex-wrap mt-0.5">
+          <span class="text-xs text-gray-600 whitespace-nowrap" data-testid="dashboard-meeting-card-time">
+            {{ formattedTime() }}
+          </span>
+          <div class="flex items-center gap-1">
+            @if (hasYoutubeUploads()) {
+              <div
+                class="flex p-1 hover:bg-gray-100 rounded transition-colors"
+                pTooltip="YouTube Auto-Upload Enabled"
+                tooltipPosition="top"
+                data-testid="dashboard-meeting-card-youtube-icon">
+                <i class="fa-light fa-upload text-xs text-gray-700"></i>
+              </div>
+            }
+            @if (hasRecording()) {
+              <div
+                class="flex p-1 hover:bg-gray-100 rounded transition-colors"
+                pTooltip="Recording Enabled"
+                tooltipPosition="top"
+                data-testid="dashboard-meeting-card-recording-icon">
+                <i class="fa-light fa-video text-xs text-gray-700"></i>
+              </div>
+            }
+            @if (hasTranscripts()) {
+              <div
+                class="flex p-1 hover:bg-gray-100 rounded transition-colors"
+                pTooltip="Transcripts Enabled"
+                tooltipPosition="top"
+                data-testid="dashboard-meeting-card-transcript-icon">
+                <i class="fa-light fa-file-lines text-xs text-gray-700"></i>
+              </div>
+            }
+            @if (hasAiSummary()) {
+              <div
+                class="flex p-1 hover:bg-gray-100 rounded transition-colors"
+                pTooltip="AI Summary Enabled"
+                tooltipPosition="top"
+                data-testid="dashboard-meeting-card-ai-icon">
+                <i class="fa-light fa-sparkles text-xs text-gray-700"></i>
+              </div>
+            }
+            @if (!isPrivate()) {
+              <div
+                class="flex p-1 hover:bg-gray-100 rounded transition-colors"
+                pTooltip="Public Meeting"
+                tooltipPosition="top"
+                data-testid="dashboard-meeting-card-public-icon">
+                <i class="fa-light fa-users text-xs text-gray-700"></i>
+              </div>
+            }
+          </div>
+        </div>
+      </div>
       @if (attachments().length > 0) {
         <div class="flex items-center gap-1 flex-shrink-0 mt-0.5">
           @for (attachment of attachments(); track attachment.id; let index = $index) {
@@ -77,45 +80,65 @@
               [href]="attachment.file_url"
               target="_blank"
               rel="noopener noreferrer"
-              class="w-6 h-6 rounded bg-gray-100 flex items-center justify-center hover:bg-gray-200 transition-colors"
+              class="w-6 h-6 rounded bg-blue-50 flex items-center justify-center hover:bg-blue-100 transition-colors cursor-pointer"
               [attr.data-testid]="'dashboard-meeting-card-file-icon-' + (index + 1)"
               [pTooltip]="attachment.file_name"
               tooltipPosition="top">
-              <i [class]="(attachment.mime_type || '' | fileTypeIcon) + ' text-xs text-gray-500'"></i>
+              <i class="text-xs text-primary" [ngClass]="attachment.mime_type || '' | fileTypeIcon"></i>
             </a>
           }
         </div>
       }
     </div>
 
-    <!-- Meeting time and actions -->
-    <div class="space-y-2">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-1 text-gray-600" data-testid="dashboard-meeting-card-time">
-          <i class="fa-light fa-clock text-xs"></i>
-          <span class="text-xs">{{ formattedTime() }}</span>
-        </div>
-        <lfx-button
-          label="See Meeting"
-          icon="fa-light fa-arrow-right"
-          iconPos="right"
-          (onClick)="handleSeeMeeting()"
-          styleClass="text-[#0094FF] hover:text-[#0094FF] hover:bg-blue-50 !h-7 !px-2 !text-xs !font-normal"
-          [text]="true"
-          data-testid="dashboard-meeting-card-see-button" />
-      </div>
+    <!-- Action buttons -->
+    <div class="flex gap-2">
+      <!-- See Meeting button - full width when alone, flex-1 when both buttons present -->
+      <lfx-button
+        class="w-full"
+        label="See Meeting Details"
+        [routerLink]="['/meetings', meeting().uid]"
+        [queryParams]="{ password: meeting().password || '' }"
+        target="_blank"
+        type="button"
+        rel="noopener noreferrer"
+        [styleClass]="'border border-gray-300 text-gray-900 hover:bg-gray-50 h-8 text-sm font-medium w-full'"
+        [outlined]="true"
+        icon="fa-light fa-up-right-from-square text-xs"
+        data-testid="dashboard-meeting-card-see-button" />
 
-      <!-- Join Meeting button for today's meetings -->
+      <!-- Join Meeting button - right side when present -->
       @if (isTodayMeeting()) {
-        <lfx-button
-          label="Join Meeting"
-          [routerLink]="['/meetings', meeting().uid]"
-          [queryParams]="{ password: meeting().password || '' }"
-          target="_blank"
-          type="button"
-          rel="noopener noreferrer"
-          styleClass="w-full mt-1 bg-emerald-500 hover:bg-emerald-600 text-white h-7 text-xs font-semibold"
-          data-testid="dashboard-meeting-card-join-button" />
+        @if (joinUrl()) {
+          <!-- Direct join URL available -->
+          <lfx-button
+            class="w-full"
+            size="small"
+            label="Join Meeting"
+            [href]="joinUrl()!"
+            target="_blank"
+            type="button"
+            rel="noopener noreferrer"
+            icon="fa-light fa-video"
+            styleClass="w-full bg-emerald-500 hover:bg-emerald-600 text-white h-8 text-sm font-semibold"
+            data-testid="dashboard-meeting-card-join-button" />
+        } @else {
+          <!-- Fallback: redirect to join page -->
+          <lfx-button
+            type="button"
+            size="small"
+            class="w-full"
+            label="Join Meeting"
+            [routerLink]="['/meetings', meeting().uid]"
+            [queryParams]="{ password: meeting().password || '' }"
+            target="_blank"
+            type="button"
+            type="button"
+            rel="noopener noreferrer"
+            icon="fa-light fa-video"
+            styleClass="w-full bg-emerald-500 hover:bg-emerald-600 text-white h-8 text-sm font-semibold"
+            data-testid="dashboard-meeting-card-join-button" />
+        }
       }
     </div>
   </div>

@@ -4,6 +4,7 @@
 @if (href()) {
   <a
     pButton
+    [type]="type()"
     [href]="href()"
     [target]="target()"
     [rel]="rel()"
@@ -22,7 +23,8 @@
     [icon]="icon()!"
     [pTooltip]="tooltip()"
     [tooltipPosition]="tooltipPosition()"
-    [style]="style()">
+    [style]="style()"
+    [ngClass]="styleClass()">
     <ng-content></ng-content>
   </a>
 } @else {

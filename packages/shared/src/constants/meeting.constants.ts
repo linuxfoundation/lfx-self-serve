@@ -93,6 +93,111 @@ export const ARTIFACT_VISIBILITY_OPTIONS = [
   { label: 'Public', value: ArtifactVisibility.PUBLIC },
 ];
 
+/**
+ * Meeting type color configuration
+ * @description Defines colors, icons, and styling for meeting type badges and borders
+ */
+export interface MeetingTypeConfig {
+  /** Display label for the meeting type */
+  label: string;
+  /** Background color class (e.g., bg-purple-100) */
+  bgColor: string;
+  /** Text color class - 600 shade (e.g., text-purple-600) */
+  textColor: string;
+  /** Text color class - 500 shade (e.g., text-purple-500) for alternate styling */
+  textColorAlt: string;
+  /** Border color class - 500 shade (e.g., border-purple-500) */
+  borderColor: string;
+  /** Border color class - 300 shade (e.g., border-purple-300) for lighter borders */
+  borderColorLight: string;
+  /** Font Awesome icon class */
+  icon: string;
+}
+
+/**
+ * Meeting type badge interface
+ * @description Structure for meeting type badge display
+ */
+export interface MeetingTypeBadge {
+  label: string;
+  className: string;
+}
+
+/**
+ * Meeting type color mappings
+ * @description Maps meeting types to their associated colors, icons, and styling for UI display
+ */
+export const MEETING_TYPE_CONFIGS: Record<string, MeetingTypeConfig> = {
+  technical: {
+    label: 'Technical',
+    bgColor: 'bg-purple-100',
+    textColor: 'text-purple-600',
+    textColorAlt: 'text-purple-500',
+    borderColor: 'border-purple-500',
+    borderColorLight: 'border-purple-300',
+    icon: 'fa-light fa-code',
+  },
+  maintainers: {
+    label: 'Maintainers',
+    bgColor: 'bg-blue-100',
+    textColor: 'text-blue-600',
+    textColorAlt: 'text-blue-500',
+    borderColor: 'border-blue-500',
+    borderColorLight: 'border-blue-300',
+    icon: 'fa-light fa-gear',
+  },
+  board: {
+    label: 'Board',
+    bgColor: 'bg-red-100',
+    textColor: 'text-red-600',
+    textColorAlt: 'text-red-500',
+    borderColor: 'border-red-500',
+    borderColorLight: 'border-red-300',
+    icon: 'fa-light fa-user-check',
+  },
+  marketing: {
+    label: 'Marketing',
+    bgColor: 'bg-green-100',
+    textColor: 'text-green-600',
+    textColorAlt: 'text-green-500',
+    borderColor: 'border-green-500',
+    borderColorLight: 'border-green-300',
+    icon: 'fa-light fa-chart-line-up',
+  },
+  legal: {
+    label: 'Legal',
+    bgColor: 'bg-amber-100',
+    textColor: 'text-amber-600',
+    textColorAlt: 'text-amber-500',
+    borderColor: 'border-amber-500',
+    borderColorLight: 'border-amber-300',
+    icon: 'fa-light fa-scale-balanced',
+  },
+  other: {
+    label: 'Other',
+    bgColor: 'bg-gray-100',
+    textColor: 'text-gray-600',
+    textColorAlt: 'text-gray-500',
+    borderColor: 'border-gray-500',
+    borderColorLight: 'border-gray-300',
+    icon: 'fa-light fa-calendar-days',
+  },
+};
+
+/**
+ * Default meeting type configuration
+ * @description Fallback configuration for unrecognized meeting types
+ */
+export const DEFAULT_MEETING_TYPE_CONFIG: MeetingTypeConfig = {
+  label: 'Meeting',
+  bgColor: 'bg-gray-100',
+  textColor: 'text-gray-400',
+  textColorAlt: 'text-gray-400',
+  borderColor: 'border-gray-400',
+  borderColorLight: 'border-gray-300',
+  icon: 'fa-light fa-calendar-days',
+};
+
 // ============================================================================
 // Meeting Form Configuration Constants
 // ============================================================================

@@ -166,6 +166,19 @@ export interface MeetingOccurrence {
   duration: number;
 }
 
+/**
+ * Meeting with occurrence information
+ * @description Combines meeting details with a specific occurrence for display and sorting purposes
+ */
+export interface MeetingWithOccurrence {
+  /** Meeting details */
+  meeting: Meeting;
+  /** Specific occurrence of the meeting */
+  occurrence: MeetingOccurrence;
+  /** Timestamp for sorting meetings chronologically (milliseconds since epoch) */
+  sortTime: number;
+}
+
 export interface CreateMeetingRequest {
   // Required API fields
   project_uid: string; // UUID of the LF project
