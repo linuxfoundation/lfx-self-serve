@@ -300,7 +300,7 @@ export class MeetingRegistrantsComponent implements OnInit {
     if (!uid) return;
 
     this.meetingService
-      .getMeetingRegistrants(uid)
+      .getMeetingRegistrants(uid, false)
       .pipe(
         take(1),
         catchError((error) => {

@@ -4,9 +4,11 @@
 import {
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
+  CreateMeetingRsvpRequest,
   Meeting,
   MeetingJoinURL,
   MeetingRegistrant,
+  MeetingRsvp,
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
@@ -219,8 +221,9 @@ export class MeetingService {
 
   /**
    * Fetches all registrants for a meeting
+   * @param includeRsvp - If true, includes RSVP status for each registrant
    */
-  public async getMeetingRegistrants(req: Request, meetingUid: string): Promise<MeetingRegistrant[]> {
+  public async getMeetingRegistrants(req: Request, meetingUid: string, includeRsvp: boolean = false): Promise<MeetingRegistrant[]> {
     try {
       const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
         req,
@@ -233,16 +236,54 @@ export class MeetingService {
         }
       );
 
-      req.log.info(
-        {
-          operation: 'get_meeting_registrants',
-          meeting_uid: meetingUid,
-          registrant_count: resources.length,
-        },
-        'Meeting registrants fetched successfully'
-      );
+      let registrants = resources.map((resource) => resource.data);
 
-      return resources.map((resource) => resource.data);
+      // If include_rsvp is true, fetch RSVP data and attach to registrants
+      if (includeRsvp) {
+        try {
+          const rsvps = await this.getMeetingRsvps(req, meetingUid);
+
+          // Create a map of username to RSVP for quick lookup
+          const rsvpMap = new Map(rsvps.map((rsvp) => [rsvp.username, rsvp]));
+
+          // Attach RSVP data to each registrant
+          registrants = registrants.map((registrant) => ({
+            ...registrant,
+            rsvp: registrant.username ? rsvpMap.get(registrant.username) || null : null,
+          }));
+
+          req.log.info(
+            {
+              operation: 'get_meeting_registrants',
+              meeting_uid: meetingUid,
+              registrant_count: registrants.length,
+              rsvp_count: rsvps.length,
+              include_rsvp: true,
+            },
+            'Meeting registrants with RSVPs fetched successfully'
+          );
+        } catch (error) {
+          req.log.warn(
+            {
+              operation: 'get_meeting_registrants',
+              meeting_uid: meetingUid,
+              error: error instanceof Error ? error.message : error,
+            },
+            'Failed to fetch RSVPs for registrants, returning registrants without RSVP data'
+          );
+        }
+      } else {
+        req.log.info(
+          {
+            operation: 'get_meeting_registrants',
+            meeting_uid: meetingUid,
+            registrant_count: registrants.length,
+          },
+          'Meeting registrants fetched successfully'
+        );
+      }
+
+      return registrants;
     } catch (error) {
       req.log.error(
         {
@@ -627,6 +668,123 @@ export class MeetingService {
         'Failed to update past meeting summary'
       );
       throw error;
+    }
+  }
+
+  /**
+   * Create or update a meeting RSVP
+   */
+  public async createMeetingRsvp(req: Request, meetingUid: string, rsvpData: CreateMeetingRsvpRequest): Promise<MeetingRsvp> {
+    Logger.start(req, 'create_meeting_rsvp', {
+      meeting_uid: meetingUid,
+      response: rsvpData.response,
+      scope: rsvpData.scope,
+    });
+
+    // Backend derives user from bearer token, so we don't need to pass username/email/registrant_id
+    const requestData: CreateMeetingRsvpRequest = {
+      response: rsvpData.response,
+      scope: rsvpData.scope,
+    };
+
+    const rsvp = await this.microserviceProxy.proxyRequest<MeetingRsvp>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/rsvp`, 'POST', {}, requestData);
+
+    Logger.success(req, 'create_meeting_rsvp', Date.now(), {
+      rsvp_id: rsvp.id,
+    });
+
+    return rsvp;
+  }
+
+  /**
+   * Get user's RSVP for a meeting
+   */
+  public async getUserMeetingRsvp(req: Request, meetingUid: string): Promise<MeetingRsvp | null> {
+    Logger.start(req, 'get_user_meeting_rsvp', {
+      meeting_uid: meetingUid,
+    });
+
+    try {
+      const username = await getUsernameFromAuth(req);
+
+      if (!username) {
+        Logger.success(req, 'get_user_meeting_rsvp', Date.now(), {
+          found: false,
+          reason: 'no_username',
+        });
+        return null;
+      }
+
+      const params = {
+        tags: `username:${username}`,
+        type: 'meeting_rsvp',
+        order_by: 'updated_at',
+        order_direction: 'desc',
+      };
+
+      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        params
+      );
+
+      // Filter by meeting_uid
+      const matchingRsvps = resources.filter((r) => r.data.meeting_uid === meetingUid);
+
+      if (matchingRsvps.length === 0) {
+        Logger.success(req, 'get_user_meeting_rsvp', Date.now(), {
+          found: false,
+        });
+        return null;
+      }
+
+      // Return the most recent RSVP for this meeting (first one due to desc sort)
+      const rsvp = matchingRsvps[0].data;
+
+      Logger.success(req, 'get_user_meeting_rsvp', Date.now(), {
+        found: true,
+        rsvp_id: rsvp.id,
+      });
+
+      return rsvp;
+    } catch (error) {
+      Logger.error(req, 'get_user_meeting_rsvp', Date.now(), error);
+      return null;
+    }
+  }
+
+  /**
+   * Get all RSVPs for a meeting
+   */
+  public async getMeetingRsvps(req: Request, meetingUid: string): Promise<MeetingRsvp[]> {
+    Logger.start(req, 'get_meeting_rsvps', {
+      meeting_uid: meetingUid,
+    });
+
+    try {
+      const params = {
+        tags: `meeting_uid:${meetingUid}`,
+        type: 'meeting_rsvp',
+      };
+
+      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        params
+      );
+
+      Logger.success(req, 'get_meeting_rsvps', Date.now(), {
+        count: resources.length,
+      });
+
+      return resources.map((resource) => resource.data);
+    } catch (error) {
+      Logger.error(req, 'get_meeting_rsvps', Date.now(), error);
+      return [];
     }
   }
 
