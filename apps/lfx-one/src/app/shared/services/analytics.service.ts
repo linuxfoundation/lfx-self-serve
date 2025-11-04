@@ -5,11 +5,10 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
   ActiveWeeksStreakResponse,
-  MembershipTierResponse,
-  OrganizationContributorsResponse,
-  OrganizationEventAttendanceResponse,
-  OrganizationMaintainersResponse,
-  OrganizationTechnicalCommitteeResponse,
+  BoardMemberDashboardResponse,
+  OrganizationContributionsOverviewResponse,
+  OrganizationEventsOverviewResponse,
+  OrganizationSegmentOverviewResponse,
   UserCodeCommitsResponse,
   UserProjectsResponse,
   UserPullRequestsResponse,
@@ -97,80 +96,31 @@ export class AnalyticsService {
   }
 
   /**
-   * Get organization-level maintainer and project statistics
+   * Get consolidated organization contributions overview (maintainers + contributors) in a single API call
+   * Optimized endpoint that reduces API roundtrips by combining related metrics
    * @param accountId - Optional account ID to filter by specific organization
-   * @returns Observable of organization maintainers response
+   * @returns Observable of consolidated contributions overview response
+   *
+   * Generated with [Claude Code](https://claude.ai/code)
    */
-  public getOrganizationMaintainers(accountId?: string): Observable<OrganizationMaintainersResponse> {
+  public getOrganizationContributionsOverview(accountId?: string): Observable<OrganizationContributionsOverviewResponse> {
     const options = accountId ? { params: { accountId } } : {};
-    return this.http.get<OrganizationMaintainersResponse>('/api/analytics/organization-maintainers', options).pipe(
+    return this.http.get<OrganizationContributionsOverviewResponse>('/api/analytics/organization-contributions-overview', options).pipe(
       catchError((error) => {
-        console.error('Failed to fetch organization maintainers:', error);
+        console.error('Failed to fetch organization contributions overview:', error);
         return of({
-          maintainers: 0,
-          projects: 0,
-          accountId: '',
-        });
-      })
-    );
-  }
-
-  /**
-   * Get organization-level contributor statistics
-   * @param accountId - Optional account ID to filter by specific organization
-   * @returns Observable of organization contributors response
-   */
-  public getOrganizationContributors(accountId?: string): Observable<OrganizationContributorsResponse> {
-    const options = accountId ? { params: { accountId } } : {};
-    return this.http.get<OrganizationContributorsResponse>('/api/analytics/organization-contributors', options).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch organization contributors:', error);
-        return of({
-          contributors: 0,
-          accountId: '',
-          accountName: '',
-          projects: 0,
-        });
-      })
-    );
-  }
-
-  /**
-   * Get organization membership tier details
-   * @param accountId - Optional account ID to filter by specific organization
-   * @returns Observable of membership tier response
-   */
-  public getMembershipTier(accountId?: string): Observable<MembershipTierResponse> {
-    const options = accountId ? { params: { accountId } } : {};
-    return this.http.get<MembershipTierResponse>('/api/analytics/membership-tier', options).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch membership tier:', error);
-        return of({
-          tier: '',
-          membershipStartDate: '',
-          membershipEndDate: '',
-          membershipPrice: 0,
-          membershipStatus: '',
-          accountId: '',
-        });
-      })
-    );
-  }
-
-  /**
-   * Get organization-level event attendance statistics
-   * @param accountId - Optional account ID to filter by specific organization
-   * @returns Observable of organization event attendance response
-   */
-  public getOrganizationEventAttendance(accountId?: string): Observable<OrganizationEventAttendanceResponse> {
-    const options = accountId ? { params: { accountId } } : {};
-    return this.http.get<OrganizationEventAttendanceResponse>('/api/analytics/organization-event-attendance', options).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch organization event attendance:', error);
-        return of({
-          totalAttendees: 0,
-          totalSpeakers: 0,
-          totalEvents: 0,
+          maintainers: {
+            maintainers: 0,
+            projects: 0,
+          },
+          contributors: {
+            contributors: 0,
+            projects: 0,
+          },
+          technicalCommittee: {
+            totalRepresentatives: 0,
+            totalProjects: 0,
+          },
           accountId: '',
           accountName: '',
         });
@@ -179,19 +129,91 @@ export class AnalyticsService {
   }
 
   /**
-   * Get organization-level technical committee participation statistics
+   * Get consolidated organization segment overview (projects participating + total commits) in a single API call
+   * Optimized endpoint that reduces API roundtrips by combining related metrics
    * @param accountId - Optional account ID to filter by specific organization
-   * @returns Observable of organization technical committee response
+   * @returns Observable of consolidated segment overview response
+   *
+   * Generated with [Claude Code](https://claude.ai/code)
    */
-  public getOrganizationTechnicalCommittee(accountId?: string): Observable<OrganizationTechnicalCommitteeResponse> {
+  public getOrganizationSegmentOverview(accountId?: string): Observable<OrganizationSegmentOverviewResponse> {
     const options = accountId ? { params: { accountId } } : {};
-    return this.http.get<OrganizationTechnicalCommitteeResponse>('/api/analytics/organization-technical-committee', options).pipe(
+    return this.http.get<OrganizationSegmentOverviewResponse>('/api/analytics/organization-segment-overview', options).pipe(
       catchError((error) => {
-        console.error('Failed to fetch organization technical committee:', error);
+        console.error('Failed to fetch organization segment overview:', error);
         return of({
-          totalRepresentatives: 0,
-          totalProjects: 0,
+          projectsParticipating: 0,
+          totalCommits: 0,
           accountId: '',
+          segmentId: '',
+        });
+      })
+    );
+  }
+
+  /**
+   * Get consolidated board member dashboard data (membership tier + certified employees + board meeting attendance)
+   * Optimized endpoint that reduces API roundtrips by combining related metrics in a single API call
+   * @param accountId - Optional account ID to filter by specific organization
+   * @returns Observable of consolidated board member dashboard response
+   *
+   * Generated with [Claude Code](https://claude.ai/code)
+   */
+  public getBoardMemberDashboard(accountId?: string): Observable<BoardMemberDashboardResponse> {
+    const options = accountId ? { params: { accountId } } : {};
+    return this.http.get<BoardMemberDashboardResponse>('/api/analytics/board-member-dashboard', options).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch board member dashboard:', error);
+        return of({
+          membershipTier: {
+            tier: '',
+            membershipStartDate: '',
+            membershipEndDate: '',
+            membershipStatus: '',
+          },
+          certifiedEmployees: {
+            certifications: 0,
+            certifiedEmployees: 0,
+          },
+          boardMeetingAttendance: {
+            totalMeetings: 0,
+            attendedMeetings: 0,
+            notAttendedMeetings: 0,
+            attendancePercentage: 0,
+          },
+          accountId: '',
+          projectId: '',
+        });
+      })
+    );
+  }
+
+  /**
+   * Get consolidated organization events overview (event attendance + event sponsorships) in a single API call
+   * Optimized endpoint that reduces API roundtrips by combining related event metrics
+   * @param accountId - Optional account ID to filter by specific organization
+   * @returns Observable of consolidated events overview response
+   *
+   * Generated with [Claude Code](https://claude.ai/code)
+   */
+  public getOrganizationEventsOverview(accountId?: string): Observable<OrganizationEventsOverviewResponse> {
+    const options = accountId ? { params: { accountId } } : {};
+    return this.http.get<OrganizationEventsOverviewResponse>('/api/analytics/organization-events-overview', options).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch organization events overview:', error);
+        return of({
+          eventAttendance: {
+            totalAttendees: 0,
+            totalSpeakers: 0,
+            totalEvents: 0,
+            accountName: '',
+          },
+          eventSponsorships: {
+            currencySummaries: [],
+            totalEvents: 0,
+          },
+          accountId: '',
+          projectId: '',
         });
       })
     );

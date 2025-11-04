@@ -37,14 +37,6 @@ export class SnowflakeService {
     // Initialize lock manager with configured strategy
     const lockStrategy = (process.env['SNOWFLAKE_LOCK_STRATEGY'] || 'memory') as SnowflakeLockStrategy;
     this.lockManager = new LockManager(lockStrategy);
-
-    serverLogger.info(
-      {
-        lock_strategy: lockStrategy,
-        snowflake_log_level: logLevel,
-      },
-      'SnowflakeService initialized'
-    );
   }
 
   /**

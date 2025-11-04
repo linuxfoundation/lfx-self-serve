@@ -5,9 +5,10 @@ import { SNOWFLAKE_CONFIG } from '@lfx-one/shared/constants';
 import { SnowflakeLockStrategy } from '@lfx-one/shared/enums';
 import { LockEntry, LockStats } from '@lfx-one/shared/interfaces';
 import crypto from 'crypto';
-import type { Bind } from 'snowflake-sdk';
 
 import { serverLogger } from '../server';
+
+import type { Bind } from 'snowflake-sdk';
 
 /**
  * Lock manager for query deduplication (fetch lock pattern)
@@ -33,13 +34,11 @@ export class LockManager {
 
     if (strategy === SnowflakeLockStrategy.MEMORY) {
       this.startCleanup();
-      serverLogger.info({ strategy: 'memory' }, 'LockManager initialized with in-memory strategy');
     }
 
     // Future Redis integration
     // if (strategy === SnowflakeLockStrategy.REDIS) {
     //   this.redisClient = new Redis(process.env['REDIS_URL']);
-    //   serverLogger.info({ strategy: 'redis' }, 'LockManager initialized with Redis strategy');
     // }
   }
 

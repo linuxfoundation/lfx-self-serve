@@ -14,48 +14,40 @@ const generateTrendData = (months: number, baseValue: number): number[] => {
 };
 
 /**
- * Primary metrics for board member organization involvement
- * Matches the React implementation for CNCF Overview page
+ * Primary metrics configuration for board member organization involvement
+ * NOTE: This contains only UI configuration (icons, chart styling). All data values come from live API.
+ * This serves as a configuration template matched by title to determine visual presentation.
  */
 export const PRIMARY_INVOLVEMENT_METRICS: PrimaryInvolvementMetric[] = [
   {
-    // NOTE: All membership tier values are placeholders - replaced with real Snowflake data in component
     title: 'Membership Tier',
-    value: 'Silver',
-    subtitle: 'since January 2024',
-    tier: 'Silver',
-    tierSince: 'January 2024',
-    annualFee: '$0',
-    nextDue: 'January 1, 2025',
+    icon: 'fa-light fa-badge-check',
     isMembershipTier: true,
+    // All membership data (tier, dates, fees) comes from getBoardMemberDashboard API
   },
   {
     title: 'Event Sponsorship',
-    value: '$250K',
-    subtitle: '8 events sponsored this year',
     icon: 'fa-light fa-dollar-sign',
-    sparklineData: generateTrendData(12, 250000),
-    sparklineColor: '#0094FF',
+    sparklineData: generateTrendData(12, 60), // TODO: Replace with API trend data
+    sparklineColor: '#0094FF', // TODO: Replace with API color
     chartType: 'line' as const,
+    // All event data (amounts, counts) comes from getOrganizationEventsOverview API
   },
   {
     title: 'Active Contributors',
-    value: '847',
-    subtitle: 'Contributors from our organization',
     icon: 'fa-light fa-users',
-    sparklineData: [645, 678, 702, 725, 748, 771, 794, 812, 829, 835, 842, 847],
-    sparklineColor: '#0094FF',
+    sparklineData: generateTrendData(12, 60), // TODO: Replace with API trend data
+    sparklineColor: '#0094FF', // TODO: Replace with API color
     chartType: 'line' as const,
+    // All contributor data comes from getOrganizationContributionsOverview API
   },
   {
-    // NOTE: Value and subtitle are placeholder - replaced with real Snowflake data in component
     title: 'Maintainers',
-    value: '60',
-    subtitle: 'Across multiple projects',
     icon: 'fa-light fa-user-check',
-    sparklineData: generateTrendData(12, 60),
-    sparklineColor: '#0094FF',
+    sparklineData: generateTrendData(12, 60), // TODO: Replace with API trend data
+    sparklineColor: '#0094FF', // TODO: Replace with API color
     chartType: 'line' as const,
+    // All maintainer data comes from getOrganizationContributionsOverview API
   },
 ];
 

@@ -3,21 +3,40 @@
 
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
-import { UserMetadata, UserMetadataUpdateRequest, UserMetadataUpdateResponse } from '@lfx-one/shared/interfaces';
+import {
+  ActiveWeeksStreakResponse,
+  ActiveWeeksStreakRow,
+  ProjectCountRow,
+  ProjectItem,
+  UserCodeCommitsResponse,
+  UserCodeCommitsRow,
+  UserMetadata,
+  UserMetadataUpdateRequest,
+  UserMetadataUpdateResponse,
+  UserProjectActivityRow,
+  UserProjectsResponse,
+  UserPullRequestsResponse,
+  UserPullRequestsRow,
+} from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
 import { serverLogger } from '../server';
 import { NatsService } from './nats.service';
+import { SnowflakeService } from './snowflake.service';
 
 /**
- * Service for handling user-related operations
+ * Service for handling user-related operations and user analytics
+ *
+ * Generated with [Claude Code](https://claude.ai/code)
  */
 export class UserService {
   private natsService: NatsService;
+  private snowflakeService: SnowflakeService;
 
   public constructor() {
     this.natsService = new NatsService();
+    this.snowflakeService = new SnowflakeService();
   }
 
   /**
@@ -218,6 +237,207 @@ export class UserService {
   public async shutdown(): Promise<void> {
     serverLogger.info('Shutting down user service');
     await this.natsService.shutdown();
+  }
+
+  /**
+   * Get active weeks streak data for a user
+   * @param userEmail - User's email address
+   * @returns Active weeks streak data with current streak calculation
+   */
+  public async getActiveWeeksStreak(userEmail: string): Promise<ActiveWeeksStreakResponse> {
+    const query = `
+      SELECT WEEKS_AGO, IS_ACTIVE
+      FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM_LFX_ONE.ACTIVE_WEEKS_STREAK
+      WHERE EMAIL = ?
+      ORDER BY WEEKS_AGO ASC
+      LIMIT 52
+    `;
+
+    const result = await this.snowflakeService.execute<ActiveWeeksStreakRow>(query, [userEmail]);
+
+    if (result.rows.length === 0) {
+      throw new ResourceNotFoundError('Active weeks streak data', userEmail, {
+        operation: 'get_active_weeks_streak',
+      });
+    }
+
+    // Calculate current streak (consecutive weeks of activity from week 0)
+    // Data is ordered by WEEKS_AGO ASC, so index 0 is week 0 (current week)
+    let currentStreak = 0;
+
+    for (const row of result.rows) {
+      if (row.IS_ACTIVE === 1) {
+        currentStreak++;
+      } else {
+        break; // Stop at first inactive week
+      }
+    }
+
+    return {
+      data: result.rows,
+      currentStreak,
+      totalWeeks: result.rows.length,
+    };
+  }
+
+  /**
+   * Get pull requests merged activity data for a user
+   * @param userEmail - User's email address
+   * @returns Pull requests merged data for last 30 days
+   */
+  public async getPullRequestsMerged(userEmail: string): Promise<UserPullRequestsResponse> {
+    // Use window function to calculate total in SQL for accuracy
+    // Filter for last 30 days of data
+    const query = `
+      SELECT
+        ACTIVITY_DATE,
+        DAILY_COUNT,
+        SUM(DAILY_COUNT) OVER () as TOTAL_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.USER_PULL_REQUESTS
+      WHERE EMAIL = ?
+        AND ACTIVITY_DATE >= DATEADD(DAY, -30, CURRENT_DATE())
+      ORDER BY ACTIVITY_DATE ASC
+    `;
+
+    const result = await this.snowflakeService.execute<UserPullRequestsRow>(query, [userEmail]);
+
+    if (result.rows.length === 0) {
+      throw new ResourceNotFoundError('Pull requests data', userEmail, {
+        operation: 'get_pull_requests_merged',
+      });
+    }
+
+    // Get total from SQL calculation (same value on all rows from window function)
+    const totalPullRequests = result.rows[0].TOTAL_COUNT;
+
+    return {
+      data: result.rows,
+      totalPullRequests,
+      totalDays: result.rows.length,
+    };
+  }
+
+  /**
+   * Get code commits activity data for a user
+   * @param userEmail - User's email address
+   * @returns Code commits data for last 30 days
+   */
+  public async getCodeCommits(userEmail: string): Promise<UserCodeCommitsResponse> {
+    // Use window function to calculate total in SQL for accuracy
+    // Filter for last 30 days of data
+    const query = `
+      SELECT
+        ACTIVITY_DATE,
+        DAILY_COUNT,
+        SUM(DAILY_COUNT) OVER () as TOTAL_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.USER_CODE_COMMITS
+      WHERE EMAIL = ?
+        AND ACTIVITY_DATE >= DATEADD(DAY, -30, CURRENT_DATE())
+      ORDER BY ACTIVITY_DATE ASC
+    `;
+
+    const result = await this.snowflakeService.execute<UserCodeCommitsRow>(query, [userEmail]);
+
+    if (result.rows.length === 0) {
+      throw new ResourceNotFoundError('Code commits data', userEmail, {
+        operation: 'get_code_commits',
+      });
+    }
+
+    // Get total from SQL calculation (same value on all rows from window function)
+    const totalCommits = result.rows[0].TOTAL_COUNT;
+
+    return {
+      data: result.rows,
+      totalCommits,
+      totalDays: result.rows.length,
+    };
+  }
+
+  /**
+   * Get user's projects with activity data for the last 30 days
+   * @param page - Page number (1-indexed)
+   * @param limit - Number of projects per page
+   * @returns Paginated projects with activity data
+   */
+  public async getMyProjects(page: number, limit: number): Promise<UserProjectsResponse> {
+    const offset = (page - 1) * limit;
+
+    // First, get total count of unique projects
+    const countQuery = `
+      SELECT COUNT(DISTINCT PROJECT_ID) as TOTAL_PROJECTS
+      FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM.PROJECT_CODE_ACTIVITY
+      WHERE ACTIVITY_DATE >= DATEADD(DAY, -30, CURRENT_DATE())
+    `;
+
+    const countResult = await this.snowflakeService.execute<ProjectCountRow>(countQuery, []);
+    const totalProjects = countResult.rows[0]?.TOTAL_PROJECTS || 0;
+
+    // If no projects found, return empty response
+    if (totalProjects === 0) {
+      return {
+        data: [],
+        totalProjects: 0,
+      };
+    }
+
+    // Get paginated projects with all their activity data
+    // Use CTE to first get paginated project list, then join for activity data
+    const query = `
+      WITH PaginatedProjects AS (
+        SELECT DISTINCT PROJECT_ID, PROJECT_NAME, PROJECT_SLUG
+        FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM.PROJECT_CODE_ACTIVITY
+        WHERE ACTIVITY_DATE >= DATEADD(DAY, -30, CURRENT_DATE())
+        ORDER BY PROJECT_NAME, PROJECT_ID
+        LIMIT ? OFFSET ?
+      )
+      SELECT
+        p.PROJECT_ID,
+        p.PROJECT_NAME,
+        p.PROJECT_SLUG,
+        a.ACTIVITY_DATE,
+        a.DAILY_TOTAL_ACTIVITIES,
+        a.DAILY_CODE_ACTIVITIES,
+        a.DAILY_NON_CODE_ACTIVITIES
+      FROM PaginatedProjects p
+      JOIN ANALYTICS_DEV.DEV_JEVANS_PLATINUM.PROJECT_CODE_ACTIVITY a
+        ON p.PROJECT_ID = a.PROJECT_ID
+      WHERE a.ACTIVITY_DATE >= DATEADD(DAY, -30, CURRENT_DATE())
+      ORDER BY p.PROJECT_NAME, p.PROJECT_ID, a.ACTIVITY_DATE ASC
+    `;
+
+    const result = await this.snowflakeService.execute<UserProjectActivityRow>(query, [limit, offset]);
+
+    // Group rows by PROJECT_ID and transform into ProjectItem[]
+    const projectsMap = new Map<string, ProjectItem>();
+
+    for (const row of result.rows) {
+      if (!projectsMap.has(row.PROJECT_ID)) {
+        // Initialize new project with placeholder values
+        projectsMap.set(row.PROJECT_ID, {
+          name: row.PROJECT_NAME,
+          logo: undefined, // Component will show default icon
+          role: 'Member', // Placeholder
+          affiliations: [], // Placeholder
+          codeActivities: [],
+          nonCodeActivities: [],
+          status: 'active', // Placeholder
+        });
+      }
+
+      // Add daily activity values to arrays
+      const project = projectsMap.get(row.PROJECT_ID)!;
+      project.codeActivities.push(row.DAILY_CODE_ACTIVITIES);
+      project.nonCodeActivities.push(row.DAILY_NON_CODE_ACTIVITIES);
+    }
+
+    // Convert map to array
+    const projects = Array.from(projectsMap.values());
+
+    return {
+      data: projects,
+      totalProjects,
+    };
   }
 
   /**

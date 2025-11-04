@@ -2,8 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Account } from '@lfx-one/shared/interfaces';
+
 import { SelectComponent } from '../../../shared/components/select/select.component';
 import { AccountContextService } from '../../../shared/services/account-context.service';
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
@@ -20,20 +22,21 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
 export class BoardMemberDashboardComponent {
   private readonly accountContextService = inject(AccountContextService);
 
-  protected readonly accountForm = new FormGroup({
+  public readonly form = new FormGroup({
     selectedAccountId: new FormControl<string>(this.accountContextService.selectedAccount().accountId),
   });
 
-  protected readonly availableAccounts: Signal<Account[]> = computed(() => this.accountContextService.availableAccounts);
+  public readonly availableAccounts: Signal<Account[]> = computed(() => this.accountContextService.availableAccounts);
 
-  /**
-   * Handle account selection change
-   */
-  protected handleAccountChange(event: any): void {
-    const selectedAccountId = event.value as string;
-    const selectedAccount = this.accountContextService.availableAccounts.find((acc) => acc.accountId === selectedAccountId);
-    if (selectedAccount) {
-      this.accountContextService.setAccount(selectedAccount);
-    }
+  public constructor() {
+    this.form
+      .get('selectedAccountId')
+      ?.valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((value) => {
+        const selectedAccount = this.accountContextService.availableAccounts.find((acc) => acc.accountId === value);
+        if (selectedAccount) {
+          this.accountContextService.setAccount(selectedAccount as Account);
+        }
+      });
   }
 }

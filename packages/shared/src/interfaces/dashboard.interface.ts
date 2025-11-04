@@ -58,15 +58,16 @@ export interface ProjectHealth {
 
 /**
  * Primary involvement metric configuration
- * @description Raw metric data for organization involvement primary metrics
+ * @description Configuration template for organization involvement primary metrics.
+ * Contains UI configuration (icons, chart styling). Data values are provided by API transform functions.
  */
 export interface PrimaryInvolvementMetric {
-  /** Metric title */
+  /** Metric title (used for matching to transform functions) */
   title: string;
-  /** Metric display value */
-  value: string;
-  /** Metric subtitle */
-  subtitle: string;
+  /** Metric display value (optional - provided by API in transform functions) */
+  value?: string;
+  /** Metric subtitle (optional - provided by API in transform functions) */
+  subtitle?: string;
   /** Icon class for the metric (optional for membership tier) */
   icon?: string;
   /** Sparkline data points for chart (optional for membership tier) */
@@ -79,8 +80,6 @@ export interface PrimaryInvolvementMetric {
   tier?: string;
   /** Date when membership tier started (only for membership tier metrics) */
   tierSince?: string;
-  /** Annual fee for membership (only for membership tier metrics) */
-  annualFee?: string;
   /** Next payment due date (only for membership tier metrics) */
   nextDue?: string;
   /** Flag indicating this is a membership tier metric */
@@ -156,8 +155,6 @@ export interface OrganizationInvolvementMetricWithChart {
   tier?: string;
   /** Date when membership tier started (only for membership tier metrics) */
   tierSince?: string;
-  /** Annual fee for membership (only for membership tier metrics) */
-  annualFee?: string;
   /** Next payment due date (only for membership tier metrics) */
   nextDue?: string;
   /** Flag indicating this is a membership tier metric */

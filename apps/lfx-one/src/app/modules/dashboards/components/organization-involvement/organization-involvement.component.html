@@ -40,19 +40,16 @@
                 <div class="space-y-2 pt-1">
                   <div class="flex items-center justify-between">
                     <span class="text-sm text-gray-500">Tier</span>
-                    <div class="flex items-center gap-2">
-                      <span class="px-2 py-0.5 text-xs font-medium rounded bg-gradient-to-r from-gray-400 to-gray-300 text-white border border-gray-300">
-                        {{ metric.tier }}
-                      </span>
-                      <span class="text-xs text-gray-500">since {{ metric.tierSince }}</span>
-                    </div>
+                    <span class="px-2 py-0.5 text-xs font-medium rounded bg-gradient-to-r from-gray-400 to-gray-300 text-white border border-gray-300">
+                      {{ metric.tier }}
+                    </span>
                   </div>
                   <div class="flex items-center justify-between">
-                    <span class="text-sm text-gray-500">Annual Fee</span>
-                    <span class="text-sm font-medium">{{ metric.annualFee }}</span>
+                    <span class="text-sm text-gray-500">Member Since</span>
+                    <span class="text-sm font-medium">{{ metric.tierSince }}</span>
                   </div>
                   <div class="flex items-center justify-between">
-                    <span class="text-sm text-gray-500">Next Due</span>
+                    <span class="text-sm text-gray-500">Renewal Date</span>
                     <span class="text-sm font-medium">{{ metric.nextDue }}</span>
                   </div>
                 </div>
@@ -87,7 +84,7 @@
                   }
                 }
                 <div class="space-y-0.5">
-                  <div class="text-xl font-medium">{{ metric.value | number }}</div>
+                  <div class="text-xl font-medium">{{ metric.value }}</div>
                   @if (metric.subtitle) {
                     <div class="text-xs text-gray-500">{{ metric.subtitle }}</div>
                   }
