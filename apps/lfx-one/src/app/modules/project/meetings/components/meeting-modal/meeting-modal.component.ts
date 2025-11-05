@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, inject } from '@angular/core';
+import { MeetingCardComponent } from '@components/meeting-card/meeting-card.component';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-
-import { MeetingCardComponent } from '../meeting-card/meeting-card.component';
 
 @Component({
   selector: 'lfx-meeting-modal',

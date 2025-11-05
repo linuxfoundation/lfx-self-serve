@@ -9,6 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { FullCalendarComponent } from '@components/fullcalendar/fullcalendar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MeetingCardComponent } from '@components/meeting-card/meeting-card.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -21,7 +22,6 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, debounceTime, distinctUntilChanged, of, startWith, switchMap, take, tap } from 'rxjs';
 
-import { MeetingCardComponent } from '../components/meeting-card/meeting-card.component';
 import { MeetingModalComponent } from '../components/meeting-modal/meeting-modal.component';
 
 @Component({

@@ -28,7 +28,8 @@
       "@pipes/*": ["./src/app/shared/pipes/*"],
       "@environments/*": ["./src/environments/*"],
       "@lfx-one/shared": ["../../packages/shared/src"],
-      "@lfx-one/shared/*": ["../../packages/shared/src/*"]
+      "@lfx-one/shared/*": ["../../packages/shared/src/*"],
+      "@modules/*": ["./src/app/modules/*"]
     }
   },
   "angularCompilerOptions": {

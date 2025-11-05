@@ -15,7 +15,16 @@ import { ExpandableTextComponent } from '@components/expandable-text/expandable-
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { environment } from '@environments/environment';
-import { extractUrlsWithDomains, getCurrentOrNextOccurrence, Meeting, MeetingAttachment, MeetingOccurrence, Project, User } from '@lfx-one/shared';
+import {
+  canJoinMeeting,
+  extractUrlsWithDomains,
+  getCurrentOrNextOccurrence,
+  Meeting,
+  MeetingAttachment,
+  MeetingOccurrence,
+  Project,
+  User,
+} from '@lfx-one/shared';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
@@ -122,8 +131,9 @@ export class MeetingJoinComponent {
         if (typeof window !== 'undefined' && url) {
           const newWindow = window.open(url, '_blank', 'noopener,noreferrer');
 
-          // Check if popup was blocked
-          if (!newWindow || newWindow.closed || typeof newWindow.closed === 'undefined') {
+          // With noopener, window.open() may return null even on success
+          // Only check if window.closed is explicitly true to detect popup blocking
+          if (newWindow !== null && newWindow.closed) {
             // Popup was blocked
             this.messageService.add({
               severity: 'warn',
@@ -132,11 +142,11 @@ export class MeetingJoinComponent {
               life: 5000,
             });
           } else {
-            // Popup opened successfully
+            // Window opened (or likely opened with noopener returning null)
             this.messageService.add({
               severity: 'success',
               summary: 'Meeting Opened',
-              detail: 'The meeting has been opened in a new tab.',
+              detail: "The meeting has been opened in a new tab. If you don't see it, check if popups are blocked.",
               life: 3000,
             });
           }
@@ -257,32 +267,7 @@ export class MeetingJoinComponent {
 
   private initializeCanJoinMeeting(): Signal<boolean> {
     return computed(() => {
-      const meeting = this.meeting();
-      const currentOccurrence = this.currentOccurrence();
-
-      // If we have an occurrence, use its timing
-      if (currentOccurrence) {
-        const now = new Date();
-        const startTime = new Date(currentOccurrence.start_time);
-        const earlyJoinMinutes = meeting.early_join_time_minutes || 10;
-        const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-        const latestJoinTime = new Date(startTime.getTime() + currentOccurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
-
-        return now >= earliestJoinTime && now <= latestJoinTime;
-      }
-
-      // Fallback to original meeting logic if no occurrences
-      if (!meeting?.start_time) {
-        return false;
-      }
-
-      const now = new Date();
-      const startTime = new Date(meeting.start_time);
-      const earlyJoinMinutes = meeting.early_join_time_minutes || 10; // Default to 10 minutes
-      const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
-      const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + 40 * 60000); // 40 minutes after end
-
-      return now >= earliestJoinTime && now <= latestJoinTime;
+      return canJoinMeeting(this.meeting(), this.currentOccurrence());
     });
   }
 

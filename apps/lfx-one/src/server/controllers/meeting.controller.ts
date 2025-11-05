@@ -14,7 +14,6 @@ import { NextFunction, Request, Response } from 'express';
 import { ServiceValidationError } from '../errors';
 import { Logger } from '../helpers/logger';
 import { validateUidParameter } from '../helpers/validation.helper';
-import { CommitteeService } from '../services/committee.service';
 import { MeetingService } from '../services/meeting.service';
 
 /**
@@ -22,7 +21,6 @@ import { MeetingService } from '../services/meeting.service';
  */
 export class MeetingController {
   private meetingService: MeetingService = new MeetingService();
-  private committeeService: CommitteeService = new CommitteeService();
 
   /**
    * GET /meetings
@@ -34,7 +32,7 @@ export class MeetingController {
 
     try {
       // Get the meetings
-      const meetings = await this.meetingService.getMeetings(req, req.query as Record<string, any>);
+      const meetings = await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'meeting', true);
       // TODO: Remove this once we have a way to get the registrants count
       const counts = await Promise.all(
         meetings.map(async (m) => {

@@ -72,3 +72,25 @@ html {
 a:not([pButton]) {
   @apply font-sans text-primary-700 hover:text-primary-900;
 }
+
+/* Button Styling - Secondary variant for card actions */
+.p-button.p-button-secondary {
+  @apply bg-white border border-gray-300 text-gray-900;
+
+  &:not(:disabled):hover {
+    @apply bg-gray-50 border-gray-400;
+  }
+
+  &:not(:disabled):active {
+    @apply bg-gray-100;
+  }
+}
+
+/* Small button sizing for cards */
+.p-button.p-button-sm {
+  @apply text-xs tracking-wide px-2.5 py-1.5 gap-2;
+
+  .p-button-icon {
+    @apply w-3.5 h-3.5;
+  }
+}

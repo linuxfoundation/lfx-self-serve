@@ -1,0 +1,472 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div data-testid="meeting-card-container" [class]="containerClass()">
+  <div [ngClass]="{ 'p-6': showBorder() }">
+    <!-- Header with badges and action menu -->
+    <div class="flex items-start justify-between mb-4" data-testid="meeting-details-header">
+      <div class="flex items-center gap-2 flex-wrap">
+        <!-- Privacy Badge -->
+        @if (meeting().visibility === 'private') {
+          <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-500 text-white">
+            <i class="fa-light fa-shield"></i>
+            <span>Private</span>
+          </div>
+        }
+
+        <!-- Meeting Type Badge -->
+        @if (meetingTypeBadge(); as badge) {
+          @if (badge.text !== 'None') {
+            <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium" [class]="badge.badgeClass">
+              @if (badge.icon) {
+                <i [class]="badge.icon"></i>
+              }
+              <span>{{ badge.text }}</span>
+            </div>
+          }
+        }
+
+        <!-- Recurring Badge -->
+        @if (meeting().recurrence) {
+          <div
+            class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-400 text-white"
+            pTooltip="This is a recurring meeting"
+            data-testid="recurring-badge">
+            <i class="fa-light fa-repeat"></i>
+            <span>{{ meeting().recurrence | recurrenceSummary }}</span>
+          </div>
+        }
+      </div>
+      <div class="flex items-center gap-1">
+        @if (!pastMeeting()) {
+          <lfx-button
+            icon="fa-light fa-copy"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="copy-meeting-button"
+            (click)="copyMeetingLink()"
+            tooltip="Copy Meeting"></lfx-button>
+        }
+        @if (pastMeeting() && hasRecording()) {
+          <lfx-button
+            icon="fa-light fa-video"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="view-recording-button"
+            (click)="openRecordingModal()"
+            tooltip="View Recording"></lfx-button>
+        }
+        @if (pastMeeting() && hasSummary()) {
+          <lfx-button
+            icon="fa-light fa-file-lines"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="view-summary-button"
+            (click)="openSummaryModal()"
+            tooltip="View Summary"></lfx-button>
+        }
+        @if (meeting().visibility === 'public') {
+          <lfx-button
+            icon="fa-light fa-share"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="share-meeting-button"
+            tooltip="Share Meeting"></lfx-button>
+        }
+        @if (project()?.slug && meeting().organizer) {
+          <lfx-button
+            icon="fa-light fa-edit"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="edit-meeting-button"
+            tooltip="Edit Meeting"
+            [routerLink]="['/project', project()!.slug, 'meetings', meeting().uid, 'edit']"></lfx-button>
+
+          <lfx-button
+            [icon]="loading() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis'"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="meeting-actions-button"
+            (click)="actionMenu.toggle($event)"></lfx-button>
+        }
+      </div>
+    </div>
+    <!-- Action Menu -->
+    <lfx-menu #actionMenu [model]="actionMenuItems()" [popup]="true" appendTo="body"></lfx-menu>
+
+    <!-- Meeting Title -->
+    <div class="flex items-center gap-2 mb-2" data-testid="meeting-title-section">
+      @if (occurrence()?.title || meeting().title) {
+        <h3 class="text-base font-medium text-gray-900 leading-tight tracking-tight" data-testid="meeting-title">
+          {{ occurrence()?.title || meeting().title }}
+        </h3>
+      }
+    </div>
+
+    <!-- Feature Badges with Date/Time -->
+    <div class="flex flex-wrap gap-1 mb-2" data-testid="feature-badges">
+      @if (meetingStartTime()) {
+        <div
+          class="inline-flex items-center gap-1.5 bg-gray-100/60 text-gray-600 px-2 py-0.5 h-[21px] rounded text-xs tracking-wide"
+          data-testid="meeting-datetime">
+          <i class="fa-light fa-calendar-days text-xs"></i>
+          <span class="whitespace-nowrap"
+            >{{ meetingStartTime() | meetingTime: meeting().duration : 'date' }} • {{ meetingStartTime() | meetingTime: meeting().duration : 'time' }}</span
+          >
+        </div>
+      }
+      @if (meeting().youtube_upload_enabled) {
+        <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs tracking-wide h-[21px] bg-red-50 text-red-700">
+          <i class="fa-light fa-upload text-xs"></i>
+          YouTube Upload
+        </div>
+      }
+      @if (meeting().recording_enabled) {
+        <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs tracking-wide h-[21px] bg-blue-50 text-blue-700">
+          <i class="fa-light fa-video text-xs"></i>
+          Recording
+        </div>
+      }
+      @if (meeting().transcript_enabled) {
+        <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs tracking-wide h-[21px] bg-purple-50 text-purple-700">
+          <i class="fa-light fa-file-lines text-xs"></i>
+          Transcripts
+        </div>
+      }
+      @if (meeting().zoom_config?.ai_companion_enabled) {
+        <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs tracking-wide h-[21px] bg-green-50 text-green-700">
+          <i class="fa-light fa-file-lines text-xs"></i>
+          AI Summary
+        </div>
+      }
+    </div>
+
+    <!-- Description Section -->
+    @if (occurrence()?.description || meeting().description) {
+      <div class="my-3" data-testid="meeting-description">
+        <lfx-expandable-text [maxHeight]="85">
+          <div class="text-gray-600 text-[12.25px] leading-relaxed tracking-tight">
+            <div [innerHTML]="occurrence()?.description || meeting().description | linkify"></div>
+          </div>
+        </lfx-expandable-text>
+      </div>
+    }
+
+    <!-- Two Column Info Cards -->
+    <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5" data-testid="meeting-info-cards">
+      <!-- Resources Card Column -->
+      <div class="flex flex-col">
+        <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60" data-testid="resources-card">
+          <div class="flex items-center justify-between gap-2">
+            <div class="flex items-center gap-2 text-xs tracking-wide leading-tight text-gray-600">
+              <i class="fa-light fa-paperclip text-xs"></i>
+              <span>Resources</span>
+            </div>
+            <lfx-button icon="fa-light fa-upload text-xs" label="Add" size="small" severity="secondary" data-testid="add-resource-button"> </lfx-button>
+          </div>
+
+          @if (totalResourcesCount() === 0) {
+            <div class="flex gap-2">
+              <p class="text-[12.25px] leading-tight tracking-tight text-gray-500">None</p>
+            </div>
+          } @else {
+            <div class="grid grid-cols-2 gap-1">
+              @for (attachment of attachments(); track attachment.id) {
+                <a
+                  [href]="attachment.file_url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex !text-black font-semibold items-center gap-1.5 px-2 py-1.5 bg-gray-200/80 hover:bg-gray-300/80 rounded text-[12px] tracking-wide transition-colors h-[26px]"
+                  [title]="attachment.file_name + ' (' + (attachment.file_size || 0 | fileSize) + ')'">
+                  <i [class]="(attachment.mime_type || '' | fileTypeIcon) + ' w-3.5 h-3.5 flex-shrink-0'"></i>
+                  <span class="truncate">{{ attachment.file_name }}</span>
+                </a>
+              }
+              @for (link of importantLinks(); track link.url) {
+                <a
+                  [href]="link.url"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  class="inline-flex !text-black font-semibold items-center gap-1.5 px-2 py-1.5 bg-gray-200/80 hover:bg-gray-300/80 rounded text-[12px] tracking-wide transition-colors h-[26px]"
+                  [title]="link.url">
+                  <i class="fa-light fa-arrow-up-right-from-square w-3.5 h-3.5 flex-shrink-0"></i>
+                  <span class="truncate">{{ link.domain }}</span>
+                </a>
+              }
+            </div>
+          }
+        </div>
+
+        <!-- Action Buttons for Resources Column -->
+        <!-- Join Meeting Button - Show when meeting can be joined -->
+        @if (canJoinMeeting()) {
+          <div class="flex gap-2 mt-3.5">
+            @if (joinUrl()) {
+              <!-- Direct join URL available -->
+              <lfx-button
+                size="small"
+                class="w-full"
+                label="Join Meeting"
+                [href]="joinUrl()!"
+                target="_blank"
+                rel="noopener noreferrer"
+                icon="fa-light fa-video"
+                styleClass="w-full !bg-emerald-500 hover:!bg-emerald-600 !text-white !font-semibold"
+                data-testid="join-meeting-button">
+              </lfx-button>
+            } @else {
+              <!-- Fallback: redirect to join page -->
+              <lfx-button
+                size="small"
+                class="w-full"
+                label="Join Meeting"
+                [routerLink]="['/meetings', meeting().uid]"
+                [queryParams]="{ password: meeting().password || '' }"
+                rel="noopener noreferrer"
+                icon="fa-light fa-video"
+                styleClass="w-full !bg-emerald-500 hover:!bg-emerald-600 !text-white !font-semibold"
+                data-testid="join-meeting-button">
+              </lfx-button>
+            }
+          </div>
+        }
+
+        <!-- Past Meeting Buttons -->
+        @if (pastMeeting()) {
+          <div class="flex gap-2 mt-3.5">
+            @if (hasRecording()) {
+              <lfx-button
+                icon="fa-light fa-play"
+                label="See Recording"
+                size="small"
+                severity="secondary"
+                styleClass="flex-1"
+                data-testid="see-recording-button"
+                (click)="openRecordingModal()">
+              </lfx-button>
+            }
+            @if (hasSummary()) {
+              <lfx-button
+                icon="fa-light fa-sparkles"
+                label="See AI Summary"
+                size="small"
+                severity="secondary"
+                styleClass="flex-1"
+                data-testid="see-summary-button"
+                (click)="openSummaryModal()">
+              </lfx-button>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- People/Attendees Card Column -->
+      <div class="flex flex-col">
+        <div
+          class="rounded-md p-3 space-y-2 flex-1"
+          [ngClass]="pastMeeting() && attendancePercentage() < 50 ? 'bg-amber-50 border border-amber-200' : 'bg-gray-100/60'"
+          data-testid="attendees-card">
+          <div class="flex items-center justify-between gap-2">
+            <div
+              class="flex items-center gap-2 text-xs tracking-wide"
+              [ngClass]="pastMeeting() && attendancePercentage() < 50 ? 'text-amber-600' : 'text-gray-600'">
+              <i class="fa-light fa-users text-xs"></i>
+              <span>{{ pastMeeting() ? 'Attendees' : 'People Invited' }}</span>
+            </div>
+            @if (!pastMeeting()) {
+              <lfx-button
+                icon="fa-light fa-user-plus text-xs"
+                label="Add"
+                size="small"
+                severity="secondary"
+                data-testid="add-participant-button"
+                (click)="openAddRegistrantModal()">
+              </lfx-button>
+            }
+          </div>
+
+          <div class="space-y-2">
+            <div class="flex items-center justify-between">
+              <span
+                class="text-[12.25px] leading-tight tracking-tight"
+                [ngClass]="pastMeeting() && attendancePercentage() < 50 ? 'text-amber-900' : 'text-gray-900'">
+                @if (pastMeeting()) {
+                  {{ attendedCount() }} of {{ meetingRegistrantCount() }} attended
+                } @else {
+                  {{ meeting().registrants_accepted_count || 0 }} of {{ meetingRegistrantCount() }} attending
+                }
+              </span>
+              <span class="text-gray-600 text-xs tracking-wide">{{ attendancePercentage() }}%</span>
+            </div>
+
+            <!-- Progress Bar -->
+            <div class="w-full bg-gray-200/80 rounded-full h-[5.25px] flex overflow-hidden">
+              @if (meeting().registrants_accepted_count && meeting().registrants_accepted_count > 0) {
+                <div
+                  class="h-[5.25px] transition-all duration-300 bg-blue-500"
+                  [style.width.%]="(meeting().registrants_accepted_count! / meetingRegistrantCount()) * 100"></div>
+              }
+              @if (!pastMeeting() && meeting().registrants_pending_count && meeting().registrants_pending_count > 0) {
+                <div
+                  class="h-[5.25px] transition-all duration-300 bg-amber-500"
+                  [style.width.%]="(meeting().registrants_pending_count! / meetingRegistrantCount()) * 100"></div>
+              }
+              @if (!pastMeeting() && meeting().registrants_declined_count && meeting().registrants_declined_count > 0) {
+                <div
+                  class="h-[5.25px] transition-all duration-300 bg-red-500"
+                  [style.width.%]="(meeting().registrants_declined_count! / meetingRegistrantCount()) * 100"></div>
+              }
+            </div>
+
+            <!-- Response Breakdown -->
+            @if (!pastMeeting()) {
+              <div class="flex items-center justify-between text-gray-600">
+                <div class="flex items-center gap-1">
+                  <i class="flex fa-light fa-check-circle text-xs text-blue-500"></i>
+                  <span class="text-xs tracking-wide">{{ meeting().registrants_accepted_count || 0 }} Yes</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  <i class="flex fa-light fa-question-circle text-xs text-amber-500"></i>
+                  <span class="text-xs tracking-wide">{{ meeting().registrants_pending_count || 0 }} Maybe</span>
+                </div>
+                <div class="flex items-center gap-1">
+                  <i class="flex fa-light fa-times-circle text-xs text-red-500"></i>
+                  <span class="text-xs tracking-wide">{{ meeting().registrants_declined_count || 0 }} No</span>
+                </div>
+              </div>
+            }
+
+            <!-- Poor Attendance Warning -->
+            @if (pastMeeting() && attendancePercentage() < 50) {
+              <div class="flex items-center justify-center gap-2 mt-2 pt-2">
+                <i class="fa-light fa-triangle-exclamation w-3.5 h-3.5 text-amber-600 flex-shrink-0"></i>
+                <p class="text-xs tracking-wide text-amber-900">This meeting was poorly attended</p>
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- Action Buttons for People Column -->
+        <div class="flex gap-2 mt-3.5">
+          <lfx-button
+            class="w-full"
+            icon="fa-light fa-users"
+            [label]="meetingRegistrantCount() > 0 ? 'View Guests' : 'Add Guests'"
+            size="small"
+            severity="secondary"
+            styleClass="w-full"
+            data-testid="view-guests-button"
+            (click)="onRegistrantsToggle()">
+          </lfx-button>
+          <lfx-button
+            class="w-full"
+            icon="fa-light fa-arrow-up-right-from-square"
+            label="See Meeting Details"
+            size="small"
+            severity="secondary"
+            styleClass="w-full"
+            data-testid="see-meeting-details-button"
+            [href]="'/meetings/' + meeting().uid + '?password=' + meeting().password"
+            target="_blank">
+          </lfx-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Meeting Registrants -->
+    @if (showRegistrants()) {
+      <div class="border-t border-gray-200 pt-4 mt-4" data-testid="registrants-section">
+        @if (registrantsLoading()) {
+          <div class="flex items-center justify-center py-8">
+            <i class="fa-light fa-circle-notch fa-spin text-2xl text-blue-600"></i>
+          </div>
+        }
+
+        @if (!registrantsLoading()) {
+          <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+            @if (!pastMeeting()) {
+              <!-- Add Registrant Option -->
+              <div
+                class="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors border-2 border-dashed border-blue-200 hover:border-blue-400"
+                (click)="openAddRegistrantModal()"
+                data-testid="add-registrant-button">
+                <div class="w-8 h-8 bg-blue-100 border border-blue-200 rounded-full flex items-center justify-center">
+                  <i class="fa-light fa-plus text-blue-500"></i>
+                </div>
+                <div class="flex flex-col min-w-0 flex-1">
+                  <span class="text-sm text-blue-600 font-medium">Add Guests</span>
+                  <span class="text-xs text-blue-500">Click to add new guests</span>
+                </div>
+              </div>
+            }
+
+            @if (pastMeeting()) {
+              @for (participant of pastMeetingParticipants(); track participant.uid) {
+                <div class="flex items-center gap-2 p-2 rounded-md" [attr.data-testid]="'participant-' + participant.uid">
+                  @if (participant.is_attended) {
+                    <i class="fa-light fa-check-circle text-green-500" pTooltip="Attended"></i>
+                  } @else {
+                    <i class="fa-light fa-times-circle text-red-500" pTooltip="Did Not Attend"></i>
+                  }
+                  <div class="flex flex-col min-w-0 flex-1">
+                    <div class="flex items-center gap-1 text-xs">
+                      <i class="fa-light fa-user text-blue-500" pTooltip="Participant"></i>
+                      <span class="text-sm text-gray-900 truncate">{{ participant.first_name }} {{ participant.last_name }}</span>
+                    </div>
+                    <span class="text-xs text-gray-500 truncate">{{ participant.email }}</span>
+                  </div>
+                </div>
+              }
+            } @else {
+              @for (registrant of registrants(); track registrant.uid) {
+                <div
+                  class="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors"
+                  (click)="onRegistrantEdit(registrant, $event)"
+                  [attr.data-testid]="'registrant-' + registrant.uid">
+                  <div class="relative">
+                    <lfx-avatar [label]="registrant.first_name" styleClass="bg-blue-50 border border-gray-200 w-8 h-8" shape="circle"></lfx-avatar>
+                    <div class="absolute -top-1 -right-1">
+                      @if (registrant.invite_accepted === false) {
+                        <i class="fa-solid text-xs fa-times-circle text-red-500" pTooltip="Declined Invite"></i>
+                      } @else if (!registrant.invite_accepted) {
+                        <i class="fa-solid text-xs fa-circle-question text-amber-400" pTooltip="Pending Response"></i>
+                      } @else {
+                        <i class="fa-solid text-xs fa-check-circle text-green-500" pTooltip="Invite Accepted"></i>
+                      }
+                    </div>
+                  </div>
+                  <div class="flex flex-col min-w-0 flex-1">
+                    <div class="flex items-center gap-1 text-xs">
+                      @if (registrant.type === 'committee') {
+                        <i class="fa-light fa-people-group text-green-500" pTooltip="Committee"></i>
+                      } @else {
+                        <i class="fa-light fa-user text-blue-500" pTooltip="Individual"></i>
+                      }
+                      <span class="text-sm text-gray-900 truncate">{{ registrant.first_name }} {{ registrant.last_name }}</span>
+                    </div>
+                    <span class="text-xs text-gray-500 truncate">{{ registrant.email }}</span>
+                  </div>
+                </div>
+              }
+            }
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Confirmation Dialog -->
+    <p-confirmDialog></p-confirmDialog>
+  </div>
+</div>

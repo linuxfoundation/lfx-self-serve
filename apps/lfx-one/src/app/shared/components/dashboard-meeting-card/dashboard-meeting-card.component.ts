@@ -3,12 +3,20 @@
 
 import { ClipboardModule } from '@angular/cdk/clipboard';
 import { CommonModule } from '@angular/common';
-import { HttpParams } from '@angular/common/http';
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FileTypeIconPipe } from '@app/shared/pipes/file-type-icon.pipe';
 import { ButtonComponent } from '@components/button/button.component';
-import { DEFAULT_MEETING_TYPE_CONFIG, Meeting, MeetingAttachment, MeetingOccurrence, MeetingTypeBadge, MEETING_TYPE_CONFIGS, User } from '@lfx-one/shared';
+import {
+  buildJoinUrlWithParams,
+  canJoinMeeting,
+  DEFAULT_MEETING_TYPE_CONFIG,
+  Meeting,
+  MeetingAttachment,
+  MeetingOccurrence,
+  MeetingTypeBadge,
+  MEETING_TYPE_CONFIGS,
+} from '@lfx-one/shared';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { TooltipModule } from 'primeng/tooltip';
@@ -138,6 +146,10 @@ export class DashboardMeetingCardComponent {
     return config.borderColor;
   });
 
+  public readonly canJoinMeeting: Signal<boolean> = computed(() => {
+    return canJoinMeeting(this.meeting(), this.occurrence());
+  });
+
   public constructor() {
     // Convert meeting input signal to observable and create reactive attachment stream
     const meeting$ = toObservable(this.meeting);
@@ -158,10 +170,10 @@ export class DashboardMeetingCardComponent {
 
     const joinUrl$ = combineLatest([meeting$, user$, authenticated$]).pipe(
       switchMap(([meeting, user, authenticated]) => {
-        // Only fetch join URL for today's meetings with authenticated users
-        if (meeting.uid && authenticated && user?.email && this.isTodayMeeting()) {
+        // Only fetch join URL for meetings that can be joined with authenticated users
+        if (meeting.uid && authenticated && user?.email && this.canJoinMeeting()) {
           return this.meetingService.getPublicMeetingJoinUrl(meeting.uid, meeting.password, { email: user.email }).pipe(
-            map((res) => this.buildJoinUrlWithParams(res.join_url, user)),
+            map((res) => buildJoinUrlWithParams(res.join_url, user)),
             catchError(() => of(null))
           );
         }
@@ -170,21 +182,5 @@ export class DashboardMeetingCardComponent {
     );
 
     this.joinUrl = toSignal(joinUrl$, { initialValue: null });
-  }
-
-  /**
-   * Build join URL with user parameters (matches meeting-join component logic)
-   * @param joinUrl - Base join URL from API
-   * @param user - Authenticated user
-   * @returns Join URL with encoded user parameters
-   */
-  private buildJoinUrlWithParams(joinUrl: string, user: User): string {
-    const displayName = user.name || user.email;
-    const encodedName = btoa(unescape(encodeURIComponent(displayName)));
-
-    const queryParams = new HttpParams().set('uname', displayName).set('un', encodedName);
-
-    const separator = joinUrl.includes('?') ? '&' : '?';
-    return `${joinUrl}${separator}${queryParams.toString()}`;
   }
 }

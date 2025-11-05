@@ -12,12 +12,12 @@ import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { HttpErrorResponse } from '@angular/common/http';
 
 @Component({
-  selector: 'lfx-meeting-cancel-occurrence-confirmation',
+  selector: 'lfx-cancel-occurrence-confirmation',
   standalone: true,
   imports: [CommonModule, ButtonComponent, MessageComponent, MeetingTimePipe],
-  templateUrl: './meeting-cancel-occurrence-confirmation.component.html',
+  templateUrl: './cancel-occurrence-confirmation.component.html',
 })
-export class MeetingCancelOccurrenceConfirmationComponent {
+export class CancelOccurrenceConfirmationComponent {
   private readonly dialogRef = inject(DynamicDialogRef);
   private readonly config = inject(DynamicDialogConfig);
   private readonly meetingService = inject(MeetingService);

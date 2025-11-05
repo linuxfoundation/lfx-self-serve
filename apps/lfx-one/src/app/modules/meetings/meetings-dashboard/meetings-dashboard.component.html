@@ -1,0 +1,98 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="p-8 mx-auto">
+  <div class="mb-8">
+    <h1 class="text-2xl font-serif font-semibold text-gray-900 mb-8">Meetings</h1>
+
+    <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-slate-200 p-4 -mx-0 mb-8">
+      <div class="flex flex-col lg:flex-row gap-4 lg:items-center">
+        <div class="shrink-0">
+          <div class="inline-flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5">
+            <button
+              (click)="onViewChange('list')"
+              [attr.data-testid]="'meetings-dashboard-view-toggle-list'"
+              [ngClass]="{
+                'bg-white text-slate-900 shadow-sm': currentView() === 'list',
+                'text-slate-600 hover:text-slate-900': currentView() !== 'list',
+              }"
+              class="px-2 py-1.5 rounded-md transition-all duration-200 flex items-center justify-center">
+              <i class="fa-light fa-list w-3.5 h-3.5"></i>
+            </button>
+            <button
+              (click)="onViewChange('calendar')"
+              [attr.data-testid]="'meetings-dashboard-view-toggle-calendar'"
+              [ngClass]="{
+                'bg-white text-slate-900 shadow-sm': currentView() === 'calendar',
+                'text-slate-600 hover:text-slate-900': currentView() !== 'calendar',
+              }"
+              class="px-2 py-1.5 rounded-md transition-all duration-200 flex items-center justify-center">
+              <i class="fa-light fa-calendar w-3.5 h-3.5"></i>
+            </button>
+          </div>
+        </div>
+
+        <div class="flex-1">
+          @if (meetings()) {
+            <lfx-meetings-top-bar
+              [(searchQuery)]="searchQuery"
+              [(timeFilter)]="timeFilter"
+              [(visibilityFilter)]="topBarVisibilityFilter"
+              [viewMode]="currentView()"
+              [meetings]="meetings()" />
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="min-h-[400px]">
+    @if (meetingsLoading()) {
+      <div class="p-8">
+        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+          @for (item of [0, 1, 2, 3, 4, 5]; track item) {
+            <div class="bg-white border border-slate-200 rounded-lg p-6 animate-pulse">
+              <div class="h-6 bg-slate-200 rounded mb-4 w-4/5"></div>
+              <div class="h-5 bg-slate-200 rounded mb-3"></div>
+              <div class="h-4 bg-slate-200 rounded mb-4 w-3/5"></div>
+              <div class="flex gap-2">
+                <div class="flex-1 h-8 bg-slate-200 rounded"></div>
+                <div class="flex-1 h-8 bg-slate-200 rounded"></div>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    } @else if (filteredMeetings().length === 0) {
+      <div class="flex items-center justify-center p-16 bg-white border border-dashed border-slate-300 rounded-lg">
+        <div class="text-center max-w-md">
+          <div class="text-slate-400 mb-4">
+            <i class="fa-light fa-calendar-xmark text-6xl"></i>
+          </div>
+          <h3 class="text-xl font-semibold text-slate-900 mt-4">No Meetings Found</h3>
+          <p class="text-slate-600 mt-2">Try adjusting your search or filter criteria</p>
+        </div>
+      </div>
+    } @else {
+      @if (currentView() === 'list') {
+        <div class="flex flex-col gap-4">
+          @for (meeting of filteredMeetings(); track meeting.uid; let i = $index) {
+            <lfx-meeting-card
+              [attr.id]="'meeting-' + meeting.uid"
+              [meetingInput]="meeting"
+              (meetingUpdated)="refreshMeetings()"
+              (meetingDeleted)="refreshMeetings()"
+              [pastMeeting]="timeFilter() === 'past'"
+              [showBorder]="true"></lfx-meeting-card>
+          }
+        </div>
+      }
+
+      @if (currentView() === 'calendar') {
+        <div class="flex items-center justify-center p-16 bg-white border border-slate-200 rounded-lg">
+          <p class="text-slate-600">Calendar view coming soon</p>
+        </div>
+      }
+    }
+  </div>
+</div>

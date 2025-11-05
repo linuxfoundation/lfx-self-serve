@@ -19,11 +19,19 @@ export const routes: Routes = [
         path: 'projects',
         loadComponent: () => import('./modules/pages/home/home.component').then((m) => m.HomeComponent),
       },
+      {
+        path: 'meetings',
+        loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
+      },
     ],
   },
   {
-    path: 'meetings',
-    loadChildren: () => import('./modules/meeting/meeting.routes').then((m) => m.MEETING_ROUTES),
+    path: 'meetings/not-found',
+    loadComponent: () => import('./modules/meetings/meeting-not-found/meeting-not-found.component').then((m) => m.MeetingNotFoundComponent),
+  },
+  {
+    path: 'meetings/:id',
+    loadComponent: () => import('./modules/meetings/meeting-join/meeting-join.component').then((m) => m.MeetingJoinComponent),
   },
   {
     path: 'project/:slug',

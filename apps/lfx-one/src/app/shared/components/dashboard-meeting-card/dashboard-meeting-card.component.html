@@ -2,9 +2,14 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- Card wrapper with border and shadow -->
-<div class="bg-white rounded-xl border border-gray-200 shadow-sm hover:shadow-md transition-shadow relative" data-testid="dashboard-meeting-card">
+<div
+  class="bg-white rounded-xl border-t border-r border-b border-gray-200 shadow-sm hover:shadow-md transition-shadow relative"
+  data-testid="dashboard-meeting-card">
   <!-- Colored left border overlay -->
-  <div aria-hidden="true" class="absolute border border-l-4 border-solid inset-0 pointer-events-none rounded-xl" [ngClass]="borderColorClass()"></div>
+  <div
+    aria-hidden="true"
+    class="absolute border-0 border-l-4 border-t border-b border-r border-solid inset-0 pointer-events-none rounded-xl"
+    [ngClass]="borderColorClass()"></div>
   <div class="p-4 space-y-3">
     <!-- Header with meeting type and project badges -->
     <div class="flex items-center gap-2 flex-wrap">
@@ -108,7 +113,7 @@
         data-testid="dashboard-meeting-card-see-button" />
 
       <!-- Join Meeting button - right side when present -->
-      @if (isTodayMeeting()) {
+      @if (canJoinMeeting()) {
         @if (joinUrl()) {
           <!-- Direct join URL available -->
           <lfx-button

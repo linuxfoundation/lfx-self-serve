@@ -33,10 +33,9 @@ export class MainLayoutComponent {
       routerLink: '/',
     },
     {
-      label: 'My Meetings',
+      label: 'Meetings',
       icon: 'fa-light fa-video',
-      routerLink: '/my-meetings',
-      disabled: true,
+      routerLink: '/meetings',
     },
     {
       label: 'Project Health',

@@ -161,7 +161,7 @@ const authConfig: ConfigParams = {
   authorizationParams: {
     response_type: 'code',
     audience: process.env['PCC_AUTH0_AUDIENCE'] || 'https://example.com',
-    scope: 'openid email profile access:api offline_access update:current_user_metadata',
+    scope: 'openid email profile access:api offline_access',
   },
   clientSecret: process.env['PCC_AUTH0_CLIENT_SECRET'] || 'bar',
   routes: {
