@@ -92,12 +92,13 @@
 
   <!-- Action Buttons -->
   <div class="flex justify-end gap-3">
-    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" [disabled]="isDeleting()" (click)="onCancel()"> </lfx-button>
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" [disabled]="isDeleting()" type="button" (click)="onCancel()"> </lfx-button>
 
     <lfx-button
       [label]="isDeleting() ? 'Deleting...' : 'Delete Meeting'"
       severity="danger"
       size="small"
+      type="button"
       [icon]="isDeleting() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-trash'"
       [disabled]="isDeleting()"
       (click)="onConfirm()">

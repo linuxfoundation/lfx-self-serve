@@ -20,6 +20,7 @@ import {
   getCurrentOrNextOccurrence,
   Meeting,
   MeetingAttachment,
+  MeetingCancelOccurrenceResult,
   MeetingOccurrence,
   MeetingRegistrant,
   PastMeeting,
@@ -37,8 +38,10 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 
+import { MeetingCancelOccurrenceConfirmationComponent } from '../meeting-cancel-occurrence-confirmation/meeting-cancel-occurrence-confirmation.component';
 import { MeetingCommitteeModalComponent } from '../meeting-committee-modal/meeting-committee-modal.component';
 import { MeetingDeleteConfirmationComponent, MeetingDeleteResult } from '../meeting-delete-confirmation/meeting-delete-confirmation.component';
+import { MeetingDeleteTypeSelectionComponent, MeetingDeleteTypeResult } from '../meeting-delete-type-selection/meeting-delete-type-selection.component';
 import { RecordingModalComponent } from '../recording-modal/recording-modal.component';
 import { RegistrantModalComponent } from '../registrant-modal/registrant-modal.component';
 import { SummaryModalComponent } from '../summary-modal/summary-modal.component';
@@ -464,6 +467,85 @@ export class MeetingCardComponent implements OnInit {
     const meeting = this.meeting();
     if (!meeting) return;
 
+    // Check if meeting is recurring
+    const isRecurring = !!meeting.recurrence;
+
+    if (isRecurring) {
+      // For recurring meetings, first show the delete type selection modal
+      this.dialogService
+        .open(MeetingDeleteTypeSelectionComponent, {
+          header: 'Delete Recurring Meeting',
+          width: '500px',
+          modal: true,
+          closable: true,
+          dismissableMask: true,
+          data: {
+            meeting: meeting,
+          },
+        })
+        .onClose.pipe(take(1))
+        .subscribe((typeResult: MeetingDeleteTypeResult) => {
+          if (typeResult) {
+            if (typeResult.deleteType === 'occurrence') {
+              // User wants to cancel just this occurrence
+              this.showCancelOccurrenceModal(meeting);
+            } else {
+              // User wants to delete the entire series
+              this.showDeleteMeetingModal(meeting);
+            }
+          }
+        });
+    } else {
+      // For non-recurring meetings, show delete confirmation directly
+      this.showDeleteMeetingModal(meeting);
+    }
+  }
+
+  private showCancelOccurrenceModal(meeting: Meeting): void {
+    // Prefer the explicitly selected/current occurrence; fallback to next active
+    const occurrenceToCancel = this.occurrence() ?? getCurrentOrNextOccurrence(meeting);
+
+    if (!occurrenceToCancel) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'No upcoming occurrence found to cancel.',
+      });
+      return;
+    }
+
+    this.dialogService
+      .open(MeetingCancelOccurrenceConfirmationComponent, {
+        header: 'Cancel Occurrence',
+        width: '450px',
+        modal: true,
+        closable: true,
+        dismissableMask: true,
+        data: {
+          meeting: meeting,
+          occurrence: occurrenceToCancel,
+        },
+      })
+      .onClose.pipe(take(1))
+      .subscribe((result: MeetingCancelOccurrenceResult) => {
+        if (result?.confirmed) {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: 'Meeting occurrence canceled successfully',
+          });
+          this.meetingDeleted.emit();
+        } else if (result?.error) {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: result.error,
+          });
+        }
+      });
+  }
+
+  private showDeleteMeetingModal(meeting: Meeting): void {
     this.dialogService
       .open(MeetingDeleteConfirmationComponent, {
         header: 'Delete Meeting',
@@ -477,7 +559,7 @@ export class MeetingCardComponent implements OnInit {
       })
       .onClose.pipe(take(1))
       .subscribe((result: MeetingDeleteResult) => {
-        if (result) {
+        if (result?.confirmed) {
           this.meetingDeleted.emit();
         }
       });

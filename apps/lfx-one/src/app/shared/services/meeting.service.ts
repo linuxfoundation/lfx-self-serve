@@ -201,6 +201,10 @@ export class MeetingService {
     );
   }
 
+  public cancelOccurrence(meetingId: string, occurrenceId: string): Observable<void> {
+    return this.http.delete<void>(`/api/meetings/${meetingId}/occurrences/${occurrenceId}`).pipe(take(1));
+  }
+
   public getMeetingAttachments(meetingId: string): Observable<MeetingAttachment[]> {
     return this.http.get<MeetingAttachment[]>(`/api/meetings/${meetingId}/attachments`).pipe(
       catchError((error) => {

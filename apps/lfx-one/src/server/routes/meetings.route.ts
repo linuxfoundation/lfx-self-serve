@@ -33,6 +33,9 @@ router.put('/:uid', (req, res, next) => meetingController.updateMeeting(req, res
 // DELETE /meetings/:uid - delete a meeting
 router.delete('/:uid', (req, res, next) => meetingController.deleteMeeting(req, res, next));
 
+// DELETE /meetings/:uid/occurrences/:occurrenceId - cancel a meeting occurrence
+router.delete('/:uid/occurrences/:occurrenceId', (req, res, next) => meetingController.cancelOccurrence(req, res, next));
+
 // Registrant routes
 router.get('/:uid/registrants', (req, res, next) => meetingController.getMeetingRegistrants(req, res, next));
 

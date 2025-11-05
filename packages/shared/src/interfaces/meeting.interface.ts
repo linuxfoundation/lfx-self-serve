@@ -164,6 +164,8 @@ export interface MeetingOccurrence {
   start_time: string;
   /** Meeting duration in minutes (0-600) */
   duration: number;
+  /** Whether this occurrence has been cancelled */
+  is_cancelled?: boolean;
 }
 
 /**
@@ -562,6 +564,15 @@ export interface PastMeetingParticipant {
   created_at: string;
   /** Last update timestamp */
   updated_at: string;
+}
+
+/**
+ * Result of canceling a meeting occurrence
+ * @description Contains the result of canceling a meeting occurrence
+ */
+export interface MeetingCancelOccurrenceResult {
+  confirmed: boolean;
+  error?: string;
 }
 
 /**

@@ -286,6 +286,67 @@ export class MeetingController {
   }
 
   /**
+   * DELETE /meetings/:uid/occurrences/:occurrenceId
+   */
+  public async cancelOccurrence(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, occurrenceId } = req.params;
+    const startTime = Logger.start(req, 'cancel_occurrence', {
+      meeting_uid: uid,
+      occurrence_id: occurrenceId,
+    });
+
+    try {
+      // Check if the meeting UID is provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'cancel_occurrence',
+          service: 'meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      // Check if the occurrence ID is provided
+      if (!occurrenceId) {
+        const validationError = ServiceValidationError.forField('occurrenceId', 'Occurrence ID is required', {
+          operation: 'cancel_occurrence',
+          service: 'meeting_controller',
+        });
+
+        Logger.error(req, 'cancel_occurrence', startTime, validationError, {
+          meeting_uid: uid,
+          occurrence_id: occurrenceId,
+        });
+
+        return next(validationError);
+      }
+
+      // Cancel the occurrence
+      await this.meetingService.cancelOccurrence(req, uid, occurrenceId);
+
+      // Log the success
+      Logger.success(req, 'cancel_occurrence', startTime, {
+        meeting_uid: uid,
+        occurrence_id: occurrenceId,
+        status_code: 204,
+      });
+
+      // Send the response to the client
+      res.status(204).send();
+    } catch (error) {
+      // Log the error
+      Logger.error(req, 'cancel_occurrence', startTime, error, {
+        meeting_uid: uid,
+        occurrence_id: occurrenceId,
+      });
+
+      // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
    * GET /meetings/:uid/registrants
    */
   public async getMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {

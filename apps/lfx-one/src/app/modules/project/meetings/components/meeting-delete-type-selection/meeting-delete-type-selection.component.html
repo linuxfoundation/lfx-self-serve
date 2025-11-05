@@ -1,0 +1,76 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="meeting-delete-type-selection">
+  <!-- Description -->
+  <div class="mb-6">
+    <p class="text-gray-700">This is a recurring meeting. Would you like to cancel just this occurrence or delete the entire meeting series?</p>
+  </div>
+
+  <!-- Selection Options -->
+  <div class="space-y-3 mb-6">
+    <div
+      class="border rounded-lg p-4 cursor-pointer transition-all"
+      [ngClass]="{
+        'border-blue-500 bg-blue-50': selectedType === 'occurrence',
+        'border-gray-200': selectedType !== 'occurrence',
+      }"
+      (click)="selectType('occurrence')"
+      data-testid="delete-type-occurrence-option">
+      <div class="flex items-start gap-3">
+        <div class="mt-1">
+          <i
+            class="fa-light text-lg"
+            [ngClass]="{
+              'fa-circle-dot text-blue-500': selectedType === 'occurrence',
+              'fa-circle text-gray-400': selectedType !== 'occurrence',
+            }"></i>
+        </div>
+        <div class="flex-1">
+          <h4 class="font-semibold text-gray-900 mb-1">Cancel This Occurrence</h4>
+          <p class="text-sm text-gray-600">Only this specific meeting instance will be canceled. The rest of the series will remain.</p>
+        </div>
+      </div>
+    </div>
+
+    <div
+      class="border rounded-lg p-4 cursor-pointer transition-all"
+      [ngClass]="{
+        'border-blue-500 bg-blue-50': selectedType === 'series',
+        'border-gray-200': selectedType !== 'series',
+      }"
+      (click)="selectType('series')"
+      data-testid="delete-type-series-option">
+      <div class="flex items-start gap-3">
+        <div class="mt-1">
+          <i
+            class="fa-light text-lg"
+            [ngClass]="{
+              'fa-circle-dot text-blue-500': selectedType === 'series',
+              'fa-circle text-gray-400': selectedType !== 'series',
+            }"></i>
+        </div>
+        <div class="flex-1">
+          <h4 class="font-semibold text-gray-900 mb-1">Delete Entire Series</h4>
+          <p class="text-sm text-gray-600">The entire recurring meeting series will be permanently deleted.</p>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Action Buttons -->
+  <div class="flex justify-end gap-3">
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" type="button" (click)="onCancel()" data-testid="delete-type-cancel-button">
+    </lfx-button>
+
+    <lfx-button
+      label="Continue"
+      severity="primary"
+      size="small"
+      type="button"
+      [disabled]="!selectedType"
+      (click)="onContinue()"
+      data-testid="delete-type-continue-button">
+    </lfx-button>
+  </div>
+</div>

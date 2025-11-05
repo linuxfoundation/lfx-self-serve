@@ -1,0 +1,69 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="meeting-cancel-occurrence-confirmation">
+  <!-- Occurrence Details -->
+  <div class="mb-6">
+    <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
+      <h3 class="text-lg font-semibold text-gray-900 mb-3">Occurrence Details</h3>
+
+      <div class="space-y-2">
+        <div class="flex items-start">
+          <span class="font-medium text-gray-700 w-20 flex-shrink-0">Title:</span>
+          <span class="text-gray-900">{{ occurrence.title || meeting.title || 'Untitled Meeting' }}</span>
+        </div>
+
+        <div class="flex items-start">
+          <span class="font-medium text-gray-700 w-20 flex-shrink-0">Date:</span>
+          <span class="text-gray-900">{{ occurrence.start_time | meetingTime: occurrence.duration : 'date' }}</span>
+        </div>
+
+        <div class="flex items-start">
+          <span class="font-medium text-gray-700 w-20 flex-shrink-0">Time:</span>
+          <span class="text-gray-900">{{ occurrence.start_time | meetingTime: occurrence.duration : 'time' }}</span>
+        </div>
+
+        <div class="flex items-start">
+          <span class="font-medium text-gray-700 w-20 flex-shrink-0">Series:</span>
+          <span class="text-gray-900 flex items-center gap-2">
+            <i class="fa-light fa-repeat text-blue-500"></i>
+            Part of Recurring Series
+          </span>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Warning Message -->
+  <lfx-message severity="error" icon="fa-light fa-triangle-exclamation" styleClass="mb-6">
+    <ng-template #content>
+      <h4 class="font-medium mb-1">Warning</h4>
+      <p class="text-sm">This will permanently cancel this specific occurrence. Guests will be notified of the cancellation. This action cannot be undone.</p>
+    </ng-template>
+  </lfx-message>
+
+  <!-- Action Buttons -->
+  <div class="flex justify-end gap-3">
+    <lfx-button
+      label="Cancel"
+      severity="secondary"
+      [outlined]="true"
+      size="small"
+      type="button"
+      [disabled]="isCanceling()"
+      (click)="onCancel()"
+      data-testid="cancel-occurrence-cancel-button">
+    </lfx-button>
+
+    <lfx-button
+      [label]="isCanceling() ? 'Canceling...' : 'Cancel Occurrence'"
+      severity="danger"
+      size="small"
+      type="button"
+      [icon]="isCanceling() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ban'"
+      [disabled]="isCanceling()"
+      (click)="onConfirm()"
+      data-testid="cancel-occurrence-confirm-button">
+    </lfx-button>
+  </div>
+</div>

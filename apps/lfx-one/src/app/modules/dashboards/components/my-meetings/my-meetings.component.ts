@@ -8,6 +8,7 @@ import { Router } from '@angular/router';
 import { MeetingService } from '@app/shared/services/meeting.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { DashboardMeetingCardComponent } from '@components/dashboard-meeting-card/dashboard-meeting-card.component';
+import { getActiveOccurrences } from '@lfx-one/shared';
 import { SkeletonModule } from 'primeng/skeleton';
 import { finalize } from 'rxjs';
 
@@ -38,7 +39,10 @@ export class MyMeetingsComponent {
     for (const meeting of this.allMeetings()) {
       // Process occurrences if they exist
       if (meeting.occurrences && meeting.occurrences.length > 0) {
-        for (const occurrence of meeting.occurrences) {
+        // Get only active (non-cancelled) occurrences
+        const activeOccurrences = getActiveOccurrences(meeting.occurrences);
+
+        for (const occurrence of activeOccurrences) {
           const startTime = new Date(occurrence.start_time);
           const startTimeMs = startTime.getTime();
           const endTime = startTimeMs + occurrence.duration * 60 * 1000 + buffer;
@@ -89,7 +93,10 @@ export class MyMeetingsComponent {
     for (const meeting of this.allMeetings()) {
       // Process occurrences if they exist
       if (meeting.occurrences && meeting.occurrences.length > 0) {
-        for (const occurrence of meeting.occurrences) {
+        // Get only active (non-cancelled) occurrences
+        const activeOccurrences = getActiveOccurrences(meeting.occurrences);
+
+        for (const occurrence of activeOccurrences) {
           const startTime = new Date(occurrence.start_time);
           const startTimeMs = startTime.getTime();
 

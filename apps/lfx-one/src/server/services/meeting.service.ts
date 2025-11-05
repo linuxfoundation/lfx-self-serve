@@ -220,6 +220,26 @@ export class MeetingService {
   }
 
   /**
+   * Cancels a meeting occurrence using ETag for concurrency control
+   */
+  public async cancelOccurrence(req: Request, meetingUid: string, occurrenceId: string): Promise<void> {
+    // Step 1: Fetch meeting with ETag
+    const { etag } = await this.etagService.fetchWithETag<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}`, 'cancel_occurrence');
+
+    // Step 2: Cancel occurrence with ETag
+    await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/occurrences/${occurrenceId}`, etag, 'cancel_occurrence');
+
+    req.log.info(
+      {
+        operation: 'cancel_occurrence',
+        meeting_uid: meetingUid,
+        occurrence_id: occurrenceId,
+      },
+      'Meeting occurrence canceled successfully'
+    );
+  }
+
+  /**
    * Fetches all registrants for a meeting
    * @param includeRsvp - If true, includes RSVP status for each registrant
    */
