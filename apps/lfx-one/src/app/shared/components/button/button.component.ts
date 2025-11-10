@@ -53,7 +53,7 @@ export class ButtonComponent {
   // Navigation
   public readonly routerLink = input<string | string[] | undefined>(undefined);
   public readonly href = input<string | undefined>(undefined);
-  public readonly target = input<string | undefined>(undefined);
+  public readonly target = input<string | undefined>('_self');
   public readonly rel = input<string | undefined>(undefined);
   public readonly queryParams = input<Record<string, string>>({});
 

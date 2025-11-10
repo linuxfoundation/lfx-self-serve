@@ -28,7 +28,7 @@ import {
   UpdatePastMeetingSummaryRequest,
   UploadFileResponse,
 } from '@lfx-one/shared/interfaces';
-import { catchError, defer, Observable, of, map, switchMap, take, tap, throwError } from 'rxjs';
+import { catchError, defer, map, Observable, of, switchMap, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -455,20 +455,21 @@ export class MeetingService {
     );
   }
 
-  public getUserMeetingRsvp(meetingUid: string): Observable<MeetingRsvp | null> {
-    return this.http.get<MeetingRsvp | null>(`/api/meetings/${meetingUid}/rsvp`).pipe(
+  public getMeetingRsvps(meetingUid: string): Observable<MeetingRsvp[]> {
+    return this.http.get<MeetingRsvp[]>(`/api/meetings/${meetingUid}/rsvp`).pipe(
       catchError((error) => {
-        console.error(`Failed to get RSVP for meeting ${meetingUid}:`, error);
-        return of(null);
+        console.error(`Failed to get RSVPs for meeting ${meetingUid}:`, error);
+        return of([]);
       })
     );
   }
 
-  public getMeetingRsvps(meetingUid: string): Observable<MeetingRsvp[]> {
-    return this.http.get<MeetingRsvp[]>(`/api/meetings/${meetingUid}/rsvps`).pipe(
+  public getMeetingRsvpByUsername(meetingUid: string, occurrenceId?: string): Observable<MeetingRsvp | null> {
+    const options = occurrenceId ? { params: { occurrenceId } } : {};
+    return this.http.get<MeetingRsvp | null>(`/api/meetings/${meetingUid}/rsvp/me`, options).pipe(
       catchError((error) => {
-        console.error(`Failed to get RSVPs for meeting ${meetingUid}:`, error);
-        return of([]);
+        console.error(`Failed to get RSVP for meeting ${meetingUid}:`, error);
+        return of(null);
       })
     );
   }

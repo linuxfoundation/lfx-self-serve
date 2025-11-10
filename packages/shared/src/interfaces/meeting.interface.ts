@@ -726,7 +726,7 @@ export type RsvpResponse = 'accepted' | 'maybe' | 'declined';
  * RSVP scope type
  * @description Defines which occurrences of a recurring meeting the RSVP applies to
  */
-export type RsvpScope = 'single' | 'all' | 'following';
+export type RsvpScope = 'single' | 'all' | 'this_and_following';
 
 /**
  * RSVP counts by response type
@@ -781,6 +781,8 @@ export interface CreateMeetingRsvpRequest {
   username?: string;
   /** User's email (optional - backend derives from authenticated user if not provided) */
   email?: string;
+  /** The specific occurrence ID to RSVP for (optional) */
+  occurrence_id?: string;
   /** Scope of the RSVP */
   scope: RsvpScope;
   /** User's RSVP response */

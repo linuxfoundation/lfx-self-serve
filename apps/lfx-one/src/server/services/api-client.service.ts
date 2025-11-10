@@ -36,7 +36,6 @@ export class ApiClientService {
 
   private async makeRequest<T>(method: string, url: string, bearerToken?: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
     const headers: Record<string, string> = {
-      ...customHeaders,
       Accept: 'application/json',
       ['Content-Type']: 'application/json',
       ['User-Agent']: 'LFX-PCC-Server/1.0',
@@ -45,6 +44,10 @@ export class ApiClientService {
     // Only add Authorization header if bearerToken is provided
     if (bearerToken) {
       headers['Authorization'] = `Bearer ${bearerToken}`;
+    }
+
+    if (customHeaders) {
+      Object.assign(headers, customHeaders);
     }
 
     const requestInit: RequestInit = {

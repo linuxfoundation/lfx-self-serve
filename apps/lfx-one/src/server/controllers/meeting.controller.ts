@@ -846,45 +846,49 @@ export class MeetingController {
   }
 
   /**
-   * GET /meetings/:uid/rsvp
+   * GET /meetings/:uid/rsvp/me
+   * Gets current user's RSVP by calling meeting service directly with M2M token
    */
-  public async getUserMeetingRsvp(req: Request, res: Response, next: NextFunction): Promise<void> {
+  public async getMeetingRsvpByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
+    const { occurrenceId } = req.query;
 
-    const startTime = Logger.start(req, 'get_user_meeting_rsvp', {
+    const startTime = Logger.start(req, 'get_meeting_rsvp_by_username', {
       meeting_uid: uid,
+      occurrence_id: occurrenceId,
     });
 
     try {
       // Validate meeting UID
       if (
         !validateUidParameter(uid, req, next, {
-          operation: 'get_user_meeting_rsvp',
+          operation: 'get_meeting_rsvp_by_username',
         })
       ) {
         return;
       }
 
-      // Get the user's RSVP
-      const rsvp = await this.meetingService.getUserMeetingRsvp(req, uid);
+      // Get the user's RSVP using direct meeting service call
+      const rsvp = await this.meetingService.getMeetingRsvpByUsername(req, uid, occurrenceId as string | undefined);
 
       // Log success
-      Logger.success(req, 'get_user_meeting_rsvp', startTime, {
+      Logger.success(req, 'get_meeting_rsvp_by_username', startTime, {
         found: !!rsvp,
         rsvp_id: rsvp?.id,
+        occurrence_id: occurrenceId,
       });
 
       // Send response
       res.json(rsvp);
     } catch (error) {
       // Log error
-      Logger.error(req, 'get_user_meeting_rsvp', startTime, error);
+      Logger.error(req, 'get_meeting_rsvp_by_username', startTime, error);
       next(error);
     }
   }
 
   /**
-   * GET /meetings/:uid/rsvps
+   * GET /meetings/:uid/rsvp
    */
   public async getMeetingRsvps(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;

@@ -1,0 +1,50 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="rsvp-scope-modal">
+  <!-- Modal Header -->
+  <div class="mb-6">
+    <h3 class="text-lg font-semibold text-gray-900 mb-2">Select RSVP Scope</h3>
+    <p class="text-sm text-gray-600">This is a recurring meeting. Choose which occurrences your "{{ response }}" response should apply to.</p>
+  </div>
+
+  <!-- Scope Options -->
+  <div class="space-y-4 mb-6">
+    @for (option of scopeOptions; track option.value) {
+      <div
+        class="flex items-start gap-3 p-4 border rounded-lg cursor-pointer hover:bg-gray-50 transition-colors"
+        [ngClass]="{
+          'border-blue-500 bg-blue-50': scopeForm.controls.scope.value === option.value,
+          'border-gray-200': scopeForm.controls.scope.value !== option.value,
+        }"
+        (click)="scopeForm.controls.scope.setValue(option.value)"
+        [attr.data-testid]="'rsvp-scope-option-' + option.value">
+        <lfx-radio-button name="rsvp-scope" [value]="option.value" [inputId]="'rsvp-scope-' + option.value" [form]="scopeForm" control="scope">
+        </lfx-radio-button>
+
+        <div class="flex-1">
+          <label [for]="'rsvp-scope-' + option.value" class="block text-sm font-medium text-gray-900 cursor-pointer mb-1">
+            {{ option.label }}
+          </label>
+          <p class="text-xs text-gray-600">{{ option.description }}</p>
+        </div>
+      </div>
+    }
+  </div>
+
+  <!-- Action Buttons -->
+  <div class="flex justify-end gap-3">
+    <lfx-button
+      label="Cancel"
+      severity="secondary"
+      [outlined]="true"
+      size="small"
+      type="button"
+      (onClick)="onCancel()"
+      [attr.data-testid]="'rsvp-scope-modal-cancel'">
+    </lfx-button>
+
+    <lfx-button label="Confirm" severity="primary" size="small" type="button" (onClick)="onConfirm()" [attr.data-testid]="'rsvp-scope-modal-confirm'">
+    </lfx-button>
+  </div>
+</div>

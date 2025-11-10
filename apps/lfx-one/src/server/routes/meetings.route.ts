@@ -53,8 +53,8 @@ router.post('/:uid/registrants/:registrantId/resend', (req, res, next) => meetin
 
 // RSVP routes
 router.post('/:uid/rsvp', (req, res, next) => meetingController.createMeetingRsvp(req, res, next));
-router.get('/:uid/rsvp', (req, res, next) => meetingController.getUserMeetingRsvp(req, res, next));
-router.get('/:uid/rsvps', (req, res, next) => meetingController.getMeetingRsvps(req, res, next));
+router.get('/:uid/rsvp', (req, res, next) => meetingController.getMeetingRsvps(req, res, next));
+router.get('/:uid/rsvp/me', (req, res, next) => meetingController.getMeetingRsvpByUsername(req, res, next));
 
 router.post('/:uid/attachments/upload', async (req: Request, res: Response, next: NextFunction) => {
   const startTime = Date.now();

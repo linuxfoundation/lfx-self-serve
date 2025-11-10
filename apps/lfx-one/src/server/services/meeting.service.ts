@@ -12,8 +12,8 @@ import {
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
-  QueryServiceResponse,
   QueryServiceCountResponse,
+  QueryServiceResponse,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
@@ -23,6 +23,7 @@ import { Request } from 'express';
 import { ResourceNotFoundError } from '../errors';
 import { Logger } from '../helpers/logger';
 import { getUsernameFromAuth } from '../utils/auth-helper';
+import { generateM2MToken } from '../utils/m2m-token.util';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
 import { ETagService } from './etag.service';
@@ -463,23 +464,31 @@ export class MeetingService {
   }
 
   /**
-   * Resends a meeting invitation to a specific registrant
+   * Resend a meeting invitation to a specific registrant
    */
   public async resendMeetingInvitation(req: Request, meetingUid: string, registrantId: string): Promise<void> {
     try {
       // Call the LFX API endpoint for resending invitation
       await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/registrants/${registrantId}/resend`, 'POST');
 
-      // Log the successful operation
-      Logger.success(req, 'resend_meeting_invitation', Date.now(), {
-        meeting_uid: meetingUid,
-        registrant_id: registrantId,
-      });
+      req.log.info(
+        {
+          operation: 'resend_meeting_invitation',
+          meeting_uid: meetingUid,
+          registrant_id: registrantId,
+        },
+        'Meeting invitation resent successfully'
+      );
     } catch (error) {
-      Logger.error(req, 'resend_meeting_invitation', Date.now(), error, {
-        meeting_uid: meetingUid,
-        registrant_id: registrantId,
-      });
+      req.log.error(
+        {
+          operation: 'resend_meeting_invitation',
+          meeting_uid: meetingUid,
+          registrant_id: registrantId,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to resend meeting invitation'
+      );
       throw error;
     }
   }
@@ -695,82 +704,101 @@ export class MeetingService {
    * Create or update a meeting RSVP
    */
   public async createMeetingRsvp(req: Request, meetingUid: string, rsvpData: CreateMeetingRsvpRequest): Promise<MeetingRsvp> {
-    Logger.start(req, 'create_meeting_rsvp', {
-      meeting_uid: meetingUid,
-      response: rsvpData.response,
-      scope: rsvpData.scope,
-    });
-
     // Backend derives user from bearer token, so we don't need to pass username/email/registrant_id
     const requestData: CreateMeetingRsvpRequest = {
       response: rsvpData.response,
       scope: rsvpData.scope,
+      occurrence_id: rsvpData.occurrence_id,
+      email: rsvpData.email,
+      username: rsvpData.username,
     };
 
     const rsvp = await this.microserviceProxy.proxyRequest<MeetingRsvp>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/rsvp`, 'POST', {}, requestData);
 
-    Logger.success(req, 'create_meeting_rsvp', Date.now(), {
-      rsvp_id: rsvp.id,
-    });
+    req.log.info(
+      {
+        operation: 'create_meeting_rsvp',
+        meeting_uid: meetingUid,
+        rsvp_id: rsvp.id,
+        response: rsvpData.response,
+        scope: rsvpData.scope,
+        occurrence_id: rsvpData.occurrence_id || undefined,
+      },
+      'Meeting RSVP created successfully'
+    );
 
     return rsvp;
   }
 
   /**
-   * Get user's RSVP for a meeting
+   * Get current user's RSVP by calling meeting service directly with M2M token
+   * @param req Express request object
+   * @param meetingUid Meeting UID to get RSVP for
+   * @param occurrenceId Optional occurrence ID to filter RSVP for specific occurrence
+   * @returns Promise resolving to user's RSVP or null
    */
-  public async getUserMeetingRsvp(req: Request, meetingUid: string): Promise<MeetingRsvp | null> {
-    Logger.start(req, 'get_user_meeting_rsvp', {
-      meeting_uid: meetingUid,
-    });
-
+  public async getMeetingRsvpByUsername(req: Request, meetingUid: string, occurrenceId?: string): Promise<MeetingRsvp | null> {
     try {
+      // Get username from authenticated user
       const username = await getUsernameFromAuth(req);
 
       if (!username) {
-        Logger.success(req, 'get_user_meeting_rsvp', Date.now(), {
-          found: false,
-          reason: 'no_username',
-        });
+        req.log.error(
+          {
+            operation: 'get_meeting_rsvp_by_username',
+            meeting_uid: meetingUid,
+            error: 'No username found in auth context',
+          },
+          'Failed to get meeting RSVP by username'
+        );
         return null;
       }
 
-      const params = {
-        tags: `username:${username}`,
-        type: 'meeting_rsvp',
-        order_by: 'updated_at',
-        order_direction: 'desc',
-      };
+      // Generate M2M token and set it on the request
+      const m2mToken = await generateM2MToken(req);
 
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(
+      // Call meeting service directly to get all RSVPs for this meeting
+      const response = await this.microserviceProxy.proxyRequest<{ rsvps: MeetingRsvp[] }>(
         req,
         'LFX_V2_SERVICE',
-        '/query/resources',
+        `/meetings/${meetingUid}/rsvp`,
         'GET',
-        params
+        undefined,
+        undefined,
+        {
+          Authorization: `Bearer ${m2mToken}`,
+        }
       );
 
-      // Filter by meeting_uid
-      const matchingRsvps = resources.filter((r) => r.data.meeting_uid === meetingUid);
+      // Handle response - it might be wrapped in { data: [] } or be a direct array
+      const allRsvps = response.rsvps ?? [];
 
-      if (matchingRsvps.length === 0) {
-        Logger.success(req, 'get_user_meeting_rsvp', Date.now(), {
-          found: false,
-        });
-        return null;
-      }
+      // Filter for current user's RSVP (optionally by occurrence)
+      const userRsvp = allRsvps.find((rsvp) => rsvp.username === username && (!occurrenceId || rsvp.occurrence_id === occurrenceId));
 
-      // Return the most recent RSVP for this meeting (first one due to desc sort)
-      const rsvp = matchingRsvps[0].data;
+      req.log.info(
+        {
+          operation: 'get_meeting_rsvp_by_username',
+          meeting_uid: meetingUid,
+          occurrence_id: occurrenceId,
+          found: !!userRsvp,
+          total_rsvps: allRsvps.length,
+          rsvp_id: userRsvp?.id,
+        },
+        'User meeting RSVP retrieved via M2M token'
+      );
 
-      Logger.success(req, 'get_user_meeting_rsvp', Date.now(), {
-        found: true,
-        rsvp_id: rsvp.id,
-      });
-
-      return rsvp;
+      return userRsvp || null;
     } catch (error) {
-      Logger.error(req, 'get_user_meeting_rsvp', Date.now(), error);
+      req.log.error(
+        {
+          operation: 'get_meeting_rsvp_by_username',
+          meeting_uid: meetingUid,
+          occurrence_id: occurrenceId,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to get meeting RSVP by username'
+      );
       return null;
     }
   }
@@ -779,10 +807,6 @@ export class MeetingService {
    * Get all RSVPs for a meeting
    */
   public async getMeetingRsvps(req: Request, meetingUid: string): Promise<MeetingRsvp[]> {
-    Logger.start(req, 'get_meeting_rsvps', {
-      meeting_uid: meetingUid,
-    });
-
     try {
       const params = {
         tags: `meeting_uid:${meetingUid}`,
@@ -797,13 +821,25 @@ export class MeetingService {
         params
       );
 
-      Logger.success(req, 'get_meeting_rsvps', Date.now(), {
-        count: resources.length,
-      });
+      req.log.info(
+        {
+          operation: 'get_meeting_rsvps',
+          meeting_uid: meetingUid,
+          count: resources.length,
+        },
+        'Meeting RSVPs retrieved successfully'
+      );
 
       return resources.map((resource) => resource.data);
     } catch (error) {
-      Logger.error(req, 'get_meeting_rsvps', Date.now(), error);
+      req.log.error(
+        {
+          operation: 'get_meeting_rsvps',
+          meeting_uid: meetingUid,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to get meeting RSVPs'
+      );
       return [];
     }
   }

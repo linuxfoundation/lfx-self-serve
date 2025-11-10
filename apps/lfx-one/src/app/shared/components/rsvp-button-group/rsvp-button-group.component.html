@@ -1,0 +1,58 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- RSVP Container -->
+<div class="relative flex flex-col gap-2 p-3 w-full rounded-md bg-blue-50" [attr.data-testid]="'meeting-rsvp-container'">
+  <!-- Border overlay -->
+  <div aria-hidden="true" class="absolute inset-0 border border-blue-500 rounded-md pointer-events-none"></div>
+
+  <!-- Header (conditional) -->
+  @if (showHeader()) {
+    <div class="flex items-center gap-2" [attr.data-testid]="'meeting-rsvp-header'">
+      <i class="fa-light fa-calendar-check text-gray-500 text-sm"></i>
+      <h3 class="text-sm text-gray-500">RSVP for This Meeting</h3>
+    </div>
+  }
+
+  <!-- RSVP Buttons -->
+  <div class="flex gap-2" [attr.data-testid]="'meeting-rsvp-buttons'">
+    <!-- Yes Button -->
+    <lfx-button
+      class="w-full"
+      label="Yes"
+      icon="fa-light fa-check"
+      [severity]="acceptedSeverity()"
+      size="small"
+      styleClass="w-full"
+      [disabled]="isLoading()"
+      (onClick)="handleRsvpClick('accepted')"
+      [attr.data-testid]="'meeting-rsvp-button-yes'">
+    </lfx-button>
+
+    <!-- No Button -->
+    <lfx-button
+      class="w-full"
+      label="No"
+      icon="fa-light fa-xmark"
+      [severity]="declinedSeverity()"
+      size="small"
+      styleClass="w-full"
+      [disabled]="isLoading()"
+      (onClick)="handleRsvpClick('declined')"
+      [attr.data-testid]="'meeting-rsvp-button-no'">
+    </lfx-button>
+
+    <!-- Maybe Button -->
+    <lfx-button
+      class="w-full"
+      label="Maybe"
+      icon="fa-light fa-question"
+      [severity]="maybeSeverity()"
+      size="small"
+      styleClass="w-full"
+      [disabled]="isLoading()"
+      (onClick)="handleRsvpClick('maybe')"
+      [attr.data-testid]="'meeting-rsvp-button-maybe'">
+    </lfx-button>
+  </div>
+</div>

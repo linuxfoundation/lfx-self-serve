@@ -19,6 +19,7 @@ import {
   MeetingDeleteTypeSelectionComponent,
 } from '@components/meeting-delete-type-selection/meeting-delete-type-selection.component';
 import { MenuComponent } from '@components/menu/menu.component';
+import { RsvpButtonGroupComponent } from '@components/rsvp-button-group/rsvp-button-group.component';
 import { environment } from '@environments/environment';
 import {
   buildJoinUrlWithParams,
@@ -70,6 +71,7 @@ import { BehaviorSubject, catchError, combineLatest, filter, finalize, map, of, 
     FileTypeIconPipe,
     FileSizePipe,
     ClipboardModule,
+    RsvpButtonGroupComponent,
   ],
   providers: [ConfirmationService],
   templateUrl: './meeting-card.component.html',
@@ -88,8 +90,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly pastMeeting = input<boolean>(false);
   public readonly loading = input<boolean>(false);
   public readonly showBorder = input<boolean>(false);
-  public readonly meetingRegistrantCount: Signal<number> = this.initMeetingRegistrantCount();
-  public readonly registrantResponseBreakdown: Signal<string> = this.initRegistrantResponseBreakdown();
+
   public showRegistrants: WritableSignal<boolean> = signal(false);
   public meeting: WritableSignal<Meeting | PastMeeting> = signal({} as Meeting | PastMeeting);
   public occurrence: WritableSignal<MeetingOccurrence | null> = signal(null);
@@ -99,26 +100,22 @@ export class MeetingCardComponent implements OnInit {
   public pastMeetingParticipants = this.initPastMeetingParticipantsList();
   public registrantsLabel: Signal<string> = this.initRegistrantsLabel();
   public recording: WritableSignal<PastMeetingRecording | null> = signal(null);
-  public recordingShareUrl: Signal<string | null> = computed(() => {
-    const recording = this.recording();
-    return recording ? this.getLargestSessionShareUrl(recording) : null;
-  });
-  public hasRecording: Signal<boolean> = computed(() => this.recordingShareUrl() !== null);
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
-  public summaryContent: Signal<string | null> = computed(() => {
-    const summary = this.summary();
-    return summary?.summary_data ? summary.summary_data.edited_content || summary.summary_data.content : null;
-  });
-  public summaryUid: Signal<string | null> = computed(() => this.summary()?.uid || null);
-  public summaryApproved: Signal<boolean> = computed(() => this.summary()?.approved || false);
-  public hasSummary: Signal<boolean> = computed(() => this.summaryContent() !== null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
   public additionalParticipantsCount: WritableSignal<number> = signal(0);
   public actionMenuItems: Signal<MenuItem[]> = this.initializeActionMenuItems();
   public attachments: Signal<MeetingAttachment[]> = signal([]);
 
   // Computed values for template
+  public readonly meetingRegistrantCount: Signal<number> = this.initMeetingRegistrantCount();
+  public readonly registrantResponseBreakdown: Signal<string> = this.initRegistrantResponseBreakdown();
+  public readonly summaryContent: Signal<string | null> = this.initSummaryContent();
+  public readonly summaryUid: Signal<string | null> = this.initSummaryUid();
+  public readonly summaryApproved: Signal<boolean> = this.initSummaryApproved();
+  public readonly hasSummary: Signal<boolean> = this.initHasSummary();
   public readonly attendancePercentage: Signal<number> = this.initAttendancePercentage();
+  public readonly recordingShareUrl: Signal<string | null> = this.initRecordingShareUrl();
+  public readonly hasRecording: Signal<boolean> = this.initHasRecording();
   public readonly attendanceBarColor: Signal<string> = this.initAttendanceBarColor();
   public readonly totalResourcesCount: Signal<number> = this.initTotalResourcesCount();
   public readonly enabledFeaturesCount: Signal<number> = this.initEnabledFeaturesCount();
@@ -132,6 +129,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly meetingStartTime: Signal<string | null> = this.initMeetingStartTime();
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
   public readonly joinUrl: Signal<string | null>;
+  public readonly authenticated: Signal<boolean> = this.userService.authenticated;
 
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
@@ -873,5 +871,35 @@ export class MeetingCardComponent implements OnInit {
       }
       return canJoinMeeting(this.meeting(), this.occurrence());
     });
+  }
+
+  private initRecordingShareUrl(): Signal<string | null> {
+    return computed(() => {
+      const recording = this.recording();
+      return recording ? this.getLargestSessionShareUrl(recording) : null;
+    });
+  }
+
+  private initHasRecording(): Signal<boolean> {
+    return computed(() => this.recordingShareUrl() !== null);
+  }
+
+  private initSummaryContent(): Signal<string | null> {
+    return computed(() => {
+      const summary = this.summary();
+      return summary?.summary_data ? summary.summary_data.edited_content || summary.summary_data.content : null;
+    });
+  }
+
+  private initSummaryUid(): Signal<string | null> {
+    return computed(() => this.summary()?.uid || null);
+  }
+
+  private initSummaryApproved(): Signal<boolean> {
+    return computed(() => this.summary()?.approved || false);
+  }
+
+  private initHasSummary(): Signal<boolean> {
+    return computed(() => this.summaryContent() !== null);
   }
 }

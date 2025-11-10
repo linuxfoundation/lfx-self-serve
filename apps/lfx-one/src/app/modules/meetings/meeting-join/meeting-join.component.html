@@ -2,25 +2,28 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (meeting()) {
-  <div class="bg-gray-50">
-    <!-- Main Content -->
+  <div class="bg-gray-50 min-h-screen">
+    <!-- Main Content Container -->
     <div class="container mx-auto py-6 px-8">
-      <div class="max-w-4xl mx-auto">
+      <div class="max-w-[900px] mx-auto flex flex-col gap-3">
         <!-- Project Logo -->
         @if (project()?.logo_url) {
-          <div class="flex items-center justify-center">
-            <img src="{{ project()?.logo_url }}" alt="{{ project()?.name }}" class="w-auto h-20 mb-6" />
+          <div class="flex items-center justify-center mb-6">
+            <img [src]="project()?.logo_url" [alt]="project()?.name" class="w-auto h-20" />
           </div>
         }
 
-        <!-- Meeting Information Card -->
-        <lfx-card class="mb-6" data-testid="meeting-info-card">
-          <!-- Header with badges -->
-          <div class="flex items-start justify-between mb-4" data-testid="meeting-details-header">
+        <!-- Main Meeting Card -->
+        <lfx-card class="rounded-[12.75px] mb-6" [attr.data-testid]="'meeting-info-card'">
+          <!-- Header Section: Badges + Copy Link -->
+          <div class="flex justify-between items-start mb-4">
+            <!-- Left: Badges -->
             <div class="flex items-center gap-2 flex-wrap">
-              <!-- Privacy Badge -->
+              <!-- Private Badge -->
               @if (meeting().visibility === 'private') {
-                <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-500 text-white">
+                <div
+                  class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-500 text-white"
+                  [attr.data-testid]="'meeting-badge-private'">
                   <i class="fa-light fa-shield"></i>
                   <span>Private</span>
                 </div>
@@ -28,7 +31,10 @@
 
               <!-- Meeting Type Badge -->
               @if (meetingTypeBadge(); as badge) {
-                <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium" [class]="badge.badgeClass">
+                <div
+                  class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium"
+                  [ngClass]="badge.badgeClass"
+                  [attr.data-testid]="'meeting-badge-type'">
                   @if (badge.icon) {
                     <i [class]="badge.icon"></i>
                   }
@@ -40,341 +46,318 @@
               @if (meeting().recurrence) {
                 <div
                   class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-400 text-white"
-                  [pTooltip]="meeting().recurrence | recurrenceSummary"
+                  pTooltip="This is a recurring meeting"
                   data-testid="recurring-badge">
                   <i class="fa-light fa-repeat"></i>
-                  <span>Recurring</span>
+                  <span>{{ meeting().recurrence | recurrenceSummary }}</span>
                 </div>
               }
             </div>
+
+            <!-- Right: Copy Link Button -->
+            <lfx-button
+              [icon]="'fa-light fa-copy'"
+              [rounded]="true"
+              size="small"
+              severity="secondary"
+              [text]="true"
+              (onClick)="handleCopyLink()"
+              [attr.data-testid]="'meeting-copy-link-button'"
+              [pTooltip]="'Copy meeting link'">
+            </lfx-button>
           </div>
 
-          <!-- Meeting Title and Date -->
-          <div class="flex sm:flex-row flex-col items-start justify-between mb-4" data-testid="meeting-title-section">
-            <div class="flex-1 pr-4 flex-grow">
-              <h2 class="text-xl font-display font-semibold text-gray-900 mb-1 leading-tight" data-testid="meeting-title">
+          <!-- Content Row: Title/Details + Join Button (if immediate) -->
+          <div class="flex justify-between items-start gap-6 mb-4">
+            <!-- Left Column: Title + Details -->
+            <div class="flex-1 flex flex-col gap-4">
+              <!-- Meeting Title -->
+              <h1 class="font-medium text-base text-neutral-950 leading-tight" [attr.data-testid]="'meeting-title'">
                 {{ currentOccurrence()?.title || meeting().title }}
-              </h2>
-            </div>
-            @if (currentOccurrence()?.start_time || meeting().start_time; as startTime) {
-              <div class="flex items-center gap-1 text-xs text-gray-600 bg-gray-100 px-2 py-1 rounded flex-shrink-0" data-testid="meeting-datetime">
-                <i class="fa-light fa-calendar-days text-gray-400"></i>
-                <span
-                  >{{ startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'date' }} •
-                  {{ startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'time' }}</span
-                >
-              </div>
-            }
-          </div>
+              </h1>
 
-          <!-- Meeting Agenda -->
-          @if (currentOccurrence()?.description || meeting().description; as description) {
-            <div class="mb-4" data-testid="meeting-description">
-              <div class="flex items-center gap-2 mb-2">
-                <i class="fa-light fa-file-lines text-gray-400"></i>
-                <span class="text-sm font-medium text-gray-700 font-sans">Meeting Description</span>
-              </div>
-              <lfx-expandable-text [maxHeight]="85">
-                <div class="text-sm text-gray-600 leading-relaxed bg-gray-50 rounded-lg p-3">
-                  <div [innerHTML]="description | linkify"></div>
-                </div>
-              </lfx-expandable-text>
-            </div>
-          }
-
-          <!-- Important Links -->
-          @if (importantLinks().length > 0) {
-            <div class="mb-4" data-testid="important-links">
-              <div class="flex items-center gap-2 mb-2">
-                <i class="fa-light fa-link text-gray-400"></i>
-                <span class="text-sm font-medium text-gray-700 font-sans">Important Links</span>
-              </div>
-              <div class="flex flex-wrap gap-2">
-                @for (link of importantLinks(); track link.url) {
-                  <a
-                    size="small"
-                    class="inline-flex items-center gap-1 px-2 py-1 bg-gray-100 hover:bg-gray-200 text-xs rounded transition-colors"
-                    [href]="link.url"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    [title]="link.url">
-                    <i class="fa-light fa-external-link"></i>
-                    {{ link.domain }}
-                  </a>
-                }
-              </div>
-            </div>
-          }
-
-          <!-- Meeting Info Cards -->
-          <div class="grid grid-cols-1 md:grid-cols-3 gap-4 py-4 border-y border-gray-200 mb-4" data-testid="meeting-info-cards">
-            <!-- Attendees Card -->
-            <div class="bg-gray-50 rounded-lg p-3 space-y-2" data-testid="attendees-card">
-              <div class="flex items-center gap-2 text-xs text-gray-500">
-                <i class="fa-light fa-users text-gray-400"></i>
-                <span>Guests</span>
-              </div>
-              <div class="space-y-2">
-                <div class="text-sm font-sans">{{ (meeting().individual_registrants_count || 0) + (meeting().committee_members_count || 0) }} invited</div>
-              </div>
-            </div>
-
-            <!-- Platform Card -->
-            <div class="bg-gray-50 rounded-lg p-3 space-y-2" data-testid="platform-card">
-              <div class="flex items-center gap-2 text-xs text-gray-500">
-                <i class="fa-light fa-video text-gray-400"></i>
-                <span>Platform</span>
-              </div>
-              <div class="flex items-center gap-2">
-                <img src="/images/zoom-logo.svg" alt="Zoom" class="w-auto h-4 mt-2 object-contain" />
-              </div>
-            </div>
-
-            <!-- Duration Card -->
-            <div class="bg-gray-50 rounded-lg p-3 space-y-2" data-testid="duration-card">
-              <div class="flex items-center gap-2 text-xs text-gray-500">
-                <i class="fa-light fa-clock text-gray-400"></i>
-                <span>Duration</span>
-              </div>
-              <div class="text-sm font-sans">{{ currentOccurrence()?.duration || meeting().duration }} minutes</div>
-            </div>
-          </div>
-
-          <!-- Meeting Attachments -->
-          @if (attachments().length > 0) {
-            <div class="mb-4" data-testid="meeting-attachments">
-              <div class="flex items-center gap-2 mb-2">
-                <i class="fa-light fa-paperclip text-gray-400"></i>
-                <span class="text-sm font-medium text-gray-700 font-sans">Meeting Attachments</span>
-              </div>
-              <div class="space-y-2">
-                @for (attachment of attachments(); track attachment.id; let i = $index) {
+              <!-- Feature Badges Row -->
+              <div class="flex flex-wrap gap-2 items-center">
+                <!-- Date/Time Badge -->
+                @if (currentOccurrence()?.start_time || meeting().start_time; as startTime) {
                   <div
-                    class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg"
-                    [attr.data-testid]="'meeting-attachment-' + i">
-                    <div class="flex items-center gap-3">
-                      <div class="p-2 bg-blue-100 rounded-lg">
-                        <i class="fa-light fa-file text-blue-600"></i>
-                      </div>
-                      <div>
-                        <p class="text-sm font-medium text-gray-900 font-sans">{{ attachment.file_name }}</p>
-                        <p class="text-xs text-gray-500 font-sans">
-                          @if (attachment.file_size) {
-                            {{ attachment.file_size | fileSize }}
-                          }
-                        </p>
-                      </div>
-                    </div>
-                    <div class="flex items-center gap-2">
-                      @if (attachment.file_url) {
-                        <a
-                          [href]="attachment.file_url"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 hover:bg-blue-200 text-xs text-blue-700 rounded transition-colors"
-                          [attr.data-testid]="'download-attachment-' + i">
-                          <i class="fa-light fa-download"></i>
-                          <span>Download</span>
-                        </a>
-                      }
-                    </div>
+                    class="inline-flex items-center gap-1 bg-gray-100/50 text-gray-600 px-2 py-1 rounded text-xs font-medium"
+                    [attr.data-testid]="'meeting-badge-datetime'">
+                    <i class="fa-light fa-calendar"></i>
+                    <span>{{ startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact' }}</span>
+                  </div>
+                }
+
+                <!-- YouTube Upload Badge -->
+                @if (meeting().youtube_upload_enabled) {
+                  <div
+                    class="inline-flex items-center gap-1 bg-amber-50 text-amber-500 px-2 py-1 rounded text-xs font-medium"
+                    [attr.data-testid]="'meeting-badge-youtube'">
+                    <i class="fa-light fa-clock"></i>
+                    <span>YouTube Upload</span>
+                  </div>
+                }
+
+                <!-- Recording Badge -->
+                @if (meeting().recording_enabled) {
+                  <div
+                    class="inline-flex items-center gap-1 bg-red-50 text-red-500 px-2 py-1 rounded text-xs font-medium"
+                    [attr.data-testid]="'meeting-badge-recording'">
+                    <i class="fa-light fa-circle-dot"></i>
+                    <span>Recording</span>
+                  </div>
+                }
+
+                <!-- Transcripts Badge -->
+                @if (meeting().transcript_enabled) {
+                  <div
+                    class="inline-flex items-center gap-1 bg-sky-50 text-sky-500 px-2 py-1 rounded text-xs font-medium"
+                    [attr.data-testid]="'meeting-badge-transcripts'">
+                    <i class="fa-light fa-file-lines"></i>
+                    <span>Transcripts</span>
+                  </div>
+                }
+
+                <!-- Live Chat Badge (AI Companion) -->
+                @if (meeting().zoom_config?.ai_companion_enabled) {
+                  <div
+                    class="inline-flex items-center gap-1 bg-violet-50 text-violet-500 px-2 py-1 rounded text-xs font-medium"
+                    [attr.data-testid]="'meeting-badge-live-chat'">
+                    <i class="fa-light fa-comments"></i>
+                    <span>Live Chat</span>
                   </div>
                 }
               </div>
+            </div>
+
+            <!-- Right Column: Join Button (immediate meetings) or RSVP (future meetings) -->
+            @if (canJoinMeeting()) {
+              <!-- Join Button - Immediate Meeting -->
+              <div class="w-[296px]">
+                <lfx-button
+                  label="Join Meeting"
+                  icon="fa-light fa-video"
+                  severity="success"
+                  size="large"
+                  styleClass="w-full h-[40px]"
+                  [href]="fetchedJoinUrl()"
+                  [disabled]="!fetchedJoinUrl() || isLoadingJoinUrl()"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  [attr.data-testid]="'join-meeting-button-immediate'">
+                </lfx-button>
+              </div>
+            } @else if (authenticated()) {
+              <!-- RSVP Container - Future Meeting (Authenticated Users) -->
+              <div class="w-[296px]">
+                <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+              </div>
+            }
+          </div>
+
+          <!-- Alert Banner -->
+          @if (messageSeverity() === 'warn') {
+            <div class="bg-amber-50 border border-amber-500/50 rounded px-3 py-2 flex items-center gap-2" [attr.data-testid]="'meeting-alert-warn'">
+              <i class="fa-light fa-clock text-amber-500 text-base"></i>
+              <p class="text-sm text-amber-900">{{ alertMessage() }}</p>
+            </div>
+          } @else if (messageSeverity() === 'info' && canJoinMeeting()) {
+            <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex items-center gap-2" [attr.data-testid]="'meeting-alert-info'">
+              <i class="fa-light fa-calendar text-blue-500 text-base"></i>
+              <p class="text-sm text-blue-900">{{ alertMessage() }}</p>
             </div>
           }
 
-          <!-- Join Section -->
-          <div data-testid="join-section">
-            <div class="flex items-center gap-2 mb-3">
-              <i class="fa-light fa-user-plus text-gray-400"></i>
-              <h3 class="text-lg font-display font-semibold text-gray-900">Join This Meeting</h3>
+          <!-- Divider -->
+          <hr class="border-gray-200 my-4" />
+
+          <!-- Agenda + Resources Row (2-column) -->
+          <div class="flex flex-col md:flex-row gap-6">
+            <!-- Left: Agenda Section (flex-1) -->
+            <div class="flex-1 flex flex-col gap-2">
+              <!-- Agenda Header -->
+              <div class="flex items-center gap-2">
+                <i class="fa-light fa-list text-gray-500 text-xs"></i>
+                <h3 class="text-gray-600 text-sm font-normal">Agenda</h3>
+              </div>
+
+              <!-- Description -->
+              @if (currentOccurrence()?.description || meeting().description; as description) {
+                <div class="text-gray-600 text-xs leading-relaxed" [attr.data-testid]="'meeting-description'">
+                  <lfx-expandable-text [maxHeight]="200">
+                    <div [innerHTML]="description | linkify" class="text-sm leading-relaxed"></div>
+                  </lfx-expandable-text>
+                </div>
+              }
             </div>
 
-            @if (authenticated() && user(); as user) {
-              <!-- Logged In State -->
-              <div class="flex flex-col gap-3">
-                <div class="bg-blue-50 p-3 rounded-lg">
-                  <div class="flex items-start justify-between">
-                    <div class="flex items-center gap-3">
-                      <div class="w-8 h-8 bg-blue-400 rounded-full flex items-center justify-center">
-                        <i class="fa-light fa-user text-white text-xs"></i>
-                      </div>
-                      <div>
-                        <h4 class="font-medium text-gray-900 font-sans">{{ user.name }}</h4>
-                        <p class="text-sm text-gray-600 font-sans">{{ user.email }}</p>
-                      </div>
-                    </div>
-                    <a href="/logout?returnTo={{ returnTo() }}" class="text-primary flex gap-2 items-center text-xs">
-                      <i class="fa-light fa-sign-out"></i>
-                      <span>Logout</span>
-                    </a>
-                  </div>
+            <!-- Right: Resources Card (fixed width) -->
+            <div class="w-full md:w-[296px]">
+              <div class="bg-slate-50 border border-slate-200 rounded-md p-3" [attr.data-testid]="'resources-card'">
+                <!-- Resources Header -->
+                <div class="flex items-center gap-2 mb-2">
+                  <i class="fa-light fa-paperclip text-gray-500 text-xs"></i>
+                  <h3 class="text-gray-600 text-sm font-normal">Resources</h3>
                 </div>
 
-                @if (joinUrlError()) {
-                  <lfx-message severity="error" icon="fa-light fa-circle-exclamation" styleClass="w-full" [attr.data-testid]="'join-url-error-message'">
-                    <ng-template #content>
-                      <span class="font-sans text-sm">{{ joinUrlError() }}</span>
-                    </ng-template>
-                  </lfx-message>
+                <!-- Attachments List -->
+                @if (attachments().length > 0) {
+                  <div class="flex flex-col gap-2">
+                    @for (attachment of attachments(); track attachment.id; let i = $index) {
+                      <a
+                        [href]="attachment.file_url"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="bg-gray-200 hover:bg-gray-300 rounded px-3 py-2 flex items-center gap-3 min-w-[180px] transition-colors cursor-pointer"
+                        [attr.data-testid]="'meeting-attachment-' + i">
+                        <!-- File Icon -->
+                        <i [class]="(attachment.mime_type || '' | fileTypeIcon) + ' text-3xl text-black'"></i>
+
+                        <!-- File Name -->
+                        <span class="text-sm text-neutral-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-sans">{{
+                          attachment.file_name
+                        }}</span>
+                      </a>
+                    }
+                  </div>
                 } @else {
-                  <lfx-message
-                    [severity]="messageSeverity()"
-                    [icon]="messageIcon()"
-                    styleClass="flex items-center justify-between w-full"
-                    [attr.data-testid]="'join-status-message'">
-                    <ng-template #content>
-                      <div class="flex items-center justify-between w-full">
-                        <div class="flex items-center gap-3 text-sm">
-                          @if (isLoadingJoinUrl()) {
-                            <div class="flex items-center gap-2">
-                              <i class="fa-light fa-spinner-third fa-spin text-primary"></i>
-                              <span class="text-sm text-gray-600">Loading meeting link...</span>
-                            </div>
-                          } @else if (canJoinMeeting()) {
-                            <span class="font-sans">Ready to join as {{ user.name }}</span>
-                          } @else {
-                            <div class="flex flex-col">
-                              <span class="font-sans"
-                                >You may only join the meeting up to <span class="font-bold">{{ meeting().early_join_time_minutes || 10 }} minutes</span> before
-                                the start time.</span
-                              >
-                            </div>
-                          }
-                        </div>
-                        @if (!isLoadingJoinUrl() && !joinUrlError()) {
-                          <div class="ml-4">
-                            <lfx-button
-                              size="small"
-                              severity="primary"
-                              label="Join Meeting"
-                              [href]="fetchedJoinUrl()"
-                              [disabled]="!fetchedJoinUrl()"
-                              icon="fa-light fa-sign-in"
-                              target="_blank"
-                              rel="noopener noreferrer"
-                              [attr.data-testid]="'join-meeting-button-authenticated'"></lfx-button>
-                          </div>
-                        }
-                      </div>
-                    </ng-template>
-                  </lfx-message>
+                  @if (!authenticated() && meeting().visibility === 'private') {
+                    <p class="text-sm text-gray-500 italic">If you have been invited to this meeting, resources may be available when you sign in.</p>
+                  } @else {
+                    <p class="text-sm text-gray-500 italic">No resources available</p>
+                  }
                 }
-
-                <div class="text-center">
-                  <p class="text-xs text-gray-500 font-sans flex gap-1 items-center justify-center">
-                    <span>Not you?</span>
-                    <a class="text-primary" href="/logout?returnTo={{ returnTo() }}"> Use a different account </a>
-                  </p>
-                </div>
               </div>
-            } @else {
-              <!-- Not Logged In State -->
-              <div class="space-y-4">
-                <!-- Sign In Option -->
-                <lfx-message severity="info" icon="fa-light fa-sign-in">
-                  <ng-template #content>
-                    <div class="flex items-center justify-between w-full">
-                      <div>
-                        <h4 class="font-medium text-gray-900 font-sans mb-1">Sign in with your LFX account</h4>
-                        <p class="text-sm text-gray-600 font-sans">Join quickly with your saved information</p>
-                      </div>
-                      <lfx-button
-                        size="small"
-                        severity="primary"
-                        label="Sign In"
-                        icon="fa-light fa-sign-in"
-                        [href]="'/login?returnTo=' + returnTo()"
-                        styleClass="ml-4">
-                      </lfx-button>
-                    </div>
-                  </ng-template>
-                </lfx-message>
-
-                <!-- OR Divider -->
-                <div class="relative">
-                  <div class="absolute inset-0 flex items-center">
-                    <div class="w-full border-t border-gray-300"></div>
-                  </div>
-                  <div class="relative flex justify-center text-xs uppercase">
-                    <span class="bg-white px-2 text-gray-500 font-sans">OR</span>
-                  </div>
-                </div>
-
-                <!-- Manual Entry Form -->
-                <div class="flex flex-col gap-3">
-                  <h4 class="font-medium text-gray-900 font-sans">Enter your information</h4>
-
-                  <form [formGroup]="joinForm" class="flex flex-col gap-3">
-                    <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
-                      <div>
-                        <label for="name" class="flex items-center gap-1 text-sm font-medium text-gray-700 font-sans mb-1">
-                          <i class="fa-light fa-user text-xs"></i>
-                          Full Name
-                          <span class="text-red-500">*</span>
-                        </label>
-                        <lfx-input-text id="name" [form]="joinForm" control="name" placeholder="John Doe" styleClass="w-full" size="small"> </lfx-input-text>
-                      </div>
-
-                      <div>
-                        <label for="email" class="flex items-center gap-1 text-sm font-medium text-gray-700 font-sans mb-1">
-                          <i class="fa-light fa-envelope text-xs"></i>
-                          Email
-                          <span class="text-red-500">*</span>
-                        </label>
-                        <lfx-input-text id="email" [form]="joinForm" control="email" placeholder="john.doe@example.com" styleClass="w-full" size="small">
-                        </lfx-input-text>
-                      </div>
-
-                      <div class="md:col-span-2">
-                        <label for="organization" class="flex items-center gap-1 text-sm font-medium text-gray-700 font-sans mb-1">
-                          <i class="fa-light fa-building text-xs"></i>
-                          Organization
-                        </label>
-                        <lfx-input-text id="organization" [form]="joinForm" control="organization" placeholder="Your Company" styleClass="w-full" size="small">
-                        </lfx-input-text>
-                      </div>
-                    </div>
-
-                    <div class="flex items-center" [ngClass]="{ 'justify-between': !canJoinMeeting(), 'justify-end': canJoinMeeting() }">
-                      @if (!canJoinMeeting()) {
-                        <div class="flex items-center gap-2 text-sm" [ngClass]="{ 'text-blue-700': canJoinMeeting(), 'text-amber-700': !canJoinMeeting() }">
-                          <i class="fa-light fa-clock text-amber-600"></i>
-                          <div class="flex flex-col">
-                            <span class="font-sans text-amber-700"
-                              >You may only join the meeting up to <span class="font-bold">{{ meeting().early_join_time_minutes || 10 }} minutes</span> before
-                              the start time.</span
-                            >
-                          </div>
-                        </div>
-                      }
-                      <div class="flex items-center gap-2">
-                        @if (joinUrlError()) {
-                          <span class="text-xs text-red-500" [attr.data-testid]="'join-url-error-form'">{{ joinUrlError() }}</span>
-                        }
-                        <lfx-button
-                          size="small"
-                          severity="primary"
-                          label="Join Meeting"
-                          [href]="fetchedJoinUrl()"
-                          [disabled]="!fetchedJoinUrl() || isLoadingJoinUrl()"
-                          [icon]="isLoadingJoinUrl() ? 'fa-light fa-spinner-third fa-spin' : 'fa-light fa-sign-in'"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          [attr.data-testid]="'join-meeting-button-form'"></lfx-button>
-                      </div>
-                    </div>
-                  </form>
-                </div>
-              </div>
-            }
+            </div>
           </div>
         </lfx-card>
+
+        <!-- Authentication Section -->
+        @if (authenticated() && user(); as user) {
+          <!-- Signed In State -->
+          <div class="flex flex-col gap-3">
+            <p class="text-sm text-neutral-950">I am signed in as:</p>
+
+            <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex items-center gap-3">
+              <!-- Avatar -->
+              <div class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
+                <span class="text-white text-2xl font-medium">{{ (user.name || 'User').substring(0, 2).toUpperCase() }}</span>
+              </div>
+
+              <!-- User Info -->
+              <div class="flex-1">
+                <p class="font-semibold text-sm text-blue-900">{{ user.name }}</p>
+                <p class="text-sm text-blue-900">{{ user.email }}</p>
+              </div>
+
+              <!-- Logout Button -->
+              <a [href]="'/logout?returnTo=' + returnTo()" class="flex items-center gap-1 px-2 py-1.5 hover:bg-blue-100 rounded transition-colors">
+                <i class="fa-light fa-arrow-right-from-bracket text-sm text-blue-900"></i>
+                <span class="text-sm font-semibold text-blue-900">Log Out</span>
+              </a>
+            </div>
+          </div>
+        } @else {
+          <!-- Signed Out State -->
+          <div class="flex flex-col gap-6">
+            <!-- Sign In CTA -->
+            <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex items-center justify-between gap-3">
+              <div class="flex items-center gap-3">
+                <i class="fa-light fa-arrow-right-to-bracket text-blue-600 text-2xl"></i>
+                <div>
+                  <p class="font-semibold text-sm text-blue-900">Sign in with your LFX account</p>
+                  <p class="text-xs text-gray-600">Join quickly with your saved information</p>
+                </div>
+              </div>
+
+              <lfx-button size="small" label="Sign In" icon="fa-light fa-arrow-right-to-bracket" severity="info" [href]="'/login?returnTo=' + returnTo()">
+              </lfx-button>
+            </div>
+
+            <!-- OR Divider -->
+            <div class="relative h-px bg-gray-200">
+              <span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-50 px-3 text-xs text-gray-600">OR</span>
+            </div>
+
+            <!-- Guest Form -->
+            <div class="flex flex-col gap-4">
+              <p class="font-semibold text-sm text-blue-900">Enter your information</p>
+
+              <form [formGroup]="joinForm" class="flex flex-col gap-4">
+                <!-- Name + Email Row -->
+                <div class="flex gap-4">
+                  <div class="flex-1">
+                    <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
+                      <i class="fa-light fa-user text-gray-600"></i>
+                      <span>Full Name</span>
+                      <span class="text-red-500">*</span>
+                    </label>
+                    <lfx-input-text
+                      size="small"
+                      [form]="joinForm"
+                      control="name"
+                      placeholder="John Doe"
+                      styleClass="w-full"
+                      [attr.data-testid]="'guest-form-name'">
+                    </lfx-input-text>
+                  </div>
+
+                  <div class="flex-1">
+                    <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
+                      <i class="fa-light fa-envelope text-gray-600"></i>
+                      <span>Email</span>
+                      <span class="text-red-500">*</span>
+                    </label>
+                    <lfx-input-text
+                      size="small"
+                      [form]="joinForm"
+                      control="email"
+                      type="email"
+                      placeholder="john.doe@example.com"
+                      styleClass="w-full"
+                      [attr.data-testid]="'guest-form-email'">
+                    </lfx-input-text>
+                  </div>
+                </div>
+
+                <!-- Organization Row -->
+                <div>
+                  <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
+                    <i class="fa-light fa-building text-gray-600"></i>
+                    <span>Organization</span>
+                  </label>
+                  <lfx-input-text
+                    size="small"
+                    [form]="joinForm"
+                    control="organization"
+                    placeholder="Your Company"
+                    styleClass="w-full"
+                    [attr.data-testid]="'guest-form-organization'">
+                  </lfx-input-text>
+                </div>
+
+                <!-- Submit Button -->
+                <div class="flex justify-end">
+                  <lfx-button
+                    size="small"
+                    label="Join Meeting"
+                    icon="fa-light fa-arrow-right-to-bracket"
+                    severity="info"
+                    [disabled]="joinForm.invalid || !fetchedJoinUrl() || isLoadingJoinUrl()"
+                    [href]="fetchedJoinUrl()"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    [attr.data-testid]="'join-meeting-button-form'">
+                  </lfx-button>
+                </div>
+              </form>
+            </div>
+          </div>
+        }
       </div>
     </div>
 
-    <!-- Toast messages -->
+    <!-- Toast Notifications -->
     <p-toast></p-toast>
   </div>
 }

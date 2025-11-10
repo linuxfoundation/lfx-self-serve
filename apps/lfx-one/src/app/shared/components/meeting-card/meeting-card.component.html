@@ -243,6 +243,13 @@
           </div>
         }
 
+        <!-- RSVP Section - Show for authenticated users on upcoming meetings -->
+        @if (!pastMeeting() && authenticated() && !meeting().organizer) {
+          <div class="mt-3.5">
+            <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id" [showHeader]="false"> </lfx-rsvp-button-group>
+          </div>
+        }
+
         <!-- Past Meeting Buttons -->
         @if (pastMeeting()) {
           <div class="flex gap-2 mt-3.5">

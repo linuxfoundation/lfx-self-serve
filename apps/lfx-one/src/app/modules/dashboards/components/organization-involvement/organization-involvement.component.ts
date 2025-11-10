@@ -10,12 +10,13 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { CONTRIBUTIONS_METRICS, IMPACT_METRICS, PRIMARY_INVOLVEMENT_METRICS } from '@lfx-one/shared/constants';
 import { ContributionMetric, ImpactMetric, OrganizationInvolvementMetricWithChart, PrimaryInvolvementMetric } from '@lfx-one/shared/interfaces';
 import { hexToRgba } from '@lfx-one/shared/utils';
+import { TooltipModule } from 'primeng/tooltip';
 import { finalize, map, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-organization-involvement',
   standalone: true,
-  imports: [CommonModule, ChartComponent],
+  imports: [CommonModule, ChartComponent, TooltipModule],
   providers: [CurrencyPipe],
   templateUrl: './organization-involvement.component.html',
   styleUrl: './organization-involvement.component.scss',

@@ -5,7 +5,7 @@ import { MeetingOccurrence, MeetingRsvp, RsvpCounts } from '../interfaces/meetin
 
 /**
  * Calculate RSVP counts for a specific occurrence
- * Takes into account RSVP scope (single, all, following) and uses the most recent RSVP per user
+ * Takes into account RSVP scope (single, all, this_and_following) and uses the most recent RSVP per user
  *
  * @param occurrence - The meeting occurrence to calculate for (or null for non-recurring meetings)
  * @param allRsvps - All RSVPs for the meeting
@@ -102,8 +102,8 @@ function getApplicableRsvp(occurrence: MeetingOccurrence | null, userRsvps: Meet
       continue;
     }
 
-    if (rsvp.scope === 'following') {
-      // 'following' scope applies to this occurrence and all future ones
+    if (rsvp.scope === 'this_and_following') {
+      // 'this_and_following' scope applies to this occurrence and all future ones
       // Check if this RSVP was created before or at the time of this occurrence
       const rsvpDate = new Date(rsvp.created_at);
       if (rsvpDate <= occurrenceDate) {

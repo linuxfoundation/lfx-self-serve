@@ -8,7 +8,7 @@ import { Pipe, PipeTransform } from '@angular/core';
   standalone: true,
 })
 export class MeetingTimePipe implements PipeTransform {
-  public transform(startTime: string | null, duration: number | null, format: 'full' | 'full-start' | 'date' | 'time' = 'full'): string {
+  public transform(startTime: string | null, duration: number | null, format: 'full' | 'full-start' | 'date' | 'time' | 'compact' = 'full'): string {
     if (!startTime) {
       return 'Time not set';
     }
@@ -44,29 +44,46 @@ export class MeetingTimePipe implements PipeTransform {
       const startTimeStr = startDate.toLocaleTimeString('en-US', timeOptions);
 
       switch (format) {
+        case 'compact': {
+          // Return compact format: Wed, Aug 26 • 11:30 PM - 12:30 AM
+          const compactDateOptions: Intl.DateTimeFormatOptions = {
+            weekday: 'short',
+            month: 'short',
+            day: 'numeric',
+          };
+          const compactDateStr = startDate.toLocaleDateString('en-US', compactDateOptions);
+          if (endDate) {
+            const endTimeStr = endDate.toLocaleTimeString('en-US', timeOptions);
+            return `${compactDateStr} • ${startTimeStr} - ${endTimeStr}`;
+          }
+          return `${compactDateStr} • ${startTimeStr}`;
+        }
+
         case 'date':
           // Return just the date: Monday, August 4, 2025
           return dateStr;
 
-        case 'time':
+        case 'time': {
           // Return just the time range: 3:00 PM - 4:00 PM
           if (endDate) {
             const endTimeStr = endDate.toLocaleTimeString('en-US', timeOptions);
             return `${startTimeStr} - ${endTimeStr}`;
           }
           return startTimeStr;
+        }
 
         case 'full-start':
           return `${dateStr} @ ${startTimeStr}`;
 
         case 'full':
-        default:
+        default: {
           // Return full format: Monday, August 4, 2025 3:00 PM - 4:00 PM
           if (endDate) {
             const endTimeStr = endDate.toLocaleTimeString('en-US', timeOptions);
             return `${dateStr} @ ${startTimeStr} - ${endTimeStr}`;
           }
           return `${dateStr} ${startTimeStr}`;
+        }
       }
     } catch {
       return 'Invalid date';
