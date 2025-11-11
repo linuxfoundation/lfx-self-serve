@@ -26,4 +26,7 @@ router.get('/:uid/summary', (req, res, next) => pastMeetingController.getPastMee
 // Update past meeting summary
 router.put('/:uid/summary/:summaryUid', (req, res, next) => pastMeetingController.updatePastMeetingSummary(req, res, next));
 
+// Get past meeting attachments
+router.get('/:uid/attachments', (req, res, next) => pastMeetingController.getPastMeetingAttachments(req, res, next));
+
 export default router;

@@ -7,17 +7,21 @@
  */
 export interface MeetingAttachment {
   /** Unique attachment identifier */
-  id: string;
+  uid: string;
   /** Meeting this attachment belongs to */
-  meeting_id: string;
-  /** Original filename */
-  file_name: string;
-  /** Storage URL for the file */
-  file_url: string;
+  meeting_uid: string;
+  /** Attachment type: 'file' for uploaded files, 'link' for external URLs */
+  type: 'file' | 'link';
+  /** Attachment name */
+  name: string;
+  /** External link URL for link-type attachments */
+  link?: string;
   /** File size in bytes */
   file_size?: number;
   /** MIME type of the file */
   mime_type?: string;
+  /** Description of the attachment */
+  description?: string;
   /** User ID who uploaded the file */
   uploaded_by?: string;
   /** Timestamp when attachment was created */
@@ -46,21 +50,6 @@ export interface CreateMeetingAttachmentRequest {
 }
 
 /**
- * Response from file upload service
- * @description Information about successfully uploaded file
- */
-export interface UploadFileResponse {
-  /** Public URL to access the uploaded file */
-  url: string;
-  /** Storage path of the uploaded file */
-  path: string;
-  /** File size in bytes */
-  size: number;
-  /** MIME type of the uploaded file */
-  mimeType: string;
-}
-
-/**
  * Temporary attachment during upload process
  * @description Represents an attachment being uploaded with status tracking
  */
@@ -69,14 +58,47 @@ export interface PendingAttachment {
   id: string;
   /** Original filename */
   fileName: string;
-  /** Storage URL (available after upload) */
-  fileUrl: string;
+  /** The actual File object to be uploaded */
+  file: File;
   /** File size in bytes */
   fileSize: number;
   /** MIME type of the file */
   mimeType: string;
   /** Whether upload is currently in progress */
   uploading?: boolean;
+  /** Whether upload completed successfully */
+  uploaded?: boolean;
   /** Error message if upload failed */
   uploadError?: string;
+}
+
+/**
+ * Past meeting attachment entity with file metadata
+ * @description Represents a file or link attached to a past meeting
+ */
+export interface PastMeetingAttachment {
+  /** Unique attachment identifier */
+  uid: string;
+  /** Past meeting this attachment belongs to */
+  past_meeting_uid: string;
+  /** Attachment type: 'file' for uploaded files, 'link' for external URLs */
+  type: 'file' | 'link';
+  /** Custom name for the attachment */
+  name: string;
+  /** URL for link-type attachments */
+  link?: string;
+  /** The name of the file (only for type='file') */
+  file_name?: string;
+  /** File size in bytes (only for type='file') */
+  file_size?: number;
+  /** The MIME type of the file (only for type='file') */
+  content_type?: string;
+  /** Optional description of the attachment */
+  description?: string;
+  /** The UID of the file in the shared Object Store (only for type='file') */
+  source_object_uid?: string;
+  /** The username of the user who uploaded the file or link */
+  uploaded_by?: string;
+  /** RFC3339 timestamp when the file was uploaded */
+  uploaded_at: string;
 }

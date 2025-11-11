@@ -26,6 +26,7 @@ export class MeetingResourcesSummaryComponent implements OnInit {
   public readonly existingAttachments = input<MeetingAttachment[]>([]);
   public readonly isEditMode = input<boolean>(false);
   public readonly deletingAttachmentId = input<string | null>(null);
+  public readonly meetingId = input<string | null>(null);
 
   // File management
   public pendingAttachments = signal<PendingAttachment[]>([]);
@@ -100,17 +101,17 @@ export class MeetingResourcesSummaryComponent implements OnInit {
         const pendingAttachment: PendingAttachment = {
           id: crypto.randomUUID(),
           fileName: file.name,
-          fileUrl: '',
+          file: file,
           fileSize: file.size,
           mimeType: file.type,
           uploading: true,
         };
 
         // Start the upload
-        this.meetingService.uploadFileToStorage(file).subscribe({
+        this.meetingService.createFileAttachment(this.meetingId()!, file).subscribe({
           next: (result) => {
             this.pendingAttachments.update((current) =>
-              current.map((pa) => (pa.id === pendingAttachment.id ? { ...pa, fileUrl: result.url, uploading: false } : pa))
+              current.map((pa) => (pa.id === pendingAttachment.id ? { ...pa, link: result.link, uploading: false } : pa))
             );
             this.form().get('attachments')?.setValue(this.pendingAttachments());
           },

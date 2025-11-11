@@ -925,6 +925,354 @@ export class MeetingController {
   }
 
   /**
+   * POST /meetings/:uid/attachments
+   */
+  public async createMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const attachmentData = req.body;
+
+    const startTime = Logger.start(req, 'create_meeting_attachment', {
+      meeting_uid: uid,
+      type: attachmentData.type,
+      name: attachmentData.name,
+    });
+
+    try {
+      // Validate meeting UID
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'create_meeting_attachment',
+          service: 'meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      // Validate attachment data
+      if (!attachmentData.type || !attachmentData.name) {
+        const validationError = ServiceValidationError.fromFieldErrors(
+          {
+            type: !attachmentData.type ? 'Type is required' : [],
+            name: !attachmentData.name ? 'Name is required' : [],
+          },
+          'Attachment data validation failed',
+          {
+            operation: 'create_meeting_attachment',
+            service: 'meeting_controller',
+            path: req.path,
+          }
+        );
+
+        Logger.error(req, 'create_meeting_attachment', startTime, validationError);
+        return next(validationError);
+      }
+
+      // Create FormData for multipart/form-data request
+      const formDataClass = (await import('form-data')).default;
+      const formData = new formDataClass();
+      formData.append('type', attachmentData.type);
+      formData.append('name', attachmentData.name);
+
+      // If file data is provided, include it (base64 encoded file from client)
+      if (attachmentData.file) {
+        const buffer = Buffer.from(attachmentData.file, 'base64');
+        formData.append('file', buffer, {
+          filename: attachmentData.name,
+          contentType: attachmentData.file_content_type || 'application/octet-stream',
+        });
+      }
+
+      // If link is provided instead of file, include it
+      if (attachmentData.link) {
+        formData.append('link', attachmentData.link);
+      }
+
+      // Create attachment via LFX V2 API
+      const attachment = await this.meetingService.createMeetingAttachment(req, uid, formData);
+
+      Logger.success(req, 'create_meeting_attachment', startTime, {
+        attachment_uid: attachment.uid,
+        meeting_uid: uid,
+      });
+
+      res.status(201).json(attachment);
+    } catch (error) {
+      Logger.error(req, 'create_meeting_attachment', startTime, error, {
+        meeting_uid: uid,
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * GET /meetings/:uid/attachments/:attachmentId
+   */
+  public async getMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, attachmentId } = req.params;
+
+    const startTime = Logger.start(req, 'get_meeting_attachment', {
+      meeting_uid: uid,
+      attachment_id: attachmentId,
+    });
+
+    try {
+      // Validate meeting UID
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_meeting_attachment',
+          service: 'meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      // Validate attachment ID
+      if (!attachmentId) {
+        const validationError = ServiceValidationError.forField('attachmentId', 'Attachment ID is required', {
+          operation: 'get_meeting_attachment',
+          service: 'meeting_controller',
+          path: req.path,
+        });
+
+        Logger.error(req, 'get_meeting_attachment', startTime, validationError);
+        return next(validationError);
+      }
+
+      // Get attachment file data via LFX V2 API (downloads file)
+      // The LFX V2 API returns the file with proper Content-Type and Content-Disposition headers
+      const attachmentData = await this.meetingService.getMeetingAttachment(req, uid, attachmentId);
+
+      // Get metadata to set proper filename (fetch in parallel with file data, but don't fail if metadata fails)
+      let filename = 'download';
+      let contentType = 'application/octet-stream';
+
+      try {
+        const metadata = await this.meetingService.getMeetingAttachmentMetadata(req, uid, attachmentId);
+        filename = metadata.name || filename;
+        contentType = metadata.mime_type || metadata.content_type || contentType;
+      } catch (metadataError) {
+        Logger.warning(req, 'get_meeting_attachment_metadata', 'Failed to fetch metadata, using defaults', {
+          meeting_uid: uid,
+          attachment_id: attachmentId,
+          error: metadataError instanceof Error ? metadataError.message : metadataError,
+        });
+      }
+
+      Logger.success(req, 'get_meeting_attachment', startTime, {
+        meeting_uid: uid,
+        attachment_id: attachmentId,
+        status_code: 200,
+      });
+
+      // Set proper headers for file download
+      res.setHeader('Content-Type', contentType);
+
+      // Use RFC 5987 encoding for Content-Disposition filename
+      // This properly handles spaces, special characters, and Unicode
+      const encodedFilename = encodeURIComponent(filename);
+      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedFilename}`);
+
+      res.setHeader('Content-Length', attachmentData.length.toString());
+
+      // Send the buffer directly
+      res.status(200).send(attachmentData);
+    } catch (error) {
+      Logger.error(req, 'get_meeting_attachment', startTime, error, {
+        meeting_uid: uid,
+        attachment_id: attachmentId,
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /meetings/:uid/attachments/:attachmentId
+   */
+  public async deleteMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, attachmentId } = req.params;
+
+    const startTime = Logger.start(req, 'delete_meeting_attachment', {
+      meeting_uid: uid,
+      attachment_id: attachmentId,
+    });
+
+    try {
+      // Validate meeting UID
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'delete_meeting_attachment',
+          service: 'meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      // Validate attachment ID
+      if (!attachmentId) {
+        const validationError = ServiceValidationError.forField('attachmentId', 'Attachment ID is required', {
+          operation: 'delete_meeting_attachment',
+          service: 'meeting_controller',
+          path: req.path,
+        });
+
+        Logger.error(req, 'delete_meeting_attachment', startTime, validationError);
+        return next(validationError);
+      }
+
+      // Delete attachment via LFX V2 API
+      await this.meetingService.deleteMeetingAttachment(req, uid, attachmentId);
+
+      Logger.success(req, 'delete_meeting_attachment', startTime, {
+        meeting_uid: uid,
+        attachment_id: attachmentId,
+        status_code: 204,
+      });
+
+      res.status(204).send();
+    } catch (error) {
+      Logger.error(req, 'delete_meeting_attachment', startTime, error, {
+        meeting_uid: uid,
+        attachment_id: attachmentId,
+      });
+      next(error);
+    }
+  }
+
+  public async getMeetingAttachmentMetadata(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid, attachmentId } = req.params;
+
+    const startTime = Logger.start(req, 'get_meeting_attachment_metadata', {
+      meeting_uid: uid,
+      attachment_id: attachmentId,
+    });
+
+    try {
+      // Validate meeting UID
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_meeting_attachment_metadata',
+          service: 'meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      // Validate attachment ID
+      if (!attachmentId) {
+        const validationError = ServiceValidationError.forField('attachmentId', 'Attachment ID is required', {
+          operation: 'get_meeting_attachment_metadata',
+          service: 'meeting_controller',
+          path: req.path,
+        });
+
+        Logger.error(req, 'get_meeting_attachment_metadata', startTime, validationError);
+        return next(validationError);
+      }
+
+      // Get attachment metadata via LFX V2 API
+      const metadata = await this.meetingService.getMeetingAttachmentMetadata(req, uid, attachmentId);
+
+      Logger.success(req, 'get_meeting_attachment_metadata', startTime, {
+        meeting_uid: uid,
+        attachment_id: attachmentId,
+        status_code: 200,
+      });
+
+      res.status(200).json(metadata);
+    } catch (error) {
+      Logger.error(req, 'get_meeting_attachment_metadata', startTime, error, {
+        meeting_uid: uid,
+        attachment_id: attachmentId,
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * GET /meetings/:uid/attachments
+   */
+  public async getMeetingAttachments(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+
+    const startTime = Logger.start(req, 'get_meeting_attachments', {
+      meeting_uid: uid,
+    });
+
+    try {
+      // Validate meeting UID
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_meeting_attachments',
+          service: 'meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      // Get attachments via Query Service
+      const attachments = await this.meetingService.getMeetingAttachments(req, uid);
+
+      Logger.success(req, 'get_meeting_attachments', startTime, {
+        meeting_uid: uid,
+        attachment_count: attachments.length,
+        status_code: 200,
+      });
+
+      res.status(200).json(attachments);
+    } catch (error) {
+      Logger.error(req, 'get_meeting_attachments', startTime, error, {
+        meeting_uid: uid,
+      });
+      next(error);
+    }
+  }
+
+  /**
+   * GET /meetings/past/:uid/attachments
+   */
+  public async getPastMeetingAttachments(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+
+    const startTime = Logger.start(req, 'get_past_meeting_attachments', {
+      past_meeting_uid: uid,
+    });
+
+    try {
+      // Validate past meeting UID
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_past_meeting_attachments',
+          service: 'meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      // Get attachments via Query Service
+      const attachments = await this.meetingService.getPastMeetingAttachments(req, uid);
+
+      Logger.success(req, 'get_past_meeting_attachments', startTime, {
+        past_meeting_uid: uid,
+        attachment_count: attachments.length,
+        status_code: 200,
+      });
+
+      res.status(200).json(attachments);
+    } catch (error) {
+      Logger.error(req, 'get_past_meeting_attachments', startTime, error, {
+        past_meeting_uid: uid,
+      });
+      next(error);
+    }
+  }
+
+  /**
    * Private helper to process registrant operations with fail-fast for 403 errors
    */
   private async processRegistrantOperations<T, R>(

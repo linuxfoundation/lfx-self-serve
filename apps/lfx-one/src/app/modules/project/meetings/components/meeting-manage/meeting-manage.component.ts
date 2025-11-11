@@ -223,8 +223,8 @@ export class MeetingManageComponent {
     const meetingId = this.meetingId();
     if (!meetingId) return;
 
-    const attachment = this.attachments().find((att: MeetingAttachment) => att.id === attachmentId);
-    const fileName = attachment?.file_name || 'this attachment';
+    const attachment = this.attachments().find((att: MeetingAttachment) => att.uid === attachmentId);
+    const fileName = attachment?.name || 'this attachment';
 
     this.showDeleteAttachmentConfirmation(meetingId, attachmentId, fileName);
   }
@@ -366,7 +366,6 @@ export class MeetingManageComponent {
             const warningMessage = this.isEditMode()
               ? 'Meeting updated but attachments failed to save. You can add them later.'
               : 'Meeting created but attachments failed to save. You can add them later.';
-
             this.messageService.add({
               severity: 'warn',
               summary: this.isEditMode() ? 'Meeting Updated' : 'Meeting Created',
@@ -752,7 +751,9 @@ export class MeetingManageComponent {
   }
 
   private savePendingAttachments(meetingId: string): Observable<{ successes: MeetingAttachment[]; failures: { fileName: string; error: any }[] }> {
-    const attachmentsToSave = this.pendingAttachments.filter((attachment) => !attachment.uploading && !attachment.uploadError && attachment.fileUrl);
+    const attachmentsToSave = this.pendingAttachments.filter(
+      (attachment) => !attachment.uploading && !attachment.uploadError && !attachment.uploaded && attachment.file
+    );
 
     if (attachmentsToSave.length === 0) {
       return of({ successes: [], failures: [] });
@@ -760,7 +761,7 @@ export class MeetingManageComponent {
 
     return from(attachmentsToSave).pipe(
       mergeMap((attachment) =>
-        this.meetingService.createAttachmentFromUrl(meetingId, attachment.fileName, attachment.fileUrl, attachment.fileSize, attachment.mimeType).pipe(
+        this.meetingService.createFileAttachment(meetingId, attachment.file).pipe(
           switchMap((result) => of({ success: result, failure: null })),
           catchError((error) => of({ success: null, failure: { fileName: attachment.fileName, error } }))
         )

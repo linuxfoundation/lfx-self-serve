@@ -80,14 +80,15 @@
       </div>
       @if (attachments().length > 0) {
         <div class="flex items-center gap-1 flex-shrink-0 mt-0.5">
-          @for (attachment of attachments(); track attachment.id; let index = $index) {
+          @for (attachment of attachments(); track attachment.uid; let index = $index) {
             <a
-              [href]="attachment.file_url"
+              [href]="attachment.type === 'link' ? attachment.link : '/api/meetings/' + meeting().uid + '/attachments/' + attachment.uid"
               target="_blank"
               rel="noopener noreferrer"
+              [download]="attachment.type === 'file' ? attachment.name : null"
               class="w-6 h-6 rounded bg-blue-50 flex items-center justify-center hover:bg-blue-100 transition-colors cursor-pointer"
               [attr.data-testid]="'dashboard-meeting-card-file-icon-' + (index + 1)"
-              [pTooltip]="attachment.file_name"
+              [pTooltip]="attachment.name"
               tooltipPosition="top">
               <i class="text-xs text-primary" [ngClass]="attachment.mime_type || '' | fileTypeIcon"></i>
             </a>

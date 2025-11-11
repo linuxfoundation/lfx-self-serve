@@ -844,6 +844,300 @@ export class MeetingService {
     }
   }
 
+  /**
+   * Creates a new meeting attachment via LFX V2 API
+   * @param req - Express request object
+   * @param meetingUid - Meeting UID to attach file to
+   * @param attachmentData - Form data including type, name, and file/url
+   * @returns The created meeting attachment
+   */
+  public async createMeetingAttachment(req: Request, meetingUid: string, attachmentData: any): Promise<any> {
+    req.log.info(
+      {
+        operation: 'create_meeting_attachment',
+        meeting_uid: meetingUid,
+      },
+      'Creating meeting attachment'
+    );
+
+    try {
+      // Call the LFX V2 API endpoint with multipart/form-data
+      // The attachmentData should be a FormData object from the controller
+      // The API client will automatically handle FormData and set the correct Content-Type with boundary
+      const attachment = await this.microserviceProxy.proxyRequest<any>(
+        req,
+        'LFX_V2_SERVICE',
+        `/meetings/${meetingUid}/attachments`,
+        'POST',
+        undefined,
+        attachmentData
+      );
+
+      req.log.info(
+        {
+          operation: 'create_meeting_attachment',
+          attachment_uid: attachment.uid,
+          meeting_uid: meetingUid,
+        },
+        'Meeting attachment created successfully'
+      );
+
+      return attachment;
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'create_meeting_attachment',
+          meeting_uid: meetingUid,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to create meeting attachment'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Gets a meeting attachment (downloads file) via LFX V2 API
+   * @param req - Express request object
+   * @param meetingUid - Meeting UID that the attachment belongs to
+   * @param attachmentUid - Attachment UID to get
+   * @returns The attachment file data
+   */
+  public async getMeetingAttachment(req: Request, meetingUid: string, attachmentUid: string): Promise<Buffer> {
+    req.log.info(
+      {
+        operation: 'get_meeting_attachment',
+        meeting_uid: meetingUid,
+        attachment_uid: attachmentUid,
+      },
+      'Fetching meeting attachment'
+    );
+
+    try {
+      // Use the microservice proxy to download the binary file
+      const buffer = await this.microserviceProxy.proxyBinaryRequest(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/attachments/${attachmentUid}`, 'GET');
+
+      req.log.info(
+        {
+          operation: 'get_meeting_attachment',
+          meeting_uid: meetingUid,
+          attachment_uid: attachmentUid,
+          file_size: buffer.length,
+        },
+        'Meeting attachment fetched successfully'
+      );
+
+      return buffer;
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'get_meeting_attachment',
+          meeting_uid: meetingUid,
+          attachment_uid: attachmentUid,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to fetch meeting attachment'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Deletes a meeting attachment via LFX V2 API
+   * @param req - Express request object
+   * @param meetingUid - Meeting UID that the attachment belongs to
+   * @param attachmentUid - Attachment UID to delete
+   */
+  public async deleteMeetingAttachment(req: Request, meetingUid: string, attachmentUid: string): Promise<void> {
+    req.log.info(
+      {
+        operation: 'delete_meeting_attachment',
+        meeting_uid: meetingUid,
+        attachment_uid: attachmentUid,
+      },
+      'Deleting meeting attachment'
+    );
+
+    try {
+      // Call the LFX V2 API endpoint to delete the attachment
+      await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/attachments/${attachmentUid}`, 'DELETE');
+
+      req.log.info(
+        {
+          operation: 'delete_meeting_attachment',
+          meeting_uid: meetingUid,
+          attachment_uid: attachmentUid,
+        },
+        'Meeting attachment deleted successfully'
+      );
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'delete_meeting_attachment',
+          meeting_uid: meetingUid,
+          attachment_uid: attachmentUid,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to delete meeting attachment'
+      );
+      throw error;
+    }
+  }
+
+  public async getMeetingAttachmentMetadata(req: Request, meetingUid: string, attachmentUid: string): Promise<any> {
+    req.log.info(
+      {
+        operation: 'get_meeting_attachment_metadata',
+        meeting_uid: meetingUid,
+        attachment_uid: attachmentUid,
+      },
+      'Fetching meeting attachment metadata'
+    );
+
+    try {
+      const metadata = await this.microserviceProxy.proxyRequest<any>(
+        req,
+        'LFX_V2_SERVICE',
+        `/meetings/${meetingUid}/attachments/${attachmentUid}/metadata`,
+        'GET'
+      );
+
+      req.log.info(
+        {
+          operation: 'get_meeting_attachment_metadata',
+          meeting_uid: meetingUid,
+          attachment_uid: attachmentUid,
+        },
+        'Meeting attachment metadata fetched successfully'
+      );
+
+      return metadata;
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'get_meeting_attachment_metadata',
+          meeting_uid: meetingUid,
+          attachment_uid: attachmentUid,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to fetch meeting attachment metadata'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Gets all meeting attachments via Query Service
+   * @param req - Express request object
+   * @param meetingUid - Meeting UID to get attachments for
+   * @returns Array of meeting attachments
+   */
+  public async getMeetingAttachments(req: Request, meetingUid: string): Promise<any[]> {
+    req.log.info(
+      {
+        operation: 'get_meeting_attachments',
+        meeting_uid: meetingUid,
+      },
+      'Fetching meeting attachments'
+    );
+
+    try {
+      const params = {
+        type: 'meeting_attachment',
+        tags: `meeting_uid:${meetingUid}`,
+      };
+
+      req.log.debug(
+        {
+          meeting_uid: meetingUid,
+          query_params: params,
+        },
+        'Fetching attachments with query params'
+      );
+
+      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<any>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
+
+      const attachments = resources.map((resource) => resource.data);
+
+      req.log.info(
+        {
+          operation: 'get_meeting_attachments',
+          meeting_uid: meetingUid,
+          attachment_count: attachments.length,
+        },
+        'Meeting attachments retrieved successfully'
+      );
+
+      return attachments;
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'get_meeting_attachments',
+          meeting_uid: meetingUid,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to get meeting attachments'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Gets all past meeting attachments via Query Service
+   * @param req - Express request object
+   * @param pastMeetingUid - Past meeting UID to get attachments for
+   * @returns Array of past meeting attachments
+   */
+  public async getPastMeetingAttachments(req: Request, pastMeetingUid: string): Promise<any[]> {
+    req.log.info(
+      {
+        operation: 'get_past_meeting_attachments',
+        past_meeting_uid: pastMeetingUid,
+      },
+      'Fetching past meeting attachments'
+    );
+
+    try {
+      const params = {
+        type: 'past_meeting_attachment',
+        tags: `past_meeting_uid:${pastMeetingUid}`,
+      };
+
+      req.log.debug(
+        {
+          past_meeting_uid: pastMeetingUid,
+          query_params: params,
+        },
+        'Fetching past meeting attachments with query params'
+      );
+
+      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<any>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
+
+      const attachments = resources.map((resource) => resource.data);
+
+      req.log.info(
+        {
+          operation: 'get_past_meeting_attachments',
+          past_meeting_uid: pastMeetingUid,
+          attachment_count: attachments.length,
+        },
+        'Past meeting attachments retrieved successfully'
+      );
+
+      return attachments;
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'get_past_meeting_attachments',
+          past_meeting_uid: pastMeetingUid,
+          error: error instanceof Error ? error.message : error,
+        },
+        'Failed to get past meeting attachments'
+      );
+      throw error;
+    }
+  }
+
   private async getMeetingCommittees(req: Request, meetings: Meeting[]): Promise<Meeting[]> {
     // Get unique committee UIDs
     const uniqueCommitteeUids = [

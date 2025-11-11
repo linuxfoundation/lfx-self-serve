@@ -255,6 +255,49 @@ export class PastMeetingController {
   }
 
   /**
+   * GET /past-meetings/:uid/attachments
+   */
+  public async getPastMeetingAttachments(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = Logger.start(req, 'get_past_meeting_attachments', {
+      past_meeting_uid: uid,
+    });
+
+    try {
+      // Check if the past meeting UID is provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_past_meeting_attachments',
+          service: 'past_meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      // Get the past meeting attachments
+      const attachments = await this.meetingService.getPastMeetingAttachments(req, uid);
+
+      // Log the success
+      Logger.success(req, 'get_past_meeting_attachments', startTime, {
+        past_meeting_uid: uid,
+        attachment_count: attachments.length,
+      });
+
+      // Send the attachments data to the client
+      res.json(attachments);
+    } catch (error) {
+      // Log the error
+      Logger.error(req, 'get_past_meeting_attachments', startTime, error, {
+        past_meeting_uid: uid,
+      });
+
+      // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
    * PUT /past-meetings/:uid/summary/:summaryUid
    */
   public async updatePastMeetingSummary(req: Request, res: Response, next: NextFunction): Promise<void> {

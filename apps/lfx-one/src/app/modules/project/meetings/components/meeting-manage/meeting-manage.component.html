@@ -51,6 +51,7 @@
               <ng-template #content let-activateCallback="activateCallback">
                 <lfx-meeting-resources-summary
                   [form]="form()"
+                  [meetingId]="meetingId()"
                   [existingAttachments]="attachments()"
                   [isEditMode]="isEditMode()"
                   [deletingAttachmentId]="deletingAttachmentId()"
@@ -109,6 +110,7 @@
                   <h2 class="text-lg font-semibold text-slate-900 mb-4">Resources & Summary</h2>
                   <lfx-meeting-resources-summary
                     [form]="form()"
+                    [meetingId]="meetingId()"
                     [existingAttachments]="attachments()"
                     [isEditMode]="isEditMode()"
                     [deletingAttachmentId]="deletingAttachmentId()"

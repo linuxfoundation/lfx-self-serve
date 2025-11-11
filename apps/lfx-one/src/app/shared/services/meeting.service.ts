@@ -18,6 +18,7 @@ import {
   MeetingRegistrantWithState,
   MeetingRsvp,
   PastMeeting,
+  PastMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
@@ -26,7 +27,6 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
-  UploadFileResponse,
 } from '@lfx-one/shared/interfaces';
 import { catchError, defer, map, Observable, of, switchMap, take, tap, throwError } from 'rxjs';
 
@@ -214,31 +214,6 @@ export class MeetingService {
     );
   }
 
-  public uploadFileToStorage(file: File): Observable<UploadFileResponse> {
-    return defer(() => this.readFileAsBase64(file)).pipe(
-      switchMap((base64Data: string) => {
-        // Generate a temporary path for the file
-        const timestamp = Date.now();
-        const sanitizedFilename = file.name.replace(/[^a-zA-Z0-9.-]/g, '_');
-        const tempPath = `temp/${timestamp}_${sanitizedFilename}`;
-
-        const uploadData = {
-          fileName: file.name,
-          fileData: base64Data,
-          mimeType: file.type,
-          fileSize: file.size,
-          filePath: tempPath,
-        };
-
-        return this.http.post<UploadFileResponse>('/api/meetings/storage/upload', uploadData);
-      }),
-      catchError((error) => {
-        console.error(`Failed to upload file ${file.name}:`, error);
-        return throwError(() => error);
-      })
-    );
-  }
-
   public uploadAttachment(meetingId: string, file: File): Observable<{ message: string; attachment: MeetingAttachment }> {
     return new Observable((observer) => {
       const reader = new FileReader();
@@ -272,13 +247,35 @@ export class MeetingService {
     });
   }
 
-  public createAttachmentFromUrl(meetingId: string, fileName: string, fileUrl: string, fileSize: number, mimeType: string): Observable<MeetingAttachment> {
-    const attachmentData = {
-      meeting_id: meetingId,
-      file_name: fileName,
-      file_url: fileUrl,
-      file_size: fileSize,
-      mime_type: mimeType,
+  public createFileAttachment(meetingId: string, file: File): Observable<MeetingAttachment> {
+    return defer(() => this.readFileAsBase64(file)).pipe(
+      switchMap((base64Data: string) => {
+        // Build attachment data for file upload to LFX V2 API
+        const attachmentData = {
+          type: 'file',
+          name: file.name,
+          file: base64Data,
+          file_content_type: file.type,
+        };
+
+        return this.http.post<MeetingAttachment>(`/api/meetings/${meetingId}/attachments`, attachmentData);
+      }),
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to create file attachment for meeting ${meetingId}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public createAttachmentFromUrl(meetingId: string, name: string, url: string): Observable<MeetingAttachment> {
+    // Build attachment data based on the API schema
+    // For link-type attachments: type, name, link (and optionally description)
+    // For file-type attachments: type, name, file, file_name, file_content_type
+    const attachmentData: any = {
+      type: 'link',
+      name: name,
+      link: url,
     };
 
     return this.http.post<MeetingAttachment>(`/api/meetings/${meetingId}/attachments`, attachmentData).pipe(
@@ -335,6 +332,10 @@ export class MeetingService {
 
   public getPastMeetingSummary(pastMeetingUid: string): Observable<PastMeetingSummary> {
     return this.http.get<PastMeetingSummary>(`/api/past-meetings/${pastMeetingUid}/summary`);
+  }
+
+  public getPastMeetingAttachments(pastMeetingUid: string): Observable<PastMeetingAttachment[]> {
+    return this.http.get<PastMeetingAttachment[]>(`/api/past-meetings/${pastMeetingUid}/attachments`);
   }
 
   public updatePastMeetingSummary(pastMeetingUid: string, summaryUid: string, updateData: UpdatePastMeetingSummaryRequest): Observable<PastMeetingSummary> {
