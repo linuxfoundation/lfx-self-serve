@@ -897,6 +897,9 @@ export class MeetingService {
       })
     );
 
-    return meetings.map((m) => ({ ...m, project_name: projects.find((p) => p?.uid === m.project_uid)?.name || '' }));
+    return meetings.map((m) => {
+      const project = projects.find((p) => p?.uid === m.project_uid);
+      return { ...m, project_name: project?.name || '', project_slug: project?.slug || '' };
+    });
   }
 }

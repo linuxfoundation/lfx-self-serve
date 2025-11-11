@@ -147,6 +147,8 @@ export interface Meeting {
   occurrences: MeetingOccurrence[];
   /** Project name */
   project_name: string;
+  /** Project slug */
+  project_slug: string;
 }
 
 /**

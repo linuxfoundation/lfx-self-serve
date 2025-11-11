@@ -14,6 +14,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MeetingRegistrantsComponent } from '@components/meeting-registrants/meeting-registrants.component';
+import { MeetingRsvpDetailsComponent } from '@components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { RsvpButtonGroupComponent } from '@components/rsvp-button-group/rsvp-button-group.component';
 import { environment } from '@environments/environment';
 import {
@@ -46,6 +48,8 @@ import { catchError, combineLatest, debounceTime, filter, map, Observable, of, s
     CardComponent,
     InputTextComponent,
     RsvpButtonGroupComponent,
+    MeetingRsvpDetailsComponent,
+    MeetingRegistrantsComponent,
     ToastModule,
     TooltipModule,
     MeetingTimePipe,
@@ -86,9 +90,10 @@ export class MeetingJoinComponent {
   public messageIcon: Signal<string>;
   public alertMessage: Signal<string>;
   private hasAutoJoined: WritableSignal<boolean> = signal<boolean>(false);
+  public showRegistrants: WritableSignal<boolean> = signal<boolean>(false);
 
   // Form value signals for reactivity
-  private formValues: Signal<{ name: string; email: string; organization: string }>;
+  public formValues: Signal<{ name: string; email: string; organization: string }>;
 
   public constructor() {
     // Initialize all class variables
@@ -118,6 +123,10 @@ export class MeetingJoinComponent {
       summary: 'Meeting Link Copied',
       detail: 'The meeting link has been copied to your clipboard',
     });
+  }
+
+  public onRegistrantsToggle(): void {
+    this.showRegistrants.set(!this.showRegistrants());
   }
 
   private initializeAutoJoin(): void {

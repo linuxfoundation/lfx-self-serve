@@ -70,64 +70,78 @@
           <!-- Content Row: Title/Details + Join Button (if immediate) -->
           <div class="flex justify-between items-start gap-6 mb-4">
             <!-- Left Column: Title + Details -->
-            <div class="flex-1 flex flex-col gap-4">
-              <!-- Meeting Title -->
-              <h1 class="font-medium text-base text-neutral-950 leading-tight" [attr.data-testid]="'meeting-title'">
-                {{ currentOccurrence()?.title || meeting().title }}
-              </h1>
+            <div class="flex-1 flex flex-col gap-4 justify-between h-full">
+              <div class="flex flex-col gap-4 h-full">
+                <!-- Meeting Title -->
+                <h1 class="font-medium text-base text-neutral-950 leading-tight" [attr.data-testid]="'meeting-title'">
+                  {{ currentOccurrence()?.title || meeting().title }}
+                </h1>
 
-              <!-- Feature Badges Row -->
-              <div class="flex flex-wrap gap-2 items-center">
-                <!-- Date/Time Badge -->
-                @if (currentOccurrence()?.start_time || meeting().start_time; as startTime) {
-                  <div
-                    class="inline-flex items-center gap-1 bg-gray-100/50 text-gray-600 px-2 py-1 rounded text-xs font-medium"
-                    [attr.data-testid]="'meeting-badge-datetime'">
-                    <i class="fa-light fa-calendar"></i>
-                    <span>{{ startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact' }}</span>
-                  </div>
-                }
+                <!-- Feature Badges Row -->
+                <div class="flex flex-wrap gap-2 items-center">
+                  <!-- Date/Time Badge -->
+                  @if (currentOccurrence()?.start_time || meeting().start_time; as startTime) {
+                    <div
+                      class="inline-flex items-center gap-1 bg-gray-100/50 text-gray-600 px-2 py-1 rounded text-xs font-medium"
+                      [attr.data-testid]="'meeting-badge-datetime'">
+                      <i class="fa-light fa-calendar"></i>
+                      <span>{{ startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact' }}</span>
+                    </div>
+                  }
 
-                <!-- YouTube Upload Badge -->
-                @if (meeting().youtube_upload_enabled) {
-                  <div
-                    class="inline-flex items-center gap-1 bg-amber-50 text-amber-500 px-2 py-1 rounded text-xs font-medium"
-                    [attr.data-testid]="'meeting-badge-youtube'">
-                    <i class="fa-light fa-clock"></i>
-                    <span>YouTube Upload</span>
-                  </div>
-                }
+                  <!-- YouTube Upload Badge -->
+                  @if (meeting().youtube_upload_enabled) {
+                    <div
+                      class="inline-flex items-center gap-1 bg-amber-50 text-amber-500 px-2 py-1 rounded text-xs font-medium"
+                      [attr.data-testid]="'meeting-badge-youtube'">
+                      <i class="fa-light fa-clock"></i>
+                      <span>YouTube Upload</span>
+                    </div>
+                  }
 
-                <!-- Recording Badge -->
-                @if (meeting().recording_enabled) {
-                  <div
-                    class="inline-flex items-center gap-1 bg-red-50 text-red-500 px-2 py-1 rounded text-xs font-medium"
-                    [attr.data-testid]="'meeting-badge-recording'">
-                    <i class="fa-light fa-circle-dot"></i>
-                    <span>Recording</span>
-                  </div>
-                }
+                  <!-- Recording Badge -->
+                  @if (meeting().recording_enabled) {
+                    <div
+                      class="inline-flex items-center gap-1 bg-red-50 text-red-500 px-2 py-1 rounded text-xs font-medium"
+                      [attr.data-testid]="'meeting-badge-recording'">
+                      <i class="fa-light fa-circle-dot"></i>
+                      <span>Recording</span>
+                    </div>
+                  }
 
-                <!-- Transcripts Badge -->
-                @if (meeting().transcript_enabled) {
-                  <div
-                    class="inline-flex items-center gap-1 bg-sky-50 text-sky-500 px-2 py-1 rounded text-xs font-medium"
-                    [attr.data-testid]="'meeting-badge-transcripts'">
-                    <i class="fa-light fa-file-lines"></i>
-                    <span>Transcripts</span>
-                  </div>
-                }
+                  <!-- Transcripts Badge -->
+                  @if (meeting().transcript_enabled) {
+                    <div
+                      class="inline-flex items-center gap-1 bg-sky-50 text-sky-500 px-2 py-1 rounded text-xs font-medium"
+                      [attr.data-testid]="'meeting-badge-transcripts'">
+                      <i class="fa-light fa-file-lines"></i>
+                      <span>Transcripts</span>
+                    </div>
+                  }
 
-                <!-- Live Chat Badge (AI Companion) -->
-                @if (meeting().zoom_config?.ai_companion_enabled) {
-                  <div
-                    class="inline-flex items-center gap-1 bg-violet-50 text-violet-500 px-2 py-1 rounded text-xs font-medium"
-                    [attr.data-testid]="'meeting-badge-live-chat'">
-                    <i class="fa-light fa-comments"></i>
-                    <span>Live Chat</span>
-                  </div>
-                }
+                  <!-- Live Chat Badge (AI Companion) -->
+                  @if (meeting().zoom_config?.ai_companion_enabled) {
+                    <div
+                      class="inline-flex items-center gap-1 bg-violet-50 text-violet-500 px-2 py-1 rounded text-xs font-medium"
+                      [attr.data-testid]="'meeting-badge-live-chat'">
+                      <i class="fa-light fa-comments"></i>
+                      <span>Live Chat</span>
+                    </div>
+                  }
+                </div>
               </div>
+              <!-- Alert Banner -->
+              @if (messageSeverity() === 'warn') {
+                <div class="bg-amber-50 border border-amber-500/50 rounded px-3 py-2 flex items-center gap-2" [attr.data-testid]="'meeting-alert-warn'">
+                  <i class="fa-light fa-clock text-amber-500 text-base"></i>
+                  <p class="text-sm text-amber-900">{{ alertMessage() }}</p>
+                </div>
+              } @else if (messageSeverity() === 'info' && canJoinMeeting()) {
+                <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex items-center gap-2" [attr.data-testid]="'meeting-alert-info'">
+                  <i class="fa-light fa-calendar text-blue-500 text-base"></i>
+                  <p class="text-sm text-blue-900">{{ alertMessage() }}</p>
+                </div>
+              }
             </div>
 
             <!-- Right Column: Join Button (immediate meetings) or RSVP (future meetings) -->
@@ -147,26 +161,44 @@
                   [attr.data-testid]="'join-meeting-button-immediate'">
                 </lfx-button>
               </div>
+            } @else if (authenticated() && meeting().organizer) {
+              <!-- RSVP Details - Future Meeting (Authenticated Organizers) -->
+              <div class="w-[296px] flex flex-col gap-3">
+                <lfx-meeting-rsvp-details
+                  [meeting]="meeting()"
+                  [project]="project()"
+                  [currentOccurrence]="currentOccurrence()"
+                  [pastMeeting]="false"
+                  [showAddLink]="true"
+                  [additionalRegistrantsCount]="0"
+                  backgroundColor="bg-slate-50"
+                  borderColor="border-slate-200">
+                </lfx-meeting-rsvp-details>
+
+                <!-- View Guests Button -->
+                <lfx-button
+                  class="w-full"
+                  styleClass="w-full"
+                  label="View Guests"
+                  icon="fa-light fa-users"
+                  [outlined]="true"
+                  severity="secondary"
+                  size="small"
+                  (onClick)="onRegistrantsToggle()"
+                  data-testid="view-guests-button">
+                </lfx-button>
+              </div>
             } @else if (authenticated()) {
-              <!-- RSVP Container - Future Meeting (Authenticated Users) -->
+              <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) -->
               <div class="w-[296px]">
                 <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
               </div>
             }
           </div>
 
-          <!-- Alert Banner -->
-          @if (messageSeverity() === 'warn') {
-            <div class="bg-amber-50 border border-amber-500/50 rounded px-3 py-2 flex items-center gap-2" [attr.data-testid]="'meeting-alert-warn'">
-              <i class="fa-light fa-clock text-amber-500 text-base"></i>
-              <p class="text-sm text-amber-900">{{ alertMessage() }}</p>
-            </div>
-          } @else if (messageSeverity() === 'info' && canJoinMeeting()) {
-            <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex items-center gap-2" [attr.data-testid]="'meeting-alert-info'">
-              <i class="fa-light fa-calendar text-blue-500 text-base"></i>
-              <p class="text-sm text-blue-900">{{ alertMessage() }}</p>
-            </div>
-          }
+          <!-- Meeting Registrants -->
+          <lfx-meeting-registrants [meeting]="meeting()" [pastMeeting]="false" [showAddRegistrant]="false" [visible]="showRegistrants()">
+          </lfx-meeting-registrants>
 
           <!-- Divider -->
           <hr class="border-gray-200 my-4" />
@@ -230,130 +262,133 @@
               </div>
             </div>
           </div>
+
+          <!-- Footer Divider -->
+          <hr class="border-gray-200 my-4" />
+
+          <!-- Card Footer: Authentication Section -->
+          @if (authenticated() && user(); as user) {
+            <!-- Signed In State -->
+            <div class="flex flex-col gap-3">
+              <p class="text-sm text-neutral-950">I am signed in as:</p>
+
+              <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex items-center gap-3">
+                <!-- Avatar -->
+                <div class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
+                  <span class="text-white text-2xl font-medium">{{ (user.name || 'User').substring(0, 2).toUpperCase() }}</span>
+                </div>
+
+                <!-- User Info -->
+                <div class="flex-1">
+                  <p class="font-semibold text-sm text-blue-900">{{ user.name }}</p>
+                  <p class="text-sm text-blue-900">{{ user.email }}</p>
+                </div>
+
+                <!-- Logout Button -->
+                <a [href]="'/logout?returnTo=' + returnTo()" class="flex items-center gap-1 px-2 py-1.5 hover:bg-blue-100 rounded transition-colors">
+                  <i class="fa-light fa-arrow-right-from-bracket text-sm text-blue-900"></i>
+                  <span class="text-sm font-semibold text-blue-900">Log Out</span>
+                </a>
+              </div>
+            </div>
+          } @else {
+            <!-- Signed Out State -->
+            <div class="flex flex-col gap-6">
+              <!-- Sign In CTA -->
+              <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex items-center justify-between gap-3">
+                <div class="flex items-center gap-3">
+                  <i class="fa-light fa-arrow-right-to-bracket text-blue-600 text-2xl"></i>
+                  <div>
+                    <p class="font-semibold text-sm text-blue-900">Sign in with your LFX account</p>
+                    <p class="text-xs text-gray-600">Join quickly with your saved information</p>
+                  </div>
+                </div>
+
+                <lfx-button size="small" label="Sign In" icon="fa-light fa-arrow-right-to-bracket" severity="info" [href]="'/login?returnTo=' + returnTo()">
+                </lfx-button>
+              </div>
+
+              <!-- OR Divider -->
+              <div class="relative h-px bg-gray-200">
+                <span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white px-3 text-xs text-gray-600">OR</span>
+              </div>
+
+              <!-- Guest Form -->
+              <div class="flex flex-col gap-4">
+                <p class="font-semibold text-sm text-blue-900">Enter your information</p>
+
+                <form [formGroup]="joinForm" class="flex flex-col gap-4">
+                  <!-- Name + Email Row -->
+                  <div class="flex gap-4">
+                    <div class="flex-1">
+                      <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
+                        <i class="fa-light fa-user text-gray-600"></i>
+                        <span>Full Name</span>
+                        <span class="text-red-500">*</span>
+                      </label>
+                      <lfx-input-text
+                        size="small"
+                        [form]="joinForm"
+                        control="name"
+                        placeholder="John Doe"
+                        styleClass="w-full"
+                        [attr.data-testid]="'guest-form-name'">
+                      </lfx-input-text>
+                    </div>
+
+                    <div class="flex-1">
+                      <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
+                        <i class="fa-light fa-envelope text-gray-600"></i>
+                        <span>Email</span>
+                        <span class="text-red-500">*</span>
+                      </label>
+                      <lfx-input-text
+                        size="small"
+                        [form]="joinForm"
+                        control="email"
+                        type="email"
+                        placeholder="john.doe@example.com"
+                        styleClass="w-full"
+                        [attr.data-testid]="'guest-form-email'">
+                      </lfx-input-text>
+                    </div>
+                  </div>
+
+                  <!-- Organization Row -->
+                  <div>
+                    <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
+                      <i class="fa-light fa-building text-gray-600"></i>
+                      <span>Organization</span>
+                    </label>
+                    <lfx-input-text
+                      size="small"
+                      [form]="joinForm"
+                      control="organization"
+                      placeholder="Your Company"
+                      styleClass="w-full"
+                      [attr.data-testid]="'guest-form-organization'">
+                    </lfx-input-text>
+                  </div>
+
+                  <!-- Submit Button -->
+                  <div class="flex justify-end">
+                    <lfx-button
+                      size="small"
+                      label="Join Meeting"
+                      icon="fa-light fa-arrow-right-to-bracket"
+                      severity="info"
+                      [disabled]="joinForm.invalid || !fetchedJoinUrl() || isLoadingJoinUrl()"
+                      [href]="fetchedJoinUrl()"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      [attr.data-testid]="'join-meeting-button-form'">
+                    </lfx-button>
+                  </div>
+                </form>
+              </div>
+            </div>
+          }
         </lfx-card>
-
-        <!-- Authentication Section -->
-        @if (authenticated() && user(); as user) {
-          <!-- Signed In State -->
-          <div class="flex flex-col gap-3">
-            <p class="text-sm text-neutral-950">I am signed in as:</p>
-
-            <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex items-center gap-3">
-              <!-- Avatar -->
-              <div class="w-12 h-12 bg-blue-600 rounded-full flex items-center justify-center">
-                <span class="text-white text-2xl font-medium">{{ (user.name || 'User').substring(0, 2).toUpperCase() }}</span>
-              </div>
-
-              <!-- User Info -->
-              <div class="flex-1">
-                <p class="font-semibold text-sm text-blue-900">{{ user.name }}</p>
-                <p class="text-sm text-blue-900">{{ user.email }}</p>
-              </div>
-
-              <!-- Logout Button -->
-              <a [href]="'/logout?returnTo=' + returnTo()" class="flex items-center gap-1 px-2 py-1.5 hover:bg-blue-100 rounded transition-colors">
-                <i class="fa-light fa-arrow-right-from-bracket text-sm text-blue-900"></i>
-                <span class="text-sm font-semibold text-blue-900">Log Out</span>
-              </a>
-            </div>
-          </div>
-        } @else {
-          <!-- Signed Out State -->
-          <div class="flex flex-col gap-6">
-            <!-- Sign In CTA -->
-            <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex items-center justify-between gap-3">
-              <div class="flex items-center gap-3">
-                <i class="fa-light fa-arrow-right-to-bracket text-blue-600 text-2xl"></i>
-                <div>
-                  <p class="font-semibold text-sm text-blue-900">Sign in with your LFX account</p>
-                  <p class="text-xs text-gray-600">Join quickly with your saved information</p>
-                </div>
-              </div>
-
-              <lfx-button size="small" label="Sign In" icon="fa-light fa-arrow-right-to-bracket" severity="info" [href]="'/login?returnTo=' + returnTo()">
-              </lfx-button>
-            </div>
-
-            <!-- OR Divider -->
-            <div class="relative h-px bg-gray-200">
-              <span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-gray-50 px-3 text-xs text-gray-600">OR</span>
-            </div>
-
-            <!-- Guest Form -->
-            <div class="flex flex-col gap-4">
-              <p class="font-semibold text-sm text-blue-900">Enter your information</p>
-
-              <form [formGroup]="joinForm" class="flex flex-col gap-4">
-                <!-- Name + Email Row -->
-                <div class="flex gap-4">
-                  <div class="flex-1">
-                    <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
-                      <i class="fa-light fa-user text-gray-600"></i>
-                      <span>Full Name</span>
-                      <span class="text-red-500">*</span>
-                    </label>
-                    <lfx-input-text
-                      size="small"
-                      [form]="joinForm"
-                      control="name"
-                      placeholder="John Doe"
-                      styleClass="w-full"
-                      [attr.data-testid]="'guest-form-name'">
-                    </lfx-input-text>
-                  </div>
-
-                  <div class="flex-1">
-                    <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
-                      <i class="fa-light fa-envelope text-gray-600"></i>
-                      <span>Email</span>
-                      <span class="text-red-500">*</span>
-                    </label>
-                    <lfx-input-text
-                      size="small"
-                      [form]="joinForm"
-                      control="email"
-                      type="email"
-                      placeholder="john.doe@example.com"
-                      styleClass="w-full"
-                      [attr.data-testid]="'guest-form-email'">
-                    </lfx-input-text>
-                  </div>
-                </div>
-
-                <!-- Organization Row -->
-                <div>
-                  <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
-                    <i class="fa-light fa-building text-gray-600"></i>
-                    <span>Organization</span>
-                  </label>
-                  <lfx-input-text
-                    size="small"
-                    [form]="joinForm"
-                    control="organization"
-                    placeholder="Your Company"
-                    styleClass="w-full"
-                    [attr.data-testid]="'guest-form-organization'">
-                  </lfx-input-text>
-                </div>
-
-                <!-- Submit Button -->
-                <div class="flex justify-end">
-                  <lfx-button
-                    size="small"
-                    label="Join Meeting"
-                    icon="fa-light fa-arrow-right-to-bracket"
-                    severity="info"
-                    [disabled]="joinForm.invalid || !fetchedJoinUrl() || isLoadingJoinUrl()"
-                    [href]="fetchedJoinUrl()"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    [attr.data-testid]="'join-meeting-button-form'">
-                  </lfx-button>
-                </div>
-              </form>
-            </div>
-          </div>
-        }
       </div>
     </div>
 

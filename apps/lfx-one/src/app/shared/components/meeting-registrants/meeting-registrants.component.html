@@ -1,0 +1,82 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (visible()) {
+  <div class="border-t border-gray-200 pt-4 mt-4" data-testid="registrants-section">
+    @if (registrantsLoading()) {
+      <div class="flex items-center justify-center py-8">
+        <i class="fa-light fa-circle-notch fa-spin text-2xl text-blue-600"></i>
+      </div>
+    }
+
+    @if (!registrantsLoading()) {
+      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+        @if (!pastMeeting() && showAddRegistrant()) {
+          <!-- Add Registrant Option -->
+          <div
+            class="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors border-2 border-dashed border-blue-200 hover:border-blue-400"
+            (click)="onAddRegistrantClick()"
+            data-testid="add-registrant-button">
+            <div class="w-8 h-8 bg-blue-100 border border-blue-200 rounded-full flex items-center justify-center">
+              <i class="fa-light fa-plus text-blue-500"></i>
+            </div>
+            <div class="flex flex-col min-w-0 flex-1">
+              <span class="text-sm text-blue-600 font-medium">Add Guests</span>
+              <span class="text-xs text-blue-500">Click to add new guests</span>
+            </div>
+          </div>
+        }
+
+        @if (pastMeeting()) {
+          @for (participant of pastMeetingParticipants(); track participant.uid) {
+            <div class="flex items-center gap-2 p-2 rounded-md" [attr.data-testid]="'participant-' + participant.uid">
+              @if (participant.is_attended) {
+                <i class="fa-light fa-check-circle text-green-500" pTooltip="Attended"></i>
+              } @else {
+                <i class="fa-light fa-times-circle text-red-500" pTooltip="Did Not Attend"></i>
+              }
+              <div class="flex flex-col min-w-0 flex-1">
+                <div class="flex items-center gap-1 text-xs">
+                  <i class="fa-light fa-user text-blue-500" pTooltip="Participant"></i>
+                  <span class="text-sm text-gray-900 truncate">{{ participant.first_name }} {{ participant.last_name }}</span>
+                </div>
+                <span class="text-xs text-gray-500 truncate">{{ participant.email }}</span>
+              </div>
+            </div>
+          }
+        } @else {
+          @for (registrant of registrants(); track registrant.uid) {
+            <div
+              class="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors"
+              (click)="onRegistrantEdit(registrant)"
+              [attr.data-testid]="'registrant-' + registrant.uid">
+              <div class="relative">
+                <lfx-avatar [label]="registrant.first_name" styleClass="bg-blue-50 border border-gray-200 w-8 h-8" shape="circle"></lfx-avatar>
+                <div class="absolute -top-1 -right-1">
+                  @if (registrant.invite_accepted === false) {
+                    <i class="fa-solid text-xs fa-times-circle text-red-500" pTooltip="Declined Invite"></i>
+                  } @else if (!registrant.invite_accepted) {
+                    <i class="fa-solid text-xs fa-circle-question text-amber-400" pTooltip="Pending Response"></i>
+                  } @else {
+                    <i class="fa-solid text-xs fa-check-circle text-green-500" pTooltip="Invite Accepted"></i>
+                  }
+                </div>
+              </div>
+              <div class="flex flex-col min-w-0 flex-1">
+                <div class="flex items-center gap-1 text-xs">
+                  @if (registrant.type === 'committee') {
+                    <i class="fa-light fa-people-group text-green-500" pTooltip="Committee"></i>
+                  } @else {
+                    <i class="fa-light fa-user text-blue-500" pTooltip="Individual"></i>
+                  }
+                  <span class="text-sm text-gray-900 truncate">{{ registrant.first_name }} {{ registrant.last_name }}</span>
+                </div>
+                <span class="text-xs text-gray-500 truncate">{{ registrant.email }}</span>
+              </div>
+            </div>
+          }
+        }
+      </div>
+    }
+  </div>
+}

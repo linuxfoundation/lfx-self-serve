@@ -8,6 +8,7 @@ import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { AuthorizationError } from '../errors/authentication.error';
 import { Logger } from '../helpers/logger';
 import { validateUidParameter } from '../helpers/validation.helper';
+import { AccessCheckService } from '../services/access-check.service';
 import { MeetingService } from '../services/meeting.service';
 import { ProjectService } from '../services/project.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
@@ -19,6 +20,7 @@ import { validatePassword } from '../utils/security.util';
 export class PublicMeetingController {
   private meetingService: MeetingService = new MeetingService();
   private projectService: ProjectService = new ProjectService();
+  private accessCheckService: AccessCheckService = new AccessCheckService();
   /**
    * GET /public/api/meetings/:id
    * Retrieves a single meeting by ID without requiring authentication
@@ -35,9 +37,12 @@ export class PublicMeetingController {
         return;
       }
 
+      // Save the user's original token before setting M2M token
+      const originalToken = req.bearerToken;
+
       // Get the meeting by ID using M2M token
       Logger.start(req, 'get_public_meeting_by_id_fetch_meeting', { meeting_uid: id });
-      const meeting = await this.fetchMeetingWithM2M(req, id);
+      let meeting = await this.fetchMeetingWithM2M(req, id);
       if (!meeting) {
         // Log the error
         Logger.error(req, 'get_public_meeting_by_id_fetch_meeting', startTime, new Error('Meeting not found'));
@@ -92,6 +97,36 @@ export class PublicMeetingController {
       const { password } = req.query;
       if (!this.validateMeetingPassword(password as string, meeting.password as string, 'get_public_meeting_by_id', req, next, startTime)) {
         return;
+      }
+
+      // Check if user is authenticated and add organizer field
+      if (req.oidc?.isAuthenticated()) {
+        // Restore user's original token before organizer check
+        if (originalToken !== undefined) {
+          req.bearerToken = originalToken;
+        }
+
+        Logger.start(req, 'get_public_meeting_by_id_check_organizer', { meeting_uid: id });
+        try {
+          meeting = await this.accessCheckService.addAccessToResource(req, meeting, 'meeting', 'organizer');
+          Logger.success(req, 'get_public_meeting_by_id_check_organizer', startTime, {
+            meeting_uid: id,
+            is_organizer: meeting.organizer,
+          });
+        } catch (error) {
+          // If organizer check fails, log but continue with organizer = false
+          req.log.warn(
+            {
+              error: error instanceof Error ? error.message : error,
+              meeting_uid: id,
+            },
+            'Failed to check organizer status, continuing with organizer = false'
+          );
+          meeting.organizer = false;
+        }
+      } else {
+        // User is not authenticated, set organizer to false
+        meeting.organizer = false;
       }
 
       // Send the meeting and project data to the client
