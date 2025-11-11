@@ -2,109 +2,172 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, input } from '@angular/core';
+import { Component, computed, ElementRef, signal, ViewChild, input } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
-import { FOUNDATION_HEALTH_DATA } from '@lfx-one/shared/constants';
-import { Foundation, OrgDependencyRiskLevel } from '@lfx-one/shared/interfaces';
+import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
+import { AGGREGATE_FOUNDATION_METRICS, FOUNDATION_SPARKLINE_CHART_OPTIONS, FOUNDATION_BAR_CHART_OPTIONS } from '@lfx-one/shared/constants';
+import { FoundationMetricCard, MetricCategory, TopProjectDisplay } from '@lfx-one/shared/interfaces';
 import { hexToRgba } from '@lfx-one/shared/utils';
-
-import { HealthScoreTagComponent } from '../health-score-tag/health-score-tag.component';
-
-interface FoundationDisplay extends Foundation {
-  softwareValueFormatted: string;
-  totalMembersFormatted: string;
-  activeContributorsAvg: string;
-  maintainersAvg: string;
-  eventsTotal: number;
-  activeContributorsChartData: {
-    labels: string[];
-    datasets: {
-      data: number[];
-      borderColor: string;
-      backgroundColor: string;
-      fill: boolean;
-      tension: number;
-      borderWidth: number;
-      pointRadius: number;
-    }[];
-  };
-  maintainersChartData: {
-    labels: string[];
-    datasets: {
-      data: number[];
-      borderColor: string;
-      backgroundColor: string;
-      fill: boolean;
-      tension: number;
-      borderWidth: number;
-      pointRadius: number;
-    }[];
-  };
-  barHeights: number[];
-  pieChartPaths: {
-    otherPath: string;
-    topPath: string;
-  };
-  orgDependencyColor: string;
-  orgDependencyTextColorClass: string;
-}
 
 @Component({
   selector: 'lfx-foundation-health',
-  imports: [CommonModule, ChartComponent, HealthScoreTagComponent],
+  standalone: true,
+  imports: [CommonModule, FilterPillsComponent, ChartComponent],
   templateUrl: './foundation-health.component.html',
   styleUrl: './foundation-health.component.scss',
 })
 export class FoundationHealthComponent {
-  /**
-   * Optional callback for "View All" button
-   */
-  public onViewAll = input<() => void>();
+  @ViewChild('carouselScroll') public carouselScrollContainer!: ElementRef;
 
-  /**
-   * Optional filter to show only specific foundation
-   */
-  public foundationFilter = input<string>();
+  public readonly title = input<string>('Foundation Health');
 
-  /**
-   * Computed foundations with pre-calculated display values
-   */
-  public readonly foundations = computed<FoundationDisplay[]>(() => {
-    const filter = this.foundationFilter();
-    const filtered = filter ? FOUNDATION_HEALTH_DATA.filter((f) => f.id === filter) : FOUNDATION_HEALTH_DATA;
+  public readonly selectedFilter = signal<string>('all');
 
-    return filtered.map((foundation) => ({
-      ...foundation,
-      softwareValueFormatted: this.formatSoftwareValue(foundation.softwareValue),
-      totalMembersFormatted: foundation.totalMembers.toLocaleString(),
-      activeContributorsAvg: this.calculateAverage(foundation.activeContributors).toLocaleString(),
-      maintainersAvg: this.calculateAverage(foundation.maintainers).toLocaleString(),
-      eventsTotal: this.calculateTotal(foundation.eventsMonthly),
-      activeContributorsChartData: this.createSparklineData(foundation.activeContributors, '#009AFF'),
-      maintainersChartData: this.createSparklineData(foundation.maintainers, '#009AFF'),
-      barHeights: this.calculateBarHeights(foundation.eventsMonthly),
-      pieChartPaths: this.createPieChartPaths(foundation.orgDependency.topOrgsPercentage),
-      orgDependencyColor: this.getOrgDependencyColor(foundation.orgDependency.riskLevel),
-      orgDependencyTextColorClass: this.getOrgDependencyTextColor(foundation.orgDependency.riskLevel),
+  public readonly filterOptions: FilterOption[] = [
+    { id: 'all', label: 'All' },
+    { id: 'contributors', label: 'Contributors' },
+    { id: 'projects', label: 'Projects' },
+    { id: 'events', label: 'Events' },
+  ];
+
+  public readonly sparklineOptions = FOUNDATION_SPARKLINE_CHART_OPTIONS;
+
+  public readonly barChartOptions = FOUNDATION_BAR_CHART_OPTIONS;
+
+  private readonly allMetricCards = computed<FoundationMetricCard[]>(() => {
+    const metrics = AGGREGATE_FOUNDATION_METRICS;
+
+    return [
+      {
+        icon: 'fa-light fa-chart-bar',
+        title: 'Total Projects',
+        value: metrics.totalProjects.toLocaleString(),
+        subtitle: 'Across all foundations',
+        category: 'projects' as MetricCategory,
+        testId: 'foundation-health-card-total-projects',
+        customContentType: 'sparkline',
+        chartData: this.createSparklineData(metrics.totalProjectsData, '#0094FF'),
+      },
+      {
+        icon: 'fa-light fa-users',
+        title: 'Total Members',
+        value: metrics.totalMembers.toLocaleString(),
+        subtitle: 'Member organizations',
+        category: 'projects' as MetricCategory,
+        testId: 'foundation-health-card-total-members',
+        customContentType: 'sparkline',
+        chartData: this.createSparklineData(metrics.totalMembersData, '#0094FF'),
+      },
+      {
+        icon: 'fa-light fa-chart-bar',
+        title: 'Software Value',
+        value: this.formatSoftwareValue(metrics.softwareValue),
+        subtitle: 'Estimated total value of software managed',
+        category: 'projects' as MetricCategory,
+        testId: 'foundation-health-card-software-value',
+        customContentType: 'top-projects',
+        topProjects: this.formatTopProjects(metrics.topProjectsByValue),
+      },
+      {
+        icon: 'fa-light fa-shield',
+        title: 'Company Bus Factor',
+        value: metrics.companyBusFactor.topCompaniesCount.toString(),
+        subtitle: 'Companies account for >50% code contributions',
+        category: 'contributors' as MetricCategory,
+        testId: 'foundation-health-card-company-bus-factor',
+        customContentType: 'bus-factor',
+        busFactor: metrics.companyBusFactor,
+      },
+      {
+        icon: 'fa-light fa-code',
+        title: 'Active Contributors',
+        value: metrics.avgActiveContributors.toLocaleString(),
+        subtitle: 'Average active contributors over the past year',
+        category: 'contributors' as MetricCategory,
+        testId: 'foundation-health-card-active-contributors',
+        customContentType: 'sparkline',
+        chartData: this.createSparklineData(metrics.activeContributorsData, '#0094FF'),
+      },
+      {
+        icon: 'fa-light fa-user-check',
+        title: 'Maintainers',
+        value: metrics.avgMaintainers.toString(),
+        subtitle: 'Average maintainers over the past year',
+        category: 'contributors' as MetricCategory,
+        testId: 'foundation-health-card-maintainers',
+        customContentType: 'sparkline',
+        chartData: this.createSparklineData(metrics.maintainersData, '#0094FF'),
+      },
+      {
+        icon: 'fa-light fa-calendar',
+        title: 'Events',
+        value: metrics.totalEvents.toString(),
+        subtitle: 'Total events over 12 months',
+        category: 'events' as MetricCategory,
+        testId: 'foundation-health-card-events',
+        customContentType: 'bar-chart',
+        chartData: this.createBarChartData(metrics.eventsMonthlyData, '#0094FF'),
+      },
+      {
+        icon: 'fa-light fa-chart-bar',
+        title: 'Project Health Scores',
+        value: '',
+        subtitle: '',
+        category: 'projects' as MetricCategory,
+        testId: 'foundation-health-card-project-health-scores',
+        customContentType: 'health-scores',
+        healthScores: metrics.projectHealthDistribution,
+      },
+    ];
+  });
+
+  public readonly metricCards = computed<FoundationMetricCard[]>(() => {
+    const filter = this.selectedFilter();
+    const allCards = this.allMetricCards();
+
+    if (filter === 'all') {
+      return allCards;
+    }
+
+    return allCards.filter((card) => card.category === filter);
+  });
+
+  public readonly healthScoreDistribution = computed(() => {
+    const metrics = AGGREGATE_FOUNDATION_METRICS;
+    const distribution = metrics.projectHealthDistribution;
+
+    const data = [
+      { category: 'Critical', count: distribution.critical, color: '#EF4444' },
+      { category: 'Unsteady', count: distribution.unsteady, color: '#FB923C' },
+      { category: 'Stable', count: distribution.stable, color: '#F59E0B' },
+      { category: 'Healthy', count: distribution.healthy, color: '#0094FF' },
+      { category: 'Excellent', count: distribution.excellent, color: '#10bc8a' },
+    ];
+
+    const maxCount = Math.max(...data.map((d) => d.count));
+
+    return data.map((item) => ({
+      ...item,
+      heightPx: Math.round((item.count / maxCount) * 64),
     }));
   });
 
-  /**
-   * Sparkline chart options for contributor/maintainer charts
-   */
-  public readonly sparklineOptions = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: { legend: { display: false }, tooltip: { enabled: false } },
-    scales: {
-      x: { display: false },
-      y: { display: false },
-    },
-  };
+  public handleFilterChange(filter: string): void {
+    this.selectedFilter.set(filter);
+  }
 
-  /**
-   * Format software value in millions to display format
-   */
+  public scrollLeft(): void {
+    if (!this.carouselScrollContainer?.nativeElement) return;
+    const container = this.carouselScrollContainer.nativeElement;
+    container.scrollBy({ left: -320, behavior: 'smooth' });
+  }
+
+  public scrollRight(): void {
+    if (!this.carouselScrollContainer?.nativeElement) return;
+    const container = this.carouselScrollContainer.nativeElement;
+    container.scrollBy({ left: 320, behavior: 'smooth' });
+  }
+
   private formatSoftwareValue(valueInMillions: number): string {
     if (valueInMillions >= 1000) {
       const billions = valueInMillions / 1000;
@@ -113,23 +176,13 @@ export class FoundationHealthComponent {
     return `${valueInMillions.toLocaleString()}M`;
   }
 
-  /**
-   * Calculate total from array of numbers
-   */
-  private calculateTotal(data: number[]): number {
-    return data.reduce((sum, val) => sum + val, 0);
+  private formatTopProjects(projects: { name: string; value: number }[]): TopProjectDisplay[] {
+    return projects.map((project) => ({
+      name: project.name,
+      formattedValue: this.formatSoftwareValue(project.value),
+    }));
   }
 
-  /**
-   * Calculate average from array of numbers
-   */
-  private calculateAverage(data: number[]): number {
-    return Math.round(data.reduce((sum, val) => sum + val, 0) / data.length);
-  }
-
-  /**
-   * Create sparkline chart data for contributors or maintainers
-   */
   private createSparklineData(data: number[], color: string) {
     return {
       labels: Array.from({ length: data.length }, (_, i) => `Day ${i + 1}`),
@@ -147,76 +200,19 @@ export class FoundationHealthComponent {
     };
   }
 
-  /**
-   * Calculate bar heights for monthly bar chart
-   */
-  private calculateBarHeights(data: number[]): number[] {
-    const maxValue = Math.max(...data);
-    const minValue = Math.min(...data);
-    const range = maxValue - minValue;
+  private createBarChartData(data: number[], color: string) {
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
 
-    return data.map((value) => {
-      if (range === 0) {
-        return 50;
-      }
-      const heightPercent = ((value - minValue) / range) * 100;
-      return Math.max(heightPercent, 10);
-    });
-  }
-
-  /**
-   * Get color for org dependency pie chart based on risk level
-   */
-  private getOrgDependencyColor(riskLevel: OrgDependencyRiskLevel): string {
-    const riskColors: Record<OrgDependencyRiskLevel, string> = {
-      low: '#0094FF',
-      moderate: '#F59E0B',
-      high: '#EF4444',
-    };
-    return riskColors[riskLevel];
-  }
-
-  /**
-   * Get text color class for org dependency based on risk level
-   */
-  private getOrgDependencyTextColor(riskLevel: OrgDependencyRiskLevel): string {
-    const colorMap: Record<OrgDependencyRiskLevel, string> = {
-      low: 'text-[#0094FF]',
-      moderate: 'text-amber-600',
-      high: 'text-red-600',
-    };
-    return colorMap[riskLevel];
-  }
-
-  /**
-   * Create SVG path for pie chart slice
-   */
-  private createPieSlice(startAngle: number, endAngle: number): string {
-    const centerX = 20;
-    const centerY = 20;
-    const radius = 16;
-
-    const startRad = ((startAngle - 90) * Math.PI) / 180;
-    const endRad = ((endAngle - 90) * Math.PI) / 180;
-
-    const x1 = centerX + radius * Math.cos(startRad);
-    const y1 = centerY + radius * Math.sin(startRad);
-    const x2 = centerX + radius * Math.cos(endRad);
-    const y2 = centerY + radius * Math.sin(endRad);
-
-    const largeArc = endAngle - startAngle > 180 ? 1 : 0;
-
-    return `M ${centerX} ${centerY} L ${x1} ${y1} A ${radius} ${radius} 0 ${largeArc} 1 ${x2} ${y2} Z`;
-  }
-
-  /**
-   * Create pie chart paths for org dependency visualization
-   */
-  private createPieChartPaths(topPercentage: number): { otherPath: string; topPath: string } {
-    const otherAngle = 360 - topPercentage * 3.6;
     return {
-      otherPath: this.createPieSlice(0, otherAngle),
-      topPath: this.createPieSlice(otherAngle, 360),
+      labels: months,
+      datasets: [
+        {
+          data,
+          backgroundColor: color,
+          borderColor: color,
+          borderWidth: 0,
+        },
+      ],
     };
   }
 }

@@ -43,6 +43,9 @@ export * from './meeting-attachment.interface';
 // Dashboard interfaces
 export * from './dashboard.interface';
 
+// Foundation metrics interfaces
+export * from './foundation-metrics.interface';
+
 // AI interfaces
 export * from './ai.interface';
 
