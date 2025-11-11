@@ -8,7 +8,6 @@ import {
   BoardMemberDashboardResponse,
   OrganizationContributionsOverviewResponse,
   OrganizationEventsOverviewResponse,
-  OrganizationSegmentOverviewResponse,
   UserCodeCommitsResponse,
   UserProjectsResponse,
   UserPullRequestsResponse,
@@ -129,29 +128,6 @@ export class AnalyticsService {
   }
 
   /**
-   * Get consolidated organization segment overview (projects participating + total commits) in a single API call
-   * Optimized endpoint that reduces API roundtrips by combining related metrics
-   * @param accountId - Optional account ID to filter by specific organization
-   * @returns Observable of consolidated segment overview response
-   *
-   * Generated with [Claude Code](https://claude.ai/code)
-   */
-  public getOrganizationSegmentOverview(accountId?: string): Observable<OrganizationSegmentOverviewResponse> {
-    const options = accountId ? { params: { accountId } } : {};
-    return this.http.get<OrganizationSegmentOverviewResponse>('/api/analytics/organization-segment-overview', options).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch organization segment overview:', error);
-        return of({
-          projectsParticipating: 0,
-          totalCommits: 0,
-          accountId: '',
-          segmentId: '',
-        });
-      })
-    );
-  }
-
-  /**
    * Get consolidated board member dashboard data (membership tier + certified employees + board meeting attendance)
    * Optimized endpoint that reduces API roundtrips by combining related metrics in a single API call
    * @param accountId - Optional account ID to filter by specific organization
@@ -207,10 +183,6 @@ export class AnalyticsService {
             totalSpeakers: 0,
             totalEvents: 0,
             accountName: '',
-          },
-          eventSponsorships: {
-            currencySummaries: [],
-            totalEvents: 0,
           },
           accountId: '',
           projectId: '',

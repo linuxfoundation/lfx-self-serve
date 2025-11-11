@@ -61,9 +61,9 @@ export class ExampleComponent {
   private readonly service = inject(DataService);
 
   // Access reactive signals from service
-  protected readonly data = this.service.data;
-  protected readonly loading = this.service.loading;
-  protected readonly error = this.service.error;
+  public readonly data = this.service.data;
+  public readonly loading = this.service.loading;
+  public readonly error = this.service.error;
 }
 ```
 
@@ -236,7 +236,7 @@ export class ExampleComponent {
   public readonly valueChange = output<string>();
 
   // Event handlers
-  protected handleClick(event: Event): void {
+  public handleClick(event: Event): void {
     this.onClick.emit(event);
   }
 }

@@ -142,3 +142,4 @@ Before starting any work or commits:
 4. **Link PR to JIRA ticket** when creating pull requests
 
 - Always use sequential thinking mcp for planning before doing any changes
+- Always run yarn build to validate that your changes are building too for validation

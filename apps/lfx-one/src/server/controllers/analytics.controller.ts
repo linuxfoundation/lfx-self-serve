@@ -178,38 +178,6 @@ export class AnalyticsController {
   }
 
   /**
-   * GET /api/analytics/organization-segment-overview
-   * Get consolidated organization segment data (projects participating + total commits) in a single request
-   * Optimized endpoint that executes a single database query for both metrics
-   * Query params: accountId (optional) - Organization account ID
-   *
-   * Generated with [Claude Code](https://claude.ai/code)
-   */
-  public async getOrganizationSegmentOverview(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'get_organization_segment_overview');
-
-    try {
-      const accountId = (req.query['accountId'] as string) || ANALYTICS_DEFAULTS.ACCOUNT_ID;
-      const segmentId = ANALYTICS_DEFAULTS.SEGMENT_ID;
-
-      // Single database query for both metrics (projects participating + total commits)
-      const response = await this.organizationService.getSegmentOverview(accountId, segmentId);
-
-      Logger.success(req, 'get_organization_segment_overview', startTime, {
-        account_id: accountId,
-        segment_id: segmentId,
-        projects_participating: response.projectsParticipating,
-        total_commits: response.totalCommits,
-      });
-
-      res.json(response);
-    } catch (error) {
-      Logger.error(req, 'get_organization_segment_overview', startTime, error);
-      next(error);
-    }
-  }
-
-  /**
    * GET /api/analytics/board-member-dashboard
    * Get consolidated board member dashboard data (membership tier + certified employees + board meeting attendance)
    * Optimized endpoint that executes a single database query for all three metrics
@@ -265,7 +233,6 @@ export class AnalyticsController {
         project_id: projectId,
         total_attendees: response.eventAttendance.totalAttendees,
         total_speakers: response.eventAttendance.totalSpeakers,
-        sponsored_events: response.eventSponsorships.totalEvents,
       });
 
       res.json(response);

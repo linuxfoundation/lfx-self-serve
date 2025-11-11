@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { ContributionMetric, ImpactMetric, PrimaryInvolvementMetric } from '../interfaces/dashboard.interface';
+import type { PrimaryInvolvementMetric } from '../interfaces/dashboard.interface';
 
 /**
  * Helper function to generate trend data for spark line charts
@@ -11,6 +11,42 @@ const generateTrendData = (months: number, baseValue: number): number[] => {
     const trendValue = i * 2;
     return Math.max(0, baseValue + trendValue + (Math.random() * 10 - 5));
   });
+};
+
+/**
+ * Chart.js configuration for sparkline charts (line charts showing trends)
+ * Used for displaying small trend visualizations in metrics cards
+ */
+export const SPARKLINE_CHART_OPTIONS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { display: false }, tooltip: { enabled: false } },
+  scales: {
+    x: { display: false },
+    y: { display: false },
+  },
+};
+
+/**
+ * Chart.js configuration for bar charts
+ * Used for displaying bar chart visualizations in metrics cards
+ */
+export const BAR_CHART_OPTIONS = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: { legend: { display: false }, tooltip: { enabled: false } },
+  scales: {
+    x: { display: false },
+    y: { display: false },
+  },
+  datasets: {
+    bar: {
+      barPercentage: 0.9,
+      categoryPercentage: 0.95,
+      borderRadius: 4,
+      borderSkipped: false,
+    },
+  },
 };
 
 /**
@@ -26,18 +62,10 @@ export const PRIMARY_INVOLVEMENT_METRICS: PrimaryInvolvementMetric[] = [
     // All membership data (tier, dates, fees) comes from getBoardMemberDashboard API
   },
   {
-    title: 'Event Sponsorship',
-    icon: 'fa-light fa-dollar-sign',
-    sparklineData: generateTrendData(12, 60), // TODO: Replace with API trend data
-    sparklineColor: '#0094FF', // TODO: Replace with API color
-    chartType: 'line' as const,
-    // All event data (amounts, counts) comes from getOrganizationEventsOverview API
-  },
-  {
     title: 'Active Contributors',
     icon: 'fa-light fa-users',
     sparklineData: generateTrendData(12, 60), // TODO: Replace with API trend data
-    sparklineColor: '#0094FF', // TODO: Replace with API color
+    sparklineColor: '#0094FF',
     chartType: 'line' as const,
     // All contributor data comes from getOrganizationContributionsOverview API
   },
@@ -45,62 +73,40 @@ export const PRIMARY_INVOLVEMENT_METRICS: PrimaryInvolvementMetric[] = [
     title: 'Maintainers',
     icon: 'fa-light fa-user-check',
     sparklineData: generateTrendData(12, 60), // TODO: Replace with API trend data
-    sparklineColor: '#0094FF', // TODO: Replace with API color
+    sparklineColor: '#0094FF',
     chartType: 'line' as const,
     // All maintainer data comes from getOrganizationContributionsOverview API
   },
-];
-
-/**
- * Contributions metrics for board member organization involvement
- * These are displayed in a list format without charts
- */
-export const CONTRIBUTIONS_METRICS: ContributionMetric[] = [
-  {
-    title: 'Contribution Rank',
-    descriptiveValue: '#3 of 45 members',
-    tooltip: 'Rank among member organizations based on contribution volume',
-  },
-  {
-    title: 'TOC/TSC/TAG Participation',
-    descriptiveValue: '8 representatives',
-    tooltip: 'Number of Technical Oversight Committee, Technical Steering Committee, and Technical Advisory Group representatives',
-  },
-  {
-    title: 'Board Meetings Participation',
-    descriptiveValue: '95% attendance',
-    tooltip: 'Percentage of board meetings attended by our representatives',
-  },
-  {
-    title: 'Total Commits',
-    descriptiveValue: '1,247',
-    tooltip: 'Total code commits to CNCF projects this year',
-  },
-];
-
-/**
- * Impact metrics for board member organization involvement
- * These are displayed in a list format without charts
- */
-export const IMPACT_METRICS: ImpactMetric[] = [
-  {
-    title: 'Projects Participating',
-    descriptiveValue: '2 projects',
-    tooltip: 'Number of CNCF projects with active contributions from our organization',
-  },
   {
     title: 'Event Attendees',
-    descriptiveValue: '156 employees',
-    tooltip: 'Total employees attending CNCF events this year',
+    icon: 'fa-light fa-user-group',
+    sparklineData: generateTrendData(30, 150), // TODO: Replace with API trend data
+    sparklineColor: '#0094FF',
+    chartType: 'line' as const,
+    // All event attendee data comes from getOrganizationEventsOverview API
   },
   {
     title: 'Event Speakers',
-    descriptiveValue: '23 speakers',
-    tooltip: 'Employee speakers presenting at CNCF events',
+    icon: 'fa-light fa-microphone',
+    sparklineData: generateTrendData(30, 20), // TODO: Replace with API trend data
+    sparklineColor: '#0094FF',
+    chartType: 'line' as const,
+    // All event speaker data comes from getOrganizationEventsOverview API
   },
   {
     title: 'Certified Employees',
-    descriptiveValue: '47 certifications',
-    tooltip: 'Employees with CNCF certifications',
+    icon: 'fa-light fa-certificate',
+    sparklineData: generateTrendData(30, 45), // TODO: Replace with API trend data
+    sparklineColor: '#0094FF',
+    chartType: 'line' as const,
+    // All certified employee data comes from getBoardMemberDashboard API
+  },
+  {
+    title: 'Training Enrollments',
+    icon: 'fa-light fa-graduation-cap',
+    sparklineData: generateTrendData(30, 80), // TODO: Replace with API trend data
+    sparklineColor: '#D3D3D3',
+    chartType: 'line' as const,
+    // Training enrollment data will come from API
   },
 ];

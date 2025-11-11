@@ -87,36 +87,6 @@ export interface PrimaryInvolvementMetric {
 }
 
 /**
- * Contribution metric for list display
- * @description Metric data for organization contributions displayed in list format
- */
-export interface ContributionMetric {
-  /** Metric title */
-  title: string;
-  /** Descriptive value (e.g., "#3 of 45 members", "8 representatives") */
-  descriptiveValue: string;
-  /** Tooltip text explaining the metric */
-  tooltip: string;
-  /** Whether the metric is connected to live API data (true) or using placeholder data (false) */
-  isConnected?: boolean;
-}
-
-/**
- * Impact metric for list display
- * @description Metric data for organization impact displayed in list format
- */
-export interface ImpactMetric {
-  /** Metric title */
-  title: string;
-  /** Descriptive value (e.g., "2 projects", "156 employees") */
-  descriptiveValue: string;
-  /** Tooltip text explaining the metric */
-  tooltip: string;
-  /** Whether the metric is connected to live API data (true) or using placeholder data (false) */
-  isConnected?: boolean;
-}
-
-/**
  * Organization involvement metric with chart data
  * @description Processed metric with Chart.js data for display in organization involvement component
  */
@@ -159,8 +129,6 @@ export interface OrganizationInvolvementMetricWithChart {
   nextDue?: string;
   /** Flag indicating this is a membership tier metric */
   isMembershipTier?: boolean;
-  /** Whether the metric is connected to live API data (true) or using placeholder data (false) */
-  isConnected?: boolean;
 }
 
 /**

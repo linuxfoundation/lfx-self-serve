@@ -37,24 +37,6 @@ export class MainLayoutComponent {
       icon: 'fa-light fa-video',
       routerLink: '/meetings',
     },
-    {
-      label: 'Project Health',
-      icon: 'fa-light fa-heart-pulse',
-      routerLink: '/project-health',
-      disabled: true,
-    },
-    {
-      label: 'Events & Community',
-      icon: 'fa-light fa-calendar',
-      routerLink: '/events-community',
-      disabled: true,
-    },
-    {
-      label: 'Training & Certification',
-      icon: 'fa-light fa-book-open',
-      routerLink: '/training-certification',
-      disabled: true,
-    },
   ];
 
   // Sidebar footer items
@@ -63,6 +45,7 @@ export class MainLayoutComponent {
       label: 'Documentation',
       icon: 'fa-light fa-file-lines',
       url: 'https://docs.lfx.linuxfoundation.org',
+      disabled: true,
     },
     {
       label: 'Submit a Ticket',

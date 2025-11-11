@@ -8,11 +8,8 @@ import {
   OrganizationContributionsOverviewResponse,
   OrganizationEventAttendanceRow,
   OrganizationEventsOverviewResponse,
-  OrganizationEventSponsorshipsAggregateRow,
-  OrganizationSegmentOverviewResponse,
   OrganizationSuggestion,
   OrganizationSuggestionsResponse,
-  SegmentContributionsConsolidatedRow,
 } from '@lfx-one/shared';
 import { Request } from 'express';
 
@@ -112,23 +109,6 @@ export class OrganizationService {
   }
 
   /**
-   * Get organization segment overview (projects participating + total commits)
-   * @param accountId - Organization account ID
-   * @param segmentId - Segment ID
-   * @returns Segment overview
-   */
-  public async getSegmentOverview(accountId: string, segmentId: string): Promise<OrganizationSegmentOverviewResponse> {
-    const data = await this.getSegmentData(accountId, segmentId);
-
-    return {
-      projectsParticipating: data.PROJECTS_PARTICIPATING || 0,
-      totalCommits: data.TOTAL_COMMITS || 0,
-      accountId: data.ACCOUNT_ID,
-      segmentId: data.SEGMENT_ID,
-    };
-  }
-
-  /**
    * Get organization events overview (event attendance + event sponsorships)
    * @param accountId - Organization account ID
    * @param projectId - Project ID
@@ -147,25 +127,7 @@ export class OrganizationService {
       GROUP BY ACCOUNT_ID
     `;
 
-    const sponsorshipsQuery = `
-      SELECT
-        SUM(PRICE) AS TOTAL_AMOUNT,
-        CURRENCY_CODE,
-        MAX(ACCOUNT_ID) AS ACCOUNT_ID,
-        (SELECT COUNT(DISTINCT EVENT_ID)
-         FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_EVENT_SPONSORSHIPS
-         WHERE ACCOUNT_ID = ? AND PROJECT_ID = ?) AS TOTAL_EVENTS
-      FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_EVENT_SPONSORSHIPS
-      WHERE ACCOUNT_ID = ?
-        AND PROJECT_ID = ?
-      GROUP BY CURRENCY_CODE
-      ORDER BY CURRENCY_CODE
-    `;
-
-    const [attendanceResult, sponsorshipsResult] = await Promise.all([
-      this.snowflakeService.execute<OrganizationEventAttendanceRow>(attendanceQuery, [accountId]),
-      this.snowflakeService.execute<OrganizationEventSponsorshipsAggregateRow>(sponsorshipsQuery, [accountId, projectId, accountId, projectId]),
-    ]);
+    const attendanceResult = await this.snowflakeService.execute<OrganizationEventAttendanceRow>(attendanceQuery, [accountId]);
 
     if (attendanceResult.rows.length === 0) {
       throw new ResourceNotFoundError('Organization event attendance data', accountId, {
@@ -173,17 +135,7 @@ export class OrganizationService {
       });
     }
 
-    if (sponsorshipsResult.rows.length === 0) {
-      throw new ResourceNotFoundError('Organization event sponsorships data', accountId, {
-        operation: 'get_organization_events_overview',
-      });
-    }
-
     const attendanceRow = attendanceResult.rows[0];
-    const currencySummaries = sponsorshipsResult.rows.map((row) => ({
-      amount: row.TOTAL_AMOUNT,
-      currencyCode: row.CURRENCY_CODE,
-    }));
 
     return {
       eventAttendance: {
@@ -191,10 +143,6 @@ export class OrganizationService {
         totalSpeakers: attendanceRow.TOTAL_SPEAKERS,
         totalEvents: attendanceRow.TOTAL_EVENTS,
         accountName: attendanceRow.ACCOUNT_NAME,
-      },
-      eventSponsorships: {
-        currencySummaries,
-        totalEvents: sponsorshipsResult.rows[0].TOTAL_EVENTS,
       },
       accountId: attendanceRow.ACCOUNT_ID,
       projectId,
@@ -241,39 +189,6 @@ export class OrganizationService {
     if (result.rows.length === 0) {
       throw new ResourceNotFoundError('Organization contributions data', accountId, {
         operation: 'get_contributions_data',
-      });
-    }
-
-    return result.rows[0];
-  }
-
-  /**
-   * Get segment contributions data from database
-   * @param accountId - Organization account ID
-   * @param segmentId - Segment ID
-   * @returns Segment contributions data row
-   */
-  private async getSegmentData(accountId: string, segmentId: string): Promise<SegmentContributionsConsolidatedRow> {
-    const query = `
-      WITH base AS (SELECT ? AS ACCOUNT_ID, ? AS SEGMENT_ID)
-      SELECT
-        pp.PROJECTS_PARTICIPATING,
-        tc.TOTAL_COMMITS,
-        COALESCE(pp.ACCOUNT_ID, tc.ACCOUNT_ID, base.ACCOUNT_ID) AS ACCOUNT_ID,
-        COALESCE(pp.SEGMENT_ID, tc.SEGMENT_ID, base.SEGMENT_ID) AS SEGMENT_ID
-      FROM base
-      LEFT JOIN ANALYTICS_DEV.DEV_JEVANS_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_PROJECTS_PARTICIPATING pp
-        ON base.ACCOUNT_ID = pp.ACCOUNT_ID AND base.SEGMENT_ID = pp.SEGMENT_ID
-      LEFT JOIN ANALYTICS_DEV.DEV_JEVANS_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_TOTAL_COMMITS tc
-        ON base.ACCOUNT_ID = tc.ACCOUNT_ID AND base.SEGMENT_ID = tc.SEGMENT_ID
-      LIMIT 1
-    `;
-
-    const result = await this.snowflakeService.execute<SegmentContributionsConsolidatedRow>(query, [accountId, segmentId]);
-
-    if (result.rows.length === 0) {
-      throw new ResourceNotFoundError('Segment contributions data', accountId, {
-        operation: 'get_segment_data',
       });
     }
 

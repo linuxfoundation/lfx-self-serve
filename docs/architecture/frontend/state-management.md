@@ -118,7 +118,7 @@ export class UserService {
   `,
 })
 export class UserProfileComponent {
-  protected readonly userService = inject(UserService);
+  public readonly userService = inject(UserService);
 }
 ```
 
@@ -150,12 +150,12 @@ export class ProjectListComponent {
   private readonly filterSignal = signal<string>('');
 
   // Service state
-  protected readonly projects = this.projectService.projects;
-  protected readonly loading = this.projectService.loading;
-  protected readonly error = this.projectService.error;
+  public readonly projects = this.projectService.projects;
+  public readonly loading = this.projectService.loading;
+  public readonly error = this.projectService.error;
 
   // Computed state
-  protected readonly filteredProjects = computed(() => {
+  public readonly filteredProjects = computed(() => {
     const filter = this.filterSignal().toLowerCase();
     const projects = this.projects();
 
@@ -165,11 +165,11 @@ export class ProjectListComponent {
   });
 
   // Actions
-  protected updateFilter(filter: string): void {
+  public updateFilter(filter: string): void {
     this.filterSignal.set(filter);
   }
 
-  protected loadMoreProjects(): void {
+  public loadMoreProjects(): void {
     this.projectService.loadMoreProjects();
   }
 }
@@ -286,8 +286,8 @@ export class RealtimeService {
   `,
 })
 export class DashboardComponent {
-  protected readonly userService = inject(UserService);
-  protected readonly projectService = inject(ProjectService);
+  public readonly userService = inject(UserService);
+  public readonly projectService = inject(ProjectService);
 
   constructor() {
     // Load data when component initializes
