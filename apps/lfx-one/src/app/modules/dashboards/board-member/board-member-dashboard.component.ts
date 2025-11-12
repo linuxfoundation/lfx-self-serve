@@ -8,6 +8,7 @@ import { Account } from '@lfx-one/shared/interfaces';
 
 import { SelectComponent } from '../../../shared/components/select/select.component';
 import { AccountContextService } from '../../../shared/services/account-context.service';
+import { ProjectContextService } from '../../../shared/services/project-context.service';
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { OrganizationInvolvementComponent } from '../components/organization-involvement/organization-involvement.component';
@@ -21,12 +22,13 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
 })
 export class BoardMemberDashboardComponent {
   private readonly accountContextService = inject(AccountContextService);
-
+  private readonly projectContextService = inject(ProjectContextService);
   public readonly form = new FormGroup({
     selectedAccountId: new FormControl<string>(this.accountContextService.selectedAccount().accountId),
   });
 
   public readonly availableAccounts: Signal<Account[]> = computed(() => this.accountContextService.availableAccounts);
+  public readonly selectedFoundation = computed(() => this.projectContextService.selectedFoundation());
 
   public constructor() {
     this.form

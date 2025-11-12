@@ -31,7 +31,16 @@
     </div>
   </div>
 
-  @if (isLoading()) {
+  @if (!hasFoundationSelected()) {
+    <!-- No Foundation Selected State -->
+    <div class="flex items-center justify-center p-12">
+      <div class="text-center space-y-3">
+        <i class="fa-light fa-circle-exclamation text-4xl text-gray-400"></i>
+        <p class="text-sm text-gray-600 font-medium">Please select a foundation project to view organization data</p>
+        <p class="text-xs text-gray-500">Use the project selector in the sidebar to choose a foundation</p>
+      </div>
+    </div>
+  } @else if (isLoading()) {
     <!-- Loading State -->
     <div class="flex items-center justify-center p-12">
       <div class="text-center space-y-3">

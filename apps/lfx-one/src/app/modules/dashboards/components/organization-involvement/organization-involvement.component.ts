@@ -6,13 +6,14 @@ import { Component, computed, ElementRef, inject, signal, ViewChild } from '@ang
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { AccountContextService } from '@app/shared/services/account-context.service';
 import { AnalyticsService } from '@app/shared/services/analytics.service';
+import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { ChartComponent } from '@components/chart/chart.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { BAR_CHART_OPTIONS, PRIMARY_INVOLVEMENT_METRICS, SPARKLINE_CHART_OPTIONS } from '@lfx-one/shared/constants';
 import { OrganizationInvolvementMetricWithChart, PrimaryInvolvementMetric } from '@lfx-one/shared/interfaces';
 import { hexToRgba } from '@lfx-one/shared/utils';
 import { TooltipModule } from 'primeng/tooltip';
-import { finalize, map, switchMap } from 'rxjs';
+import { combineLatest, finalize, map, of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-organization-involvement',
@@ -26,11 +27,14 @@ export class OrganizationInvolvementComponent {
 
   private readonly analyticsService = inject(AnalyticsService);
   private readonly accountContextService = inject(AccountContextService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   private readonly contributionsLoading = signal(true);
   private readonly dashboardLoading = signal(true);
   private readonly eventsLoading = signal(true);
   private readonly selectedAccountId$ = toObservable(this.accountContextService.selectedAccount).pipe(map((account) => account.accountId));
+  private readonly selectedFoundationSlug$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((foundation) => foundation?.slug || ''));
+  public readonly hasFoundationSelected = computed<boolean>(() => !!this.projectContextService.selectedFoundation());
   private readonly contributionsOverviewData = this.initializeContributionsOverviewData();
   private readonly boardMemberDashboardData = this.initializeBoardMemberDashboardData();
   private readonly eventsOverviewData = this.initializeEventsOverviewData();
@@ -148,10 +152,30 @@ export class OrganizationInvolvementComponent {
 
   private initializeBoardMemberDashboardData() {
     return toSignal(
-      this.selectedAccountId$.pipe(
-        switchMap((accountId) => {
+      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$]).pipe(
+        switchMap(([accountId, foundationSlug]) => {
           this.dashboardLoading.set(true);
-          return this.analyticsService.getBoardMemberDashboard(accountId).pipe(finalize(() => this.dashboardLoading.set(false)));
+
+          // Return empty data if no foundation is selected
+          if (!foundationSlug) {
+            this.dashboardLoading.set(false);
+            return of({
+              membershipTier: {
+                tier: '',
+                membershipStartDate: '',
+                membershipEndDate: '',
+                membershipStatus: '',
+              },
+              certifiedEmployees: {
+                certifications: 0,
+                certifiedEmployees: 0,
+              },
+              accountId: '',
+              projectId: '',
+            });
+          }
+
+          return this.analyticsService.getBoardMemberDashboard(accountId, foundationSlug).pipe(finalize(() => this.dashboardLoading.set(false)));
         })
       ),
       {
@@ -165,12 +189,6 @@ export class OrganizationInvolvementComponent {
           certifiedEmployees: {
             certifications: 0,
             certifiedEmployees: 0,
-          },
-          boardMeetingAttendance: {
-            totalMeetings: 0,
-            attendedMeetings: 0,
-            notAttendedMeetings: 0,
-            attendancePercentage: 0,
           },
           accountId: '',
           projectId: '',
@@ -196,7 +214,6 @@ export class OrganizationInvolvementComponent {
             accountName: '',
           },
           accountId: '',
-          projectId: '',
         },
       }
     );

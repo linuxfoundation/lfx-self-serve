@@ -2,6 +2,23 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="space-y-6">
+  @if (projectOptions().length > 0) {
+    <div data-testid="meeting-project-selector">
+      <label for="project-select" class="text-sm font-semibold text-slate-900 mb-2 block">Select Project</label>
+      <p class="text-xs text-slate-500 mb-3">Choose which project this meeting is for. If not selected, the current project will be used.</p>
+      <lfx-select
+        class="w-full"
+        styleClass="w-full"
+        id="project-select"
+        [form]="form()"
+        control="selectedProjectUid"
+        [options]="projectOptions()"
+        placeholder="Select a project (optional)"
+        [showClear]="true"
+        data-testid="project-select-dropdown" />
+    </div>
+  }
+
   <div class="text-center mb-8">
     <h2 class="text-2xl font-semibold text-slate-900 mb-2">Meeting Type</h2>
     <p class="text-slate-500 text-base">What kind of meeting are you organizing for your open source project?</p>

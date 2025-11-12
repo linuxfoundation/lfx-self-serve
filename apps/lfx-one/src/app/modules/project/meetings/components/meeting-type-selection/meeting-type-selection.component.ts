@@ -2,12 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, input } from '@angular/core';
+import { HttpParams } from '@angular/common/http';
+import { Component, computed, inject, input } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MessageComponent } from '@components/message/message.component';
+import { SelectComponent } from '@components/select/select.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { MeetingType } from '@lfx-one/shared/enums';
+import { Project } from '@lfx-one/shared/interfaces';
+import { ProjectService } from '@services/project.service';
 import { TooltipModule } from 'primeng/tooltip';
+import { map, of } from 'rxjs';
 
 interface MeetingTypeInfo {
   icon: string;
@@ -19,12 +25,25 @@ interface MeetingTypeInfo {
 @Component({
   selector: 'lfx-meeting-type-selection',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, MessageComponent, ToggleComponent, TooltipModule],
+  imports: [CommonModule, ReactiveFormsModule, MessageComponent, SelectComponent, ToggleComponent, TooltipModule],
   templateUrl: './meeting-type-selection.component.html',
 })
 export class MeetingTypeSelectionComponent {
+  private readonly projectService = inject(ProjectService);
+
   // Form group input from parent
   public readonly form = input.required<FormGroup>();
+
+  // Child projects signal
+  public childProjects = this.initializeChildProjects();
+
+  // Map projects to select options
+  public projectOptions = computed(() => {
+    return this.childProjects().map((project: Project) => ({
+      label: project.name,
+      value: project.uid,
+    }));
+  });
 
   // Meeting type options using shared enum (excluding NONE for selection)
   public readonly meetingTypeOptions = [
@@ -91,5 +110,25 @@ export class MeetingTypeSelectionComponent {
   public onMeetingTypeSelect(meetingType: MeetingType): void {
     this.form().get('meeting_type')?.setValue(meetingType);
     this.form().get('meeting_type')?.markAsTouched();
+  }
+
+  // Get child projects for the current project
+  private initializeChildProjects() {
+    const currentProject = this.projectService.project();
+
+    if (!currentProject) {
+      return toSignal(of([]), { initialValue: [] });
+    }
+
+    const params = new HttpParams().set('tags', `parent_uid:${currentProject.uid}`);
+    return toSignal(
+      this.projectService.getProjects(params).pipe(
+        map((projects: Project[]) => {
+          // Filter out the current project from the list
+          return projects.filter((project) => project.uid !== currentProject.uid);
+        })
+      ),
+      { initialValue: [] }
+    );
   }
 }

@@ -1,0 +1,73 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (projects().length > 1) {
+  <!-- Interactive dropdown for multiple projects -->
+  <div
+    class="box-border content-stretch flex gap-3 items-center overflow-clip p-3 relative w-full cursor-pointer hover:bg-gray-50 transition-colors rounded-lg"
+    (click)="togglePanel($event, popover)"
+    data-testid="project-selector">
+    <!-- Logo -->
+    <div class="bg-gray-100 overflow-clip relative rounded-full shrink-0 size-10">
+      <div class="flex items-center justify-center size-full p-2.5">
+        @if (displayLogo()) {
+          <img [alt]="displayName()" class="w-full h-full object-contain" [src]="displayLogo()" />
+        }
+      </div>
+    </div>
+
+    <!-- Text -->
+    <div class="flex flex-col gap-1 grow items-start relative shrink-0">
+      <p class="font-medium grow leading-5 text-wrap whitespace-pre-wrap w-28 relative shrink-0 text-sm text-gray-900 tracking-tight">
+        {{ displayName() }}
+      </p>
+    </div>
+
+    <!-- Chevron Button -->
+    <lfx-button icon="fa-light fa-chevron-down" [outlined]="true" size="small" [text]="true" styleClass="shrink-0"></lfx-button>
+  </div>
+
+  <!-- Popover for Project List -->
+  <p-popover #popover [style]="{ width: '16rem', marginLeft: '-7px' }" styleClass="project-selector-panel" data-testid="project-selector-panel">
+    <div class="flex flex-col gap-1">
+      @for (project of projects(); track project.uid) {
+        <div
+          class="flex items-center gap-3 p-2 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors"
+          (click)="selectProject(project, popover)"
+          [attr.data-testid]="'project-option-' + project.slug">
+          <!-- Project Logo -->
+          <div class="bg-gray-100 overflow-clip relative rounded-full shrink-0 size-8">
+            <div class="flex items-center justify-center size-full p-2">
+              @if (project.logo_url) {
+                <img [alt]="project.name" class="w-full h-full object-contain" [src]="project.logo_url" />
+              }
+            </div>
+          </div>
+          <!-- Project Name -->
+          <span class="font-medium text-sm text-gray-900">{{ project.name }}</span>
+        </div>
+      } @empty {
+        <div class="p-4 text-center text-gray-500 text-sm">No projects available</div>
+      }
+    </div>
+  </p-popover>
+} @else {
+  <!-- Static display for single project -->
+  <div class="box-border content-stretch flex gap-3 items-center overflow-clip p-3 relative w-full rounded-lg" data-testid="project-selector-static">
+    <!-- Logo -->
+    <div class="bg-gray-100 overflow-clip relative rounded-full shrink-0 size-10">
+      <div class="flex items-center justify-center size-full p-2.5">
+        @if (displayLogo()) {
+          <img [alt]="displayName()" class="w-full h-full object-contain" [src]="displayLogo()" />
+        }
+      </div>
+    </div>
+
+    <!-- Text -->
+    <div class="flex flex-col gap-1 grow items-start relative shrink-0">
+      <p class="font-medium grow leading-5 min-h-px min-w-px relative shrink-0 text-sm text-gray-900 tracking-tight">
+        {{ displayName() }}
+      </p>
+    </div>
+  </div>
+}

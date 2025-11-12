@@ -198,26 +198,20 @@ export interface OrganizationEventAttendanceRow {
 }
 
 /**
- * Consolidated Snowflake response joining membership tier, certified employees, and board meeting attendance
+ * Consolidated Snowflake response joining membership tier and certified employees
  * Uses LEFT JOINs to handle partial data scenarios with nullable fields
  * All fields from joined tables are nullable to support flexible NULL handling
  */
 export interface BoardMemberDashboardConsolidatedRow {
   // Membership Tier fields
   MEMBERSHIP_TIER: string | null;
-  CURRENT_MEMBERSHIP_START_DATE: string | null;
-  CURRENT_MEMBERSHIP_END_DATE: string | null;
+  START_DATE: string | null;
+  LAST_END_DATE: string | null;
   MEMBERSHIP_STATUS: string | null;
 
   // Certified Employees fields
   CERTIFICATIONS: number | null;
   CERTIFIED_EMPLOYEES: number | null;
-
-  // Board Meeting Attendance fields
-  TOTAL_MEETINGS: number | null;
-  ATTENDED_MEETINGS: number | null;
-  NOT_ATTENDED_MEETINGS: number | null;
-  ATTENDANCE_PERCENTAGE: number | null;
 
   // Common fields
   ACCOUNT_ID: string;
@@ -289,7 +283,7 @@ export interface OrganizationContributionsOverviewResponse {
 
 /**
  * Consolidated API response for board member dashboard
- * Combines membership tier, certified employees, and board meeting attendance in a single response
+ * Combines membership tier and certified employees in a single response
  */
 export interface BoardMemberDashboardResponse {
   /**
@@ -308,16 +302,6 @@ export interface BoardMemberDashboardResponse {
   certifiedEmployees: {
     certifications: number;
     certifiedEmployees: number;
-  };
-
-  /**
-   * Board meeting attendance information
-   */
-  boardMeetingAttendance: {
-    totalMeetings: number;
-    attendedMeetings: number;
-    notAttendedMeetings: number;
-    attendancePercentage: number;
   };
 
   /**
@@ -352,11 +336,6 @@ export interface OrganizationEventsOverviewResponse {
    * Salesforce account ID for the organization
    */
   accountId: string;
-
-  /**
-   * Project ID (used for sponsorships filtering)
-   */
-  projectId: string;
 }
 
 /**

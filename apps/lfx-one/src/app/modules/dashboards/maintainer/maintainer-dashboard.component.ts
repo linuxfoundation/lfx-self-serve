@@ -25,6 +25,7 @@ export class MaintainerDashboardComponent {
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
 
+  public readonly selectedFoundation = computed(() => this.projectContextService.selectedFoundation());
   public readonly form = new FormGroup({
     selectedProjectId: new FormControl<string>(this.projectContextService.getProjectId() || ''),
   });

@@ -315,7 +315,7 @@ export class MeetingManageComponent {
     }
 
     return {
-      project_uid: project.uid,
+      project_uid: formValue.selectedProjectUid || project.uid,
       title: formValue.title,
       description: formValue.description || '',
       start_time: startDateTime,
@@ -664,6 +664,7 @@ export class MeetingManageComponent {
     return new FormGroup(
       {
         // Step 1: Meeting Type
+        selectedProjectUid: new FormControl(''),
         meeting_type: new FormControl('', [Validators.required]),
         visibility: new FormControl(MeetingVisibility.PRIVATE),
         restricted: new FormControl(false),

@@ -5,7 +5,9 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { MeetingCardComponent } from '@app/shared/components/meeting-card/meeting-card.component';
-import { Meeting } from '@lfx-one/shared/interfaces';
+import { ProjectContextService } from '@app/shared/services/project-context.service';
+import { ButtonComponent } from '@components/button/button.component';
+import { Meeting, ProjectContext } from '@lfx-one/shared/interfaces';
 import { getCurrentOrNextOccurrence } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { BehaviorSubject, map, switchMap, tap } from 'rxjs';
@@ -15,12 +17,13 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 @Component({
   selector: 'lfx-meetings-dashboard',
   standalone: true,
-  imports: [CommonModule, MeetingCardComponent, MeetingsTopBarComponent],
+  imports: [CommonModule, MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent],
   templateUrl: './meetings-dashboard.component.html',
   styleUrl: './meetings-dashboard.component.scss',
 })
 export class MeetingsDashboardComponent {
   private readonly meetingService = inject(MeetingService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   public meetingsLoading: WritableSignal<boolean>;
   public meetings: Signal<Meeting[]> = signal([]);
@@ -30,6 +33,7 @@ export class MeetingsDashboardComponent {
   public searchQuery: WritableSignal<string>;
   public timeFilter: WritableSignal<'upcoming' | 'past'>;
   public topBarVisibilityFilter: WritableSignal<'mine' | 'public'>;
+  public project: Signal<ProjectContext | null>;
 
   public constructor() {
     this.meetingsLoading = signal<boolean>(true);
@@ -40,6 +44,7 @@ export class MeetingsDashboardComponent {
     this.timeFilter = signal<'upcoming' | 'past'>('upcoming');
     this.topBarVisibilityFilter = signal<'mine' | 'public'>('mine');
     this.filteredMeetings = this.initializeFilteredMeetings();
+    this.project = computed(() => this.projectContextService.selectedFoundation());
   }
 
   public onViewChange(view: 'list' | 'calendar'): void {

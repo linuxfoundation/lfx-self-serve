@@ -100,12 +100,11 @@ export class AnalyticsService {
   /**
    * Get consolidated organization contributions overview (maintainers + contributors) in a single API call
    * Optimized endpoint that reduces API roundtrips by combining related metrics
-   * @param accountId - Optional account ID to filter by specific organization
+   * @param accountId - Required account ID to filter by specific organization
    * @returns Observable of consolidated contributions overview response
    */
-  public getOrganizationContributionsOverview(accountId?: string): Observable<OrganizationContributionsOverviewResponse> {
-    const options = accountId ? { params: { accountId } } : {};
-    return this.http.get<OrganizationContributionsOverviewResponse>('/api/analytics/organization-contributions-overview', options).pipe(
+  public getOrganizationContributionsOverview(accountId: string): Observable<OrganizationContributionsOverviewResponse> {
+    return this.http.get<OrganizationContributionsOverviewResponse>('/api/analytics/organization-contributions-overview', { params: { accountId } }).pipe(
       catchError((error) => {
         console.error('Failed to fetch organization contributions overview:', error);
         return of({
@@ -129,14 +128,15 @@ export class AnalyticsService {
   }
 
   /**
-   * Get consolidated board member dashboard data (membership tier + certified employees + board meeting attendance)
+   * Get consolidated board member dashboard data (membership tier + certified employees)
    * Optimized endpoint that reduces API roundtrips by combining related metrics in a single API call
-   * @param accountId - Optional account ID to filter by specific organization
+   * @param accountId - Required account ID to filter by specific organization
+   * @param projectSlug - Required foundation project slug to filter data
    * @returns Observable of consolidated board member dashboard response
    */
-  public getBoardMemberDashboard(accountId?: string): Observable<BoardMemberDashboardResponse> {
-    const options = accountId ? { params: { accountId } } : {};
-    return this.http.get<BoardMemberDashboardResponse>('/api/analytics/board-member-dashboard', options).pipe(
+  public getBoardMemberDashboard(accountId: string, projectSlug: string): Observable<BoardMemberDashboardResponse> {
+    const params = { accountId, projectSlug };
+    return this.http.get<BoardMemberDashboardResponse>('/api/analytics/board-member-dashboard', { params }).pipe(
       catchError((error) => {
         console.error('Failed to fetch board member dashboard:', error);
         return of({
@@ -150,12 +150,6 @@ export class AnalyticsService {
             certifications: 0,
             certifiedEmployees: 0,
           },
-          boardMeetingAttendance: {
-            totalMeetings: 0,
-            attendedMeetings: 0,
-            notAttendedMeetings: 0,
-            attendancePercentage: 0,
-          },
           accountId: '',
           projectId: '',
         });
@@ -166,12 +160,11 @@ export class AnalyticsService {
   /**
    * Get consolidated organization events overview (event attendance + event sponsorships) in a single API call
    * Optimized endpoint that reduces API roundtrips by combining related event metrics
-   * @param accountId - Optional account ID to filter by specific organization
+   * @param accountId - Required account ID to filter by specific organization
    * @returns Observable of consolidated events overview response
    */
-  public getOrganizationEventsOverview(accountId?: string): Observable<OrganizationEventsOverviewResponse> {
-    const options = accountId ? { params: { accountId } } : {};
-    return this.http.get<OrganizationEventsOverviewResponse>('/api/analytics/organization-events-overview', options).pipe(
+  public getOrganizationEventsOverview(accountId: string): Observable<OrganizationEventsOverviewResponse> {
+    return this.http.get<OrganizationEventsOverviewResponse>('/api/analytics/organization-events-overview', { params: { accountId } }).pipe(
       catchError((error) => {
         console.error('Failed to fetch organization events overview:', error);
         return of({
@@ -182,7 +175,6 @@ export class AnalyticsService {
             accountName: '',
           },
           accountId: '',
-          projectId: '',
         });
       })
     );
