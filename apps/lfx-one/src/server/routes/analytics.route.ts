@@ -20,4 +20,13 @@ router.get('/organization-contributions-overview', (req, res, next) => analytics
 router.get('/board-member-dashboard', (req, res, next) => analyticsController.getBoardMemberDashboard(req, res, next));
 router.get('/organization-events-overview', (req, res, next) => analyticsController.getOrganizationEventsOverview(req, res, next));
 
+// Projects list endpoint
+router.get('/projects', (req, res, next) => analyticsController.getProjects(req, res, next));
+
+// Project issues resolution endpoint
+router.get('/project-issues-resolution', (req, res, next) => analyticsController.getProjectIssuesResolution(req, res, next));
+
+// Project pull requests weekly endpoint
+router.get('/project-pull-requests-weekly', (req, res, next) => analyticsController.getProjectPullRequestsWeekly(req, res, next));
+
 export default router;

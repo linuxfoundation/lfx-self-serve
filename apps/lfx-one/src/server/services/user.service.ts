@@ -27,8 +27,6 @@ import { SnowflakeService } from './snowflake.service';
 
 /**
  * Service for handling user-related operations and user analytics
- *
- * Generated with [Claude Code](https://claude.ai/code)
  */
 export class UserService {
   private natsService: NatsService;

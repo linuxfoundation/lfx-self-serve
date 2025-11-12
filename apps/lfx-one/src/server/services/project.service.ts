@@ -3,7 +3,19 @@
 
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
-import { Project, ProjectSettings, ProjectSlugToIdResponse, QueryServiceResponse } from '@lfx-one/shared/interfaces';
+import {
+  Project,
+  ProjectIssuesResolutionAggregatedRow,
+  ProjectIssuesResolutionResponse,
+  ProjectIssuesResolutionRow,
+  ProjectPullRequestsWeeklyResponse,
+  ProjectPullRequestsWeeklyRow,
+  ProjectRow,
+  ProjectSettings,
+  ProjectsListResponse,
+  ProjectSlugToIdResponse,
+  QueryServiceResponse,
+} from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
@@ -12,6 +24,7 @@ import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NatsService } from './nats.service';
+import { SnowflakeService } from './snowflake.service';
 
 /**
  * Service for handling project business logic
@@ -21,12 +34,14 @@ export class ProjectService {
   private microserviceProxy: MicroserviceProxyService;
   private natsService: NatsService;
   private etagService: ETagService;
+  private snowflakeService: SnowflakeService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.natsService = new NatsService();
     this.etagService = new ETagService();
+    this.snowflakeService = new SnowflakeService();
   }
 
   /**
@@ -535,6 +550,138 @@ export class ProjectService {
 
       throw error;
     }
+  }
+
+  /**
+   * Get list of projects with maintainers from Snowflake
+   * @returns List of projects with ID, name, and slug that have maintainers
+   */
+  public async getProjectsWithMaintainersList(): Promise<ProjectsListResponse> {
+    const query = `
+      SELECT PROJECT_ID, NAME, SLUG
+      FROM ANALYTICS.SILVER_DIM.PROJECTS P
+      WHERE EXISTS (SELECT 1 FROM ANALYTICS.SILVER_DIM.MAINTAINERS M WHERE P.PROJECT_ID = M.PROJECT_ID)
+      ORDER BY NAME
+    `;
+
+    const result = await this.snowflakeService.execute<ProjectRow>(query, []);
+
+    // Transform Snowflake response to camelCase API response
+    const projects = result.rows.map((row) => ({
+      projectId: row.PROJECT_ID,
+      name: row.NAME,
+      slug: row.SLUG,
+    }));
+
+    return { projects };
+  }
+
+  /**
+   * Get project issues resolution data (opened vs closed issues) from Snowflake
+   * Combines daily trend data with aggregated metrics
+   * @param projectId - Project ID to filter by specific project (required)
+   * @returns Daily issue resolution data with aggregated totals and metrics
+   */
+  public async getProjectIssuesResolution(projectId: string): Promise<ProjectIssuesResolutionResponse> {
+    // Query for daily trend data
+    const dailyQuery = `
+      SELECT
+        PROJECT_ID,
+        PROJECT_NAME,
+        PROJECT_SLUG,
+        METRIC_DATE,
+        OPENED_ISSUES_COUNT,
+        CLOSED_ISSUES_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_ISSUES_RESOLUTION_DAILY
+      WHERE PROJECT_ID = ?
+      ORDER BY METRIC_DATE DESC
+    `;
+
+    // Query for aggregated metrics
+    const aggregatedQuery = `
+      SELECT
+        OPENED_ISSUES,
+        CLOSED_ISSUES,
+        RESOLUTION_RATE_PCT,
+        MEDIAN_DAYS_TO_CLOSE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_ISSUES_RESOLUTION
+      WHERE PROJECT_ID = ?
+    `;
+
+    const params = [projectId];
+    const aggregatedParams = [projectId];
+
+    // Execute both queries in parallel
+    const [dailyResult, aggregatedResult] = await Promise.all([
+      this.snowflakeService.execute<ProjectIssuesResolutionRow>(dailyQuery, params),
+      this.snowflakeService.execute<ProjectIssuesResolutionAggregatedRow>(aggregatedQuery, aggregatedParams),
+    ]);
+
+    // Get aggregated metrics or use defaults
+    const aggregated = aggregatedResult.rows[0] || {
+      OPENED_ISSUES: 0,
+      CLOSED_ISSUES: 0,
+      RESOLUTION_RATE_PCT: 0,
+      MEDIAN_DAYS_TO_CLOSE: 0,
+    };
+
+    return {
+      data: dailyResult.rows,
+      totalOpenedIssues: aggregated.OPENED_ISSUES,
+      totalClosedIssues: aggregated.CLOSED_ISSUES,
+      resolutionRatePct: aggregated.RESOLUTION_RATE_PCT,
+      medianDaysToClose: aggregated.MEDIAN_DAYS_TO_CLOSE,
+      totalDays: dailyResult.rows.length,
+    };
+  }
+
+  /**
+   * Get project pull requests weekly data from Snowflake
+   * @param projectId - Optional project ID to filter by specific project. If not provided, uses the first project from the list.
+   * @returns Weekly PR merge velocity data with aggregated metrics
+   */
+  public async getProjectPullRequestsWeekly(projectId?: string): Promise<ProjectPullRequestsWeeklyResponse> {
+    // If no projectId provided, get the first project from the list
+    let resolvedProjectId = projectId;
+    if (!resolvedProjectId) {
+      const projectsList = await this.getProjectsWithMaintainersList();
+      if (!projectsList.projects || projectsList.projects.length === 0) {
+        throw new ResourceNotFoundError('Project', 'first project', {
+          operation: 'get_project_pull_requests_weekly',
+          service: 'project_service',
+          path: '/projects/pull-requests-weekly',
+        });
+      }
+      resolvedProjectId = projectsList.projects[0].projectId;
+    }
+
+    // Query for weekly trend data
+    const query = `
+      SELECT
+        WEEK_START_DATE,
+        MERGED_PR_COUNT,
+        AVG_MERGED_IN_DAYS,
+        AVG_REVIEWERS_PER_PR,
+        PENDING_PR_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_PULL_REQUESTS_WEEKLY
+      WHERE PROJECT_ID = ?
+      ORDER BY WEEK_START_DATE DESC
+      LIMIT 26
+    `;
+
+    const result = await this.snowflakeService.execute<ProjectPullRequestsWeeklyRow>(query, [resolvedProjectId]);
+
+    // Calculate aggregated metrics
+    const totalMergedPRs = result.rows.reduce((sum, row) => sum + row.MERGED_PR_COUNT, 0);
+    const totalMergeTime = result.rows.reduce((sum, row) => sum + row.AVG_MERGED_IN_DAYS * row.MERGED_PR_COUNT, 0);
+    const avgMergeTime = totalMergedPRs > 0 ? totalMergeTime / totalMergedPRs : 0;
+
+    return {
+      data: result.rows,
+      totalMergedPRs,
+      avgMergeTime: Math.round(avgMergeTime * 10) / 10, // Round to 1 decimal place
+      totalWeeks: result.rows.length,
+    };
   }
 
   /**

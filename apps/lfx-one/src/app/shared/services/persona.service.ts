@@ -15,8 +15,8 @@ export class PersonaService {
   public readonly currentPersona: WritableSignal<PersonaType>;
 
   public constructor() {
-    // Initialize with default value
-    this.currentPersona = signal<PersonaType>('board-member');
+    const stored = this.loadStoredPersona();
+    this.currentPersona = signal<PersonaType>(stored || 'maintainer');
   }
 
   /**
@@ -32,6 +32,23 @@ export class PersonaService {
   }
 
   private persistPersona(persona: PersonaType): void {
-    localStorage.setItem(this.storageKey, persona);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(this.storageKey, persona);
+    }
+  }
+
+  private loadStoredPersona(): PersonaType | null {
+    if (typeof localStorage === 'undefined') {
+      return null;
+    }
+    try {
+      const stored = localStorage.getItem(this.storageKey);
+      if (stored) {
+        return stored as PersonaType;
+      }
+    } catch {
+      // Invalid data in localStorage, ignore
+    }
+    return null;
   }
 }

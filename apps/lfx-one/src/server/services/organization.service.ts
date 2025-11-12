@@ -19,8 +19,6 @@ import { SnowflakeService } from './snowflake.service';
 
 /**
  * Service for handling organization-related operations and analytics
- *
- * Generated with [Claude Code](https://claude.ai/code)
  */
 export class OrganizationService {
   private microserviceProxy: MicroserviceProxyService;

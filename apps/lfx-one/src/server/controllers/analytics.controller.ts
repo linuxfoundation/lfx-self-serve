@@ -7,21 +7,22 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthenticationError } from '../errors';
 import { Logger } from '../helpers/logger';
 import { OrganizationService } from '../services/organization.service';
+import { ProjectService } from '../services/project.service';
 import { UserService } from '../services/user.service';
 
 /**
  * Controller for handling analytics HTTP requests
  * Routes requests to appropriate domain services
- *
- * Generated with [Claude Code](https://claude.ai/code)
  */
 export class AnalyticsController {
   private userService: UserService;
   private organizationService: OrganizationService;
+  private projectService: ProjectService;
 
   public constructor() {
     this.userService = new UserService();
     this.organizationService = new OrganizationService();
+    this.projectService = new ProjectService();
   }
 
   /**
@@ -151,9 +152,7 @@ export class AnalyticsController {
    * Get consolidated organization contributions data (maintainers + contributors + technical committee) in a single request
    * Optimized endpoint that executes a single database query for all three metrics
    * Query params: accountId (optional) - Organization account ID
-   *
-   * Generated with [Claude Code](https://claude.ai/code)
-   */
+   *   */
   public async getOrganizationContributionsOverview(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = Logger.start(req, 'get_organization_contributions_overview');
 
@@ -182,9 +181,7 @@ export class AnalyticsController {
    * Get consolidated board member dashboard data (membership tier + certified employees + board meeting attendance)
    * Optimized endpoint that executes a single database query for all three metrics
    * Query params: accountId (optional) - Organization account ID
-   *
-   * Generated with [Claude Code](https://claude.ai/code)
-   */
+   *   */
   public async getBoardMemberDashboard(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = Logger.start(req, 'get_board_member_dashboard');
 
@@ -215,9 +212,7 @@ export class AnalyticsController {
    * Get consolidated organization events data (event attendance + event sponsorships) in a single request
    * Uses parallel database queries (two different tables) for optimal performance
    * Query params: accountId (optional) - Organization account ID
-   *
-   * Generated with [Claude Code](https://claude.ai/code)
-   */
+   *   */
   public async getOrganizationEventsOverview(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = Logger.start(req, 'get_organization_events_overview');
 
@@ -238,6 +233,93 @@ export class AnalyticsController {
       res.json(response);
     } catch (error) {
       Logger.error(req, 'get_organization_events_overview', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/projects
+   * Get list of projects with maintainers from Snowflake
+   *   */
+  public async getProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_projects_list');
+
+    try {
+      const response = await this.projectService.getProjectsWithMaintainersList();
+
+      Logger.success(req, 'get_projects_list', startTime, {
+        project_count: response.projects.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_projects_list', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/project-issues-resolution
+   * Get project issues resolution data (opened vs closed issues) from Snowflake
+   * Query params: projectId (required) - Project ID to filter by specific project
+   *   */
+  public async getProjectIssuesResolution(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_project_issues_resolution');
+
+    try {
+      const projectId = req.query['projectId'] as string | undefined;
+
+      if (!projectId) {
+        res.status(400).json({ error: 'projectId query parameter is required' });
+        return;
+      }
+
+      const response = await this.projectService.getProjectIssuesResolution(projectId);
+
+      Logger.success(req, 'get_project_issues_resolution', startTime, {
+        project_id: projectId,
+        total_days: response.totalDays,
+        total_opened: response.totalOpenedIssues,
+        total_closed: response.totalClosedIssues,
+        resolution_rate: response.resolutionRatePct,
+        median_days_to_close: response.medianDaysToClose,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_project_issues_resolution', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/project-pull-requests-weekly
+   * Get project pull requests weekly data (merge velocity) from Snowflake
+   * Query params: projectId (required) - Project ID to filter by specific project
+   *   */
+  public async getProjectPullRequestsWeekly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_project_pull_requests_weekly');
+
+    try {
+      const projectId = req.query['projectId'] as string | undefined;
+
+      if (!projectId) {
+        res.status(400).json({ error: 'projectId query parameter is required' });
+        return;
+      }
+
+      const response = await this.projectService.getProjectPullRequestsWeekly(projectId);
+
+      Logger.success(req, 'get_project_pull_requests_weekly', startTime, {
+        project_id: projectId,
+        total_weeks: response.totalWeeks,
+        total_merged_prs: response.totalMergedPRs,
+        avg_merge_time: response.avgMergeTime,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_project_pull_requests_weekly', startTime, error);
       next(error);
     }
   }

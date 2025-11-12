@@ -159,3 +159,16 @@ export interface ProjectSlugToIdResponse {
   slug: string;
   exists: boolean;
 }
+
+/**
+ * Project context for the application state
+ * @description Minimal project information used for context management
+ */
+export interface ProjectContext {
+  /** Unique project identifier */
+  projectId: string;
+  /** Project display name */
+  name: string;
+  /** URL-friendly project identifier */
+  slug: string;
+}

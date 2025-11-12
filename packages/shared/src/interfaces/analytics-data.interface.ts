@@ -358,3 +358,234 @@ export interface OrganizationEventsOverviewResponse {
    */
   projectId: string;
 }
+
+/**
+ * Snowflake aggregated response from MEMBER_DASHBOARD_EVENT_SPONSORSHIPS query (per currency)
+ * Contains calculated totals via SQL aggregation grouped by currency
+ * Includes window function for total event count (repeated across rows)
+ */
+export interface OrganizationEventSponsorshipsAggregateRow {
+  /**
+   * Total sponsorship amount for this currency (SUM of PRICE)
+   */
+  TOTAL_AMOUNT: number;
+
+  /**
+   * Currency code for this row (e.g., USD, INR, EUR)
+   */
+  CURRENCY_CODE: string;
+
+  /**
+   * Salesforce account ID for the organization
+   */
+  ACCOUNT_ID: string;
+
+  /**
+   * Total number of distinct events sponsored (across all currencies)
+   * Computed via window function, repeated in each row
+   */
+  TOTAL_EVENTS: number;
+}
+
+/**
+ * Currency-specific sponsorship summary
+ */
+export interface CurrencySummary {
+  /**
+   * Total amount in this currency
+   */
+  amount: number;
+
+  /**
+   * Currency code (e.g., USD, INR, EUR)
+   */
+  currencyCode: string;
+}
+
+/**
+ * Snowflake row from projects dimension table
+ * Raw response with Snowflake naming conventions (ALL_CAPS)
+ */
+export interface ProjectRow {
+  /**
+   * Project unique identifier
+   */
+  PROJECT_ID: string;
+
+  /**
+   * Project display name
+   */
+  NAME: string;
+
+  /**
+   * Project URL slug
+   */
+  SLUG: string;
+}
+
+/**
+ * API response for projects list query
+ */
+export interface ProjectsListResponse {
+  /**
+   * Array of projects
+   */
+  projects: {
+    projectId: string;
+    name: string;
+    slug: string;
+  }[];
+}
+
+/**
+ * Snowflake row from project issues resolution daily query
+ * Raw response with Snowflake naming conventions (ALL_CAPS)
+ */
+export interface ProjectIssuesResolutionRow {
+  /**
+   * Project unique identifier
+   */
+  PROJECT_ID: string;
+
+  /**
+   * Project display name
+   */
+  PROJECT_NAME: string;
+
+  /**
+   * Project URL slug
+   */
+  PROJECT_SLUG: string;
+
+  /**
+   * Date of the metric (YYYY-MM-DD format)
+   */
+  METRIC_DATE: string;
+
+  /**
+   * Number of issues opened on this date
+   */
+  OPENED_ISSUES_COUNT: number;
+
+  /**
+   * Number of issues closed on this date
+   */
+  CLOSED_ISSUES_COUNT: number;
+}
+
+/**
+ * Snowflake row from project issues resolution aggregated query
+ * Raw response with Snowflake naming conventions (ALL_CAPS)
+ */
+export interface ProjectIssuesResolutionAggregatedRow {
+  /**
+   * Total number of issues opened
+   */
+  OPENED_ISSUES: number;
+
+  /**
+   * Total number of issues closed
+   */
+  CLOSED_ISSUES: number;
+
+  /**
+   * Resolution rate as a percentage
+   */
+  RESOLUTION_RATE_PCT: number;
+
+  /**
+   * Median number of days to close an issue
+   */
+  MEDIAN_DAYS_TO_CLOSE: number;
+}
+
+/**
+ * API response for project issues resolution query
+ */
+export interface ProjectIssuesResolutionResponse {
+  /**
+   * Array of daily issue resolution data
+   */
+  data: ProjectIssuesResolutionRow[];
+
+  /**
+   * Total opened issues across all dates
+   */
+  totalOpenedIssues: number;
+
+  /**
+   * Total closed issues across all dates
+   */
+  totalClosedIssues: number;
+
+  /**
+   * Resolution rate as a percentage from database
+   */
+  resolutionRatePct: number;
+
+  /**
+   * Median days to close an issue
+   */
+  medianDaysToClose: number;
+
+  /**
+   * Number of days with data
+   */
+  totalDays: number;
+}
+
+/**
+ * Snowflake row from project pull requests weekly query
+ * Raw response with Snowflake naming conventions (ALL_CAPS)
+ */
+export interface ProjectPullRequestsWeeklyRow {
+  /**
+   * Week start date (YYYY-MM-DD format)
+   */
+  WEEK_START_DATE: string;
+
+  /**
+   * Number of PRs merged during this week
+   */
+  MERGED_PR_COUNT: number;
+
+  /**
+   * Average time to merge in days
+   */
+  AVG_MERGED_IN_DAYS: number;
+
+  /**
+   * Average number of reviewers per PR
+   */
+  AVG_REVIEWERS_PER_PR: number;
+
+  /**
+   * Number of pending PRs at the end of the week
+   */
+  PENDING_PR_COUNT: number;
+}
+
+/**
+ * API response for project pull requests weekly query
+ */
+export interface ProjectPullRequestsWeeklyResponse {
+  /**
+   * Array of weekly PR data
+   */
+  data: ProjectPullRequestsWeeklyRow[];
+
+  /**
+   * Total PRs merged across all weeks
+   */
+  totalMergedPRs: number;
+
+  /**
+   * Average merge time across all weeks (in days)
+   */
+  avgMergeTime: number;
+
+  /**
+   * Number of weeks with data
+   */
+  totalWeeks: number;
+}
