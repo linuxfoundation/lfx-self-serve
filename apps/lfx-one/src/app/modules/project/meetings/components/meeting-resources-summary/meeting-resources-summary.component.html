@@ -67,47 +67,88 @@
         <div class="space-y-2">
           @for (attachment of existingAttachments(); track attachment.uid; let i = $index) {
             <div
-              class="flex items-center justify-between p-3 bg-slate-50 border border-slate-200 rounded-lg"
+              [ngClass]="{
+                'flex items-center justify-between p-3 rounded-lg border': true,
+                'bg-red-50 border-red-200 opacity-60': isPendingDeletion(attachment.uid),
+                'bg-slate-50 border-slate-200': !isPendingDeletion(attachment.uid),
+              }"
               [attr.data-testid]="'existing-attachment-item-' + i">
               <div class="flex items-center gap-3">
-                <div class="p-2 bg-green-100 rounded-lg">
-                  <i class="fa-light fa-file text-green-600"></i>
+                <div
+                  [ngClass]="{
+                    'p-2 rounded-lg': true,
+                    'bg-red-100': isPendingDeletion(attachment.uid),
+                    'bg-green-100': !isPendingDeletion(attachment.uid),
+                  }">
+                  <i
+                    [ngClass]="{
+                      'fa-light fa-file': true,
+                      'text-red-600': isPendingDeletion(attachment.uid),
+                      'text-green-600': !isPendingDeletion(attachment.uid),
+                    }"></i>
                 </div>
                 <div>
-                  <p class="text-sm font-medium text-slate-900">{{ attachment.name }}</p>
+                  <p
+                    [ngClass]="{
+                      'text-sm font-medium': true,
+                      'text-red-900 line-through': isPendingDeletion(attachment.uid),
+                      'text-slate-900': !isPendingDeletion(attachment.uid),
+                    }">
+                    {{ attachment.name }}
+                  </p>
                   <p class="text-xs text-slate-500">
                     {{ getFileType(attachment.name) }}
                     @if (attachment.file_size) {
                       • {{ attachment.file_size | fileSize }}
                     }
+                    @if (isPendingDeletion(attachment.uid)) {
+                      • <span class="text-red-600 font-semibold">Marked for deletion</span>
+                    }
                   </p>
                 </div>
               </div>
               <div class="flex items-center gap-2">
-                @if (attachment.link) {
+                @if (attachment.type === 'file' && !isPendingDeletion(attachment.uid)) {
                   <a
                     [href]="'/api/meetings/' + meetingId() + '/attachments/' + attachment.uid"
                     target="_blank"
+                    class="h-6 w-6 p-0 text-slate-400 hover:text-green-500 flex items-center justify-center"
+                    data-testid="view-attachment-btn"
+                    title="View">
+                    <i class="fa-light fa-eye w-3 h-3"></i>
+                  </a>
+                  <a
+                    [href]="'/api/meetings/' + meetingId() + '/attachments/' + attachment.uid + '?download=true'"
                     class="h-6 w-6 p-0 text-slate-400 hover:text-blue-500 flex items-center justify-center"
-                    data-testid="download-attachment-btn">
+                    data-testid="download-attachment-btn"
+                    title="Download">
                     <i class="fa-light fa-download w-3 h-3"></i>
                   </a>
                 }
-                <button
-                  (click)="onDeleteExistingAttachment(attachment.uid)"
-                  [disabled]="deletingAttachmentId() === attachment.uid"
-                  [class]="
-                    deletingAttachmentId() === attachment.uid
-                      ? 'h-6 w-6 p-0 text-slate-300 flex items-center justify-center cursor-not-allowed'
-                      : 'h-6 w-6 p-0 text-slate-400 hover:text-red-500 flex items-center justify-center'
-                  "
-                  data-testid="delete-existing-attachment-btn">
-                  @if (deletingAttachmentId() === attachment.uid) {
-                    <i class="fa-light fa-spinner fa-spin w-3 h-3"></i>
-                  } @else {
-                    <i class="fa-light fa-trash w-3 h-3"></i>
-                  }
-                </button>
+                @if (isPendingDeletion(attachment.uid)) {
+                  <button
+                    (click)="undoDeleteAttachment.emit(attachment.uid)"
+                    class="h-6 w-6 p-0 text-blue-500 hover:text-blue-600 flex items-center justify-center"
+                    data-testid="undo-delete-attachment-btn">
+                    <i class="fa-light fa-undo w-3 h-3"></i>
+                  </button>
+                } @else {
+                  <button
+                    (click)="onDeleteExistingAttachment(attachment.uid)"
+                    [disabled]="deletingAttachmentId() === attachment.uid"
+                    [ngClass]="{
+                      'h-6 w-6 p-0 flex items-center justify-center': true,
+                      'text-slate-300 cursor-not-allowed': deletingAttachmentId() === attachment.uid,
+                      'text-slate-400 hover:text-red-500': deletingAttachmentId() !== attachment.uid,
+                    }"
+                    data-testid="delete-existing-attachment-btn">
+                    @if (deletingAttachmentId() === attachment.uid) {
+                      <i class="fa-light fa-spinner fa-spin w-3 h-3"></i>
+                    } @else {
+                      <i class="fa-light fa-trash w-3 h-3"></i>
+                    }
+                  </button>
+                }
               </div>
             </div>
           }

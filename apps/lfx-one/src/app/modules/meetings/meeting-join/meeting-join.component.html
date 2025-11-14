@@ -237,15 +237,19 @@
                   <div class="flex flex-col gap-2">
                     @for (attachment of attachments(); track attachment.uid; let i = $index) {
                       <a
-                        [href]="'/api/meetings/' + meeting().uid + '/attachments/' + attachment.uid"
+                        [href]="attachment.type === 'link' ? attachment.link : '/api/meetings/' + meeting().uid + '/attachments/' + attachment.uid"
                         target="_blank"
                         rel="noopener noreferrer"
                         class="bg-gray-200 hover:bg-gray-300 rounded px-3 py-2 flex items-center gap-3 min-w-[180px] transition-colors cursor-pointer"
                         [attr.data-testid]="'meeting-attachment-' + i">
-                        <!-- File Icon -->
-                        <i [class]="(attachment.mime_type || '' | fileTypeIcon) + ' text-3xl text-black'"></i>
+                        <!-- Icon - File or Link -->
+                        @if (attachment.type === 'link') {
+                          <i class="fa-light fa-arrow-up-right-from-square text-3xl text-black w-8 flex-shrink-0"></i>
+                        } @else {
+                          <i [class]="(attachment.mime_type || '' | fileTypeIcon) + ' text-3xl text-black w-8 flex-shrink-0'"></i>
+                        }
 
-                        <!-- File Name -->
+                        <!-- Attachment Name -->
                         <span class="text-sm text-neutral-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-sans">{{ attachment.name }}</span>
                       </a>
                     }

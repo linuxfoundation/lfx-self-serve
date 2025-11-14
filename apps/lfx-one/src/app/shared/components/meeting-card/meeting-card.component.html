@@ -188,22 +188,14 @@
                   [href]="attachment.type === 'link' ? attachment.link : '/api/meetings/' + meeting().uid + '/attachments/' + attachment.uid"
                   target="_blank"
                   rel="noopener noreferrer"
-                  [download]="attachment.type === 'file' ? attachment.name : null"
                   class="inline-flex !text-black font-semibold items-center gap-1.5 px-2 py-1.5 bg-gray-200/80 hover:bg-gray-300/80 rounded text-[12px] tracking-wide transition-colors h-[26px]"
-                  [title]="attachment.name + ' (' + (attachment.file_size || 0 | fileSize) + ')'">
-                  <i [class]="(attachment.mime_type || '' | fileTypeIcon) + ' w-3.5 h-3.5 flex-shrink-0'"></i>
+                  [pTooltip]="attachment.name + ' (' + (attachment.file_size || 0 | fileSize) + ')'">
+                  @if (attachment.type === 'link') {
+                    <i class="fa-light fa-arrow-up-right-from-square w-3.5 h-3.5 flex-shrink-0"></i>
+                  } @else {
+                    <i [class]="(attachment.mime_type || '' | fileTypeIcon) + ' w-3.5 h-3.5 flex-shrink-0'"></i>
+                  }
                   <span class="truncate">{{ attachment.name }}</span>
-                </a>
-              }
-              @for (link of importantLinks(); track link.url) {
-                <a
-                  [href]="link.url"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="inline-flex !text-black font-semibold items-center gap-1.5 px-2 py-1.5 bg-gray-200/80 hover:bg-gray-300/80 rounded text-[12px] tracking-wide transition-colors h-[26px]"
-                  [title]="link.url">
-                  <i class="fa-light fa-arrow-up-right-from-square w-3.5 h-3.5 flex-shrink-0"></i>
-                  <span class="truncate">{{ link.domain }}</span>
                 </a>
               }
             </div>

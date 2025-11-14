@@ -26,7 +26,6 @@ import {
   buildJoinUrlWithParams,
   canJoinMeeting,
   DEFAULT_MEETING_TYPE_CONFIG,
-  extractUrlsWithDomains,
   getCurrentOrNextOccurrence,
   Meeting,
   MEETING_TYPE_CONFIGS,
@@ -126,11 +125,6 @@ export class MeetingCardComponent implements OnInit {
 
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
-
-  // Extract important links from description
-  public readonly importantLinks = this.initImportantLinks();
-
-  // Meeting attachments
 
   public constructor() {
     effect(() => {
@@ -482,18 +476,6 @@ export class MeetingCardComponent implements OnInit {
       .subscribe();
   }
 
-  private initImportantLinks(): Signal<{ url: string; domain: string }[]> {
-    return computed(() => {
-      const description = this.meeting().description;
-      if (!description) {
-        return [];
-      }
-
-      // Use shared utility to extract URLs with domains
-      return extractUrlsWithDomains(description);
-    });
-  }
-
   private initAttachments(): Signal<MeetingAttachment[]> {
     return runInInjectionContext(this.injector, () => {
       return toSignal(this.meetingService.getMeetingAttachments(this.meetingInput().uid).pipe(catchError(() => of([]))), { initialValue: [] });
@@ -555,7 +537,7 @@ export class MeetingCardComponent implements OnInit {
 
   private initTotalResourcesCount(): Signal<number> {
     return computed(() => {
-      return this.attachments().length + this.importantLinks().length;
+      return this.attachments().length;
     });
   }
 

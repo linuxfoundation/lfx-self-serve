@@ -18,16 +18,7 @@ import { MeetingRegistrantsComponent } from '@components/meeting-registrants/mee
 import { MeetingRsvpDetailsComponent } from '@components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { RsvpButtonGroupComponent } from '@components/rsvp-button-group/rsvp-button-group.component';
 import { environment } from '@environments/environment';
-import {
-  canJoinMeeting,
-  extractUrlsWithDomains,
-  getCurrentOrNextOccurrence,
-  Meeting,
-  MeetingAttachment,
-  MeetingOccurrence,
-  Project,
-  User,
-} from '@lfx-one/shared';
+import { canJoinMeeting, getCurrentOrNextOccurrence, Meeting, MeetingAttachment, MeetingOccurrence, Project, User } from '@lfx-one/shared';
 import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
@@ -78,7 +69,6 @@ export class MeetingJoinComponent {
   public meeting: Signal<Meeting & { project: Project }>;
   public currentOccurrence: Signal<MeetingOccurrence | null>;
   public meetingTypeBadge: Signal<{ badgeClass: string; icon?: string; text: string } | null>;
-  public importantLinks: Signal<{ url: string; domain: string }[]>;
   public returnTo: Signal<string | undefined>;
   public password: WritableSignal<string | null> = signal<string | null>(null);
   public canJoinMeeting: Signal<boolean>;
@@ -103,7 +93,6 @@ export class MeetingJoinComponent {
     this.joinForm = this.initializeJoinForm();
     this.formValues = this.initializeFormValues();
     this.meetingTypeBadge = this.initializeMeetingTypeBadge();
-    this.importantLinks = this.initializeImportantLinks();
     this.returnTo = this.initializeReturnTo();
     this.canJoinMeeting = this.initializeCanJoinMeeting();
     this.fetchedJoinUrl = this.initializeFetchedJoinUrl();
@@ -265,20 +254,6 @@ export class MeetingJoinComponent {
         default:
           return { badgeClass: 'bg-gray-100 text-gray-400', icon: 'fa-light fa-calendar-days', text: meetingType };
       }
-    });
-  }
-
-  private initializeImportantLinks(): Signal<{ url: string; domain: string }[]> {
-    return computed(() => {
-      const meeting = this.meeting();
-      const currentOccurrence = this.currentOccurrence();
-
-      // Use current occurrence description if available, otherwise fallback to meeting description
-      const description = currentOccurrence?.description || meeting?.description;
-      if (!description) {
-        return [];
-      }
-      return extractUrlsWithDomains(description);
     });
   }
 

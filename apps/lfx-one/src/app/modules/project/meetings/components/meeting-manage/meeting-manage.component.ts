@@ -23,6 +23,7 @@ import { MeetingVisibility } from '@lfx-one/shared/enums';
 import {
   BatchRegistrantOperationResponse,
   CreateMeetingRequest,
+  ImportantLinkFormValue,
   Meeting,
   MeetingAttachment,
   MeetingRegistrant,
@@ -78,7 +79,6 @@ export class MeetingManageComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly projectService = inject(ProjectService);
   private readonly messageService = inject(MessageService);
-  private readonly confirmationService = inject(ConfirmationService);
   private readonly destroyRef = inject(DestroyRef);
 
   // Mode and state signals
@@ -103,6 +103,7 @@ export class MeetingManageComponent {
   public form = signal<FormGroup>(this.createMeetingFormGroup());
   public submitting = signal<boolean>(false);
   public deletingAttachmentId = signal<string | null>(null);
+  public pendingAttachmentDeletions = signal<string[]>([]);
   // Registrant updates refresh
   public registrantUpdatesRefresh$ = new BehaviorSubject<void>(undefined);
 
@@ -220,13 +221,17 @@ export class MeetingManageComponent {
   }
 
   public deleteAttachment(attachmentId: string): void {
-    const meetingId = this.meetingId();
-    if (!meetingId) return;
+    this.pendingAttachmentDeletions.update((current) => [...current, attachmentId]);
+  }
 
-    const attachment = this.attachments().find((att: MeetingAttachment) => att.uid === attachmentId);
-    const fileName = attachment?.name || 'this attachment';
+  public undoDeleteAttachment(attachmentId: string): void {
+    this.pendingAttachmentDeletions.update((current) => current.filter((id) => id !== attachmentId));
+  }
 
-    this.showDeleteAttachmentConfirmation(meetingId, attachmentId, fileName);
+  public deleteLinkAttachment(attachmentId: string): void {
+    // When a link with an existing attachment uid is removed from the form,
+    // add it to pending deletions so it gets deleted on save
+    this.pendingAttachmentDeletions.update((current) => [...current, attachmentId]);
   }
 
   public onManageRegistrants(): void {
@@ -352,20 +357,43 @@ export class MeetingManageComponent {
       return;
     }
 
-    // If we have pending attachments, save them to the database
-    if (this.pendingAttachments.length > 0) {
-      this.savePendingAttachments(meeting.uid)
-        .pipe(take(1))
+    const hasPendingDeletions = this.pendingAttachmentDeletions().length > 0;
+    const hasPendingUploads = this.pendingAttachments.length > 0;
+    const importantLinksArray = this.form().get('important_links') as FormArray;
+    const hasPendingLinks = importantLinksArray.length > 0;
+
+    // If we have pending deletions, uploads, or links, process them
+    if (hasPendingDeletions || hasPendingUploads || hasPendingLinks) {
+      // Process deletions, then uploads, then links
+      this.deletePendingAttachments(meeting.uid)
+        .pipe(
+          switchMap((deletionResult) =>
+            this.savePendingAttachments(meeting.uid).pipe(
+              switchMap((uploadResult) =>
+                this.saveLinkAttachments(meeting.uid).pipe(
+                  switchMap((linkResult) =>
+                    of({
+                      deletions: deletionResult,
+                      uploads: uploadResult,
+                      links: linkResult,
+                    })
+                  )
+                )
+              )
+            )
+          ),
+          take(1)
+        )
         .subscribe({
           next: (result) => {
-            // Process attachments after meeting save
-            this.handleAttachmentResults(result, project);
+            // Process attachment operations after meeting save
+            this.handleAttachmentOperationsResults(result, project);
           },
           error: (attachmentError: any) => {
-            console.error('Error saving attachments:', attachmentError);
+            console.error('Error processing attachments:', attachmentError);
             const warningMessage = this.isEditMode()
-              ? 'Meeting updated but attachments failed to save. You can add them later.'
-              : 'Meeting created but attachments failed to save. You can add them later.';
+              ? 'Meeting updated but some attachment operations failed. You can manage them later.'
+              : 'Meeting created but some attachment operations failed. You can manage them later.';
             this.messageService.add({
               severity: 'warn',
               summary: this.isEditMode() ? 'Meeting Updated' : 'Meeting Created',
@@ -394,36 +422,72 @@ export class MeetingManageComponent {
     this.submitting.set(false);
   }
 
-  private handleAttachmentResults(result: { successes: MeetingAttachment[]; failures: { fileName: string; error: any }[] }, project: any): void {
-    const { successes, failures } = result;
+  private handleAttachmentOperationsResults(
+    result: {
+      deletions: { successes: number; failures: string[] };
+      uploads: { successes: MeetingAttachment[]; failures: { fileName: string; error: any }[] };
+      links: { successes: MeetingAttachment[]; failures: { linkName: string; error: any }[] };
+    },
+    project: any
+  ): void {
+    const totalDeleteSuccesses = result.deletions.successes;
+    const totalDeleteFailures = result.deletions.failures.length;
+    const totalUploadSuccesses = result.uploads.successes.length;
+    const totalUploadFailures = result.uploads.failures.length;
+    const totalLinkSuccesses = result.links.successes.length;
+    const totalLinkFailures = result.links.failures.length;
 
-    if (failures.length === 0) {
-      // All attachments saved successfully
+    const totalOperations = totalDeleteSuccesses + totalDeleteFailures + totalUploadSuccesses + totalUploadFailures + totalLinkSuccesses + totalLinkFailures;
+
+    if (totalDeleteFailures === 0 && totalUploadFailures === 0 && totalLinkFailures === 0 && totalOperations > 0) {
+      // All operations successful
+      const parts = [];
+      if (totalDeleteSuccesses > 0) parts.push(`${totalDeleteSuccesses} attachment(s) deleted`);
+      if (totalUploadSuccesses > 0) parts.push(`${totalUploadSuccesses} file(s) uploaded`);
+      if (totalLinkSuccesses > 0) parts.push(`${totalLinkSuccesses} link(s) added`);
+
       const successMessage = this.isEditMode()
-        ? `Meeting updated successfully with ${successes.length} new attachment(s)`
-        : `Meeting created successfully with ${successes.length} attachment(s)`;
+        ? `Meeting updated successfully${parts.length > 0 ? ': ' + parts.join(', ') : ''}`
+        : `Meeting created successfully${parts.length > 0 ? ' with ' + parts.join(' and ') : ''}`;
 
       this.messageService.add({
         severity: 'success',
         summary: 'Success',
         detail: successMessage,
       });
-    } else if (successes.length > 0) {
+    } else if (totalOperations > 0 && (totalDeleteSuccesses > 0 || totalUploadSuccesses > 0 || totalLinkSuccesses > 0)) {
       // Partial success
+      const successParts = [];
+      if (totalDeleteSuccesses > 0) successParts.push(`${totalDeleteSuccesses} deleted`);
+      if (totalUploadSuccesses > 0) successParts.push(`${totalUploadSuccesses} files uploaded`);
+      if (totalLinkSuccesses > 0) successParts.push(`${totalLinkSuccesses} links added`);
+
+      const failureParts = [];
+      if (totalDeleteFailures > 0) failureParts.push(`${totalDeleteFailures} failed to delete`);
+      if (totalUploadFailures > 0) failureParts.push(`${totalUploadFailures} files failed to upload`);
+      if (totalLinkFailures > 0) failureParts.push(`${totalLinkFailures} links failed to add`);
+
       const partialMessage = this.isEditMode()
-        ? `Meeting updated with ${successes.length} attachments. ${failures.length} failed to save.`
-        : `Meeting created with ${successes.length} attachments. ${failures.length} failed to save.`;
+        ? `Meeting updated: ${successParts.join(', ')}. ${failureParts.join(', ')}.`
+        : `Meeting created: ${successParts.join(', ')}. ${failureParts.join(', ')}.`;
 
       this.messageService.add({
         severity: 'warn',
         summary: this.isEditMode() ? 'Meeting Updated' : 'Meeting Created',
         detail: partialMessage,
       });
+    } else if (totalOperations === 0) {
+      // No attachment operations
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Success',
+        detail: `Meeting ${this.isEditMode() ? 'updated' : 'created'} successfully`,
+      });
     } else {
       // All failed
       const errorMessage = this.isEditMode()
-        ? 'Meeting updated but all attachments failed to save. You can add them later.'
-        : 'Meeting created but all attachments failed to save. You can add them later.';
+        ? 'Meeting updated but attachment operations failed. You can manage them later.'
+        : 'Meeting created but attachment operations failed. You can manage them later.';
 
       this.messageService.add({
         severity: 'warn',
@@ -433,53 +497,22 @@ export class MeetingManageComponent {
     }
 
     // Log individual failures for debugging
-    failures.forEach((failure) => {
-      console.error(`Failed to save attachment ${failure.fileName}:`, failure.error);
+    result.uploads.failures.forEach((failure) => {
+      console.error(`Failed to upload attachment ${failure.fileName}:`, failure.error);
+    });
+    result.links.failures.forEach((failure) => {
+      console.error(`Failed to add link ${failure.linkName}:`, failure.error);
+    });
+    result.deletions.failures.forEach((attachmentId) => {
+      console.error(`Failed to delete attachment ${attachmentId}`);
     });
 
-    // Refresh attachments list if we're in edit mode
-    if (this.isEditMode()) {
-      this.attachmentsRefresh$.next();
+    // Clear pending deletions when operations complete without failures
+    if (totalDeleteFailures === 0 && this.pendingAttachmentDeletions().length > 0) {
+      this.pendingAttachmentDeletions.set([]);
     }
 
     this.router.navigate(['/project', project.slug, 'meetings']);
-  }
-
-  private showDeleteAttachmentConfirmation(meetingId: string, attachmentId: string, fileName: string): void {
-    this.confirmationService.confirm({
-      message: `Are you sure you want to delete "${fileName}"? This action cannot be undone.`,
-      header: 'Delete Attachment',
-      icon: 'fa-light fa-exclamation-triangle',
-      acceptIcon: 'fa-light fa-trash',
-      rejectIcon: 'fa-light fa-times',
-      acceptLabel: 'Delete',
-      rejectLabel: 'Cancel',
-      acceptButtonStyleClass: 'p-button-danger p-button-text',
-      rejectButtonStyleClass: 'p-button-text',
-      accept: () => {
-        this.deletingAttachmentId.set(attachmentId);
-        this.meetingService.deleteAttachment(meetingId, attachmentId).subscribe({
-          next: () => {
-            this.messageService.add({
-              severity: 'success',
-              summary: 'Success',
-              detail: 'Attachment deleted successfully',
-            });
-            this.attachmentsRefresh$.next();
-            this.deletingAttachmentId.set(null);
-          },
-          error: (error) => {
-            console.error('Error deleting attachment:', error);
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Error',
-              detail: 'Failed to delete attachment. Please try again.',
-            });
-            this.deletingAttachmentId.set(null);
-          },
-        });
-      },
-    });
   }
 
   private initializeMeeting() {
@@ -602,8 +635,39 @@ export class MeetingManageComponent {
         });
     }
 
+    // Populate important_links FormArray with existing link-type attachments
+    this.populateExistingLinks();
+
     // Update the form validator to use edit mode validator with original start time
     this.updateFormValidator();
+  }
+
+  private populateExistingLinks(): void {
+    const attachments = this.attachments();
+    const linkAttachments = attachments.filter((att: MeetingAttachment) => att.type === 'link');
+
+    if (linkAttachments.length === 0) {
+      return;
+    }
+
+    const importantLinksArray = this.form().get('important_links') as FormArray;
+
+    // Clear existing form array
+    while (importantLinksArray.length > 0) {
+      importantLinksArray.removeAt(0);
+    }
+
+    // Add existing link attachments to the form array
+    linkAttachments.forEach((linkAttachment: MeetingAttachment) => {
+      const linkFormGroup = new FormGroup({
+        id: new FormControl(crypto.randomUUID()),
+        title: new FormControl(linkAttachment.name),
+        url: new FormControl(linkAttachment.link || ''),
+        uid: new FormControl(linkAttachment.uid), // Track the attachment UID
+      });
+
+      importantLinksArray.push(linkFormGroup);
+    });
   }
 
   private canNavigateToStep(step: number): boolean {
@@ -751,6 +815,30 @@ export class MeetingManageComponent {
     }
   }
 
+  private deletePendingAttachments(meetingId: string): Observable<{ successes: number; failures: string[] }> {
+    const attachmentIdsToDelete = this.pendingAttachmentDeletions();
+
+    if (attachmentIdsToDelete.length === 0) {
+      return of({ successes: 0, failures: [] });
+    }
+
+    return from(attachmentIdsToDelete).pipe(
+      mergeMap((attachmentId) =>
+        this.meetingService.deleteAttachment(meetingId, attachmentId).pipe(
+          switchMap(() => of({ success: attachmentId, failure: null })),
+          catchError(() => of({ success: null, failure: attachmentId }))
+        )
+      ),
+      toArray(),
+      switchMap((results) => {
+        const successes = results.filter((r) => r.success).length;
+        const failures = results.filter((r) => r.failure).map((r) => r.failure!);
+        return of({ successes, failures });
+      }),
+      take(1)
+    );
+  }
+
   private savePendingAttachments(meetingId: string): Observable<{ successes: MeetingAttachment[]; failures: { fileName: string; error: any }[] }> {
     const attachmentsToSave = this.pendingAttachments.filter(
       (attachment) => !attachment.uploading && !attachment.uploadError && !attachment.uploaded && attachment.file
@@ -765,6 +853,33 @@ export class MeetingManageComponent {
         this.meetingService.createFileAttachment(meetingId, attachment.file).pipe(
           switchMap((result) => of({ success: result, failure: null })),
           catchError((error) => of({ success: null, failure: { fileName: attachment.fileName, error } }))
+        )
+      ),
+      toArray(),
+      switchMap((results) => {
+        const successes = results.filter((r) => r.success).map((r) => r.success!);
+        const failures = results.filter((r) => r.failure).map((r) => r.failure!);
+        return of({ successes, failures });
+      }),
+      take(1)
+    );
+  }
+
+  private saveLinkAttachments(meetingId: string): Observable<{ successes: MeetingAttachment[]; failures: { linkName: string; error: any }[] }> {
+    const importantLinksArray = this.form().get('important_links') as FormArray;
+    // Only save links that don't have a uid (new links)
+    // Links with uid already exist as attachments and don't need to be recreated
+    const linksToSave = (importantLinksArray.value as ImportantLinkFormValue[]).filter((link) => link.title && link.url && !link.uid);
+
+    if (linksToSave.length === 0) {
+      return of({ successes: [], failures: [] });
+    }
+
+    return from(linksToSave).pipe(
+      mergeMap((link: ImportantLinkFormValue) =>
+        this.meetingService.createAttachmentFromUrl(meetingId, link.title, link.url).pipe(
+          switchMap((result) => of({ success: result, failure: null })),
+          catchError((error) => of({ success: null, failure: { linkName: link.title, error } }))
         )
       ),
       toArray(),

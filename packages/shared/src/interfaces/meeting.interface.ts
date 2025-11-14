@@ -55,6 +55,21 @@ export interface ImportantLink {
 }
 
 /**
+ * Important link form value with attachment tracking
+ * @description Form-specific interface for managing important links with attachment UIDs
+ */
+export interface ImportantLinkFormValue {
+  /** Unique identifier for the form control */
+  id: string;
+  /** Display title for the link */
+  title: string;
+  /** URL of the external resource */
+  url: string;
+  /** Attachment UID (null for new links, present for existing link attachments) */
+  uid: string | null;
+}
+
+/**
  * Committee associated with a meeting
  * @description Basic committee information for meeting association
  */

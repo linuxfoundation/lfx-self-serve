@@ -51,7 +51,28 @@ export class ApiClientService {
     customHeaders?: Record<string, string>
   ): Promise<ApiResponse<Buffer>> {
     const fullUrl = this.getFullUrl(url, query);
-    return this.makeBinaryRequest(type, fullUrl, bearerToken, customHeaders);
+
+    const headers: Record<string, string> = {
+      ['User-Agent']: 'LFX-PCC-Server/1.0',
+    };
+
+    // Only add Authorization header if bearerToken is provided
+    if (bearerToken) {
+      headers['Authorization'] = `Bearer ${bearerToken}`;
+    }
+
+    // Add custom headers
+    if (customHeaders) {
+      Object.assign(headers, customHeaders);
+    }
+
+    const requestInit: RequestInit = {
+      method: type,
+      headers,
+      signal: AbortSignal.timeout(this.config.timeout),
+    };
+
+    return this.executeRequest<Buffer>(fullUrl, requestInit, { binary: true });
   }
 
   private async makeRequest<T>(method: string, url: string, bearerToken?: string, data?: any, customHeaders?: Record<string, string>): Promise<ApiResponse<T>> {
@@ -118,31 +139,7 @@ export class ApiClientService {
     return this.executeRequest<T>(url, requestInit);
   }
 
-  private async makeBinaryRequest(method: string, url: string, bearerToken?: string, customHeaders?: Record<string, string>): Promise<ApiResponse<Buffer>> {
-    const headers: Record<string, string> = {
-      ['User-Agent']: 'LFX-PCC-Server/1.0',
-    };
-
-    // Add custom headers
-    if (customHeaders) {
-      Object.assign(headers, customHeaders);
-    }
-
-    // Only add Authorization header if bearerToken is provided
-    if (bearerToken) {
-      headers['Authorization'] = `Bearer ${bearerToken}`;
-    }
-
-    const requestInit: RequestInit = {
-      method,
-      headers,
-      signal: AbortSignal.timeout(this.config.timeout),
-    };
-
-    return this.executeBinaryRequest(url, requestInit);
-  }
-
-  private async executeRequest<T>(url: string, requestInit: RequestInit): Promise<ApiResponse<T>> {
+  private async executeRequest<T>(url: string, requestInit: RequestInit, options: { binary: boolean } = { binary: false }): Promise<ApiResponse<T>> {
     try {
       const response = await fetch(url, requestInit);
 
@@ -161,18 +158,27 @@ export class ApiClientService {
         const errorMessage = errorBody?.message || errorBody?.error || response.statusText;
 
         throw new MicroserviceError(errorMessage, response.status, getHttpErrorCode(response.status), {
-          operation: 'api_client_request',
+          operation: options.binary ? 'api_client_binary_request' : 'api_client_request',
           service: 'api_client_service',
           path: url,
           errorBody: errorBody,
         });
       }
 
-      // If the response is text, parse it as JSON
-      const data = await response.text();
+      // Process response based on binary flag
+      let data: T;
+      if (options.binary) {
+        // Get the response as an ArrayBuffer and convert to Buffer
+        const arrayBuffer = await response.arrayBuffer();
+        data = Buffer.from(arrayBuffer) as T;
+      } else {
+        // Parse as JSON
+        const text = await response.text();
+        data = text ? JSON.parse(text) : null;
+      }
 
       const apiResponse: ApiResponse<T> = {
-        data: data ? JSON.parse(data) : null,
+        data,
         status: response.status,
         statusText: response.statusText,
         headers: Object.fromEntries(response.headers.entries()),
@@ -183,7 +189,7 @@ export class ApiClientService {
       if (error instanceof Error) {
         if (error.name === 'AbortError') {
           throw new MicroserviceError(`Request timeout after ${this.config.timeout}ms`, 408, 'TIMEOUT', {
-            operation: 'api_client_timeout',
+            operation: options.binary ? 'api_client_binary_timeout' : 'api_client_timeout',
             service: 'api_client_service',
             path: url,
           });
@@ -192,70 +198,7 @@ export class ApiClientService {
         const errorWithCause = error as Error & { cause?: { code?: string } };
         if (errorWithCause.cause?.code) {
           throw new MicroserviceError(`Request failed: ${error.message}`, 500, errorWithCause.cause.code || 'NETWORK_ERROR', {
-            operation: 'api_client_network_error',
-            service: 'api_client_service',
-            path: url,
-            originalError: error,
-          });
-        }
-      }
-
-      throw error;
-    }
-  }
-
-  private async executeBinaryRequest(url: string, requestInit: RequestInit): Promise<ApiResponse<Buffer>> {
-    try {
-      const response = await fetch(url, requestInit);
-
-      if (!response.ok) {
-        // Try to parse error response body for additional details
-        let errorBody: any = null;
-        try {
-          const errorText = await response.text();
-          if (errorText) {
-            errorBody = JSON.parse(errorText);
-          }
-        } catch {
-          // If we can't parse the error body, we'll use the basic HTTP error
-        }
-
-        const errorMessage = errorBody?.message || errorBody?.error || response.statusText;
-
-        throw new MicroserviceError(errorMessage, response.status, getHttpErrorCode(response.status), {
-          operation: 'api_client_binary_request',
-          service: 'api_client_service',
-          path: url,
-          errorBody: errorBody,
-        });
-      }
-
-      // Get the response as an ArrayBuffer and convert to Buffer
-      const arrayBuffer = await response.arrayBuffer();
-      const buffer = Buffer.from(arrayBuffer);
-
-      const apiResponse: ApiResponse<Buffer> = {
-        data: buffer,
-        status: response.status,
-        statusText: response.statusText,
-        headers: Object.fromEntries(response.headers.entries()),
-      };
-
-      return apiResponse;
-    } catch (error: unknown) {
-      if (error instanceof Error) {
-        if (error.name === 'AbortError') {
-          throw new MicroserviceError(`Request timeout after ${this.config.timeout}ms`, 408, 'TIMEOUT', {
-            operation: 'api_client_binary_timeout',
-            service: 'api_client_service',
-            path: url,
-          });
-        }
-
-        const errorWithCause = error as Error & { cause?: { code?: string } };
-        if (errorWithCause.cause?.code) {
-          throw new MicroserviceError(`Request failed: ${error.message}`, 500, errorWithCause.cause.code || 'NETWORK_ERROR', {
-            operation: 'api_client_binary_network_error',
+            operation: options.binary ? 'api_client_binary_network_error' : 'api_client_network_error',
             service: 'api_client_service',
             path: url,
             originalError: error,

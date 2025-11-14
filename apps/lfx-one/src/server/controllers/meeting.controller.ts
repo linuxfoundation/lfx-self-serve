@@ -1007,13 +1007,17 @@ export class MeetingController {
 
   /**
    * GET /meetings/:uid/attachments/:attachmentId
+   * Query params:
+   * - download: 'true' to force download (attachment), omit or 'false' to view inline
    */
   public async getMeetingAttachment(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, attachmentId } = req.params;
+    const { download } = req.query;
 
     const startTime = Logger.start(req, 'get_meeting_attachment', {
       meeting_uid: uid,
       attachment_id: attachmentId,
+      download_mode: download === 'true' ? 'download' : 'inline',
     });
 
     try {
@@ -1066,13 +1070,14 @@ export class MeetingController {
         status_code: 200,
       });
 
-      // Set proper headers for file download
+      // Set proper headers for file delivery
       res.setHeader('Content-Type', contentType);
 
       // Use RFC 5987 encoding for Content-Disposition filename
       // This properly handles spaces, special characters, and Unicode
       const encodedFilename = encodeURIComponent(filename);
-      res.setHeader('Content-Disposition', `attachment; filename*=UTF-8''${encodedFilename}`);
+      const disposition = download === 'true' ? 'attachment' : 'inline';
+      res.setHeader('Content-Disposition', `${disposition}; filename*=UTF-8''${encodedFilename}`);
 
       res.setHeader('Content-Length', attachmentData.length.toString());
 

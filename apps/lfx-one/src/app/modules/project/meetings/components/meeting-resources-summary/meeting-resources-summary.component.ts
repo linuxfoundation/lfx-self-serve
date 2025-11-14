@@ -11,7 +11,6 @@ import { RecurrenceType } from '@lfx-one/shared/enums';
 import { CustomRecurrencePattern, MeetingAttachment, PendingAttachment } from '@lfx-one/shared/interfaces';
 import { buildRecurrenceSummary, generateAcceptString } from '@lfx-one/shared/utils';
 import { FileSizePipe } from '@pipes/file-size.pipe';
-import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
 
 @Component({
@@ -27,6 +26,7 @@ export class MeetingResourcesSummaryComponent implements OnInit {
   public readonly isEditMode = input<boolean>(false);
   public readonly deletingAttachmentId = input<string | null>(null);
   public readonly meetingId = input<string | null>(null);
+  public readonly pendingAttachmentDeletions = input<string[]>([]);
 
   // File management
   public pendingAttachments = signal<PendingAttachment[]>([]);
@@ -46,12 +46,13 @@ export class MeetingResourcesSummaryComponent implements OnInit {
   public recurrenceLabel = computed(() => this.getRecurrenceLabel());
 
   // Inject services
-  private readonly meetingService = inject(MeetingService);
   private readonly messageService = inject(MessageService);
 
   // Navigation
   public readonly goToStep = output<number>();
   public readonly deleteAttachment = output<string>();
+  public readonly undoDeleteAttachment = output<string>();
+  public readonly deleteLinkAttachment = output<string>(); // Output when a link with uid is removed
 
   // File upload configuration
   public readonly acceptString = generateAcceptString();
@@ -68,6 +69,10 @@ export class MeetingResourcesSummaryComponent implements OnInit {
   public getFileType(fileName: string): string {
     const extension = fileName.split('.').pop()?.toUpperCase();
     return extension || 'FILE';
+  }
+
+  public isPendingDeletion(attachmentId: string): boolean {
+    return this.pendingAttachmentDeletions().includes(attachmentId);
   }
 
   // File handling methods
@@ -104,30 +109,16 @@ export class MeetingResourcesSummaryComponent implements OnInit {
           file: file,
           fileSize: file.size,
           mimeType: file.type,
-          uploading: true,
+          uploading: false,
+          uploaded: false,
         };
-
-        // Start the upload
-        this.meetingService.createFileAttachment(this.meetingId()!, file).subscribe({
-          next: (result) => {
-            this.pendingAttachments.update((current) =>
-              current.map((pa) => (pa.id === pendingAttachment.id ? { ...pa, link: result.link, uploading: false } : pa))
-            );
-            this.form().get('attachments')?.setValue(this.pendingAttachments());
-          },
-          error: (error) => {
-            this.pendingAttachments.update((current) =>
-              current.map((pa) => (pa.id === pendingAttachment.id ? { ...pa, uploading: false, uploadError: error.message || 'Upload failed' } : pa))
-            );
-            console.error(`Failed to upload ${file.name}:`, error);
-          },
-        });
 
         return pendingAttachment;
       })
       .filter(Boolean) as PendingAttachment[];
 
     this.pendingAttachments.update((current) => [...current, ...newAttachments]);
+    this.form().get('attachments')?.setValue(this.pendingAttachments());
   }
 
   public removeAttachment(id: string): void {
@@ -142,6 +133,7 @@ export class MeetingResourcesSummaryComponent implements OnInit {
         id: new FormControl(crypto.randomUUID()),
         title: new FormControl(this.newLink.title),
         url: new FormControl(this.newLink.url),
+        uid: new FormControl(null), // New links don't have a uid yet
       });
 
       this.importantLinksFormArray.push(linkFormGroup);
@@ -150,6 +142,14 @@ export class MeetingResourcesSummaryComponent implements OnInit {
   }
 
   public removeLink(index: number): void {
+    const linkControl = this.importantLinksFormArray.at(index);
+    const uid = linkControl?.get('uid')?.value;
+
+    // If this link has a uid (exists as an attachment), emit for deletion tracking
+    if (uid) {
+      this.deleteLinkAttachment.emit(uid);
+    }
+
     this.importantLinksFormArray.removeAt(index);
   }
 
