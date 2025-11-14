@@ -5,7 +5,7 @@ apiVersion: v2
 name: lfx-v2-ui
 description: A Helm chart for LFX v2 UI - Angular SSR application with Express backend
 type: application
-version: 0.3.0
+version: 0.3.1
 appVersion: "latest"
 keywords:
   - lfx
