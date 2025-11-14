@@ -96,13 +96,13 @@ externalSecrets:
       rewrite:
         - regexp:
             source: '(.*)'
-            replacement: 'auth0_$1'
+            target: 'auth0_$1'
     - extract:
         key: '/cloudops/managed-secrets/auth0/LFX_ONE_Passwordless'
       rewrite:
         - regexp:
             source: '(.*)'
-            replacement: 'auth0_passwordless_$1'
+            target: 'auth0_passwordless_$1'
     - find:
         tags:
           service: "pcc"
