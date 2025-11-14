@@ -363,16 +363,21 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: ProgressItemWithChart[] = [
  */
 export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
   {
-    label: 'Code Commits',
+    label: 'Critical Security Issues',
+    icon: 'fa-light fa-shield-halved',
     value: '19',
-    trend: 'up',
-    subtitle: 'Last 30 days',
+    trend: 'down',
+    subtitle: 'Open critical security vulnerabilities',
     chartType: 'line',
+    category: 'projectHealth',
     chartData: {
-      labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
+      labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
       datasets: [
         {
-          data: generateMockData(30, 0, 3),
+          data: Array.from({ length: 12 }, (_, i) => {
+            const base = 28 - i * 0.75;
+            return Math.max(15, Math.floor(base + (Math.random() * 4 - 2)));
+          }),
           borderColor: '#ef4444',
           backgroundColor: 'rgba(239, 68, 68, 0.1)',
           fill: true,
@@ -394,10 +399,12 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
   },
   {
     label: 'PR Review & Merge Velocity',
+    icon: 'fa-light fa-clock',
     value: '2.8 days',
     trend: 'up',
     subtitle: 'Average time to merge',
     chartType: 'bar',
+    category: 'code',
     chartData: {
       labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
       datasets: [
@@ -424,23 +431,25 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
   },
   {
     label: 'Open vs Closed Issues Trend',
+    icon: 'fa-light fa-chart-line',
     value: '89%',
     trend: 'up',
     subtitle: 'Issue resolution rate',
     chartType: 'line',
+    category: 'code',
     chartData: {
       labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
       datasets: [
         {
           label: 'Opened Issues',
           data: generateMockData(30, 5, 15),
-          borderColor: '#ef4444',
-          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+          borderColor: '#0094FF',
+          backgroundColor: 'rgba(0, 148, 255, 0.1)',
           fill: false,
           tension: 0.4,
           borderWidth: 2,
           pointRadius: 0,
-          pointHoverBackgroundColor: '#ef4444',
+          pointHoverBackgroundColor: '#0094FF',
           pointHoverBorderColor: '#fff',
           pointHoverBorderWidth: 2,
         },
@@ -512,10 +521,12 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
   },
   {
     label: 'Contributors Mentored',
+    icon: 'fa-light fa-user-graduate',
     value: '6',
     trend: 'up',
     subtitle: 'Active mentorship relationships',
     chartType: 'line',
+    category: 'projectHealth',
     chartData: {
       labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
       datasets: [
@@ -542,21 +553,21 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
   },
   {
     label: 'Unique Contributors per Week',
+    icon: 'fa-light fa-users',
     value: '24',
     trend: 'up',
     subtitle: 'Active contributors',
     chartType: 'bar',
+    category: 'code',
     chartData: {
-      labels: Array.from({ length: 12 }, (_, i) => `Week ${i + 1}`),
+      labels: Array.from({ length: 4 }, (_, i) => `Week ${i + 1}`),
       datasets: [
         {
-          data: generateMockData(12, 18, 30),
-          borderColor: '#0094FF',
-          backgroundColor: 'rgba(0, 148, 255, 0.1)',
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2,
-          pointRadius: 0,
+          data: generateMockData(4, 18, 30),
+          backgroundColor: 'rgba(0, 148, 255, 0.8)',
+          borderColor: 'transparent',
+          borderWidth: 0,
+          borderRadius: 2,
         },
       ],
     },
@@ -572,10 +583,12 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
   },
   {
     label: 'Health Score',
+    icon: 'fa-light fa-heart-pulse',
     value: '85',
     trend: 'up',
     subtitle: 'Overall project health',
     chartType: 'line',
+    category: 'projectHealth',
     chartData: {
       labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
       datasets: [

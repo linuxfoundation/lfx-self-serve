@@ -8,6 +8,7 @@ import { AnalyticsService } from '@app/shared/services/analytics.service';
 import { PersonaService } from '@app/shared/services/persona.service';
 import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { ChartComponent } from '@components/chart/chart.component';
+import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import {
   CORE_DEVELOPER_PROGRESS_METRICS,
   MAINTAINER_PROGRESS_METRICS,
@@ -33,7 +34,7 @@ import type { TooltipItem } from 'chart.js';
 @Component({
   selector: 'lfx-recent-progress',
   standalone: true,
-  imports: [CommonModule, ChartComponent, TooltipModule],
+  imports: [CommonModule, ChartComponent, TooltipModule, FilterPillsComponent],
   templateUrl: './recent-progress.component.html',
   styleUrl: './recent-progress.component.scss',
 })
@@ -53,7 +54,7 @@ export class RecentProgressComponent {
     projectIssuesResolution: true,
     projectPullRequestsWeekly: true,
   });
-  public readonly projectId = computed(() => this.projectContextService.selectedProject()?.projectId);
+  public readonly projectSlug = computed(() => this.projectContextService.selectedFoundation()?.slug || this.projectContextService.selectedProject()?.slug);
   private readonly activeWeeksStreakData = this.initializeActiveWeeksStreakData();
   private readonly pullRequestsMergedData = this.initializePullRequestsMergedData();
   private readonly codeCommitsData = this.initializeCodeCommitsData();
@@ -63,6 +64,39 @@ export class RecentProgressComponent {
   private readonly prVelocityTooltipData = this.initializePrVelocityTooltipData();
   protected readonly isLoading = this.initializeIsLoading();
   protected readonly progressItems = this.initializeProgressItems();
+  protected readonly selectedFilter = signal<string>('all');
+  protected readonly filteredProgressItems = computed(() => {
+    const items = this.progressItems();
+    const filter = this.selectedFilter();
+    const persona = this.personaService.currentPersona();
+
+    // Only apply filtering for maintainer persona
+    if (persona !== 'maintainer') {
+      return items;
+    }
+
+    if (filter === 'all') {
+      return items;
+    }
+
+    return items.filter((item) => item.category === filter);
+  });
+
+  protected readonly currentPersona = computed(() => this.personaService.currentPersona());
+  protected readonly showFilterPills = computed(() => this.currentPersona() === 'maintainer');
+  protected readonly filterOptions: FilterOption[] = [
+    { id: 'all', label: 'All' },
+    { id: 'code', label: 'Code' },
+    { id: 'projectHealth', label: 'Project Health' },
+  ];
+
+  protected setFilter(filter: string): void {
+    this.selectedFilter.set(filter);
+    // Reset scroll position when filter changes
+    if (this.progressScrollContainer) {
+      this.progressScrollContainer.nativeElement.scrollLeft = 0;
+    }
+  }
 
   protected scrollLeft(): void {
     const container = this.progressScrollContainer.nativeElement;
@@ -228,20 +262,22 @@ export class RecentProgressComponent {
 
     return {
       label: 'Open vs Closed Issues Trend',
+      icon: 'fa-light fa-chart-line',
       value: `${resolutionRate}%`,
       trend: resolutionRate >= 50 ? 'up' : 'down',
       subtitle: 'Issue resolution rate',
       tooltipText,
       isConnected: true,
       chartType: 'line',
+      category: 'code',
       chartData: {
         labels: chartData.map((row) => row.METRIC_DATE),
         datasets: [
           {
             label: 'Opened Issues',
             data: chartData.map((row) => row.OPENED_ISSUES_COUNT),
-            borderColor: '#ef4444',
-            backgroundColor: 'rgba(239, 68, 68, 0.1)',
+            borderColor: '#0094FF',
+            backgroundColor: 'rgba(0, 148, 255, 0.1)',
             fill: false,
             tension: 0.4,
             borderWidth: 2,
@@ -414,15 +450,15 @@ export class RecentProgressComponent {
 
   private initializeProjectIssuesResolutionData() {
     return toSignal(
-      toObservable(this.projectId).pipe(
-        switchMap((projectId) => {
-          if (!projectId) {
+      toObservable(this.projectSlug).pipe(
+        switchMap((projectSlug) => {
+          if (!projectSlug) {
             this.loadingState.update((state) => ({ ...state, projectIssuesResolution: false }));
             return [{ data: [], totalOpenedIssues: 0, totalClosedIssues: 0, resolutionRatePct: 0, medianDaysToClose: 0, totalDays: 0 }];
           }
           this.loadingState.update((state) => ({ ...state, projectIssuesResolution: true }));
           return this.analyticsService
-            .getProjectIssuesResolution(projectId)
+            .getProjectIssuesResolution(projectSlug)
             .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, projectIssuesResolution: false }))));
         })
       ),
@@ -441,15 +477,15 @@ export class RecentProgressComponent {
 
   private initializeProjectPullRequestsWeeklyData() {
     return toSignal(
-      toObservable(this.projectId).pipe(
-        switchMap((projectId) => {
-          if (!projectId) {
+      toObservable(this.projectSlug).pipe(
+        switchMap((projectSlug) => {
+          if (!projectSlug) {
             this.loadingState.update((state) => ({ ...state, projectPullRequestsWeekly: false }));
             return [{ data: [], totalMergedPRs: 0, avgMergeTime: 0, totalWeeks: 0 }];
           }
           this.loadingState.update((state) => ({ ...state, projectPullRequestsWeekly: true }));
           return this.analyticsService
-            .getProjectPullRequestsWeekly(projectId)
+            .getProjectPullRequestsWeekly(projectSlug)
             .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, projectPullRequestsWeekly: false }))));
         })
       ),

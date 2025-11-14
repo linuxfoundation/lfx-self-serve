@@ -197,13 +197,13 @@ export class AnalyticsService {
 
   /**
    * Get project issues resolution data (opened vs closed issues) from Snowflake
-   * @param projectId - Project ID to filter by specific project (required)
+   * @param projectSlug - Project slug to filter by specific project (required)
    * @returns Observable of project issues resolution response with aggregated metrics
    */
-  public getProjectIssuesResolution(projectId: string): Observable<ProjectIssuesResolutionResponse> {
+  public getProjectIssuesResolution(projectSlug: string): Observable<ProjectIssuesResolutionResponse> {
     return this.http
       .get<ProjectIssuesResolutionResponse>('/api/analytics/project-issues-resolution', {
-        params: { projectId },
+        params: { projectSlug },
       })
       .pipe(
         catchError((error) => {
@@ -222,13 +222,13 @@ export class AnalyticsService {
 
   /**
    * Get project pull requests weekly data (merge velocity) from Snowflake
-   * @param projectId - Project ID to filter by specific project (required)
+   * @param projectSlug - Project slug to filter by specific project (required)
    * @returns Observable of project pull requests weekly response with aggregated metrics
    */
-  public getProjectPullRequestsWeekly(projectId: string): Observable<ProjectPullRequestsWeeklyResponse> {
+  public getProjectPullRequestsWeekly(projectSlug: string): Observable<ProjectPullRequestsWeeklyResponse> {
     return this.http
       .get<ProjectPullRequestsWeeklyResponse>('/api/analytics/project-pull-requests-weekly', {
-        params: { projectId },
+        params: { projectSlug },
       })
       .pipe(
         catchError((error) => {

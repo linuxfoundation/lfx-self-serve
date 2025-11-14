@@ -281,24 +281,24 @@ export class AnalyticsController {
   /**
    * GET /api/analytics/project-issues-resolution
    * Get project issues resolution data (opened vs closed issues) from Snowflake
-   * Query params: projectId (required) - Project ID to filter by specific project
+   * Query params: projectSlug (required) - Project slug to filter by specific project
    *   */
   public async getProjectIssuesResolution(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = Logger.start(req, 'get_project_issues_resolution');
 
     try {
-      const projectId = req.query['projectId'] as string | undefined;
+      const projectSlug = req.query['projectSlug'] as string | undefined;
 
-      if (!projectId) {
-        throw ServiceValidationError.forField('projectId', 'projectId query parameter is required', {
+      if (!projectSlug) {
+        throw ServiceValidationError.forField('projectSlug', 'projectSlug query parameter is required', {
           operation: 'get_project_issues_resolution',
         });
       }
 
-      const response = await this.projectService.getProjectIssuesResolution(projectId);
+      const response = await this.projectService.getProjectIssuesResolution(projectSlug);
 
       Logger.success(req, 'get_project_issues_resolution', startTime, {
-        project_id: projectId,
+        project_slug: projectSlug,
         total_days: response.totalDays,
         total_opened: response.totalOpenedIssues,
         total_closed: response.totalClosedIssues,
@@ -316,24 +316,24 @@ export class AnalyticsController {
   /**
    * GET /api/analytics/project-pull-requests-weekly
    * Get project pull requests weekly data (merge velocity) from Snowflake
-   * Query params: projectId (required) - Project ID to filter by specific project
+   * Query params: projectSlug (required) - Project slug to filter by specific project
    *   */
   public async getProjectPullRequestsWeekly(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = Logger.start(req, 'get_project_pull_requests_weekly');
 
     try {
-      const projectId = req.query['projectId'] as string | undefined;
+      const projectSlug = req.query['projectSlug'] as string | undefined;
 
-      if (!projectId) {
-        throw ServiceValidationError.forField('projectId', 'projectId query parameter is required', {
+      if (!projectSlug) {
+        throw ServiceValidationError.forField('projectSlug', 'projectSlug query parameter is required', {
           operation: 'get_project_pull_requests_weekly',
         });
       }
 
-      const response = await this.projectService.getProjectPullRequestsWeekly(projectId);
+      const response = await this.projectService.getProjectPullRequestsWeekly(projectSlug);
 
       Logger.success(req, 'get_project_pull_requests_weekly', startTime, {
-        project_id: projectId,
+        project_slug: projectSlug,
         total_weeks: response.totalWeeks,
         total_merged_prs: response.totalMergedPRs,
         avg_merge_time: response.avgMergeTime,

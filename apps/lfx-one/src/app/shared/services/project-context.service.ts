@@ -27,6 +27,7 @@ export class ProjectContextService {
    * Set the selected foundation-level project
    */
   public setFoundation(foundation: ProjectContext): void {
+    this.clearProject();
     this.selectedFoundation.set(foundation);
     this.persistToStorage(this.foundationStorageKey, foundation);
   }
@@ -35,8 +36,29 @@ export class ProjectContextService {
    * Set the selected sub-project (child project)
    */
   public setProject(project: ProjectContext): void {
+    this.clearFoundation();
     this.selectedProject.set(project);
     this.persistToStorage(this.projectStorageKey, project);
+  }
+
+  /**
+   * Clear the selected sub-project
+   */
+  public clearProject(): void {
+    this.selectedProject.set(null);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(this.projectStorageKey);
+    }
+  }
+
+  /**
+   * Clear the selected foundation
+   */
+  public clearFoundation(): void {
+    this.selectedFoundation.set(null);
+    if (typeof localStorage !== 'undefined') {
+      localStorage.removeItem(this.foundationStorageKey);
+    }
   }
 
   /**
@@ -54,7 +76,9 @@ export class ProjectContextService {
   }
 
   private persistToStorage(key: string, project: ProjectContext): void {
-    localStorage.setItem(key, JSON.stringify(project));
+    if (typeof localStorage !== 'undefined') {
+      localStorage.setItem(key, JSON.stringify(project));
+    }
   }
 
   private loadFromStorage(key: string): ProjectContext | null {

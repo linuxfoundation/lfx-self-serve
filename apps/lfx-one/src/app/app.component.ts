@@ -7,13 +7,12 @@ import { RouterOutlet } from '@angular/router';
 import { AuthContext } from '@lfx-one/shared/interfaces';
 import { ToastModule } from 'primeng/toast';
 
-import { HeaderComponent } from './shared/components/header/header.component';
 import { SegmentService } from './shared/services/segment.service';
 import { UserService } from './shared/services/user.service';
 
 @Component({
   selector: 'lfx-root',
-  imports: [RouterOutlet, HeaderComponent, CommonModule, ToastModule],
+  imports: [RouterOutlet, CommonModule, ToastModule],
   templateUrl: './app.component.html',
   styleUrl: './app.component.scss',
 })

@@ -3,33 +3,11 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="dashboard-container">
   <!-- Foundation Project -->
-  <div class="mb-6 flex items-center gap-4" data-testid="foundation-project">
-    <h1 class="text-2xl font-serif font-semibold text-gray-900">{{ selectedFoundation()?.name }} Overview</h1>
-  </div>
-
-  <!-- Filters -->
-  <div class="mb-6 flex flex-col sm:flex-row items-start sm:items-center gap-4" data-testid="maintainer-filters">
-    <div class="flex flex-col sm:flex-row items-start sm:items-center gap-4 w-full">
-      <!-- Project Filter -->
-      <div class="flex items-center gap-2 w-full sm:w-auto">
-        <label for="project-filter" class="text-sm font-semibold text-gray-700 whitespace-nowrap">Project:</label>
-        <lfx-select
-          [form]="form"
-          control="selectedProjectId"
-          [options]="availableProjects()"
-          optionLabel="name"
-          optionValue="projectId"
-          [filter]="true"
-          filterBy="name"
-          filterPlaceholder="Search projects..."
-          placeholder="Select a project"
-          [showClear]="false"
-          styleClass="min-w-[300px]"
-          inputId="project-filter"
-          data-testid="project-filter" />
-      </div>
+  @if (selectedProject()) {
+    <div class="mb-6 flex items-center gap-4" data-testid="foundation-project">
+      <h1 class="text-2xl font-serif font-semibold text-gray-900">{{ selectedProject()?.name }} Overview</h1>
     </div>
-  </div>
+  }
 
   <!-- Dashboard Sections -->
   <div class="flex flex-col gap-6" data-testid="dashboard-sections-grid">

@@ -10,6 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { Meeting, ProjectContext } from '@lfx-one/shared/interfaces';
 import { getCurrentOrNextOccurrence } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
+import { PersonaService } from '@services/persona.service';
 import { BehaviorSubject, map, switchMap, tap } from 'rxjs';
 
 import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-top-bar.component';
@@ -24,6 +25,7 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 export class MeetingsDashboardComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly personaService = inject(PersonaService);
 
   public meetingsLoading: WritableSignal<boolean>;
   public meetings: Signal<Meeting[]> = signal([]);
@@ -34,6 +36,8 @@ export class MeetingsDashboardComponent {
   public timeFilter: WritableSignal<'upcoming' | 'past'>;
   public topBarVisibilityFilter: WritableSignal<'mine' | 'public'>;
   public project: Signal<ProjectContext | null>;
+  public isMaintainer: Signal<boolean>;
+  public isNonFoundationProjectSelected: Signal<boolean>;
 
   public constructor() {
     this.meetingsLoading = signal<boolean>(true);
@@ -44,7 +48,10 @@ export class MeetingsDashboardComponent {
     this.timeFilter = signal<'upcoming' | 'past'>('upcoming');
     this.topBarVisibilityFilter = signal<'mine' | 'public'>('mine');
     this.filteredMeetings = this.initializeFilteredMeetings();
-    this.project = computed(() => this.projectContextService.selectedFoundation());
+    this.project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+    this.isMaintainer = computed(() => this.personaService.currentPersona() === 'maintainer');
+    // A non-foundation project is selected if selectedProject is not null
+    this.isNonFoundationProjectSelected = computed(() => this.projectContextService.selectedProject() !== null);
   }
 
   public onViewChange(view: 'list' | 'calendar'): void {

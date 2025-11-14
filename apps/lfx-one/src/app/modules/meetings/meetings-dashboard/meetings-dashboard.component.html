@@ -5,13 +5,15 @@
   <div class="mb-8">
     <div class="flex justify-between items-center w-full gap-4 mb-8">
       <span class="mb-0 text-2xl font-serif font-semibold text-gray-900">Meetings</span>
-      <lfx-button
-        icon="fa-light fa-plus"
-        severity="primary"
-        [attr.data-testid]="'meeting-create-button'"
-        label="Create Meeting"
-        [routerLink]="['/project', project()?.slug || '', 'meetings', 'create']">
-      </lfx-button>
+      @if (isMaintainer() && isNonFoundationProjectSelected()) {
+        <lfx-button
+          icon="fa-light fa-plus"
+          severity="primary"
+          [attr.data-testid]="'meeting-create-button'"
+          label="Create Meeting"
+          [routerLink]="['/project', project()?.slug || '', 'meetings', 'create']">
+        </lfx-button>
+      }
     </div>
 
     <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-slate-200 p-4 -mx-0 mb-8">

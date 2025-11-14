@@ -1,16 +1,16 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex min-h-screen pt-4">
+<div class="flex min-h-screen">
   <!-- Sidebar - Desktop -->
-  <div class="hidden lg:block w-72 flex-shrink-0 fixed top-[6rem] left-0">
+  <div class="hidden lg:block w-64 flex-shrink-0 fixed top-0 left-0">
     <lfx-sidebar [items]="sidebarItems" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-sidebar>
   </div>
 
   <!-- Sidebar - Mobile Overlay -->
   @if (showMobileSidebar()) {
     <div class="lg:hidden fixed inset-0 z-40 bg-black bg-opacity-50" data-testid="mobile-sidebar-overlay" (click)="closeMobileSidebar()">
-      <div class="absolute top-0 left-0 bottom-0 w-72 bg-white shadow-xl" (click)="$event.stopPropagation()" data-testid="mobile-sidebar">
+      <div class="absolute top-0 left-0 bottom-0 w-64 bg-white shadow-xl" (click)="$event.stopPropagation()" data-testid="mobile-sidebar">
         <div class="flex items-center justify-between p-4 border-b border-gray-200">
           <h2 class="text-lg font-semibold text-gray-900">Menu</h2>
           <button
@@ -30,7 +30,7 @@
   }
 
   <!-- Main Content Area -->
-  <main class="flex-1 min-w-0 transition-all duration-300 lg:ml-72" data-testid="main-content">
+  <main class="flex-1 min-w-0 transition-all duration-300 lg:ml-64 px-[21px] md:px-[32px] py-[24px]" data-testid="main-content">
     <router-outlet />
     <!-- Footer Component -->
     <lfx-footer class="py-8"></lfx-footer>

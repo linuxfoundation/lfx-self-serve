@@ -45,15 +45,39 @@ export class MeetingTypeSelectionComponent {
     }));
   });
 
-  // Meeting type options using shared enum (excluding NONE for selection)
-  public readonly meetingTypeOptions = [
-    { label: 'Board', value: MeetingType.BOARD },
-    { label: 'Maintainers', value: MeetingType.MAINTAINERS },
-    { label: 'Marketing', value: MeetingType.MARKETING },
-    { label: 'Technical', value: MeetingType.TECHNICAL },
-    { label: 'Legal', value: MeetingType.LEGAL },
-    { label: 'Other', value: MeetingType.OTHER },
-  ];
+  // Meeting type options with their info - computed for template efficiency
+  // Filtered based on user role (currently showing only maintainers, technical, and other)
+  public readonly meetingTypeOptions = computed(() => {
+    const allOptions = [
+      { label: 'Board', value: MeetingType.BOARD },
+      { label: 'Maintainers', value: MeetingType.MAINTAINERS },
+      { label: 'Marketing', value: MeetingType.MARKETING },
+      { label: 'Technical', value: MeetingType.TECHNICAL },
+      { label: 'Legal', value: MeetingType.LEGAL },
+      { label: 'Other', value: MeetingType.OTHER },
+    ];
+
+    // Filter to only show maintainers, technical, and other meeting types
+    const allowedTypes = [MeetingType.MAINTAINERS, MeetingType.TECHNICAL, MeetingType.OTHER];
+    const filteredOptions = allOptions.filter((option) => allowedTypes.includes(option.value));
+
+    return filteredOptions.map((option) => ({
+      ...option,
+      info: this.meetingTypeInfo[option.value],
+    }));
+  });
+
+  // Computed grid columns based on number of meeting types
+  public readonly gridColumns = computed(() => {
+    const count = this.meetingTypeOptions().length;
+    // If divisible by 3, show 3 columns; if divisible by 2, show 2 columns; otherwise show 1
+    if (count % 3 === 0) {
+      return 3;
+    } else if (count % 2 === 0) {
+      return 2;
+    }
+    return 1;
+  });
 
   // Meeting type info mapping (using colors consistent with committee colors)
   private readonly meetingTypeInfo: Record<MeetingType, MeetingTypeInfo> = {
@@ -101,11 +125,6 @@ export class MeetingTypeSelectionComponent {
     },
   };
 
-  // Get meeting type information
-  public getMeetingTypeInfo(type: MeetingType): MeetingTypeInfo {
-    return this.meetingTypeInfo[type] || this.meetingTypeInfo[MeetingType.OTHER];
-  }
-
   // Handle meeting type selection
   public onMeetingTypeSelect(meetingType: MeetingType): void {
     this.form().get('meeting_type')?.setValue(meetingType);
@@ -125,7 +144,7 @@ export class MeetingTypeSelectionComponent {
       this.projectService.getProjects(params).pipe(
         map((projects: Project[]) => {
           // Filter out the current project from the list
-          return projects.filter((project) => project.uid !== currentProject.uid);
+          return projects.filter((project) => project.uid !== currentProject.uid && project.writer);
         })
       ),
       { initialValue: [] }

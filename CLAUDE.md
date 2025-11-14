@@ -143,3 +143,4 @@ Before starting any work or commits:
 
 - Always use sequential thinking mcp for planning before doing any changes
 - Always run yarn build to validate that your changes are building too for validation
+- Always remember that our JIRA sprint field is customfield_10020. When we create tickets, we need to assign them to the current user and set it to the current sprint.
