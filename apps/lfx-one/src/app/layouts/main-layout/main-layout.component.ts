@@ -25,39 +25,27 @@ export class MainLayoutComponent {
   // Expose mobile sidebar state from service
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
 
-  // Sidebar navigation items
+  // Sidebar navigation items - matching React NavigationSidebar design
   protected readonly sidebarItems: SidebarMenuItem[] = [
     {
-      label: 'Home',
-      icon: 'fa-light fa-house',
+      label: 'Overview',
+      icon: 'fa-light fa-grid-2',
       routerLink: '/',
     },
     {
       label: 'Meetings',
-      icon: 'fa-light fa-video',
+      icon: 'fa-light fa-calendar',
       routerLink: '/meetings',
+    },
+    {
+      label: 'Projects',
+      icon: 'fa-light fa-folder-open',
+      routerLink: '/projects',
     },
   ];
 
-  // Sidebar footer items
+  // Sidebar footer items - matching React NavigationSidebar design
   protected readonly sidebarFooterItems: SidebarMenuItem[] = [
-    {
-      label: 'Documentation',
-      icon: 'fa-light fa-file-lines',
-      url: 'https://docs.lfx.linuxfoundation.org',
-      disabled: true,
-    },
-    {
-      label: 'Submit a Ticket',
-      icon: 'fa-light fa-circle-question',
-      url: 'https://jira.linuxfoundation.org/plugins/servlet/theme/portal/4',
-    },
-    {
-      label: 'Changelog',
-      icon: 'fa-light fa-rectangle-history',
-      routerLink: '/changelog',
-      disabled: true,
-    },
     {
       label: 'Settings',
       icon: 'fa-light fa-gear',

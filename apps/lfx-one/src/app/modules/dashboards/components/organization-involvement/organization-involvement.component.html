@@ -58,7 +58,10 @@
               class="p-4 bg-white rounded-lg border border-slate-200 hover:border-[#0094FF] transition-colors cursor-pointer flex-shrink-0 w-80"
               [attr.data-testid]="'dashboard-involvement-metric-' + metric.title">
               <div class="space-y-3">
-                <h5 class="text-sm font-medium w-full">{{ metric.title }}</h5>
+                <div class="flex items-center gap-1">
+                  <i [class]="metric.icon + ' text-gray-500'" class="w-4 h-4"></i>
+                  <h5 class="text-sm font-medium">{{ metric.title }}</h5>
+                </div>
 
                 <!-- Membership Info -->
                 <div class="space-y-2">
@@ -83,9 +86,12 @@
             <!-- Regular Card -->
             <div class="p-4 bg-white rounded-lg border border-slate-200 flex-shrink-0 w-80" [attr.data-testid]="'dashboard-involvement-metric-' + metric.title">
               <div class="space-y-3">
-                <h5 class="text-sm font-medium w-full">{{ metric.title }}</h5>
+                <div class="flex items-center gap-3">
+                  <i [class]="metric.icon + ' text-gray-500'" class="w-4 h-4"></i>
+                  <h5 class="text-sm font-medium">{{ metric.title }}</h5>
+                </div>
                 @if (metric.chartData) {
-                  <div class="w-full h-8">
+                  <div class="w-full h-16">
                     <lfx-chart
                       [type]="metric.title === 'Active Contributors' || metric.title === 'Maintainers' ? 'bar' : 'line'"
                       [data]="metric.chartData"

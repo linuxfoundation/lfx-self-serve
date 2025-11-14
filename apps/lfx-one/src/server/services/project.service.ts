@@ -304,7 +304,7 @@ export class ProjectService {
     try {
       req.log.info({ email: normalizedEmail }, 'Resolving email to sub via NATS');
 
-      const response = await this.natsService.request(NatsSubjects.EMAIL_TO_SUB, codec.encode(normalizedEmail), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+      const response = await this.natsService.request(NatsSubjects.EMAIL_TO_USERNAME, codec.encode(normalizedEmail), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
 
       const responseText = codec.decode(response.data);
 
@@ -579,37 +579,62 @@ export class ProjectService {
   /**
    * Get project issues resolution data (opened vs closed issues) from Snowflake
    * Combines daily trend data with aggregated metrics
-   * @param projectId - Project ID to filter by specific project (required)
+   * @param projectSlug - Project slug to filter by specific project (required)
    * @returns Daily issue resolution data with aggregated totals and metrics
    */
-  public async getProjectIssuesResolution(projectId: string): Promise<ProjectIssuesResolutionResponse> {
-    // Query for daily trend data
+  public async getProjectIssuesResolution(projectSlug: string): Promise<ProjectIssuesResolutionResponse> {
+    // Query for daily trend data using PROJECT_SLUG
+    // First, determine the foundation slug for the given project slug
+    // Then, get all data for projects under that foundation
     const dailyQuery = `
+      WITH foundation_lookup AS (
+        SELECT
+          COALESCE(grandparents_slug, parent_slug, slug) as foundation_slug
+        FROM analytics.silver_dim.active_segments
+        WHERE slug = ?
+        LIMIT 1
+      )
       SELECT
-        PROJECT_ID,
-        PROJECT_NAME,
-        PROJECT_SLUG,
-        METRIC_DATE,
-        OPENED_ISSUES_COUNT,
-        CLOSED_ISSUES_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_ISSUES_RESOLUTION_DAILY
-      WHERE PROJECT_ID = ?
-      ORDER BY METRIC_DATE DESC
+          pisd.PROJECT_ID,
+          pisd.PROJECT_NAME,
+          pisd.PROJECT_SLUG,
+          pisd.METRIC_DATE,
+          pisd.OPENED_ISSUES_COUNT,
+          pisd.CLOSED_ISSUES_COUNT,
+          COALESCE(seg.grandparents_slug, seg.parent_slug, seg.slug) as foundation_slug
+        FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_ISSUES_RESOLUTION_DAILY pisd
+        INNER JOIN analytics.silver_dim.active_segments seg
+          ON pisd.project_slug = seg.slug
+        CROSS JOIN foundation_lookup fl
+        WHERE COALESCE(seg.grandparents_slug, seg.parent_slug, seg.slug) = fl.foundation_slug
+        ORDER BY METRIC_DATE DESC
     `;
 
-    // Query for aggregated metrics
+    // Query for aggregated metrics using PROJECT_SLUG
+    // First, determine the foundation slug for the given project slug
+    // Then, get all data for projects under that foundation
     const aggregatedQuery = `
+      WITH foundation_lookup AS (
+        SELECT
+          COALESCE(grandparents_slug, parent_slug, slug) as foundation_slug
+        FROM analytics.silver_dim.active_segments
+        WHERE slug = ?
+        LIMIT 1
+      )
       SELECT
         OPENED_ISSUES,
         CLOSED_ISSUES,
         RESOLUTION_RATE_PCT,
         MEDIAN_DAYS_TO_CLOSE
-      FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_ISSUES_RESOLUTION
-      WHERE PROJECT_ID = ?
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_ISSUES_RESOLUTION pir
+      INNER JOIN analytics.silver_dim.active_segments seg
+        ON pir.PROJECT_SLUG = seg.slug
+      CROSS JOIN foundation_lookup fl
+      WHERE COALESCE(seg.grandparents_slug, seg.parent_slug, seg.slug) = fl.foundation_slug
     `;
 
-    const params = [projectId];
-    const aggregatedParams = [projectId];
+    const params = [projectSlug];
+    const aggregatedParams = [projectSlug];
 
     // Execute both queries in parallel
     const [dailyResult, aggregatedResult] = await Promise.all([
@@ -637,13 +662,13 @@ export class ProjectService {
 
   /**
    * Get project pull requests weekly data from Snowflake
-   * @param projectId - Optional project ID to filter by specific project. If not provided, uses the first project from the list.
+   * @param projectSlug - Optional project slug to filter by specific project. If not provided, uses the first project from the list.
    * @returns Weekly PR merge velocity data with aggregated metrics
    */
-  public async getProjectPullRequestsWeekly(projectId?: string): Promise<ProjectPullRequestsWeeklyResponse> {
-    // If no projectId provided, get the first project from the list
-    let resolvedProjectId = projectId;
-    if (!resolvedProjectId) {
+  public async getProjectPullRequestsWeekly(projectSlug?: string): Promise<ProjectPullRequestsWeeklyResponse> {
+    // If no projectSlug provided, get the first project from the list
+    let resolvedProjectSlug: string;
+    if (!projectSlug) {
       const projectsList = await this.getProjectsWithMaintainersList();
       if (!projectsList.projects || projectsList.projects.length === 0) {
         throw new ResourceNotFoundError('Project', 'first project', {
@@ -652,24 +677,38 @@ export class ProjectService {
           path: '/projects/pull-requests-weekly',
         });
       }
-      resolvedProjectId = projectsList.projects[0].projectId;
+      resolvedProjectSlug = projectsList.projects[0].slug;
+    } else {
+      resolvedProjectSlug = projectSlug;
     }
 
-    // Query for weekly trend data
+    // Query for weekly trend data using PROJECT_SLUG
+    // First, determine the foundation slug for the given project slug
+    // Then, get all data for projects under that foundation
     const query = `
+      WITH foundation_lookup AS (
+        SELECT
+          COALESCE(grandparents_slug, parent_slug, slug) as foundation_slug
+        FROM analytics.silver_dim.active_segments
+        WHERE slug = ?
+        LIMIT 1
+      )
       SELECT
         WEEK_START_DATE,
         MERGED_PR_COUNT,
         AVG_MERGED_IN_DAYS,
         AVG_REVIEWERS_PER_PR,
         PENDING_PR_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_PULL_REQUESTS_WEEKLY
-      WHERE PROJECT_ID = ?
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_PULL_REQUESTS_WEEKLY pprw
+      INNER JOIN analytics.silver_dim.active_segments seg
+        ON pprw.PROJECT_SLUG = seg.slug
+      CROSS JOIN foundation_lookup fl
+      WHERE COALESCE(seg.grandparents_slug, seg.parent_slug, seg.slug) = fl.foundation_slug
       ORDER BY WEEK_START_DATE DESC
       LIMIT 26
     `;
 
-    const result = await this.snowflakeService.execute<ProjectPullRequestsWeeklyRow>(query, [resolvedProjectId]);
+    const result = await this.snowflakeService.execute<ProjectPullRequestsWeeklyRow>(query, [resolvedProjectSlug]);
 
     // Calculate aggregated metrics
     const totalMergedPRs = result.rows.reduce((sum, row) => sum + row.MERGED_PR_COUNT, 0);

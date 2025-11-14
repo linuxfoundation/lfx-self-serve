@@ -57,7 +57,7 @@ export const BAR_CHART_OPTIONS = {
 export const PRIMARY_INVOLVEMENT_METRICS: PrimaryInvolvementMetric[] = [
   {
     title: 'Membership Tier',
-    icon: 'fa-light fa-badge-check',
+    icon: 'fa-light fa-dollar-sign',
     isMembershipTier: true,
     // All membership data (tier, dates, fees) comes from getBoardMemberDashboard API
   },
@@ -65,7 +65,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: PrimaryInvolvementMetric[] = [
     title: 'Active Contributors',
     icon: 'fa-light fa-users',
     sparklineData: generateTrendData(12, 60), // TODO: Replace with API trend data
-    sparklineColor: '#0094FF',
+    sparklineColor: '#93c5fd',
     chartType: 'line' as const,
     // All contributor data comes from getOrganizationContributionsOverview API
   },
@@ -73,7 +73,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: PrimaryInvolvementMetric[] = [
     title: 'Maintainers',
     icon: 'fa-light fa-user-check',
     sparklineData: generateTrendData(12, 60), // TODO: Replace with API trend data
-    sparklineColor: '#0094FF',
+    sparklineColor: '#93c5fd',
     chartType: 'line' as const,
     // All maintainer data comes from getOrganizationContributionsOverview API
   },

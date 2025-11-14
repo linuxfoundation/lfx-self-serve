@@ -7,6 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { PERSONA_OPTIONS } from '@lfx-one/shared/constants';
 import { PersonaType } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { SelectComponent } from '@shared/components/select/select.component';
 
 @Component({
@@ -17,7 +18,7 @@ import { SelectComponent } from '@shared/components/select/select.component';
 })
 export class PersonaSelectorComponent {
   private readonly personaService = inject(PersonaService);
-
+  private readonly projectContextService = inject(ProjectContextService);
   // Persona options available for selection
   protected readonly personaOptions = PERSONA_OPTIONS;
 
@@ -32,6 +33,15 @@ export class PersonaSelectorComponent {
       .get('persona')
       ?.valueChanges.pipe(takeUntilDestroyed())
       .subscribe((value: PersonaType) => {
+        if (value === 'board-member') {
+          // TODO: DEMO - Remove when proper permissions are implemented
+          this.projectContextService.setFoundation({
+            projectId: 'tlf',
+            name: 'The Linux Foundation',
+            slug: 'tlf',
+          });
+        }
+
         this.personaService.setPersona(value);
       });
   }

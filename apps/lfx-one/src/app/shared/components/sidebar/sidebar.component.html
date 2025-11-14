@@ -2,36 +2,49 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <aside
-  class="h-[calc(100vh-8rem)] bg-white transition-all duration-300 w-64 ml-4 flex flex-col"
-  style="
-    border-radius: 12px;
-    box-shadow:
-      rgba(0, 0, 0, 0.1) 0px 1px 3px 0px,
-      rgba(0, 0, 0, 0.1) 0px 1px 2px -1px;
-  "
+  class="h-screen bg-white w-72 flex flex-col border-r border-gray-200 shadow-[0px_1px_2px_-1px_rgba(0,0,0,0.10),0px_1px_3px_0px_rgba(0,0,0,0.10)]"
   data-testid="sidebar">
-  <!-- Project Selector (if enabled) -->
-  @if (showProjectSelector()) {
-    <div class="px-2 pt-3 pb-2 border-b border-gray-200">
-      <lfx-project-selector [projects]="projects()" [selectedProject]="selectedProject()" (projectChange)="onProjectChange($event)"></lfx-project-selector>
-    </div>
-  }
+  <div class="flex flex-col justify-between py-4 h-full">
+    <!-- Top Navigation -->
+    <div class="flex flex-col items-start w-full">
+      <!-- LFX One Logo -->
+      <div class="h-[20px] ml-2 w-[141.6px] px-3 py-3 mb-12">
+        <!-- LFX One Logo SVG -->
+        <img src="/images/lfx-one-logo.svg" alt="LFX Logo" class="w-auto h-5" />
+      </div>
 
-  <!-- Main Navigation -->
-  <nav class="flex flex-col py-3 flex-grow overflow-y-auto">
-    @for (item of itemsWithTestIds(); track item.label) {
-      <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
-    }
-  </nav>
-
-  <!-- Footer Navigation -->
-  @if (footerItems().length > 0) {
-    <nav class="flex flex-col py-3 border-t border-gray-200">
-      @for (item of footerItemsWithTestIds(); track item.label) {
-        <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
+      <!-- Project Selector -->
+      @if (showProjectSelector()) {
+        <div class="px-3 mb-6 w-full">
+          <lfx-project-selector
+            [projects]="foundationProjects()"
+            [selectedProject]="selectedProject()"
+            (projectChange)="onProjectChange($event)"></lfx-project-selector>
+        </div>
       }
-    </nav>
-  }
+
+      <!-- Main Navigation Items -->
+      <div class="flex flex-col gap-2 items-start px-3 w-full">
+        @for (item of itemsWithTestIds(); track item.label) {
+          <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
+        }
+      </div>
+    </div>
+
+    <!-- Bottom Navigation -->
+    <div class="flex flex-col gap-2 items-start px-3 w-full">
+      <!-- Persona Selector -->
+      <div class="w-full mb-2">
+        <lfx-persona-selector></lfx-persona-selector>
+      </div>
+
+      @if (footerItems().length > 0) {
+        @for (item of footerItemsWithTestIds(); track item.label) {
+          <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
+        }
+      }
+    </div>
+  </div>
 </aside>
 
 <!-- Menu Item Template -->
@@ -39,14 +52,18 @@
   @if (item.routerLink) {
     <a
       [routerLink]="item.routerLink"
-      routerLinkActive="!bg-blue-600 !text-white"
+      routerLinkActive="bg-[#ecf4ff] font-medium !text-[#0f172b]"
       [routerLinkActiveOptions]="{ exact: true }"
-      class="flex items-center px-4 py-3 mx-2 rounded-lg transition-colors cursor-pointer group text-sm"
-      [class.opacity-50]="item.disabled"
-      [class.pointer-events-none]="item.disabled"
-      [attr.data-testid]="item.testId">
-      <i [ngClass]="[item.icon, 'w-6', 'text-center']"></i>
-      <span class="ml-3 font-medium">{{ item.label }}</span>
+      [ngClass]="{
+        'flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-base text-[#45556c] font-normal hover:bg-slate-50': true,
+        'opacity-50 pointer-events-none cursor-not-allowed': item.disabled,
+      }"
+      [attr.data-testid]="item.testId"
+      [attr.aria-label]="item.label">
+      <div class="flex items-center justify-center shrink-0 w-6 h-6">
+        <i [ngClass]="[item.icon, 'w-5']"></i>
+      </div>
+      <span class="whitespace-nowrap">{{ item.label }}</span>
 
       @if (item.badge) {
         <lfx-badge [value]="item.badge" [severity]="item.badgeSeverity || 'info'" size="small" styleClass="ml-auto"></lfx-badge>
@@ -57,12 +74,18 @@
   @if (item.url) {
     <a
       [href]="item.url"
-      class="flex items-center px-4 py-3 mx-2 rounded-lg transition-colors cursor-pointer group text-sm"
-      [class.opacity-50]="item.disabled"
-      [class.pointer-events-none]="item.disabled"
-      [attr.data-testid]="item.testId">
-      <i [ngClass]="[item.icon, 'w-6', 'text-center']"></i>
-      <span class="ml-3 font-medium">{{ item.label }}</span>
+      [target]="item.disabled ? '_self' : '_blank'"
+      [rel]="item.disabled ? '' : 'noopener noreferrer'"
+      [ngClass]="{
+        'flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-base text-[#45556c] font-normal hover:bg-slate-50': true,
+        'opacity-50 pointer-events-none cursor-not-allowed': item.disabled,
+      }"
+      [attr.data-testid]="item.testId"
+      [attr.aria-label]="item.label">
+      <div class="flex items-center justify-center shrink-0 w-6 h-6">
+        <i [ngClass]="[item.icon, 'w-5']"></i>
+      </div>
+      <span class="whitespace-nowrap">{{ item.label }}</span>
 
       @if (item.badge) {
         <lfx-badge [value]="item.badge" [severity]="item.badgeSeverity || 'info'" size="small" styleClass="ml-auto"></lfx-badge>
@@ -74,12 +97,17 @@
     <button
       type="button"
       (click)="item.command()"
-      class="flex items-center px-4 py-3 mx-2 rounded-lg transition-colors cursor-pointer group w-full text-left text-sm"
-      [class.opacity-50]="item.disabled"
+      [ngClass]="{
+        'flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-left text-base text-[#45556c] font-normal hover:bg-slate-50': true,
+        'opacity-50 cursor-not-allowed': item.disabled,
+      }"
       [disabled]="item.disabled"
-      [attr.data-testid]="item.testId">
-      <i [ngClass]="[item.icon, 'w-6', 'text-center']"></i>
-      <span class="ml-3 font-medium">{{ item.label }}</span>
+      [attr.data-testid]="item.testId"
+      [attr.aria-label]="item.label">
+      <div class="flex items-center justify-center shrink-0 w-6 h-6">
+        <i [ngClass]="[item.icon, 'w-5']"></i>
+      </div>
+      <span class="whitespace-nowrap">{{ item.label }}</span>
 
       @if (item.badge) {
         <lfx-badge [value]="item.badge" [severity]="item.badgeSeverity || 'info'" size="small" styleClass="ml-auto"></lfx-badge>

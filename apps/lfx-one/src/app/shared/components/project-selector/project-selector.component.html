@@ -12,15 +12,15 @@
       <div class="flex items-center justify-center size-full p-2.5">
         @if (displayLogo()) {
           <img [alt]="displayName()" class="w-full h-full object-contain" [src]="displayLogo()" />
+        } @else {
+          <img src="images/lfx-one-logo.svg" alt="LFX One Logo" />
         }
       </div>
     </div>
 
     <!-- Text -->
     <div class="flex flex-col gap-1 grow items-start relative shrink-0">
-      <p class="font-medium grow leading-5 text-wrap whitespace-pre-wrap w-28 relative shrink-0 text-sm text-gray-900 tracking-tight">
-        {{ displayName() }}
-      </p>
+      <p class="font-medium grow leading-5 text-wrap whitespace-pre-wrap w-28 relative shrink-0 text-base text-gray-900 tracking-tight">{{ displayName() }}</p>
     </div>
 
     <!-- Chevron Button -->
@@ -28,27 +28,91 @@
   </div>
 
   <!-- Popover for Project List -->
-  <p-popover #popover [style]="{ width: '16rem', marginLeft: '-7px' }" styleClass="project-selector-panel" data-testid="project-selector-panel">
-    <div class="flex flex-col gap-1">
-      @for (project of projects(); track project.uid) {
-        <div
-          class="flex items-center gap-3 p-2 hover:bg-gray-100 rounded-lg cursor-pointer transition-colors"
-          (click)="selectProject(project, popover)"
-          [attr.data-testid]="'project-option-' + project.slug">
-          <!-- Project Logo -->
-          <div class="bg-gray-100 overflow-clip relative rounded-full shrink-0 size-8">
-            <div class="flex items-center justify-center size-full p-2">
-              @if (project.logo_url) {
-                <img [alt]="project.name" class="w-full h-full object-contain" [src]="project.logo_url" />
-              }
+  <p-popover #popover [style]="{ width: '28rem' }" styleClass="project-selector-panel" (onHide)="onPopoverHide()" data-testid="project-selector-panel">
+    <div class="p-2">
+      <!-- Search Input -->
+      <div class="relative mb-2">
+        <i class="fa-light fa-search absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"></i>
+        <input
+          [pAutoFocus]="true"
+          autofocus
+          pInputText
+          type="text"
+          [value]="searchQuery()"
+          (input)="searchQuery.set($any($event.target).value)"
+          placeholder="Search foundations and projects..."
+          class="pl-10 h-9 w-full text-sm bg-gray-50"
+          data-testid="project-search-input" />
+      </div>
+
+      <!-- Projects List -->
+      <div class="max-h-[400px] overflow-y-auto">
+        @for (foundation of foundations(); track foundation.uid) {
+          <div>
+            <!-- Foundation -->
+            <div
+              class="flex items-center gap-3 p-2 cursor-pointer hover:bg-gray-100 rounded-lg transition-colors"
+              (click)="selectProject(foundation, popover)"
+              [attr.data-testid]="'foundation-' + foundation.slug">
+              <!-- Foundation Logo (32px) -->
+              <div class="bg-[#f3f3f3] overflow-clip rounded-full shrink-0 size-[32px]">
+                <div class="flex items-center justify-center size-full p-[8px]">
+                  @if (foundation.logo_url) {
+                    <img [alt]="foundation.name" class="w-full h-full object-contain" [src]="foundation.logo_url" />
+                  }
+                </div>
+              </div>
+
+              <!-- Foundation Info -->
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <p class="font-medium text-sm text-neutral-900 mb-0">{{ foundation.name }}</p>
+                  <lfx-badge
+                    value="Foundation"
+                    severity="info"
+                    size="small"
+                    styleClass="px-2 py-1 bg-blue-100 text-[#1447E6] text-xs flex items-center font-normal"></lfx-badge>
+                </div>
+                <p class="text-xs text-gray-500 line-clamp-1">{{ foundation.description }}</p>
+              </div>
             </div>
+
+            <!-- Child Projects -->
+            @if (childProjectsMap().has(foundation.uid)) {
+              <div class="ml-4 border-l-2 border-gray-200 pl-2 my-1">
+                @for (project of childProjectsMap().get(foundation.uid); track project.uid) {
+                  <div
+                    class="flex items-center gap-3 p-2 cursor-pointer hover:bg-gray-100 rounded-lg transition-colors"
+                    (click)="selectProject(project, popover)"
+                    [attr.data-testid]="'project-' + project.slug">
+                    <!-- Project Logo (28px) -->
+                    <div class="bg-[#f3f3f3] overflow-clip rounded-full shrink-0 size-[28px]">
+                      <div class="flex items-center justify-center size-full p-[6px]">
+                        @if (project.logo_url) {
+                          <img [alt]="project.name" class="w-full h-full object-contain" [src]="project.logo_url" />
+                        } @else {
+                          <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
+                            <path d="M3.96369 15.9789V7.98987H0V19.9504H11.9372V15.9789H3.96369Z" fill="#0094FF" />
+                            <path d="M19.8645 0H0V6.00333H3.96369V4.01761H15.9009V15.9781H13.919V19.9495H19.8645V0Z" fill="#003778" />
+                          </svg>
+                        }
+                      </div>
+                    </div>
+
+                    <!-- Project Info -->
+                    <div class="flex-1 min-w-0">
+                      <p class="font-medium text-sm text-neutral-900">{{ project.name }}</p>
+                      <p class="text-xs text-gray-500 line-clamp-1">{{ project.description }}</p>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
           </div>
-          <!-- Project Name -->
-          <span class="font-medium text-sm text-gray-900">{{ project.name }}</span>
-        </div>
-      } @empty {
-        <div class="p-4 text-center text-gray-500 text-sm">No projects available</div>
-      }
+        } @empty {
+          <div class="text-center py-8 text-gray-500 text-sm">No foundations or projects found</div>
+        }
+      </div>
     </div>
   </p-popover>
 } @else {
@@ -59,13 +123,15 @@
       <div class="flex items-center justify-center size-full p-2.5">
         @if (displayLogo()) {
           <img [alt]="displayName()" class="w-full h-full object-contain" [src]="displayLogo()" />
+        } @else {
+          <img src="images/lfx-one-logo.svg" alt="LFX One Logo" />
         }
       </div>
     </div>
 
     <!-- Text -->
     <div class="flex flex-col gap-1 grow items-start relative shrink-0">
-      <p class="font-medium grow leading-5 min-h-px min-w-px relative shrink-0 text-sm text-gray-900 tracking-tight">
+      <p class="font-medium grow leading-5 min-h-px min-w-px relative shrink-0 text-base text-gray-900 tracking-tight">
         {{ displayName() }}
       </p>
     </div>

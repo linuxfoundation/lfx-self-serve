@@ -8,7 +8,7 @@
 
 ::ng-deep {
   .project-selector-panel {
-    @apply mt-2 rounded-none border-l-0 border-r-0 border-t;
+    @apply shadow-lg;
 
     &::before {
       @apply hidden;

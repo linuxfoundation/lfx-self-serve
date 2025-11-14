@@ -9,6 +9,7 @@ import { CombinedProfile } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { AvatarComponent } from '@shared/components/avatar/avatar.component';
 import { BreadcrumbComponent } from '@shared/components/breadcrumb/breadcrumb.component';
+import { HeaderComponent } from '@shared/components/header/header.component';
 import { MenuItem } from 'primeng/api';
 import { ChipModule } from 'primeng/chip';
 import { finalize } from 'rxjs';
@@ -18,7 +19,7 @@ import { ProfileStatsComponent } from './components/profile-stats/profile-stats.
 @Component({
   selector: 'lfx-profile-layout',
   standalone: true,
-  imports: [CommonModule, RouterModule, AvatarComponent, BreadcrumbComponent, ChipModule, ProfileStatsComponent],
+  imports: [CommonModule, RouterModule, HeaderComponent, AvatarComponent, BreadcrumbComponent, ChipModule, ProfileStatsComponent],
   templateUrl: './profile-layout.component.html',
   styleUrl: './profile-layout.component.scss',
 })
