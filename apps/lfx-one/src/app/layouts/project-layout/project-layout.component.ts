@@ -5,7 +5,6 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, input, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterModule } from '@angular/router';
-import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { FilterButton, Project } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
 import { HeaderComponent } from '@shared/components/header/header.component';
@@ -16,7 +15,7 @@ import { of, switchMap } from 'rxjs';
 @Component({
   selector: 'lfx-project-layout',
   standalone: true,
-  imports: [CommonModule, RouterModule, HeaderComponent, BreadcrumbComponent, ChipModule],
+  imports: [CommonModule, RouterModule, HeaderComponent, ChipModule],
   templateUrl: './project-layout.component.html',
   styleUrl: './project-layout.component.scss',
 })

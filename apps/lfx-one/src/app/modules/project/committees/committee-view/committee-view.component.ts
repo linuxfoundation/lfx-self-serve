@@ -75,10 +75,7 @@ export class CommitteeViewComponent {
   }
 
   public goBack(): void {
-    const project = this.project();
-    if (project) {
-      this.router.navigate(['/project', project.slug, 'committees']);
-    }
+    this.router.navigate(['/', 'groups']);
   }
 
   public toggleActionMenu(event: Event, menuComponent: MenuComponent): void {
@@ -155,7 +152,7 @@ export class CommitteeViewComponent {
                 summary: 'Error',
                 detail: 'Failed to load committee',
               });
-              this.router.navigate(['/project', this.project()!.slug, 'committees']);
+              this.router.navigate(['/', 'groups']);
               return throwError(() => new Error('Failed to load committee'));
             })
           );

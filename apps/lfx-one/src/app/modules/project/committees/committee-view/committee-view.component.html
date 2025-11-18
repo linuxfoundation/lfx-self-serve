@@ -7,7 +7,7 @@
     <div class="flex justify-center items-center min-h-96">
       <div class="text-center">
         <i class="fa-light fa-spinner-third fa-spin text-3xl text-blue-600 mb-4"></i>
-        <p class="text-gray-600">Loading committee details...</p>
+        <p class="text-gray-600">Loading group details...</p>
       </div>
     </div>
   }
@@ -17,9 +17,9 @@
     <div class="flex justify-center items-center min-h-96">
       <div class="text-center">
         <i class="fa-light fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
-        <h2 class="text-xl font-semibold text-gray-900 mb-2">Committee Not Found</h2>
-        <p class="text-gray-600 mb-4">The committee you're looking for doesn't exist or has been removed.</p>
-        <lfx-button label="Back to Committees" styleClass="p-button-outlined" (onClick)="goBack()"> </lfx-button>
+        <h2 class="text-xl font-semibold text-gray-900 mb-2">Group Not Found</h2>
+        <p class="text-gray-600 mb-4">The group you're looking for doesn't exist or has been removed.</p>
+        <lfx-button label="Back to Groups" styleClass="p-button-outlined" (onClick)="goBack()"> </lfx-button>
       </div>
     </div>
   }
@@ -33,7 +33,7 @@
           <div class="flex items-center gap-3 mb-2">
             <button (click)="goBack()" class="inline-flex items-center text-gray-500 hover:text-gray-700 transition-colors">
               <i class="fa-light fa-arrow-left mr-2"></i>
-              Back to Committees
+              Back to Groups
             </button>
           </div>
           <h1 class="text-3xl font-bold text-gray-900 mb-2">{{ committee()?.name }}</h1>

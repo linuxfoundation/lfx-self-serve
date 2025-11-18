@@ -11,6 +11,7 @@ import { SidebarComponent } from '@components/sidebar/sidebar.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { filter } from 'rxjs';
 
 @Component({
@@ -26,12 +27,14 @@ export class MainLayoutComponent {
   private readonly appService = inject(AppService);
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly personaService = inject(PersonaService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   // Expose mobile sidebar state from service
+  protected readonly selectedProject = this.projectContextService.selectedProject;
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
 
   // Feature flags
-  private readonly showProjectsInSidebar = this.featureFlagService.getBooleanFlag('sidebar-projects', true);
+  private readonly showProjectsInSidebar = this.featureFlagService.getBooleanFlag('sidebar-projects', false);
 
   // Base sidebar navigation items - matching React NavigationSidebar design
   private readonly baseSidebarItems: SidebarMenuItem[] = [
@@ -79,7 +82,6 @@ export class MainLayoutComponent {
       label: 'Settings',
       icon: 'fa-light fa-gear',
       routerLink: '/settings',
-      disabled: true,
     },
     {
       label: 'Profile',

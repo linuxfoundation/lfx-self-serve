@@ -180,10 +180,7 @@ export class MeetingManageComponent {
   }
 
   public onCancel(): void {
-    const project = this.projectService.project();
-    if (project?.slug) {
-      this.router.navigate(['/project', project.slug, 'meetings']);
-    }
+    this.router.navigate(['/', 'meetings']);
   }
 
   public onSubmit(): void {
@@ -215,7 +212,7 @@ export class MeetingManageComponent {
       : this.meetingService.createMeeting(meetingData as CreateMeetingRequest);
 
     operation.subscribe({
-      next: (meeting) => this.handleMeetingSuccess(meeting, project),
+      next: (meeting) => this.handleMeetingSuccess(meeting),
       error: (error) => this.handleMeetingError(error),
     });
   }
@@ -268,7 +265,7 @@ export class MeetingManageComponent {
           this.showRegistrantOperationToast(totalSuccess, totalFailed, totalOperations);
 
           if (!this.isEditMode()) {
-            this.router.navigate(['/project', this.projectService.project()?.slug, 'meetings']);
+            this.router.navigate(['/', 'meetings']);
           } else {
             this.registrantUpdatesRefresh$.next();
             // Reset registrant updates only if there were some successes
@@ -347,7 +344,7 @@ export class MeetingManageComponent {
     };
   }
 
-  private handleMeetingSuccess(meeting: Meeting, project: any): void {
+  private handleMeetingSuccess(meeting: Meeting): void {
     this.meetingId.set(meeting.uid);
 
     // If we're in create mode and not on the last step, continue to next step
@@ -387,7 +384,7 @@ export class MeetingManageComponent {
         .subscribe({
           next: (result) => {
             // Process attachment operations after meeting save
-            this.handleAttachmentOperationsResults(result, project);
+            this.handleAttachmentOperationsResults(result);
           },
           error: (attachmentError: any) => {
             console.error('Error processing attachments:', attachmentError);
@@ -399,7 +396,7 @@ export class MeetingManageComponent {
               summary: this.isEditMode() ? 'Meeting Updated' : 'Meeting Created',
               detail: warningMessage,
             });
-            this.router.navigate(['/project', project.slug, 'meetings']);
+            this.router.navigate(['/meetings']);
           },
         });
     } else {
@@ -408,7 +405,7 @@ export class MeetingManageComponent {
         summary: 'Success',
         detail: `Meeting ${this.isEditMode() ? 'updated' : 'created'} successfully`,
       });
-      this.router.navigate(['/project', project.slug, 'meetings']);
+      this.router.navigate(['/meetings']);
     }
   }
 
@@ -422,14 +419,11 @@ export class MeetingManageComponent {
     this.submitting.set(false);
   }
 
-  private handleAttachmentOperationsResults(
-    result: {
-      deletions: { successes: number; failures: string[] };
-      uploads: { successes: MeetingAttachment[]; failures: { fileName: string; error: any }[] };
-      links: { successes: MeetingAttachment[]; failures: { linkName: string; error: any }[] };
-    },
-    project: any
-  ): void {
+  private handleAttachmentOperationsResults(result: {
+    deletions: { successes: number; failures: string[] };
+    uploads: { successes: MeetingAttachment[]; failures: { fileName: string; error: any }[] };
+    links: { successes: MeetingAttachment[]; failures: { linkName: string; error: any }[] };
+  }): void {
     const totalDeleteSuccesses = result.deletions.successes;
     const totalDeleteFailures = result.deletions.failures.length;
     const totalUploadSuccesses = result.uploads.successes.length;
@@ -512,7 +506,7 @@ export class MeetingManageComponent {
       this.pendingAttachmentDeletions.set([]);
     }
 
-    this.router.navigate(['/project', project.slug, 'meetings']);
+    this.router.navigate(['/meetings']);
   }
 
   private initializeMeeting() {

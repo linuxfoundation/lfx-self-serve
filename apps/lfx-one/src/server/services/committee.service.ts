@@ -44,7 +44,18 @@ export class CommitteeService {
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
-    const committees = resources.map((resource) => resource.data);
+    let committees = resources.map((resource) => resource.data);
+
+    // Get member count for each committee
+    committees = await Promise.all(
+      committees.map(async (committee) => {
+        const memberCount = await this.getCommitteeMembersCount(req, committee.uid);
+        return {
+          ...committee,
+          total_members: memberCount,
+        };
+      })
+    );
 
     // Add writer access field to all committees
     return await this.accessCheckService.addAccessToResources(req, committees, 'committee');
@@ -220,6 +231,30 @@ export class CommitteeService {
     );
 
     return resources.map((resource) => resource.data);
+  }
+
+  /**
+   * Fetches count of all members for a specific committee
+   */
+  public async getCommitteeMembersCount(req: Request, committeeId: string, query: Record<string, any> = {}): Promise<number> {
+    req.log.info(
+      {
+        operation: 'get_committee_members_count',
+        committee_id: committeeId,
+        query: query,
+      },
+      'Fetching committee members count'
+    );
+
+    const params = {
+      ...query,
+      type: 'committee_member',
+      tags: `committee_uid:${committeeId}`,
+    };
+
+    const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', `/query/resources/count`, 'GET', params);
+
+    return count;
   }
 
   /**

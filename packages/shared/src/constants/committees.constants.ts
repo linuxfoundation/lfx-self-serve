@@ -160,7 +160,7 @@ export function getCommitteeTypeColor(category: string | undefined): string {
   if (lowerCategory.includes('technical oversight')) return 'bg-teal-100 text-teal-800';
   if (lowerCategory.includes('marketing oversight')) return 'bg-pink-100 text-pink-800';
   if (lowerCategory.includes('marketing committee')) return 'bg-pink-100 text-pink-800';
-  if (lowerCategory.includes('finance')) return 'bg-emerald-100 text-emerald-800';
+  if (lowerCategory.includes('finance')) return 'bg-amber-100 text-amber-800';
 
   // Fallback to exact match or default
   return COMMITTEE_TYPE_COLORS[category as keyof typeof COMMITTEE_TYPE_COLORS] || DEFAULT_COMMITTEE_TYPE_COLOR;

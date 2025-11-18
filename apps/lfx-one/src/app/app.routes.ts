@@ -27,6 +27,10 @@ export const routes: Routes = [
         path: 'groups',
         loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
       },
+      {
+        path: 'settings',
+        loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
+      },
     ],
   },
   {

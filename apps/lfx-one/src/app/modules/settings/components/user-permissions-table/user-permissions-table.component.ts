@@ -2,14 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, inject, input, output, signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, output, signal, WritableSignal } from '@angular/core';
+import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TableComponent } from '@components/table/table.component';
 import { ProjectPermissionUser } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
-import { ProjectService } from '@services/project.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -26,15 +26,15 @@ import { UserFormComponent } from '../user-form/user-form.component';
 })
 export class UserPermissionsTableComponent {
   private readonly permissionsService = inject(PermissionsService);
-  private readonly projectService = inject(ProjectService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   // State signals
   public users = input.required<ProjectPermissionUser[]>();
   public loading = input<boolean>();
-  public project = this.projectService.project;
+  public project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
   public isRemoving: WritableSignal<string | null> = signal(null);
   public selectedUser: WritableSignal<ProjectPermissionUser | null> = signal(null);
   public userActionMenuItems: MenuItem[] = this.initializeUserActionMenuItems();
@@ -108,7 +108,7 @@ export class UserPermissionsTableComponent {
     this.isRemoving.set(user.username);
 
     this.permissionsService
-      .removeUserFromProject(this.project()!.uid, user.username)
+      .removeUserFromProject(this.project()!.projectId, user.username)
       .pipe(take(1))
       .subscribe({
         next: () => {

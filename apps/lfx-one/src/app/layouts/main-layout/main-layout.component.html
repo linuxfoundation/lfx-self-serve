@@ -30,9 +30,11 @@
   }
 
   <!-- Main Content Area -->
-  <main class="flex-1 min-w-0 transition-all duration-300 lg:ml-64 px-[21px] md:px-[32px] py-[24px]" data-testid="main-content">
-    <router-outlet />
+  <main class="flex-1 min-w-0 transition-all duration-300 lg:ml-64 flex flex-col" data-testid="main-content">
+    <div class="flex-grow px-5 md:px-8 py-6">
+      <router-outlet />
+    </div>
     <!-- Footer Component -->
-    <lfx-footer class="py-8"></lfx-footer>
+    <lfx-footer class="py-8 px-5 md:px-8 mt-auto"></lfx-footer>
   </main>
 </div>

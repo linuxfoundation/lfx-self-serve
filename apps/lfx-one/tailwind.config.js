@@ -66,6 +66,7 @@ export default {
     fontSize: lfxFontSizes,
     fontFamily: {
       sans: ['Open Sans', 'sans-serif'],
+      inter: ['Inter', 'sans-serif'],
       display: ['Roboto Slab', 'serif'],
       serif: ['Roboto Slab', 'serif'],
     },

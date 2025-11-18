@@ -4,12 +4,12 @@
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { RadioButtonComponent } from '@components/radio-button/radio-button.component';
 import { AddUserToProjectRequest, ProjectPermissionUser, UpdateUserRoleRequest } from '@lfx-one/shared';
 import { PermissionsService } from '@services/permissions.service';
-import { ProjectService } from '@services/project.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -25,7 +25,7 @@ import { take } from 'rxjs';
 export class UserFormComponent {
   private readonly config = inject(DynamicDialogConfig);
   private readonly dialogRef = inject(DynamicDialogRef);
-  private readonly projectService = inject(ProjectService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly messageService = inject(MessageService);
   private readonly permissionsService = inject(PermissionsService);
   private readonly confirmationService = inject(ConfirmationService);
@@ -41,7 +41,7 @@ export class UserFormComponent {
 
   public isEditing = computed(() => this.config.data?.isEditing || false);
   public user = computed(() => (this.config.data?.user as ProjectPermissionUser) || null);
-  public project = this.projectService.project;
+  public project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
 
   // Permission options - simplified to only View/Manage
   public permissionLevelOptions = [
@@ -67,7 +67,7 @@ export class UserFormComponent {
       return;
     }
 
-    const project = this.projectService.project();
+    const project = this.project();
     if (!project) {
       this.messageService.add({
         severity: 'error',
@@ -83,7 +83,7 @@ export class UserFormComponent {
     // For editing, update role only
     if (this.isEditing()) {
       this.permissionsService
-        .updateUserRole(project.uid, this.user()!.username, {
+        .updateUserRole(project.projectId, this.user()!.username, {
           role: formValue.role,
         } as UpdateUserRoleRequest)
         .pipe(take(1))
@@ -113,7 +113,7 @@ export class UserFormComponent {
     if (!this.showManualFields()) {
       // Try to add user with just email (backend will resolve to username)
       this.permissionsService
-        .addUserToProject(project.uid, {
+        .addUserToProject(project.projectId, {
           username: formValue.email, // Pass email as username, backend will resolve
           role: formValue.role,
         } as AddUserToProjectRequest)
@@ -196,7 +196,7 @@ export class UserFormComponent {
   }
 
   private addUserWithManualData(formValue: any): void {
-    const project = this.projectService.project();
+    const project = this.project();
     if (!project) {
       this.messageService.add({
         severity: 'error',
@@ -223,7 +223,7 @@ export class UserFormComponent {
     // Since the user doesn't exist in the system, we need to send the full user data
     // The backend should handle this case by accepting UserInfo objects
     this.permissionsService
-      .addUserToProject(project.uid, userData as any)
+      .addUserToProject(project.projectId, userData as any)
       .pipe(take(1))
       .subscribe({
         next: () => {
