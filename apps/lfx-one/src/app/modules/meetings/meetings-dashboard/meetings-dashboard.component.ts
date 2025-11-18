@@ -7,7 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetingCardComponent } from '@app/shared/components/meeting-card/meeting-card.component';
 import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { ButtonComponent } from '@components/button/button.component';
-import { Meeting, ProjectContext } from '@lfx-one/shared/interfaces';
+import { Meeting, PastMeeting, ProjectContext } from '@lfx-one/shared/interfaces';
 import { getCurrentOrNextOccurrence } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -28,9 +28,11 @@ export class MeetingsDashboardComponent {
   private readonly personaService = inject(PersonaService);
 
   public meetingsLoading: WritableSignal<boolean>;
-  public meetings: Signal<Meeting[]> = signal([]);
+  public pastMeetingsLoading: WritableSignal<boolean>;
+  public upcomingMeetings: Signal<Meeting[]>;
+  public pastMeetings: Signal<PastMeeting[]>;
   public currentView: WritableSignal<'list' | 'calendar'>;
-  public filteredMeetings: Signal<Meeting[]>;
+  public filteredMeetings: Signal<(Meeting | PastMeeting)[]>;
   public refresh$: BehaviorSubject<void>;
   public searchQuery: WritableSignal<string>;
   public timeFilter: WritableSignal<'upcoming' | 'past'>;
@@ -49,6 +51,7 @@ export class MeetingsDashboardComponent {
 
     // Initialize state
     this.meetingsLoading = signal<boolean>(true);
+    this.pastMeetingsLoading = signal<boolean>(true);
     this.refresh$ = new BehaviorSubject<void>(undefined);
     this.currentView = signal<'list' | 'calendar'>('list');
     this.searchQuery = signal<string>('');
@@ -56,7 +59,8 @@ export class MeetingsDashboardComponent {
     this.topBarVisibilityFilter = signal<'mine' | 'public'>('mine');
 
     // Initialize data with reactive pattern
-    this.meetings = this.initializeMeetings();
+    this.upcomingMeetings = this.initializeUpcomingMeetings();
+    this.pastMeetings = this.initializePastMeetings();
     this.filteredMeetings = this.initializeFilteredMeetings();
   }
 
@@ -66,10 +70,11 @@ export class MeetingsDashboardComponent {
 
   public refreshMeetings(): void {
     this.meetingsLoading.set(true);
+    this.pastMeetingsLoading.set(true);
     this.refresh$.next();
   }
 
-  private initializeMeetings(): Signal<Meeting[]> {
+  private initializeUpcomingMeetings(): Signal<Meeting[]> {
     // Convert project signal to observable to react to project changes
     const project$ = toObservable(this.project);
 
@@ -86,7 +91,7 @@ export class MeetingsDashboardComponent {
             return of([]);
           }
 
-          return this.meetingService.getMeetings().pipe(
+          return this.meetingService.getMeetingsByProject(project.projectId, 100).pipe(
             map((meetings) => {
               // Sort meetings by current or next occurrence start time (earliest first)
               return meetings.sort((a, b) => {
@@ -107,7 +112,7 @@ export class MeetingsDashboardComponent {
               });
             }),
             catchError((error) => {
-              console.error('Failed to load meetings:', error);
+              console.error('Failed to load upcoming meetings:', error);
               this.meetingsLoading.set(false);
               return of([]);
             }),
@@ -119,11 +124,44 @@ export class MeetingsDashboardComponent {
     );
   }
 
-  private initializeFilteredMeetings(): Signal<Meeting[]> {
-    return computed(() => {
-      let filtered = this.meetings();
-      const now = new Date();
+  private initializePastMeetings(): Signal<PastMeeting[]> {
+    // Convert project signal to observable to react to project changes
+    const project$ = toObservable(this.project);
 
+    return toSignal(
+      merge(
+        project$, // Triggers on project context changes
+        this.refresh$ // Triggers on manual refresh
+      ).pipe(
+        tap(() => this.pastMeetingsLoading.set(true)),
+        switchMap(() => {
+          const project = this.project();
+          if (!project?.projectId) {
+            this.pastMeetingsLoading.set(false);
+            return of([]);
+          }
+
+          return this.meetingService.getPastMeetingsByProject(project.projectId, 100).pipe(
+            catchError((error) => {
+              console.error('Failed to load past meetings:', error);
+              this.pastMeetingsLoading.set(false);
+              return of([]);
+            }),
+            tap(() => this.pastMeetingsLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] }
+    );
+  }
+
+  private initializeFilteredMeetings(): Signal<(Meeting | PastMeeting)[]> {
+    return computed(() => {
+      // Get appropriate meetings based on time filter
+      const timeFilter = this.timeFilter();
+      let filtered: (Meeting | PastMeeting)[] = timeFilter === 'past' ? this.pastMeetings() : this.upcomingMeetings();
+
+      // Apply search filter only - time filtering is handled by API
       const search = this.searchQuery()?.toLowerCase() || '';
       if (search) {
         filtered = filtered.filter(
@@ -133,21 +171,6 @@ export class MeetingsDashboardComponent {
             meeting.meeting_type?.toLowerCase().includes(search) ||
             meeting.committees?.some((committee) => committee.name?.toLowerCase().includes(search))
         );
-      }
-
-      const timeFilterValue = this.timeFilter();
-      if (timeFilterValue === 'upcoming') {
-        filtered = filtered.filter((meeting) => {
-          const meetingEndTime = new Date(meeting.start_time);
-          meetingEndTime.setMinutes(meetingEndTime.getMinutes() + meeting.duration + 40);
-          return meetingEndTime >= now;
-        });
-      } else {
-        filtered = filtered.filter((meeting) => {
-          const meetingEndTime = new Date(meeting.start_time);
-          meetingEndTime.setMinutes(meetingEndTime.getMinutes() + meeting.duration + 40);
-          return meetingEndTime < now;
-        });
       }
 
       return filtered;

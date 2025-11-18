@@ -277,8 +277,8 @@
             [additionalRegistrantsCount]="additionalRegistrantsCount()"
             (addParticipant)="openAddRegistrantModal()">
           </lfx-meeting-rsvp-details>
-        } @else {
-          <!-- Show RSVP Selection for authenticated non-organizers -->
+        } @else if (!pastMeeting()) {
+          <!-- Show RSVP Selection for authenticated non-organizers (upcoming meetings only) -->
           <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
         }
 

@@ -45,13 +45,13 @@
         </div>
 
         <div class="flex-1">
-          @if (meetings()) {
+          @if (upcomingMeetings() || pastMeetings()) {
             <lfx-meetings-top-bar
               [(searchQuery)]="searchQuery"
               [(timeFilter)]="timeFilter"
               [(visibilityFilter)]="topBarVisibilityFilter"
               [viewMode]="currentView()"
-              [meetings]="meetings()" />
+              [meetings]="timeFilter() === 'past' ? pastMeetings() : upcomingMeetings()" />
           }
         </div>
       </div>
@@ -59,7 +59,7 @@
   </div>
 
   <div class="min-h-[400px]">
-    @if (meetingsLoading()) {
+    @if ((timeFilter() === 'upcoming' && meetingsLoading()) || (timeFilter() === 'past' && pastMeetingsLoading())) {
       <div class="p-8">
         <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
           @for (item of [0, 1, 2, 3, 4, 5]; track item) {
