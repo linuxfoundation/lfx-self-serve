@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, CUSTOM_ELEMENTS_SCHEMA, inject } from '@angular/core';
+import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { AppService } from '@app/shared/services/app.service';
+import { FeatureFlagService } from '@app/shared/services/feature-flag.service';
 import { SidebarComponent } from '@components/sidebar/sidebar.component';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { filter } from 'rxjs';
@@ -21,12 +22,16 @@ import { filter } from 'rxjs';
 export class MainLayoutComponent {
   private readonly router = inject(Router);
   private readonly appService = inject(AppService);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   // Expose mobile sidebar state from service
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
 
-  // Sidebar navigation items - matching React NavigationSidebar design
-  protected readonly sidebarItems: SidebarMenuItem[] = [
+  // Feature flags
+  private readonly showProjectsInSidebar = this.featureFlagService.getBooleanFlag('sidebar-projects', true);
+
+  // Base sidebar navigation items - matching React NavigationSidebar design
+  private readonly baseSidebarItems: SidebarMenuItem[] = [
     {
       label: 'Overview',
       icon: 'fa-light fa-grid-2',
@@ -43,6 +48,18 @@ export class MainLayoutComponent {
       routerLink: '/projects',
     },
   ];
+
+  // Computed sidebar items based on feature flags
+  protected readonly sidebarItems = computed(() => {
+    const items = [...this.baseSidebarItems];
+
+    // Filter out Projects if feature flag is disabled
+    if (!this.showProjectsInSidebar()) {
+      return items.filter((item) => item.label !== 'Projects');
+    }
+
+    return items;
+  });
 
   // Sidebar footer items - matching React NavigationSidebar design
   protected readonly sidebarFooterItems: SidebarMenuItem[] = [

@@ -34,6 +34,8 @@ export interface User {
   last_name?: string;
   /** Alternative username field */
   username?: string;
+  /** Alternative preferred username field */
+  preferred_username?: string;
   /** Internal user ID */
   id?: string;
   /** Account creation timestamp */

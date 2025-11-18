@@ -24,8 +24,13 @@ RUN yarn install --immutable
 # NOW copy source code (changes here won't invalidate the dependency layer)
 COPY . .
 
-# Build the application with specified environment
-RUN yarn build:${BUILD_ENV}
+# Build shared package first (doesn't need --define flag)
+RUN yarn workspace @lfx-one/shared build:${BUILD_ENV}
+
+# Build the Angular application with LaunchDarkly client ID from secret
+RUN --mount=type=secret,id=LAUNCHDARKLY_CLIENT_ID \
+    LAUNCHDARKLY_CLIENT_ID=$(cat /run/secrets/LAUNCHDARKLY_CLIENT_ID) && \
+    yarn workspace lfx-one-ui build:${BUILD_ENV} --define LAUNCHDARKLY_CLIENT_ID="'${LAUNCHDARKLY_CLIENT_ID}'"
 
 # Expose port 4000
 EXPOSE 4000

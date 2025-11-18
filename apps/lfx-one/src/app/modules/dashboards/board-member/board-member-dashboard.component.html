@@ -10,22 +10,24 @@
   }
 
   <!-- Organization Selector -->
-  <div class="mb-6 flex items-center gap-4" data-testid="organization-selector">
-    <label for="organization-select" class="text-sm font-semibold text-gray-700">Organization:</label>
-    <lfx-select
-      [form]="form"
-      control="selectedAccountId"
-      [options]="availableAccounts()"
-      optionLabel="accountName"
-      optionValue="accountId"
-      [filter]="true"
-      filterPlaceholder="Search organizations..."
-      placeholder="Select an organization"
-      [showClear]="false"
-      styleClass="min-w-[300px]"
-      inputId="organization-select"
-      data-testid="organization-select" />
-  </div>
+  @if (showOrganizationSelector()) {
+    <div class="mb-6 flex items-center gap-4" data-testid="organization-selector">
+      <label for="organization-select" class="text-sm font-semibold text-gray-700">Organization:</label>
+      <lfx-select
+        [form]="form"
+        control="selectedAccountId"
+        [options]="availableAccounts()"
+        optionLabel="accountName"
+        optionValue="accountId"
+        [filter]="true"
+        filterPlaceholder="Search organizations..."
+        placeholder="Select an organization"
+        [showClear]="false"
+        styleClass="min-w-[300px]"
+        inputId="organization-select"
+        data-testid="organization-select" />
+    </div>
+  }
 
   <!-- Dashboard Sections -->
   <div class="flex flex-col gap-6" data-testid="dashboard-sections-grid">

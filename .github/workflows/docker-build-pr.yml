@@ -12,6 +12,7 @@ permissions:
   packages: write
   pull-requests: write
   issues: write
+  id-token: write
 
 env:
   REGISTRY: ghcr.io
@@ -27,9 +28,32 @@ jobs:
       github.event.pull_request.head.repo.fork == false &&
       contains(github.event.pull_request.labels.*.name, 'deploy-preview')
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+
+      - name: OIDC Auth
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          audience: sts.amazonaws.com
+          role-to-assume: arn:aws:iam::788942260905:role/github-actions-deploy
+          aws-region: us-west-2
+
+      - name: Get LaunchDarkly client ID from AWS Secrets Manager
+        uses: aws-actions/aws-secretsmanager-get-secrets@v2
+        with:
+          secret-ids: |
+            LAUNCHDARKLY, /cloudops/managed-secrets/launchdarkly/lfx_one/ld_client_id
+
+      - name: Set LaunchDarkly client ID environment variable
+        run: |
+          LAUNCHDARKLY_CLIENT_ID=$(echo "$LAUNCHDARKLY" | jq -r '.ld_client_id // empty')
+          if [ -z "$LAUNCHDARKLY_CLIENT_ID" ]; then
+            echo "❌ LaunchDarkly client ID not found in AWS Secrets Manager"
+            exit 1
+          fi
+          echo "LAUNCHDARKLY_CLIENT_ID=$LAUNCHDARKLY_CLIENT_ID" >> $GITHUB_ENV
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@v3
@@ -72,6 +96,8 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             BUILD_ENV=development
+          secret-envs: |
+            LAUNCHDARKLY_CLIENT_ID=LAUNCHDARKLY_CLIENT_ID
 
       - name: Comment deployment URL on PR
         uses: actions/github-script@v7

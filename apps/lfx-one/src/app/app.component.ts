@@ -7,6 +7,7 @@ import { RouterOutlet } from '@angular/router';
 import { AuthContext } from '@lfx-one/shared/interfaces';
 import { ToastModule } from 'primeng/toast';
 
+import { FeatureFlagService } from './shared/services/feature-flag.service';
 import { SegmentService } from './shared/services/segment.service';
 import { UserService } from './shared/services/user.service';
 
@@ -19,6 +20,7 @@ import { UserService } from './shared/services/user.service';
 export class AppComponent {
   private readonly userService = inject(UserService);
   private readonly segmentService = inject(SegmentService);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   public auth: AuthContext | undefined;
   public transferState = inject(TransferState);
@@ -52,6 +54,11 @@ export class AppComponent {
 
       // Identify user with Segment tracking (pass entire Auth0 user object)
       this.segmentService.identifyUser(this.auth.user);
+
+      // Initialize feature flags with user context
+      this.featureFlagService.initialize(this.auth.user).catch((error) => {
+        console.error('Failed to initialize feature flags:', error);
+      });
     }
   }
 }

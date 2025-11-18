@@ -15,6 +15,7 @@ import { providePrimeNG } from 'primeng/config';
 import { DialogService } from 'primeng/dynamicdialog';
 
 import { routes } from './app.routes';
+import { provideFeatureFlags } from './shared/providers/feature-flag.provider';
 import { CustomPreloadingStrategy } from './shared/strategies/custom-preloading.strategy';
 
 const customPreset = definePreset(Aura, {
@@ -45,6 +46,7 @@ export const appConfig: ApplicationConfig = {
         },
       },
     }),
+    provideFeatureFlags(),
     ConfirmationService,
     DialogService,
     MessageService,
