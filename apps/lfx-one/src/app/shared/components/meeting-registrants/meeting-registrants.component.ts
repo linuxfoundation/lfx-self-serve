@@ -6,7 +6,7 @@ import { Component, effect, inject, input, InputSignal, output, OutputEmitterRef
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { Meeting, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared';
-import { RegistrantModalComponent } from '@modules/project/meetings/components/registrant-modal/registrant-modal.component';
+import { RegistrantModalComponent } from '@modules/meetings/components/registrant-modal/registrant-modal.component';
 import { MeetingService } from '@services/meeting.service';
 import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';

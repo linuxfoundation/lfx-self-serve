@@ -34,9 +34,11 @@
     <!-- Bottom Navigation -->
     <div class="flex flex-col gap-2 items-start px-3 w-full">
       <!-- Persona Selector -->
-      <div class="w-full mb-2">
-        <lfx-persona-selector></lfx-persona-selector>
-      </div>
+      @if (showRoleSelector()) {
+        <div class="w-full mb-2">
+          <lfx-persona-selector></lfx-persona-selector>
+        </div>
+      }
 
       @if (footerItems().length > 0) {
         @for (item of footerItemsWithTestIds(); track item.label) {

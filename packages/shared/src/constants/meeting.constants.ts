@@ -48,6 +48,14 @@ export const MEETING_FEATURES = [
     color: '#3b82f6', // blue - matches bg-blue-50 text-blue-700
   },
   {
+    key: 'zoom_ai_enabled',
+    icon: 'fa-light fa-microchip-ai',
+    title: 'AI Meeting Summary',
+    description: 'Generate key takeaways and action items automatically',
+    recommended: true,
+    color: '#16a34a', // green - matches bg-green-50 text-green-700
+  },
+  {
     key: 'transcript_enabled',
     icon: 'fa-light fa-file-lines',
     title: 'Generate Transcripts',
@@ -62,14 +70,6 @@ export const MEETING_FEATURES = [
     description: "Automatically publish recordings to your project's YouTube channel",
     recommended: false,
     color: '#dc2626', // red - matches bg-red-50 text-red-700
-  },
-  {
-    key: 'zoom_ai_enabled',
-    icon: 'fa-light fa-microchip-ai',
-    title: 'AI Meeting Summary',
-    description: 'Generate key takeaways and action items automatically',
-    recommended: true,
-    color: '#16a34a', // green - matches bg-green-50 text-green-700
   },
   {
     key: 'visibility',

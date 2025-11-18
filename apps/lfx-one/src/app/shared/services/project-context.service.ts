@@ -1,13 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Injectable, signal, WritableSignal } from '@angular/core';
+import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { ProjectContext } from '@lfx-one/shared/interfaces';
+import { SsrCookieService } from 'ngx-cookie-service-ssr';
 
 @Injectable({
   providedIn: 'root',
 })
 export class ProjectContextService {
+  private readonly cookieService = inject(SsrCookieService);
   private readonly foundationStorageKey = 'lfx-selected-foundation';
   private readonly projectStorageKey = 'lfx-selected-project';
 
@@ -46,9 +48,7 @@ export class ProjectContextService {
    */
   public clearProject(): void {
     this.selectedProject.set(null);
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem(this.projectStorageKey);
-    }
+    this.cookieService.delete(this.projectStorageKey, '/');
   }
 
   /**
@@ -56,9 +56,7 @@ export class ProjectContextService {
    */
   public clearFoundation(): void {
     this.selectedFoundation.set(null);
-    if (typeof localStorage !== 'undefined') {
-      localStorage.removeItem(this.foundationStorageKey);
-    }
+    this.cookieService.delete(this.foundationStorageKey, '/');
   }
 
   /**
@@ -76,19 +74,23 @@ export class ProjectContextService {
   }
 
   private persistToStorage(key: string, project: ProjectContext): void {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(key, JSON.stringify(project));
-    }
+    // Store in cookie (SSR-compatible)
+    this.cookieService.set(key, JSON.stringify(project), {
+      expires: 30, // 30 days
+      path: '/',
+      sameSite: 'Lax',
+      secure: process.env['NODE_ENV'] === 'production',
+    });
   }
 
   private loadFromStorage(key: string): ProjectContext | null {
     try {
-      const stored = localStorage.getItem(key);
+      const stored = this.cookieService.get(key);
       if (stored) {
         return JSON.parse(stored) as ProjectContext;
       }
     } catch {
-      // Invalid data in localStorage, ignore
+      // Invalid data in cookie, ignore
     }
     return null;
   }

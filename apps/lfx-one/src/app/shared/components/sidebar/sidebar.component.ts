@@ -6,6 +6,7 @@ import { Component, computed, inject, input } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
 import { PersonaService } from '@app/shared/services/persona.service';
+import { FeatureFlagService } from '@app/shared/services/feature-flag.service';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { PersonaSelectorComponent } from '@components/persona-selector/persona-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
@@ -25,6 +26,7 @@ export class SidebarComponent {
   private readonly projectService = inject(ProjectService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   // Input properties
   public readonly items = input.required<SidebarMenuItem[]>();
@@ -32,6 +34,9 @@ export class SidebarComponent {
   public readonly collapsed = input<boolean>(false);
   public readonly styleClass = input<string>('');
   public readonly showProjectSelector = input<boolean>(false);
+
+  // Feature flags
+  protected readonly showRoleSelector = this.featureFlagService.getBooleanFlag('role-selector', true);
 
   // Load all projects using toSignal with tap to set default
   protected readonly projects = toSignal(

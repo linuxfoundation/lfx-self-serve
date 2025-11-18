@@ -12,7 +12,7 @@
           [attr.data-testid]="'meeting-create-button'"
           label="Create Meeting"
           size="small"
-          [routerLink]="['/project', project()?.slug || '', 'meetings', 'create']">
+          [routerLink]="['/meetings', 'create']">
         </lfx-button>
       }
     </div>
@@ -60,22 +60,20 @@
 
   <div class="min-h-[400px]">
     @if ((timeFilter() === 'upcoming' && meetingsLoading()) || (timeFilter() === 'past' && pastMeetingsLoading())) {
-      <div class="p-8">
-        <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-          @for (item of [0, 1, 2, 3, 4, 5]; track item) {
-            <div class="bg-white border border-slate-200 rounded-lg p-6 animate-pulse">
-              <div class="h-6 bg-slate-200 rounded mb-4 w-4/5"></div>
-              <div class="h-5 bg-slate-200 rounded mb-3"></div>
-              <div class="h-4 bg-slate-200 rounded mb-4 w-3/5"></div>
-              <div class="flex gap-2">
-                <div class="flex-1 h-8 bg-slate-200 rounded"></div>
-                <div class="flex-1 h-8 bg-slate-200 rounded"></div>
-              </div>
+      <div class="flex flex-col gap-4">
+        @for (item of [0, 1, 2]; track item) {
+          <div class="bg-white border border-slate-200 rounded-lg p-6 animate-pulse">
+            <div class="h-6 bg-slate-200 rounded mb-4 w-4/5"></div>
+            <div class="h-5 bg-slate-200 rounded mb-3"></div>
+            <div class="h-4 bg-slate-200 rounded mb-4 w-3/5"></div>
+            <div class="grid grid-cols-2 gap-4 mt-4">
+              <div class="h-24 bg-slate-200 rounded"></div>
+              <div class="h-24 bg-slate-200 rounded"></div>
             </div>
-          }
-        </div>
+          </div>
+        }
       </div>
-    } @else if (filteredMeetings().length === 0) {
+    } @else if (filteredMeetings().length === 0 && project()?.projectId) {
       <div class="flex items-center justify-center p-16 bg-white border border-dashed border-slate-300 rounded-lg">
         <div class="text-center max-w-md">
           <div class="text-slate-400 mb-4">
@@ -85,7 +83,7 @@
           <p class="text-slate-600 mt-2">Try adjusting your search or filter criteria</p>
         </div>
       </div>
-    } @else {
+    } @else if (filteredMeetings().length > 0) {
       @if (currentView() === 'list') {
         <div class="flex flex-col gap-4">
           @for (meeting of filteredMeetings(); track meeting.uid; let i = $index) {

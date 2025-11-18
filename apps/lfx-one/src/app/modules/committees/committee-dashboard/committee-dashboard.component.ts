@@ -16,7 +16,7 @@ import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { BehaviorSubject, catchError, debounceTime, distinctUntilChanged, merge, of, startWith, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap } from 'rxjs';
 
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
 
@@ -230,25 +230,20 @@ export class CommitteeDashboardComponent {
     const project$ = toObservable(this.project);
 
     return toSignal(
-      merge(
-        project$, // Triggers on project context changes
-        this.refresh // Triggers on manual refresh
-      ).pipe(
-        tap(() => this.committeesLoading.set(true)),
-        switchMap(() => {
-          const project = this.project();
+      combineLatest([project$, this.refresh]).pipe(
+        switchMap(([project]) => {
           if (!project?.projectId) {
             this.committeesLoading.set(false);
             return of([]);
           }
 
+          this.committeesLoading.set(true);
           return this.committeeService.getCommitteesByProject(project.projectId).pipe(
             catchError((error) => {
               console.error('Failed to load committees:', error);
-              this.committeesLoading.set(false);
               return of([]);
             }),
-            tap(() => this.committeesLoading.set(false))
+            finalize(() => this.committeesLoading.set(false))
           );
         })
       ),

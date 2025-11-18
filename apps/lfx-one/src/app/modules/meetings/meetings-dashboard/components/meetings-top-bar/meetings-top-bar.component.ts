@@ -18,14 +18,10 @@ export class MeetingsTopBarComponent {
   public meetings = input.required<Meeting[]>();
   public viewMode = input<'list' | 'calendar'>('list');
 
-  public upcomingCount: Signal<number>;
-  public pastCount: Signal<number>;
   public mineCount: Signal<number>;
   public publicCount: Signal<number>;
 
   public constructor() {
-    this.upcomingCount = this.initializeUpcomingCount();
-    this.pastCount = this.initializePastCount();
     this.mineCount = this.initializeMineCount();
     this.publicCount = this.initializePublicCount();
   }
@@ -47,28 +43,6 @@ export class MeetingsTopBarComponent {
 
   public get isCalendarView(): boolean {
     return this.viewMode() === 'calendar';
-  }
-
-  private initializeUpcomingCount(): Signal<number> {
-    return computed(() => {
-      const now = new Date();
-      return this.meetings().filter((meeting) => {
-        const meetingEndTime = new Date(meeting.start_time);
-        meetingEndTime.setMinutes(meetingEndTime.getMinutes() + meeting.duration + 40);
-        return meetingEndTime >= now;
-      }).length;
-    });
-  }
-
-  private initializePastCount(): Signal<number> {
-    return computed(() => {
-      const now = new Date();
-      return this.meetings().filter((meeting) => {
-        const meetingEndTime = new Date(meeting.start_time);
-        meetingEndTime.setMinutes(meetingEndTime.getMinutes() + meeting.duration + 40);
-        return meetingEndTime < now;
-      }).length;
-    });
   }
 
   private initializeMineCount(): Signal<number> {

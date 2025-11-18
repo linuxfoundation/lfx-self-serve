@@ -36,10 +36,10 @@ import {
   PastMeetingRecording,
   PastMeetingSummary,
 } from '@lfx-one/shared';
-import { MeetingCommitteeModalComponent } from '@modules/project/meetings/components/meeting-committee-modal/meeting-committee-modal.component';
-import { RecordingModalComponent } from '@modules/project/meetings/components/recording-modal/recording-modal.component';
-import { RegistrantModalComponent } from '@modules/project/meetings/components/registrant-modal/registrant-modal.component';
-import { SummaryModalComponent } from '@modules/project/meetings/components/summary-modal/summary-modal.component';
+import { MeetingCommitteeModalComponent } from '@modules/meetings/components/meeting-committee-modal/meeting-committee-modal.component';
+import { RecordingModalComponent } from '@modules/meetings/components/recording-modal/recording-modal.component';
+import { RegistrantModalComponent } from '@modules/meetings/components/registrant-modal/registrant-modal.component';
+import { SummaryModalComponent } from '@modules/meetings/components/summary-modal/summary-modal.component';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
@@ -172,7 +172,7 @@ export class MeetingCardComponent implements OnInit {
   }
 
   public onRegistrantsToggle(): void {
-    if (this.meetingRegistrantCount() === 0) {
+    if (this.meetingRegistrantCount() === 0 && !this.pastMeeting()) {
       this.openAddRegistrantModal();
       return;
     }
@@ -427,11 +427,10 @@ export class MeetingCardComponent implements OnInit {
             command: () => this.openCommitteeModal(),
           });
 
-          const projectSlug = this.project()?.slug;
           baseItems.push({
             label: 'Edit',
             icon: 'fa-light fa-edit',
-            routerLink: ['/project', projectSlug, 'meetings', this.meeting().uid, 'edit'],
+            routerLink: ['/meetings', this.meeting().uid, 'edit'],
           });
         }
 

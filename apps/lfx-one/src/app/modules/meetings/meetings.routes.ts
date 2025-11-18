@@ -12,4 +12,12 @@ export const MEETING_ROUTES: Routes = [
     canActivate: [authGuard],
     data: { preload: true, preloadDelay: 500 },
   },
+  {
+    path: 'create',
+    loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
+  },
+  {
+    path: ':id/edit',
+    loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
+  },
 ];

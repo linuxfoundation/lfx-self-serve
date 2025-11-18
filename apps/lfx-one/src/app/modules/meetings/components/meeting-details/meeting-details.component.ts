@@ -17,7 +17,7 @@ import { GenerateAgendaRequest, MeetingTemplate } from '@lfx-one/shared';
 import { TIMEZONES } from '@lfx-one/shared/constants';
 import { getWeekOfMonth } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
-import { ProjectService } from '@services/project.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 import { finalize, take, tap } from 'rxjs';
@@ -46,9 +46,9 @@ import { MeetingRecurrencePatternComponent } from '../meeting-recurrence-pattern
   templateUrl: './meeting-details.component.html',
 })
 export class MeetingDetailsComponent implements OnInit {
-  private readonly projectService = inject(ProjectService);
   private readonly meetingService = inject(MeetingService);
   private readonly messageService = inject(MessageService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   // Form group input from parent
   public readonly form = input.required<FormGroup>();
@@ -172,7 +172,7 @@ export class MeetingDetailsComponent implements OnInit {
 
   public async generateAiAgenda(): Promise<void> {
     const context = this.form().get('aiPrompt')?.value;
-    const currentProject = this.projectService.project();
+    const currentProject = this.projectContextService.selectedProject();
     const form = this.form();
     const title = form.get('title')?.value;
     const meetingType = form.get('meeting_type')?.value;

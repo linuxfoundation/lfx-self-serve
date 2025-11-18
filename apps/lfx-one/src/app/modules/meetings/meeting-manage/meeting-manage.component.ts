@@ -5,7 +5,7 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { ActivatedRoute, Router } from '@angular/router';
+import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import {
   DEFAULT_ARTIFACT_VISIBILITY,
@@ -41,18 +41,18 @@ import {
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
 import { MeetingService } from '@services/meeting.service';
-import { ProjectService } from '@services/project.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
 import { TabsModule } from 'primeng/tabs';
 import { BehaviorSubject, catchError, concat, filter, finalize, from, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
 
-import { MeetingDetailsComponent } from '../meeting-details/meeting-details.component';
-import { MeetingPlatformFeaturesComponent } from '../meeting-platform-features/meeting-platform-features.component';
-import { MeetingRegistrantsComponent } from '../meeting-registrants/meeting-registrants.component';
-import { MeetingResourcesSummaryComponent } from '../meeting-resources-summary/meeting-resources-summary.component';
-import { MeetingTypeSelectionComponent } from '../meeting-type-selection/meeting-type-selection.component';
+import { MeetingDetailsComponent } from '../components/meeting-details/meeting-details.component';
+import { MeetingPlatformFeaturesComponent } from '../components/meeting-platform-features/meeting-platform-features.component';
+import { MeetingRegistrantsComponent } from '../components/meeting-registrants/meeting-registrants.component';
+import { MeetingResourcesSummaryComponent } from '../components/meeting-resources-summary/meeting-resources-summary.component';
+import { MeetingTypeSelectionComponent } from '../components/meeting-type-selection/meeting-type-selection.component';
 
 @Component({
   selector: 'lfx-meeting-manage',
@@ -69,6 +69,7 @@ import { MeetingTypeSelectionComponent } from '../meeting-type-selection/meeting
     MeetingResourcesSummaryComponent,
     MeetingRegistrantsComponent,
     TabsModule,
+    RouterLink,
   ],
   providers: [ConfirmationService],
   templateUrl: './meeting-manage.component.html',
@@ -77,10 +78,9 @@ export class MeetingManageComponent {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly meetingService = inject(MeetingService);
-  private readonly projectService = inject(ProjectService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
-
+  private readonly projectContextService = inject(ProjectContextService);
   // Mode and state signals
   public mode = signal<'create' | 'edit'>('create');
   public meetingId = signal<string | null>(null);
@@ -195,18 +195,8 @@ export class MeetingManageComponent {
       return;
     }
 
-    const project = this.projectService.project();
-    if (!project) {
-      this.messageService.add({
-        severity: 'error',
-        summary: 'Error',
-        detail: `Project information is required to ${this.isEditMode() ? 'update' : 'create'} a meeting.`,
-      });
-      return;
-    }
-
     this.submitting.set(true);
-    const meetingData = this.prepareMeetingData(project);
+    const meetingData = this.prepareMeetingData();
     const operation = this.isEditMode()
       ? this.meetingService.updateMeeting(this.meetingId()!, meetingData as UpdateMeetingRequest, 'single')
       : this.meetingService.createMeeting(meetingData as CreateMeetingRequest);
@@ -282,7 +272,7 @@ export class MeetingManageComponent {
   }
 
   // Private methods
-  private prepareMeetingData(project: any): CreateMeetingRequest | UpdateMeetingRequest {
+  private prepareMeetingData(): CreateMeetingRequest | UpdateMeetingRequest {
     const formValue = this.form().value;
     const duration = formValue.duration === 'custom' ? Number(formValue.customDuration) : Number(formValue.duration);
     const startDateTime = combineDateTime(formValue.startDate, formValue.startTime, formValue.timezone);
@@ -317,7 +307,7 @@ export class MeetingManageComponent {
     }
 
     return {
-      project_uid: formValue.selectedProjectUid || project.uid,
+      project_uid: formValue.selectedProjectUid || this.projectContextService.getProjectId(),
       title: formValue.title,
       description: formValue.description || '',
       start_time: startDateTime,
@@ -525,7 +515,7 @@ export class MeetingManageComponent {
                   summary: 'Error',
                   detail: 'Meeting not found or you do not have permission to access it',
                 });
-                this.router.navigate(['/project', this.projectService.project()?.slug, 'meetings']);
+                this.router.navigate(['/meetings']);
                 return of(null);
               })
             );
@@ -792,7 +782,7 @@ export class MeetingManageComponent {
     const form = this.form();
     const meetingType = form.get('meeting_type')?.value;
     const startDate = form.get('startDate')?.value;
-    const project = this.projectService.project();
+    const project = this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation();
 
     // Only auto-generate if we have meeting type, start date, and the title is empty
     const currentTitle = form.get('title')?.value;

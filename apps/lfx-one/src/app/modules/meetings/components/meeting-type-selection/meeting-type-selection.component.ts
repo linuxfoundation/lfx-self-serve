@@ -11,6 +11,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { MeetingType } from '@lfx-one/shared/enums';
 import { Project } from '@lfx-one/shared/interfaces';
+import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { TooltipModule } from 'primeng/tooltip';
 import { map, of } from 'rxjs';
@@ -29,6 +30,7 @@ interface MeetingTypeInfo {
   templateUrl: './meeting-type-selection.component.html',
 })
 export class MeetingTypeSelectionComponent {
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
 
   // Form group input from parent
@@ -133,18 +135,18 @@ export class MeetingTypeSelectionComponent {
 
   // Get child projects for the current project
   private initializeChildProjects() {
-    const currentProject = this.projectService.project();
+    const currentProject = this.projectContextService.selectedProject();
 
     if (!currentProject) {
       return toSignal(of([]), { initialValue: [] });
     }
 
-    const params = new HttpParams().set('tags', `parent_uid:${currentProject.uid}`);
+    const params = new HttpParams().set('tags', `parent_uid:${currentProject.projectId}`);
     return toSignal(
       this.projectService.getProjects(params).pipe(
         map((projects: Project[]) => {
           // Filter out the current project from the list
-          return projects.filter((project) => project.uid !== currentProject.uid && project.writer);
+          return projects.filter((project) => project.uid !== currentProject.projectId && project.writer);
         })
       ),
       { initialValue: [] }

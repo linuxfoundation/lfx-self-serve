@@ -5,7 +5,7 @@
   <div class="bg-gray-50 min-h-screen">
     <!-- Main Content Container -->
     <div class="container mx-auto py-6 px-8">
-      <div class="max-w-[900px] mx-auto flex flex-col gap-3">
+      <div class="max-w-[900px] mx-auto flex flex-col">
         <!-- Project Logo -->
         @if (project()?.logo_url) {
           <div class="flex items-center justify-center mb-6">
@@ -272,7 +272,7 @@
           @if (authenticated() && user(); as user) {
             <!-- Signed In State -->
             <div class="flex flex-col gap-3">
-              <p class="text-sm text-neutral-950">I am signed in as:</p>
+              <p class="text-sm text-neutral-950">You are signed in as:</p>
 
               <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex flex-wrap items-center gap-3">
                 <!-- Avatar -->

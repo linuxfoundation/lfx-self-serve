@@ -74,14 +74,14 @@
 
       <!-- Content Area - Table or Cards -->
       <div class="w-full">
-        @if (filteredCommittees().length === 0) {
+        @if (filteredCommittees().length === 0 && project()?.projectId) {
           <div class="text-center py-12">
             <div class="bg-muted/50 rounded-lg p-8">
               <i class="fa-light fa-people-group text-5xl text-muted-foreground mb-4"></i>
               <h3 class="text-muted-foreground">No {{ committeeLabelPlural.toLowerCase() }} found</h3>
             </div>
           </div>
-        } @else {
+        } @else if (filteredCommittees().length > 0) {
           <lfx-committee-table
             [committees]="filteredCommittees()"
             [canManageCommittee]="canCreateGroup()"

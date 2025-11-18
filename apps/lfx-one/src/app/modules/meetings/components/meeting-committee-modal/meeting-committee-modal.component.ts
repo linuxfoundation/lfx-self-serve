@@ -12,7 +12,7 @@ import { VOTING_STATUSES } from '@lfx-one/shared';
 import { Committee, CommitteeMember, Meeting } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
-import { ProjectService } from '@services/project.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -35,8 +35,8 @@ export class MeetingCommitteeModalComponent {
   private readonly config = inject(DynamicDialogConfig);
   private readonly committeeService = inject(CommitteeService);
   private readonly meetingService = inject(MeetingService);
-  private readonly projectService = inject(ProjectService);
   private readonly messageService = inject(MessageService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   // Inputs
   public readonly meeting: Meeting = this.config.data.meeting;
@@ -60,7 +60,7 @@ export class MeetingCommitteeModalComponent {
 
   // Load committees using toSignal
   public committees: Signal<Committee[]> = toSignal(
-    this.committeeService.getCommitteesByProject(this.projectService.project()?.uid || '').pipe(
+    this.committeeService.getCommitteesByProject(this.projectContextService.getProjectId() || '').pipe(
       tap(() => this.committeesLoading.set(false)),
       catchError((error) => {
         console.error('Failed to load committees:', error);

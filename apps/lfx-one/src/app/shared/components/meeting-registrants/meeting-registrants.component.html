@@ -28,6 +28,12 @@
         }
 
         @if (pastMeeting()) {
+          @if (pastMeetingParticipants().length === 0) {
+            <div class="flex w-full items-center justify-center gap-4 py-8 col-span-3">
+              <i class="fa-light fa-users text-2xl text-gray-500"></i>
+              <span class="text-sm text-gray-500">No guests found</span>
+            </div>
+          }
           @for (participant of pastMeetingParticipants(); track participant.uid) {
             <div class="flex items-center gap-2 p-2 rounded-md" [attr.data-testid]="'participant-' + participant.uid">
               @if (participant.is_attended) {

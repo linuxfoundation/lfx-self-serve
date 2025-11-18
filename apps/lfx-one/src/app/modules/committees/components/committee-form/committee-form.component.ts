@@ -80,8 +80,8 @@ export class CommitteeFormComponent {
         value: committee.uid,
       }));
 
-      // Add "No Parent Committee" option at the beginning
-      return [{ label: 'No Parent Committee', value: null }, ...options];
+      // Add "No Parent Group" option at the beginning
+      return [{ label: 'No Parent ' + this.committeeLabel, value: null }, ...options];
     });
   }
 }
