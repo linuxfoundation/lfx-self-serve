@@ -16,7 +16,6 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap, throwError } from 'rxjs';
 
-import { CommitteeFormComponent } from '../components/committee-form/committee-form.component';
 import { CommitteeMembersComponent } from '../components/committee-members/committee-members.component';
 import { UpcomingCommitteeMeetingComponent } from '../components/upcoming-committee-meeting/upcoming-committee-meeting.component';
 
@@ -133,21 +132,9 @@ export class CommitteeViewComponent {
 
   private openEditDialog(): void {
     const committee = this.committee();
-    if (!committee) return;
-
-    this.dialogRef = this.dialogService.open(CommitteeFormComponent, {
-      header: 'Edit Committee',
-      width: '600px',
-      contentStyle: { overflow: 'auto' },
-      modal: true,
-      closable: true,
-      data: {
-        isEditing: true,
-        committee: committee,
-        committeeId: committee.uid,
-        onCancel: () => this.dialogRef?.close(),
-      },
-    });
+    if (committee) {
+      this.router.navigate(['/groups', committee.uid, 'edit']);
+    }
   }
 
   private initializeCommittee(): Signal<Committee | null> {

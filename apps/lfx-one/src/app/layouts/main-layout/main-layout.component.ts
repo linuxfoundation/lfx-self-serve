@@ -8,7 +8,9 @@ import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { AppService } from '@app/shared/services/app.service';
 import { FeatureFlagService } from '@app/shared/services/feature-flag.service';
 import { SidebarComponent } from '@components/sidebar/sidebar.component';
+import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { PersonaService } from '@services/persona.service';
 import { filter } from 'rxjs';
 
 @Component({
@@ -23,6 +25,7 @@ export class MainLayoutComponent {
   private readonly router = inject(Router);
   private readonly appService = inject(AppService);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly personaService = inject(PersonaService);
 
   // Expose mobile sidebar state from service
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
@@ -43,6 +46,11 @@ export class MainLayoutComponent {
       routerLink: '/meetings',
     },
     {
+      label: COMMITTEE_LABEL.plural,
+      icon: 'fa-light fa-users',
+      routerLink: '/groups',
+    },
+    {
       label: 'Projects',
       icon: 'fa-light fa-folder-open',
       routerLink: '/projects',
@@ -56,6 +64,10 @@ export class MainLayoutComponent {
     // Filter out Projects if feature flag is disabled
     if (!this.showProjectsInSidebar()) {
       return items.filter((item) => item.label !== 'Projects');
+    }
+
+    if (this.personaService.currentPersona() === 'board-member') {
+      return items.filter((item) => item.label !== COMMITTEE_LABEL.plural);
     }
 
     return items;

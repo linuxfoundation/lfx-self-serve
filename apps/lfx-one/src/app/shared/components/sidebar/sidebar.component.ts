@@ -38,10 +38,11 @@ export class SidebarComponent {
     this.projectService.getProjects().pipe(
       tap((loadedProjects: Project[]) => {
         const currentFoundation = this.projectContextService.selectedFoundation();
+        const currentProject = this.projectContextService.selectedProject();
         const foundationExists = loadedProjects.some((p: Project) => p.uid === currentFoundation?.projectId);
 
-        // Only set default if no foundation is selected and projects exist
-        if (loadedProjects.length > 0 && (!foundationExists || !currentFoundation)) {
+        // Only set default if no foundation is selected, no project is selected, and projects exist
+        if (loadedProjects.length > 0 && (!foundationExists || !currentFoundation) && !currentProject) {
           // Prefer "tlf" project, fallback to first available project
           const defaultProject = loadedProjects.find((p: Project) => p.slug === 'tlf') || loadedProjects[0];
 

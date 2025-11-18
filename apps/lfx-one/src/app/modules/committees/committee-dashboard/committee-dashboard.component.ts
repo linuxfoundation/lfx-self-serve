@@ -3,58 +3,47 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
+import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { ButtonComponent } from '@components/button/button.component';
-import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { Committee } from '@lfx-one/shared/interfaces';
+import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
+import { Committee, ProjectContext } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
-import { ProjectService } from '@services/project.service';
-import { AnimateOnScrollModule } from 'primeng/animateonscroll';
-import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
+import { PersonaService } from '@services/persona.service';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, debounceTime, distinctUntilChanged, of, startWith, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, debounceTime, distinctUntilChanged, merge, of, startWith, switchMap, tap } from 'rxjs';
 
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
-import { UpcomingCommitteeMeetingComponent } from '../components/upcoming-committee-meeting/upcoming-committee-meeting.component';
 
 @Component({
   selector: 'lfx-committee-dashboard',
-  imports: [
-    CommonModule,
-    ReactiveFormsModule,
-    CardComponent,
-    CommitteeTableComponent,
-    InputTextComponent,
-    SelectComponent,
-    ButtonComponent,
-    ConfirmDialogModule,
-    DynamicDialogModule,
-    AnimateOnScrollModule,
-    UpcomingCommitteeMeetingComponent,
-  ],
-  providers: [DialogService],
+  standalone: true,
+  imports: [CommonModule, ReactiveFormsModule, InputTextComponent, SelectComponent, ButtonComponent, ConfirmDialogModule, CommitteeTableComponent],
   templateUrl: './committee-dashboard.component.html',
+  styleUrl: './committee-dashboard.component.scss',
 })
 export class CommitteeDashboardComponent {
-  // Injected services
-  private readonly projectService = inject(ProjectService);
+  // Inject services
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly committeeService = inject(CommitteeService);
+  private readonly personaService = inject(PersonaService);
   private readonly router = inject(Router);
   private readonly confirmationService = inject(ConfirmationService);
-  private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
 
-  // Class variables with types
-  public project: typeof this.projectService.project;
+  // Use the configurable label constants
+  protected readonly committeeLabel = COMMITTEE_LABEL.singular;
+  protected readonly committeeLabelPlural = COMMITTEE_LABEL.plural;
+
+  // State signals
+  public project: Signal<ProjectContext | null>;
   public selectedCommittee: WritableSignal<Committee | null>;
   public isDeleting: WritableSignal<boolean>;
-  public first: WritableSignal<number>;
-  public rows: number;
   public searchForm: FormGroup;
   public categoryFilter: WritableSignal<string | null>;
   public votingStatusFilter: WritableSignal<string | null>;
@@ -63,68 +52,82 @@ export class CommitteeDashboardComponent {
   public categories: Signal<{ label: string; value: string | null }[]>;
   public votingStatusOptions: Signal<{ label: string; value: string | null }[]>;
   public filteredCommittees: Signal<Committee[]>;
-  public totalRecords: Signal<number>;
-  public actionMenuItems: MenuItem[];
   public refresh: BehaviorSubject<void>;
   private searchTerm: Signal<string>;
-  private dialogRef: DynamicDialogRef | undefined;
+
+  // Permission signals
+  public isMaintainer: Signal<boolean>;
+  public isNonFoundationProjectSelected: Signal<boolean>;
+  public canCreateGroup: Signal<boolean>;
 
   // Statistics calculations
   public totalCommittees: Signal<number>;
-  public publicCommittees: Signal<number> = computed(() => this.committees().filter((c) => c.public).length);
-  public activeVoting: Signal<number> = computed(() => this.committees().filter((c) => c.enable_voting).length);
+  public publicCommittees: Signal<number>;
+  public activeVoting: Signal<number>;
+  public totalMembers: Signal<number>;
 
   public constructor() {
-    // Initialize all class variables
-    this.project = this.projectService.project;
+    // Initialize project context
+    this.project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+
+    // Initialize permission checks
+    this.isMaintainer = computed(() => this.personaService.currentPersona() === 'maintainer');
+    this.isNonFoundationProjectSelected = computed(() => this.projectContextService.selectedProject() !== null);
+    this.canCreateGroup = computed(() => this.isMaintainer() && this.isNonFoundationProjectSelected());
+
+    // Initialize state
     this.selectedCommittee = signal<Committee | null>(null);
     this.isDeleting = signal<boolean>(false);
-    this.first = signal<number>(0);
-    this.rows = 10;
     this.committeesLoading = signal<boolean>(true);
     this.refresh = new BehaviorSubject<void>(undefined);
+
+    // Initialize data
     this.committees = this.initializeCommittees();
-    this.totalCommittees = this.initializeCommitteesCount();
+
+    // Initialize search form
     this.searchForm = this.initializeSearchForm();
     this.categoryFilter = signal<string | null>(null);
     this.votingStatusFilter = signal<string | null>(null);
     this.searchTerm = this.initializeSearchTerm();
+
+    // Initialize filters
     this.categories = this.initializeCategories();
     this.votingStatusOptions = this.initializeVotingStatusOptions();
     this.filteredCommittees = this.initializeFilteredCommittees();
-    this.totalRecords = this.initializeTotalRecords();
-    this.actionMenuItems = this.initializeActionMenuItems();
-  }
 
-  public onPageChange(event: any): void {
-    this.first.set(event.first);
+    // Initialize statistics
+    this.totalCommittees = computed(() => this.committees().length);
+    this.publicCommittees = computed(() => this.committees().filter((c) => c.public).length);
+    this.activeVoting = computed(() => this.committees().filter((c) => c.enable_voting).length);
+    this.totalMembers = computed(() => this.committees().reduce((sum, c) => sum + (c.total_members || 0), 0));
   }
 
   public onCategoryChange(value: string | null): void {
-    // Update the category filter signal
     this.categoryFilter.set(value);
-    // Reset to first page when changing filter
-    this.first.set(0);
   }
 
   public onVotingStatusChange(value: string | null): void {
-    // Update the voting status filter signal
     this.votingStatusFilter.set(value);
-    // Reset to first page when changing filter
-    this.first.set(0);
   }
 
   public onSearch(): void {
-    // Reset to first page when searching
-    this.first.set(0);
+    // Trigger search through form control value changes
   }
 
-  // Create/edit methods
   public openCreateDialog(): void {
+    const projectId = this.project()?.projectId;
+    if (!projectId) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Warning',
+        detail: 'Please select a project first',
+      });
+      return;
+    }
+
     this.router.navigate(['/groups/create']);
   }
 
-  // Committee table event handlers
   public onEditCommittee(committee: Committee): void {
     this.selectedCommittee.set(committee);
     this.editCommittee();
@@ -140,12 +143,21 @@ export class CommitteeDashboardComponent {
     this.deleteCommittee();
   }
 
-  // Action handlers (use selectedCommittee)
+  public onAddMember(committee: Committee): void {
+    this.selectedCommittee.set(committee);
+    // TODO: Implement add member functionality
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Info',
+      detail: 'Add member functionality coming soon',
+    });
+  }
+
   private viewCommittee(): void {
     const committee = this.selectedCommittee();
-    const projectId = this.project()?.uid;
-    if (committee && projectId) {
-      this.router.navigate(['/project', this.project()?.slug, 'committees', committee.uid]);
+    const project = this.project();
+    if (committee && project) {
+      this.router.navigate(['/project', project.slug, 'committees', committee.uid]);
     }
   }
 
@@ -161,8 +173,8 @@ export class CommitteeDashboardComponent {
     if (!committee) return;
 
     this.confirmationService.confirm({
-      message: `Are you sure you want to delete the committee "${committee.name}"? This action cannot be undone.`,
-      header: 'Delete Committee',
+      message: `Are you sure you want to delete the ${this.committeeLabel.toLowerCase()} "${committee.name}"? This action cannot be undone.`,
+      header: `Delete ${this.committeeLabel}`,
       acceptLabel: 'Delete',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
@@ -177,7 +189,11 @@ export class CommitteeDashboardComponent {
     this.committeeService.deleteCommittee(committee.uid).subscribe({
       next: () => {
         this.isDeleting.set(false);
-        // Refresh the committees list by reloading
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Success',
+          detail: `${this.committeeLabel} deleted successfully`,
+        });
         this.refreshCommittees();
       },
       error: (error) => {
@@ -185,7 +201,7 @@ export class CommitteeDashboardComponent {
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
-          detail: 'Failed to delete committee',
+          detail: `Failed to delete ${this.committeeLabel.toLowerCase()}`,
         });
         console.error('Failed to delete committee:', error);
       },
@@ -193,10 +209,10 @@ export class CommitteeDashboardComponent {
   }
 
   private refreshCommittees(): void {
+    this.committeesLoading.set(true);
     this.refresh.next();
   }
 
-  // Private initialization methods
   private initializeSearchForm(): FormGroup {
     return new FormGroup({
       search: new FormControl<string>(''),
@@ -210,29 +226,34 @@ export class CommitteeDashboardComponent {
   }
 
   private initializeCommittees(): Signal<Committee[]> {
+    // Convert project signal to observable to react to project changes
+    const project$ = toObservable(this.project);
+
     return toSignal(
-      this.project()
-        ? this.refresh.pipe(
-            tap(() => this.committeesLoading.set(true)),
-            switchMap(() =>
-              this.committeeService.getCommitteesByProject(this.project()!.uid).pipe(
-                catchError(() => {
-                  console.error('Failed to load project committees');
-                  return of([]);
-                }),
-                tap(() => this.committeesLoading.set(false))
-              )
-            )
-          )
-        : of([]),
+      merge(
+        project$, // Triggers on project context changes
+        this.refresh // Triggers on manual refresh
+      ).pipe(
+        tap(() => this.committeesLoading.set(true)),
+        switchMap(() => {
+          const project = this.project();
+          if (!project?.projectId) {
+            this.committeesLoading.set(false);
+            return of([]);
+          }
+
+          return this.committeeService.getCommitteesByProject(project.projectId).pipe(
+            catchError((error) => {
+              console.error('Failed to load committees:', error);
+              this.committeesLoading.set(false);
+              return of([]);
+            }),
+            tap(() => this.committeesLoading.set(false))
+          );
+        })
+      ),
       { initialValue: [] }
     );
-  }
-
-  private initializeCommitteesCount(): Signal<number> {
-    return toSignal(this.project() ? this.refresh.pipe(switchMap(() => this.committeeService.getCommitteesCountByProject(this.project()!.uid))) : of(0), {
-      initialValue: 0,
-    });
   }
 
   private initializeCategories(): Signal<{ label: string; value: string | null }[]> {
@@ -256,7 +277,7 @@ export class CommitteeDashboardComponent {
         value: cat,
       }));
 
-      return [{ label: 'All Committee Types', value: null }, ...categoryOptions];
+      return [{ label: `All ${this.committeeLabelPlural} Types`, value: null }, ...categoryOptions];
     });
   }
 
@@ -309,34 +330,5 @@ export class CommitteeDashboardComponent {
 
       return filtered;
     });
-  }
-
-  private initializeTotalRecords(): Signal<number> {
-    return computed(() => this.filteredCommittees().length);
-  }
-
-  private initializeActionMenuItems(): MenuItem[] {
-    return [
-      {
-        label: 'View',
-        icon: 'fa-light fa-eye',
-        command: () => this.viewCommittee(),
-      },
-      {
-        label: 'Edit',
-        icon: 'fa-light fa-edit',
-        command: () => this.editCommittee(),
-      },
-      {
-        separator: true,
-      },
-      {
-        label: 'Delete',
-        icon: 'fa-light fa-trash',
-        styleClass: 'text-red-500',
-        disabled: this.isDeleting(),
-        command: () => this.deleteCommittee(),
-      },
-    ];
   }
 }

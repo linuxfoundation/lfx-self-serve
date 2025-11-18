@@ -1,0 +1,94 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card styleClass="border-0 shadow-[0px_1px_2px_-1px_rgba(0,0,0,0.10),0px_1px_3px_0px_rgba(0,0,0,0.10)]">
+  <div class="overflow-x-auto">
+    <table class="min-w-full" data-testid="committee-dashboard-table">
+      <thead>
+        <tr>
+          <th class="px-3 py-3 text-left text-xs font-medium text-[#62748e] w-[180px]">{{ committeeLabel() }}</th>
+          <th class="px-3 py-3 text-left text-xs font-medium text-[#62748e] min-w-[300px]">Description</th>
+          <th class="px-3 py-3 text-left text-xs font-medium text-[#62748e] w-[80px]">Members</th>
+          <th class="px-3 py-3 text-left text-xs font-medium text-[#62748e] w-[80px]">Voting</th>
+          <th class="px-3 py-3 text-left text-xs font-medium text-[#62748e] w-[100px]">Last Updated</th>
+          <th class="px-3 py-3 text-left text-xs font-medium text-[#62748e] w-[120px]"></th>
+        </tr>
+      </thead>
+      <tbody>
+        @for (committee of committees(); track committee.uid) {
+          <tr class="hover:bg-slate-50" [attr.data-testid]="'committee-row-' + committee.uid">
+            <td class="px-3 py-3 w-[180px]">
+              <div class="flex flex-col gap-1">
+                <span
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium w-fit"
+                  [ngClass]="committee.category | committeeTypeColor">
+                  {{ committee.category || 'Other' }}
+                </span>
+                <div class="flex items-center gap-2">
+                  <p class="font-['Inter:Medium',sans-serif] font-medium leading-[16px] not-italic text-[#0f172b] text-[12px] text-nowrap whitespace-pre">
+                    {{ committee.name }}
+                  </p>
+                  @if (!committee.public) {
+                    <i class="fa-light fa-lock text-slate-500" pTooltip="Private" tooltipPosition="top"></i>
+                  }
+                </div>
+              </div>
+            </td>
+            <td class="px-3 py-3 text-xs min-w-[300px]">{{ committee.description || '-' }}</td>
+            <td class="px-3 py-3 w-[140px]">
+              <button class="text-xs text-[#009aff] hover:text-[#0080dd] hover:underline cursor-pointer" (click)="onViewCommittee(committee)">
+                {{ committee.total_members || 0 }}
+              </button>
+            </td>
+            <td class="px-3 py-3 text-xs text-[#0f172b] w-[80px]">
+              @if (committee.enable_voting) {
+                <i class="fa-light fa-check w-4 h-4 text-green-600"></i>
+              }
+            </td>
+            <td class="px-3 py-3 text-xs text-[#0f172b] w-[100px] whitespace-nowrap">{{ committee.updated_at | date: 'MMM d, y' }}</td>
+            <td class="px-3 py-3 text-xs w-[120px]">
+              @if (canManageCommittee()) {
+                <div class="flex items-center gap-1">
+                  <lfx-button
+                    icon="fa-light fa-user-plus"
+                    severity="secondary"
+                    size="small"
+                    [text]="true"
+                    styleClass="h-8 w-8 text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                    (onClick)="onAddMember(committee)"
+                    [attr.data-testid]="'committee-add-member-' + committee.uid"
+                    [pTooltip]="'Add Member'"
+                    tooltipPosition="top">
+                  </lfx-button>
+                  <lfx-button
+                    icon="fa-light fa-pencil"
+                    severity="secondary"
+                    size="small"
+                    [text]="true"
+                    styleClass="h-8 w-8 text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                    (onClick)="onEditCommittee(committee)"
+                    [attr.data-testid]="'committee-edit-' + committee.uid"
+                    [pTooltip]="'Edit ' + committeeLabel"
+                    tooltipPosition="top">
+                  </lfx-button>
+                  <lfx-button
+                    icon="fa-light fa-trash-can"
+                    severity="secondary"
+                    size="small"
+                    [text]="true"
+                    styleClass="h-8 w-8 text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                    (onClick)="onDeleteCommittee(committee)"
+                    [disabled]="isDeleting()"
+                    [attr.data-testid]="'committee-delete-' + committee.uid"
+                    [pTooltip]="'Delete ' + committeeLabel"
+                    tooltipPosition="top">
+                  </lfx-button>
+                </div>
+              }
+            </td>
+          </tr>
+        }
+      </tbody>
+    </table>
+  </div>
+</lfx-card>

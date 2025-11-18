@@ -22,8 +22,6 @@ import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, finalize, of, switchMap } from 'rxjs';
 
-import { CommitteeFormComponent } from '../../committees/components/committee-form/committee-form.component';
-
 @Component({
   selector: 'lfx-project',
   imports: [CardComponent, TableComponent, DatePipe, RouterModule, SkeletonModule, ButtonComponent, ChartComponent, MenuComponent, TooltipModule],
@@ -111,20 +109,7 @@ export class ProjectComponent {
   }
 
   public openCreateDialog(): void {
-    const projectId = this.project()?.uid;
-    if (!projectId) return;
-
-    this.dialogService.open(CommitteeFormComponent, {
-      header: 'Create Committee',
-      width: '600px',
-      contentStyle: { overflow: 'auto' },
-      modal: true,
-      closable: true,
-      data: {
-        isEditing: false,
-        projectId: projectId,
-      },
-    });
+    this.router.navigate(['/groups/create']);
   }
 
   // Private initialization methods

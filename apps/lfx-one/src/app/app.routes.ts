@@ -23,6 +23,10 @@ export const routes: Routes = [
         path: 'meetings',
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },
+      {
+        path: 'groups',
+        loadChildren: () => import('./modules/committees/committees.routes').then((m) => m.COMMITTEE_ROUTES),
+      },
     ],
   },
   {

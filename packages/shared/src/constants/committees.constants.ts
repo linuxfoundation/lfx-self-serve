@@ -4,6 +4,21 @@
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 
 /**
+ * Configurable labels for committees displayed throughout the UI
+ * @description This constant allows the user-facing labels to be changed (e.g., to "Group/Groups")
+ * while keeping all code and file names as "committees"
+ * @readonly
+ * @example
+ * // Use in templates to display the label
+ * <h1>{{COMMITTEE_LABEL.plural}}</h1> // Displays "Groups"
+ * <span>{{COMMITTEE_LABEL.singular}} Name</span> // Displays "Group Name"
+ */
+export const COMMITTEE_LABEL = {
+  singular: 'Group',
+  plural: 'Groups',
+} as const;
+
+/**
  * Available committee category types for classification
  * @description Standard categories used across the LFX platform for organizing committees
  * @readonly
@@ -72,48 +87,52 @@ export const VOTING_STATUSES = [
 ];
 
 /**
- * Committee type color mappings for consistent styling across the application
- * Colors match corresponding meeting types for consistency
+ * Committee type color mappings for badge styling
+ * Returns background and text color classes for category badges
  */
 export const COMMITTEE_TYPE_COLORS = {
   // Board and governance
-  Board: 'text-red-500', // Matches meeting type
-  'Government Advisory Council': 'text-red-600', // Similar to board governance
-
-  // Technical committees
-  'Technical Steering Committee': 'text-purple-500', // Matches "Technical" meeting type
-  'Technical Oversight Committee/Technical Advisory Committee': 'text-purple-500', // Matches "Technical" meeting type
-  'Technical Mailing List': 'text-purple-400', // Technical related
-  Maintainers: 'text-blue-500', // Matches meeting type
-  Committers: 'text-blue-600', // Similar to maintainers
+  Board: 'bg-purple-100 text-purple-800',
+  'Government Advisory Council': 'bg-purple-100 text-purple-800',
 
   // Legal and compliance
-  'Legal Committee': 'text-amber-500', // Matches meeting type
-  'Code of Conduct': 'text-amber-600', // Legal/compliance related
-  'Product Security': 'text-amber-700', // Security/compliance
+  'Legal Committee': 'bg-red-100 text-red-800',
+  'Code of Conduct': 'bg-red-100 text-red-800',
+  'Product Security': 'bg-red-100 text-red-800',
+
+  // Special interest groups
+  'Special Interest Group': 'bg-blue-100 text-blue-800',
+  'Expert Group': 'bg-blue-100 text-blue-800',
+
+  // Working groups
+  'Working Group': 'bg-orange-100 text-orange-800',
+
+  // Technical committees
+  'Technical Steering Committee': 'bg-green-100 text-green-800',
+  'Technical Oversight Committee/Technical Advisory Committee': 'bg-teal-100 text-teal-800',
+  'Technical Mailing List': 'bg-teal-100 text-teal-800',
+
+  // Technical roles
+  Maintainers: 'bg-blue-100 text-blue-800',
+  Committers: 'bg-blue-100 text-blue-800',
 
   // Marketing and outreach
-  'Marketing Oversight Committee/Marketing Advisory Committee': 'text-green-500', // Matches marketing meeting type
-  'Marketing Committee/Sub Committee': 'text-green-600', // Marketing related
-  'Marketing Mailing List': 'text-green-400', // Marketing related
-  Ambassador: 'text-green-700', // Outreach/marketing
+  'Marketing Oversight Committee/Marketing Advisory Committee': 'bg-pink-100 text-pink-800',
+  'Marketing Committee/Sub Committee': 'bg-pink-100 text-pink-800',
+  'Marketing Mailing List': 'bg-pink-100 text-pink-800',
+  Ambassador: 'bg-pink-100 text-pink-800',
 
   // Finance
-  'Finance Committee': 'text-emerald-500', // Financial management
-
-  // Working groups and special interest
-  'Working Group': 'text-orange-700', // Distinct color for working groups
-  'Special Interest Group': 'text-amber-600', // Special interest groups
-  'Expert Group': 'text-amber-700', // Similar to special interest
+  'Finance Committee': 'bg-emerald-100 text-emerald-800',
 
   // Other/miscellaneous
-  Other: 'text-gray-600', // General other category
+  Other: 'bg-gray-100 text-gray-800',
 } as const;
 
 /**
  * Default color scheme for unknown committee types
  */
-export const DEFAULT_COMMITTEE_TYPE_COLOR = 'text-gray-500';
+export const DEFAULT_COMMITTEE_TYPE_COLOR = 'bg-gray-100 text-gray-800';
 
 /**
  * Get valid committee category values for validation
@@ -123,8 +142,26 @@ export function getValidCommitteeCategories(): string[] {
 }
 
 /**
- * Get color class for a committee type
+ * Get color classes for a committee category badge
+ * Returns background and text color classes based on category name
+ * Uses partial string matching to categorize committee types
  */
-export function getCommitteeTypeColor(type: string): string {
-  return COMMITTEE_TYPE_COLORS[type as keyof typeof COMMITTEE_TYPE_COLORS] || DEFAULT_COMMITTEE_TYPE_COLOR;
+export function getCommitteeTypeColor(category: string | undefined): string {
+  if (!category) return DEFAULT_COMMITTEE_TYPE_COLOR;
+
+  const lowerCategory = category.toLowerCase();
+
+  // Check for partial matches in category name
+  if (lowerCategory.includes('board')) return 'bg-purple-100 text-purple-800';
+  if (lowerCategory.includes('legal')) return 'bg-red-100 text-red-800';
+  if (lowerCategory.includes('special interest')) return 'bg-blue-100 text-blue-800';
+  if (lowerCategory.includes('working group')) return 'bg-orange-100 text-orange-800';
+  if (lowerCategory.includes('technical steering')) return 'bg-green-100 text-green-800';
+  if (lowerCategory.includes('technical oversight')) return 'bg-teal-100 text-teal-800';
+  if (lowerCategory.includes('marketing oversight')) return 'bg-pink-100 text-pink-800';
+  if (lowerCategory.includes('marketing committee')) return 'bg-pink-100 text-pink-800';
+  if (lowerCategory.includes('finance')) return 'bg-emerald-100 text-emerald-800';
+
+  // Fallback to exact match or default
+  return COMMITTEE_TYPE_COLORS[category as keyof typeof COMMITTEE_TYPE_COLORS] || DEFAULT_COMMITTEE_TYPE_COLOR;
 }
