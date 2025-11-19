@@ -52,7 +52,16 @@
             "ssr": {
               "entry": "src/server/server.ts"
             },
-            "allowedCommonJsDependencies": ["@linuxfoundation/lfx-ui-core"],
+            "allowedCommonJsDependencies": [
+              "@linuxfoundation/lfx-ui-core",
+              "combined-stream",
+              "mime-types",
+              "asynckit",
+              "hasown",
+              "es-set-tostringtag",
+              "safe-buffer",
+              "lodash.isempty"
+            ],
             "externalDependencies": ["snowflake-sdk"],
             "define": {
               "LAUNCHDARKLY_CLIENT_ID": "''"
@@ -68,7 +77,7 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "4kB",
+                  "maximumWarning": "6kB",
                   "maximumError": "8kB"
                 }
               ],
@@ -92,7 +101,7 @@
                 },
                 {
                   "type": "anyComponentStyle",
-                  "maximumWarning": "4kB",
+                  "maximumWarning": "6kB",
                   "maximumError": "8kB"
                 }
               ],

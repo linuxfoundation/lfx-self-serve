@@ -172,3 +172,54 @@ export interface ProjectContext {
   /** URL-friendly project identifier */
   slug: string;
 }
+
+/**
+ * Pending survey response from analytics database
+ * @description Survey data for member dashboard pending actions
+ */
+export interface PendingSurveyRow {
+  /** Unique survey identifier */
+  SURVEY_ID: string;
+  /** Survey title/name */
+  SURVEY_TITLE: string;
+  /** Survey status (e.g., sent) */
+  SURVEY_STATUS: string;
+  /** Survey cohort date */
+  SURVEY_COHORT_DATE: string;
+  /** Survey cutoff/due date */
+  SURVEY_CUTOFF_DATE: string;
+  /** Committee identifier */
+  COMMITTEE_ID: string;
+  /** Committee name */
+  COMMITTEE_NAME: string;
+  /** Committee category (e.g., Board) */
+  COMMITTEE_CATEGORY: string;
+  /** Project identifier */
+  PROJECT_ID: string;
+  /** Project slug */
+  PROJECT_SLUG: string;
+  /** Project name */
+  PROJECT_NAME: string;
+  /** Response identifier */
+  RESPONSE_ID: string;
+  /** Response date */
+  RESPONSE_DATE: string;
+  /** Respondent first name */
+  FIRST_NAME: string;
+  /** Respondent last name */
+  LAST_NAME: string;
+  /** Respondent email */
+  EMAIL: string;
+  /** Account identifier */
+  ACCOUNT_ID: string;
+  /** Account name */
+  ACCOUNT_NAME: string;
+  /** Organization identifier */
+  ORGANIZATION_ID: string;
+  /** Organization name */
+  ORGANIZATION_NAME: string;
+  /** Response type (e.g., non_response) */
+  RESPONSE_TYPE: string;
+  /** Survey link URL */
+  SURVEY_LINK: string;
+}

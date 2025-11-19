@@ -45,14 +45,27 @@
 
     <!-- Progress Bar -->
     <div class="w-full bg-gray-200/80 rounded-full h-[5.25px] flex overflow-hidden">
-      @if (acceptedCount() > 0) {
-        <div class="h-[5.25px] transition-all duration-300 bg-blue-500" [style.width.%]="(acceptedCount() / meetingRegistrantCount()) * 100"></div>
-      }
-      @if (!pastMeeting() && maybeCount() > 0) {
-        <div class="h-[5.25px] transition-all duration-300 bg-amber-500" [style.width.%]="(maybeCount() / meetingRegistrantCount()) * 100"></div>
-      }
-      @if (!pastMeeting() && declinedCount() > 0) {
-        <div class="h-[5.25px] transition-all duration-300 bg-red-500" [style.width.%]="(declinedCount() / meetingRegistrantCount()) * 100"></div>
+      @if (pastMeeting()) {
+        <!-- Past meeting: Show attended vs not attended -->
+        @if (attendedCount() > 0) {
+          <div class="h-[5.25px] transition-all duration-300 bg-blue-500" [style.width.%]="(attendedCount() / meetingRegistrantCount()) * 100"></div>
+        }
+        @if (meetingRegistrantCount() - attendedCount() > 0) {
+          <div
+            class="h-[5.25px] transition-all duration-300 bg-red-500"
+            [style.width.%]="((meetingRegistrantCount() - attendedCount()) / meetingRegistrantCount()) * 100"></div>
+        }
+      } @else {
+        <!-- Upcoming meeting: Show accepted/maybe/declined -->
+        @if (acceptedCount() > 0) {
+          <div class="h-[5.25px] transition-all duration-300 bg-blue-500" [style.width.%]="(acceptedCount() / meetingRegistrantCount()) * 100"></div>
+        }
+        @if (maybeCount() > 0) {
+          <div class="h-[5.25px] transition-all duration-300 bg-amber-500" [style.width.%]="(maybeCount() / meetingRegistrantCount()) * 100"></div>
+        }
+        @if (declinedCount() > 0) {
+          <div class="h-[5.25px] transition-all duration-300 bg-red-500" [style.width.%]="(declinedCount() / meetingRegistrantCount()) * 100"></div>
+        }
       }
     </div>
 

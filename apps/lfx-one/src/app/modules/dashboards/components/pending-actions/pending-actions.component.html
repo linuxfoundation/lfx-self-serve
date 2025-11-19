@@ -4,85 +4,94 @@
 <section class="flex flex-col flex-1" data-testid="dashboard-pending-actions-section">
   <!-- Header -->
   <div class="flex items-center justify-between mb-4">
-    <h2 class="font-display font-semibold text-gray-900">Pending Actions</h2>
-    <lfx-button
-      label="View All"
-      icon="fa-light fa-chevron-right"
-      iconPos="right"
-      (onClick)="handleViewAll()"
-      styleClass="!text-sm !font-normal"
-      [text]="true"
-      size="small"
-      data-testid="dashboard-pending-actions-view-all" />
+    <h2 class="font-display font-semibold text-gray-900 py-1.5">Pending Actions</h2>
   </div>
 
   <!-- Scrollable Content -->
   <div class="flex flex-col flex-1 max-h-[28.125rem] overflow-y-auto">
-    <div class="flex flex-col gap-3" data-testid="dashboard-pending-actions-list">
-      @for (item of pendingActions(); track item.text) {
-        <div
-          class="p-4 border rounded-lg"
-          [ngClass]="{
-            'bg-amber-50 border-amber-200': item.color === 'amber',
-            'bg-blue-50 border-blue-200': item.color === 'blue',
-            'bg-green-50 border-green-200': item.color === 'green',
-            'bg-purple-50 border-purple-200': item.color === 'purple',
-          }"
-          [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
-          <!-- Header with Type and Badge -->
-          <div class="flex items-start justify-between mb-3">
-            <div class="flex items-center gap-2">
-              <div
-                [ngClass]="{
-                  'text-amber-700': item.color === 'amber',
-                  'text-blue-700': item.color === 'blue',
-                  'text-green-700': item.color === 'green',
-                  'text-purple-700': item.color === 'purple',
-                }">
-                <i [ngClass]="[item.icon, 'w-4', 'h-4']"></i>
+    @if (pendingActions().length > 0) {
+      <div class="flex flex-col gap-3" data-testid="dashboard-pending-actions-list">
+        @for (item of pendingActions(); track $index) {
+          <div
+            class="p-4 border rounded-lg"
+            [ngClass]="{
+              'bg-amber-50 border-amber-200': item.color === 'amber',
+              'bg-blue-50 border-blue-200': item.color === 'blue',
+              'bg-green-50 border-green-200': item.color === 'green',
+              'bg-purple-50 border-purple-200': item.color === 'purple',
+            }"
+            [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
+            <!-- Header with Type and Badge -->
+            <div class="flex items-start justify-between mb-3">
+              <div class="flex items-center gap-2">
+                <div
+                  [ngClass]="{
+                    'text-amber-700': item.color === 'amber',
+                    'text-blue-700': item.color === 'blue',
+                    'text-green-700': item.color === 'green',
+                    'text-purple-700': item.color === 'purple',
+                  }">
+                  <i [ngClass]="[item.icon, 'w-4', 'h-4']"></i>
+                </div>
+                <span
+                  class="text-xs font-medium"
+                  [ngClass]="{
+                    'text-amber-700': item.color === 'amber',
+                    'text-blue-700': item.color === 'blue',
+                    'text-green-700': item.color === 'green',
+                    'text-purple-700': item.color === 'purple',
+                  }">
+                  {{ item.type }}
+                </span>
               </div>
               <span
-                class="text-xs font-medium"
-                [ngClass]="{
-                  'text-amber-700': item.color === 'amber',
-                  'text-blue-700': item.color === 'blue',
-                  'text-green-700': item.color === 'green',
-                  'text-purple-700': item.color === 'purple',
-                }">
-                {{ item.type }}
+                class="inline-flex items-center justify-center rounded-md px-2 py-0.5 text-xs font-medium bg-white text-gray-700 border border-gray-200"
+                data-testid="dashboard-pending-actions-badge">
+                {{ item.badge }}
               </span>
             </div>
-            <span
-              class="inline-flex items-center justify-center rounded-md px-2 py-0.5 text-xs font-medium bg-white text-gray-700 border border-gray-200"
-              data-testid="dashboard-pending-actions-badge">
-              {{ item.badge }}
-            </span>
-          </div>
 
-          <!-- Action Text -->
-          <div class="mb-4">
-            <p
-              class="text-sm font-medium"
-              [ngClass]="{
-                'text-amber-900': item.color === 'amber',
-                'text-blue-900': item.color === 'blue',
-                'text-green-900': item.color === 'green',
-                'text-purple-900': item.color === 'purple',
-              }">
-              {{ item.text }}
-            </p>
-          </div>
+            <!-- Action Text -->
+            <div class="mb-4">
+              <p
+                class="text-sm font-medium"
+                [ngClass]="{
+                  'text-amber-900': item.color === 'amber',
+                  'text-blue-900': item.color === 'blue',
+                  'text-green-900': item.color === 'green',
+                  'text-purple-900': item.color === 'purple',
+                }">
+                {{ item.text }}
+              </p>
+            </div>
 
-          <!-- Action Button -->
-          <button
-            type="button"
-            (click)="handleActionClick(item)"
-            class="w-full h-8 rounded-md px-3 text-sm font-medium border border-gray-300 bg-white text-gray-700 hover:bg-slate-100 transition-colors"
-            data-testid="dashboard-pending-actions-button">
-            {{ item.buttonText }}
-          </button>
-        </div>
-      }
-    </div>
+            <!-- Action Button -->
+            @if (item.buttonLink) {
+              <a
+                [href]="item.buttonLink"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="w-full h-8 rounded-md px-3 text-sm font-medium border border-gray-300 bg-white text-gray-700 hover:bg-slate-100 transition-colors flex items-center justify-center"
+                data-testid="dashboard-pending-actions-button">
+                {{ item.buttonText }}
+              </a>
+            } @else {
+              <button
+                type="button"
+                (click)="handleActionClick(item)"
+                class="w-full h-8 rounded-md px-3 text-sm font-medium border border-gray-300 bg-white text-gray-700 hover:bg-slate-100 transition-colors"
+                data-testid="dashboard-pending-actions-button">
+                {{ item.buttonText }}
+              </button>
+            }
+          </div>
+        }
+      </div>
+    } @else {
+      <!-- Empty state - shows when no pending actions -->
+      <div class="text-xs text-gray-500 py-8 text-center border-2 border-dashed border-gray-300 rounded-lg" data-testid="dashboard-pending-actions-empty">
+        No pending actions
+      </div>
+    }
   </div>
 </section>

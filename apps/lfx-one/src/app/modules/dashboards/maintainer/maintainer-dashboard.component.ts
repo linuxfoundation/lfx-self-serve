@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { ProjectContextService } from '@app/shared/services/project-context.service';
+import { MAINTAINER_ACTION_ITEMS } from '@lfx-one/shared/constants';
 
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { MyProjectsComponent } from '../components/my-projects/my-projects.component';
@@ -20,4 +21,5 @@ export class MaintainerDashboardComponent {
   private readonly projectContextService = inject(ProjectContextService);
 
   public readonly selectedProject = computed(() => this.projectContextService.selectedFoundation() || this.projectContextService.selectedProject());
+  public readonly maintainerActions = signal(MAINTAINER_ACTION_ITEMS);
 }

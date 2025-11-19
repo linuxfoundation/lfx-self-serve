@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { Project } from '@lfx-one/shared/interfaces';
+import { PendingActionItem, Project } from '@lfx-one/shared/interfaces';
 import { BehaviorSubject, catchError, Observable, of, tap } from 'rxjs';
 
 @Injectable({
@@ -43,6 +43,22 @@ export class ProjectService {
     return this.http.get<Project[]>('/api/projects/search', { params }).pipe(
       catchError((error) => {
         console.error('Failed to search projects:', error);
+        return of([]);
+      })
+    );
+  }
+
+  /**
+   * Get pending action surveys for the current user
+   * @param projectSlug - Project slug to filter surveys
+   * @returns Observable of pending action items with survey links
+   */
+  public getPendingActionSurveys(projectSlug: string): Observable<PendingActionItem[]> {
+    const params = new HttpParams().set('projectSlug', projectSlug);
+
+    return this.http.get<PendingActionItem[]>('/api/projects/pending-action-surveys', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch pending action surveys:', error);
         return of([]);
       })
     );

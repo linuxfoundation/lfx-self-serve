@@ -437,6 +437,59 @@ export class ProjectController {
     }
   }
 
+  /**
+   * GET /projects/pending-action-surveys - Get pending survey actions for the authenticated user
+   */
+  public async getPendingActionSurveys(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_pending_action_surveys');
+
+    try {
+      // Extract user email from OIDC
+      const userEmail = req.oidc?.user?.['email'];
+      if (!userEmail) {
+        Logger.error(req, 'get_pending_action_surveys', startTime, new Error('User email not found in OIDC context'));
+
+        const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
+          operation: 'get_pending_action_surveys',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Extract projectSlug from query parameters
+      const projectSlug = req.query['projectSlug'] as string | undefined;
+      if (!projectSlug) {
+        Logger.error(req, 'get_pending_action_surveys', startTime, new Error('Missing projectSlug parameter'));
+
+        const validationError = ServiceValidationError.forField('projectSlug', 'projectSlug query parameter is required', {
+          operation: 'get_pending_action_surveys',
+          service: 'project_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Get pending surveys from service
+      const pendingActions = await this.projectService.getPendingActionSurveys(userEmail, projectSlug);
+
+      Logger.success(req, 'get_pending_action_surveys', startTime, {
+        email: userEmail,
+        project_slug: projectSlug,
+        survey_count: pendingActions.length,
+      });
+
+      res.json(pendingActions);
+    } catch (error) {
+      Logger.error(req, 'get_pending_action_surveys', startTime, error);
+      next(error);
+    }
+  }
+
   private isUuid(slug: string): boolean {
     return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
   }

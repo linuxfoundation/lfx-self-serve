@@ -4,6 +4,8 @@
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
+  PendingActionItem,
+  PendingSurveyRow,
   Project,
   ProjectIssuesResolutionAggregatedRow,
   ProjectIssuesResolutionResponse,
@@ -721,6 +723,53 @@ export class ProjectService {
       avgMergeTime: Math.round(avgMergeTime * 10) / 10, // Round to 1 decimal place
       totalWeeks: result.rows.length,
     };
+  }
+
+  /**
+   * Get pending survey actions for a user
+   * Queries for non-responded surveys and transforms them into PendingActionItem format
+   * @param email - User's email from OIDC authentication
+   * @param projectSlug - Project slug to filter surveys
+   * @returns Array of pending action items with survey links
+   */
+  public async getPendingActionSurveys(email: string, projectSlug: string): Promise<PendingActionItem[]> {
+    const query = `
+      SELECT
+        SURVEY_TITLE,
+        SURVEY_CUTOFF_DATE,
+        PROJECT_NAME,
+        SURVEY_LINK
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_PENDING_ACTION_SURVEYS
+      WHERE EMAIL = ?
+        AND PROJECT_SLUG = ?
+        AND SURVEY_CUTOFF_DATE > CURRENT_DATE()
+        AND RESPONSE_TYPE = 'non_response'
+        AND COMMITTEE_CATEGORY = 'Board'
+      ORDER BY SURVEY_CUTOFF_DATE ASC
+    `;
+
+    const result = await this.snowflakeService.execute<PendingSurveyRow>(query, [email, projectSlug]);
+
+    // Transform database rows to PendingActionItem format
+    return result.rows.map((row) => {
+      // Format the cutoff date as a readable string
+      const cutoffDate = new Date(row.SURVEY_CUTOFF_DATE);
+      const formattedDate = cutoffDate.toLocaleDateString('en-US', {
+        month: 'short',
+        day: 'numeric',
+        year: 'numeric',
+      });
+
+      return {
+        type: 'Submit Feedback',
+        badge: row.PROJECT_NAME,
+        text: `${row.SURVEY_TITLE} is due ${formattedDate}`,
+        icon: 'fa-regular fa-clipboard-list',
+        color: 'amber' as const,
+        buttonText: 'Submit Survey',
+        buttonLink: row.SURVEY_LINK,
+      };
+    });
   }
 
   /**

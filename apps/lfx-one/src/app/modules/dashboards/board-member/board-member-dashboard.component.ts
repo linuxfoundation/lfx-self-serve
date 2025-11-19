@@ -2,14 +2,16 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, Signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { Account } from '@lfx-one/shared/interfaces';
+import { Account, PendingActionItem } from '@lfx-one/shared/interfaces';
+import { catchError, of, switchMap } from 'rxjs';
 
 import { SelectComponent } from '../../../shared/components/select/select.component';
 import { AccountContextService } from '../../../shared/services/account-context.service';
 import { FeatureFlagService } from '../../../shared/services/feature-flag.service';
 import { ProjectContextService } from '../../../shared/services/project-context.service';
+import { ProjectService } from '../../../shared/services/project.service';
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { OrganizationInvolvementComponent } from '../components/organization-involvement/organization-involvement.component';
@@ -24,6 +26,7 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
 export class BoardMemberDashboardComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
   private readonly featureFlagService = inject(FeatureFlagService);
 
   public readonly form = new FormGroup({
@@ -32,11 +35,14 @@ export class BoardMemberDashboardComponent {
 
   public readonly availableAccounts: Signal<Account[]> = computed(() => this.accountContextService.availableAccounts);
   public readonly selectedFoundation = computed(() => this.projectContextService.selectedFoundation());
+  public readonly selectedProject = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+  public readonly boardMemberActions: Signal<PendingActionItem[]>;
 
   // Feature flags
   protected readonly showOrganizationSelector = this.featureFlagService.getBooleanFlag('organization-selector', true);
 
   public constructor() {
+    // Handle account selection changes
     this.form
       .get('selectedAccountId')
       ?.valueChanges.pipe(takeUntilDestroyed())
@@ -46,5 +52,34 @@ export class BoardMemberDashboardComponent {
           this.accountContextService.setAccount(selectedAccount as Account);
         }
       });
+
+    // Initialize board member actions with reactive pattern
+    this.boardMemberActions = this.initializeBoardMemberActions();
+  }
+
+  private initializeBoardMemberActions(): Signal<PendingActionItem[]> {
+    // Convert project signal to observable to react to changes (handles both project and foundation)
+    const project$ = toObservable(this.selectedProject);
+
+    return toSignal(
+      project$.pipe(
+        switchMap((project) => {
+          // If no project/foundation selected, return empty array
+          if (!project?.slug) {
+            return of([]);
+          }
+
+          // Fetch survey actions from API
+          return this.projectService.getPendingActionSurveys(project.slug).pipe(
+            catchError((error) => {
+              console.error('Failed to fetch survey actions:', error);
+              // Return empty array on error
+              return of([]);
+            })
+          );
+        })
+      ),
+      { initialValue: [] }
+    );
   }
 }

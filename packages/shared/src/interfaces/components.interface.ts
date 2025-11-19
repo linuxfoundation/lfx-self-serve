@@ -354,6 +354,8 @@ export interface PendingActionItem {
   color: 'amber' | 'blue' | 'green' | 'purple';
   /** Button text */
   buttonText: string;
+  /** Button link */
+  buttonLink?: string;
 }
 
 /**

@@ -9,7 +9,6 @@ import { Router, RouterModule } from '@angular/router';
 import { AppService } from '@app/shared/services/app.service';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { MenubarComponent } from '@components/menubar/menubar.component';
-import { PersonaSelectorComponent } from '@components/persona-selector/persona-selector.component';
 import { CombinedProfile, Project } from '@lfx-one/shared/interfaces';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -18,23 +17,12 @@ import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/auto
 import { RippleModule } from 'primeng/ripple';
 import { catchError, debounceTime, distinctUntilChanged, of, startWith, switchMap } from 'rxjs';
 
-import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
 import { MenuComponent } from '../menu/menu.component';
 
 @Component({
   selector: 'lfx-header',
   standalone: true,
-  imports: [
-    CommonModule,
-    ReactiveFormsModule,
-    MenubarComponent,
-    RippleModule,
-    RouterModule,
-    AvatarComponent,
-    MenuComponent,
-    AutocompleteComponent,
-    PersonaSelectorComponent,
-  ],
+  imports: [CommonModule, ReactiveFormsModule, MenubarComponent, RippleModule, RouterModule, AvatarComponent, MenuComponent],
   templateUrl: './header.component.html',
   styleUrl: './header.component.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
