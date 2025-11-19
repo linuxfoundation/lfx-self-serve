@@ -51,7 +51,12 @@ export class MeetingService {
   /**
    * Fetches all meetings based on query parameters
    */
-  public async getMeetings(req: Request, query: Record<string, any> = {}, meetingType: string = 'meeting', access: boolean = true): Promise<Meeting[]> {
+  public async getMeetings(
+    req: Request,
+    query: Record<string, any> = {},
+    meetingType: 'meeting' | 'past_meeting' = 'meeting',
+    access: boolean = true
+  ): Promise<Meeting[]> {
     const params = {
       ...query,
       type: meetingType,
@@ -71,7 +76,7 @@ export class MeetingService {
 
     if (access) {
       // Add writer access field to all meetings
-      return await this.accessCheckService.addAccessToResources(req, meetings, 'meeting', 'organizer');
+      return await this.accessCheckService.addAccessToResources(req, meetings, meetingType, 'organizer');
     }
 
     return meetings;

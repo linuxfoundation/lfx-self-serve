@@ -8,6 +8,7 @@ import { Component, computed, inject, signal, Signal, WritableSignal } from '@an
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
+import { HeaderComponent } from '@app/shared/components/header/header.component';
 import { LinkifyPipe } from '@app/shared/pipes/linkify.pipe';
 import { RecurrenceSummaryPipe } from '@app/shared/pipes/recurrence-summary.pipe';
 import { ButtonComponent } from '@components/button/button.component';
@@ -48,6 +49,7 @@ import { catchError, combineLatest, debounceTime, filter, map, Observable, of, s
     LinkifyPipe,
     FileTypeIconPipe,
     ExpandableTextComponent,
+    HeaderComponent,
   ],
   providers: [],
   templateUrl: './meeting-join.component.html',

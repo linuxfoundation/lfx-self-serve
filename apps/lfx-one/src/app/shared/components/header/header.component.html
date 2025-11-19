@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="sticky top-0 z-50 bg-white border-b border-gray-100">
-  <div class="mx-auto">
+  <div class="mx-auto max-w-6xl">
     <lfx-menubar styleClass="border-none">
       <ng-template #start>
         <div class="flex items-center lg:gap-32">
@@ -19,31 +19,11 @@
           <button type="button" class="flex items-center space-x-2 hover:opacity-80 transition-opacity p-2" routerLink="/" aria-label="Go to home page">
             <img src="/images/lfx-one-logo.svg" alt="LFX Logo" class="w-auto h-5" />
           </button>
-
-          @if (userService.authenticated()) {
-            <div class="items-center gap-3 hidden lg:flex">
-              <lfx-avatar
-                [label]="initials()"
-                [size]="'large'"
-                [shape]="'circle'"
-                styleClass="bg-blue-50 border border-gray-200"
-                [ariaLabel]="fullName() + ' avatar'">
-              </lfx-avatar>
-
-              <div class="flex flex-col gap-1">
-                <span class="text-sm font-semibold">{{ userProfile()?.user?.first_name }} {{ userProfile()?.user?.last_name }}</span>
-                <span class="text-xs text-gray-500"
-                  >{{ userProfile()?.profile?.job_title }} at <span class="text-primary">{{ userProfile()?.profile?.organization }}</span></span
-                >
-              </div>
-            </div>
-          }
         </div>
       </ng-template>
 
       <ng-template #end>
         <div class="flex items-center gap-4">
-          <lfx-persona-selector></lfx-persona-selector>
           <div class="flex items-center gap-6">
             <!-- Mobile Search Toggle -->
             <button
@@ -58,24 +38,6 @@
             <!-- Search Input -->
             <div>
               <div class="relative flex items-center gap-4">
-                <div class="items-center gap-2 hidden md:flex">
-                  <lfx-autocomplete
-                    [form]="searchForm"
-                    control="search"
-                    [suggestions]="suggestions()"
-                    optionLabel="name"
-                    placeholder="Search projects..."
-                    styleClass="w-80"
-                    inputStyleClass="pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:bg-white text-sm placeholder-gray-400 transition-all w-full"
-                    panelStyleClass="mt-2 max-w-[280px]"
-                    dataTestId="header-search-autocomplete"
-                    (completeMethod)="onSearchComplete($event)"
-                    (onSelect)="onProjectSelect($event)"
-                    (onClear)="onSearchClear()"
-                    [autoHighlight]="true">
-                  </lfx-autocomplete>
-                  <i class="fa-light fa-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm pointer-events-none"></i>
-                </div>
                 @if (userService.authenticated()) {
                   <div class="flex items-center gap-4">
                     <lfx-avatar
@@ -97,43 +59,4 @@
       </ng-template>
     </lfx-menubar>
   </div>
-
-  <!-- Mobile Search Drawer -->
-  @if (showMobileSearch()) {
-    <div class="md:hidden fixed inset-0 z-50 bg-black bg-opacity-50" data-testid="mobile-search-overlay" (click)="closeMobileSearch()">
-      <div class="absolute top-0 left-0 right-0 bg-white shadow-lg" (click)="$event.stopPropagation()">
-        <div class="container mx-auto p-4">
-          <div class="flex items-center gap-4">
-            <button
-              type="button"
-              class="hover:opacity-80 transition-opacity p-2"
-              (click)="closeMobileSearch()"
-              aria-label="Close search"
-              data-testid="mobile-search-close">
-              <i class="fa-light fa-times text-gray-600"></i>
-            </button>
-            <div class="flex-1 relative">
-              <lfx-autocomplete
-                #mobileSearchInput
-                [form]="searchForm"
-                control="search"
-                [suggestions]="suggestions()"
-                optionLabel="name"
-                placeholder="Search projects..."
-                styleClass="w-full"
-                inputStyleClass="pl-10 pr-4 py-2 bg-gray-50 border border-gray-200 rounded-full focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-blue-500 focus:bg-white text-sm placeholder-gray-400 transition-all w-full"
-                panelStyleClass="mt-2"
-                dataTestId="mobile-search-autocomplete"
-                (completeMethod)="onSearchComplete($event)"
-                (onSelect)="onProjectSelect($event)"
-                (onClear)="onSearchClear()"
-                [autoHighlight]="true">
-              </lfx-autocomplete>
-              <i class="fa-light fa-magnifying-glass absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 text-sm pointer-events-none"></i>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  }
 </div>

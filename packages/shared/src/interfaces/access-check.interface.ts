@@ -32,5 +32,5 @@ export interface AccessCheckApiResponse {
 /**
  * Resource types
  */
-export type AccessCheckResourceType = 'project' | 'meeting' | 'committee';
+export type AccessCheckResourceType = 'project' | 'meeting' | 'committee' | 'past_meeting';
 export type AccessCheckAccessType = 'writer' | 'viewer' | 'organizer';
