@@ -35,7 +35,7 @@ jobs:
         uses: aws-actions/configure-aws-credentials@v4
         with:
           audience: sts.amazonaws.com
-          role-to-assume: arn:aws:iam::788942260905:role/github-actions-deploy
+          role-to-assume: arn:aws:iam::372256339901:role/github-actions-deploy
           aws-region: us-west-2
 
       - name: Get LaunchDarkly client ID from AWS Secrets Manager
