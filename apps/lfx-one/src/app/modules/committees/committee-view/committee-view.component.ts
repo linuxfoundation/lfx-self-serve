@@ -10,7 +10,7 @@ import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { Committee, CommitteeMember } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
-import { ProjectService } from '@services/project.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -39,7 +39,7 @@ export class CommitteeViewComponent {
   // Injected services
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
-  private readonly projectService = inject(ProjectService);
+  private readonly projectContextService = inject(ProjectContextService);
   private readonly committeeService = inject(CommitteeService);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
@@ -47,7 +47,6 @@ export class CommitteeViewComponent {
 
   // Class variables with types
   private dialogRef: DynamicDialogRef | undefined;
-  public project: typeof this.projectService.project;
   public committee: Signal<Committee | null>;
   public members: WritableSignal<CommitteeMember[]>;
   public membersLoading: WritableSignal<boolean>;
@@ -61,7 +60,6 @@ export class CommitteeViewComponent {
 
   public constructor() {
     // Initialize all class variables
-    this.project = this.projectService.project;
     this.error = signal<boolean>(false);
     this.isDeleting = signal<boolean>(false);
     this.refresh = new BehaviorSubject<void>(undefined);

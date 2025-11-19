@@ -96,7 +96,7 @@ export class OrganizationService {
         certifiedEmployees: data.CERTIFIED_EMPLOYEES || 0,
       },
       accountId: data.ACCOUNT_ID,
-      projectId: data.PROJECT_ID,
+      uid: data.PROJECT_ID,
     };
   }
 

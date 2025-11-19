@@ -146,7 +146,7 @@
             </div>
 
             <!-- Right Column: Join Button (immediate meetings) or RSVP (future meetings) -->
-            @if (canJoinMeeting()) {
+            @if (canJoinMeeting() && authenticated()) {
               <!-- Join Button - Immediate Meeting -->
               <div class="w-full md:w-[296px]">
                 <lfx-button
@@ -158,6 +158,7 @@
                   [href]="fetchedJoinUrl()"
                   [disabled]="!fetchedJoinUrl() || isLoadingJoinUrl()"
                   target="_blank"
+                  [styleClass]="!fetchedJoinUrl() || isLoadingJoinUrl() ? 'cursor-not-allowed w-full' : 'w-full'"
                   rel="noopener noreferrer"
                   [attr.data-testid]="'join-meeting-button-immediate'">
                 </lfx-button>

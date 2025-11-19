@@ -62,15 +62,15 @@ export class ProjectContextService {
   /**
    * Get the current project ID (sub-project if set, otherwise foundation)
    */
-  public getProjectId(): string {
-    return this.selectedProject()?.projectId || '';
+  public getProjectUid(): string {
+    return this.selectedProject()?.uid || '';
   }
 
   /**
    * Get the current foundation ID
    */
   public getFoundationId(): string {
-    return this.selectedFoundation()?.projectId || '';
+    return this.selectedFoundation()?.uid || '';
   }
 
   private persistToStorage(key: string, project: ProjectContext): void {

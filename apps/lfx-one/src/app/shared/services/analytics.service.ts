@@ -151,7 +151,7 @@ export class AnalyticsService {
             certifiedEmployees: 0,
           },
           accountId: '',
-          projectId: '',
+          uid: '',
         });
       })
     );

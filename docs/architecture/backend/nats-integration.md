@@ -103,12 +103,12 @@ public async getProjectIdBySlug(slug: string): Promise<ProjectSlugToIdResponse> 
     { timeout: NATS_CONFIG.REQUEST_TIMEOUT } // 5000ms
   );
 
-  const projectId = this.codec.decode(response.data);
+  const uid = this.codec.decode(response.data);
 
   return {
-    projectId: projectId.trim(),
+    uid: uid.trim(),
     slug,
-    exists: projectId.trim() !== ''
+    exists: uid.trim() !== ''
   };
 }
 ```
@@ -127,7 +127,7 @@ export class ProjectService {
 
   public async getProjectBySlug(req: Request, slug: string): Promise<Project> {
     // Use NATS to resolve project slug to ID
-    const { projectId, exists } = await this.natsService.getProjectIdBySlug(slug);
+    const { uid, exists } = await this.natsService.getProjectIdBySlug(slug);
 
     if (!exists) {
       throw createApiError({
@@ -138,7 +138,7 @@ export class ProjectService {
     }
 
     // Use resolved ID to fetch project details
-    return this.getProjectById(req, projectId);
+    return this.getProjectById(req, uid);
   }
 }
 ```
@@ -193,7 +193,7 @@ try {
   // Handle timeout and no responder errors gracefully
   if (error.message.includes('timeout') || error.message.includes('503')) {
     serverLogger.info({ slug }, 'Project slug not found via NATS');
-    return { exists: false, projectId: '', slug };
+    return { exists: false, uid: '', slug };
   }
 
   // Re-throw connection and other critical errors
@@ -233,7 +233,7 @@ public isConnected(): boolean {
 
 ```typescript
 // Success logging
-serverLogger.info({ slug, project_id: projectId }, 'Successfully resolved project slug to ID');
+serverLogger.info({ slug, project_id: uid }, 'Successfully resolved project slug to ID');
 
 // Error logging
 serverLogger.error({ error, slug }, 'Failed to resolve project slug via NATS');

@@ -18,6 +18,11 @@ export const COMMITTEE_ROUTES: Routes = [
     canActivate: [authGuard],
   },
   {
+    path: ':id',
+    loadComponent: () => import('./committee-view/committee-view.component').then((m) => m.CommitteeViewComponent),
+    canActivate: [authGuard],
+  },
+  {
     path: ':id/edit',
     loadComponent: () => import('./committee-manage/committee-manage.component').then((m) => m.CommitteeManageComponent),
     canActivate: [authGuard],

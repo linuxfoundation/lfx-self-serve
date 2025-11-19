@@ -56,8 +56,8 @@ export class MeetingService {
     );
   }
 
-  public getMeetingsByProject(projectId: string, limit?: number, orderBy?: string): Observable<Meeting[]> {
-    let params = new HttpParams().set('tags', `project_uid:${projectId}`);
+  public getMeetingsByProject(uid: string, limit?: number, orderBy?: string): Observable<Meeting[]> {
+    let params = new HttpParams().set('tags', `project_uid:${uid}`);
 
     if (limit) {
       params = params.set('limit', limit.toString());
@@ -70,8 +70,8 @@ export class MeetingService {
     return this.getMeetings(params);
   }
 
-  public getMeetingsCountByProject(projectId: string): Observable<number> {
-    const params = new HttpParams().set('tags', `project_uid:${projectId}`);
+  public getMeetingsCountByProject(uid: string): Observable<number> {
+    const params = new HttpParams().set('tags', `project_uid:${uid}`);
     return this.http
       .get<QueryServiceCountResponse>('/api/meetings/count', { params })
       .pipe(
@@ -86,12 +86,12 @@ export class MeetingService {
       );
   }
 
-  public getRecentMeetingsByProject(projectId: string, limit: number = 3): Observable<Meeting[]> {
-    return this.getMeetingsByProject(projectId, limit, 'updated_at.desc');
+  public getRecentMeetingsByProject(uid: string, limit: number = 3): Observable<Meeting[]> {
+    return this.getMeetingsByProject(uid, limit, 'updated_at.desc');
   }
 
-  public getUpcomingMeetingsByProject(projectId: string, limit: number = 3): Observable<Meeting[]> {
-    let params = new HttpParams().set('tags', `project_uid:${projectId}`);
+  public getUpcomingMeetingsByProject(uid: string, limit: number = 3): Observable<Meeting[]> {
+    let params = new HttpParams().set('tags', `project_uid:${uid}`);
 
     // TODO: Add filter for upcoming meetings
     if (limit) {
@@ -101,8 +101,8 @@ export class MeetingService {
     return this.getMeetings(params);
   }
 
-  public getPastMeetingsByProject(projectId: string, limit: number = 3): Observable<PastMeeting[]> {
-    let params = new HttpParams().set('tags', `project_uid:${projectId}`);
+  public getPastMeetingsByProject(uid: string, limit: number = 3): Observable<PastMeeting[]> {
+    let params = new HttpParams().set('tags', `project_uid:${uid}`);
 
     if (limit) {
       params = params.set('limit', limit.toString());

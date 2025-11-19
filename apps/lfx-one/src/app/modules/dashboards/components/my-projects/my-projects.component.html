@@ -10,7 +10,7 @@
     @if (loading()) {
       <div class="absolute inset-0 bg-white/60 flex items-center justify-center z-10" data-testid="dashboard-my-projects-loading">
         <div class="flex flex-col items-center gap-2">
-          <i class="fa-solid fa-spinner fa-spin text-[#009aff] text-2xl"></i>
+          <i class="fa-solid fa-spinner fa-spin text-brand-500 text-2xl"></i>
           <span class="text-sm text-gray-600">Loading...</span>
         </div>
       </div>
@@ -61,7 +61,7 @@
                   }
                 </div>
                 <div class="min-w-0">
-                  <div class="font-medium text-sm text-[#009aff] truncate">{{ project.name }}</div>
+                  <div class="font-medium text-sm text-brand-500 truncate">{{ project.name }}</div>
                   <div class="text-xs text-muted-foreground truncate">{{ project.role }}</div>
                 </div>
               </div>

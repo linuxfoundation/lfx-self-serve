@@ -14,8 +14,7 @@ import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { Committee, ProjectContext } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
-import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { MessageService } from 'primeng/api';
 import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap } from 'rxjs';
 
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
@@ -23,7 +22,7 @@ import { CommitteeTableComponent } from '../components/committee-table/committee
 @Component({
   selector: 'lfx-committee-dashboard',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, InputTextComponent, SelectComponent, ButtonComponent, ConfirmDialogModule, CommitteeTableComponent],
+  imports: [CommonModule, ReactiveFormsModule, InputTextComponent, SelectComponent, ButtonComponent, CommitteeTableComponent],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
 })
@@ -33,7 +32,6 @@ export class CommitteeDashboardComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly personaService = inject(PersonaService);
   private readonly router = inject(Router);
-  private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
 
   // Use the configurable label constants
@@ -42,8 +40,6 @@ export class CommitteeDashboardComponent {
 
   // State signals
   public project: Signal<ProjectContext | null>;
-  public selectedCommittee: WritableSignal<Committee | null>;
-  public isDeleting: WritableSignal<boolean>;
   public searchForm: FormGroup;
   public categoryFilter: WritableSignal<string | null>;
   public votingStatusFilter: WritableSignal<string | null>;
@@ -76,8 +72,6 @@ export class CommitteeDashboardComponent {
     this.canCreateGroup = computed(() => this.isMaintainer() && this.isNonFoundationProjectSelected());
 
     // Initialize state
-    this.selectedCommittee = signal<Committee | null>(null);
-    this.isDeleting = signal<boolean>(false);
     this.committeesLoading = signal<boolean>(true);
     this.refresh = new BehaviorSubject<void>(undefined);
 
@@ -115,8 +109,8 @@ export class CommitteeDashboardComponent {
   }
 
   public openCreateDialog(): void {
-    const projectId = this.project()?.projectId;
-    if (!projectId) {
+    const uid = this.project()?.uid;
+    if (!uid) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Warning',
@@ -128,87 +122,7 @@ export class CommitteeDashboardComponent {
     this.router.navigate(['/groups/create']);
   }
 
-  public onEditCommittee(committee: Committee): void {
-    this.selectedCommittee.set(committee);
-    this.editCommittee();
-  }
-
-  public onViewCommittee(committee: Committee): void {
-    this.selectedCommittee.set(committee);
-    this.viewCommittee();
-  }
-
-  public onDeleteCommittee(committee: Committee): void {
-    this.selectedCommittee.set(committee);
-    this.deleteCommittee();
-  }
-
-  public onAddMember(committee: Committee): void {
-    this.selectedCommittee.set(committee);
-    // TODO: Implement add member functionality
-    this.messageService.add({
-      severity: 'info',
-      summary: 'Info',
-      detail: 'Add member functionality coming soon',
-    });
-  }
-
-  private viewCommittee(): void {
-    const committee = this.selectedCommittee();
-    const project = this.project();
-    if (committee && project) {
-      this.router.navigate(['/project', project.slug, 'committees', committee.uid]);
-    }
-  }
-
-  private editCommittee(): void {
-    const committee = this.selectedCommittee();
-    if (committee) {
-      this.router.navigate(['/groups', committee.uid, 'edit']);
-    }
-  }
-
-  private deleteCommittee(): void {
-    const committee = this.selectedCommittee();
-    if (!committee) return;
-
-    this.confirmationService.confirm({
-      message: `Are you sure you want to delete the ${this.committeeLabel.toLowerCase()} "${committee.name}"? This action cannot be undone.`,
-      header: `Delete ${this.committeeLabel}`,
-      acceptLabel: 'Delete',
-      rejectLabel: 'Cancel',
-      acceptButtonStyleClass: 'p-button-danger p-button-sm',
-      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
-      accept: () => this.performDelete(committee),
-    });
-  }
-
-  private performDelete(committee: Committee): void {
-    this.isDeleting.set(true);
-
-    this.committeeService.deleteCommittee(committee.uid).subscribe({
-      next: () => {
-        this.isDeleting.set(false);
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Success',
-          detail: `${this.committeeLabel} deleted successfully`,
-        });
-        this.refreshCommittees();
-      },
-      error: (error) => {
-        this.isDeleting.set(false);
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Error',
-          detail: `Failed to delete ${this.committeeLabel.toLowerCase()}`,
-        });
-        console.error('Failed to delete committee:', error);
-      },
-    });
-  }
-
-  private refreshCommittees(): void {
+  public refreshCommittees(): void {
     this.committeesLoading.set(true);
     this.refresh.next();
   }
@@ -232,13 +146,13 @@ export class CommitteeDashboardComponent {
     return toSignal(
       combineLatest([project$, this.refresh]).pipe(
         switchMap(([project]) => {
-          if (!project?.projectId) {
+          if (!project?.uid) {
             this.committeesLoading.set(false);
             return of([]);
           }
 
           this.committeesLoading.set(true);
-          return this.committeeService.getCommitteesByProject(project.projectId).pipe(
+          return this.committeeService.getCommitteesByProject(project.uid).pipe(
             catchError((error) => {
               console.error('Failed to load committees:', error);
               return of([]);
@@ -272,7 +186,7 @@ export class CommitteeDashboardComponent {
         value: cat,
       }));
 
-      return [{ label: `All ${this.committeeLabelPlural} Types`, value: null }, ...categoryOptions];
+      return [{ label: `All Types`, value: null }, ...categoryOptions];
     });
   }
 

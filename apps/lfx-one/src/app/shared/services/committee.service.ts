@@ -4,7 +4,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { Committee, CommitteeMember, CreateCommitteeMemberRequest, QueryServiceCountResponse } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, map, take, tap, throwError } from 'rxjs';
+import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -23,14 +23,14 @@ export class CommitteeService {
     );
   }
 
-  public getCommitteesByProject(projectId: string): Observable<Committee[]> {
-    const params = new HttpParams().set('tags', `project_uid:${projectId}`);
+  public getCommitteesByProject(uid: string): Observable<Committee[]> {
+    const params = new HttpParams().set('tags', `project_uid:${uid}`);
 
     return this.getCommittees(params);
   }
 
-  public getCommitteesCountByProject(projectId: string): Observable<number> {
-    const params = new HttpParams().set('tags', `project_uid:${projectId}`);
+  public getCommitteesCountByProject(uid: string): Observable<number> {
+    const params = new HttpParams().set('tags', `project_uid:${uid}`);
     return this.http
       .get<QueryServiceCountResponse>('/api/committees/count', { params })
       .pipe(
@@ -42,8 +42,8 @@ export class CommitteeService {
       .pipe(map((response) => response.count));
   }
 
-  public getRecentCommitteesByProject(projectId: string): Observable<Committee[]> {
-    return this.getCommitteesByProject(projectId);
+  public getRecentCommitteesByProject(uid: string): Observable<Committee[]> {
+    return this.getCommitteesByProject(uid);
   }
 
   public getCommittee(id: string): Observable<Committee> {

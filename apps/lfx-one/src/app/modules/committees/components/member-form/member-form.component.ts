@@ -118,11 +118,20 @@ export class MemberFormComponent {
         error: (error) => {
           this.submitting.set(false);
           console.error('Failed to save member:', error);
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Error',
-            detail: `Failed to ${this.isEditing() ? 'update' : 'create'} member`,
-          });
+
+          if (error.status === 409) {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: 'Member already exists',
+            });
+          } else {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: `Failed to ${this.isEditing() ? 'update' : 'create'} member`,
+            });
+          }
         },
       });
     } else {

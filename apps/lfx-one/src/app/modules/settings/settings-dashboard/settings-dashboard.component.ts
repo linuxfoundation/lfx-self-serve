@@ -60,12 +60,12 @@ export class SettingsDashboardComponent {
         tap(() => this.loading.set(true)),
         switchMap(() => {
           const project = this.project();
-          if (!project?.projectId) {
+          if (!project?.uid) {
             this.loading.set(false);
             return of([]);
           }
 
-          return this.permissionsService.getProjectPermissions(project.projectId).pipe(
+          return this.permissionsService.getProjectPermissions(project.uid).pipe(
             catchError((error) => {
               console.error('Failed to load permissions:', error);
               this.loading.set(false);

@@ -167,8 +167,10 @@ export class MeetingCardComponent implements OnInit {
 
   public ngOnInit(): void {
     this.attachments = this.initAttachments();
-    this.initRecording();
-    this.initSummary();
+    if (this.pastMeeting()) {
+      this.initRecording();
+      this.initSummary();
+    }
   }
 
   public onRegistrantsToggle(): void {

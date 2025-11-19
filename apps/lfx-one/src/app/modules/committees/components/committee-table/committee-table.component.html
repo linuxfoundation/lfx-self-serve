@@ -36,9 +36,9 @@
             </td>
             <td class="px-3 py-3 text-xs min-w-[300px]">{{ committee.description || '-' }}</td>
             <td class="px-3 py-3 w-[140px]">
-              <button class="text-xs text-[#009aff] hover:text-[#0080dd] hover:underline cursor-pointer" (click)="onViewCommittee(committee)">
+              <a [routerLink]="['/groups', committee.uid]" class="text-xs text-brand-500 hover:text-brand-600 hover:underline cursor-pointer">
                 {{ committee.total_members || 0 }}
-              </button>
+              </a>
             </td>
             <td class="px-3 py-3 text-xs text-[#0f172b] w-[80px]">
               @if (committee.enable_voting) {
@@ -60,17 +60,19 @@
                     [pTooltip]="'Add Member'"
                     tooltipPosition="top">
                   </lfx-button>
-                  <lfx-button
-                    icon="fa-light fa-pencil"
-                    severity="secondary"
-                    size="small"
-                    [text]="true"
-                    styleClass="h-8 w-8 text-slate-500 hover:text-slate-700 hover:bg-slate-100"
-                    (onClick)="onEditCommittee(committee)"
-                    [attr.data-testid]="'committee-edit-' + committee.uid"
-                    [pTooltip]="'Edit ' + committeeLabel"
-                    tooltipPosition="top">
-                  </lfx-button>
+                  <a [routerLink]="['/groups', committee.uid, 'edit']">
+                    <lfx-button
+                      icon="fa-light fa-pencil"
+                      severity="secondary"
+                      size="small"
+                      [outlined]="false"
+                      [text]="true"
+                      styleClass="h-8 w-8 text-slate-500 hover:text-slate-700 hover:bg-slate-100"
+                      [attr.data-testid]="'committee-edit-' + committee.uid"
+                      [pTooltip]="'Edit ' + committeeLabel()"
+                      tooltipPosition="top">
+                    </lfx-button>
+                  </a>
                   <lfx-button
                     icon="fa-light fa-trash-can"
                     severity="secondary"
@@ -80,7 +82,7 @@
                     (onClick)="onDeleteCommittee(committee)"
                     [disabled]="isDeleting()"
                     [attr.data-testid]="'committee-delete-' + committee.uid"
-                    [pTooltip]="'Delete ' + committeeLabel"
+                    [pTooltip]="'Delete ' + committeeLabel()"
                     tooltipPosition="top">
                   </lfx-button>
                 </div>
@@ -92,3 +94,6 @@
     </table>
   </div>
 </lfx-card>
+
+<!-- Confirmation Dialog -->
+<p-confirmDialog></p-confirmDialog>

@@ -53,8 +53,8 @@ export class UpcomingCommitteeMeetingComponent implements OnInit {
     );
   }
 
-  private getNextUpcomingCommitteeMeeting(projectId: string, committeeId: string | null = null) {
-    return this.meetingService.getMeetingsByProject(projectId).pipe(
+  private getNextUpcomingCommitteeMeeting(uid: string, committeeId: string | null = null) {
+    return this.meetingService.getMeetingsByProject(uid).pipe(
       filter((meetings: Meeting[]) => {
         // Return only meetings that have a start time in the future and has a committee value regardless of the committee id
         return (

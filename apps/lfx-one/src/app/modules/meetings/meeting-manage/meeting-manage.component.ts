@@ -307,7 +307,7 @@ export class MeetingManageComponent {
     }
 
     return {
-      project_uid: formValue.selectedProjectUid || this.projectContextService.getProjectId(),
+      project_uid: formValue.selectedProjectUid || this.projectContextService.getProjectUid(),
       title: formValue.title,
       description: formValue.description || '',
       start_time: startDateTime,

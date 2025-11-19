@@ -83,7 +83,7 @@ export class UserFormComponent {
     // For editing, update role only
     if (this.isEditing()) {
       this.permissionsService
-        .updateUserRole(project.projectId, this.user()!.username, {
+        .updateUserRole(project.uid, this.user()!.username, {
           role: formValue.role,
         } as UpdateUserRoleRequest)
         .pipe(take(1))
@@ -113,7 +113,7 @@ export class UserFormComponent {
     if (!this.showManualFields()) {
       // Try to add user with just email (backend will resolve to username)
       this.permissionsService
-        .addUserToProject(project.projectId, {
+        .addUserToProject(project.uid, {
           username: formValue.email, // Pass email as username, backend will resolve
           role: formValue.role,
         } as AddUserToProjectRequest)
@@ -223,7 +223,7 @@ export class UserFormComponent {
     // Since the user doesn't exist in the system, we need to send the full user data
     // The backend should handle this case by accepting UserInfo objects
     this.permissionsService
-      .addUserToProject(project.projectId, userData as any)
+      .addUserToProject(project.uid, userData as any)
       .pipe(take(1))
       .subscribe({
         next: () => {

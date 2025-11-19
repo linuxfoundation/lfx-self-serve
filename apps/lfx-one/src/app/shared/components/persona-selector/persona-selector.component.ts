@@ -36,7 +36,7 @@ export class PersonaSelectorComponent {
         if (value === 'board-member') {
           // TODO: DEMO - Remove when proper permissions are implemented
           this.projectContextService.setFoundation({
-            projectId: 'tlf',
+            uid: 'tlf',
             name: 'The Linux Foundation',
             slug: 'tlf',
           });

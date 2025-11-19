@@ -410,7 +410,7 @@ Pino-http automatically generates request IDs for correlation:
 ```typescript
 // Use req.log for request-specific operations
 app.use('/api/projects', (req: Request, res: Response, next: NextFunction) => {
-  req.log.info({ projectId: req.params.id }, 'Processing project request');
+  req.log.info({ uid: req.params.id }, 'Processing project request');
   // ... rest of handler
 });
 ```

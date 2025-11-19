@@ -310,9 +310,9 @@ export interface BoardMemberDashboardResponse {
   accountId: string;
 
   /**
-   * Project ID
+   * Project unique identifier
    */
-  projectId: string;
+  uid: string;
 }
 
 /**
@@ -410,7 +410,7 @@ export interface ProjectsListResponse {
    * Array of projects
    */
   projects: {
-    projectId: string;
+    uid: string;
     name: string;
     slug: string;
   }[];

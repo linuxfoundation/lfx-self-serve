@@ -141,12 +141,12 @@ export class MeetingTypeSelectionComponent {
       return toSignal(of([]), { initialValue: [] });
     }
 
-    const params = new HttpParams().set('tags', `parent_uid:${currentProject.projectId}`);
+    const params = new HttpParams().set('tags', `parent_uid:${currentProject.uid}`);
     return toSignal(
       this.projectService.getProjects(params).pipe(
         map((projects: Project[]) => {
           // Filter out the current project from the list
-          return projects.filter((project) => project.uid !== currentProject.projectId && project.writer);
+          return projects.filter((project) => project.uid !== currentProject.uid && project.writer);
         })
       ),
       { initialValue: [] }

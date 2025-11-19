@@ -60,7 +60,7 @@ export class MeetingCommitteeModalComponent {
 
   // Load committees using toSignal
   public committees: Signal<Committee[]> = toSignal(
-    this.committeeService.getCommitteesByProject(this.projectContextService.getProjectId() || '').pipe(
+    this.committeeService.getCommitteesByProject(this.projectContextService.getProjectUid() || '').pipe(
       tap(() => this.committeesLoading.set(false)),
       catchError((error) => {
         console.error('Failed to load committees:', error);

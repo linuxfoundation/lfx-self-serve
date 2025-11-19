@@ -66,16 +66,16 @@ export class ProjectService {
   /**
    * Fetches a single project by ID
    */
-  public async getProjectById(req: Request, projectId: string, access: boolean = true): Promise<Project> {
+  public async getProjectById(req: Request, uid: string, access: boolean = true): Promise<Project> {
     const params = {
       type: 'project',
-      tags: projectId,
+      tags: uid,
     };
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
     if (!resources || resources.length === 0) {
-      throw new ResourceNotFoundError('Project', projectId, {
+      throw new ResourceNotFoundError('Project', uid, {
         operation: 'get_project_by_id',
         service: 'project_service',
         path: '/query/resources',
@@ -85,7 +85,7 @@ export class ProjectService {
     if (resources.length > 1) {
       req.log.warn(
         {
-          project_id: projectId,
+          project_id: uid,
           result_count: resources.length,
         },
         'Multiple projects found for single ID lookup'
@@ -132,7 +132,7 @@ export class ProjectService {
 
     const natsResult = await this.getProjectIdBySlug(projectSlug);
 
-    if (!natsResult.exists || !natsResult.projectId) {
+    if (!natsResult.exists || !natsResult.uid) {
       throw new ResourceNotFoundError('Project', projectSlug, {
         operation: 'get_project_by_slug_via_nats',
         service: 'project_service',
@@ -143,7 +143,7 @@ export class ProjectService {
     req.log.info(
       {
         slug: projectSlug,
-        project_id: natsResult.projectId,
+        project_id: natsResult.uid,
         operation: 'get_project_by_slug_via_nats',
         step: 'nats_success',
       },
@@ -151,11 +151,11 @@ export class ProjectService {
     );
 
     // Now fetch the project using the resolved ID
-    return this.getProjectById(req, natsResult.projectId);
+    return this.getProjectById(req, natsResult.uid);
   }
 
-  public async getProjectSettings(req: Request, projectId: string): Promise<ProjectSettings> {
-    return await this.microserviceProxy.proxyRequest<ProjectSettings>(req, 'LFX_V2_SERVICE', `/projects/${projectId}/settings`, 'GET');
+  public async getProjectSettings(req: Request, uid: string): Promise<ProjectSettings> {
+    return await this.microserviceProxy.proxyRequest<ProjectSettings>(req, 'LFX_V2_SERVICE', `/projects/${uid}/settings`, 'GET');
   }
 
   /**
@@ -163,7 +163,7 @@ export class ProjectService {
    */
   public async updateProjectPermissions(
     req: Request,
-    projectId: string,
+    uid: string,
     operation: 'add' | 'update' | 'remove',
     usernameOrEmail: string,
     role?: 'view' | 'manage',
@@ -181,7 +181,7 @@ export class ProjectService {
     const { data: settings, etag } = await this.etagService.fetchWithETag<ProjectSettings>(
       req,
       'LFX_V2_SERVICE',
-      `/projects/${projectId}/settings`,
+      `/projects/${uid}/settings`,
       `${operation}_user_project_permissions`
     );
 
@@ -271,7 +271,7 @@ export class ProjectService {
     const result = await this.etagService.updateWithETag<ProjectSettings>(
       req,
       'LFX_V2_SERVICE',
-      `/projects/${projectId}/settings`,
+      `/projects/${uid}/settings`,
       etag,
       updatedSettings,
       `${operation}_user_project_permissions`
@@ -280,7 +280,7 @@ export class ProjectService {
     req.log.info(
       {
         operation: `${operation}_user_project_permissions`,
-        project_id: projectId,
+        project_id: uid,
         username: backendIdentifier,
         role: role || 'N/A',
       },
@@ -570,7 +570,7 @@ export class ProjectService {
 
     // Transform Snowflake response to camelCase API response
     const projects = result.rows.map((row) => ({
-      projectId: row.PROJECT_ID,
+      uid: row.PROJECT_ID,
       name: row.NAME,
       slug: row.SLUG,
     }));
@@ -782,22 +782,22 @@ export class ProjectService {
     try {
       const response = await this.natsService.request(NatsSubjects.PROJECT_SLUG_TO_UID, codec.encode(slug), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
 
-      const projectId = codec.decode(response.data);
+      const uid = codec.decode(response.data);
 
       // Check if we got a valid project ID
-      if (!projectId || projectId.trim() === '') {
+      if (!uid || uid.trim() === '') {
         serverLogger.info({ slug }, 'Project slug not found via NATS');
         return {
-          projectId: '',
+          uid: '',
           slug,
           exists: false,
         };
       }
 
-      serverLogger.info({ slug, project_id: projectId }, 'Successfully resolved project slug to ID');
+      serverLogger.info({ slug, project_id: uid }, 'Successfully resolved project slug to ID');
 
       return {
-        projectId: projectId.trim(),
+        uid: uid.trim(),
         slug,
         exists: true,
       };
@@ -807,7 +807,7 @@ export class ProjectService {
       // If it's a timeout or no responder error, treat as not found
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         return {
-          projectId: '',
+          uid: '',
           slug,
           exists: false,
         };

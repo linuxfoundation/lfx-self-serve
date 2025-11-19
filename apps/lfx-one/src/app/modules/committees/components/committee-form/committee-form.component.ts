@@ -56,10 +56,10 @@ export class CommitteeFormComponent {
 
   private initializeParentCommitteeOptions(): Signal<{ label: string; value: string | null }[]> {
     // Get project ID from context (project or foundation)
-    const projectId = this.projectContextService.getProjectId() || this.projectContextService.getFoundationId();
+    const uid = this.projectContextService.getProjectUid() || this.projectContextService.getFoundationId();
 
     const committees = toSignal(
-      this.committeeService.getCommitteesByProject(projectId).pipe(
+      this.committeeService.getCommitteesByProject(uid).pipe(
         map((committees: Committee[]) => {
           // Filter to only top-level committees (no parent_uid)
           const topLevelCommittees = committees.filter((committee) => !committee.parent_uid);

@@ -171,7 +171,7 @@ export class OrganizationInvolvementComponent {
                 certifiedEmployees: 0,
               },
               accountId: '',
-              projectId: '',
+              uid: '',
             });
           }
 
@@ -191,7 +191,7 @@ export class OrganizationInvolvementComponent {
             certifiedEmployees: 0,
           },
           accountId: '',
-          projectId: '',
+          uid: '',
         },
       }
     );

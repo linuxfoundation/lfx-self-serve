@@ -155,7 +155,7 @@ export interface ProjectSettings {
  * Project slug to ID response payload
  */
 export interface ProjectSlugToIdResponse {
-  projectId: string;
+  uid: string;
   slug: string;
   exists: boolean;
 }
@@ -166,7 +166,7 @@ export interface ProjectSlugToIdResponse {
  */
 export interface ProjectContext {
   /** Unique project identifier */
-  projectId: string;
+  uid: string;
   /** Project display name */
   name: string;
   /** URL-friendly project identifier */

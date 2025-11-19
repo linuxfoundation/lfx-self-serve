@@ -5,8 +5,8 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, input } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
-import { PersonaService } from '@app/shared/services/persona.service';
 import { FeatureFlagService } from '@app/shared/services/feature-flag.service';
+import { PersonaService } from '@app/shared/services/persona.service';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { PersonaSelectorComponent } from '@components/persona-selector/persona-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
@@ -44,7 +44,7 @@ export class SidebarComponent {
       tap((loadedProjects: Project[]) => {
         const currentFoundation = this.projectContextService.selectedFoundation();
         const currentProject = this.projectContextService.selectedProject();
-        const foundationExists = loadedProjects.some((p: Project) => p.uid === currentFoundation?.projectId);
+        const foundationExists = loadedProjects.some((p: Project) => p.uid === currentFoundation?.uid);
 
         // Only set default if no foundation is selected, no project is selected, and projects exist
         if (loadedProjects.length > 0 && (!foundationExists || !currentFoundation) && !currentProject) {
@@ -52,7 +52,7 @@ export class SidebarComponent {
           const defaultProject = loadedProjects.find((p: Project) => p.slug === 'tlf') || loadedProjects[0];
 
           const projectContext: ProjectContext = {
-            projectId: defaultProject.uid,
+            uid: defaultProject.uid,
             name: defaultProject.name,
             slug: defaultProject.slug,
           };
@@ -116,7 +116,7 @@ export class SidebarComponent {
     const isFoundation = !project.parent_uid || project.parent_uid === '' || !validProjectIds.has(project.parent_uid);
 
     const projectContext: ProjectContext = {
-      projectId: project.uid,
+      uid: project.uid,
       name: project.name,
       slug: project.slug,
     };
