@@ -26,6 +26,7 @@ import profileRouter from './routes/profile.route';
 import projectsRouter from './routes/projects.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
 import searchRouter from './routes/search.route';
+import { fetchUserPersona } from './utils/persona-helper';
 
 if (process.env['NODE_ENV'] !== 'production') {
   dotenv.config();
@@ -219,6 +220,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   const auth: AuthContext = {
     authenticated: false,
     user: null,
+    persona: null,
   };
 
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
@@ -243,6 +245,10 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       res.oidc.logout();
       return;
     }
+
+    // Fetch user persona based on committee membership (non-critical, don't block SSR)
+    // Note: fetchUserPersona handles errors internally and returns null on failure
+    auth.persona = await fetchUserPersona(req);
   }
 
   angularApp

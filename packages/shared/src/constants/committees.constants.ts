@@ -27,24 +27,24 @@ export const COMMITTEE_LABEL = {
  * <LfxDropdown options={COMMITTEE_CATEGORIES} />
  */
 export const COMMITTEE_CATEGORIES = [
-  { label: 'Legal Committee', value: 'Legal Committee' },
-  { label: 'Finance Committee', value: 'Finance Committee' },
-  { label: 'Special Interest Group', value: 'Special Interest Group' },
+  { label: 'Ambassador', value: 'Ambassador' },
   { label: 'Board', value: 'Board' },
+  { label: 'Code of Conduct', value: 'Code of Conduct' },
+  { label: 'Committers', value: 'Committers' },
+  { label: 'Expert Group', value: 'Expert Group' },
+  { label: 'Finance Committee', value: 'Finance Committee' },
+  { label: 'Government Advisory Council', value: 'Government Advisory Council' },
+  { label: 'Legal Committee', value: 'Legal Committee' },
+  { label: 'Maintainers', value: 'Maintainers' },
+  { label: 'Marketing Committee/Sub Committee', value: 'Marketing Committee/Sub Committee' },
+  { label: 'Marketing Mailing List', value: 'Marketing Mailing List' },
+  { label: 'Marketing Oversight Committee/Marketing Advisory Committee', value: 'Marketing Oversight Committee/Marketing Advisory Committee' },
+  { label: 'Product Security', value: 'Product Security' },
+  { label: 'Special Interest Group', value: 'Special Interest Group' },
+  { label: 'Technical Mailing List', value: 'Technical Mailing List' },
   { label: 'Technical Oversight Committee/Technical Advisory Committee', value: 'Technical Oversight Committee/Technical Advisory Committee' },
   { label: 'Technical Steering Committee', value: 'Technical Steering Committee' },
-  { label: 'Marketing Oversight Committee/Marketing Advisory Committee', value: 'Marketing Oversight Committee/Marketing Advisory Committee' },
-  { label: 'Marketing Committee/Sub Committee', value: 'Marketing Committee/Sub Committee' },
-  { label: 'Code of Conduct', value: 'Code of Conduct' },
-  { label: 'Product Security', value: 'Product Security' },
-  { label: 'Technical Mailing List', value: 'Technical Mailing List' },
-  { label: 'Marketing Mailing List', value: 'Marketing Mailing List' },
   { label: 'Working Group', value: 'Working Group' },
-  { label: 'Committers', value: 'Committers' },
-  { label: 'Maintainers', value: 'Maintainers' },
-  { label: 'Ambassador', value: 'Ambassador' },
-  { label: 'Government Advisory Council', value: 'Government Advisory Council' },
-  { label: 'Expert Group', value: 'Expert Group' },
   { label: 'Other', value: 'Other' },
 ];
 
@@ -60,14 +60,14 @@ export const MEMBER_ROLES = [
   { label: 'Chair', value: CommitteeMemberRole.CHAIR },
   { label: 'Counsel', value: CommitteeMemberRole.COUNSEL },
   { label: 'Developer Seat', value: CommitteeMemberRole.DEVELOPER_SEAT },
-  { label: 'TAC/TOC Representative', value: CommitteeMemberRole.TAC_TOC_REPRESENTATIVE },
   { label: 'Director', value: CommitteeMemberRole.DIRECTOR },
   { label: 'Lead', value: CommitteeMemberRole.LEAD },
-  { label: 'None', value: CommitteeMemberRole.NONE },
+  { label: 'LF Staff', value: CommitteeMemberRole.LF_STAFF },
   { label: 'Secretary', value: CommitteeMemberRole.SECRETARY },
+  { label: 'TAC/TOC Representative', value: CommitteeMemberRole.TAC_TOC_REPRESENTATIVE },
   { label: 'Treasurer', value: CommitteeMemberRole.TREASURER },
   { label: 'Vice Chair', value: CommitteeMemberRole.VICE_CHAIR },
-  { label: 'LF Staff', value: CommitteeMemberRole.LF_STAFF },
+  { label: 'None', value: CommitteeMemberRole.NONE },
 ];
 
 /**
@@ -80,59 +80,61 @@ export const MEMBER_ROLES = [
  */
 export const VOTING_STATUSES = [
   { label: 'Alternate Voting Rep', value: CommitteeMemberVotingStatus.ALTERNATE_VOTING_REP },
+  { label: 'Emeritus', value: CommitteeMemberVotingStatus.EMERITUS },
   { label: 'Observer', value: CommitteeMemberVotingStatus.OBSERVER },
   { label: 'Voting Rep', value: CommitteeMemberVotingStatus.VOTING_REP },
-  { label: 'Emeritus', value: CommitteeMemberVotingStatus.EMERITUS },
   { label: 'None', value: CommitteeMemberVotingStatus.NONE },
 ];
 
 /**
- * Committee type color mappings for badge styling
- * Returns background and text color classes for category badges
+ * Internal committee type color mappings for exact match fallback
+ * @private - Use getCommitteeTypeColor() function instead
+ * @description Uses LFX semantic color tokens from the design system
  */
-export const COMMITTEE_TYPE_COLORS = {
+const COMMITTEE_TYPE_COLORS = {
   // Board and governance
-  Board: 'bg-purple-100 text-purple-800',
-  'Government Advisory Council': 'bg-purple-100 text-purple-800',
+  Board: 'bg-violet-100 text-violet-800',
+  'Government Advisory Council': 'bg-violet-100 text-violet-800',
 
   // Legal and compliance
-  'Legal Committee': 'bg-red-100 text-red-800',
-  'Code of Conduct': 'bg-red-100 text-red-800',
-  'Product Security': 'bg-red-100 text-red-800',
+  'Legal Committee': 'bg-negative-100 text-negative-800',
+  'Code of Conduct': 'bg-negative-100 text-negative-800',
+  'Product Security': 'bg-negative-100 text-negative-800',
 
   // Special interest groups
-  'Special Interest Group': 'bg-blue-100 text-blue-800',
-  'Expert Group': 'bg-blue-100 text-blue-800',
+  'Special Interest Group': 'bg-brand-100 text-brand-800',
+  'Expert Group': 'bg-brand-100 text-brand-800',
 
   // Working groups
-  'Working Group': 'bg-orange-100 text-orange-800',
+  'Working Group': 'bg-warning-100 text-warning-800',
 
   // Technical committees
-  'Technical Steering Committee': 'bg-green-100 text-green-800',
-  'Technical Oversight Committee/Technical Advisory Committee': 'bg-teal-100 text-teal-800',
-  'Technical Mailing List': 'bg-teal-100 text-teal-800',
+  'Technical Steering Committee': 'bg-positive-100 text-positive-800',
+  'Technical Oversight Committee/Technical Advisory Committee': 'bg-brand-100 text-brand-700',
+  'Technical Mailing List': 'bg-brand-100 text-brand-700',
 
   // Technical roles
-  Maintainers: 'bg-blue-100 text-blue-800',
-  Committers: 'bg-blue-100 text-blue-800',
+  Maintainers: 'bg-brand-100 text-brand-800',
+  Committers: 'bg-brand-100 text-brand-800',
 
   // Marketing and outreach
-  'Marketing Oversight Committee/Marketing Advisory Committee': 'bg-pink-100 text-pink-800',
-  'Marketing Committee/Sub Committee': 'bg-pink-100 text-pink-800',
-  'Marketing Mailing List': 'bg-pink-100 text-pink-800',
-  Ambassador: 'bg-pink-100 text-pink-800',
+  'Marketing Oversight Committee/Marketing Advisory Committee': 'bg-violet-100 text-violet-700',
+  'Marketing Committee/Sub Committee': 'bg-violet-100 text-violet-700',
+  'Marketing Mailing List': 'bg-violet-100 text-violet-700',
+  Ambassador: 'bg-violet-100 text-violet-700',
 
   // Finance
-  'Finance Committee': 'bg-emerald-100 text-emerald-800',
+  'Finance Committee': 'bg-positive-100 text-positive-800',
 
   // Other/miscellaneous
-  Other: 'bg-gray-100 text-gray-800',
+  Other: 'bg-neutral-100 text-neutral-800',
 } as const;
 
 /**
- * Default color scheme for unknown committee types
+ * Internal default color scheme for unknown committee types
+ * @private
  */
-export const DEFAULT_COMMITTEE_TYPE_COLOR = 'bg-gray-100 text-gray-800';
+const DEFAULT_COMMITTEE_TYPE_COLOR = 'bg-neutral-100 text-neutral-800';
 
 /**
  * Get valid committee category values for validation
@@ -151,16 +153,42 @@ export function getCommitteeTypeColor(category: string | undefined): string {
 
   const lowerCategory = category.toLowerCase();
 
-  // Check for partial matches in category name
-  if (lowerCategory.includes('board')) return 'bg-purple-100 text-purple-800';
-  if (lowerCategory.includes('legal')) return 'bg-red-100 text-red-800';
-  if (lowerCategory.includes('special interest')) return 'bg-blue-100 text-blue-800';
-  if (lowerCategory.includes('working group')) return 'bg-orange-100 text-orange-800';
-  if (lowerCategory.includes('technical steering')) return 'bg-green-100 text-green-800';
-  if (lowerCategory.includes('technical oversight')) return 'bg-teal-100 text-teal-800';
-  if (lowerCategory.includes('marketing oversight')) return 'bg-pink-100 text-pink-800';
-  if (lowerCategory.includes('marketing committee')) return 'bg-pink-100 text-pink-800';
-  if (lowerCategory.includes('finance')) return 'bg-emerald-100 text-emerald-800';
+  // Board and governance
+  if (lowerCategory.includes('board')) return 'bg-violet-100 text-violet-800';
+  if (lowerCategory.includes('government')) return 'bg-violet-100 text-violet-800';
+
+  // Legal and compliance
+  if (lowerCategory.includes('legal')) return 'bg-negative-100 text-negative-800';
+  if (lowerCategory.includes('code of conduct')) return 'bg-negative-100 text-negative-800';
+  if (lowerCategory.includes('product security')) return 'bg-negative-100 text-negative-800';
+
+  // Special interest groups
+  if (lowerCategory.includes('special interest')) return 'bg-brand-100 text-brand-800';
+  if (lowerCategory.includes('expert')) return 'bg-brand-100 text-brand-800';
+
+  // Working groups
+  if (lowerCategory.includes('working group')) return 'bg-warning-100 text-warning-800';
+
+  // Technical committees
+  if (lowerCategory.includes('technical steering')) return 'bg-positive-100 text-positive-800';
+  if (lowerCategory.includes('technical oversight')) return 'bg-brand-100 text-brand-700';
+  if (lowerCategory.includes('technical mailing')) return 'bg-brand-100 text-brand-700';
+
+  // Technical roles
+  if (lowerCategory.includes('maintainer')) return 'bg-brand-100 text-brand-800';
+  if (lowerCategory.includes('committer')) return 'bg-brand-100 text-brand-800';
+
+  // Marketing and outreach
+  if (lowerCategory.includes('marketing oversight')) return 'bg-violet-100 text-violet-700';
+  if (lowerCategory.includes('marketing committee')) return 'bg-violet-100 text-violet-700';
+  if (lowerCategory.includes('marketing mailing')) return 'bg-violet-100 text-violet-700';
+  if (lowerCategory.includes('ambassador')) return 'bg-violet-100 text-violet-700';
+
+  // Finance
+  if (lowerCategory.includes('finance')) return 'bg-positive-100 text-positive-800';
+
+  // Other/miscellaneous
+  if (lowerCategory.includes('other')) return 'bg-neutral-100 text-neutral-800';
 
   // Fallback to exact match or default
   return COMMITTEE_TYPE_COLORS[category as keyof typeof COMMITTEE_TYPE_COLORS] || DEFAULT_COMMITTEE_TYPE_COLOR;

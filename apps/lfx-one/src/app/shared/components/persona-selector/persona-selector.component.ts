@@ -21,6 +21,8 @@ export class PersonaSelectorComponent {
   private readonly projectContextService = inject(ProjectContextService);
   // Persona options available for selection
   protected readonly personaOptions = PERSONA_OPTIONS;
+  // Whether persona is auto-detected (read-only)
+  protected readonly isAutoDetected = this.personaService.isAutoDetected;
 
   public form: FormGroup;
 

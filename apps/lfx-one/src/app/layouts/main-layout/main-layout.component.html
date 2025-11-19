@@ -4,7 +4,7 @@
 <div class="flex min-h-screen">
   <!-- Sidebar - Desktop -->
   <div class="hidden lg:block w-64 flex-shrink-0 fixed top-0 left-0">
-    <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-sidebar>
+    <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems()" [showProjectSelector]="true"></lfx-sidebar>
   </div>
 
   <!-- Sidebar - Mobile Overlay -->
@@ -23,7 +23,7 @@
           </button>
         </div>
         <div class="overflow-y-auto h-[calc(100vh-4rem)]">
-          <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems" [showProjectSelector]="true"></lfx-sidebar>
+          <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems()" [showProjectSelector]="true"></lfx-sidebar>
         </div>
       </div>
     </div>

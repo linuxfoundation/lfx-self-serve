@@ -20,6 +20,7 @@ export const ACCOUNTS: Account[] = [
   { accountId: '0014100000Te0QfAAJ', accountName: 'NEC Corporation' },
   { accountId: '0014100000Te08IAAR', accountName: 'Ericsson' },
   { accountId: '0014100000Te2MfAAJ', accountName: 'Oracle America Inc.' },
+  { accountId: '0014100000Te2ovAAB', accountName: 'The Linux Foundation' },
 ];
 
 /**

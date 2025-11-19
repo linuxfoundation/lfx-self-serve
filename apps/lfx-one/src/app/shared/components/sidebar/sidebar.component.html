@@ -76,8 +76,8 @@
   @if (item.url) {
     <a
       [href]="item.url"
-      [target]="item.disabled ? '_self' : '_blank'"
-      [rel]="item.disabled ? '' : 'noopener noreferrer'"
+      [target]="item.target || '_blank'"
+      [rel]="item.rel || 'noopener noreferrer'"
       [ngClass]="{
         'flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-base text-[#45556c] font-normal hover:bg-slate-50': true,
         'opacity-50 pointer-events-none cursor-not-allowed': item.disabled,

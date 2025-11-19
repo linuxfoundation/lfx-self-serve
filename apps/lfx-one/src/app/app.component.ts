@@ -8,6 +8,7 @@ import { AuthContext } from '@lfx-one/shared/interfaces';
 import { ToastModule } from 'primeng/toast';
 
 import { FeatureFlagService } from './shared/services/feature-flag.service';
+import { PersonaService } from './shared/services/persona.service';
 import { SegmentService } from './shared/services/segment.service';
 import { UserService } from './shared/services/user.service';
 
@@ -19,6 +20,7 @@ import { UserService } from './shared/services/user.service';
 })
 export class AppComponent {
   private readonly userService = inject(UserService);
+  private readonly personaService = inject(PersonaService);
   private readonly segmentService = inject(SegmentService);
   private readonly featureFlagService = inject(FeatureFlagService);
 
@@ -42,15 +44,19 @@ export class AppComponent {
       this.transferState.set(this.serverKey, this.auth);
     }
 
-    // Hydrate the auth s tate from the server, if it exists, otherwise set it to false and null
+    // Hydrate the auth state from the server, if it exists, otherwise set it to false and null
     this.auth = this.transferState.get(this.serverKey, {
       authenticated: false,
       user: null,
+      persona: null,
     });
 
     if (this.auth?.authenticated && this.auth.user) {
       this.userService.authenticated.set(true);
       this.userService.user.set(this.auth.user);
+
+      // Initialize persona from backend (auto-detected from committee membership)
+      this.personaService.initializeFromAuth(this.auth.persona);
 
       // Identify user with Segment tracking (pass entire Auth0 user object)
       this.segmentService.identifyUser(this.auth.user);

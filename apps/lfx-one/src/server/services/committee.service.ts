@@ -375,6 +375,50 @@ export class CommitteeService {
   }
 
   /**
+   * Fetches committee memberships for a specific user filtered by committee category
+   * Used to determine user persona based on committee membership
+   * @param req - Express request object
+   * @param username - Username to filter by
+   * @param userEmail - User email to filter by (as fallback)
+   * @param category - Committee category to filter (currently supports: 'Board', 'Maintainers')
+   */
+  public async getCommitteeMembersByCategory(req: Request, username: string, userEmail: string, category: string): Promise<CommitteeMember[]> {
+    const params = {
+      v: '1',
+      type: 'committee_member',
+      tags: `committee_category:${category}`,
+    };
+
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params
+    );
+
+    // Filter to only include memberships for this specific user
+    const userMemberships = resources
+      .map((resource) => resource.data)
+      .filter((member) => {
+        // Match by username or email
+        return member.username === username || (userEmail && member.email.toLowerCase() === userEmail.toLowerCase());
+      });
+
+    req.log.info(
+      {
+        operation: 'get_committee_members_by_category',
+        username,
+        category,
+        memberships_count: userMemberships.length,
+      },
+      `Fetched user committee memberships for category: ${category}`
+    );
+
+    return userMemberships;
+  }
+
+  /**
    * Updates committee settings (business_email_required, is_audit_enabled)
    */
   private async updateCommitteeSettings(req: Request, committeeId: string, settings: CommitteeSettingsData): Promise<void> {

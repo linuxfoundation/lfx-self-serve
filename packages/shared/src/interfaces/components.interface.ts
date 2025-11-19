@@ -273,6 +273,10 @@ export interface SidebarMenuItem {
   routerLink?: string;
   /** External URL */
   url?: string;
+  /** Target for external links */
+  target?: string;
+  /** Rel for external links */
+  rel?: string;
   /** Badge content for notifications */
   badge?: string | number;
   /** Badge severity for styling */

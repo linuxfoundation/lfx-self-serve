@@ -8,6 +8,7 @@ import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { AppService } from '@app/shared/services/app.service';
 import { FeatureFlagService } from '@app/shared/services/feature-flag.service';
 import { SidebarComponent } from '@components/sidebar/sidebar.component';
+import { environment } from '@environments/environment';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
@@ -35,6 +36,7 @@ export class MainLayoutComponent {
 
   // Feature flags
   private readonly showProjectsInSidebar = this.featureFlagService.getBooleanFlag('sidebar-projects', false);
+  private readonly enableProfileClick = this.featureFlagService.getBooleanFlag('sidebar-profile', false);
 
   // Base sidebar navigation items - matching React NavigationSidebar design
   private readonly baseSidebarItems: SidebarMenuItem[] = [
@@ -62,33 +64,48 @@ export class MainLayoutComponent {
 
   // Computed sidebar items based on feature flags
   protected readonly sidebarItems = computed(() => {
-    const items = [...this.baseSidebarItems];
+    let items = [...this.baseSidebarItems];
 
     // Filter out Projects if feature flag is disabled
     if (!this.showProjectsInSidebar()) {
-      return items.filter((item) => item.label !== 'Projects');
+      items = items.filter((item) => item.label !== 'Projects');
     }
 
     if (this.personaService.currentPersona() === 'board-member') {
-      return items.filter((item) => item.label !== COMMITTEE_LABEL.plural);
+      items = items.filter((item) => item.label !== COMMITTEE_LABEL.plural);
     }
 
     return items;
   });
 
   // Sidebar footer items - matching React NavigationSidebar design
-  protected readonly sidebarFooterItems: SidebarMenuItem[] = [
-    {
-      label: 'Settings',
-      icon: 'fa-light fa-gear',
-      routerLink: '/settings',
-    },
+  protected readonly sidebarFooterItems = computed(() => [
     {
       label: 'Profile',
       icon: 'fa-light fa-user',
       routerLink: '/profile',
+      disabled: !this.enableProfileClick(), // Disable when feature flag is false
     },
-  ];
+    {
+      label: 'Support',
+      icon: 'fa-light fa-question-circle',
+      url: environment.urls.support,
+      target: '_blank',
+      rel: 'noopener noreferrer',
+    },
+    {
+      label: 'Permissions',
+      icon: 'fa-light fa-shield',
+      routerLink: '/settings',
+    },
+    {
+      label: 'Logout',
+      icon: 'fa-light fa-sign-out',
+      url: '/logout',
+      target: '_self',
+      rel: '',
+    },
+  ]);
 
   public constructor() {
     // Close mobile sidebar on navigation

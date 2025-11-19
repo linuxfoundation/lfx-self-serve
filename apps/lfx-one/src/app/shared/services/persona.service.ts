@@ -14,22 +14,42 @@ export class PersonaService {
   private readonly router = inject(Router);
   private readonly projectContextService = inject(ProjectContextService);
 
-  private readonly storageKey = 'lfx-persona';
   public readonly currentPersona: WritableSignal<PersonaType>;
+  public readonly isAutoDetected: WritableSignal<boolean> = signal(false);
 
   public constructor() {
-    const stored = this.loadStoredPersona();
-    this.currentPersona = signal<PersonaType>(stored || 'maintainer');
+    // Default persona - will be overridden by initializeFromAuth if backend provides one
+    this.currentPersona = signal<PersonaType>('maintainer');
   }
 
   /**
-   * Set the current persona and persist to storage
+   * Initialize persona from AuthContext (SSR state transfer)
+   * If persona is provided from backend, it was auto-detected and cannot be changed
+   */
+  public initializeFromAuth(persona: PersonaType | null | undefined): void {
+    if (persona) {
+      this.currentPersona.set(persona);
+      this.isAutoDetected.set(true);
+    } else {
+      // No auto-detected persona, allow manual selection
+      this.isAutoDetected.set(false);
+    }
+  }
+
+  /**
+   * Set the current persona
    * When switching to board-member, clear child project selection
+   * Cannot change persona if it was auto-detected from committee membership
    */
   public setPersona(persona: PersonaType): void {
+    // Don't allow changes if persona was auto-detected
+    if (this.isAutoDetected()) {
+      console.warn('Cannot change persona - it was automatically determined from committee membership');
+      return;
+    }
+
     if (persona !== this.currentPersona()) {
       this.currentPersona.set(persona);
-      this.persistPersona(persona);
 
       // When switching to board-member persona, clear any child project selection
       // Board members should only work at the foundation level
@@ -39,26 +59,5 @@ export class PersonaService {
 
       this.router.navigate(['/']);
     }
-  }
-
-  private persistPersona(persona: PersonaType): void {
-    if (typeof localStorage !== 'undefined') {
-      localStorage.setItem(this.storageKey, persona);
-    }
-  }
-
-  private loadStoredPersona(): PersonaType | null {
-    if (typeof localStorage === 'undefined') {
-      return null;
-    }
-    try {
-      const stored = localStorage.getItem(this.storageKey);
-      if (stored) {
-        return stored as PersonaType;
-      }
-    } catch {
-      // Invalid data in localStorage, ignore
-    }
-    return null;
   }
 }
