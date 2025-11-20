@@ -110,7 +110,7 @@ router.post('/generate-agenda', async (req: Request, res: Response, next: NextFu
     const duration = Date.now() - startTime;
     req.log.error(
       {
-        error: error instanceof Error ? error.message : error,
+        err: error,
         operation: 'generate_agenda',
         duration,
         meeting_type: req.body['meetingType'],

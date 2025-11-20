@@ -108,19 +108,19 @@ export class SnowflakeService {
         return result as SnowflakeQueryResult<T>;
       } catch (error) {
         const duration = Date.now() - startTime;
-        const errorMessage = error instanceof Error ? error.message : String(error);
 
         serverLogger.error(
           {
             query_hash: queryHash,
             duration_ms: duration,
-            error: errorMessage,
+            err: error,
             sql_preview: sqlText.substring(0, 100),
           },
           'Snowflake query execution failed'
         );
 
         // Wrap Snowflake SDK errors in MicroserviceError for proper error handling
+        const errorMessage = error instanceof Error ? error.message : String(error);
         throw new MicroserviceError(`Snowflake query execution failed: ${errorMessage}`, 500, 'SNOWFLAKE_QUERY_ERROR', {
           operation: 'snowflake_query_execution',
           service: 'snowflake',
@@ -196,7 +196,7 @@ export class SnowflakeService {
         await Promise.race([drainPromise, timeoutPromise]);
         serverLogger.info('Snowflake connection pool drained successfully');
       } catch (error) {
-        serverLogger.error({ error: error instanceof Error ? error.message : error }, 'Error during Snowflake pool shutdown');
+        serverLogger.error({ err: error }, 'Error during Snowflake pool shutdown');
       }
 
       this.pool = null;
@@ -327,15 +327,15 @@ export class SnowflakeService {
 
       return pool;
     } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
       serverLogger.error(
         {
-          error: errorMessage,
+          err: error,
           account: requiredEnvVars.SNOWFLAKE_ACCOUNT,
         },
         'Failed to create Snowflake connection pool'
       );
       // Wrap SDK errors in MicroserviceError for proper error handling
+      const errorMessage = error instanceof Error ? error.message : String(error);
       throw new MicroserviceError(`Snowflake connection pool creation failed: ${errorMessage}`, 500, 'SNOWFLAKE_CONNECTION_ERROR', {
         operation: 'snowflake_pool_creation',
         service: 'snowflake',

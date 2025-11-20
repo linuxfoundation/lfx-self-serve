@@ -25,11 +25,11 @@ export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: 
     };
 
     if (logLevel === 'error') {
-      req.log.error(logContext, `API error: ${error.message}`);
+      req.log.error({ ...logContext, err: error }, `API error: ${error.message}`);
     } else if (logLevel === 'warn') {
-      req.log.warn(logContext, `API error: ${error.message}`);
+      req.log.warn({ ...logContext, err: error }, `API error: ${error.message}`);
     } else {
-      req.log.info(logContext, `API error: ${error.message}`);
+      req.log.info({ ...logContext, err: error }, `API error: ${error.message}`);
     }
 
     // Send structured response
@@ -41,16 +41,12 @@ export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: 
   }
 
   // Log unhandled errors
-  const errorMessage = error instanceof Error ? error.message : String(error);
-  const errorName = error instanceof Error ? error.name : 'Unknown';
-
   req.log.error(
     {
-      error: errorMessage,
+      err: error,
       path: req.path,
       method: req.method,
       user_agent: req.get('User-Agent'),
-      error_name: errorName,
       request_id: req.id,
     },
     'Unhandled API error'

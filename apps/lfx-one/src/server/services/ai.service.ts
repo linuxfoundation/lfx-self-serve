@@ -81,7 +81,7 @@ export class AiService {
 
       return result;
     } catch (error) {
-      serverLogger.error('Failed to generate meeting agenda', { error });
+      serverLogger.error({ err: error }, 'Failed to generate meeting agenda');
       throw new Error('Failed to generate meeting agenda');
     }
   }

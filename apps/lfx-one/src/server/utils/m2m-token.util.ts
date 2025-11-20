@@ -103,7 +103,7 @@ export async function generateM2MToken(req: Request): Promise<string> {
       operation: 'generate_m2m_token',
       service: isAuthelia ? 'authelia' : 'auth0',
       errorBody: {
-        original_error: error instanceof Error ? error.message : String(error),
+        original_error: error,
       },
     });
   }

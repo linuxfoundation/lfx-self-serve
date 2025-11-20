@@ -368,6 +368,10 @@ export class PastMeetingController {
     req: Request,
     pastMeetingUid: string
   ): Promise<{ individual_registrants_count: number; committee_members_count: number; participant_count: number; attended_count: number }> {
+    const startTime = Logger.start(req, 'add_participant_counts', {
+      past_meeting_uid: pastMeetingUid,
+    });
+
     try {
       // Get all participants (contains both invited and attended information)
       const participants = await this.meetingService.getPastMeetingParticipants(req, pastMeetingUid).catch(() => []);
@@ -377,15 +381,24 @@ export class PastMeetingController {
       const attendedCount = participants.filter((p) => p.is_attended).length;
       const totalParticipantCount = participants.length;
 
-      return {
+      const result = {
         individual_registrants_count: invitedCount, // Count of people who were formally invited
         committee_members_count: 0, // Not available in participant data, set to 0
         participant_count: totalParticipantCount, // Total count of all participants
         attended_count: attendedCount, // Count of people who actually attended
       };
+
+      Logger.success(req, 'add_participant_counts', startTime, {
+        past_meeting_uid: pastMeetingUid,
+        invited_count: invitedCount,
+        attended_count: attendedCount,
+        total_count: totalParticipantCount,
+      });
+
+      return result;
     } catch (error) {
       // Log error but don't fail - default to 0 counts
-      Logger.error(req, 'add_participant_counts', Date.now(), error, {
+      Logger.error(req, 'add_participant_counts', startTime, error, {
         past_meeting_uid: pastMeetingUid,
       });
 

@@ -98,8 +98,26 @@ lfx-v2-ui/
 - **Protected routes middleware** handles selective authentication logic
 - **Custom login handler** at `/login` with URL validation and secure redirects
 - Authentication is handled by Auth0/Authelia with express-openid-connect middleware
-- Logging uses Pino for structured JSON logs with sensitive data redaction
-- Health checks are available at /health and are not logged or authenticated
+- **Logging System**: Uses Pino for structured JSON logs with sensitive data redaction
+- **Logger Helper Pattern**: All controller functions must use Logger helper methods:
+  - `Logger.start(req, 'operation_name', metadata)` - Returns startTime, logs at INFO
+  - `Logger.success(req, 'operation_name', startTime, metadata)` - Logs at INFO
+  - `Logger.error(req, 'operation_name', startTime, error, metadata)` - Logs at ERROR with 'err' field
+  - `Logger.warning(req, 'operation_name', message, metadata)` - Logs at WARN
+  - `Logger.validation(req, 'operation_name', errors, metadata)` - Logs at WARN
+- **Error Logging Standard**: Always use `err` field for errors to leverage Pino's error serializer
+  - ✅ Correct: `req.log.error({ err: error, ...metadata }, 'message')`
+  - ✅ Correct: `serverLogger.error({ err: error }, 'message')`
+  - ✅ Correct: `Logger.error(req, 'operation', startTime, error, metadata)`
+  - ❌ Incorrect: `{ error: error.message }` or `{ error: error instanceof Error ? error.message : error }`
+  - Benefits: Complete stack traces (production/debug), clean single-line errors (development), proper AWS CloudWatch format
+  - Custom serializer: `/server/helpers/error-serializer.ts` - excludes verbose stacks in dev, includes in prod
+- **Log Level Guidelines** (What to log at each level):
+  - **INFO**: Business operation completions (created, updated, deleted), successful data retrieval (fetched, retrieved)
+  - **WARN**: Error conditions leading to exceptions, data quality issues, user not found, fallback behaviors
+  - **DEBUG**: Internal operations, preparation steps (sanitizing, creating payload), intent statements (resolving, fetching), NATS lookups
+  - **ERROR**: System failures, unhandled exceptions, critical errors requiring immediate attention
+- **Filtered URLs**: Health checks (/health, /api/health) and /.well-known URLs are not logged to reduce noise
 - All shared types, interfaces, and constants are centralized in @lfx-one/shared package
 - **AI Service Integration**: Claude Sonnet 4 model via LiteLLM proxy for meeting agenda generation
 - **AI Environment Variables**: AI_PROXY_URL and AI_API_KEY required for AI functionality

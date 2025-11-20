@@ -84,7 +84,7 @@ export async function fetchUserPersona(req: Request): Promise<PersonaType | null
     // Log error but don't fail SSR - persona determination is non-critical
     req.log.warn(
       {
-        error: error instanceof Error ? error.message : error,
+        err: error,
       },
       'Failed to determine user persona from committee membership'
     );

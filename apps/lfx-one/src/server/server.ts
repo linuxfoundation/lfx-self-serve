@@ -14,6 +14,7 @@ import pino from 'pino';
 import pinoHttp from 'pino-http';
 import pinoPretty from 'pino-pretty';
 
+import { customErrorSerializer } from './helpers/error-serializer';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { authMiddleware } from './middleware/auth.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
@@ -79,6 +80,12 @@ const prettyStream =
 const serverLogger = pino(
   {
     level: process.env['LOG_LEVEL'] || 'info',
+    serializers: {
+      err: customErrorSerializer,
+      error: customErrorSerializer,
+      req: pino.stdSerializers.req,
+      res: pino.stdSerializers.res,
+    },
     redact: {
       paths:
         process.env['NODE_ENV'] !== 'production'
@@ -128,9 +135,15 @@ app.get('/health', (_req: Request, res: Response) => {
  */
 const httpLogger = pinoHttp({
   logger: serverLogger, // Use the same base logger for consistency
+  serializers: {
+    err: customErrorSerializer,
+    error: customErrorSerializer,
+    req: pino.stdSerializers.req,
+    res: pino.stdSerializers.res,
+  },
   autoLogging: {
     ignore: (req: Request) => {
-      return req.url === '/health' || req.url === '/api/health';
+      return req.url === '/health' || req.url === '/api/health' || req.url.startsWith('/.well-known');
     },
   },
   redact: {
@@ -236,7 +249,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       // If userinfo fetch fails, fall back to basic user info from token
       req.log.warn(
         {
-          error: error instanceof Error ? error.message : String(error),
+          err: error,
           path: req.path,
         },
         'Failed to fetch user info, using basic user data'

@@ -71,7 +71,7 @@ export class UserService {
         throw error;
       }
 
-      req.log.error({ error: error instanceof Error ? error.message : error, userArgProvided: !!userArg }, 'Failed to fetch user metadata via NATS');
+      req.log.error({ err: error, userArgProvided: !!userArg }, 'Failed to fetch user metadata via NATS');
 
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         throw new ResourceNotFoundError('User', undefined, {
@@ -140,7 +140,7 @@ export class UserService {
       req.log.error(
         {
           username: updates.username,
-          error: error instanceof Error ? error.message : error,
+          err: error,
         },
         'Error in user metadata update service'
       );
@@ -481,7 +481,7 @@ export class UserService {
     } catch (error) {
       serverLogger.error(
         {
-          error: error instanceof Error ? error.message : error,
+          err: error,
           username: request.username,
         },
         'Failed to update user metadata via NATS'

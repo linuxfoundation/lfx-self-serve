@@ -121,7 +121,7 @@ export class ProjectService {
    * First resolves slug to ID via NATS, then fetches project data
    */
   public async getProjectBySlug(req: Request, projectSlug: string): Promise<Project> {
-    req.log.info(
+    req.log.debug(
       {
         slug: projectSlug,
         operation: 'get_project_by_slug_via_nats',
@@ -207,7 +207,7 @@ export class ProjectService {
       // Use manual user info if provided, otherwise fetch from NATS
       let userInfo: { name: string; email: string; username: string; avatar?: string };
       if (manualUserInfo) {
-        req.log.info(
+        req.log.debug(
           {
             username: backendIdentifier,
             operation: `${operation}_user_project_permissions`,
@@ -304,7 +304,7 @@ export class ProjectService {
     const normalizedEmail = email.trim().toLowerCase();
 
     try {
-      req.log.info({ email: normalizedEmail }, 'Resolving email to sub via NATS');
+      req.log.debug({ email: normalizedEmail }, 'Resolving email to sub via NATS');
 
       const response = await this.natsService.request(NatsSubjects.EMAIL_TO_USERNAME, codec.encode(normalizedEmail), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
 
@@ -317,7 +317,7 @@ export class ProjectService {
 
         // Check if it's an error response
         if (typeof parsed === 'object' && parsed !== null && parsed.success === false) {
-          req.log.info({ email: normalizedEmail, error: parsed.error }, 'User email not found via NATS');
+          req.log.warn({ email: normalizedEmail, error: parsed.error }, 'User email not found via NATS');
 
           throw new ResourceNotFoundError('User', normalizedEmail, {
             operation: 'resolve_email_to_sub',
@@ -342,7 +342,7 @@ export class ProjectService {
       username = username.trim();
 
       if (!username || username === '') {
-        req.log.info({ email: normalizedEmail }, 'Empty sub returned from NATS');
+        req.log.warn({ email: normalizedEmail }, 'Empty sub returned from NATS');
 
         throw new ResourceNotFoundError('User', normalizedEmail, {
           operation: 'resolve_email_to_sub',
@@ -360,7 +360,7 @@ export class ProjectService {
         throw error;
       }
 
-      req.log.error({ error: error instanceof Error ? error.message : error, email: normalizedEmail }, 'Failed to resolve email to sub via NATS');
+      req.log.error({ err: error, email: normalizedEmail }, 'Failed to resolve email to sub via NATS');
 
       // If it's a timeout or no responder error, treat as not found
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
@@ -389,7 +389,7 @@ export class ProjectService {
     const normalizedEmail = email.trim().toLowerCase();
 
     try {
-      req.log.info({ email: normalizedEmail }, 'Resolving email to username via NATS');
+      req.log.debug({ email: normalizedEmail }, 'Resolving email to username via NATS');
 
       const response = await this.natsService.request(NatsSubjects.EMAIL_TO_USERNAME, codec.encode(normalizedEmail), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
 
@@ -402,7 +402,7 @@ export class ProjectService {
 
         // Check if it's an error response
         if (typeof parsed === 'object' && parsed !== null && parsed.success === false) {
-          req.log.info({ email: normalizedEmail, error: parsed.error }, 'User email not found via NATS');
+          req.log.warn({ email: normalizedEmail, error: parsed.error }, 'User email not found via NATS');
 
           throw new ResourceNotFoundError('User', normalizedEmail, {
             operation: 'resolve_email_to_username',
@@ -427,7 +427,7 @@ export class ProjectService {
       username = username.trim();
 
       if (!username || username === '') {
-        req.log.info({ email: normalizedEmail }, 'Empty username returned from NATS');
+        req.log.warn({ email: normalizedEmail }, 'Empty username returned from NATS');
 
         throw new ResourceNotFoundError('User', normalizedEmail, {
           operation: 'resolve_email_to_username',
@@ -445,7 +445,7 @@ export class ProjectService {
         throw error;
       }
 
-      req.log.error({ error: error instanceof Error ? error.message : error, email: normalizedEmail }, 'Failed to resolve email to username via NATS');
+      req.log.error({ err: error, email: normalizedEmail }, 'Failed to resolve email to username via NATS');
 
       // If it's a timeout or no responder error, treat as not found
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
@@ -482,11 +482,11 @@ export class ProjectService {
       await this.resolveEmailToSub(req, usernameOrEmail);
       // Then get the username for user metadata lookup
       usernameForLookup = await this.resolveEmailToUsername(req, usernameOrEmail);
-      req.log.info({ email: originalEmail, resolvedUsername: usernameForLookup }, 'Resolved email to username for user metadata lookup');
+      req.log.debug({ email: originalEmail, resolvedUsername: usernameForLookup }, 'Resolved email to username for user metadata lookup');
     }
 
     try {
-      req.log.info({ username: usernameForLookup }, 'Fetching user metadata via NATS');
+      req.log.debug({ username: usernameForLookup }, 'Fetching user metadata via NATS');
 
       const response = await this.natsService.request(NatsSubjects.USER_METADATA_READ, codec.encode(usernameForLookup), {
         timeout: NATS_CONFIG.REQUEST_TIMEOUT,
@@ -506,7 +506,7 @@ export class ProjectService {
 
       // Check if it's an error response
       if (userMetadata.success === false) {
-        req.log.info({ username: usernameForLookup, error: userMetadata.error }, 'User metadata not found via NATS');
+        req.log.warn({ username: usernameForLookup, error: userMetadata.error }, 'User metadata not found via NATS');
 
         throw new ResourceNotFoundError('User', usernameForLookup, {
           operation: 'get_user_info',
@@ -539,7 +539,7 @@ export class ProjectService {
         throw error;
       }
 
-      req.log.error({ error: error instanceof Error ? error.message : error, username: usernameForLookup }, 'Failed to fetch user metadata via NATS');
+      req.log.error({ err: error, username: usernameForLookup }, 'Failed to fetch user metadata via NATS');
 
       // If it's a timeout or no responder error, treat as not found
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
@@ -802,7 +802,7 @@ export class ProjectService {
         exists: true,
       };
     } catch (error) {
-      serverLogger.error({ error: error instanceof Error ? error.message : error, slug }, 'Failed to resolve project slug via NATS');
+      serverLogger.error({ err: error, slug }, 'Failed to resolve project slug via NATS');
 
       // If it's a timeout or no responder error, treat as not found
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {

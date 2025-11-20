@@ -1290,6 +1290,11 @@ export class MeetingController {
     operation: (input: T) => Promise<R>,
     getIdentifier: (input: T, index?: number) => string
   ): Promise<{ results: PromiseSettledResult<R>[]; shouldReturn: boolean }> {
+    const helperStartTime = Logger.start(req, `${operationName}_batch_processing`, {
+      meeting_uid: meetingUid,
+      batch_size: inputData.length,
+    });
+
     try {
       // Process the first registrant
       const firstResult = await operation(inputData[0]);
@@ -1303,12 +1308,24 @@ export class MeetingController {
         results = [{ status: 'fulfilled', value: firstResult }];
       }
 
+      Logger.success(req, `${operationName}_batch_processing`, helperStartTime, {
+        meeting_uid: meetingUid,
+        batch_size: inputData.length,
+        successful: results.filter((r) => r.status === 'fulfilled').length,
+      });
+
       // Return the results and shouldReturn flag
       return { results, shouldReturn: false };
     } catch (error: any) {
       // Check if it's a 403 error - if so, fail fast
       // This will stop the processing if a 403 error is encountered
       if (error?.status === 403 || error?.statusCode === 403) {
+        Logger.error(req, `${operationName}_batch_processing`, helperStartTime, error, {
+          meeting_uid: meetingUid,
+          identifier: getIdentifier(inputData[0], 0),
+          fail_fast: true,
+        });
+
         Logger.error(req, operationName, startTime, error, {
           meeting_uid: meetingUid,
           identifier: getIdentifier(inputData[0], 0),
@@ -1342,6 +1359,11 @@ export class MeetingController {
     meetingUid: string,
     getIdentifier: (input: I, index?: number) => string
   ): BatchRegistrantOperationResponse<T> {
+    const helperStartTime = Logger.start(req, `${operationName}_batch_response`, {
+      meeting_uid: meetingUid,
+      total_results: results.length,
+    });
+
     // Initialize the successes and failures arrays
     const successes: T[] = [];
     const failures: Array<{
@@ -1370,6 +1392,13 @@ export class MeetingController {
           identifier: getIdentifier(inputData[index], index),
         });
       }
+    });
+
+    Logger.success(req, `${operationName}_batch_response`, helperStartTime, {
+      meeting_uid: meetingUid,
+      total: inputData.length,
+      successful: successes.length,
+      failed: failures.length,
     });
 
     // Return the batch response

@@ -101,7 +101,7 @@ export class AccessCheckService {
         {
           operation: 'check_access',
           request_count: resources.length,
-          error: error instanceof Error ? error.message : error,
+          err: error,
         },
         'Access check failed, defaulting to no access'
       );

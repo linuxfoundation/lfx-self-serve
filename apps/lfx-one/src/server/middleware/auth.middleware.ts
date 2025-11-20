@@ -111,7 +111,7 @@ async function extractBearerToken(req: Request): Promise<TokenExtractionResult> 
         } catch (refreshError) {
           req.log.warn(
             {
-              error: refreshError instanceof Error ? refreshError.message : refreshError,
+              error: refreshError,
               path: req.path,
             },
             'Token refresh failed - logging user out'
@@ -132,7 +132,7 @@ async function extractBearerToken(req: Request): Promise<TokenExtractionResult> 
   } catch (error) {
     req.log.warn(
       {
-        error: error instanceof Error ? error.message : error,
+        err: error,
         path: req.path,
       },
       'Failed to extract bearer token'
@@ -415,7 +415,7 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
       const duration = Date.now() - startTime;
       req.log.error(
         {
-          error: error instanceof Error ? error.message : error,
+          err: error,
           path: req.path,
           method: req.method,
           duration,

@@ -128,7 +128,7 @@ export class CommitteeService {
           {
             operation: 'create_committee',
             committee_id: newCommittee.uid,
-            error: error instanceof Error ? error.message : error,
+            err: error,
           },
           'Failed to update committee settings, but committee was created successfully'
         );
@@ -179,7 +179,7 @@ export class CommitteeService {
           {
             operation: 'update_committee',
             committee_id: committeeId,
-            error: error instanceof Error ? error.message : error,
+            err: error,
           },
           'Failed to update committee settings, but committee was updated successfully'
         );
@@ -237,7 +237,7 @@ export class CommitteeService {
    * Fetches count of all members for a specific committee
    */
   public async getCommitteeMembersCount(req: Request, committeeId: string, query: Record<string, any> = {}): Promise<number> {
-    req.log.info(
+    req.log.debug(
       {
         operation: 'get_committee_members_count',
         committee_id: committeeId,
@@ -405,7 +405,7 @@ export class CommitteeService {
         return member.username === username || (userEmail && member.email.toLowerCase() === userEmail.toLowerCase());
       });
 
-    req.log.info(
+    req.log.debug(
       {
         operation: 'get_committee_members_by_category',
         username,

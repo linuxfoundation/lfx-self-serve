@@ -56,7 +56,7 @@ export class Logger {
       {
         operation,
         duration,
-        error: error instanceof Error ? error.message : String(error),
+        err: error,
         ...metadata,
         request_id: req.id,
       },

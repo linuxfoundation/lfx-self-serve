@@ -84,7 +84,7 @@ export class ProfileController {
         req.log.warn(
           {
             username,
-            error: error instanceof Error ? error.message : error,
+            err: error,
           },
           'Exception while fetching user metadata from NATS'
         );

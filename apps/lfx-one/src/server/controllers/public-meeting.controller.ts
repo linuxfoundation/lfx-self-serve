@@ -117,7 +117,7 @@ export class PublicMeetingController {
           // If organizer check fails, log but continue with organizer = false
           req.log.warn(
             {
-              error: error instanceof Error ? error.message : error,
+              err: error,
               meeting_uid: id,
             },
             'Failed to check organizer status, continuing with organizer = false'
@@ -218,9 +218,21 @@ export class PublicMeetingController {
    * Sets up M2M token for API calls
    */
   private async setupM2MToken(req: Request): Promise<string> {
-    const m2mToken = await generateM2MToken(req);
-    req.bearerToken = m2mToken;
-    return m2mToken;
+    const startTime = Logger.start(req, 'setup_m2m_token');
+
+    try {
+      const m2mToken = await generateM2MToken(req);
+      req.bearerToken = m2mToken;
+
+      Logger.success(req, 'setup_m2m_token', startTime, {
+        has_token: !!m2mToken,
+      });
+
+      return m2mToken;
+    } catch (error) {
+      Logger.error(req, 'setup_m2m_token', startTime, error);
+      throw error;
+    }
   }
 
   /**
@@ -257,34 +269,50 @@ export class PublicMeetingController {
    * Fetches meeting with M2M token setup
    */
   private async fetchMeetingWithM2M(req: Request, id: string) {
-    await this.setupM2MToken(req);
-    return await this.meetingService.getMeetingById(req, id, 'meetings', false);
+    const startTime = Logger.start(req, 'fetch_meeting_with_m2m', {
+      meeting_id: id,
+    });
+
+    try {
+      await this.setupM2MToken(req);
+      const meeting = await this.meetingService.getMeetingById(req, id, 'meetings', false);
+
+      Logger.success(req, 'fetch_meeting_with_m2m', startTime, {
+        meeting_id: id,
+        meeting_uid: meeting.uid,
+      });
+
+      return meeting;
+    } catch (error) {
+      Logger.error(req, 'fetch_meeting_with_m2m', startTime, error, {
+        meeting_id: id,
+      });
+      throw error;
+    }
   }
 
   /**
    * Handles join URL logic for public meetings
    */
   private async handleJoinUrlForPublicMeeting(req: Request, meeting: any, id: string): Promise<void> {
+    const startTime = Logger.start(req, 'handle_join_url_for_public_meeting', {
+      meeting_uid: id,
+    });
+
     try {
       const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
       meeting.join_url = joinUrlData.join_url;
 
-      req.log.debug(
-        Logger.sanitize({
-          meeting_uid: id,
-          has_join_url: !!joinUrlData.join_url,
-        }),
-        'Fetched join URL for public meeting'
-      );
+      Logger.success(req, 'handle_join_url_for_public_meeting', startTime, {
+        meeting_uid: id,
+        has_join_url: !!joinUrlData.join_url,
+      });
     } catch (error) {
-      req.log.warn(
-        {
-          error: error instanceof Error ? error.message : error,
-          meeting_uid: id,
-          has_token: !!req.bearerToken,
-        },
-        'Failed to fetch join URL for public meeting, continuing without it'
-      );
+      Logger.warning(req, 'handle_join_url_for_public_meeting', 'Failed to fetch join URL, continuing without it', {
+        meeting_uid: id,
+        has_token: !!req.bearerToken,
+        err: error,
+      });
     }
   }
 
@@ -305,9 +333,15 @@ export class PublicMeetingController {
   }
 
   private async restrictedMeetingCheck(req: Request, next: NextFunction, email: string, id: string, startTime: number): Promise<void> {
+    const helperStartTime = Logger.start(req, 'restricted_meeting_check', {
+      meeting_id: id,
+      has_email: !!email,
+    });
+
     // Check that the user has access to the meeting by validating they were invited to the meeting
     if (!email) {
       // Log the error
+      Logger.error(req, 'restricted_meeting_check', helperStartTime, new Error('Missing email parameter'));
       Logger.error(req, 'post_meeting_join_url', startTime, new Error('Missing email parameter'));
 
       // Create a validation error
@@ -324,11 +358,22 @@ export class PublicMeetingController {
     // Query the meeting registrants filtered by the user's email to validate if the user was invited to the meeting
     const registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, id, email);
     if (registrants.resources.length === 0) {
-      throw new AuthorizationError('The email address is not registered for this restricted meeting', {
+      const authError = new AuthorizationError('The email address is not registered for this restricted meeting', {
         operation: 'post_meeting_join_url',
         service: 'public_meeting_controller',
         path: `/meetings/${id}`,
       });
+      Logger.error(req, 'restricted_meeting_check', helperStartTime, authError, {
+        email,
+        meeting_id: id,
+      });
+      throw authError;
     }
+
+    Logger.success(req, 'restricted_meeting_check', helperStartTime, {
+      meeting_id: id,
+      email,
+      registrant_count: registrants.resources.length,
+    });
   }
 }

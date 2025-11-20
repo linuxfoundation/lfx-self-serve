@@ -39,7 +39,7 @@ export class NatsService {
     } catch (error) {
       serverLogger.error(
         {
-          error: error instanceof Error ? error.message : error,
+          err: error,
           subject,
         },
         'NATS request failed'
@@ -66,7 +66,7 @@ export class NatsService {
         await this.connection.drain();
         serverLogger.info('NATS connection closed successfully');
       } catch (error) {
-        serverLogger.error({ error: error instanceof Error ? error.message : error }, 'Error during NATS shutdown');
+        serverLogger.error({ err: error }, 'Error during NATS shutdown');
       }
     }
     this.connection = null;
@@ -121,7 +121,7 @@ export class NatsService {
     } catch (error) {
       serverLogger.error(
         {
-          error: error instanceof Error ? error.message : error,
+          err: error,
           url: natsUrl,
           suggestion: 'If running locally, you may need to port-forward NATS: kubectl port-forward -n lfx svc/lfx-platform-nats 4222:4222',
         },
