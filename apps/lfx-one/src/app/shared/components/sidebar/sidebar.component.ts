@@ -9,7 +9,6 @@ import { BadgeComponent } from '@components/badge/badge.component';
 import { PersonaSelectorComponent } from '@components/persona-selector/persona-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { Project, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -26,7 +25,6 @@ export class SidebarComponent {
   private readonly projectService = inject(ProjectService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
-  private readonly featureFlagService = inject(FeatureFlagService);
 
   // Input properties
   public readonly items = input.required<SidebarMenuItem[]>();
@@ -34,9 +32,6 @@ export class SidebarComponent {
   public readonly collapsed = input<boolean>(false);
   public readonly styleClass = input<string>('');
   public readonly showProjectSelector = input<boolean>(false);
-
-  // Feature flags
-  protected readonly showRoleSelector = this.featureFlagService.getBooleanFlag('role-selector', true);
 
   // Load all projects using toSignal with tap to set default
   protected readonly projects = toSignal(

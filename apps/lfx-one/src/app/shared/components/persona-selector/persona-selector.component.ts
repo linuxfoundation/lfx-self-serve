@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject } from '@angular/core';
+import { Component, computed, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
 import { PERSONA_OPTIONS } from '@lfx-one/shared/constants';
 import { PersonaType } from '@lfx-one/shared/interfaces';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 
@@ -19,10 +20,16 @@ import { ProjectContextService } from '@services/project-context.service';
 export class PersonaSelectorComponent {
   private readonly personaService = inject(PersonaService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly featureFlagService = inject(FeatureFlagService);
+
   // Persona options available for selection
   protected readonly personaOptions = PERSONA_OPTIONS;
   // Whether persona is auto-detected (read-only)
   protected readonly isAutoDetected = this.personaService.isAutoDetected;
+  // Feature flag for role selector
+  protected readonly showRoleSelector = this.featureFlagService.getBooleanFlag('role-selector', true);
+  // Show selector if not autodetected OR feature flag is enabled
+  protected readonly shouldShowSelector = computed(() => !this.isAutoDetected() || this.showRoleSelector());
 
   public form: FormGroup;
 

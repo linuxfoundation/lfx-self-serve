@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@if (!isAutoDetected()) {
+@if (shouldShowSelector()) {
   <div class="persona-selector" data-testid="persona-selector">
     <lfx-select [form]="form" control="persona" [options]="personaOptions" optionLabel="label" optionValue="value" size="small"></lfx-select>
   </div>
