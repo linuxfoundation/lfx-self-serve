@@ -7,7 +7,7 @@ import { FormControl, FormGroup } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { ProjectCardComponent } from '@components/project-card/project-card.component';
 import { Project, ProjectCard, ProjectCardMetric } from '@lfx-one/shared/interfaces';
-import { ProjectService } from '@shared/services/project.service';
+import { ProjectService } from '@services/project.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, debounceTime, distinctUntilChanged, of, startWith, switchMap, tap } from 'rxjs';

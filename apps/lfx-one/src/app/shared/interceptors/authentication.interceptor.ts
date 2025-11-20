@@ -3,7 +3,7 @@
 
 import { HttpInterceptorFn } from '@angular/common/http';
 import { inject } from '@angular/core';
-import { UserService } from '@shared/services/user.service';
+import { UserService } from '@services/user.service';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 
 /**

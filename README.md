@@ -47,7 +47,7 @@ of conduct, development process, and how to submit pull requests.
 - **Node.js** v22+ (specified in package.json)
 - **Yarn** v4.9.2+ package manager
 - **Auth0 Account** for authentication setup
-- **Supabase Project (Temporary Mock)** for database operations
+- **Supabase Project** for user profile email management
 
 #### Environment Setup
 
@@ -78,7 +78,7 @@ of conduct, development process, and how to submit pull requests.
    - Create a project in [Supabase](https://supabase.com)
    - Get your project URL and anon key from Project Settings → API
    - Set `SUPABASE_URL` and `POSTGRES_API_KEY`
-   - Configure `SUPABASE_STORAGE_BUCKET` for file storage
+   - Used exclusively for user profile email management
 
    **Microservice Configuration:**
    - Set `LFX_V2_SERVICE` to your query service endpoint

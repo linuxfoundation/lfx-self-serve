@@ -4,11 +4,11 @@
 import { Component, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { SelectComponent } from '@components/select/select.component';
 import { PERSONA_OPTIONS } from '@lfx-one/shared/constants';
 import { PersonaType } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { SelectComponent } from '@shared/components/select/select.component';
 
 @Component({
   selector: 'lfx-persona-selector',

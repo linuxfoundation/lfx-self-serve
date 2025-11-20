@@ -1,11 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject } from '@angular/core';
 import { CommonModule } from '@angular/common';
-import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { Meeting } from '@lfx-one/shared/interfaces';
+import { Component, inject } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
+import { Meeting } from '@lfx-one/shared/interfaces';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 export interface MeetingDeleteTypeResult {
   deleteType: 'occurrence' | 'series';

@@ -4,9 +4,6 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, ElementRef, inject, signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { AnalyticsService } from '@app/shared/services/analytics.service';
-import { PersonaService } from '@app/shared/services/persona.service';
-import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { ChartComponent } from '@components/chart/chart.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import {
@@ -18,6 +15,9 @@ import {
   PROGRESS_LINE_CHART_OPTIONS,
 } from '@lfx-one/shared/constants';
 import { parseLocalDateString } from '@lfx-one/shared/utils';
+import { AnalyticsService } from '@services/analytics.service';
+import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
 import { finalize, switchMap } from 'rxjs';
 

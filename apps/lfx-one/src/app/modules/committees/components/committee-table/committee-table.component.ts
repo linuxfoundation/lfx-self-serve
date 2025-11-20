@@ -4,10 +4,10 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject, input, output, signal, WritableSignal } from '@angular/core';
 import { RouterLink } from '@angular/router';
-import { CommitteeTypeColorPipe } from '@app/shared/pipes/committee-type-colors.pipe';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
-import { Committee } from '@lfx-one/shared/interfaces';
+import { TagComponent } from '@components/tag/tag.component';
+import { Committee, COMMITTEE_CATEGORY_SEVERITY } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -20,7 +20,7 @@ import { MemberFormComponent } from '../member-form/member-form.component';
 @Component({
   selector: 'lfx-committee-table',
   standalone: true,
-  imports: [CommonModule, RouterLink, CardComponent, ButtonComponent, TooltipModule, ConfirmDialogModule, DynamicDialogModule, CommitteeTypeColorPipe],
+  imports: [CommonModule, RouterLink, CardComponent, ButtonComponent, TagComponent, TooltipModule, ConfirmDialogModule, DynamicDialogModule],
   providers: [ConfirmationService, DialogService],
   templateUrl: './committee-table.component.html',
   styleUrl: './committee-table.component.scss',
@@ -45,6 +45,11 @@ export class CommitteeTableComponent {
 
   // Outputs
   public readonly refresh = output<void>();
+
+  // Helper method for category severity
+  public getCategorySeverity(category: string): 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast' {
+    return COMMITTEE_CATEGORY_SEVERITY[category] || 'secondary';
+  }
 
   // Event handlers
   public onAddMember(committee: Committee): void {

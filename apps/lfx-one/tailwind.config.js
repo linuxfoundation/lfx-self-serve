@@ -81,6 +81,15 @@ export default {
       animation: {
         'fade-in-up': 'fade-in-up 1s ease-out forwards', // Adjust duration and easing
       },
+      fontWeight: {
+        normal: 400,
+        medium: 500,
+        semibold: 600,
+      },
+      lineHeight: {
+        normal: 1.5,
+        relaxed: 1.75,
+      },
     },
     fontSize: lfxFontSizes,
     fontFamily: {

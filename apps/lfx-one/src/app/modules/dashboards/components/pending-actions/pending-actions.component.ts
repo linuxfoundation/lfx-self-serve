@@ -3,13 +3,14 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, input, output } from '@angular/core';
+import { TagComponent } from '@components/tag/tag.component';
 
 import type { PendingActionItem } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-pending-actions',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, TagComponent],
   templateUrl: './pending-actions.component.html',
   styleUrl: './pending-actions.component.scss',
 })

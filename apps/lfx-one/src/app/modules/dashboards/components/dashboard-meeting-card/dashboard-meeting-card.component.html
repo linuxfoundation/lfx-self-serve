@@ -13,9 +13,11 @@
   <div class="p-4 space-y-3">
     <!-- Header with meeting type and project badges -->
     <div class="flex items-center gap-2 flex-wrap">
-      <span class="text-xs px-2 py-1 font-medium rounded" [ngClass]="meetingTypeInfo().className" data-testid="dashboard-meeting-card-type-badge">
-        {{ meetingTypeInfo().label }}
-      </span>
+      <lfx-tag
+        [value]="meetingTypeInfo().label"
+        [severity]="meetingTypeInfo().severity"
+        [icon]="meetingTypeInfo().icon"
+        data-testid="dashboard-meeting-card-type-badge"></lfx-tag>
     </div>
 
     <!-- Meeting title with file icons -->

@@ -4,14 +4,14 @@
 import { CommonModule } from '@angular/common';
 import { Component, input } from '@angular/core';
 import { RouterModule } from '@angular/router';
+import { TagComponent } from '@components/tag/tag.component';
 import { ProjectCardMetric } from '@lfx-one/shared/interfaces';
-import { BadgeModule } from 'primeng/badge';
 import { CardModule } from 'primeng/card';
 
 @Component({
   selector: 'lfx-project-card',
   standalone: true,
-  imports: [CommonModule, RouterModule, CardModule, BadgeModule],
+  imports: [CommonModule, RouterModule, CardModule, TagComponent],
   templateUrl: './project-card.component.html',
   styleUrl: './project-card.component.scss',
 })
@@ -21,4 +21,9 @@ export class ProjectCardComponent {
   public readonly logo = input.required<string | undefined>();
   public readonly metrics = input<ProjectCardMetric[]>([]);
   public readonly url = input<string | undefined>('');
+
+  // Map 'warning' to 'warn' for PrimeNG tag compatibility
+  public mapSeverity(severity: string): 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast' {
+    return severity === 'warning' ? 'warn' : (severity as 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast');
+  }
 }

@@ -4,14 +4,14 @@
 import { Component, computed, inject, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { SelectComponent } from '@components/select/select.component';
 import { Account, PendingActionItem } from '@lfx-one/shared/interfaces';
+import { AccountContextService } from '@services/account-context.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
 import { catchError, of, switchMap } from 'rxjs';
 
-import { SelectComponent } from '../../../shared/components/select/select.component';
-import { AccountContextService } from '../../../shared/services/account-context.service';
-import { FeatureFlagService } from '../../../shared/services/feature-flag.service';
-import { ProjectContextService } from '../../../shared/services/project-context.service';
-import { ProjectService } from '../../../shared/services/project.service';
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { OrganizationInvolvementComponent } from '../components/organization-involvement/organization-involvement.component';

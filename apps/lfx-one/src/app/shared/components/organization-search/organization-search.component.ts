@@ -6,10 +6,10 @@ import { Component, effect, inject, input, output, signal, Signal } from '@angul
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { normalizeToUrl, OrganizationSuggestion } from '@lfx-one/shared';
+import { OrganizationService } from '@services/organization.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 import { catchError, debounceTime, distinctUntilChanged, of, startWith, switchMap } from 'rxjs';
 
-import { OrganizationService } from '../../services/organization.service';
 import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
 import { InputTextComponent } from '../input-text/input-text.component';
 

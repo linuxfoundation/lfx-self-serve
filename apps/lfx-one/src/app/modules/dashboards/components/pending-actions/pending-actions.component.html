@@ -4,7 +4,7 @@
 <section class="flex flex-col flex-1" data-testid="dashboard-pending-actions-section">
   <!-- Header -->
   <div class="flex items-center justify-between mb-4">
-    <h2 class="font-display font-semibold text-gray-900 py-1.5">Pending Actions</h2>
+    <h2 class="py-1.5">Pending Actions</h2>
   </div>
 
   <!-- Scrollable Content -->
@@ -44,11 +44,11 @@
                   {{ item.type }}
                 </span>
               </div>
-              <span
-                class="inline-flex items-center justify-center rounded-md px-2 py-0.5 text-xs font-medium bg-white text-gray-700 border border-gray-200"
-                data-testid="dashboard-pending-actions-badge">
-                {{ item.badge }}
-              </span>
+              <lfx-tag
+                [value]="item.badge"
+                severity="secondary"
+                styleClass="bg-white border border-gray-200"
+                data-testid="dashboard-pending-actions-badge"></lfx-tag>
             </div>
 
             <!-- Action Text -->

@@ -4,11 +4,10 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ButtonComponent } from '@components/button/button.component';
 import { calculateRsvpCounts, Meeting, MeetingOccurrence, MeetingRsvp, PastMeeting, Project, RsvpCounts } from '@lfx-one/shared';
 import { MeetingService } from '@services/meeting.service';
 import { catchError, of, switchMap } from 'rxjs';
-
-import { ButtonComponent } from '../button/button.component';
 
 @Component({
   selector: 'lfx-meeting-rsvp-details',

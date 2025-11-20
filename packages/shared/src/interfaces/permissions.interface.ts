@@ -201,5 +201,7 @@ export interface PermissionMatrixItem {
     color: string;
     /** Background color */
     bgColor: string;
+    /** Semantic severity level for tag component */
+    severity?: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
   };
 }

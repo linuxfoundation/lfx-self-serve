@@ -13,12 +13,12 @@ import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 
 @Component({
-  selector: 'lfx-meeting-registrants',
+  selector: 'lfx-meeting-registrants-display',
   standalone: true,
   imports: [CommonModule, AvatarComponent, TooltipModule],
-  templateUrl: './meeting-registrants.component.html',
+  templateUrl: './meeting-registrants-display.component.html',
 })
-export class MeetingRegistrantsComponent {
+export class MeetingRegistrantsDisplayComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly dialogService = inject(DialogService);
 

@@ -8,33 +8,24 @@
       <div class="flex items-center gap-2 flex-wrap">
         <!-- Privacy Badge -->
         @if (meeting().visibility === 'private') {
-          <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-500 text-white">
-            <i class="fa-light fa-shield"></i>
-            <span>Private</span>
-          </div>
+          <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield"></lfx-tag>
         }
 
         <!-- Meeting Type Badge -->
         @if (meetingTypeBadge(); as badge) {
           @if (badge.text !== 'None') {
-            <div class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium" [class]="badge.badgeClass">
-              @if (badge.icon) {
-                <i [class]="badge.icon"></i>
-              }
-              <span>{{ badge.text }}</span>
-            </div>
+            <lfx-tag [value]="badge.text" [severity]="badge.severity" [icon]="badge.icon"></lfx-tag>
           }
         }
 
         <!-- Recurring Badge -->
         @if (meeting().recurrence) {
-          <div
-            class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-400 text-white"
+          <lfx-tag
+            [value]="meeting().recurrence | recurrenceSummary"
+            severity="secondary"
+            icon="fa-light fa-repeat"
             pTooltip="This is a recurring meeting"
-            data-testid="recurring-badge">
-            <i class="fa-light fa-repeat"></i>
-            <span>{{ meeting().recurrence | recurrenceSummary }}</span>
-          </div>
+            data-testid="recurring-badge"></lfx-tag>
         }
       </div>
       <div class="flex items-center gap-1">
@@ -98,38 +89,23 @@
     <!-- Feature Badges with Date/Time -->
     <div class="flex flex-wrap gap-1 mb-2" data-testid="feature-badges">
       @if (meetingStartTime()) {
-        <div
-          class="inline-flex items-center gap-1.5 bg-gray-100/60 text-gray-600 px-2 py-0.5 h-[21px] rounded text-xs tracking-wide"
-          data-testid="meeting-datetime">
-          <i class="fa-light fa-calendar-days text-xs"></i>
-          <span class="whitespace-nowrap"
-            >{{ meetingStartTime() | meetingTime: meeting().duration : 'date' }} • {{ meetingStartTime() | meetingTime: meeting().duration : 'time' }}</span
-          >
-        </div>
+        <lfx-tag
+          [value]="(meetingStartTime() | meetingTime: meeting().duration : 'date') + ' • ' + (meetingStartTime() | meetingTime: meeting().duration : 'time')"
+          severity="secondary"
+          icon="fa-light fa-calendar-days"
+          data-testid="meeting-datetime"></lfx-tag>
       }
       @if (meeting().youtube_upload_enabled) {
-        <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs tracking-wide h-[21px] bg-red-50 text-red-700">
-          <i class="fa-light fa-upload text-xs"></i>
-          YouTube Upload
-        </div>
+        <lfx-tag value="YouTube Upload" severity="danger" icon="fa-light fa-upload"></lfx-tag>
       }
       @if (meeting().recording_enabled) {
-        <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs tracking-wide h-[21px] bg-blue-50 text-blue-700">
-          <i class="fa-light fa-video text-xs"></i>
-          Recording
-        </div>
+        <lfx-tag value="Recording" severity="info" icon="fa-light fa-video"></lfx-tag>
       }
       @if (meeting().transcript_enabled) {
-        <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs tracking-wide h-[21px] bg-purple-50 text-purple-700">
-          <i class="fa-light fa-file-lines text-xs"></i>
-          Transcripts
-        </div>
+        <lfx-tag value="Transcripts" severity="secondary" icon="fa-light fa-file-lines"></lfx-tag>
       }
       @if (meeting().zoom_config?.ai_companion_enabled) {
-        <div class="inline-flex items-center gap-1.5 px-2 py-1 rounded text-xs tracking-wide h-[21px] bg-green-50 text-green-700">
-          <i class="fa-light fa-file-lines text-xs"></i>
-          AI Summary
-        </div>
+        <lfx-tag value="AI Summary" severity="success" icon="fa-light fa-sparkles"></lfx-tag>
       }
     </div>
 
@@ -340,13 +316,13 @@
     </div>
 
     <!-- Meeting Registrants -->
-    <lfx-meeting-registrants
+    <lfx-meeting-registrants-display
       [meeting]="meeting()"
       [pastMeeting]="pastMeeting()"
       [visible]="showRegistrants()"
       [showAddRegistrant]="!pastMeeting()"
       (registrantsCountChange)="additionalRegistrantsCount.set($event)">
-    </lfx-meeting-registrants>
+    </lfx-meeting-registrants-display>
 
     <!-- Confirmation Dialog -->
     <p-confirmDialog></p-confirmDialog>

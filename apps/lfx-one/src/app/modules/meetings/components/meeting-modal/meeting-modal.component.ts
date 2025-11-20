@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, inject } from '@angular/core';
-import { MeetingCardComponent } from '@components/meeting-card/meeting-card.component';
+import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 @Component({

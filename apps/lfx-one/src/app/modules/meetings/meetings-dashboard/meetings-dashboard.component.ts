@@ -4,13 +4,13 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { MeetingCardComponent } from '@app/shared/components/meeting-card/meeting-card.component';
-import { ProjectContextService } from '@app/shared/services/project-context.service';
+import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { Meeting, PastMeeting, ProjectContext } from '@lfx-one/shared/interfaces';
 import { getCurrentOrNextOccurrence } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { BehaviorSubject, catchError, combineLatest, finalize, map, of, switchMap } from 'rxjs';
 
 import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-top-bar.component';
@@ -31,7 +31,6 @@ export class MeetingsDashboardComponent {
   public pastMeetingsLoading: WritableSignal<boolean>;
   public upcomingMeetings: Signal<Meeting[]>;
   public pastMeetings: Signal<PastMeeting[]>;
-  public currentView: WritableSignal<'list' | 'calendar'>;
   public filteredMeetings: Signal<(Meeting | PastMeeting)[]>;
   public refresh$: BehaviorSubject<void>;
   public searchQuery: WritableSignal<string>;
@@ -53,7 +52,6 @@ export class MeetingsDashboardComponent {
     this.meetingsLoading = signal<boolean>(true);
     this.pastMeetingsLoading = signal<boolean>(true);
     this.refresh$ = new BehaviorSubject<void>(undefined);
-    this.currentView = signal<'list' | 'calendar'>('list');
     this.searchQuery = signal<string>('');
     this.timeFilter = signal<'upcoming' | 'past'>('upcoming');
     this.topBarVisibilityFilter = signal<'mine' | 'public'>('mine');
@@ -62,10 +60,6 @@ export class MeetingsDashboardComponent {
     this.upcomingMeetings = this.initializeUpcomingMeetings();
     this.pastMeetings = this.initializePastMeetings();
     this.filteredMeetings = this.initializeFilteredMeetings();
-  }
-
-  public onViewChange(view: 'list' | 'calendar'): void {
-    this.currentView.set(view);
   }
 
   public refreshMeetings(): void {

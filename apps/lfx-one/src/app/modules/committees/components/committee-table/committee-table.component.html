@@ -19,11 +19,7 @@
           <tr class="hover:bg-slate-50" [attr.data-testid]="'committee-row-' + committee.uid">
             <td class="px-3 py-3 w-[180px]">
               <div class="flex flex-col gap-1">
-                <span
-                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded text-[10px] font-medium w-fit"
-                  [ngClass]="committee.category | committeeTypeColor">
-                  {{ committee.category || 'Other' }}
-                </span>
+                <lfx-tag [value]="committee.category || 'Other'" [severity]="getCategorySeverity(committee.category || 'Other')"></lfx-tag>
                 <div class="flex items-center gap-2">
                   <p class="font-inter font-medium leading-[16px] not-italic text-[#0f172b] text-[12px] text-nowrap whitespace-pre">
                     {{ committee.name }}

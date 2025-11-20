@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, Signal } from '@angular/core';
-import { PersonaService } from '@app/shared/services/persona.service';
 import { PersonaType } from '@lfx-one/shared/interfaces';
+import { PersonaService } from '@services/persona.service';
 
 import { HomeComponent } from '../pages/home/home.component';
 import { BoardMemberDashboardComponent } from './board-member/board-member-dashboard.component';

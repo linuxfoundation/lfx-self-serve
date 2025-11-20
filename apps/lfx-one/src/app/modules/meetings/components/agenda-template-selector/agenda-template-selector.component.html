@@ -20,9 +20,7 @@
             [attr.data-testid]="'template-item-' + template.id">
             <div class="flex items-start justify-between">
               <h4 class="text-sm font-semibold text-gray-900">{{ template.title }}</h4>
-              <span class="text-xs text-gray-500 bg-gray-100 px-2 py-1 rounded-md">
-                {{ template.formattedDuration }}
-              </span>
+              <lfx-tag [value]="template.formattedDuration" severity="secondary"></lfx-tag>
             </div>
             <p class="text-xs text-gray-600 leading-relaxed">{{ template.preview }}</p>
           </div>

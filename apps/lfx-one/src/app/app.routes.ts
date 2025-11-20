@@ -42,13 +42,6 @@ export const routes: Routes = [
     loadComponent: () => import('./modules/meetings/meeting-join/meeting-join.component').then((m) => m.MeetingJoinComponent),
   },
   {
-    path: 'project/:slug',
-    loadComponent: () => import('./layouts/project-layout/project-layout.component').then((m) => m.ProjectLayoutComponent),
-    loadChildren: () => import('./modules/project/project.routes').then((m) => m.PROJECT_ROUTES),
-    canActivate: [authGuard],
-    data: { preload: true, preloadDelay: 1000 }, // Preload after 1 second for likely navigation
-  },
-  {
     path: 'profile',
     loadComponent: () => import('./layouts/profile-layout/profile-layout.component').then((m) => m.ProfileLayoutComponent),
     loadChildren: () => import('./modules/profile/profile.routes').then((m) => m.PROFILE_ROUTES),

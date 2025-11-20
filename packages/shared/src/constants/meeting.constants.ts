@@ -121,6 +121,8 @@ export interface MeetingTypeConfig {
 export interface MeetingTypeBadge {
   label: string;
   className: string;
+  severity?: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+  icon?: string;
 }
 
 /**

@@ -8,26 +8,28 @@ import { Component, computed, inject, signal, Signal, WritableSignal } from '@an
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
-import { HeaderComponent } from '@app/shared/components/header/header.component';
-import { LinkifyPipe } from '@app/shared/pipes/linkify.pipe';
-import { RecurrenceSummaryPipe } from '@app/shared/pipes/recurrence-summary.pipe';
+import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
+import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
+import { HeaderComponent } from '@components/header/header.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { MeetingRegistrantsComponent } from '@components/meeting-registrants/meeting-registrants.component';
-import { MeetingRsvpDetailsComponent } from '@components/meeting-rsvp-details/meeting-rsvp-details.component';
-import { RsvpButtonGroupComponent } from '@components/rsvp-button-group/rsvp-button-group.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import { canJoinMeeting, getCurrentOrNextOccurrence, Meeting, MeetingAttachment, MeetingOccurrence, Project, User } from '@lfx-one/shared';
 import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
+import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
+import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, debounceTime, filter, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
+
+import { MeetingRsvpDetailsComponent } from '../components/meeting-rsvp-details/meeting-rsvp-details.component';
 
 @Component({
   selector: 'lfx-meeting-join',
@@ -39,9 +41,10 @@ import { catchError, combineLatest, debounceTime, filter, map, Observable, of, s
     ButtonComponent,
     CardComponent,
     InputTextComponent,
+    TagComponent,
     RsvpButtonGroupComponent,
     MeetingRsvpDetailsComponent,
-    MeetingRegistrantsComponent,
+    MeetingRegistrantsDisplayComponent,
     ToastModule,
     TooltipModule,
     MeetingTimePipe,
@@ -70,7 +73,12 @@ export class MeetingJoinComponent {
   public project: WritableSignal<Project | null> = signal<Project | null>(null);
   public meeting: Signal<Meeting & { project: Project }>;
   public currentOccurrence: Signal<MeetingOccurrence | null>;
-  public meetingTypeBadge: Signal<{ badgeClass: string; icon?: string; text: string } | null>;
+  public meetingTypeBadge: Signal<{
+    badgeClass: string;
+    severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+    icon?: string;
+    text: string;
+  } | null>;
   public returnTo: Signal<string | undefined>;
   public password: WritableSignal<string | null> = signal<string | null>(null);
   public canJoinMeeting: Signal<boolean>;
@@ -235,7 +243,12 @@ export class MeetingJoinComponent {
     );
   }
 
-  private initializeMeetingTypeBadge(): Signal<{ badgeClass: string; icon?: string; text: string } | null> {
+  private initializeMeetingTypeBadge(): Signal<{
+    badgeClass: string;
+    severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+    icon?: string;
+    text: string;
+  } | null> {
     return computed(() => {
       const meetingType = this.meeting()?.meeting_type;
       if (!meetingType) return null;
@@ -244,17 +257,17 @@ export class MeetingJoinComponent {
 
       switch (type) {
         case 'board':
-          return { badgeClass: 'bg-red-100 text-red-500', icon: 'fa-light fa-user-check', text: meetingType };
+          return { badgeClass: 'bg-red-100 text-red-500', severity: 'danger', icon: 'fa-light fa-user-check', text: meetingType };
         case 'maintainers':
-          return { badgeClass: 'bg-blue-100 text-blue-500', icon: 'fa-light fa-gear', text: meetingType };
+          return { badgeClass: 'bg-blue-100 text-blue-500', severity: 'info', icon: 'fa-light fa-gear', text: meetingType };
         case 'marketing':
-          return { badgeClass: 'bg-green-100 text-green-500', icon: 'fa-light fa-chart-line-up', text: meetingType };
+          return { badgeClass: 'bg-green-100 text-green-500', severity: 'success', icon: 'fa-light fa-chart-line-up', text: meetingType };
         case 'technical':
-          return { badgeClass: 'bg-purple-100 text-purple-500', icon: 'fa-light fa-code', text: meetingType };
+          return { badgeClass: 'bg-purple-100 text-purple-500', severity: 'contrast', icon: 'fa-light fa-code', text: meetingType };
         case 'legal':
-          return { badgeClass: 'bg-amber-100 text-amber-500', icon: 'fa-light fa-scale-balanced', text: meetingType };
+          return { badgeClass: 'bg-amber-100 text-amber-500', severity: 'warn', icon: 'fa-light fa-scale-balanced', text: meetingType };
         default:
-          return { badgeClass: 'bg-gray-100 text-gray-400', icon: 'fa-light fa-calendar-days', text: meetingType };
+          return { badgeClass: 'bg-gray-100 text-gray-400', severity: 'secondary', icon: 'fa-light fa-calendar-days', text: meetingType };
       }
     });
   }

@@ -2,8 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Routes } from '@angular/router';
-
-import { authGuard } from '../../shared/guards/auth.guard';
+import { authGuard } from '@shared/guards/auth.guard';
 
 export const MEETING_ROUTES: Routes = [
   {

@@ -23,7 +23,7 @@ export interface BadgeSizeOptions {
 
 /**
  * Complete badge component properties
- * @description Configuration for LFX badge wrapper component
+ * @description Configuration for LFX badge wrapper component (for count indicators)
  */
 export interface BadgeProps {
   /** Badge content (text or number) */
@@ -36,6 +36,32 @@ export interface BadgeProps {
   styleClass: string;
   /** Whether the badge is disabled */
   badgeDisabled: boolean;
+}
+
+/**
+ * Tag severity level options
+ * @description Available color schemes for tag components
+ */
+export interface TagSeverityOptions {
+  /** Tag color scheme indicating status or category */
+  severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+}
+
+/**
+ * Complete tag component properties
+ * @description Configuration for LFX tag wrapper component (for labels and status indicators)
+ */
+export interface TagProps {
+  /** Tag content text */
+  value: string;
+  /** Color scheme for the tag */
+  severity?: TagSeverityOptions['severity'];
+  /** Icon class or name (e.g., 'fa-light fa-shield') */
+  icon?: string;
+  /** Whether the corners of the tag are rounded */
+  rounded?: boolean;
+  /** Additional CSS classes */
+  styleClass?: string;
 }
 
 /**

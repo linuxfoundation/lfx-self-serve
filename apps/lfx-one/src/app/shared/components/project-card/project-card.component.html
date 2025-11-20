@@ -36,18 +36,11 @@
                 </div>
                 <div class="flex items-center gap-2" data-testid="metric-value-container">
                   @if (metric.badge) {
-                    <span
-                      class="inline-flex items-center px-2.5 py-0.5 rounded-full text-sm font-semibold"
-                      [ngClass]="{
-                        'bg-emerald-500 text-white': metric.badge.severity === 'success',
-                        'bg-blue-500 text-white': metric.badge.severity === 'info',
-                        'bg-amber-500 text-white': metric.badge.severity === 'warning',
-                        'bg-red-500 text-white': metric.badge.severity === 'danger',
-                      }"
+                    <lfx-tag
+                      [value]="metric.badge.label"
+                      [severity]="mapSeverity(metric.badge.severity)"
                       data-testid="metric-badge"
-                      [attr.data-badge-severity]="metric.badge.severity">
-                      {{ metric.badge.label }}
-                    </span>
+                      [attr.data-badge-severity]="metric.badge.severity"></lfx-tag>
                   } @else {
                     <span class="text-sm text-gray-900 font-normal font-display" data-testid="metric-value">{{ metric.value || 0 }}</span>
                   }

@@ -3,12 +3,14 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, computed, input, model, Signal } from '@angular/core';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { InputTextComponent } from '@components/input-text/input-text.component';
 import { Meeting } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-meetings-top-bar',
   standalone: true,
-  imports: [CommonModule],
+  imports: [CommonModule, ReactiveFormsModule, InputTextComponent],
   templateUrl: './meetings-top-bar.component.html',
 })
 export class MeetingsTopBarComponent {
@@ -16,33 +18,32 @@ export class MeetingsTopBarComponent {
   public timeFilter = model.required<'upcoming' | 'past'>();
   public visibilityFilter = model.required<'mine' | 'public'>();
   public meetings = input.required<Meeting[]>();
-  public viewMode = input<'list' | 'calendar'>('list');
 
   public mineCount: Signal<number>;
   public publicCount: Signal<number>;
+  public searchForm: FormGroup;
 
   public constructor() {
     this.mineCount = this.initializeMineCount();
     this.publicCount = this.initializePublicCount();
-  }
 
-  public onSearchInput(event: Event): void {
-    const value = (event.target as HTMLInputElement).value;
-    this.searchQuery.set(value);
+    // Initialize form
+    this.searchForm = new FormGroup({
+      search: new FormControl(''),
+    });
+
+    // Subscribe to form changes and update signal
+    this.searchForm.get('search')?.valueChanges.subscribe((value) => {
+      this.searchQuery.set(value || '');
+    });
   }
 
   public onTimeFilterClick(value: 'upcoming' | 'past'): void {
-    if (this.viewMode() !== 'calendar') {
-      this.timeFilter.set(value);
-    }
+    this.timeFilter.set(value);
   }
 
   public onVisibilityFilterClick(value: 'mine' | 'public'): void {
     this.visibilityFilter.set(value);
-  }
-
-  public get isCalendarView(): boolean {
-    return this.viewMode() === 'calendar';
   }
 
   private initializeMineCount(): Signal<number> {

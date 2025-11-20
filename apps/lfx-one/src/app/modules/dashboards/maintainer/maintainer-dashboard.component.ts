@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, signal } from '@angular/core';
-import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { MAINTAINER_ACTION_ITEMS } from '@lfx-one/shared/constants';
+import { ProjectContextService } from '@services/project-context.service';
 
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { MyProjectsComponent } from '../components/my-projects/my-projects.component';

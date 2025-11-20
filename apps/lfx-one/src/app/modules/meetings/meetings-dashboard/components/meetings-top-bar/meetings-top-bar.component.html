@@ -2,42 +2,32 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-wrap items-center gap-4">
-  <div class="flex-1 min-w-[300px]">
-    <div class="bg-slate-50 relative rounded-[12px]">
-      <div class="flex flex-row items-center overflow-clip rounded-[inherit] size-full">
-        <div class="box-border content-stretch flex gap-[8px] items-center px-[12px] py-[8px] relative w-full">
-          <i class="fa-light fa-magnifying-glass w-4 h-4 text-[#90a1b9] shrink-0"></i>
-          <input
-            type="text"
-            [value]="searchQuery()"
-            (input)="onSearchInput($event)"
-            placeholder="Search meetings..."
-            class="font-sans font-normal leading-[normal] not-italic flex-1 bg-transparent border-0 outline-none text-[#90a1b9] text-[14px] placeholder:text-[#90a1b9]" />
-        </div>
-      </div>
-      <div aria-hidden="true" class="absolute border-[#cad5e2] border-[0.5px] border-solid inset-0 pointer-events-none rounded-[12px]"></div>
-    </div>
+  <div class="flex-1">
+    <lfx-input-text
+      [form]="searchForm"
+      control="search"
+      placeholder="Search meetings..."
+      icon="fa-light fa-search"
+      styleClass="w-full"
+      size="small"
+      data-testid="meetings-search-input"></lfx-input-text>
   </div>
 
-  <div [ngClass]="{ 'opacity-50': isCalendarView }" class="inline-flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5">
+  <div class="inline-flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5">
     <button
       (click)="onTimeFilterClick('upcoming')"
-      [disabled]="isCalendarView"
       [ngClass]="{
         'bg-white text-slate-900 shadow-sm': timeFilter() === 'upcoming',
         'text-slate-600 hover:text-slate-900': timeFilter() !== 'upcoming',
-        'cursor-not-allowed': isCalendarView,
       }"
       class="px-3 py-1.5 rounded-md text-[12.25px] transition-all duration-200">
       Upcoming
     </button>
     <button
       (click)="onTimeFilterClick('past')"
-      [disabled]="isCalendarView"
       [ngClass]="{
         'bg-white text-slate-900 shadow-sm': timeFilter() === 'past',
         'text-slate-600 hover:text-slate-900': timeFilter() !== 'past',
-        'cursor-not-allowed': isCalendarView,
       }"
       class="px-3 py-1.5 rounded-md text-[12.25px] transition-all duration-200">
       Past

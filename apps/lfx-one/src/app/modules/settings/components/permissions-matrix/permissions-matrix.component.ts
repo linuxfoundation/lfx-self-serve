@@ -3,12 +3,13 @@
 
 import { Component } from '@angular/core';
 import { CardComponent } from '@components/card/card.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { PermissionMatrixItem } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-permissions-matrix',
   standalone: true,
-  imports: [CardComponent],
+  imports: [CardComponent, TagComponent],
   templateUrl: './permissions-matrix.component.html',
 })
 export class PermissionsMatrixComponent {
@@ -21,6 +22,7 @@ export class PermissionsMatrixComponent {
       badge: {
         color: 'text-blue-800',
         bgColor: 'bg-blue-100',
+        severity: 'info',
       },
     },
     {
@@ -31,6 +33,7 @@ export class PermissionsMatrixComponent {
       badge: {
         color: 'text-green-800',
         bgColor: 'bg-green-100',
+        severity: 'success',
       },
     },
   ];

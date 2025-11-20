@@ -3,11 +3,11 @@
 
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { ProjectPermissionUser } from '@lfx-one/shared';
 import { PermissionsService } from '@services/permissions.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { MenuItem } from 'primeng/api';
 import { DialogService } from 'primeng/dynamicdialog';
 import { BehaviorSubject, catchError, merge, of, switchMap, take, tap } from 'rxjs';

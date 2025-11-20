@@ -22,7 +22,7 @@ export class ApiMockHelper {
       const url = route.request().url();
 
       // Skip other endpoints - only handle direct slug requests
-      if (url.includes('/search') || url.includes('/recent-activity')) {
+      if (url.includes('/search')) {
         await route.continue();
         return;
       }

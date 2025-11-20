@@ -4,17 +4,18 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
-import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { Project } from '@lfx-one/shared/interfaces';
 import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
 import { Popover, PopoverModule } from 'primeng/popover';
 
+import { TagComponent } from '../tag/tag.component';
+
 @Component({
   selector: 'lfx-project-selector',
   standalone: true,
-  imports: [CommonModule, PopoverModule, ButtonComponent, BadgeComponent, InputTextModule, FormsModule, AutoFocus],
+  imports: [CommonModule, PopoverModule, ButtonComponent, InputTextModule, FormsModule, AutoFocus, TagComponent],
   templateUrl: './project-selector.component.html',
   styleUrl: './project-selector.component.scss',
 })

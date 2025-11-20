@@ -6,7 +6,6 @@ import { Component, computed, inject, signal, Signal, WritableSignal } from '@an
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
-import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -14,6 +13,7 @@ import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { Committee, ProjectContext } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap } from 'rxjs';
 

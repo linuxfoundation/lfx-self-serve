@@ -248,7 +248,6 @@ export class ExampleComponent {
 
 <!-- Good: Pure Tailwind for custom layouts -->
 <div class="bg-white rounded-lg shadow-md p-6 mb-4">
-  <h2 class="text-2xl font-display font-semibold text-gray-800 mb-4">Title</h2>
   <p class="text-gray-600 leading-relaxed">Content</p>
 </div>
 ```

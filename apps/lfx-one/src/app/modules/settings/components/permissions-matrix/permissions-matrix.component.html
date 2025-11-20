@@ -12,9 +12,7 @@
       @for (item of permissionMatrix; track item.scope + item.level) {
         <div class="border border-gray-200 rounded-lg p-3">
           <div class="flex items-center justify-between mb-2">
-            <span class="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium" [class]="item.badge.bgColor + ' ' + item.badge.color">
-              {{ item.scope }} {{ item.level }}
-            </span>
+            <lfx-tag [value]="item.scope + ' ' + item.level" [severity]="item.badge.severity"></lfx-tag>
           </div>
           <p class="text-xs text-gray-600 mb-2">{{ item.description }}</p>
           <ul class="text-xs text-gray-500 space-y-1">

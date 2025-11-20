@@ -14,7 +14,7 @@
     <!-- Header -->
     <div class="border-b border-slate-200 p-6">
       <div class="flex items-center justify-between">
-        <h1 class="text-xl font-semibold text-slate-900" data-testid="meeting-manage-title">
+        <h1 data-testid="meeting-manage-title">
           {{ isEditMode() ? 'Edit Meeting' : 'Create Meeting' }}
         </h1>
         @if (!isEditMode()) {
@@ -75,8 +75,8 @@
             <p-step-panel [value]="5" data-testid="meeting-manage-panel-4">
               <ng-template #content let-activateCallback="activateCallback">
                 @if (meetingId()) {
-                  <lfx-meeting-registrants [meetingUid]="meetingId()!" [(registrantUpdates)]="registrantUpdates" [refresh]="registrantUpdatesRefresh$">
-                  </lfx-meeting-registrants>
+                  <lfx-meeting-registrants-manager [meetingUid]="meetingId()!" [(registrantUpdates)]="registrantUpdates" [refresh]="registrantUpdatesRefresh$">
+                  </lfx-meeting-registrants-manager>
                 } @else {
                   <div class="text-center py-8 text-gray-500">
                     <p>Meeting must be created before managing guests.</p>
@@ -100,25 +100,25 @@
               <div class="space-y-8" data-testid="meeting-manage-single-page">
                 <!-- Meeting Type Section -->
                 <div class="border border-slate-200 rounded-lg p-6">
-                  <h2 class="text-lg font-semibold text-slate-900 mb-4">Meeting Type</h2>
+                  <h2 class="mb-4">Meeting Type</h2>
                   <lfx-meeting-type-selection [form]="form()"></lfx-meeting-type-selection>
                 </div>
 
                 <!-- Meeting Details Section -->
                 <div class="border border-slate-200 rounded-lg p-6">
-                  <h2 class="text-lg font-semibold text-slate-900 mb-4">Meeting Details</h2>
+                  <h2 class="mb-4">Meeting Details</h2>
                   <lfx-meeting-details [form]="form()"></lfx-meeting-details>
                 </div>
 
                 <!-- Platform & Features Section -->
                 <div class="border border-slate-200 rounded-lg p-6">
-                  <h2 class="text-lg font-semibold text-slate-900 mb-4">Platform & Features</h2>
+                  <h2 class="mb-4">Platform & Features</h2>
                   <lfx-meeting-platform-features [form]="form()"></lfx-meeting-platform-features>
                 </div>
 
                 <!-- Resources & Summary Section -->
                 <div class="border border-slate-200 rounded-lg p-6">
-                  <h2 class="text-lg font-semibold text-slate-900 mb-4">Resources & Summary</h2>
+                  <h2 class="mb-4">Resources & Summary</h2>
                   <lfx-meeting-resources-summary
                     [form]="form()"
                     [meetingId]="meetingId()"
@@ -136,9 +136,9 @@
             <p-tabpanel [value]="2">
               <!-- Manage Guests Section -->
               <div class="border border-slate-200 rounded-lg p-6">
-                <h2 class="text-lg font-semibold text-slate-900 mb-4">Manage Guests</h2>
-                <lfx-meeting-registrants [meetingUid]="meetingId()!" [(registrantUpdates)]="registrantUpdates" [refresh]="registrantUpdatesRefresh$">
-                </lfx-meeting-registrants>
+                <h2 class="mb-4">Manage Guests</h2>
+                <lfx-meeting-registrants-manager [meetingUid]="meetingId()!" [(registrantUpdates)]="registrantUpdates" [refresh]="registrantUpdatesRefresh$">
+                </lfx-meeting-registrants-manager>
               </div>
             </p-tabpanel>
           </p-tabpanels>

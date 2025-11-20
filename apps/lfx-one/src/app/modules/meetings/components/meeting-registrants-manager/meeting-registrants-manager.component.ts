@@ -21,7 +21,7 @@ import { RegistrantCardComponent } from '../registrant-card/registrant-card.comp
 import { RegistrantFormComponent } from '../registrant-form/registrant-form.component';
 
 @Component({
-  selector: 'lfx-meeting-registrants',
+  selector: 'lfx-meeting-registrants-manager',
   imports: [
     CommonModule,
     ReactiveFormsModule,
@@ -35,9 +35,9 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
     RegistrantFormComponent,
   ],
   providers: [ConfirmationService],
-  templateUrl: './meeting-registrants.component.html',
+  templateUrl: './meeting-registrants-manager.component.html',
 })
-export class MeetingRegistrantsComponent implements OnInit {
+export class MeetingRegistrantsManagerComponent implements OnInit {
   // Injected services
   private readonly meetingService = inject(MeetingService);
   private readonly confirmationService = inject(ConfirmationService);

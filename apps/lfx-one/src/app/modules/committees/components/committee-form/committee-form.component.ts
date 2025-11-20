@@ -5,7 +5,7 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, inject, input, output, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ButtonComponent } from '@app/shared/components/button/button.component';
+import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';

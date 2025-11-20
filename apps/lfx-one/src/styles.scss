@@ -8,6 +8,56 @@
 
 @layer tailwind-base {
   @tailwind base;
+
+  /* Typography Defaults - Apply Inter font family to all text elements */
+  h1,
+  h2,
+  h3,
+  h4,
+  h5,
+  h6,
+  p,
+  label,
+  button,
+  input {
+    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+  }
+
+  /* Heading styles - only apply to elements without text or font classes */
+  h1:not([class*='text-']):not([class*='font-']) {
+    @apply text-xl font-semibold leading-normal;
+  }
+
+  h2:not([class*='text-']):not([class*='font-']) {
+    @apply text-lg font-normal leading-normal;
+  }
+
+  h3:not([class*='text-']):not([class*='font-']) {
+    @apply text-base font-normal leading-normal;
+  }
+
+  h4:not([class*='text-']):not([class*='font-']),
+  h5:not([class*='text-']):not([class*='font-']),
+  h6:not([class*='text-']):not([class*='font-']) {
+    @apply text-sm font-normal leading-normal;
+  }
+
+  /* Text element styles - only apply to elements without text or font classes */
+  p:not([class*='text-']):not([class*='font-']) {
+    @apply text-base font-normal leading-normal;
+  }
+
+  label:not([class*='text-']):not([class*='font-']) {
+    @apply text-base font-medium leading-normal;
+  }
+
+  button:not([class*='text-']):not([class*='font-']) {
+    @apply text-sm font-medium leading-normal;
+  }
+
+  input:not([class*='text-']):not([class*='font-']) {
+    @apply text-sm font-normal leading-normal;
+  }
 }
 
 @layer tailwind-utilities {
@@ -65,6 +115,10 @@
   --p-tabs-tab-border-width: 0;
 
   --p-message-content-gap: 1rem;
+
+  /* Tag component styling */
+  --p-tag-font-size: 10.5px;
+  --p-tag-font-weight: 400;
 }
 
 html {

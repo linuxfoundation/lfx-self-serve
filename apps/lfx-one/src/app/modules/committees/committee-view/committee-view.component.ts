@@ -8,7 +8,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
-import { Committee, CommitteeMember } from '@lfx-one/shared/interfaces';
+import { TagComponent } from '@components/tag/tag.component';
+import { Committee, CommitteeMember, COMMITTEE_CATEGORY_SEVERITY } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
@@ -26,6 +27,7 @@ import { UpcomingCommitteeMeetingComponent } from '../components/upcoming-commit
     CardComponent,
     MenuComponent,
     ButtonComponent,
+    TagComponent,
     CommitteeMembersComponent,
     UpcomingCommitteeMeetingComponent,
     ConfirmDialogModule,
@@ -57,6 +59,7 @@ export class CommitteeViewComponent {
   public formattedCreatedDate: Signal<string>;
   public formattedUpdatedDate: Signal<string>;
   public refresh: BehaviorSubject<void>;
+  public categorySeverity: Signal<'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast'>;
 
   public constructor() {
     // Initialize all class variables
@@ -70,6 +73,10 @@ export class CommitteeViewComponent {
     this.actionMenuItems = this.initializeActionMenuItems();
     this.formattedCreatedDate = this.initializeFormattedCreatedDate();
     this.formattedUpdatedDate = this.initializeFormattedUpdatedDate();
+    this.categorySeverity = computed(() => {
+      const category = this.committee()?.category;
+      return category ? COMMITTEE_CATEGORY_SEVERITY[category] || 'secondary' : 'secondary';
+    });
   }
 
   public goBack(): void {

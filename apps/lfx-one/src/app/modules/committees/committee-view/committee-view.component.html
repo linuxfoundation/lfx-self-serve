@@ -17,7 +17,7 @@
     <div class="flex justify-center items-center min-h-96">
       <div class="text-center">
         <i class="fa-light fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
-        <h2 class="text-xl font-semibold text-gray-900 mb-2">Group Not Found</h2>
+        <h2 class="mb-2">Group Not Found</h2>
         <p class="text-gray-600 mb-4">The group you're looking for doesn't exist or has been removed.</p>
         <lfx-button label="Back to Groups" styleClass="p-button-outlined" (onClick)="goBack()"> </lfx-button>
       </div>
@@ -36,11 +36,11 @@
               Back to Groups
             </button>
           </div>
-          <h1 class="text-3xl font-bold text-gray-900 mb-2">{{ committee()?.name }}</h1>
+          <h1 class="mb-2">{{ committee()?.name }}</h1>
           <div class="flex items-center gap-4 text-sm text-gray-500">
-            <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
-              {{ committee()?.category }}
-            </span>
+            @if (committee()?.category) {
+              <lfx-tag [value]="committee()!.category" [severity]="categorySeverity()"></lfx-tag>
+            }
             <span>Created {{ formattedCreatedDate() }}</span>
             @if (committee()?.updated_at) {
               <span>Last updated {{ formattedUpdatedDate() }}</span>

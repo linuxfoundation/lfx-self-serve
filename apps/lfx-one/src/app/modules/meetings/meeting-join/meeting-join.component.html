@@ -22,36 +22,22 @@
             <div class="flex items-center gap-2 flex-wrap">
               <!-- Private Badge -->
               @if (meeting().visibility === 'private') {
-                <div
-                  class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-red-500 text-white"
-                  [attr.data-testid]="'meeting-badge-private'">
-                  <i class="fa-light fa-shield"></i>
-                  <span>Private</span>
-                </div>
+                <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield" [attr.data-testid]="'meeting-badge-private'"></lfx-tag>
               }
 
               <!-- Meeting Type Badge -->
               @if (meetingTypeBadge(); as badge) {
-                <div
-                  class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium"
-                  [ngClass]="badge.badgeClass"
-                  [attr.data-testid]="'meeting-badge-type'">
-                  @if (badge.icon) {
-                    <i [class]="badge.icon"></i>
-                  }
-                  <span>{{ badge.text }}</span>
-                </div>
+                <lfx-tag [value]="badge.text" [severity]="badge.severity" [icon]="badge.icon" [attr.data-testid]="'meeting-badge-type'"></lfx-tag>
               }
 
               <!-- Recurring Badge -->
               @if (meeting().recurrence) {
-                <div
-                  class="inline-flex items-center gap-1 px-2 py-1 rounded text-xs font-medium bg-gray-400 text-white"
+                <lfx-tag
+                  [value]="meeting().recurrence | recurrenceSummary"
+                  severity="secondary"
+                  icon="fa-light fa-repeat"
                   pTooltip="This is a recurring meeting"
-                  data-testid="recurring-badge">
-                  <i class="fa-light fa-repeat"></i>
-                  <span>{{ meeting().recurrence | recurrenceSummary }}</span>
-                </div>
+                  data-testid="recurring-badge"></lfx-tag>
               }
             </div>
 
@@ -74,7 +60,7 @@
             <div class="flex-1 flex flex-col gap-4 justify-between h-full">
               <div class="flex flex-col gap-4 h-full">
                 <!-- Meeting Title -->
-                <h1 class="font-medium text-base text-neutral-950 leading-tight" [attr.data-testid]="'meeting-title'">
+                <h1 [attr.data-testid]="'meeting-title'">
                   {{ currentOccurrence()?.title || meeting().title }}
                 </h1>
 
@@ -82,52 +68,31 @@
                 <div class="flex flex-wrap gap-2 items-center">
                   <!-- Date/Time Badge -->
                   @if (currentOccurrence()?.start_time || meeting().start_time; as startTime) {
-                    <div
-                      class="inline-flex items-center gap-1 bg-gray-100/50 text-gray-600 px-2 py-1 rounded text-xs font-medium"
-                      [attr.data-testid]="'meeting-badge-datetime'">
-                      <i class="fa-light fa-calendar"></i>
-                      <span>{{ startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact' }}</span>
-                    </div>
+                    <lfx-tag
+                      [value]="startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact'"
+                      severity="secondary"
+                      icon="fa-light fa-calendar-days"
+                      [attr.data-testid]="'meeting-badge-datetime'"></lfx-tag>
                   }
 
                   <!-- YouTube Upload Badge -->
                   @if (meeting().youtube_upload_enabled) {
-                    <div
-                      class="inline-flex items-center gap-1 bg-amber-50 text-amber-500 px-2 py-1 rounded text-xs font-medium"
-                      [attr.data-testid]="'meeting-badge-youtube'">
-                      <i class="fa-light fa-clock"></i>
-                      <span>YouTube Upload</span>
-                    </div>
+                    <lfx-tag value="YouTube Upload" severity="danger" icon="fa-light fa-upload" [attr.data-testid]="'meeting-badge-youtube'"></lfx-tag>
                   }
 
                   <!-- Recording Badge -->
                   @if (meeting().recording_enabled) {
-                    <div
-                      class="inline-flex items-center gap-1 bg-red-50 text-red-500 px-2 py-1 rounded text-xs font-medium"
-                      [attr.data-testid]="'meeting-badge-recording'">
-                      <i class="fa-light fa-circle-dot"></i>
-                      <span>Recording</span>
-                    </div>
+                    <lfx-tag value="Recording" severity="info" icon="fa-light fa-video" [attr.data-testid]="'meeting-badge-recording'"></lfx-tag>
                   }
 
                   <!-- Transcripts Badge -->
                   @if (meeting().transcript_enabled) {
-                    <div
-                      class="inline-flex items-center gap-1 bg-sky-50 text-sky-500 px-2 py-1 rounded text-xs font-medium"
-                      [attr.data-testid]="'meeting-badge-transcripts'">
-                      <i class="fa-light fa-file-lines"></i>
-                      <span>Transcripts</span>
-                    </div>
+                    <lfx-tag value="Transcripts" severity="secondary" icon="fa-light fa-file-lines" [attr.data-testid]="'meeting-badge-transcripts'"></lfx-tag>
                   }
 
-                  <!-- Live Chat Badge (AI Companion) -->
+                  <!-- AI Summary Badge -->
                   @if (meeting().zoom_config?.ai_companion_enabled) {
-                    <div
-                      class="inline-flex items-center gap-1 bg-violet-50 text-violet-500 px-2 py-1 rounded text-xs font-medium"
-                      [attr.data-testid]="'meeting-badge-live-chat'">
-                      <i class="fa-light fa-comments"></i>
-                      <span>Live Chat</span>
-                    </div>
+                    <lfx-tag value="AI Summary" severity="success" icon="fa-light fa-sparkles" [attr.data-testid]="'meeting-badge-live-chat'"></lfx-tag>
                   }
                 </div>
               </div>
@@ -199,8 +164,8 @@
           </div>
 
           <!-- Meeting Registrants -->
-          <lfx-meeting-registrants [meeting]="meeting()" [pastMeeting]="false" [showAddRegistrant]="false" [visible]="showRegistrants()">
-          </lfx-meeting-registrants>
+          <lfx-meeting-registrants-display [meeting]="meeting()" [pastMeeting]="false" [showAddRegistrant]="false" [visible]="showRegistrants()">
+          </lfx-meeting-registrants-display>
 
           <!-- Divider -->
           <hr class="border-gray-200 my-4" />

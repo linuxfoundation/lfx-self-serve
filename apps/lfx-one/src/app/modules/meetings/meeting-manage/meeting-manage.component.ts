@@ -50,7 +50,7 @@ import { BehaviorSubject, catchError, concat, filter, finalize, from, mergeMap, 
 
 import { MeetingDetailsComponent } from '../components/meeting-details/meeting-details.component';
 import { MeetingPlatformFeaturesComponent } from '../components/meeting-platform-features/meeting-platform-features.component';
-import { MeetingRegistrantsComponent } from '../components/meeting-registrants/meeting-registrants.component';
+import { MeetingRegistrantsManagerComponent } from '../components/meeting-registrants-manager/meeting-registrants-manager.component';
 import { MeetingResourcesSummaryComponent } from '../components/meeting-resources-summary/meeting-resources-summary.component';
 import { MeetingTypeSelectionComponent } from '../components/meeting-type-selection/meeting-type-selection.component';
 
@@ -67,7 +67,7 @@ import { MeetingTypeSelectionComponent } from '../components/meeting-type-select
     MeetingDetailsComponent,
     MeetingPlatformFeaturesComponent,
     MeetingResourcesSummaryComponent,
-    MeetingRegistrantsComponent,
+    MeetingRegistrantsManagerComponent,
     TabsModule,
     RouterLink,
   ],

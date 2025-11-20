@@ -5,22 +5,20 @@ import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
 import { CommonModule } from '@angular/common';
 import { Component, computed, effect, inject, Injector, input, OnInit, output, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FileSizePipe } from '@app/shared/pipes/file-size.pipe';
-import { FileTypeIconPipe } from '@app/shared/pipes/file-type-icon.pipe';
-import { LinkifyPipe } from '@app/shared/pipes/linkify.pipe';
-import { RecurrenceSummaryPipe } from '@app/shared/pipes/recurrence-summary.pipe';
-import { ButtonComponent } from '@components/button/button.component';
-import { CancelOccurrenceConfirmationComponent } from '@components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
-import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
-import { MeetingDeleteConfirmationComponent, MeetingDeleteResult } from '@components/meeting-delete-confirmation/meeting-delete-confirmation.component';
+import {
+  MeetingDeleteConfirmationComponent,
+  MeetingDeleteResult,
+} from '@app/modules/meetings/components/meeting-delete-confirmation/meeting-delete-confirmation.component';
 import {
   MeetingDeleteTypeResult,
   MeetingDeleteTypeSelectionComponent,
-} from '@components/meeting-delete-type-selection/meeting-delete-type-selection.component';
-import { MeetingRegistrantsComponent } from '@components/meeting-registrants/meeting-registrants.component';
-import { MeetingRsvpDetailsComponent } from '@components/meeting-rsvp-details/meeting-rsvp-details.component';
+} from '@app/modules/meetings/components/meeting-delete-type-selection/meeting-delete-type-selection.component';
+import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
+import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
+import { ButtonComponent } from '@components/button/button.component';
+import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
-import { RsvpButtonGroupComponent } from '@components/rsvp-button-group/rsvp-button-group.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import {
   buildJoinUrlWithParams,
@@ -40,7 +38,11 @@ import { MeetingCommitteeModalComponent } from '@modules/meetings/components/mee
 import { RecordingModalComponent } from '@modules/meetings/components/recording-modal/recording-modal.component';
 import { RegistrantModalComponent } from '@modules/meetings/components/registrant-modal/registrant-modal.component';
 import { SummaryModalComponent } from '@modules/meetings/components/summary-modal/summary-modal.component';
+import { FileSizePipe } from '@pipes/file-size.pipe';
+import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
+import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
+import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
@@ -51,12 +53,16 @@ import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, map, of, switchMap, take, tap } from 'rxjs';
 
+import { CancelOccurrenceConfirmationComponent } from '../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
+import { MeetingRsvpDetailsComponent } from '../../components/meeting-rsvp-details/meeting-rsvp-details.component';
+
 @Component({
   selector: 'lfx-meeting-card',
   standalone: true,
   imports: [
     CommonModule,
     ButtonComponent,
+    TagComponent,
     MenuComponent,
     MeetingTimePipe,
     RecurrenceSummaryPipe,
@@ -70,7 +76,7 @@ import { catchError, combineLatest, map, of, switchMap, take, tap } from 'rxjs';
     ClipboardModule,
     RsvpButtonGroupComponent,
     MeetingRsvpDetailsComponent,
-    MeetingRegistrantsComponent,
+    MeetingRegistrantsDisplayComponent,
   ],
   providers: [ConfirmationService],
   templateUrl: './meeting-card.component.html',
@@ -111,7 +117,12 @@ export class MeetingCardComponent implements OnInit {
   public readonly attendanceBarColor: Signal<string> = this.initAttendanceBarColor();
   public readonly totalResourcesCount: Signal<number> = this.initTotalResourcesCount();
   public readonly enabledFeaturesCount: Signal<number> = this.initEnabledFeaturesCount();
-  public readonly meetingTypeBadge: Signal<{ badgeClass: string; icon?: string; text: string } | null> = this.initMeetingTypeBadge();
+  public readonly meetingTypeBadge: Signal<{
+    badgeClass: string;
+    severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+    icon?: string;
+    text: string;
+  } | null> = this.initMeetingTypeBadge();
   public readonly containerClass: Signal<string> = this.initContainerClass();
   public readonly borderColorClass: Signal<string> = this.initBorderColorClass();
   public readonly attendedCount: Signal<number> = this.initAttendedCount();
@@ -555,7 +566,12 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  private initMeetingTypeBadge(): Signal<{ badgeClass: string; icon?: string; text: string } | null> {
+  private initMeetingTypeBadge(): Signal<{
+    badgeClass: string;
+    severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+    icon?: string;
+    text: string;
+  } | null> {
     return computed(() => {
       const meetingType = this.meeting().meeting_type;
       if (!meetingType) return null;
@@ -564,17 +580,17 @@ export class MeetingCardComponent implements OnInit {
 
       switch (type) {
         case 'board':
-          return { badgeClass: 'bg-red-100 text-red-500', icon: 'fa-light fa-user-check', text: meetingType };
+          return { badgeClass: 'bg-red-100 text-red-500', severity: 'danger', icon: 'fa-light fa-user-check', text: meetingType };
         case 'maintainers':
-          return { badgeClass: 'bg-blue-100 text-blue-500', icon: 'fa-light fa-gear', text: meetingType };
+          return { badgeClass: 'bg-blue-100 text-blue-500', severity: 'info', icon: 'fa-light fa-gear', text: meetingType };
         case 'marketing':
-          return { badgeClass: 'bg-green-100 text-green-500', icon: 'fa-light fa-chart-line-up', text: meetingType };
+          return { badgeClass: 'bg-green-100 text-green-500', severity: 'success', icon: 'fa-light fa-chart-line-up', text: meetingType };
         case 'technical':
-          return { badgeClass: 'bg-purple-100 text-purple-500', icon: 'fa-light fa-code', text: meetingType };
+          return { badgeClass: 'bg-purple-100 text-purple-500', severity: 'contrast', icon: 'fa-light fa-code', text: meetingType };
         case 'legal':
-          return { badgeClass: 'bg-amber-100 text-amber-500', icon: 'fa-light fa-scale-balanced', text: meetingType };
+          return { badgeClass: 'bg-amber-100 text-amber-500', severity: 'warn', icon: 'fa-light fa-scale-balanced', text: meetingType };
         default:
-          return { badgeClass: 'bg-gray-100 text-gray-400', icon: 'fa-light fa-calendar-days', text: meetingType };
+          return { badgeClass: 'bg-gray-100 text-gray-400', severity: 'secondary', icon: 'fa-light fa-calendar-days', text: meetingType };
       }
     });
   }

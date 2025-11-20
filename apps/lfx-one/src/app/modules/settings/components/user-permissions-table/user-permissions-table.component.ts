@@ -3,13 +3,13 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, input, output, signal, WritableSignal } from '@angular/core';
-import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TableComponent } from '@components/table/table.component';
 import { ProjectPermissionUser } from '@lfx-one/shared/interfaces';
 import { PermissionsService } from '@services/permissions.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';

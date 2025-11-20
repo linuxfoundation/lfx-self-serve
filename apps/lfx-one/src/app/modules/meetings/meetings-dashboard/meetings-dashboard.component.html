@@ -1,10 +1,10 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="p-8 mx-auto">
+<div class="container mx-auto px-4 sm:px-6 lg:px-8">
   <div class="mb-8">
     <div class="flex justify-between items-center w-full gap-4 mb-8">
-      <span class="mb-0 text-2xl font-serif font-semibold text-gray-900">Meetings</span>
+      <h1>Meetings</h1>
       @if (isMaintainer() && isNonFoundationProjectSelected()) {
         <lfx-button
           icon="fa-light fa-plus"
@@ -18,43 +18,13 @@
     </div>
 
     <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-slate-200 p-4 -mx-0 mb-8">
-      <div class="flex flex-col lg:flex-row gap-4 lg:items-center">
-        <div class="shrink-0">
-          <div class="inline-flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5">
-            <button
-              (click)="onViewChange('list')"
-              [attr.data-testid]="'meetings-dashboard-view-toggle-list'"
-              [ngClass]="{
-                'bg-white text-slate-900 shadow-sm': currentView() === 'list',
-                'text-slate-600 hover:text-slate-900': currentView() !== 'list',
-              }"
-              class="px-2 py-1.5 rounded-md transition-all duration-200 flex items-center justify-center">
-              <i class="fa-light fa-list w-3.5 h-3.5"></i>
-            </button>
-            <button
-              (click)="onViewChange('calendar')"
-              [attr.data-testid]="'meetings-dashboard-view-toggle-calendar'"
-              [ngClass]="{
-                'bg-white text-slate-900 shadow-sm': currentView() === 'calendar',
-                'text-slate-600 hover:text-slate-900': currentView() !== 'calendar',
-              }"
-              class="px-2 py-1.5 rounded-md transition-all duration-200 flex items-center justify-center">
-              <i class="fa-light fa-calendar w-3.5 h-3.5"></i>
-            </button>
-          </div>
-        </div>
-
-        <div class="flex-1">
-          @if (upcomingMeetings() || pastMeetings()) {
-            <lfx-meetings-top-bar
-              [(searchQuery)]="searchQuery"
-              [(timeFilter)]="timeFilter"
-              [(visibilityFilter)]="topBarVisibilityFilter"
-              [viewMode]="currentView()"
-              [meetings]="timeFilter() === 'past' ? pastMeetings() : upcomingMeetings()" />
-          }
-        </div>
-      </div>
+      @if (upcomingMeetings() || pastMeetings()) {
+        <lfx-meetings-top-bar
+          [(searchQuery)]="searchQuery"
+          [(timeFilter)]="timeFilter"
+          [(visibilityFilter)]="topBarVisibilityFilter"
+          [meetings]="timeFilter() === 'past' ? pastMeetings() : upcomingMeetings()" />
+      }
     </div>
   </div>
 
@@ -84,25 +54,17 @@
         </div>
       </div>
     } @else if (filteredMeetings().length > 0) {
-      @if (currentView() === 'list') {
-        <div class="flex flex-col gap-4">
-          @for (meeting of filteredMeetings(); track meeting.uid; let i = $index) {
-            <lfx-meeting-card
-              [attr.id]="'meeting-' + meeting.uid"
-              [meetingInput]="meeting"
-              (meetingUpdated)="refreshMeetings()"
-              (meetingDeleted)="refreshMeetings()"
-              [pastMeeting]="timeFilter() === 'past'"
-              [showBorder]="true"></lfx-meeting-card>
-          }
-        </div>
-      }
-
-      @if (currentView() === 'calendar') {
-        <div class="flex items-center justify-center p-16 bg-white border border-slate-200 rounded-lg">
-          <p class="text-slate-600">Calendar view coming soon</p>
-        </div>
-      }
+      <div class="flex flex-col gap-4">
+        @for (meeting of filteredMeetings(); track meeting.uid; let i = $index) {
+          <lfx-meeting-card
+            [attr.id]="'meeting-' + meeting.uid"
+            [meetingInput]="meeting"
+            (meetingUpdated)="refreshMeetings()"
+            (meetingDeleted)="refreshMeetings()"
+            [pastMeeting]="timeFilter() === 'past'"
+            [showBorder]="true"></lfx-meeting-card>
+        }
+      </div>
     }
   </div>
 </div>

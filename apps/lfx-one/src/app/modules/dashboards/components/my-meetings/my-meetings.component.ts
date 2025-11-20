@@ -4,11 +4,11 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { MeetingService } from '@app/shared/services/meeting.service';
-import { ProjectContextService } from '@app/shared/services/project-context.service';
+import { DashboardMeetingCardComponent } from '@app/modules/dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { ButtonComponent } from '@components/button/button.component';
-import { DashboardMeetingCardComponent } from '@components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { getActiveOccurrences } from '@lfx-one/shared';
+import { MeetingService } from '@services/meeting.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, finalize, of, switchMap } from 'rxjs';
 

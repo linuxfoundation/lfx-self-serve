@@ -153,11 +153,10 @@ environment:
 
 #### Database Configuration
 
-| Parameter                             | Description                                   | Required | Default               |
-| ------------------------------------- | --------------------------------------------- | -------- | --------------------- |
-| `environment.SUPABASE_URL`            | Supabase project URL                          | **Yes**  | -                     |
-| `environment.POSTGRES_API_KEY`        | Supabase Postgres API key (anon/service role) | **Yes**  | -                     |
-| `environment.SUPABASE_STORAGE_BUCKET` | Supabase storage bucket name                  | No       | `meeting-attachments` |
+| Parameter                      | Description                                              | Required | Default |
+| ------------------------------ | -------------------------------------------------------- | -------- | ------- |
+| `environment.SUPABASE_URL`     | Supabase project URL (for user profile email management) | **Yes**  | -       |
+| `environment.POSTGRES_API_KEY` | Supabase Postgres API key (anon/service role)            | **Yes**  | -       |
 
 #### External Services
 

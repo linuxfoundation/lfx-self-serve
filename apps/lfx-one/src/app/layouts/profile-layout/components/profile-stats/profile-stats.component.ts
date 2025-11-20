@@ -3,8 +3,8 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, computed, input, Signal } from '@angular/core';
+import { CardComponent } from '@components/card/card.component';
 import { CombinedProfile, UserStatistics } from '@lfx-one/shared/interfaces';
-import { CardComponent } from '@shared/components/card/card.component';
 
 @Component({
   selector: 'lfx-profile-stats',

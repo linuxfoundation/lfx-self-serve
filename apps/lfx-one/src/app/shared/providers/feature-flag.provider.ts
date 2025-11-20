@@ -2,11 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { EnvironmentProviders, provideAppInitializer } from '@angular/core';
+import { environment } from '@environments/environment';
 import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-provider';
 import { OpenFeature } from '@openfeature/web-sdk';
 import { basicLogger } from 'launchdarkly-js-client-sdk';
-
-import { environment } from '../../../environments/environment';
 
 /**
  * Initialize OpenFeature with LaunchDarkly provider

@@ -5,18 +5,19 @@ import { ClipboardModule } from '@angular/cdk/clipboard';
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FileTypeIconPipe } from '@app/shared/pipes/file-type-icon.pipe';
 import { ButtonComponent } from '@components/button/button.component';
+import { TagComponent } from '@components/tag/tag.component';
 import {
   buildJoinUrlWithParams,
   canJoinMeeting,
   DEFAULT_MEETING_TYPE_CONFIG,
   Meeting,
+  MEETING_TYPE_CONFIGS,
   MeetingAttachment,
   MeetingOccurrence,
   MeetingTypeBadge,
-  MEETING_TYPE_CONFIGS,
 } from '@lfx-one/shared';
+import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { TooltipModule } from 'primeng/tooltip';
@@ -25,7 +26,7 @@ import { catchError, combineLatest, map, of, switchMap } from 'rxjs';
 @Component({
   selector: 'lfx-dashboard-meeting-card',
   standalone: true,
-  imports: [CommonModule, ButtonComponent, TooltipModule, ClipboardModule, FileTypeIconPipe],
+  imports: [CommonModule, ButtonComponent, TagComponent, TooltipModule, ClipboardModule, FileTypeIconPipe],
   templateUrl: './dashboard-meeting-card.component.html',
 })
 export class DashboardMeetingCardComponent {
@@ -43,9 +44,19 @@ export class DashboardMeetingCardComponent {
     const type = this.meeting().meeting_type?.toLowerCase();
     const config = type ? (MEETING_TYPE_CONFIGS[type] ?? DEFAULT_MEETING_TYPE_CONFIG) : DEFAULT_MEETING_TYPE_CONFIG;
 
+    // Map text color to severity
+    let severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast' = 'secondary';
+    if (config.textColor.includes('red')) severity = 'danger';
+    else if (config.textColor.includes('blue')) severity = 'info';
+    else if (config.textColor.includes('green')) severity = 'success';
+    else if (config.textColor.includes('purple')) severity = 'contrast';
+    else if (config.textColor.includes('amber')) severity = 'warn';
+
     return {
       label: config.label,
       className: `${config.bgColor} ${config.textColor}`,
+      severity,
+      icon: config.icon,
     };
   });
 
