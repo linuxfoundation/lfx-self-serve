@@ -39,6 +39,10 @@ spec:
             - name: http
               containerPort: {{ .Values.service.targetPort }}
               protocol: TCP
+          {{- with .Values.resources }}
+          resources:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           env:
           {{- range $name, $config := .Values.environment }}
           - name: {{ $name }}
