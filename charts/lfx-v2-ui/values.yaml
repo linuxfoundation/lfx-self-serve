@@ -1,7 +1,7 @@
 # Copyright The Linux Foundation and each contributor to LFX.
 # SPDX-License-Identifier: MIT
 
-replicaCount: 1
+replicaCount: 3
 
 image:
   repository: ghcr.io/linuxfoundation/lfx-v2-ui
@@ -146,6 +146,14 @@ ingress:
         - path: /
           pathType: Prefix
   tls: []
+
+resources:
+  limits:
+    cpu: 1000m
+    memory: 1024Mi
+  requests:
+    cpu: 500m
+    memory: 512Mi
 
 # Environment variables for the application
 # Uses map/object format for deep merging support
