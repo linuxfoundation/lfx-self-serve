@@ -1,0 +1,25 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Trigger Button -->
+@if (isLfxLensEnabled()) {
+  <lfx-button
+    severity="secondary"
+    icon="fa-light fa-microchip-ai"
+    (click)="openDrawer()"
+    data-testid="data-copilot-button"
+    label="Ask LFX Lens"
+    size="small"></lfx-button>
+}
+
+<!-- Drawer -->
+<p-drawer
+  [visible]="visible()"
+  header="LFX Data Copilot"
+  position="right"
+  styleClass="md:w-1/2 w-full"
+  (onShow)="onShow()"
+  (onHide)="onHide()"
+  data-testid="data-copilot-drawer">
+  <div #iframeContainer class="iframe-container" data-testid="data-copilot-iframe-container"></div>
+</p-drawer>

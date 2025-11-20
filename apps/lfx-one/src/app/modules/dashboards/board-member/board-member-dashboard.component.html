@@ -4,8 +4,10 @@
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="dashboard-container">
   <!-- Foundation Project -->
   @if (selectedFoundation()) {
-    <div class="mb-6 flex items-center gap-4" data-testid="foundation-project">
+    <div class="mb-6 flex justify-between items-center gap-4" data-testid="foundation-project">
       <h1>{{ selectedFoundation()?.name }} Overview</h1>
+      <!-- Data Copilot Button -->
+      <lfx-data-copilot></lfx-data-copilot>
     </div>
   }
 
