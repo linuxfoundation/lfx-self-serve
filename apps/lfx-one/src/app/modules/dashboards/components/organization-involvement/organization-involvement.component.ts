@@ -46,8 +46,8 @@ export class OrganizationInvolvementComponent {
   public readonly barChartOptions = BAR_CHART_OPTIONS;
   public readonly filterOptions: FilterOption[] = [
     { id: 'all', label: 'All' },
-    { id: 'contributions', label: 'Contributions' },
-    { id: 'events', label: 'Events' },
+    { id: 'contributions', label: 'Contribution' },
+    { id: 'events', label: 'Event' },
     { id: 'education', label: 'Education' },
   ];
 

@@ -54,7 +54,7 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   // Writable signals for state management
   public registrantsWithState: WritableSignal<MeetingRegistrantWithState[]> = signal([]);
   public loading: WritableSignal<boolean> = signal(true);
-  public showAddForm = signal<boolean>(false);
+  public showAddForm = signal<boolean>(true);
   public showImport = signal<boolean>(false);
   public editingRegistrantId = signal<string | null>(null);
   public searchTerm = signal<string>('');

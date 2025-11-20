@@ -2,10 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, ElementRef, signal, ViewChild, input } from '@angular/core';
+import { Component, computed, ElementRef, input, signal, ViewChild } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import { AGGREGATE_FOUNDATION_METRICS, FOUNDATION_SPARKLINE_CHART_OPTIONS, FOUNDATION_BAR_CHART_OPTIONS } from '@lfx-one/shared/constants';
+import { AGGREGATE_FOUNDATION_METRICS, FOUNDATION_BAR_CHART_OPTIONS, FOUNDATION_SPARKLINE_CHART_OPTIONS } from '@lfx-one/shared/constants';
 import { FoundationMetricCard, MetricCategory, TopProjectDisplay } from '@lfx-one/shared/interfaces';
 import { hexToRgba } from '@lfx-one/shared/utils';
 
@@ -25,9 +25,9 @@ export class FoundationHealthComponent {
 
   public readonly filterOptions: FilterOption[] = [
     { id: 'all', label: 'All' },
-    { id: 'contributors', label: 'Contributors' },
-    { id: 'projects', label: 'Projects' },
-    { id: 'events', label: 'Events' },
+    { id: 'contributors', label: 'Contribution' },
+    { id: 'projects', label: 'Project' },
+    { id: 'events', label: 'Event' },
   ];
 
   public readonly sparklineOptions = FOUNDATION_SPARKLINE_CHART_OPTIONS;

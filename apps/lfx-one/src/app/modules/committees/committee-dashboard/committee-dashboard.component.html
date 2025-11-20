@@ -11,19 +11,22 @@
     </div>
   } @else {
     <div class="mb-8">
-      <!-- Page Title with Create Group Button -->
-      <div class="flex justify-between items-center w-full gap-4 mb-8">
-        <h1>{{ committeeLabelPlural }}</h1>
-        @if (canCreateGroup()) {
-          <lfx-button
-            [label]="'Create ' + committeeLabel"
-            icon="fa-light fa-users mr-1"
-            severity="primary"
-            size="small"
-            (onClick)="openCreateDialog()"
-            data-testid="committee-new-cta">
-          </lfx-button>
-        }
+      <div class="mb-8">
+        <!-- Page Title with Create Group Button -->
+        <div class="flex justify-between items-center w-full gap-4">
+          <h1>{{ committeeLabelPlural }}</h1>
+          @if (canCreateGroup()) {
+            <lfx-button
+              [label]="'Create ' + committeeLabel"
+              icon="fa-light fa-users mr-1"
+              severity="primary"
+              size="small"
+              (onClick)="openCreateDialog()"
+              data-testid="committee-new-cta">
+            </lfx-button>
+          }
+        </div>
+        <p class="mt-2 text-neutral-500">A group is a team of people like committees, boards, or working groups organized to collaborate across your project</p>
       </div>
 
       <!-- Sticky Top Bar with Search and Filters -->

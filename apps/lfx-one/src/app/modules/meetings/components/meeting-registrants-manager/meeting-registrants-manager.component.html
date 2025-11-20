@@ -6,19 +6,26 @@
   <p-confirmDialog></p-confirmDialog>
 
   <!-- Main Card Container (following React pattern) -->
+  <!-- Header -->
+  <div class="text-center mb-8">
+    <h2 class="mb-2">Invite Guests</h2>
+    <p class="text-neutral-500 text-base">Include key stakeholders and contributors who should participate in this discussion</p>
+  </div>
 
   <div class="flex items-center mb-4">
     <div class="flex items-center gap-3">
       <!-- <lfx-button size="small" label="Bulk Add" icon="fa-light fa-upload" severity="secondary" data-testid="bulk-add-button" (click)="onBulkAdd()">
       </lfx-button> -->
-      <lfx-button
-        size="small"
-        label="Add Guest"
-        icon="fa-light fa-user-plus"
-        severity="secondary"
-        data-testid="add-guest-button"
-        (click)="onToggleAddRegistrant()">
-      </lfx-button>
+      @if (!showAddForm()) {
+        <lfx-button
+          size="small"
+          label="Add Guest"
+          icon="fa-light fa-user-plus"
+          severity="secondary"
+          data-testid="add-guest-button"
+          (click)="onToggleAddRegistrant()">
+        </lfx-button>
+      }
     </div>
   </div>
 

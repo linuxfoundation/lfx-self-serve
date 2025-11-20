@@ -5,7 +5,7 @@
   <!-- Header -->
   <div class="text-center mb-8">
     <h2 class="mb-2">Meeting Platform & Features</h2>
-    <p class="text-slate-500 text-sm">Choose your meeting platform and enable helpful features.</p>
+    <p class="text-neutral-500 text-base">Select your video platform and enable transparency features like recording and public calendars</p>
   </div>
 
   <!-- Meeting Platform Selection -->
@@ -14,6 +14,7 @@
 
     <lfx-select
       [form]="form()"
+      class="mb-4"
       control="platform"
       [options]="platformDropdownOptions"
       placeholder="Select meeting platform"
