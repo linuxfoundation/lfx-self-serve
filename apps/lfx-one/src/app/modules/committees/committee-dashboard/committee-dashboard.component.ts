@@ -12,6 +12,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { Committee, ProjectContext } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
@@ -31,6 +32,7 @@ export class CommitteeDashboardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly committeeService = inject(CommitteeService);
   private readonly personaService = inject(PersonaService);
+  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly router = inject(Router);
   private readonly messageService = inject(MessageService);
 
@@ -53,6 +55,8 @@ export class CommitteeDashboardComponent {
 
   // Permission signals
   public isMaintainer: Signal<boolean>;
+  public isFoundationContext: Signal<boolean>;
+  public foundationCreateCommitteeFlag: Signal<boolean>;
   public canCreateGroup: Signal<boolean>;
 
   // Statistics calculations
@@ -67,7 +71,13 @@ export class CommitteeDashboardComponent {
 
     // Initialize permission checks
     this.isMaintainer = computed(() => this.personaService.currentPersona() === 'maintainer');
-    this.canCreateGroup = computed(() => this.isMaintainer());
+    this.isFoundationContext = computed(() => !this.projectContextService.selectedProject() && !!this.projectContextService.selectedFoundation());
+    this.foundationCreateCommitteeFlag = this.featureFlagService.getBooleanFlag('foundation-create-committee', false);
+    this.canCreateGroup = computed(() => {
+      const isMaintainerAndNotFoundation = this.isMaintainer() && !this.isFoundationContext();
+      const hasFeatureFlag = this.foundationCreateCommitteeFlag();
+      return isMaintainerAndNotFoundation || hasFeatureFlag;
+    });
 
     // Initialize state
     this.committeesLoading = signal<boolean>(true);

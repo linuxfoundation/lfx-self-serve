@@ -110,13 +110,15 @@
         }
 
         <div class="flex gap-3">
-          <lfx-button
-            [label]="isLastStep() ? 'Skip For Now' : 'Cancel'"
-            [outlined]="true"
-            (onClick)="onCancel()"
-            data-testid="meeting-manage-cancel-btn"
-            size="small">
-          </lfx-button>
+          @if (!isEditMode()) {
+            <lfx-button
+              [label]="isLastStep() ? 'Skip For Now' : 'Cancel'"
+              [outlined]="true"
+              (onClick)="onCancel()"
+              data-testid="meeting-manage-cancel-btn"
+              size="small">
+            </lfx-button>
+          }
 
           <!-- Next/Submit Button -->
           @if (!isLastMeetingStep() && !isLastStep()) {

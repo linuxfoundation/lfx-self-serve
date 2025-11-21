@@ -7,7 +7,7 @@ import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { Committee, COMMITTEE_CATEGORY_SEVERITY } from '@lfx-one/shared';
+import { Committee, COMMITTEE_CATEGORY_SEVERITY, ComponentSeverity } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -47,7 +47,7 @@ export class CommitteeTableComponent {
   public readonly refresh = output<void>();
 
   // Helper method for category severity
-  public getCategorySeverity(category: string): 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast' {
+  public getCategorySeverity(category: string): ComponentSeverity {
     return COMMITTEE_CATEGORY_SEVERITY[category] || 'secondary';
   }
 

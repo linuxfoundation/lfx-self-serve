@@ -10,6 +10,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   buildJoinUrlWithParams,
   canJoinMeeting,
+  ComponentSeverity,
   DEFAULT_MEETING_TYPE_CONFIG,
   Meeting,
   MEETING_TYPE_CONFIGS,
@@ -45,11 +46,11 @@ export class DashboardMeetingCardComponent {
     const config = type ? (MEETING_TYPE_CONFIGS[type] ?? DEFAULT_MEETING_TYPE_CONFIG) : DEFAULT_MEETING_TYPE_CONFIG;
 
     // Map text color to severity
-    let severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast' = 'secondary';
+    let severity: ComponentSeverity = 'secondary';
     if (config.textColor.includes('red')) severity = 'danger';
     else if (config.textColor.includes('blue')) severity = 'info';
     else if (config.textColor.includes('green')) severity = 'success';
-    else if (config.textColor.includes('purple')) severity = 'contrast';
+    else if (config.textColor.includes('purple')) severity = 'primary';
     else if (config.textColor.includes('amber')) severity = 'warn';
 
     return {

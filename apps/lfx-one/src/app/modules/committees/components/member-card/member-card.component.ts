@@ -7,7 +7,7 @@ import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { MenuComponent } from '@components/menu/menu.component';
-import { Committee, CommitteeMember } from '@lfx-one/shared/interfaces';
+import { BadgeSeverity, Committee, CommitteeMember } from '@lfx-one/shared';
 import { Tooltip } from 'primeng/tooltip';
 
 @Component({
@@ -45,7 +45,7 @@ export class MemberCardComponent {
     return 'M';
   });
 
-  public readonly roleBadgeSeverity = computed<'secondary' | 'success' | 'info' | 'warn' | 'danger' | 'contrast'>(() => {
+  public readonly roleBadgeSeverity = computed<BadgeSeverity>(() => {
     const role = this.member().role?.name?.toLowerCase();
     if (role === 'chair' || role === 'chairperson') return 'info';
     if (role === 'vice chair' || role === 'vice-chair') return 'success';
@@ -53,7 +53,7 @@ export class MemberCardComponent {
     return 'secondary';
   });
 
-  public readonly votingStatusBadgeSeverity = computed<'secondary' | 'success' | 'info' | 'warn' | 'danger' | 'contrast'>(() => {
+  public readonly votingStatusBadgeSeverity = computed<BadgeSeverity>(() => {
     const status = this.member().voting?.status?.toLowerCase();
     if (status === 'voting') return 'success';
     if (status === 'non-voting') return 'warn';

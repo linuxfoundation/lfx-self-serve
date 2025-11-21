@@ -19,7 +19,9 @@
     data-testid="mobile-sidebar-drawer">
     <ng-template #header>
       <div class="flex items-center gap-3">
-        <img src="/images/lfx-one-logo.svg" alt="LFX Logo" class="w-auto h-5" />
+        <a [routerLink]="['/']" class="flex items-center">
+          <img src="/images/lfx-one-logo.svg" alt="LFX Logo" class="w-auto h-5" />
+        </a>
       </div>
     </ng-template>
     <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems()" [showProjectSelector]="true" [mobile]="true"></lfx-sidebar>

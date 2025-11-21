@@ -17,7 +17,7 @@ import { HeaderComponent } from '@components/header/header.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
-import { canJoinMeeting, getCurrentOrNextOccurrence, Meeting, MeetingAttachment, MeetingOccurrence, Project, User } from '@lfx-one/shared';
+import { canJoinMeeting, ComponentSeverity, getCurrentOrNextOccurrence, Meeting, MeetingAttachment, MeetingOccurrence, Project, User } from '@lfx-one/shared';
 import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -75,7 +75,7 @@ export class MeetingJoinComponent {
   public currentOccurrence: Signal<MeetingOccurrence | null>;
   public meetingTypeBadge: Signal<{
     badgeClass: string;
-    severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+    severity: ComponentSeverity;
     icon?: string;
     text: string;
   } | null>;
@@ -245,7 +245,7 @@ export class MeetingJoinComponent {
 
   private initializeMeetingTypeBadge(): Signal<{
     badgeClass: string;
-    severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+    severity: ComponentSeverity;
     icon?: string;
     text: string;
   } | null> {
@@ -263,7 +263,7 @@ export class MeetingJoinComponent {
         case 'marketing':
           return { badgeClass: 'bg-green-100 text-green-500', severity: 'success', icon: 'fa-light fa-chart-line-up', text: meetingType };
         case 'technical':
-          return { badgeClass: 'bg-purple-100 text-purple-500', severity: 'contrast', icon: 'fa-light fa-code', text: meetingType };
+          return { badgeClass: 'bg-purple-100 text-purple-500', severity: 'primary', icon: 'fa-light fa-code', text: meetingType };
         case 'legal':
           return { badgeClass: 'bg-amber-100 text-amber-500', severity: 'warn', icon: 'fa-light fa-scale-balanced', text: meetingType };
         default:

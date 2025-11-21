@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { Component, computed, ElementRef, inject, input, signal, viewChild } from '@angular/core';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
 import { AccountContextService } from '@app/shared/services/account-context.service';
 import { FeatureFlagService } from '@app/shared/services/feature-flag.service';
@@ -17,6 +17,12 @@ import { DrawerModule } from 'primeng/drawer';
 })
 export class DataCopilotComponent {
   public readonly iframeContainer = viewChild<ElementRef<HTMLDivElement>>('iframeContainer');
+
+  // Optional inputs to control which fields are included in the iframe URL
+  public readonly includeOrganizationId = input<boolean>(true);
+  public readonly includeOrganizationName = input<boolean>(true);
+  public readonly includeProjectSlug = input<boolean>(true);
+  public readonly includeProjectName = input<boolean>(true);
 
   private readonly accountContextService = inject(AccountContextService);
   private readonly projectContextService = inject(ProjectContextService);
@@ -91,13 +97,24 @@ export class DataCopilotComponent {
 
     const iframe = document.createElement('iframe');
 
-    // Construct the iframe src with query parameters
-    const params = new URLSearchParams({
-      organization_id: this.organizationId(),
-      organization_name: this.organizationName(),
-      project_slug: this.projectSlug(),
-      project_name: this.projectName(),
-    });
+    // Construct the iframe src with query parameters conditionally
+    const params = new URLSearchParams();
+
+    if (this.includeOrganizationId()) {
+      params.append('organization_id', this.organizationId());
+    }
+
+    if (this.includeOrganizationName()) {
+      params.append('organization_name', this.organizationName());
+    }
+
+    if (this.includeProjectSlug()) {
+      params.append('project_slug', this.projectSlug());
+    }
+
+    if (this.includeProjectName()) {
+      params.append('project_name', this.projectName());
+    }
 
     iframe.src = `https://lfx-data-copilot.onrender.com/embed?${params.toString()}`;
     iframe.width = '100%';

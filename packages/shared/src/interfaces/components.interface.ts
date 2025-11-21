@@ -4,12 +4,24 @@
 import { ChartData, ChartOptions, ChartType } from 'chart.js';
 
 /**
+ * Component severity type
+ * @description Standard severity levels used across Tag and other UI components
+ */
+export type ComponentSeverity = 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'primary';
+
+/**
+ * Badge severity type
+ * @description Severity levels for Badge component (PrimeNG Badge uses 'contrast' instead of 'primary')
+ */
+export type BadgeSeverity = 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+
+/**
  * Badge severity level options
  * @description Available color schemes for badge components
  */
 export interface BadgeSeverityOptions {
   /** Badge color scheme indicating status or priority */
-  severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+  severity: BadgeSeverity;
 }
 
 /**
@@ -44,7 +56,7 @@ export interface BadgeProps {
  */
 export interface TagSeverityOptions {
   /** Tag color scheme indicating status or category */
-  severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+  severity: ComponentSeverity;
 }
 
 /**
@@ -70,7 +82,7 @@ export interface TagProps {
  */
 export interface ButtonSeverityOptions {
   /** Button color scheme indicating action type */
-  severity: 'success' | 'info' | 'warn' | 'danger' | 'help' | 'primary' | 'secondary' | 'contrast' | null | undefined;
+  severity: 'success' | 'info' | 'warn' | 'danger' | 'help' | 'primary' | 'secondary' | 'primary' | null | undefined;
 }
 
 /**
@@ -230,7 +242,7 @@ export interface TimePickerProps {
  */
 export interface MessageSeverityOptions {
   /** Message severity level indicating urgency or type */
-  severity: 'info' | 'success' | 'warn' | 'error' | 'secondary' | 'contrast';
+  severity: 'info' | 'success' | 'warn' | 'error' | 'secondary' | 'primary';
 }
 
 /**

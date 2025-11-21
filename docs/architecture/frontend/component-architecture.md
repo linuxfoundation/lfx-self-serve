@@ -170,7 +170,7 @@ public hide(): void
 **Properties**:
 
 - `value: string` - Badge text content
-- `severity: 'success' | 'info' | 'warning' | 'danger' | 'help' | 'primary' | 'secondary' | 'contrast'`
+- `severity: 'success' | 'info' | 'warning' | 'danger' | 'help' | 'primary' | 'secondary'`
 - `size: 'small' | 'large' | 'xlarge'`
 
 ### ButtonComponent (`lfx-button`)

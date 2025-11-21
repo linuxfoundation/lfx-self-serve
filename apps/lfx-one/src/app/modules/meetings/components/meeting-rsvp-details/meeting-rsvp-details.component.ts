@@ -22,8 +22,7 @@ export class MeetingRsvpDetailsComponent {
   public readonly project: InputSignal<Project | null> = input<Project | null>(null);
   public readonly currentOccurrence: InputSignal<MeetingOccurrence | null> = input<MeetingOccurrence | null>(null);
   public readonly pastMeeting: InputSignal<boolean> = input<boolean>(false);
-  public readonly showAddLink: InputSignal<boolean> = input<boolean>(false);
-  public readonly showAddModal: InputSignal<boolean> = input<boolean>(false);
+  public readonly showAddButton: InputSignal<boolean> = input<boolean>(false);
 
   public readonly backgroundColor: InputSignal<string | undefined> = input<string | undefined>(undefined);
   public readonly borderColor: InputSignal<string | undefined> = input<string | undefined>(undefined);

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ArtifactVisibility } from '../enums';
+import { ComponentSeverity } from '../interfaces';
 
 /**
  * Available meeting platforms and their configurations
@@ -121,7 +122,7 @@ export interface MeetingTypeConfig {
 export interface MeetingTypeBadge {
   label: string;
   className: string;
-  severity?: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+  severity?: ComponentSeverity;
   icon?: string;
 }
 

@@ -13,8 +13,10 @@
       <!-- LFX One Logo - Hidden on mobile (shown in drawer header instead) -->
       @if (!mobile()) {
         <div class="h-[20px] ml-2 w-[141.6px] px-3 py-3 mb-12">
-          <!-- LFX One Logo SVG -->
-          <img src="/images/lfx-one-logo.svg" alt="LFX Logo" class="w-auto h-5" />
+          <a [routerLink]="['/']" class="flex items-center">
+            <!-- LFX One Logo SVG -->
+            <img src="/images/lfx-one-logo.svg" alt="LFX Logo" class="w-auto h-5" />
+          </a>
         </div>
       }
 

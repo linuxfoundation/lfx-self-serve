@@ -1156,7 +1156,7 @@ export interface ProjectCardMetric {
 
 export interface BadgeProps {
   value: string | number;
-  severity: 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+  severity: ComponentSeverity;
   size: 'small' | 'large' | 'xlarge';
   styleClass: string;
   badgeDisabled: boolean;

@@ -61,7 +61,7 @@ export const TAG_TYPE_CONFIGS: Record<string, TagTypeConfig> = {
  * Committee category to severity mapping
  * @description Maps committee categories to semantic severity levels for consistent styling
  */
-export const COMMITTEE_CATEGORY_SEVERITY: Record<string, 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast'> = {
+export const COMMITTEE_CATEGORY_SEVERITY: Record<string, 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'primary'> = {
   // Governance & Leadership
   Board: 'danger',
   'Government Advisory Council': 'danger',
