@@ -42,12 +42,6 @@ export class PersonaService {
    * Cannot change persona if it was auto-detected from committee membership
    */
   public setPersona(persona: PersonaType): void {
-    // Don't allow changes if persona was auto-detected
-    if (this.isAutoDetected()) {
-      console.warn('Cannot change persona - it was automatically determined from committee membership');
-      return;
-    }
-
     if (persona !== this.currentPersona()) {
       this.currentPersona.set(persona);
 
