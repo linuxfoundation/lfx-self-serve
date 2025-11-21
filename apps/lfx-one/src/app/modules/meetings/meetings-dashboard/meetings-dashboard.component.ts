@@ -3,9 +3,12 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
 import { ButtonComponent } from '@components/button/button.component';
+import { SelectButtonComponent } from '@components/select-button/select-button.component';
+import { MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { Meeting, PastMeeting, ProjectContext } from '@lfx-one/shared/interfaces';
 import { getCurrentOrNextOccurrence } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -18,7 +21,7 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 @Component({
   selector: 'lfx-meetings-dashboard',
   standalone: true,
-  imports: [CommonModule, MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent],
+  imports: [CommonModule, ReactiveFormsModule, MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent, SelectButtonComponent],
   templateUrl: './meetings-dashboard.component.html',
   styleUrl: './meetings-dashboard.component.scss',
 })
@@ -36,6 +39,13 @@ export class MeetingsDashboardComponent {
   public searchQuery: WritableSignal<string>;
   public timeFilter: WritableSignal<'upcoming' | 'past'>;
   public topBarVisibilityFilter: WritableSignal<'mine' | 'public'>;
+  public meetingTypeFilter: WritableSignal<string | null>;
+  public meetingTypeOptions: Signal<{ label: string; value: string | null }[]>;
+  public readonly timeFilterOptions = [
+    { label: 'Upcoming', value: 'upcoming' },
+    { label: 'Past', value: 'past' },
+  ];
+  public filterForm: FormGroup;
   public project: Signal<ProjectContext | null>;
   public isMaintainer: Signal<boolean>;
   public isNonFoundationProjectSelected: Signal<boolean>;
@@ -55,6 +65,25 @@ export class MeetingsDashboardComponent {
     this.searchQuery = signal<string>('');
     this.timeFilter = signal<'upcoming' | 'past'>('upcoming');
     this.topBarVisibilityFilter = signal<'mine' | 'public'>('mine');
+    this.meetingTypeFilter = signal<string | null>(null);
+
+    // Initialize filter form
+    this.filterForm = new FormGroup({
+      timeFilter: new FormControl<'upcoming' | 'past'>('upcoming'),
+    });
+
+    // Subscribe to time filter changes
+    this.filterForm
+      .get('timeFilter')
+      ?.valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((value) => {
+        if (value) {
+          this.timeFilter.set(value);
+        }
+      });
+
+    // Initialize meeting type options
+    this.meetingTypeOptions = this.initializeMeetingTypeOptions();
 
     // Initialize data with reactive pattern
     this.upcomingMeetings = this.initializeUpcomingMeetings();
@@ -66,6 +95,10 @@ export class MeetingsDashboardComponent {
     this.meetingsLoading.set(true);
     this.pastMeetingsLoading.set(true);
     this.refresh$.next();
+  }
+
+  public onMeetingTypeChange(value: string | null): void {
+    this.meetingTypeFilter.set(value);
   }
 
   private initializeUpcomingMeetings(): Signal<Meeting[]> {
@@ -131,6 +164,17 @@ export class MeetingsDashboardComponent {
 
           this.pastMeetingsLoading.set(true);
           return this.meetingService.getPastMeetingsByProject(project.uid, 100).pipe(
+            // TODO: Remove client-side sorting once API supports sorting by scheduled_start_time
+            // When backend sorting is implemented, this map() operator can be removed as the
+            // API will return meetings already sorted in the correct order
+            map((meetings) => {
+              // Sort past meetings by scheduled start time (most recent first)
+              return meetings.sort((a, b) => {
+                const timeA = new Date(a.scheduled_start_time).getTime();
+                const timeB = new Date(b.scheduled_start_time).getTime();
+                return timeB - timeA; // Descending order (most recent first)
+              });
+            }),
             catchError((error) => {
               console.error('Failed to load past meetings:', error);
               return of([]);
@@ -143,13 +187,30 @@ export class MeetingsDashboardComponent {
     );
   }
 
+  private initializeMeetingTypeOptions(): Signal<{ label: string; value: string | null }[]> {
+    return computed(() => {
+      const types = Object.entries(MEETING_TYPE_CONFIGS).map(([value, config]) => ({
+        label: config.label,
+        value: value,
+      }));
+
+      return [{ label: 'All Types', value: null }, ...types];
+    });
+  }
+
   private initializeFilteredMeetings(): Signal<(Meeting | PastMeeting)[]> {
     return computed(() => {
       // Get appropriate meetings based on time filter
       const timeFilter = this.timeFilter();
       let filtered: (Meeting | PastMeeting)[] = timeFilter === 'past' ? this.pastMeetings() : this.upcomingMeetings();
 
-      // Apply search filter only - time filtering is handled by API
+      // Apply meeting type filter
+      const typeFilter = this.meetingTypeFilter();
+      if (typeFilter) {
+        filtered = filtered.filter((meeting) => meeting.meeting_type?.toLowerCase() === typeFilter.toLowerCase());
+      }
+
+      // Apply search filter
       const search = this.searchQuery()?.toLowerCase() || '';
       if (search) {
         filtered = filtered.filter(

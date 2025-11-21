@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, Signal } from '@angular/core';
+import { Component, computed, inject, input, InputSignal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { calculateRsvpCounts, Meeting, MeetingOccurrence, MeetingRsvp, PastMeeting, Project, RsvpCounts } from '@lfx-one/shared';
@@ -28,7 +28,6 @@ export class MeetingRsvpDetailsComponent {
   public readonly backgroundColor: InputSignal<string | undefined> = input<string | undefined>(undefined);
   public readonly borderColor: InputSignal<string | undefined> = input<string | undefined>(undefined);
   public readonly additionalRegistrantsCount: InputSignal<number> = input<number>(0);
-  public readonly addParticipant: OutputEmitterRef<void> = output<void>();
 
   public readonly rsvps: Signal<MeetingRsvp[]> = this.initializeRsvps();
   public readonly rsvpCounts: Signal<RsvpCounts> = this.initializeRsvpCounts();
@@ -44,10 +43,6 @@ export class MeetingRsvpDetailsComponent {
   public readonly borderClasses: Signal<string> = this.initializeBorderClasses();
   public readonly headerTextClasses: Signal<string> = computed(() => (this.showPoorAttendanceWarning() ? 'text-amber-600' : 'text-gray-600'));
   public readonly summaryTextClasses: Signal<string> = computed(() => (this.showPoorAttendanceWarning() ? 'text-amber-900' : 'text-gray-900'));
-
-  public onAddParticipantClick(): void {
-    this.addParticipant.emit();
-  }
 
   private initializeRsvps(): Signal<MeetingRsvp[]> {
     return toSignal(

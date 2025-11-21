@@ -32,6 +32,7 @@ export class SidebarComponent {
   public readonly collapsed = input<boolean>(false);
   public readonly styleClass = input<string>('');
   public readonly showProjectSelector = input<boolean>(false);
+  public readonly mobile = input<boolean>(false);
 
   // Load all projects using toSignal with tap to set default
   protected readonly projects = toSignal(

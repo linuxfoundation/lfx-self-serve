@@ -1,7 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-wrap items-center gap-4">
+<div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+  <!-- Search Input -->
   <div class="flex-1">
     <lfx-input-text
       [form]="searchForm"
@@ -13,48 +14,17 @@
       data-testid="meetings-search-input"></lfx-input-text>
   </div>
 
-  <div class="inline-flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5">
-    <button
-      (click)="onTimeFilterClick('upcoming')"
-      [ngClass]="{
-        'bg-white text-slate-900 shadow-sm': timeFilter() === 'upcoming',
-        'text-slate-600 hover:text-slate-900': timeFilter() !== 'upcoming',
-      }"
-      class="px-3 py-1.5 rounded-md text-[12.25px] transition-all duration-200">
-      Upcoming
-    </button>
-    <button
-      (click)="onTimeFilterClick('past')"
-      [ngClass]="{
-        'bg-white text-slate-900 shadow-sm': timeFilter() === 'past',
-        'text-slate-600 hover:text-slate-900': timeFilter() !== 'past',
-      }"
-      class="px-3 py-1.5 rounded-md text-[12.25px] transition-all duration-200">
-      Past
-    </button>
+  <!-- Meeting Type Filter Dropdown -->
+  <div class="w-full sm:w-64">
+    <lfx-select
+      [form]="searchForm"
+      control="meetingType"
+      size="small"
+      [options]="meetingTypeOptions()"
+      placeholder="Select Type"
+      [showClear]="true"
+      styleClass="w-full"
+      (onChange)="onMeetingTypeChange($event.value)"
+      data-testid="meeting-type-filter"></lfx-select>
   </div>
-
-  <!-- TODO: Readd when in scope to filter by visibility -->
-  <!--
-  <div class="inline-flex items-center bg-slate-100 rounded-lg p-0.5 gap-0.5">
-    <button
-      (click)="onVisibilityFilterClick('mine')"
-      [ngClass]="{
-        'bg-white text-slate-900 shadow-sm': visibilityFilter() === 'mine',
-        'text-slate-600 hover:text-slate-900': visibilityFilter() !== 'mine',
-      }"
-      class="px-3 py-1.5 rounded-md text-[12.25px] transition-all duration-200">
-      Mine ({{ mineCount() }})
-    </button>
-    <button
-      (click)="onVisibilityFilterClick('public')"
-      [ngClass]="{
-        'bg-white text-slate-900 shadow-sm': visibilityFilter() === 'public',
-        'text-slate-600 hover:text-slate-900': visibilityFilter() !== 'public',
-      }"
-      class="px-3 py-1.5 rounded-md text-[12.25px] transition-all duration-200">
-      Public ({{ publicCount() }})
-    </button>
-  </div>
-  -->
 </div>

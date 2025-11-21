@@ -108,6 +108,10 @@ export class MeetingService {
       params = params.set('limit', limit.toString());
     }
 
+    // TODO: Add sort parameter once API supports sorting by scheduled_start_time
+    // When implemented, add: params = params.set('sort', 'scheduled_start_time_desc');
+    // This will enable backend sorting instead of client-side sorting in the component
+
     return this.getPastMeetings(params);
   }
 

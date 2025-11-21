@@ -4,6 +4,7 @@
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
 import { CommonModule } from '@angular/common';
 import { Component, computed, effect, inject, Injector, input, OnInit, output, runInInjectionContext, signal, Signal, WritableSignal } from '@angular/core';
+import { Router } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   MeetingDeleteConfirmationComponent,
@@ -36,7 +37,6 @@ import {
 } from '@lfx-one/shared';
 import { MeetingCommitteeModalComponent } from '@modules/meetings/components/meeting-committee-modal/meeting-committee-modal.component';
 import { RecordingModalComponent } from '@modules/meetings/components/recording-modal/recording-modal.component';
-import { RegistrantModalComponent } from '@modules/meetings/components/registrant-modal/registrant-modal.component';
 import { SummaryModalComponent } from '@modules/meetings/components/summary-modal/summary-modal.component';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
@@ -89,6 +89,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly injector = inject(Injector);
   private readonly clipboard = inject(Clipboard);
   private readonly userService = inject(UserService);
+  private readonly router = inject(Router);
 
   public readonly meetingInput = input.required<Meeting | PastMeeting>();
   public readonly occurrenceInput = input<MeetingOccurrence | null>(null);
@@ -186,25 +187,13 @@ export class MeetingCardComponent implements OnInit {
 
   public onRegistrantsToggle(): void {
     if (this.meetingRegistrantCount() === 0 && !this.pastMeeting()) {
-      this.openAddRegistrantModal();
+      this.router.navigate(['/meetings', this.meeting().uid, 'edit'], {
+        queryParams: { step: '5' },
+      });
       return;
     }
 
     this.showRegistrants.set(!this.showRegistrants());
-  }
-
-  public openAddRegistrantModal(): void {
-    this.dialogService.open(RegistrantModalComponent, {
-      header: 'Add Guests',
-      width: '650px',
-      modal: true,
-      closable: true,
-      dismissableMask: true,
-      data: {
-        meetingId: this.meeting().uid,
-        registrant: null,
-      },
-    });
   }
 
   public openCommitteeModal(): void {
@@ -431,7 +420,8 @@ export class MeetingCardComponent implements OnInit {
           baseItems.push({
             label: 'Add Guests',
             icon: 'fa-light fa-plus',
-            command: () => this.openAddRegistrantModal(),
+            routerLink: ['/meetings', this.meeting().uid, 'edit'],
+            queryParams: { step: '5' },
           });
 
           baseItems.push({

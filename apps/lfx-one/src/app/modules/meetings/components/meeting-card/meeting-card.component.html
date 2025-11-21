@@ -148,8 +148,16 @@
               <i class="fa-light fa-paperclip text-xs"></i>
               <span>Resources</span>
             </div>
-            @if (!pastMeeting()) {
-              <lfx-button icon="fa-light fa-upload text-xs" label="Add" size="small" severity="secondary" data-testid="add-resource-button"> </lfx-button>
+            @if (!pastMeeting() && meeting().organizer) {
+              <lfx-button
+                icon="fa-light fa-upload text-xs"
+                label="Add"
+                size="small"
+                severity="secondary"
+                data-testid="add-resource-button"
+                [routerLink]="['/meetings', meeting().uid, 'edit']"
+                [queryParams]="{ step: '4' }">
+              </lfx-button>
             }
           </div>
 
@@ -248,8 +256,7 @@
             [currentOccurrence]="currentOccurrence()"
             [pastMeeting]="pastMeeting()"
             [showAddModal]="!pastMeeting()"
-            [additionalRegistrantsCount]="additionalRegistrantsCount()"
-            (addParticipant)="openAddRegistrantModal()">
+            [additionalRegistrantsCount]="additionalRegistrantsCount()">
           </lfx-meeting-rsvp-details>
         } @else if (!pastMeeting()) {
           <!-- Show RSVP Selection for authenticated non-organizers (upcoming meetings only) -->

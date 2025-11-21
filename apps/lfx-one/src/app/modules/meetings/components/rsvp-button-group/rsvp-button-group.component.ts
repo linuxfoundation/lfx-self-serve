@@ -6,7 +6,6 @@ import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, Signal, signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RsvpScopeModalComponent } from '@app/modules/meetings/components/rsvp-scope-modal/rsvp-scope-modal.component';
-import { ButtonComponent } from '@components/button/button.component';
 import { CreateMeetingRsvpRequest, Meeting, MeetingRsvp, RsvpResponse, RsvpScope, User } from '@lfx-one/shared';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -17,7 +16,7 @@ import { catchError, combineLatest, finalize, of, switchMap, tap } from 'rxjs';
 @Component({
   selector: 'lfx-rsvp-button-group',
   standalone: true,
-  imports: [CommonModule, ButtonComponent],
+  imports: [CommonModule],
   providers: [DialogService],
   templateUrl: './rsvp-button-group.component.html',
 })
@@ -49,16 +48,8 @@ export class RsvpButtonGroupComponent {
   public readonly isRecurring: Signal<boolean> = this.initializeIsRecurring();
   public readonly currentRsvp: Signal<MeetingRsvp | null> = this.initializeCurrentRsvp();
   public readonly selectedResponse: Signal<RsvpResponse | null> = this.initializeSelectedResponse();
-  public readonly acceptedSeverity: Signal<'primary' | 'secondary'> = this.initializeAcceptedSeverity();
-  public readonly declinedSeverity: Signal<'danger' | 'secondary'> = this.initializeDeclinedSeverity();
-  public readonly maybeSeverity: Signal<'warn' | 'secondary'> = this.initializeMaybeSeverity();
 
   public handleRsvpClick(response: RsvpResponse): void {
-    // If clicking the same response, do nothing
-    if (this.selectedResponse() === response) {
-      return;
-    }
-
     // For recurring meetings, show scope modal
     if (this.isRecurring()) {
       this.showScopeModal(response);
@@ -178,17 +169,5 @@ export class RsvpButtonGroupComponent {
 
   private initializeSelectedResponse(): Signal<RsvpResponse | null> {
     return computed(() => this.currentRsvp()?.response ?? null);
-  }
-
-  private initializeAcceptedSeverity(): Signal<'primary' | 'secondary'> {
-    return computed(() => (this.selectedResponse() === 'accepted' ? 'primary' : 'secondary'));
-  }
-
-  private initializeDeclinedSeverity(): Signal<'danger' | 'secondary'> {
-    return computed(() => (this.selectedResponse() === 'declined' ? 'danger' : 'secondary'));
-  }
-
-  private initializeMaybeSeverity(): Signal<'warn' | 'secondary'> {
-    return computed(() => (this.selectedResponse() === 'maybe' ? 'warn' : 'secondary'));
   }
 }

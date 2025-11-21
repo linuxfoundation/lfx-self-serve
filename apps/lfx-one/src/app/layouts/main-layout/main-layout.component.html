@@ -7,30 +7,37 @@
     <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems()" [showProjectSelector]="true"></lfx-sidebar>
   </div>
 
-  <!-- Sidebar - Mobile Overlay -->
-  @if (showMobileSidebar()) {
-    <div class="lg:hidden fixed inset-0 z-40 bg-black bg-opacity-50" data-testid="mobile-sidebar-overlay" (click)="closeMobileSidebar()">
-      <div class="absolute top-0 left-0 bottom-0 w-64 bg-white shadow-xl" (click)="$event.stopPropagation()" data-testid="mobile-sidebar">
-        <div class="flex items-center justify-between p-4 border-b border-gray-200">
-          <h2>Menu</h2>
-          <button
-            type="button"
-            class="hover:opacity-80 transition-opacity p-2"
-            (click)="closeMobileSidebar()"
-            aria-label="Close menu"
-            data-testid="mobile-sidebar-close">
-            <i class="fa-light fa-times text-gray-600 text-xl"></i>
-          </button>
-        </div>
-        <div class="overflow-y-auto h-[calc(100vh-4rem)]">
-          <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems()" [showProjectSelector]="true"></lfx-sidebar>
-        </div>
+  <!-- Sidebar - Mobile Drawer -->
+  <p-drawer
+    [visible]="showMobileSidebar()"
+    (visibleChange)="onDrawerVisibilityChange($event)"
+    position="left"
+    [modal]="true"
+    [dismissable]="true"
+    [showCloseIcon]="true"
+    styleClass="lg:hidden w-86 mobile-sidebar-drawer"
+    data-testid="mobile-sidebar-drawer">
+    <ng-template #header>
+      <div class="flex items-center gap-3">
+        <img src="/images/lfx-one-logo.svg" alt="LFX Logo" class="w-auto h-5" />
       </div>
-    </div>
-  }
+    </ng-template>
+    <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems()" [showProjectSelector]="true" [mobile]="true"></lfx-sidebar>
+  </p-drawer>
 
   <!-- Main Content Area -->
   <main class="flex-1 min-w-0 transition-all duration-300 lg:ml-64 flex flex-col" data-testid="main-content">
+    <!-- Mobile Menu Button -->
+    <div class="lg:hidden sticky top-0 z-30 bg-white border-b border-gray-200 px-5 py-3">
+      <button
+        type="button"
+        class="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors"
+        (click)="toggleMobileSidebar()"
+        aria-label="Toggle menu"
+        data-testid="mobile-menu-button">
+        <i class="fa-light fa-bars text-gray-600 text-xl"></i>
+      </button>
+    </div>
     <div class="flex-grow px-5 md:px-8 py-6">
       <router-outlet />
     </div>

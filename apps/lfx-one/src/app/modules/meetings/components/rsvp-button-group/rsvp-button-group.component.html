@@ -2,57 +2,70 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <!-- RSVP Container -->
-<div class="relative flex flex-col gap-2 p-3 w-full rounded-md bg-blue-50" [attr.data-testid]="'meeting-rsvp-container'">
-  <!-- Border overlay -->
-  <div aria-hidden="true" class="absolute inset-0 border border-blue-500 rounded-md pointer-events-none"></div>
-
-  <!-- Header (conditional) -->
-  @if (showHeader()) {
-    <div class="flex items-center gap-2" [attr.data-testid]="'meeting-rsvp-header'">
-      <i class="fa-light fa-calendar-check text-gray-500 text-sm"></i>
-      <h3 class="text-sm text-gray-500">RSVP for This Meeting</h3>
-    </div>
-  }
+<div
+  [ngClass]="{
+    'bg-cyan-50 border border-cyan-400': selectedResponse() === null,
+    'bg-[rgba(236,236,240,0.5)]': selectedResponse() !== null,
+  }"
+  class="rounded-[6px] p-[12px] space-y-2 flex-1"
+  [attr.data-testid]="'meeting-rsvp-container'">
+  <!-- Header -->
+  <div
+    [ngClass]="{
+      'text-cyan-600': selectedResponse() === null,
+      'text-[#717182]': selectedResponse() !== null,
+    }"
+    class="flex items-center gap-[7px]"
+    [attr.data-testid]="'meeting-rsvp-header'">
+    <i class="fa-light fa-users text-[10.5px]"></i>
+    <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">RSVP</span>
+  </div>
 
   <!-- RSVP Buttons -->
-  <div class="flex gap-2" [attr.data-testid]="'meeting-rsvp-buttons'">
+  <div class="flex gap-[7px]" [attr.data-testid]="'meeting-rsvp-buttons'">
     <!-- Yes Button -->
-    <lfx-button
-      class="w-full"
-      label="Yes"
-      icon="fa-light fa-check"
-      [severity]="acceptedSeverity()"
-      size="small"
-      styleClass="w-full"
-      [disabled]="isLoading()"
-      (onClick)="handleRsvpClick('accepted')"
+    <button
+      (click)="handleRsvpClick('accepted')"
+      [disabled]="isLoading() || (selectedResponse() !== null && selectedResponse() !== 'accepted')"
+      [ngClass]="{
+        'bg-blue-500 border-blue-500 text-white': selectedResponse() === 'accepted',
+        'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed': selectedResponse() !== null && selectedResponse() !== 'accepted',
+        'bg-white border-blue-500 text-blue-700 hover:bg-blue-50': selectedResponse() === null,
+      }"
+      class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
       [attr.data-testid]="'meeting-rsvp-button-yes'">
-    </lfx-button>
+      <i class="fa-light fa-circle-check text-[14px]"></i>
+      <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">Yes</span>
+    </button>
 
     <!-- No Button -->
-    <lfx-button
-      class="w-full"
-      label="No"
-      icon="fa-light fa-xmark"
-      [severity]="declinedSeverity()"
-      size="small"
-      styleClass="w-full"
-      [disabled]="isLoading()"
-      (onClick)="handleRsvpClick('declined')"
+    <button
+      (click)="handleRsvpClick('declined')"
+      [disabled]="isLoading() || (selectedResponse() !== null && selectedResponse() !== 'declined')"
+      [ngClass]="{
+        'bg-red-500 border-red-500 text-white': selectedResponse() === 'declined',
+        'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed': selectedResponse() !== null && selectedResponse() !== 'declined',
+        'bg-white border-red-500 text-red-700 hover:bg-red-50': selectedResponse() === null,
+      }"
+      class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
       [attr.data-testid]="'meeting-rsvp-button-no'">
-    </lfx-button>
+      <i class="fa-light fa-circle-xmark text-[14px]"></i>
+      <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">No</span>
+    </button>
 
     <!-- Maybe Button -->
-    <lfx-button
-      class="w-full"
-      label="Maybe"
-      icon="fa-light fa-question"
-      [severity]="maybeSeverity()"
-      size="small"
-      styleClass="w-full"
-      [disabled]="isLoading()"
-      (onClick)="handleRsvpClick('maybe')"
+    <button
+      (click)="handleRsvpClick('maybe')"
+      [disabled]="isLoading() || (selectedResponse() !== null && selectedResponse() !== 'maybe')"
+      [ngClass]="{
+        'bg-amber-500 border-amber-500 text-white': selectedResponse() === 'maybe',
+        'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed': selectedResponse() !== null && selectedResponse() !== 'maybe',
+        'bg-white border-amber-500 text-amber-700 hover:bg-amber-50': selectedResponse() === null,
+      }"
+      class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
       [attr.data-testid]="'meeting-rsvp-button-maybe'">
-    </lfx-button>
+      <i class="fa-light fa-circle-question text-[14px]"></i>
+      <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">Maybe</span>
+    </button>
   </div>
 </div>

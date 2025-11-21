@@ -158,7 +158,9 @@
             } @else if (authenticated()) {
               <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) -->
               <div class="w-full md:w-[296px]">
-                <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+                @defer (when meeting()) {
+                  <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+                }
               </div>
             }
           </div>
@@ -252,12 +254,6 @@
                   <p class="font-semibold text-sm text-blue-900">{{ user.name }}</p>
                   <p class="text-sm text-blue-900">{{ user.email }}</p>
                 </div>
-
-                <!-- Logout Button -->
-                <a [href]="'/logout?returnTo=' + returnTo()" class="flex items-center gap-1 px-2 py-1.5 hover:bg-blue-100 rounded transition-colors">
-                  <i class="fa-light fa-arrow-right-from-bracket text-sm text-blue-900"></i>
-                  <span class="text-sm font-semibold text-blue-900">Log Out</span>
-                </a>
               </div>
             </div>
           } @else {

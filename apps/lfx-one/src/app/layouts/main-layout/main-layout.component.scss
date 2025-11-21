@@ -4,3 +4,11 @@
 :host {
   display: block;
 }
+
+::ng-deep {
+  .mobile-sidebar-drawer {
+    .p-drawer-content {
+      @apply px-2;
+    }
+  }
+}

@@ -45,8 +45,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { TabsModule } from 'primeng/tabs';
-import { BehaviorSubject, catchError, concat, filter, finalize, from, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
+import { BehaviorSubject, catchError, concat, filter, finalize, forkJoin, from, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
 
 import { MeetingDetailsComponent } from '../components/meeting-details/meeting-details.component';
 import { MeetingPlatformFeaturesComponent } from '../components/meeting-platform-features/meeting-platform-features.component';
@@ -68,7 +67,6 @@ import { MeetingTypeSelectionComponent } from '../components/meeting-type-select
     MeetingPlatformFeaturesComponent,
     MeetingResourcesSummaryComponent,
     MeetingRegistrantsManagerComponent,
-    TabsModule,
     RouterLink,
   ],
   providers: [ConfirmationService],
@@ -97,7 +95,7 @@ export class MeetingManageComponent {
   private attachmentsRefresh$ = new BehaviorSubject<void>(undefined);
   public attachments = this.initializeAttachments();
   // Stepper state
-  public currentStep = signal<number>(1);
+  public currentStep = toSignal(of(1), { initialValue: 1 });
   public readonly totalSteps = TOTAL_STEPS;
   // Form state
   public form = signal<FormGroup>(this.createMeetingFormGroup());
@@ -125,6 +123,23 @@ export class MeetingManageComponent {
   );
 
   public constructor() {
+    // Initialize step from query parameter
+    this.currentStep = toSignal(
+      this.route.queryParamMap.pipe(
+        switchMap((params) => {
+          const stepParam = params.get('step');
+          if (stepParam) {
+            const step = parseInt(stepParam, 10);
+            if (step >= 1 && step <= this.totalSteps) {
+              return of(step);
+            }
+          }
+          return of(1);
+        })
+      ),
+      { initialValue: 1 }
+    );
+
     // Subscribe to form value changes and update validation signals
     this.form()
       .valueChanges.pipe(takeUntilDestroyed(this.destroyRef))
@@ -153,7 +168,7 @@ export class MeetingManageComponent {
 
   public goToStep(step: number | undefined): void {
     if (step !== undefined && this.canNavigateToStep(step)) {
-      this.currentStep.set(step);
+      this.router.navigate([], { queryParams: { step: step } });
       this.scrollToStepper();
     }
   }
@@ -166,7 +181,7 @@ export class MeetingManageComponent {
         this.generateMeetingTitle();
       }
 
-      this.currentStep.set(next);
+      this.router.navigate([], { queryParams: { step: next } });
       this.scrollToStepper();
     }
   }
@@ -174,7 +189,7 @@ export class MeetingManageComponent {
   public previousStep(): void {
     const previous = this.currentStep() - 1;
     if (previous >= 1) {
-      this.currentStep.set(previous);
+      this.router.navigate([], { queryParams: { step: previous } });
       this.scrollToStepper();
     }
   }
@@ -219,6 +234,72 @@ export class MeetingManageComponent {
     // When a link with an existing attachment uid is removed from the form,
     // add it to pending deletions so it gets deleted on save
     this.pendingAttachmentDeletions.update((current) => [...current, attachmentId]);
+  }
+
+  public onSubmitAll(): void {
+    // Edit mode only - save meeting and registrants together using forkJoin
+    if (!this.isEditMode()) {
+      return;
+    }
+
+    // Mark all form controls as touched to show validation errors
+    Object.keys(this.form().controls).forEach((key) => {
+      const control = this.form().get(key);
+      control?.markAsTouched();
+      control?.markAsDirty();
+    });
+
+    if (this.form().invalid) {
+      return;
+    }
+
+    this.submitting.set(true);
+
+    // Prepare meeting data
+    const meetingData = this.prepareMeetingData();
+    const updateMeeting$ = this.meetingService.updateMeeting(this.meetingId()!, meetingData as UpdateMeetingRequest, 'single');
+
+    // Prepare registrant operations
+    const registrantOperations = this.buildRegistrantOperations();
+    const registrants$ = registrantOperations.length > 0 ? concat(...registrantOperations).pipe(toArray()) : of([]);
+
+    // Execute both operations in parallel
+    forkJoin({
+      meeting: updateMeeting$,
+      registrants: registrants$,
+    })
+      .pipe(finalize(() => this.submitting.set(false)))
+      .subscribe({
+        next: (result: { meeting: Meeting; registrants: { type: string; success: number; failed: number }[] }) => {
+          const registrantResults = result.registrants;
+
+          // Calculate registrant operation results
+          const totalSuccess = registrantResults.reduce((sum: number, r: { type: string; success: number; failed: number }) => sum + r.success, 0);
+          const totalFailed = registrantResults.reduce((sum: number, r: { type: string; success: number; failed: number }) => sum + r.failed, 0);
+
+          // Show success message
+          if (totalSuccess > 0 || totalFailed > 0) {
+            this.showRegistrantOperationToast(totalSuccess, totalFailed, totalSuccess + totalFailed);
+          } else {
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Success',
+              detail: 'Meeting updated successfully',
+            });
+          }
+
+          // Navigate back to meetings list
+          this.router.navigate(['/meetings']);
+        },
+        error: (error: any) => {
+          console.error('Error saving meeting and registrants:', error);
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to update meeting. Please try again.',
+          });
+        },
+      });
   }
 
   public onManageRegistrants(): void {
@@ -386,7 +467,14 @@ export class MeetingManageComponent {
               summary: this.isEditMode() ? 'Meeting Updated' : 'Meeting Created',
               detail: warningMessage,
             });
-            this.router.navigate(['/meetings']);
+
+            // For edit mode, navigate to step 5 to manage guests
+            if (this.isEditMode()) {
+              this.router.navigate([], { queryParams: { step: '5' } });
+              this.submitting.set(false);
+            } else {
+              this.router.navigate(['/meetings']);
+            }
           },
         });
     } else {
@@ -395,7 +483,14 @@ export class MeetingManageComponent {
         summary: 'Success',
         detail: `Meeting ${this.isEditMode() ? 'updated' : 'created'} successfully`,
       });
-      this.router.navigate(['/meetings']);
+
+      // For edit mode, navigate to step 5 to manage guests
+      if (this.isEditMode()) {
+        this.router.navigate([], { queryParams: { step: '5' } });
+        this.submitting.set(false);
+      } else {
+        this.router.navigate(['/meetings']);
+      }
     }
   }
 
@@ -496,7 +591,13 @@ export class MeetingManageComponent {
       this.pendingAttachmentDeletions.set([]);
     }
 
-    this.router.navigate(['/meetings']);
+    // For edit mode, navigate to step 5 to manage guests
+    if (this.isEditMode()) {
+      this.router.navigate([], { queryParams: { step: '5' } });
+      this.submitting.set(false);
+    } else {
+      this.router.navigate(['/meetings']);
+    }
   }
 
   private initializeMeeting() {

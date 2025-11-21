@@ -3,6 +3,7 @@
 
 import { CommonModule } from '@angular/common';
 import { Component, computed, ElementRef, input, signal, ViewChild } from '@angular/core';
+import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { AGGREGATE_FOUNDATION_METRICS, FOUNDATION_BAR_CHART_OPTIONS, FOUNDATION_SPARKLINE_CHART_OPTIONS } from '@lfx-one/shared/constants';
@@ -12,7 +13,7 @@ import { hexToRgba } from '@lfx-one/shared/utils';
 @Component({
   selector: 'lfx-foundation-health',
   standalone: true,
-  imports: [CommonModule, FilterPillsComponent, ChartComponent],
+  imports: [CommonModule, FilterPillsComponent, ChartComponent, DataCopilotComponent],
   templateUrl: './foundation-health.component.html',
   styleUrl: './foundation-health.component.scss',
 })

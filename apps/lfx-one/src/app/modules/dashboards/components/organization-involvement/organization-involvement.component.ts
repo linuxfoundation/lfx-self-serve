@@ -4,6 +4,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, ElementRef, inject, signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -19,7 +20,7 @@ import { combineLatest, finalize, map, of, switchMap } from 'rxjs';
 @Component({
   selector: 'lfx-organization-involvement',
   standalone: true,
-  imports: [CommonModule, ChartComponent, TooltipModule, FilterPillsComponent, TagComponent],
+  imports: [CommonModule, ChartComponent, TooltipModule, FilterPillsComponent, TagComponent, DataCopilotComponent],
   templateUrl: './organization-involvement.component.html',
   styleUrl: './organization-involvement.component.scss',
 })

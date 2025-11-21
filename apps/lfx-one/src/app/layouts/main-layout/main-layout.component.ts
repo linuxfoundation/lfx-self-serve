@@ -13,12 +13,13 @@ import { AppService } from '@services/app.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { DrawerModule } from 'primeng/drawer';
 import { filter } from 'rxjs';
 
 @Component({
   selector: 'lfx-main-layout',
   standalone: true,
-  imports: [CommonModule, RouterModule, SidebarComponent],
+  imports: [CommonModule, RouterModule, SidebarComponent, DrawerModule],
   templateUrl: './main-layout.component.html',
   styleUrl: './main-layout.component.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -30,7 +31,7 @@ export class MainLayoutComponent {
   private readonly personaService = inject(PersonaService);
   private readonly projectContextService = inject(ProjectContextService);
 
-  // Expose mobile sidebar state from service
+  // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
   protected readonly selectedProject = this.projectContextService.selectedProject;
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
 
@@ -119,7 +120,13 @@ export class MainLayoutComponent {
       });
   }
 
-  public closeMobileSidebar(): void {
-    this.appService.closeMobileSidebar();
+  public toggleMobileSidebar(): void {
+    this.appService.toggleMobileSidebar();
+  }
+
+  public onDrawerVisibilityChange(visible: boolean): void {
+    if (!visible) {
+      this.appService.closeMobileSidebar();
+    }
   }
 }
