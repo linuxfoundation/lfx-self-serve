@@ -568,3 +568,140 @@ export interface ProjectPullRequestsWeeklyResponse {
    */
   totalWeeks: number;
 }
+
+/**
+ * Contributors Mentored row from Snowflake FOUNDATION_CONTRIBUTORS_MENTORED_WEEKLY table
+ * Represents weekly mentorship activity data
+ */
+export interface FoundationContributorsMentoredRow {
+  /**
+   * Week start date (YYYY-MM-DD)
+   */
+  WEEK_START_DATE: string;
+
+  /**
+   * Foundation identifier
+   */
+  FOUNDATION_ID: string;
+
+  /**
+   * Foundation name
+   */
+  FOUNDATION_NAME: string;
+
+  /**
+   * Foundation slug for filtering
+   */
+  FOUNDATION_SLUG: string;
+
+  /**
+   * New contributors mentored that week
+   */
+  WEEKLY_MENTORED_CONTRIBUTOR_COUNT: number;
+
+  /**
+   * Cumulative total of contributors mentored
+   */
+  MENTORED_CONTRIBUTOR_COUNT: number;
+}
+
+/**
+ * API response for Contributors Mentored query
+ * Contains weekly mentorship data with aggregated metrics
+ */
+export interface FoundationContributorsMentoredResponse {
+  /**
+   * Array of weekly mentorship data
+   */
+  data: FoundationContributorsMentoredRow[];
+
+  /**
+   * Latest cumulative count of mentored contributors
+   */
+  totalMentored: number;
+
+  /**
+   * Average new contributors mentored per week
+   */
+  avgWeeklyNew: number;
+
+  /**
+   * Number of weeks with data
+   */
+  totalWeeks: number;
+}
+
+/**
+ * Unique contributors weekly row from Snowflake
+ * Raw response with Snowflake naming conventions (ALL_CAPS)
+ */
+export interface UniqueContributorsWeeklyRow {
+  /**
+   * Foundation or Project ID
+   */
+  FOUNDATION_ID?: string;
+  PROJECT_ID?: string;
+
+  /**
+   * Foundation or Project Name
+   */
+  FOUNDATION_NAME?: string;
+  PROJECT_NAME?: string;
+
+  /**
+   * Foundation or Project Slug
+   */
+  FOUNDATION_SLUG?: string;
+  PROJECT_SLUG?: string;
+
+  /**
+   * Week start date (YYYY-MM-DD format)
+   */
+  WEEK_START_DATE: string;
+
+  /**
+   * Number of unique contributors in this week
+   */
+  UNIQUE_CONTRIBUTORS: number;
+
+  /**
+   * Total active contributors (including repeat contributors)
+   */
+  TOTAL_ACTIVE_CONTRIBUTORS: number;
+
+  /**
+   * Number of new contributors (first contribution)
+   */
+  NEW_CONTRIBUTORS: number;
+
+  /**
+   * Number of returning contributors
+   */
+  RETURNING_CONTRIBUTORS: number;
+}
+
+/**
+ * Response from unique contributors weekly endpoint
+ * Includes weekly data and aggregated metrics
+ */
+export interface UniqueContributorsWeeklyResponse {
+  /**
+   * Weekly contributor data (raw Snowflake rows)
+   */
+  data: UniqueContributorsWeeklyRow[];
+
+  /**
+   * Total unique contributors across all weeks
+   */
+  totalUniqueContributors: number;
+
+  /**
+   * Average unique contributors per week
+   */
+  avgUniqueContributors: number;
+
+  /**
+   * Total number of weeks with data
+   */
+  totalWeeks: number;
+}

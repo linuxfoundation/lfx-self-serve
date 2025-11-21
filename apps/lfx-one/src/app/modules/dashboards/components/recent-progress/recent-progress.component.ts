@@ -23,9 +23,11 @@ import { finalize, switchMap } from 'rxjs';
 
 import type {
   ActiveWeeksStreakResponse,
+  FoundationContributorsMentoredResponse,
   ProgressItemWithChart,
   ProjectIssuesResolutionResponse,
   ProjectPullRequestsWeeklyResponse,
+  UniqueContributorsWeeklyResponse,
   UserCodeCommitsResponse,
   UserPullRequestsResponse,
 } from '@lfx-one/shared/interfaces';
@@ -53,15 +55,21 @@ export class RecentProgressComponent {
     codeCommits: true,
     projectIssuesResolution: true,
     projectPullRequestsWeekly: true,
+    contributorsMentored: true,
+    uniqueContributorsWeekly: true,
   });
   public readonly projectSlug = computed(() => this.projectContextService.selectedFoundation()?.slug || this.projectContextService.selectedProject()?.slug);
+  private readonly entityType = computed<'foundation' | 'project'>(() => (this.projectContextService.selectedFoundation() ? 'foundation' : 'project'));
   private readonly activeWeeksStreakData = this.initializeActiveWeeksStreakData();
   private readonly pullRequestsMergedData = this.initializePullRequestsMergedData();
   private readonly codeCommitsData = this.initializeCodeCommitsData();
   private readonly projectIssuesResolutionData = this.initializeProjectIssuesResolutionData();
   private readonly projectPullRequestsWeeklyData = this.initializeProjectPullRequestsWeeklyData();
+  private readonly contributorsMentoredData = this.initializeContributorsMentoredData();
+  private readonly uniqueContributorsWeeklyData = this.initializeUniqueContributorsWeeklyData();
   private readonly issuesTooltipData = this.initializeIssuesTooltipData();
   private readonly prVelocityTooltipData = this.initializePrVelocityTooltipData();
+  private readonly uniqueContributorsTooltipData = this.initializeUniqueContributorsTooltipData();
   protected readonly isLoading = this.initializeIsLoading();
   protected readonly progressItems = this.initializeProgressItems();
   protected readonly selectedFilter = signal<string>('all');
@@ -412,6 +420,131 @@ export class RecentProgressComponent {
     };
   }
 
+  private transformContributorsMentored(data: FoundationContributorsMentoredResponse): ProgressItemWithChart {
+    // Reverse the data to show oldest week on the left
+    const chartData = [...data.data].reverse();
+
+    return {
+      label: 'Contributors Mentored',
+      icon: 'fa-light fa-user-graduate',
+      value: data.totalMentored.toString(),
+      trend: data.avgWeeklyNew > 0 ? 'up' : undefined,
+      subtitle: 'Total contributors mentored',
+      chartType: 'line',
+      category: 'projectHealth',
+      isConnected: true,
+      chartData: {
+        labels: chartData.map((row) => row.WEEK_START_DATE),
+        datasets: [
+          {
+            label: 'Total Contributors Mentored',
+            data: chartData.map((row) => row.MENTORED_CONTRIBUTOR_COUNT),
+            borderColor: '#8b5cf6',
+            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+            fill: true,
+            tension: 0.4,
+            borderWidth: 2,
+            pointRadius: 0,
+          },
+        ],
+      },
+      chartOptions: PROGRESS_LINE_CHART_OPTIONS,
+    };
+  }
+
+  private transformUniqueContributorsWeekly(
+    data: UniqueContributorsWeeklyResponse,
+    tooltipData: { total: string; avgNew: string; avgReturning: string } | null
+  ): ProgressItemWithChart {
+    // Reverse the data to show oldest week on the left
+    const chartData = [...data.data].reverse();
+
+    // Round average to whole number for display
+    const avgUniqueContributors = Math.round(data.avgUniqueContributors || 0);
+
+    const tooltipText = tooltipData
+      ? `<div class="flex flex-col">
+        <div>Total unique contributors: ${tooltipData.total}</div>
+        <div>Avg new per week: ${tooltipData.avgNew}</div>
+        <div>Avg returning per week: ${tooltipData.avgReturning}</div>
+      </div>`
+      : undefined;
+
+    return {
+      label: 'Unique Contributors per Week',
+      icon: 'fa-light fa-users',
+      value: avgUniqueContributors.toString(),
+      trend: avgUniqueContributors > 0 ? 'up' : 'down',
+      subtitle: 'Active contributors',
+      tooltipText,
+      isConnected: true,
+      chartType: 'bar',
+      category: 'code',
+      chartData: {
+        labels: chartData.map((row) => row.WEEK_START_DATE),
+        datasets: [
+          {
+            label: 'Unique Contributors',
+            data: chartData.map((row) => row.UNIQUE_CONTRIBUTORS),
+            backgroundColor: 'rgba(0, 148, 255, 0.5)',
+            borderColor: '#0094FF',
+            borderWidth: 0,
+            borderRadius: 2,
+            barPercentage: 0.95,
+            categoryPercentage: 0.95,
+          },
+        ],
+      },
+      chartOptions: {
+        ...PROGRESS_BAR_CHART_WITH_FOOTER_OPTIONS,
+        plugins: {
+          ...PROGRESS_BAR_CHART_WITH_FOOTER_OPTIONS.plugins,
+          tooltip: {
+            ...(PROGRESS_BAR_CHART_WITH_FOOTER_OPTIONS.plugins?.tooltip ?? {}),
+            callbacks: {
+              title: (context: TooltipItem<'bar'>[]) => {
+                try {
+                  const dateStr = context[0]?.label || '';
+                  if (!dateStr) return '';
+                  const date = parseLocalDateString(dateStr);
+                  const formattedDate = date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+                  return `Week of ${formattedDate}`;
+                } catch (e) {
+                  console.error('Error in title callback:', e);
+                  return context[0]?.label || '';
+                }
+              },
+              label: (context: TooltipItem<'bar'>) => {
+                try {
+                  const dataIndex = context.dataIndex;
+                  const weekData = chartData[dataIndex];
+                  return `Unique contributors: ${weekData.UNIQUE_CONTRIBUTORS}`;
+                } catch (e) {
+                  console.error('Error in label callback:', e);
+                  return '';
+                }
+              },
+              footer: (context: TooltipItem<'bar'>[]) => {
+                try {
+                  const dataIndex = context[0].dataIndex;
+                  const weekData = chartData[dataIndex];
+                  return [
+                    `New: ${weekData.NEW_CONTRIBUTORS}`,
+                    `Returning: ${weekData.RETURNING_CONTRIBUTORS}`,
+                    `Total active: ${weekData.TOTAL_ACTIVE_CONTRIBUTORS}`,
+                  ];
+                } catch (e) {
+                  console.error('Error in footer callback:', e);
+                  return [];
+                }
+              },
+            },
+          },
+        },
+      },
+    };
+  }
+
   private initializeActiveWeeksStreakData() {
     return toSignal(
       this.analyticsService.getActiveWeeksStreak().pipe(finalize(() => this.loadingState.update((state) => ({ ...state, activeWeeksStreak: false })))),
@@ -457,8 +590,9 @@ export class RecentProgressComponent {
             return [{ data: [], totalOpenedIssues: 0, totalClosedIssues: 0, resolutionRatePct: 0, medianDaysToClose: 0, totalDays: 0 }];
           }
           this.loadingState.update((state) => ({ ...state, projectIssuesResolution: true }));
+          const entityType = this.entityType();
           return this.analyticsService
-            .getProjectIssuesResolution(projectSlug)
+            .getProjectIssuesResolution(projectSlug, entityType)
             .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, projectIssuesResolution: false }))));
         })
       ),
@@ -484,8 +618,9 @@ export class RecentProgressComponent {
             return [{ data: [], totalMergedPRs: 0, avgMergeTime: 0, totalWeeks: 0 }];
           }
           this.loadingState.update((state) => ({ ...state, projectPullRequestsWeekly: true }));
+          const entityType = this.entityType();
           return this.analyticsService
-            .getProjectPullRequestsWeekly(projectSlug)
+            .getProjectPullRequestsWeekly(projectSlug, entityType)
             .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, projectPullRequestsWeekly: false }))));
         })
       ),
@@ -494,6 +629,57 @@ export class RecentProgressComponent {
           data: [],
           totalMergedPRs: 0,
           avgMergeTime: 0,
+          totalWeeks: 0,
+        },
+      }
+    );
+  }
+
+  private initializeContributorsMentoredData() {
+    return toSignal(
+      toObservable(this.projectSlug).pipe(
+        switchMap((projectSlug) => {
+          if (!projectSlug) {
+            this.loadingState.update((state) => ({ ...state, contributorsMentored: false }));
+            return [{ data: [], totalMentored: 0, avgWeeklyNew: 0, totalWeeks: 0 }];
+          }
+          this.loadingState.update((state) => ({ ...state, contributorsMentored: true }));
+          return this.analyticsService
+            .getContributorsMentored(projectSlug)
+            .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, contributorsMentored: false }))));
+        })
+      ),
+      {
+        initialValue: {
+          data: [],
+          totalMentored: 0,
+          avgWeeklyNew: 0,
+          totalWeeks: 0,
+        },
+      }
+    );
+  }
+
+  private initializeUniqueContributorsWeeklyData() {
+    return toSignal(
+      toObservable(this.projectSlug).pipe(
+        switchMap((projectSlug) => {
+          if (!projectSlug) {
+            this.loadingState.update((state) => ({ ...state, uniqueContributorsWeekly: false }));
+            return [{ data: [], totalUniqueContributors: 0, avgUniqueContributors: 0, totalWeeks: 0 }];
+          }
+          this.loadingState.update((state) => ({ ...state, uniqueContributorsWeekly: true }));
+          const entityType = this.entityType();
+          return this.analyticsService
+            .getUniqueContributorsWeekly(projectSlug, entityType)
+            .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, uniqueContributorsWeekly: false }))));
+        })
+      ),
+      {
+        initialValue: {
+          data: [],
+          totalUniqueContributors: 0,
+          avgUniqueContributors: 0,
           totalWeeks: 0,
         },
       }
@@ -515,8 +701,11 @@ export class RecentProgressComponent {
       const codeCommitsDataValue = this.codeCommitsData();
       const issuesResolutionData = this.projectIssuesResolutionData();
       const prWeeklyData = this.projectPullRequestsWeeklyData();
+      const contributorsMentoredData = this.contributorsMentoredData();
+      const uniqueContributorsData = this.uniqueContributorsWeeklyData();
       const issuesTooltip = this.issuesTooltipData();
       const prVelocityTooltip = this.prVelocityTooltipData();
+      const uniqueContributorsTooltip = this.uniqueContributorsTooltipData();
 
       const baseMetrics = persona === 'maintainer' ? MAINTAINER_PROGRESS_METRICS : CORE_DEVELOPER_PROGRESS_METRICS;
 
@@ -535,6 +724,12 @@ export class RecentProgressComponent {
         }
         if (metric.label === 'PR Review & Merge Velocity') {
           return this.transformProjectPullRequestsWeekly(prWeeklyData, prVelocityTooltip);
+        }
+        if (metric.label === 'Contributors Mentored') {
+          return this.transformContributorsMentored(contributorsMentoredData);
+        }
+        if (metric.label === 'Unique Contributors per Week') {
+          return this.transformUniqueContributorsWeekly(uniqueContributorsData, uniqueContributorsTooltip);
         }
         return metric;
       });
@@ -575,6 +770,25 @@ export class RecentProgressComponent {
         total: totalMergedPRs.toLocaleString(),
         reviewers: avgReviewers.toString(),
         pending: avgPendingPRs.toString(),
+      };
+    });
+  }
+
+  private initializeUniqueContributorsTooltipData() {
+    return computed(() => {
+      const contributorsData = this.uniqueContributorsWeeklyData();
+      if (!contributorsData || contributorsData.data.length === 0) {
+        return null;
+      }
+      const chartData = [...contributorsData.data].reverse();
+      const totalUnique = contributorsData.totalUniqueContributors || 0;
+      const avgNew = chartData.length > 0 ? Math.round(chartData.reduce((sum, row) => sum + row.NEW_CONTRIBUTORS, 0) / chartData.length) : 0;
+      const avgReturning = chartData.length > 0 ? Math.round(chartData.reduce((sum, row) => sum + row.RETURNING_CONTRIBUTORS, 0) / chartData.length) : 0;
+
+      return {
+        total: totalUnique.toLocaleString(),
+        avgNew: avgNew.toString(),
+        avgReturning: avgReturning.toString(),
       };
     });
   }

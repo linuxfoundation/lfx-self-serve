@@ -6,11 +6,13 @@ import { inject, Injectable } from '@angular/core';
 import {
   ActiveWeeksStreakResponse,
   BoardMemberDashboardResponse,
+  FoundationContributorsMentoredResponse,
   OrganizationContributionsOverviewResponse,
   OrganizationEventsOverviewResponse,
   ProjectIssuesResolutionResponse,
   ProjectPullRequestsWeeklyResponse,
   ProjectsListResponse,
+  UniqueContributorsWeeklyResponse,
   UserCodeCommitsResponse,
   UserProjectsResponse,
   UserPullRequestsResponse,
@@ -197,13 +199,15 @@ export class AnalyticsService {
 
   /**
    * Get project issues resolution data (opened vs closed issues) from Snowflake
-   * @param projectSlug - Project slug to filter by specific project (required)
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (foundation-level data) or 'project' (single project data)
    * @returns Observable of project issues resolution response with aggregated metrics
    */
-  public getProjectIssuesResolution(projectSlug: string): Observable<ProjectIssuesResolutionResponse> {
+  public getProjectIssuesResolution(slug: string, entityType: 'foundation' | 'project'): Observable<ProjectIssuesResolutionResponse> {
+    const params = { slug, entityType };
     return this.http
       .get<ProjectIssuesResolutionResponse>('/api/analytics/project-issues-resolution', {
-        params: { projectSlug },
+        params,
       })
       .pipe(
         catchError((error) => {
@@ -222,13 +226,15 @@ export class AnalyticsService {
 
   /**
    * Get project pull requests weekly data (merge velocity) from Snowflake
-   * @param projectSlug - Project slug to filter by specific project (required)
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (aggregates all projects) or 'project' (single project)
    * @returns Observable of project pull requests weekly response with aggregated metrics
    */
-  public getProjectPullRequestsWeekly(projectSlug: string): Observable<ProjectPullRequestsWeeklyResponse> {
+  public getProjectPullRequestsWeekly(slug: string, entityType: 'foundation' | 'project'): Observable<ProjectPullRequestsWeeklyResponse> {
+    const params = { slug, entityType };
     return this.http
       .get<ProjectPullRequestsWeeklyResponse>('/api/analytics/project-pull-requests-weekly', {
-        params: { projectSlug },
+        params,
       })
       .pipe(
         catchError((error) => {
@@ -237,6 +243,55 @@ export class AnalyticsService {
             data: [],
             totalMergedPRs: 0,
             avgMergeTime: 0,
+            totalWeeks: 0,
+          });
+        })
+      );
+  }
+
+  /**
+   * Get contributors mentored weekly data from Snowflake
+   * @param slug - Foundation slug for filtering (always uses foundation_slug)
+   * @returns Observable of contributors mentored response with aggregated metrics
+   */
+  public getContributorsMentored(slug: string): Observable<FoundationContributorsMentoredResponse> {
+    const params = { slug };
+    return this.http
+      .get<FoundationContributorsMentoredResponse>('/api/analytics/contributors-mentored', {
+        params,
+      })
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to fetch contributors mentored:', error);
+          return of({
+            data: [],
+            totalMentored: 0,
+            avgWeeklyNew: 0,
+            totalWeeks: 0,
+          });
+        })
+      );
+  }
+
+  /**
+   * Get unique contributors weekly data from Snowflake
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (aggregates all projects) or 'project' (single project)
+   * @returns Observable of unique contributors weekly response with aggregated metrics
+   */
+  public getUniqueContributorsWeekly(slug: string, entityType: 'foundation' | 'project'): Observable<UniqueContributorsWeeklyResponse> {
+    const params = { slug, entityType };
+    return this.http
+      .get<UniqueContributorsWeeklyResponse>('/api/analytics/unique-contributors-weekly', {
+        params,
+      })
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to fetch unique contributors weekly:', error);
+          return of({
+            data: [],
+            totalUniqueContributors: 0,
+            avgUniqueContributors: 0,
             totalWeeks: 0,
           });
         })

@@ -29,4 +29,10 @@ router.get('/project-issues-resolution', (req, res, next) => analyticsController
 // Project pull requests weekly endpoint
 router.get('/project-pull-requests-weekly', (req, res, next) => analyticsController.getProjectPullRequestsWeekly(req, res, next));
 
+// Contributors mentored endpoint
+router.get('/contributors-mentored', (req, res, next) => analyticsController.getContributorsMentored(req, res, next));
+
+// Unique contributors weekly endpoint
+router.get('/unique-contributors-weekly', (req, res, next) => analyticsController.getUniqueContributorsWeekly(req, res, next));
+
 export default router;

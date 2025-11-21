@@ -45,7 +45,7 @@ export const PROGRESS_LINE_CHART_OPTIONS: ChartOptions<'line'> = {
   },
   scales: {
     x: { display: false },
-    y: { display: false },
+    y: { display: false, min: 0, grace: '5%' },
   },
 };
 
@@ -66,7 +66,7 @@ export const PROGRESS_BAR_CHART_OPTIONS: ChartOptions<'bar'> = {
   },
   scales: {
     x: { display: false },
-    y: { display: false, min: 0, max: 1 },
+    y: { display: false, min: 0, max: 1, grace: '5%' },
   },
 };
 
@@ -132,7 +132,7 @@ export const PROGRESS_DUAL_LINE_CHART_OPTIONS: ChartOptions<'line'> = {
   },
   scales: {
     x: { display: false },
-    y: { display: false },
+    y: { display: false, min: 0, grace: '5%' },
   },
 };
 
@@ -193,7 +193,7 @@ export const PROGRESS_BAR_CHART_WITH_FOOTER_OPTIONS: ChartOptions<'bar'> = {
   },
   scales: {
     x: { display: false },
-    y: { display: false },
+    y: { display: false, min: 0, grace: '5%' },
   },
 };
 

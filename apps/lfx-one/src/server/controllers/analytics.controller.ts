@@ -281,24 +281,39 @@ export class AnalyticsController {
   /**
    * GET /api/analytics/project-issues-resolution
    * Get project issues resolution data (opened vs closed issues) from Snowflake
-   * Query params: projectSlug (required) - Project slug to filter by specific project
+   * Query params: slug (required), entityType (required)
    *   */
   public async getProjectIssuesResolution(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = Logger.start(req, 'get_project_issues_resolution');
 
     try {
-      const projectSlug = req.query['projectSlug'] as string | undefined;
+      const slug = req.query['slug'] as string | undefined;
+      const entityType = req.query['entityType'] as 'foundation' | 'project' | undefined;
 
-      if (!projectSlug) {
-        throw ServiceValidationError.forField('projectSlug', 'projectSlug query parameter is required', {
+      if (!slug) {
+        throw ServiceValidationError.forField('slug', 'slug query parameter is required', {
           operation: 'get_project_issues_resolution',
         });
       }
 
-      const response = await this.projectService.getProjectIssuesResolution(projectSlug);
+      if (!entityType) {
+        throw ServiceValidationError.forField('entityType', 'entityType query parameter is required', {
+          operation: 'get_project_issues_resolution',
+        });
+      }
+
+      // Validate entityType
+      if (entityType !== 'foundation' && entityType !== 'project') {
+        throw ServiceValidationError.forField('entityType', 'entityType must be "foundation" or "project"', {
+          operation: 'get_project_issues_resolution',
+        });
+      }
+
+      const response = await this.projectService.getProjectIssuesResolution(slug, entityType);
 
       Logger.success(req, 'get_project_issues_resolution', startTime, {
-        project_slug: projectSlug,
+        slug,
+        entity_type: entityType,
         total_days: response.totalDays,
         total_opened: response.totalOpenedIssues,
         total_closed: response.totalClosedIssues,
@@ -316,24 +331,39 @@ export class AnalyticsController {
   /**
    * GET /api/analytics/project-pull-requests-weekly
    * Get project pull requests weekly data (merge velocity) from Snowflake
-   * Query params: projectSlug (required) - Project slug to filter by specific project
+   * Query params: slug (required), entityType (required)
    *   */
   public async getProjectPullRequestsWeekly(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = Logger.start(req, 'get_project_pull_requests_weekly');
 
     try {
-      const projectSlug = req.query['projectSlug'] as string | undefined;
+      const slug = req.query['slug'] as string | undefined;
+      const entityType = req.query['entityType'] as 'foundation' | 'project' | undefined;
 
-      if (!projectSlug) {
-        throw ServiceValidationError.forField('projectSlug', 'projectSlug query parameter is required', {
+      if (!slug) {
+        throw ServiceValidationError.forField('slug', 'slug query parameter is required', {
           operation: 'get_project_pull_requests_weekly',
         });
       }
 
-      const response = await this.projectService.getProjectPullRequestsWeekly(projectSlug);
+      if (!entityType) {
+        throw ServiceValidationError.forField('entityType', 'entityType query parameter is required', {
+          operation: 'get_project_pull_requests_weekly',
+        });
+      }
+
+      // Validate entityType
+      if (entityType !== 'foundation' && entityType !== 'project') {
+        throw ServiceValidationError.forField('entityType', 'entityType must be "foundation" or "project"', {
+          operation: 'get_project_pull_requests_weekly',
+        });
+      }
+
+      const response = await this.projectService.getProjectPullRequestsWeekly(slug, entityType);
 
       Logger.success(req, 'get_project_pull_requests_weekly', startTime, {
-        project_slug: projectSlug,
+        slug,
+        entity_type: entityType,
         total_weeks: response.totalWeeks,
         total_merged_prs: response.totalMergedPRs,
         avg_merge_time: response.avgMergeTime,
@@ -342,6 +372,87 @@ export class AnalyticsController {
       res.json(response);
     } catch (error) {
       Logger.error(req, 'get_project_pull_requests_weekly', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/contributors-mentored
+   * Get contributors mentored weekly data from Snowflake
+   * Query params: slug (required) - Foundation slug for filtering
+   */
+  public async getContributorsMentored(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_contributors_mentored');
+
+    try {
+      const slug = req.query['slug'] as string | undefined;
+
+      if (!slug) {
+        throw ServiceValidationError.forField('slug', 'slug query parameter is required', {
+          operation: 'get_contributors_mentored',
+        });
+      }
+
+      const response = await this.projectService.getContributorsMentored(slug);
+
+      Logger.success(req, 'get_contributors_mentored', startTime, {
+        slug,
+        total_mentored: response.totalMentored,
+        avg_weekly_new: response.avgWeeklyNew,
+        total_weeks: response.totalWeeks,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_contributors_mentored', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/unique-contributors-weekly
+   * Get unique contributors weekly data from Snowflake
+   * Query params: slug (required), entityType (required)
+   */
+  public async getUniqueContributorsWeekly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_unique_contributors_weekly');
+
+    try {
+      const slug = req.query['slug'] as string | undefined;
+      const entityType = req.query['entityType'] as 'foundation' | 'project' | undefined;
+
+      if (!slug) {
+        throw ServiceValidationError.forField('slug', 'slug query parameter is required', {
+          operation: 'get_unique_contributors_weekly',
+        });
+      }
+
+      if (!entityType) {
+        throw ServiceValidationError.forField('entityType', 'entityType query parameter is required', {
+          operation: 'get_unique_contributors_weekly',
+        });
+      }
+
+      // Validate entityType
+      if (entityType !== 'foundation' && entityType !== 'project') {
+        throw ServiceValidationError.forField('entityType', 'entityType must be "foundation" or "project"', {
+          operation: 'get_unique_contributors_weekly',
+        });
+      }
+
+      const response = await this.projectService.getUniqueContributorsWeekly(slug, entityType);
+
+      Logger.success(req, 'get_unique_contributors_weekly', startTime, {
+        slug,
+        entity_type: entityType,
+        total_weeks: response.totalWeeks,
+        total_unique: response.totalUniqueContributors,
+        avg_unique: response.avgUniqueContributors,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_unique_contributors_weekly', startTime, error);
       next(error);
     }
   }

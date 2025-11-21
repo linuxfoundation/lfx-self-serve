@@ -4,6 +4,8 @@
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
+  FoundationContributorsMentoredResponse,
+  FoundationContributorsMentoredRow,
   PendingActionItem,
   PendingSurveyRow,
   Project,
@@ -17,6 +19,8 @@ import {
   ProjectsListResponse,
   ProjectSlugToIdResponse,
   QueryServiceResponse,
+  UniqueContributorsWeeklyResponse,
+  UniqueContributorsWeeklyRow,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -581,62 +585,61 @@ export class ProjectService {
   /**
    * Get project issues resolution data (opened vs closed issues) from Snowflake
    * Combines daily trend data with aggregated metrics
-   * @param projectSlug - Project slug to filter by specific project (required)
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (foundation-level data) or 'project' (single project data)
    * @returns Daily issue resolution data with aggregated totals and metrics
    */
-  public async getProjectIssuesResolution(projectSlug: string): Promise<ProjectIssuesResolutionResponse> {
-    // Query for daily trend data using PROJECT_SLUG
-    // First, determine the foundation slug for the given project slug
-    // Then, get all data for projects under that foundation
-    const dailyQuery = `
-      WITH foundation_lookup AS (
-        SELECT
-          COALESCE(grandparents_slug, parent_slug, slug) as foundation_slug
-        FROM analytics.silver_dim.active_segments
-        WHERE slug = ?
-        LIMIT 1
-      )
+  public async getProjectIssuesResolution(slug: string, entityType: 'foundation' | 'project'): Promise<ProjectIssuesResolutionResponse> {
+    // Query switching based on entity type for daily trend data
+    const dailyQuery =
+      entityType === 'foundation'
+        ? `
       SELECT
-          pisd.PROJECT_ID,
-          pisd.PROJECT_NAME,
-          pisd.PROJECT_SLUG,
-          pisd.METRIC_DATE,
-          pisd.OPENED_ISSUES_COUNT,
-          pisd.CLOSED_ISSUES_COUNT,
-          COALESCE(seg.grandparents_slug, seg.parent_slug, seg.slug) as foundation_slug
-        FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_ISSUES_RESOLUTION_DAILY pisd
-        INNER JOIN analytics.silver_dim.active_segments seg
-          ON pisd.project_slug = seg.slug
-        CROSS JOIN foundation_lookup fl
-        WHERE COALESCE(seg.grandparents_slug, seg.parent_slug, seg.slug) = fl.foundation_slug
-        ORDER BY METRIC_DATE DESC
+        METRIC_DATE,
+        OPENED_ISSUES_COUNT,
+        CLOSED_ISSUES_COUNT
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.FOUNDATION_ISSUES_RESOLUTION_DAILY
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY METRIC_DATE DESC
+    `
+        : `
+      SELECT
+        METRIC_DATE,
+        OPENED_ISSUES_COUNT,
+        CLOSED_ISSUES_COUNT
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.PROJECT_ISSUES_RESOLUTION_DAILY
+      WHERE PROJECT_SLUG = ?
+      ORDER BY METRIC_DATE DESC
     `;
 
-    // Query for aggregated metrics using PROJECT_SLUG
-    // First, determine the foundation slug for the given project slug
-    // Then, get all data for projects under that foundation
-    const aggregatedQuery = `
-      WITH foundation_lookup AS (
-        SELECT
-          COALESCE(grandparents_slug, parent_slug, slug) as foundation_slug
-        FROM analytics.silver_dim.active_segments
-        WHERE slug = ?
-        LIMIT 1
-      )
+    // Query switching based on entity type for aggregated metrics
+    const aggregatedQuery =
+      entityType === 'foundation'
+        ? `
       SELECT
         OPENED_ISSUES,
         CLOSED_ISSUES,
+        TOTAL_ISSUES,
         RESOLUTION_RATE_PCT,
+        AVG_DAYS_TO_CLOSE,
         MEDIAN_DAYS_TO_CLOSE
-      FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_ISSUES_RESOLUTION pir
-      INNER JOIN analytics.silver_dim.active_segments seg
-        ON pir.PROJECT_SLUG = seg.slug
-      CROSS JOIN foundation_lookup fl
-      WHERE COALESCE(seg.grandparents_slug, seg.parent_slug, seg.slug) = fl.foundation_slug
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.FOUNDATION_ISSUES_RESOLUTION
+      WHERE FOUNDATION_SLUG = ?
+    `
+        : `
+      SELECT
+        OPENED_ISSUES,
+        CLOSED_ISSUES,
+        TOTAL_ISSUES,
+        RESOLUTION_RATE_PCT,
+        AVG_DAYS_TO_CLOSE,
+        MEDIAN_DAYS_TO_CLOSE
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.PROJECT_ISSUES_RESOLUTION
+      WHERE PROJECT_SLUG = ?
     `;
 
-    const params = [projectSlug];
-    const aggregatedParams = [projectSlug];
+    const params = [slug];
+    const aggregatedParams = [slug];
 
     // Execute both queries in parallel
     const [dailyResult, aggregatedResult] = await Promise.all([
@@ -664,53 +667,40 @@ export class ProjectService {
 
   /**
    * Get project pull requests weekly data from Snowflake
-   * @param projectSlug - Optional project slug to filter by specific project. If not provided, uses the first project from the list.
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (aggregates all projects under foundation) or 'project' (single project)
    * @returns Weekly PR merge velocity data with aggregated metrics
    */
-  public async getProjectPullRequestsWeekly(projectSlug?: string): Promise<ProjectPullRequestsWeeklyResponse> {
-    // If no projectSlug provided, get the first project from the list
-    let resolvedProjectSlug: string;
-    if (!projectSlug) {
-      const projectsList = await this.getProjectsWithMaintainersList();
-      if (!projectsList.projects || projectsList.projects.length === 0) {
-        throw new ResourceNotFoundError('Project', 'first project', {
-          operation: 'get_project_pull_requests_weekly',
-          service: 'project_service',
-          path: '/projects/pull-requests-weekly',
-        });
-      }
-      resolvedProjectSlug = projectsList.projects[0].slug;
-    } else {
-      resolvedProjectSlug = projectSlug;
-    }
-
-    // Query for weekly trend data using PROJECT_SLUG
-    // First, determine the foundation slug for the given project slug
-    // Then, get all data for projects under that foundation
-    const query = `
-      WITH foundation_lookup AS (
-        SELECT
-          COALESCE(grandparents_slug, parent_slug, slug) as foundation_slug
-        FROM analytics.silver_dim.active_segments
-        WHERE slug = ?
-        LIMIT 1
-      )
+  public async getProjectPullRequestsWeekly(slug: string, entityType: 'foundation' | 'project'): Promise<ProjectPullRequestsWeeklyResponse> {
+    // Query switching based on entity type
+    const query =
+      entityType === 'foundation'
+        ? `
       SELECT
         WEEK_START_DATE,
         MERGED_PR_COUNT,
         AVG_MERGED_IN_DAYS,
         AVG_REVIEWERS_PER_PR,
         PENDING_PR_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_PULL_REQUESTS_WEEKLY pprw
-      INNER JOIN analytics.silver_dim.active_segments seg
-        ON pprw.PROJECT_SLUG = seg.slug
-      CROSS JOIN foundation_lookup fl
-      WHERE COALESCE(seg.grandparents_slug, seg.parent_slug, seg.slug) = fl.foundation_slug
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.FOUNDATION_PULL_REQUESTS_WEEKLY
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY WEEK_START_DATE DESC
+      LIMIT 26
+    `
+        : `
+      SELECT
+        WEEK_START_DATE,
+        MERGED_PR_COUNT,
+        AVG_MERGED_IN_DAYS,
+        AVG_REVIEWERS_PER_PR,
+        PENDING_PR_COUNT
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.PROJECT_PULL_REQUESTS_WEEKLY
+      WHERE PROJECT_SLUG = ?
       ORDER BY WEEK_START_DATE DESC
       LIMIT 26
     `;
 
-    const result = await this.snowflakeService.execute<ProjectPullRequestsWeeklyRow>(query, [resolvedProjectSlug]);
+    const result = await this.snowflakeService.execute<ProjectPullRequestsWeeklyRow>(query, [slug]);
 
     // Calculate aggregated metrics
     const totalMergedPRs = result.rows.reduce((sum, row) => sum + row.MERGED_PR_COUNT, 0);
@@ -721,6 +711,95 @@ export class ProjectService {
       data: result.rows,
       totalMergedPRs,
       avgMergeTime: Math.round(avgMergeTime * 10) / 10, // Round to 1 decimal place
+      totalWeeks: result.rows.length,
+    };
+  }
+
+  /**
+   * Get contributors mentored weekly data from Snowflake
+   * Always uses foundation_slug for filtering regardless of entity type
+   * @param slug - Foundation slug for filtering
+   * @returns Weekly contributors mentored data with aggregated metrics
+   */
+  public async getContributorsMentored(slug: string): Promise<FoundationContributorsMentoredResponse> {
+    const query = `
+      SELECT
+        WEEK_START_DATE,
+        FOUNDATION_ID,
+        FOUNDATION_NAME,
+        FOUNDATION_SLUG,
+        WEEKLY_MENTORED_CONTRIBUTOR_COUNT,
+        MENTORED_CONTRIBUTOR_COUNT
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.FOUNDATION_CONTRIBUTORS_MENTORED_WEEKLY
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY WEEK_START_DATE DESC
+      LIMIT 52
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationContributorsMentoredRow>(query, [slug]);
+
+    // Calculate aggregated metrics
+    const latestRow = result.rows[0];
+    const totalMentored = latestRow?.MENTORED_CONTRIBUTOR_COUNT || 0;
+
+    // Calculate average weekly new contributors
+    const totalWeeklyNew = result.rows.reduce((sum, row) => sum + row.WEEKLY_MENTORED_CONTRIBUTOR_COUNT, 0);
+    const avgWeeklyNew = result.rows.length > 0 ? Math.round((totalWeeklyNew / result.rows.length) * 10) / 10 : 0;
+
+    return {
+      data: result.rows,
+      totalMentored,
+      avgWeeklyNew,
+      totalWeeks: result.rows.length,
+    };
+  }
+
+  /**
+   * Get unique contributors weekly data from Snowflake
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (aggregates all projects) or 'project' (single project)
+   * @returns Weekly unique contributor data with aggregated metrics
+   */
+  public async getUniqueContributorsWeekly(slug: string, entityType: 'foundation' | 'project'): Promise<UniqueContributorsWeeklyResponse> {
+    // Query switching based on entity type
+    const query =
+      entityType === 'foundation'
+        ? `
+      SELECT
+        WEEK_START_DATE,
+        UNIQUE_CONTRIBUTORS,
+        TOTAL_ACTIVE_CONTRIBUTORS,
+        NEW_CONTRIBUTORS,
+        RETURNING_CONTRIBUTORS
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.FOUNDATION_UNIQUE_CONTRIBUTORS_WEEKLY
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY WEEK_START_DATE DESC
+      LIMIT 26
+    `
+        : `
+      SELECT
+        WEEK_START_DATE,
+        UNIQUE_CONTRIBUTORS,
+        TOTAL_ACTIVE_CONTRIBUTORS,
+        NEW_CONTRIBUTORS,
+        RETURNING_CONTRIBUTORS
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.PROJECT_UNIQUE_CONTRIBUTORS_WEEKLY
+      WHERE PROJECT_SLUG = ?
+      ORDER BY WEEK_START_DATE DESC
+      LIMIT 26
+    `;
+
+    const result = await this.snowflakeService.execute<UniqueContributorsWeeklyRow>(query, [slug]);
+
+    // Calculate aggregated metrics
+    const totalUniqueContributors = result.rows.reduce((max, row) => Math.max(max, row.UNIQUE_CONTRIBUTORS), 0);
+    const totalUniqueSum = result.rows.reduce((sum, row) => sum + row.UNIQUE_CONTRIBUTORS, 0);
+    const avgUniqueContributors = result.rows.length > 0 ? totalUniqueSum / result.rows.length : 0;
+
+    return {
+      data: result.rows,
+      totalUniqueContributors,
+      avgUniqueContributors: Math.round(avgUniqueContributors * 10) / 10,
       totalWeeks: result.rows.length,
     };
   }
