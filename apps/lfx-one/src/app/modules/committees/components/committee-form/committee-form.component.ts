@@ -10,7 +10,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
-import { COMMITTEE_CATEGORIES, COMMITTEE_LABEL } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, FILTERED_COMMITTEE_CATEGORIES } from '@lfx-one/shared/constants';
 import { Committee } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -38,8 +38,8 @@ export class CommitteeFormComponent {
   public readonly formSubmit = output<void>();
   public readonly formCancel = output<void>();
 
-  // Category options from constants
-  public readonly categoryOptions = COMMITTEE_CATEGORIES;
+  // Category options from constants (using filtered list)
+  public readonly categoryOptions = FILTERED_COMMITTEE_CATEGORIES;
 
   // Load parent committee options
   public parentCommitteeOptions: Signal<{ label: string; value: string | null }[]> = this.initializeParentCommitteeOptions();

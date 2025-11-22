@@ -58,11 +58,20 @@
           </div>
         }
       </div>
+    } @else if (upcomingMeetings().length === 0 && timeFilter() === 'upcoming') {
+      <div class="flex items-center justify-center p-16 bg-white border border-dashed border-slate-300 rounded-lg">
+        <div class="text-center max-w-md">
+          <div class="text-slate-400 mb-4">
+            <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
+            <h3 class="text-slate-600 mt-2">Your project has no meetings, yet.</h3>
+          </div>
+        </div>
+      </div>
     } @else if (filteredMeetings().length === 0 && project()?.uid) {
       <div class="flex items-center justify-center p-16 bg-white border border-dashed border-slate-300 rounded-lg">
         <div class="text-center max-w-md">
           <div class="text-slate-400 mb-4">
-            <i class="fa-light fa-calendar-xmark text-6xl"></i>
+            <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
           </div>
           <h3 class="text-xl font-semibold text-slate-900 mt-4">No Meetings Found</h3>
           <p class="text-slate-600 mt-2">Try adjusting your search or filter criteria</p>

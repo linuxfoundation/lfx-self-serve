@@ -41,8 +41,22 @@ export const COMMITTEE_CATEGORIES = [
   { label: 'Marketing Oversight Committee/Marketing Advisory Committee', value: 'Marketing Oversight Committee/Marketing Advisory Committee' },
   { label: 'Product Security', value: 'Product Security' },
   { label: 'Special Interest Group', value: 'Special Interest Group' },
+  { label: 'Technical Advisory Committee', value: 'Technical Advisory Committee' },
   { label: 'Technical Mailing List', value: 'Technical Mailing List' },
-  { label: 'Technical Oversight Committee/Technical Advisory Committee', value: 'Technical Oversight Committee/Technical Advisory Committee' },
+  { label: 'Technical Oversight Committee', value: 'Technical Oversight Committee' },
+  { label: 'Technical Steering Committee', value: 'Technical Steering Committee' },
+  { label: 'Working Group', value: 'Working Group' },
+  { label: 'Other', value: 'Other' },
+];
+
+/**
+ * Filtered committee categories for specific UI contexts
+ * @description Subset of categories for restricted selection (e.g., forms, dashboards)
+ */
+export const FILTERED_COMMITTEE_CATEGORIES = [
+  { label: 'Special Interest Group', value: 'Special Interest Group' },
+  { label: 'Technical Advisory Committee', value: 'Technical Advisory Committee' },
+  { label: 'Technical Oversight Committee', value: 'Technical Oversight Committee' },
   { label: 'Technical Steering Committee', value: 'Technical Steering Committee' },
   { label: 'Working Group', value: 'Working Group' },
   { label: 'Other', value: 'Other' },
@@ -110,7 +124,8 @@ const COMMITTEE_TYPE_COLORS = {
 
   // Technical committees
   'Technical Steering Committee': 'bg-positive-100 text-positive-800',
-  'Technical Oversight Committee/Technical Advisory Committee': 'bg-brand-100 text-brand-700',
+  'Technical Advisory Committee': 'bg-brand-100 text-brand-700',
+  'Technical Oversight Committee': 'bg-brand-100 text-brand-700',
   'Technical Mailing List': 'bg-brand-100 text-brand-700',
 
   // Technical roles
@@ -171,6 +186,7 @@ export function getCommitteeTypeColor(category: string | undefined): string {
 
   // Technical committees
   if (lowerCategory.includes('technical steering')) return 'bg-positive-100 text-positive-800';
+  if (lowerCategory.includes('technical advisory')) return 'bg-brand-100 text-brand-700';
   if (lowerCategory.includes('technical oversight')) return 'bg-brand-100 text-brand-700';
   if (lowerCategory.includes('technical mailing')) return 'bg-brand-100 text-brand-700';
 

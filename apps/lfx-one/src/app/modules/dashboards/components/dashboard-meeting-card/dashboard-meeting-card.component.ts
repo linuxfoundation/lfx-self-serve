@@ -152,12 +152,6 @@ export class DashboardMeetingCardComponent {
     return occurrence?.title || meeting.title;
   });
 
-  public readonly borderColorClass: Signal<string> = computed(() => {
-    const type = this.meeting().meeting_type?.toLowerCase();
-    const config = type ? (MEETING_TYPE_CONFIGS[type] ?? DEFAULT_MEETING_TYPE_CONFIG) : DEFAULT_MEETING_TYPE_CONFIG;
-    return config.borderColor;
-  });
-
   public readonly canJoinMeeting: Signal<boolean> = computed(() => {
     return canJoinMeeting(this.meeting(), this.occurrence());
   });

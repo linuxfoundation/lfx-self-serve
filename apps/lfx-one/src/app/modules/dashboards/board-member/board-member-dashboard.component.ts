@@ -4,7 +4,6 @@
 import { Component, computed, inject, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
 import { SelectComponent } from '@components/select/select.component';
 import { Account, PendingActionItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
@@ -20,15 +19,7 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
 
 @Component({
   selector: 'lfx-board-member-dashboard',
-  imports: [
-    OrganizationInvolvementComponent,
-    PendingActionsComponent,
-    MyMeetingsComponent,
-    FoundationHealthComponent,
-    SelectComponent,
-    ReactiveFormsModule,
-    DataCopilotComponent,
-  ],
+  imports: [OrganizationInvolvementComponent, PendingActionsComponent, MyMeetingsComponent, FoundationHealthComponent, SelectComponent, ReactiveFormsModule],
   templateUrl: './board-member-dashboard.component.html',
   styleUrl: './board-member-dashboard.component.scss',
 })

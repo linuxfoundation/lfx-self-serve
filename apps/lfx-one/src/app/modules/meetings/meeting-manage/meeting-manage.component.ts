@@ -112,6 +112,7 @@ export class MeetingManageComponent {
 
   // Validation signals for template
   public readonly canProceed = signal<boolean>(false);
+  public readonly project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
   public readonly canGoNext = computed(() => this.currentStep() + 1 < this.totalSteps && this.canNavigateToStep(this.currentStep() + 1));
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
   public readonly isFirstStep = computed(() => this.currentStep() === 1);
@@ -388,7 +389,7 @@ export class MeetingManageComponent {
     }
 
     return {
-      project_uid: formValue.selectedProjectUid || this.projectContextService.getProjectUid(),
+      project_uid: formValue.selectedProjectUid || this.project()?.uid,
       title: formValue.title,
       description: formValue.description || '',
       start_time: startDateTime,
