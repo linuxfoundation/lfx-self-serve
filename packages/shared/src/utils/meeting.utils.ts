@@ -192,6 +192,37 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
 }
 
 /**
+ * Check if a meeting has ended (including 40-minute buffer)
+ * @param meeting The meeting object
+ * @param occurrence Optional occurrence for recurring meetings
+ * @returns True if meeting has ended (current time > start time + duration + 40 minutes)
+ * @description
+ * Determines if a meeting should be filtered from upcoming meetings list.
+ * For recurring meetings, checks the specific occurrence.
+ * For one-time meetings, checks the meeting start time.
+ */
+export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence): boolean {
+  const now = new Date();
+  const buffer = 40 * 60000; // 40 minutes in milliseconds
+
+  // For recurring meetings with occurrence
+  if (occurrence) {
+    const startTime = new Date(occurrence.start_time);
+    const endTime = new Date(startTime.getTime() + occurrence.duration * 60000 + buffer);
+    return now > endTime;
+  }
+
+  // For one-time meetings
+  if (!meeting?.start_time) {
+    return false;
+  }
+
+  const startTime = new Date(meeting.start_time);
+  const endTime = new Date(startTime.getTime() + meeting.duration * 60000 + buffer);
+  return now > endTime;
+}
+
+/**
  * Build join URL with user parameters for meeting join link
  * @param joinUrl - Base join URL from API
  * @param user - Authenticated user

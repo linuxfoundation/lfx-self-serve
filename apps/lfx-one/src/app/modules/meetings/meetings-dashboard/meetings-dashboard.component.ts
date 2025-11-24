@@ -10,7 +10,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { Meeting, PastMeeting, ProjectContext } from '@lfx-one/shared/interfaces';
-import { getCurrentOrNextOccurrence } from '@lfx-one/shared/utils';
+import { getCurrentOrNextOccurrence, hasMeetingEnded } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -118,8 +118,21 @@ export class MeetingsDashboardComponent {
           this.meetingsLoading.set(true);
           return this.meetingService.getMeetingsByProject(project.uid, 100).pipe(
             map((meetings) => {
+              // TODO: Remove client-side filtering once API supports filtering by end time + 40-minute buffer
+              // This logic should be moved to the query service for better performance
+              // Filter out meetings that have ended (including 40-minute buffer)
+              const activeMeetings = meetings.filter((meeting) => {
+                // For recurring meetings, check if there's at least one occurrence that hasn't ended
+                if (meeting.occurrences && meeting.occurrences.length > 0) {
+                  return meeting.occurrences.some((occurrence) => !occurrence.is_cancelled && !hasMeetingEnded(meeting, occurrence));
+                }
+
+                // For one-time meetings, check if the meeting itself hasn't ended
+                return !hasMeetingEnded(meeting);
+              });
+
               // Sort meetings by current or next occurrence start time (earliest first)
-              return meetings.sort((a, b) => {
+              return activeMeetings.sort((a, b) => {
                 const occurrenceA = getCurrentOrNextOccurrence(a);
                 const occurrenceB = getCurrentOrNextOccurrence(b);
 
