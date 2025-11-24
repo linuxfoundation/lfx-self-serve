@@ -24,7 +24,8 @@
     [pTooltip]="tooltip()"
     [tooltipPosition]="tooltipPosition()"
     [style]="style()"
-    [ngClass]="styleClass()">
+    [ngClass]="styleClass()"
+    (click)="handleClick($event)">
     <ng-content></ng-content>
   </a>
 } @else {

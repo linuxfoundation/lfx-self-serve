@@ -131,7 +131,7 @@ a:not([pButton]) {
 }
 
 /* Button Styling - Secondary variant for card actions */
-.p-button.p-button-secondary {
+.p-button:not([class*='p-button-text']).p-button-secondary {
   @apply bg-white border border-gray-300 text-gray-900;
 
   &:not(:disabled):hover {

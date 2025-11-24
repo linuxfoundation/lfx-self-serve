@@ -8,9 +8,10 @@ import { SelectComponent } from '@components/select/select.component';
 import { Account, PendingActionItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { HiddenActionsService } from '@services/hidden-actions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { catchError, of, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
 
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
@@ -28,6 +29,7 @@ export class BoardMemberDashboardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly hiddenActionsService = inject(HiddenActionsService);
 
   public readonly form = new FormGroup({
     selectedAccountId: new FormControl<string>(this.accountContextService.selectedAccount().accountId),
@@ -36,6 +38,8 @@ export class BoardMemberDashboardComponent {
   public readonly availableAccounts: Signal<Account[]> = computed(() => this.accountContextService.availableAccounts);
   public readonly selectedFoundation = computed(() => this.projectContextService.selectedFoundation());
   public readonly selectedProject = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+  public readonly refresh$: BehaviorSubject<void> = new BehaviorSubject<void>(undefined);
+  private readonly rawBoardMemberActions: Signal<PendingActionItem[]>;
   public readonly boardMemberActions: Signal<PendingActionItem[]>;
 
   // Feature flags
@@ -54,7 +58,16 @@ export class BoardMemberDashboardComponent {
       });
 
     // Initialize board member actions with reactive pattern
-    this.boardMemberActions = this.initializeBoardMemberActions();
+    this.rawBoardMemberActions = this.initializeBoardMemberActions();
+
+    // Create filtered signal that removes hidden actions
+    this.boardMemberActions = computed(() => {
+      return this.rawBoardMemberActions().filter((item) => !this.hiddenActionsService.isActionHidden(item));
+    });
+  }
+
+  public handleActionClick(): void {
+    this.refresh$.next();
   }
 
   private initializeBoardMemberActions(): Signal<PendingActionItem[]> {
@@ -62,19 +75,24 @@ export class BoardMemberDashboardComponent {
     const project$ = toObservable(this.selectedProject);
 
     return toSignal(
-      project$.pipe(
-        switchMap((project) => {
-          // If no project/foundation selected, return empty array
-          if (!project?.slug) {
-            return of([]);
-          }
+      this.refresh$.pipe(
+        takeUntilDestroyed(),
+        switchMap(() => {
+          return project$.pipe(
+            switchMap((project) => {
+              // If no project/foundation selected, return empty array
+              if (!project?.slug) {
+                return of([]);
+              }
 
-          // Fetch survey actions from API
-          return this.projectService.getPendingActionSurveys(project.slug).pipe(
-            catchError((error) => {
-              console.error('Failed to fetch survey actions:', error);
-              // Return empty array on error
-              return of([]);
+              // Fetch survey actions from API
+              return this.projectService.getPendingActionSurveys(project.slug).pipe(
+                catchError((error) => {
+                  console.error('Failed to fetch survey actions:', error);
+                  // Return empty array on error
+                  return of([]);
+                })
+              );
             })
           );
         })

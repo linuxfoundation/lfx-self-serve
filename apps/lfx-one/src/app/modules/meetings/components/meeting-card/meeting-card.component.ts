@@ -18,17 +18,15 @@ import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/compon
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
-import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import {
   buildJoinUrlWithParams,
   canJoinMeeting,
+  COMMITTEE_LABEL,
   ComponentSeverity,
-  DEFAULT_MEETING_TYPE_CONFIG,
   getCurrentOrNextOccurrence,
   Meeting,
-  MEETING_TYPE_CONFIGS,
   MeetingAttachment,
   MeetingCancelOccurrenceResult,
   MeetingOccurrence,
@@ -48,7 +46,7 @@ import { MeetingService } from '@services/meeting.service';
 import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
-import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -64,7 +62,6 @@ import { MeetingRsvpDetailsComponent } from '../../components/meeting-rsvp-detai
     CommonModule,
     ButtonComponent,
     TagComponent,
-    MenuComponent,
     MeetingTimePipe,
     RecurrenceSummaryPipe,
     TooltipModule,
@@ -104,7 +101,6 @@ export class MeetingCardComponent implements OnInit {
   public recording: WritableSignal<PastMeetingRecording | null> = signal(null);
   public summary: WritableSignal<PastMeetingSummary | null> = signal(null);
   public additionalRegistrantsCount: WritableSignal<number> = signal(0);
-  public actionMenuItems: Signal<MenuItem[]> = this.initializeActionMenuItems();
   public attachments: Signal<MeetingAttachment[]> = signal([]);
 
   // Computed values for template
@@ -126,7 +122,6 @@ export class MeetingCardComponent implements OnInit {
     text: string;
   } | null> = this.initMeetingTypeBadge();
   public readonly containerClass: Signal<string> = this.initContainerClass();
-  public readonly borderColorClass: Signal<string> = this.initBorderColorClass();
   public readonly attendedCount: Signal<number> = this.initAttendedCount();
   public readonly notAttendedCount: Signal<number> = this.initNotAttendedCount();
   public readonly participantCount: Signal<number> = this.initParticipantCount();
@@ -138,6 +133,7 @@ export class MeetingCardComponent implements OnInit {
 
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
+  public readonly committeeLabel = COMMITTEE_LABEL;
 
   public constructor() {
     effect(() => {
@@ -285,31 +281,7 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  private getLargestSessionShareUrl(recording: PastMeetingRecording): string | null {
-    if (!recording.sessions || recording.sessions.length === 0) {
-      return null;
-    }
-
-    const largestSession = recording.sessions.reduce((largest, current) => {
-      return current.total_size > largest.total_size ? current : largest;
-    });
-
-    return largestSession.share_url || null;
-  }
-
-  private initMeetingRegistrantCount(): Signal<number> {
-    return computed(() => {
-      if (this.pastMeeting()) {
-        // For past meetings, show total participant count
-        return this.meeting()?.participant_count || 0;
-      }
-
-      // For upcoming meetings, show registrant count
-      return (this.meeting()?.individual_registrants_count || 0) + (this.meeting()?.committee_members_count || 0) + (this.additionalRegistrantsCount() || 0);
-    });
-  }
-
-  private deleteMeeting(): void {
+  public deleteMeeting(): void {
     const meeting = this.meeting();
     if (!meeting) return;
 
@@ -345,6 +317,30 @@ export class MeetingCardComponent implements OnInit {
       // For non-recurring meetings, show delete confirmation directly
       this.showDeleteMeetingModal(meeting);
     }
+  }
+
+  private getLargestSessionShareUrl(recording: PastMeetingRecording): string | null {
+    if (!recording.sessions || recording.sessions.length === 0) {
+      return null;
+    }
+
+    const largestSession = recording.sessions.reduce((largest, current) => {
+      return current.total_size > largest.total_size ? current : largest;
+    });
+
+    return largestSession.share_url || null;
+  }
+
+  private initMeetingRegistrantCount(): Signal<number> {
+    return computed(() => {
+      if (this.pastMeeting()) {
+        // For past meetings, show total participant count
+        return this.meeting()?.participant_count || 0;
+      }
+
+      // For upcoming meetings, show registrant count
+      return (this.meeting()?.individual_registrants_count || 0) + (this.meeting()?.committee_members_count || 0) + (this.additionalRegistrantsCount() || 0);
+    });
   }
 
   private showCancelOccurrenceModal(meeting: Meeting): void {
@@ -409,61 +405,6 @@ export class MeetingCardComponent implements OnInit {
           this.meetingDeleted.emit();
         }
       });
-  }
-
-  private initializeActionMenuItems(): Signal<MenuItem[]> {
-    return computed(() => {
-      const baseItems: MenuItem[] = [];
-
-      // Only add Edit option for upcoming meetings
-      if (!this.pastMeeting()) {
-        if (this.meeting()?.organizer) {
-          baseItems.push({
-            label: 'Add Guests',
-            icon: 'fa-light fa-plus',
-            routerLink: ['/meetings', this.meeting().uid, 'edit'],
-            queryParams: { step: '5' },
-          });
-
-          baseItems.push({
-            label: this.meeting().committees && this.meeting().committees!.length > 0 ? 'Manage Committees' : 'Connect Committees',
-            icon: 'fa-light fa-people-group',
-            command: () => this.openCommitteeModal(),
-          });
-
-          baseItems.push({
-            label: 'Edit',
-            icon: 'fa-light fa-edit',
-            routerLink: ['/meetings', this.meeting().uid, 'edit'],
-          });
-        }
-
-        baseItems.push({
-          label: 'Join Meeting',
-          icon: 'fa-light fa-calendar',
-          routerLink: ['/meetings', this.meeting().uid],
-          queryParams: {
-            password: this.meeting().password,
-          },
-        });
-
-        baseItems.push({
-          separator: true,
-        });
-      }
-
-      if (this.meeting()?.organizer) {
-        // Add separator and delete option
-        baseItems.push({
-          label: 'Delete',
-          icon: 'fa-light fa-trash',
-          styleClass: 'text-red-600',
-          command: () => this.deleteMeeting(),
-        });
-      }
-
-      return baseItems;
-    });
   }
 
   private refreshMeeting(): void {
@@ -592,22 +533,7 @@ export class MeetingCardComponent implements OnInit {
         return '';
       }
 
-      const type = this.meeting().meeting_type?.toLowerCase();
-      const config = type ? (MEETING_TYPE_CONFIGS[type] ?? DEFAULT_MEETING_TYPE_CONFIG) : DEFAULT_MEETING_TYPE_CONFIG;
-      const leftBorderColor = config.borderColor;
-
-      const baseClasses = 'bg-white rounded-lg border-t border-r border-b border-l-4';
-      const styleClasses = 'shadow-sm hover:shadow-md h-full transition-all duration-300';
-
-      return `${baseClasses} ${leftBorderColor} ${styleClasses}`;
-    });
-  }
-
-  private initBorderColorClass(): Signal<string> {
-    return computed(() => {
-      const type = this.meeting().meeting_type?.toLowerCase();
-      const config = type ? (MEETING_TYPE_CONFIGS[type] ?? DEFAULT_MEETING_TYPE_CONFIG) : DEFAULT_MEETING_TYPE_CONFIG;
-      return config.borderColor;
+      return 'bg-white rounded-xl border-0 shadow-md';
     });
   }
 

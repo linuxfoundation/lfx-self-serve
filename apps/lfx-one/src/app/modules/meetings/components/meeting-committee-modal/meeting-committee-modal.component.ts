@@ -8,7 +8,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
 import { TableComponent } from '@components/table/table.component';
-import { VOTING_STATUSES } from '@lfx-one/shared';
+import { COMMITTEE_LABEL, VOTING_STATUSES } from '@lfx-one/shared';
 import { Committee, CommitteeMember, Meeting } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
@@ -57,17 +57,18 @@ export class MeetingCommitteeModalComponent {
 
   // Voting status options for dropdown
   public readonly votingStatusOptions = VOTING_STATUSES;
+  public readonly committeeLabel = COMMITTEE_LABEL;
 
   // Load committees using toSignal
   public committees: Signal<Committee[]> = toSignal(
     this.committeeService.getCommitteesByProject(this.projectContextService.getProjectUid() || '').pipe(
       tap(() => this.committeesLoading.set(false)),
       catchError((error) => {
-        console.error('Failed to load committees:', error);
+        console.error(`Failed to load ${COMMITTEE_LABEL.plural.toLowerCase()}:`, error);
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
-          detail: 'Failed to load committees',
+          detail: `Failed to load ${COMMITTEE_LABEL.plural.toLowerCase()}`,
         });
         this.committeesLoading.set(false);
         return of([]);
@@ -199,17 +200,17 @@ export class MeetingCommitteeModalComponent {
           this.messageService.add({
             severity: 'success',
             summary: 'Success',
-            detail: 'Meeting committees updated successfully',
+            detail: `Meeting ${COMMITTEE_LABEL.plural.toLowerCase()} updated successfully`,
           });
           this.saving.set(false);
           this.ref.close(true);
         },
         error: (error) => {
-          console.error('Failed to update meeting committees:', error);
+          console.error(`Failed to update meeting ${COMMITTEE_LABEL.plural.toLowerCase()}:`, error);
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
-            detail: 'Failed to update meeting committees',
+            detail: `Failed to update meeting ${COMMITTEE_LABEL.plural.toLowerCase()}`,
           });
           this.saving.set(false);
         },

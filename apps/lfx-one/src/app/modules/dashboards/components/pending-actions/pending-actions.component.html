@@ -21,7 +21,7 @@
               'bg-purple-50': item.color === 'purple',
             }"
             [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
-            <!-- Header with Type and Badge -->
+            <!-- Header with Type -->
             <div class="flex items-start justify-between mb-3">
               <div class="flex items-center gap-2">
                 <div
@@ -44,11 +44,6 @@
                   {{ item.type }}
                 </span>
               </div>
-              <lfx-tag
-                [value]="item.badge"
-                severity="secondary"
-                styleClass="bg-white border border-gray-200"
-                data-testid="dashboard-pending-actions-badge"></lfx-tag>
             </div>
 
             <!-- Action Text -->
@@ -67,22 +62,27 @@
 
             <!-- Action Button -->
             @if (item.buttonLink) {
-              <a
+              <lfx-button
+                size="small"
+                class="w-full"
+                styleClass="w-full"
+                severity="secondary"
+                rel="noopener noreferrer"
+                [link]="true"
                 [href]="item.buttonLink"
                 target="_blank"
-                rel="noopener noreferrer"
-                class="w-full h-8 rounded-md px-3 text-sm font-medium border border-gray-300 bg-white text-gray-700 hover:bg-slate-100 transition-colors flex items-center justify-center"
-                data-testid="dashboard-pending-actions-button">
-                {{ item.buttonText }}
-              </a>
+                (onClick)="handleActionClick(item)"
+                [label]="item.buttonText">
+              </lfx-button>
             } @else {
-              <button
-                type="button"
-                (click)="handleActionClick(item)"
-                class="w-full h-8 rounded-md px-3 text-sm font-medium border border-gray-300 bg-white text-gray-700 hover:bg-slate-100 transition-colors"
-                data-testid="dashboard-pending-actions-button">
-                {{ item.buttonText }}
-              </button>
+              <lfx-button
+                size="small"
+                class="w-full"
+                styleClass="w-full text-sm"
+                severity="secondary"
+                (onClick)="handleActionClick(item)"
+                [label]="item.buttonText">
+              </lfx-button>
             }
           </div>
         }

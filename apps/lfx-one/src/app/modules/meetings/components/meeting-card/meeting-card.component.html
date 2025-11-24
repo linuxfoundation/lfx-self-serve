@@ -61,21 +61,31 @@
             tooltip="Edit Meeting"
             [routerLink]="['/meetings', meeting().uid, 'edit']"></lfx-button>
 
-          @if (!pastMeeting()) {
-            <lfx-button
-              [icon]="loading() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis'"
-              [text]="true"
-              [rounded]="true"
-              size="small"
-              severity="secondary"
-              data-testid="meeting-actions-button"
-              (click)="actionMenu.toggle($event)"></lfx-button>
-          }
+          <lfx-button
+            icon="fa-light fa-people-group"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="committees-button"
+            (click)="openCommitteeModal()"
+            [tooltip]="
+              meeting().committees && meeting().committees!.length > 0 ? 'Manage ' + committeeLabel.plural : 'Connect ' + committeeLabel.plural
+            "></lfx-button>
+        }
+        @if (meeting().organizer) {
+          <lfx-button
+            icon="fa-light fa-trash"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            data-testid="delete-meeting-button"
+            (click)="deleteMeeting()"
+            tooltip="Delete Meeting"></lfx-button>
         }
       </div>
     </div>
-    <!-- Action Menu -->
-    <lfx-menu #actionMenu [model]="actionMenuItems()" [popup]="true" appendTo="body"></lfx-menu>
 
     <!-- Meeting Title -->
     <div class="flex items-center gap-2 mb-2" data-testid="meeting-title-section">

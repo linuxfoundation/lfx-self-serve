@@ -6,28 +6,31 @@
   @if (committeesLoading()) {
     <div class="flex items-center justify-center py-8">
       <i class="fa-light fa-circle-notch fa-spin text-2xl text-blue-600 mr-3"></i>
-      <span class="text-gray-600">Loading committees...</span>
+      <span class="text-gray-600">Loading {{ committeeLabel.plural.toLowerCase() }}...</span>
     </div>
   } @else {
     <!-- Committee Selection -->
     <div class="flex flex-col gap-1">
-      <label class="text-sm font-medium text-gray-700">Select Committees</label>
+      <label class="text-sm font-medium text-gray-700">Select {{ committeeLabel.plural }}</label>
       <lfx-multi-select
         [form]="form"
         control="committees"
         [options]="committees()"
         optionLabel="name"
         optionValue="uid"
-        placeholder="Select one or more committees"
+        [placeholder]="'Select one or more ' + committeeLabel.plural.toLowerCase()"
         [filter]="true"
-        filterPlaceHolder="Search committees"
+        [filterPlaceHolder]="'Search ' + committeeLabel.plural.toLowerCase()"
         [showToggleAll]="true"
         appendTo="body"
         styleClass="w-full"
         data-testid="meeting-committee-multi-select"></lfx-multi-select>
     </div>
     @if (selectedCommitteeIds().length === 0) {
-      <p class="text-xs text-gray-500">Select committees to associate with this meeting. Committee members will automatically be added as guests.</p>
+      <p class="text-xs text-gray-500">
+        Select {{ committeeLabel.plural.toLowerCase() }} to associate with this meeting. {{ committeeLabel.singular }} members will automatically be added as
+        guests.
+      </p>
     }
 
     <!-- Voting Status Selection -->
@@ -58,7 +61,7 @@
 
     <p class="text-xs text-gray-500">
       @if (selectedCommitteeIds().length > 0) {
-        <strong>{{ selectedCommitteeIds().length }}</strong> committee(s) selected.
+        <strong>{{ selectedCommitteeIds().length }}</strong> {{ committeeLabel.plural.toLowerCase() }} selected.
         @if (filteredCommitteeMembers().length > 0) {
           <strong>{{ filteredCommitteeMembers().length }}</strong> unique member(s) will be added to the meeting.
         }
@@ -70,15 +73,15 @@
   @if (!committeesLoading() && selectedCommitteeIds().length === 0) {
     <div class="bg-blue-50 rounded-lg p-6 text-center">
       <i class="fa-light fa-users text-3xl text-blue-400 mb-3"></i>
-      <h4 class="text-lg font-medium text-gray-900 mb-2">No Committees Selected</h4>
-      <p class="text-sm text-gray-600">Select one or more committees above to view their members</p>
+      <h4 class="text-lg font-medium text-gray-900 mb-2">No {{ committeeLabel.plural }} Selected</h4>
+      <p class="text-sm text-gray-600">Select one or more {{ committeeLabel.plural.toLowerCase() }} above to view their members</p>
     </div>
   }
 
   @if (selectedCommitteeIds().length > 0) {
     <div class="flex flex-col gap-2">
       <div class="flex items-center justify-between">
-        <h3 class="text-sm font-medium text-gray-700">Committee Members</h3>
+        <h3 class="text-sm font-medium text-gray-700">{{ committeeLabel.singular }} Members</h3>
         @if (membersLoading()) {
           <i class="fa-light fa-circle-notch fa-spin text-blue-600"></i>
         }
@@ -105,7 +108,7 @@
                 </th>
                 @if (form.value.committees.length > 1) {
                   <th>
-                    <span class="text-xs font-sans text-gray-500">Committee</span>
+                    <span class="text-xs font-sans text-gray-500">{{ committeeLabel.singular }}</span>
                   </th>
                 }
                 @if (hasVotingEnabledCommittee()) {
@@ -153,7 +156,7 @@
             <ng-template #emptymessage>
               <tr>
                 <td [attr.colspan]="tableColspan()" class="text-center py-4">
-                  <span class="text-sm text-gray-500">No members found in selected committees</span>
+                  <span class="text-sm text-gray-500">No members found in selected {{ committeeLabel.plural.toLowerCase() }}</span>
                 </td>
               </tr>
             </ng-template>
@@ -169,7 +172,7 @@
               @if (hasVotingEnabledCommittee() && selectedVotingStatuses().length > 0) {
                 No members found with the selected voting statuses
               } @else {
-                No members found in the selected committees
+                No members found in the selected {{ committeeLabel.plural.toLowerCase() }}
               }
             </p>
           </div>
