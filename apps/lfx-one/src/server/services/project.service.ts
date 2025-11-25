@@ -6,6 +6,16 @@ import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
   FoundationContributorsMentoredResponse,
   FoundationContributorsMentoredRow,
+  FoundationHealthScoreDistributionResponse,
+  FoundationHealthScoreDistributionRow,
+  FoundationMaintainersDailyRow,
+  FoundationMaintainersResponse,
+  FoundationSoftwareValueResponse,
+  FoundationTopProjectBySoftwareValueRow,
+  FoundationTotalMembersResponse,
+  FoundationTotalProjectsResponse,
+  MonthlyMemberCountWithFoundation,
+  MonthlyProjectCountWithFoundation,
   PendingActionItem,
   PendingSurveyRow,
   Project,
@@ -844,7 +854,7 @@ export class ProjectService {
         badge: row.PROJECT_NAME,
         text: `${row.SURVEY_TITLE} is due ${formattedDate}`,
         icon: 'fa-regular fa-clipboard-list',
-        color: 'amber' as const,
+        color: 'amber',
         buttonText: 'Submit Survey',
         buttonLink: row.SURVEY_LINK,
       };
@@ -852,7 +862,219 @@ export class ProjectService {
   }
 
   /**
-   * Get project ID by slug using NATS request-reply pattern
+   * Get total projects count for a foundation from Snowflake
+   * Queries MEMBER_DASHBOARD_TOTAL_PROJECTS table with monthly cumulative aggregation
+   * Optimized single query including foundation metadata
+   * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
+   * @returns Foundation total projects response with cumulative monthly data and metadata
+   */
+  public async getFoundationTotalProjects(foundationSlug: string): Promise<FoundationTotalProjectsResponse> {
+    const query = `
+      WITH monthly_counts AS (
+        SELECT
+          FOUNDATION_SEGMENT_ID,
+          FOUNDATION_NAME,
+          FOUNDATION_SOURCE_ID,
+          FOUNDATION_SLUG,
+          DATE_TRUNC('MONTH', CHILD_START_DATE) AS MONTH_START,
+          COUNT(DISTINCT CHILD_SEGMENT_ID) AS MONTHLY_COUNT
+        FROM ANALYTICS_DEV.DEV_JEVANS_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_TOTAL_PROJECTS
+        WHERE FOUNDATION_SLUG = ?
+        GROUP BY FOUNDATION_SEGMENT_ID, FOUNDATION_NAME, FOUNDATION_SOURCE_ID, FOUNDATION_SLUG, DATE_TRUNC('MONTH', CHILD_START_DATE)
+      )
+      SELECT
+        FOUNDATION_SEGMENT_ID,
+        FOUNDATION_NAME,
+        FOUNDATION_SOURCE_ID,
+        FOUNDATION_SLUG,
+        MONTH_START,
+        SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS PROJECT_COUNT
+      FROM monthly_counts
+      ORDER BY MONTH_START ASC
+    `;
+
+    const result = await this.snowflakeService.execute<MonthlyProjectCountWithFoundation>(query, [foundationSlug]);
+
+    // Convert monthly data to arrays of counts and labels
+    const monthlyData = result.rows.map((row) => row.PROJECT_COUNT);
+    const monthlyLabels = result.rows.map((row) => {
+      const date = new Date(row.MONTH_START);
+      return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    });
+
+    // Total projects is the last cumulative count
+    const totalProjects = result.rows.length > 0 ? result.rows[result.rows.length - 1].PROJECT_COUNT : 0;
+
+    return {
+      totalProjects,
+      monthlyData,
+      monthlyLabels,
+    };
+  }
+
+  /**
+   * Get total members count for a foundation from Snowflake
+   * Queries MEMBER_DASHBOARD_MEMBERSHIP_TIER table with monthly cumulative aggregation
+   * Counts distinct member organizations over time
+   * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
+   * @returns Foundation total members response with cumulative monthly data and metadata
+   */
+  public async getFoundationTotalMembers(foundationSlug: string): Promise<FoundationTotalMembersResponse> {
+    const query = `
+      WITH monthly_counts AS (
+        SELECT
+          PROJECT_ID,
+          PROJECT_NAME,
+          PROJECT_SLUG,
+          DATE_TRUNC('MONTH', START_DATE) AS MONTH_START,
+          COUNT(DISTINCT ACCOUNT_ID) AS MONTHLY_COUNT
+        FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
+        WHERE PROJECT_SLUG = ?
+        GROUP BY PROJECT_ID, PROJECT_NAME, PROJECT_SLUG, DATE_TRUNC('MONTH', START_DATE)
+      )
+      SELECT
+        PROJECT_ID,
+        PROJECT_NAME,
+        PROJECT_SLUG,
+        MONTH_START,
+        SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
+      FROM monthly_counts
+      ORDER BY MONTH_START ASC
+    `;
+
+    const result = await this.snowflakeService.execute<MonthlyMemberCountWithFoundation>(query, [foundationSlug]);
+
+    // Convert monthly data to arrays of counts and labels
+    const monthlyData = result.rows.map((row) => row.MEMBER_COUNT);
+    const monthlyLabels = result.rows.map((row) => {
+      const date = new Date(row.MONTH_START);
+      return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+    });
+
+    // Total members is the last cumulative count
+    const totalMembers = result.rows.length > 0 ? result.rows[result.rows.length - 1].MEMBER_COUNT : 0;
+
+    return {
+      totalMembers,
+      monthlyData,
+      monthlyLabels,
+    };
+  }
+
+  /**
+   * Get foundation software value and top projects from Snowflake
+   * Queries FOUNDATION_TOP_PROJECTS_BY_SOFTWARE_VALUE table
+   * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
+   * @returns Foundation software value response with total value and top projects
+   */
+  public async getFoundationSoftwareValue(foundationSlug: string): Promise<FoundationSoftwareValueResponse> {
+    const query = `
+      SELECT
+        PROJECT_ID,
+        PROJECT_NAME,
+        PROJECT_SLUG,
+        SOFTWARE_VALUE,
+        VALUE_RANK
+      FROM ANALYTICS_DEV.DEV_MSALOMAO_PLATINUM_LFX_ONE.FOUNDATION_SOFTWARE_VALUE_TOP_PROJECTS
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY VALUE_RANK ASC
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationTopProjectBySoftwareValueRow>(query, [foundationSlug]);
+
+    // Calculate total value (sum of all projects) and convert to millions
+    const totalValue = result.rows.reduce((sum, row) => sum + row.SOFTWARE_VALUE, 0) / 1000000;
+
+    // Get top 3 projects and convert values to millions
+    const topProjects = result.rows.slice(0, 3).map((row) => ({
+      name: row.PROJECT_NAME,
+      value: row.SOFTWARE_VALUE / 1000000,
+    }));
+
+    return {
+      totalValue,
+      topProjects,
+    };
+  }
+
+  /**
+   * Get foundation maintainers data from Snowflake
+   * Queries FOUNDATION_MAINTAINERS_YEARLY table (contains daily data despite name)
+   * Returns daily maintainer counts for detailed trend visualization
+   * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
+   * @returns Foundation maintainers response with average and daily trend data
+   */
+  public async getFoundationMaintainers(foundationSlug: string): Promise<FoundationMaintainersResponse> {
+    const query = `
+      SELECT
+        METRIC_DATE,
+        ACTIVE_MAINTAINERS,
+        AVG_MAINTAINERS_YEARLY
+      FROM ANALYTICS_DEV.DEV_MSALOMAO_PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_YEARLY
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY METRIC_DATE ASC
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationMaintainersDailyRow>(query, [foundationSlug]);
+
+    // Get average maintainers from first row (same across all rows)
+    const avgMaintainers = result.rows.length > 0 ? Math.round(result.rows[0].AVG_MAINTAINERS_YEARLY) : 0;
+
+    // Extract daily data and labels
+    const trendData = result.rows.map((row) => row.ACTIVE_MAINTAINERS);
+    const trendLabels = result.rows.map((row) => {
+      const date = new Date(row.METRIC_DATE);
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    });
+
+    return {
+      avgMaintainers,
+      trendData,
+      trendLabels,
+    };
+  }
+
+  /**
+   * Get foundation health score distribution from Snowflake
+   * Queries FOUNDATION_HEALTH_SCORE_DISTRIBUTION table
+   * Returns project count breakdown by health category
+   * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
+   * @returns Foundation health score distribution with counts by category
+   */
+  public async getFoundationHealthScoreDistribution(foundationSlug: string): Promise<FoundationHealthScoreDistributionResponse> {
+    const query = `
+      SELECT
+        HEALTH_SCORE_CATEGORY,
+        PROJECT_COUNT
+      FROM ANALYTICS_DEV.DEV_MSALOMAO_PLATINUM_LFX_ONE.FOUNDATION_HEALTH_SCORE_DISTRIBUTION
+      WHERE FOUNDATION_SLUG = ?
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationHealthScoreDistributionRow>(query, [foundationSlug]);
+
+    // Map categories to response structure (case-insensitive)
+    const distribution = {
+      excellent: 0,
+      healthy: 0,
+      stable: 0,
+      unsteady: 0,
+      critical: 0,
+    };
+
+    result.rows.forEach((row) => {
+      const category = row.HEALTH_SCORE_CATEGORY.toLowerCase();
+      if (category === 'excellent') distribution.excellent = row.PROJECT_COUNT;
+      if (category === 'healthy') distribution.healthy = row.PROJECT_COUNT;
+      if (category === 'stable') distribution.stable = row.PROJECT_COUNT;
+      if (category === 'unsteady') distribution.unsteady = row.PROJECT_COUNT;
+      if (category === 'critical') distribution.critical = row.PROJECT_COUNT;
+    });
+
+    return distribution;
+  }
+
+  /**
+   * Get project UID by slug using NATS request-reply pattern
    * @private
    */
   private async getProjectIdBySlug(slug: string): Promise<ProjectSlugToIdResponse> {

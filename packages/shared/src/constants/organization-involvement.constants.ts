@@ -81,7 +81,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: PrimaryInvolvementMetric[] = [
     title: 'Event Attendees',
     icon: 'fa-light fa-user-group',
     sparklineData: generateTrendData(30, 150), // TODO: Replace with API trend data
-    sparklineColor: '#0094FF',
+    sparklineColor: '#8b5cf6',
     chartType: 'line' as const,
     // All event attendee data comes from getOrganizationEventsOverview API
   },
@@ -89,7 +89,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: PrimaryInvolvementMetric[] = [
     title: 'Event Speakers',
     icon: 'fa-light fa-microphone',
     sparklineData: generateTrendData(30, 20), // TODO: Replace with API trend data
-    sparklineColor: '#0094FF',
+    sparklineColor: '#10b981',
     chartType: 'line' as const,
     // All event speaker data comes from getOrganizationEventsOverview API
   },
@@ -97,7 +97,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: PrimaryInvolvementMetric[] = [
     title: 'Certified Employees',
     icon: 'fa-light fa-certificate',
     sparklineData: generateTrendData(30, 45), // TODO: Replace with API trend data
-    sparklineColor: '#0094FF',
+    sparklineColor: '#F59E0B',
     chartType: 'line' as const,
     // All certified employee data comes from getBoardMemberDashboard API
   },

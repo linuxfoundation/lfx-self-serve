@@ -7,6 +7,11 @@ import {
   ActiveWeeksStreakResponse,
   BoardMemberDashboardResponse,
   FoundationContributorsMentoredResponse,
+  FoundationHealthScoreDistributionResponse,
+  FoundationMaintainersResponse,
+  FoundationSoftwareValueResponse,
+  FoundationTotalMembersResponse,
+  FoundationTotalProjectsResponse,
   OrganizationContributionsOverviewResponse,
   OrganizationEventsOverviewResponse,
   ProjectIssuesResolutionResponse,
@@ -177,6 +182,97 @@ export class AnalyticsService {
             accountName: '',
           },
           accountId: '',
+        });
+      })
+    );
+  }
+
+  /**
+   * Get total projects count for a foundation from Snowflake
+   * @param foundationSlug - Required foundation slug to filter projects (e.g., 'tlf', 'cncf')
+   * @returns Observable of foundation total projects response with cumulative monthly data
+   */
+  public getFoundationTotalProjects(foundationSlug: string): Observable<FoundationTotalProjectsResponse> {
+    return this.http.get<FoundationTotalProjectsResponse>('/api/analytics/foundation-total-projects', { params: { foundationSlug } }).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch foundation total projects:', error);
+        return of({
+          totalProjects: 0,
+          monthlyData: [],
+          monthlyLabels: [],
+        });
+      })
+    );
+  }
+
+  /**
+   * Get total members count for a foundation from Snowflake
+   * @param foundationSlug - Required foundation slug to filter members (e.g., 'tlf', 'cncf')
+   * @returns Observable of foundation total members response with cumulative monthly data
+   */
+  public getFoundationTotalMembers(foundationSlug: string): Observable<FoundationTotalMembersResponse> {
+    return this.http.get<FoundationTotalMembersResponse>('/api/analytics/foundation-total-members', { params: { foundationSlug } }).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch foundation total members:', error);
+        return of({
+          totalMembers: 0,
+          monthlyData: [],
+          monthlyLabels: [],
+        });
+      })
+    );
+  }
+
+  /**
+   * Get foundation software value and top projects from Snowflake
+   * @param foundationSlug - Required foundation slug to filter by (e.g., 'tlf', 'cncf')
+   * @returns Observable of foundation software value response with total value and top projects
+   */
+  public getFoundationSoftwareValue(foundationSlug: string): Observable<FoundationSoftwareValueResponse> {
+    return this.http.get<FoundationSoftwareValueResponse>('/api/analytics/foundation-software-value', { params: { foundationSlug } }).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch foundation software value:', error);
+        return of({
+          totalValue: 0,
+          topProjects: [],
+        });
+      })
+    );
+  }
+
+  /**
+   * Get foundation maintainers data from Snowflake
+   * @param foundationSlug - Required foundation slug to filter by (e.g., 'tlf', 'cncf')
+   * @returns Observable of foundation maintainers response with average and daily trend data
+   */
+  public getFoundationMaintainers(foundationSlug: string): Observable<FoundationMaintainersResponse> {
+    return this.http.get<FoundationMaintainersResponse>('/api/analytics/foundation-maintainers', { params: { foundationSlug } }).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch foundation maintainers:', error);
+        return of({
+          avgMaintainers: 0,
+          trendData: [],
+          trendLabels: [],
+        });
+      })
+    );
+  }
+
+  /**
+   * Get foundation health score distribution from Snowflake
+   * @param foundationSlug - Required foundation slug to filter by (e.g., 'tlf', 'cncf')
+   * @returns Observable of foundation health score distribution response
+   */
+  public getFoundationHealthScoreDistribution(foundationSlug: string): Observable<FoundationHealthScoreDistributionResponse> {
+    return this.http.get<FoundationHealthScoreDistributionResponse>('/api/analytics/foundation-health-score-distribution', { params: { foundationSlug } }).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch foundation health score distribution:', error);
+        return of({
+          excellent: 0,
+          healthy: 0,
+          stable: 0,
+          unsteady: 0,
+          critical: 0,
         });
       })
     );

@@ -19,7 +19,7 @@ export class PersonaService {
 
   public constructor() {
     // Default persona - will be overridden by initializeFromAuth if backend provides one
-    this.currentPersona = signal<PersonaType>('maintainer');
+    this.currentPersona = signal<PersonaType>('board-member');
   }
 
   /**

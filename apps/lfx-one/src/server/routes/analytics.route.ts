@@ -35,4 +35,19 @@ router.get('/contributors-mentored', (req, res, next) => analyticsController.get
 // Unique contributors weekly endpoint
 router.get('/unique-contributors-weekly', (req, res, next) => analyticsController.getUniqueContributorsWeekly(req, res, next));
 
+// Foundation total projects endpoint
+router.get('/foundation-total-projects', (req, res, next) => analyticsController.getFoundationTotalProjects(req, res, next));
+
+// Foundation total members endpoint
+router.get('/foundation-total-members', (req, res, next) => analyticsController.getFoundationTotalMembers(req, res, next));
+
+// Foundation software value endpoint
+router.get('/foundation-software-value', (req, res, next) => analyticsController.getFoundationSoftwareValue(req, res, next));
+
+// Foundation maintainers endpoint
+router.get('/foundation-maintainers', (req, res, next) => analyticsController.getFoundationMaintainers(req, res, next));
+
+// Foundation health score distribution endpoint
+router.get('/foundation-health-score-distribution', (req, res, next) => analyticsController.getFoundationHealthScoreDistribution(req, res, next));
+
 export default router;

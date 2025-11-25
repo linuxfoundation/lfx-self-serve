@@ -1,7 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Foundation, AggregateFoundationMetrics, ProjectHealthDistribution, CompanyBusFactor, TopProjectByValue } from '../interfaces';
+import {
+  AggregateFoundationMetrics,
+  CompanyBusFactor,
+  Foundation,
+  PrimaryFoundationHealthMetric,
+  ProjectHealthDistribution,
+  TopProjectByValue,
+} from '../interfaces';
 
 /**
  * Generate smooth trend data for sparkline charts
@@ -162,3 +169,72 @@ export const AGGREGATE_FOUNDATION_METRICS: AggregateFoundationMetrics = {
   eventsMonthlyData: FOUNDATION_HEALTH_DATA.eventsMonthly,
   projectHealthDistribution: PROJECT_HEALTH_DISTRIBUTION,
 };
+
+/**
+ * Primary foundation health metrics configuration
+ * NOTE: This contains only UI configuration (icons, categories, test IDs). Data values come from APIs or fallback to mock data.
+ * This serves as a configuration template for building metric cards with consistent structure.
+ */
+export const PRIMARY_FOUNDATION_HEALTH_METRICS: PrimaryFoundationHealthMetric[] = [
+  {
+    title: 'Total Projects',
+    icon: 'fa-light fa-chart-bar',
+    category: 'projects',
+    testId: 'foundation-health-card-total-projects',
+    customContentType: 'sparkline',
+    sparklineColor: '#0094FF',
+  },
+  {
+    title: 'Total Members',
+    icon: 'fa-light fa-users',
+    category: 'projects',
+    testId: 'foundation-health-card-total-members',
+    customContentType: 'sparkline',
+    sparklineColor: '#0094FF',
+  },
+  {
+    title: 'Software Value',
+    icon: 'fa-light fa-chart-bar',
+    category: 'projects',
+    testId: 'foundation-health-card-software-value',
+    customContentType: 'top-projects',
+  },
+  {
+    title: 'Company Bus Factor',
+    icon: 'fa-light fa-shield',
+    category: 'contributors',
+    testId: 'foundation-health-card-company-bus-factor',
+    customContentType: 'bus-factor',
+  },
+  {
+    title: 'Active Contributors',
+    icon: 'fa-light fa-code',
+    category: 'contributors',
+    testId: 'foundation-health-card-active-contributors',
+    customContentType: 'sparkline',
+    sparklineColor: '#64748B',
+  },
+  {
+    title: 'Maintainers',
+    icon: 'fa-light fa-user-check',
+    category: 'contributors',
+    testId: 'foundation-health-card-maintainers',
+    customContentType: 'sparkline',
+    sparklineColor: '#0094FF',
+  },
+  {
+    title: 'Events',
+    icon: 'fa-light fa-calendar',
+    category: 'events',
+    testId: 'foundation-health-card-events',
+    customContentType: 'bar-chart',
+    chartColor: '#64748B',
+  },
+  {
+    title: 'Project Health Scores',
+    icon: 'fa-light fa-chart-bar',
+    category: 'projects',
+    testId: 'foundation-health-card-project-health-scores',
+    customContentType: 'health-scores',
+  },
+];

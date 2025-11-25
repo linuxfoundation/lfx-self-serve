@@ -705,3 +705,387 @@ export interface UniqueContributorsWeeklyResponse {
    */
   totalWeeks: number;
 }
+
+/**
+ * Monthly project count aggregation from Snowflake
+ * Raw response with Snowflake naming conventions (ALL_CAPS)
+ */
+export interface MonthlyProjectCountRow {
+  /**
+   * Month start date (first day of month)
+   */
+  MONTH_START: string;
+
+  /**
+   * Number of projects added in this month
+   */
+  PROJECT_COUNT: number;
+}
+
+/**
+ * Foundation total projects row from Snowflake MEMBER_DASHBOARD_TOTAL_PROJECTS table
+ * Raw response with Snowflake naming conventions (ALL_CAPS)
+ */
+export interface FoundationTotalProjectsRow {
+  /**
+   * Foundation segment ID (parent)
+   */
+  FOUNDATION_SEGMENT_ID: string;
+
+  /**
+   * Foundation name (parent)
+   */
+  FOUNDATION_NAME: string;
+
+  /**
+   * Foundation source ID from Salesforce (parent)
+   */
+  FOUNDATION_SOURCE_ID: string;
+
+  /**
+   * Foundation URL slug (parent)
+   */
+  FOUNDATION_SLUG: string;
+
+  /**
+   * Child project segment ID
+   */
+  CHILD_SEGMENT_ID: string;
+
+  /**
+   * Child project name
+   */
+  CHILD_NAME: string;
+
+  /**
+   * Child project source ID from Salesforce
+   */
+  CHILD_SOURCE_ID: string;
+
+  /**
+   * Child project URL slug
+   */
+  CHILD_SLUG: string;
+
+  /**
+   * Date when the child project started (YYYY-MM-DD format)
+   */
+  CHILD_START_DATE: string;
+}
+
+/**
+ * Monthly project count with foundation metadata
+ * Combined result from cumulative aggregation query
+ */
+export interface MonthlyProjectCountWithFoundation {
+  /**
+   * Foundation segment ID
+   */
+  FOUNDATION_SEGMENT_ID: string;
+
+  /**
+   * Foundation name
+   */
+  FOUNDATION_NAME: string;
+
+  /**
+   * Foundation source ID from Salesforce
+   */
+  FOUNDATION_SOURCE_ID: string;
+
+  /**
+   * Foundation URL slug
+   */
+  FOUNDATION_SLUG: string;
+
+  /**
+   * Month start date (first day of month)
+   */
+  MONTH_START: string;
+
+  /**
+   * Cumulative count of projects up to this month
+   */
+  PROJECT_COUNT: number;
+}
+
+/**
+ * Monthly member count with foundation metadata
+ * Combined result from cumulative aggregation query for member organizations
+ * Uses actual MEMBER_DASHBOARD_MEMBERSHIP_TIER column names
+ */
+export interface MonthlyMemberCountWithFoundation {
+  /**
+   * Project/Foundation ID
+   */
+  PROJECT_ID: string;
+
+  /**
+   * Project/Foundation name
+   */
+  PROJECT_NAME: string;
+
+  /**
+   * Project/Foundation URL slug
+   */
+  PROJECT_SLUG: string;
+
+  /**
+   * Month start date (first day of month)
+   */
+  MONTH_START: string;
+
+  /**
+   * Cumulative count of member organizations up to this month
+   */
+  MEMBER_COUNT: number;
+}
+
+/**
+ * API response for foundation total projects query
+ * Contains cumulative monthly trend data
+ * Optimized response without full project list for better performance
+ */
+export interface FoundationTotalProjectsResponse {
+  /**
+   * Total number of distinct child projects (latest cumulative count)
+   */
+  totalProjects: number;
+
+  /**
+   * Monthly cumulative project count data for trend visualization
+   * Array of cumulative counts (oldest to newest)
+   */
+  monthlyData: number[];
+
+  /**
+   * Month labels for chart visualization
+   * Array of month strings (e.g., ['Jan 2020', 'Feb 2020']) matching monthlyData
+   */
+  monthlyLabels: string[];
+}
+
+/**
+ * API response for foundation total members query
+ * Contains cumulative monthly trend data for member organizations
+ * Optimized response with aggregated member counts over time
+ */
+export interface FoundationTotalMembersResponse {
+  /**
+   * Total number of distinct member organizations (latest cumulative count)
+   */
+  totalMembers: number;
+
+  /**
+   * Monthly cumulative member count data for trend visualization
+   * Array of cumulative counts (oldest to newest)
+   */
+  monthlyData: number[];
+
+  /**
+   * Month labels for chart visualization
+   * Array of month strings (e.g., ['Jan 2020', 'Feb 2020']) matching monthlyData
+   */
+  monthlyLabels: string[];
+}
+
+/**
+ * Foundation top project by software value row from Snowflake
+ * Raw response from FOUNDATION_TOP_PROJECTS_BY_SOFTWARE_VALUE table
+ */
+export interface FoundationTopProjectBySoftwareValueRow {
+  /**
+   * Foundation ID
+   */
+  FOUNDATION_ID: string;
+
+  /**
+   * Foundation URL slug
+   */
+  FOUNDATION_SLUG: string;
+
+  /**
+   * Project ID
+   */
+  PROJECT_ID: string;
+
+  /**
+   * Project name
+   */
+  PROJECT_NAME: string;
+
+  /**
+   * Project URL slug
+   */
+  PROJECT_SLUG: string;
+
+  /**
+   * Estimated software value in dollars
+   */
+  SOFTWARE_VALUE: number;
+
+  /**
+   * Date of last metric calculation
+   */
+  LAST_METRIC_DATE: string;
+
+  /**
+   * Rank by value (1 = highest)
+   */
+  VALUE_RANK: number;
+}
+
+/**
+ * API response for foundation software value query
+ * Contains total software value and top projects by value
+ */
+export interface FoundationSoftwareValueResponse {
+  /**
+   * Total estimated software value in millions of dollars
+   */
+  totalValue: number;
+
+  /**
+   * Top projects by software value
+   * Values converted to millions
+   */
+  topProjects: {
+    name: string;
+    value: number;
+  }[];
+}
+
+/**
+ * Foundation maintainers daily row from Snowflake
+ * Raw response from FOUNDATION_MAINTAINERS_YEARLY table (despite name, contains daily data)
+ */
+export interface FoundationMaintainersDailyRow {
+  /**
+   * Foundation ID
+   */
+  FOUNDATION_ID: string;
+
+  /**
+   * Foundation name
+   */
+  FOUNDATION_NAME: string;
+
+  /**
+   * Foundation URL slug
+   */
+  FOUNDATION_SLUG: string;
+
+  /**
+   * Metric date (daily granularity)
+   */
+  METRIC_DATE: string;
+
+  /**
+   * Number of active maintainers on this date
+   */
+  ACTIVE_MAINTAINERS: number;
+
+  /**
+   * Average maintainers yearly (calculated aggregate)
+   */
+  AVG_MAINTAINERS_YEARLY: number;
+}
+
+/**
+ * Weekly aggregated maintainers result from Snowflake query
+ */
+export interface WeeklyMaintainersRow {
+  /**
+   * Week start date
+   */
+  WEEK_START: string;
+
+  /**
+   * Average maintainers for this week
+   */
+  AVG_WEEKLY_MAINTAINERS: number;
+
+  /**
+   * Average maintainers yearly (same across all rows)
+   */
+  AVG_MAINTAINERS_YEARLY: number;
+}
+
+/**
+ * API response for foundation maintainers query
+ * Contains average maintainers and weekly trend data
+ */
+export interface FoundationMaintainersResponse {
+  /**
+   * Average number of maintainers (from AVG_MAINTAINERS_YEARLY)
+   */
+  avgMaintainers: number;
+
+  /**
+   * Daily or aggregated maintainer count data for trend visualization
+   */
+  trendData: number[];
+
+  /**
+   * Date labels for chart visualization
+   * Array of date strings matching trendData
+   */
+  trendLabels: string[];
+}
+
+/**
+ * Foundation health score distribution row from Snowflake
+ * Raw response from FOUNDATION_HEALTH_SCORE_DISTRIBUTION table
+ */
+export interface FoundationHealthScoreDistributionRow {
+  /**
+   * Foundation ID
+   */
+  FOUNDATION_ID: string;
+
+  /**
+   * Foundation URL slug
+   */
+  FOUNDATION_SLUG: string;
+
+  /**
+   * Health score category (Excellent, Healthy, Stable, Unsteady, Critical)
+   */
+  HEALTH_SCORE_CATEGORY: string;
+
+  /**
+   * Number of projects in this category
+   */
+  PROJECT_COUNT: number;
+}
+
+/**
+ * API response for foundation health score distribution query
+ * Contains project count breakdown by health category
+ */
+export interface FoundationHealthScoreDistributionResponse {
+  /**
+   * Number of projects with excellent health
+   */
+  excellent: number;
+
+  /**
+   * Number of projects with healthy status
+   */
+  healthy: number;
+
+  /**
+   * Number of projects with stable status
+   */
+  stable: number;
+
+  /**
+   * Number of projects with unsteady status
+   */
+  unsteady: number;
+
+  /**
+   * Number of projects with critical status
+   */
+  critical: number;
+}

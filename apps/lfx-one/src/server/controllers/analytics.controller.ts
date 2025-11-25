@@ -456,4 +456,170 @@ export class AnalyticsController {
       next(error);
     }
   }
+
+  /**
+   * GET /api/analytics/foundation-total-projects
+   * Get total projects count for a foundation from Snowflake
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationTotalProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_foundation_total_projects');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_total_projects',
+        });
+      }
+
+      const response = await this.projectService.getFoundationTotalProjects(foundationSlug);
+
+      Logger.success(req, 'get_foundation_total_projects', startTime, {
+        foundation_slug: foundationSlug,
+        total_projects: response.totalProjects,
+        monthly_data_points: response.monthlyData.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_foundation_total_projects', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/foundation-total-members
+   * Get total members count for a foundation from Snowflake
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationTotalMembers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_foundation_total_members');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_total_members',
+        });
+      }
+
+      const response = await this.projectService.getFoundationTotalMembers(foundationSlug);
+
+      Logger.success(req, 'get_foundation_total_members', startTime, {
+        foundation_slug: foundationSlug,
+        total_members: response.totalMembers,
+        monthly_data_points: response.monthlyData.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_foundation_total_members', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/foundation-software-value
+   * Get foundation software value and top projects from Snowflake
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationSoftwareValue(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_foundation_software_value');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_software_value',
+        });
+      }
+
+      const response = await this.projectService.getFoundationSoftwareValue(foundationSlug);
+
+      Logger.success(req, 'get_foundation_software_value', startTime, {
+        foundation_slug: foundationSlug,
+        total_value_millions: response.totalValue,
+        top_projects_count: response.topProjects.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_foundation_software_value', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/foundation-maintainers
+   * Get foundation maintainers data from Snowflake
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationMaintainers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_foundation_maintainers');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_maintainers',
+        });
+      }
+
+      const response = await this.projectService.getFoundationMaintainers(foundationSlug);
+
+      Logger.success(req, 'get_foundation_maintainers', startTime, {
+        foundation_slug: foundationSlug,
+        avg_maintainers: response.avgMaintainers,
+        trend_data_points: response.trendData.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_foundation_maintainers', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/foundation-health-score-distribution
+   * Get foundation health score distribution from Snowflake
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationHealthScoreDistribution(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_foundation_health_score_distribution');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_health_score_distribution',
+        });
+      }
+
+      const response = await this.projectService.getFoundationHealthScoreDistribution(foundationSlug);
+
+      const totalProjects = Object.values(response).reduce((sum, count) => sum + count, 0);
+
+      Logger.success(req, 'get_foundation_health_score_distribution', startTime, {
+        foundation_slug: foundationSlug,
+        total_projects: totalProjects,
+        excellent: response.excellent,
+        healthy: response.healthy,
+        stable: response.stable,
+        unsteady: response.unsteady,
+        critical: response.critical,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_foundation_health_score_distribution', startTime, error);
+      next(error);
+    }
+  }
 }
