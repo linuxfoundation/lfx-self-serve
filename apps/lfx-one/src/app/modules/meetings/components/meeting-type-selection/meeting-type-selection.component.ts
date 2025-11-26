@@ -135,7 +135,7 @@ export class MeetingTypeSelectionComponent {
 
   // Get child projects for the current project
   private initializeChildProjects() {
-    const currentProject = this.projectContextService.selectedProject();
+    const currentProject = this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation();
 
     if (!currentProject) {
       return toSignal(of([]), { initialValue: [] });

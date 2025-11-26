@@ -11,6 +11,7 @@ import { SelectButtonComponent } from '@components/select-button/select-button.c
 import { MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { Meeting, PastMeeting, ProjectContext } from '@lfx-one/shared/interfaces';
 import { getCurrentOrNextOccurrence, hasMeetingEnded } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -29,6 +30,7 @@ export class MeetingsDashboardComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
+  private readonly featureFlagService = inject(FeatureFlagService);
 
   public meetingsLoading: WritableSignal<boolean>;
   public pastMeetingsLoading: WritableSignal<boolean>;
@@ -48,7 +50,9 @@ export class MeetingsDashboardComponent {
   public filterForm: FormGroup;
   public project: Signal<ProjectContext | null>;
   public isMaintainer: Signal<boolean>;
-  public isNonFoundationProjectSelected: Signal<boolean>;
+  public isFoundationContext: Signal<boolean>;
+  public foundationCreateMeetingFlag: Signal<boolean>;
+  public canCreateMeeting: Signal<boolean>;
 
   public constructor() {
     // Initialize project context first (needed for reactive data loading)
@@ -56,7 +60,13 @@ export class MeetingsDashboardComponent {
 
     // Initialize permission checks
     this.isMaintainer = computed(() => this.personaService.currentPersona() === 'maintainer');
-    this.isNonFoundationProjectSelected = computed(() => this.projectContextService.selectedProject() !== null);
+    this.isFoundationContext = computed(() => !this.projectContextService.selectedProject() && !!this.projectContextService.selectedFoundation());
+    this.foundationCreateMeetingFlag = this.featureFlagService.getBooleanFlag('foundation-create-meeting', false);
+    this.canCreateMeeting = computed(() => {
+      const isMaintainerAndNotFoundation = this.isMaintainer() && !this.isFoundationContext();
+      const hasFeatureFlag = this.foundationCreateMeetingFlag();
+      return isMaintainerAndNotFoundation || hasFeatureFlag;
+    });
 
     // Initialize state
     this.meetingsLoading = signal<boolean>(true);

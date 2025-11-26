@@ -47,16 +47,16 @@ export class ProjectContextService {
    * Clear the selected sub-project
    */
   public clearProject(): void {
-    this.selectedProject.set(null);
     this.cookieService.delete(this.projectStorageKey, '/');
+    this.selectedProject.set(null);
   }
 
   /**
    * Clear the selected foundation
    */
   public clearFoundation(): void {
-    this.selectedFoundation.set(null);
     this.cookieService.delete(this.foundationStorageKey, '/');
+    this.selectedFoundation.set(null);
   }
 
   /**

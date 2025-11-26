@@ -17,7 +17,7 @@
           control="name"
           id="committeeName"
           [placeholder]="'Enter ' + committeeLabel.toLowerCase() + ' name'"
-          styleClass="w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0094FF] focus:border-transparent"></lfx-input-text>
+          styleClass="w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"></lfx-input-text>
         @if (form().get('name')?.errors?.['required'] && form().get('name')?.touched) {
           <p class="text-sm text-red-600">{{ committeeLabel }} name is required</p>
         }
@@ -66,7 +66,7 @@
           id="description"
           [placeholder]="'Enter ' + committeeLabel.toLowerCase() + ' description'"
           [rows]="3"
-          styleClass="w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0094FF] focus:border-transparent resize-none"></lfx-textarea>
+          styleClass="w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent resize-none"></lfx-textarea>
       </div>
 
       <!-- Committee Website -->
@@ -79,7 +79,7 @@
           id="website"
           type="url"
           placeholder="https://example.com"
-          styleClass="w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0094FF] focus:border-transparent"></lfx-input-text>
+          styleClass="w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"></lfx-input-text>
         @if (form().get('website')?.errors?.['pattern'] && form().get('website')?.touched) {
           <p class="text-sm text-red-600">Please enter a valid URL</p>
         }
@@ -151,7 +151,7 @@
               control="display_name"
               id="displayName"
               placeholder="Enter public display name"
-              styleClass="w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0094FF] focus:border-transparent"></lfx-input-text>
+              styleClass="w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"></lfx-input-text>
           </div>
         }
 
@@ -173,7 +173,7 @@
               control="sso_group_name"
               id="ssoGroupName"
               placeholder="Enter SSO group name"
-              styleClass="w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-[#0094FF] focus:border-transparent"></lfx-input-text>
+              styleClass="w-full border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"></lfx-input-text>
           </div>
         }
       </div>

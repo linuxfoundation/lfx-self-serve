@@ -3,6 +3,8 @@
 
 import type { ChartOptions } from 'chart.js';
 import type { ProgressItemWithChart } from '../interfaces';
+import { hexToRgba } from '../utils';
+import { lfxColors } from './colors.constants';
 
 /**
  * Helper function to generate random data for spark line charts
@@ -13,7 +15,7 @@ const generateMockData = (length: number, min: number, max: number): number[] =>
 
 /**
  * Base chart options for progress metrics - no tooltips
- * Used for simple sparkline visualizations
+ * Used for simple sparkline visualizations where tooltips are not needed
  */
 export const PROGRESS_BASE_CHART_OPTIONS: ChartOptions<'line' | 'bar'> = {
   responsive: true,
@@ -25,175 +27,6 @@ export const PROGRESS_BASE_CHART_OPTIONS: ChartOptions<'line' | 'bar'> = {
   scales: {
     x: { display: false },
     y: { display: false },
-  },
-};
-
-/**
- * Chart options for line charts with simple tooltips
- * Used for single-dataset line charts (commits, PRs, etc.)
- */
-export const PROGRESS_LINE_CHART_OPTIONS: ChartOptions<'line'> = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      enabled: true,
-      yAlign: 'bottom',
-      position: 'nearest',
-    },
-  },
-  scales: {
-    x: { display: false },
-    y: { display: false, min: 0, grace: '5%' },
-  },
-};
-
-/**
- * Chart options for bar charts with simple tooltips
- * Used for Active Weeks Streak and similar metrics
- */
-export const PROGRESS_BAR_CHART_OPTIONS: ChartOptions<'bar'> = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      enabled: true,
-      yAlign: 'bottom',
-      position: 'nearest',
-    },
-  },
-  scales: {
-    x: { display: false },
-    y: { display: false, min: 0, max: 1, grace: '5%' },
-  },
-};
-
-/**
- * Chart options for dual-line charts with enhanced tooltips
- * Used for Issues Trend (opened vs closed) with styled tooltips
- */
-export const PROGRESS_DUAL_LINE_CHART_OPTIONS: ChartOptions<'line'> = {
-  responsive: true,
-  maintainAspectRatio: false,
-  interaction: {
-    mode: 'index',
-    intersect: false,
-  },
-  hover: {
-    mode: 'index',
-    intersect: false,
-  },
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      enabled: true,
-      mode: 'index',
-      intersect: false,
-      yAlign: 'bottom',
-      position: 'nearest',
-      backgroundColor: 'rgba(255, 255, 255, 0.98)',
-      titleColor: '#1f2937',
-      bodyColor: '#4b5563',
-      footerColor: '#6b7280',
-      borderColor: 'rgba(209, 213, 219, 0.8)',
-      borderWidth: 1,
-      padding: 12,
-      displayColors: true,
-      bodySpacing: 6,
-      footerSpacing: 4,
-      footerMarginTop: 8,
-      cornerRadius: 8,
-      caretSize: 6,
-      caretPadding: 8,
-      usePointStyle: true,
-      boxWidth: 8,
-      boxHeight: 8,
-      titleFont: {
-        size: 13,
-        weight: 'bold',
-      },
-      bodyFont: {
-        size: 12,
-      },
-      footerFont: {
-        size: 11,
-        weight: 'normal',
-      },
-      boxPadding: 6,
-      callbacks: {
-        labelPointStyle: () => ({
-          pointStyle: 'circle',
-          rotation: 0,
-        }),
-      },
-    },
-  },
-  scales: {
-    x: { display: false },
-    y: { display: false, min: 0, grace: '5%' },
-  },
-};
-
-/**
- * Chart options for bar charts with footer tooltips
- * Used for PR Velocity with additional footer information
- */
-export const PROGRESS_BAR_CHART_WITH_FOOTER_OPTIONS: ChartOptions<'bar'> = {
-  responsive: true,
-  maintainAspectRatio: false,
-  layout: {
-    padding: {
-      top: 5,
-      bottom: 5,
-    },
-  },
-  interaction: {
-    mode: 'index',
-    intersect: false,
-  },
-  hover: {
-    mode: 'index',
-    intersect: false,
-  },
-  plugins: {
-    legend: { display: false },
-    tooltip: {
-      enabled: true,
-      mode: 'index',
-      intersect: false,
-      position: 'nearest',
-      backgroundColor: 'rgba(255, 255, 255, 0.98)',
-      titleColor: '#1f2937',
-      bodyColor: '#4b5563',
-      footerColor: '#6b7280',
-      borderColor: 'rgba(209, 213, 219, 0.8)',
-      borderWidth: 1,
-      padding: 12,
-      displayColors: false,
-      bodySpacing: 6,
-      footerSpacing: 4,
-      footerMarginTop: 8,
-      cornerRadius: 8,
-      caretSize: 6,
-      caretPadding: 8,
-      titleFont: {
-        size: 13,
-        weight: 'bold',
-      },
-      bodyFont: {
-        size: 12,
-      },
-      footerFont: {
-        size: 11,
-        weight: 'normal',
-      },
-    },
-  },
-  scales: {
-    x: { display: false },
-    y: { display: false, min: 0, grace: '5%' },
   },
 };
 
@@ -212,8 +45,8 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: Array.from({ length: 30 }, () => Math.floor(Math.random() * 6)),
-          borderColor: '#0094FF',
-          backgroundColor: 'rgba(0, 148, 255, 0.1)',
+          borderColor: lfxColors.brand[500],
+          backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -242,8 +75,8 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: Array.from({ length: 30 }, () => Math.floor(Math.random() * 3)),
-          borderColor: '#0094FF',
-          backgroundColor: 'rgba(0, 148, 255, 0.1)',
+          borderColor: lfxColors.brand[500],
+          backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -272,8 +105,8 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: Array.from({ length: 30 }, () => Math.floor(Math.random() * 5)),
-          borderColor: '#0094FF',
-          backgroundColor: 'rgba(0, 148, 255, 0.1)',
+          borderColor: lfxColors.brand[500],
+          backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -307,8 +140,8 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: ProgressItemWithChart[] = [
             }
             return Math.random() > 0.5 ? 1 : 0;
           }),
-          borderColor: '#10b981',
-          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          borderColor: lfxColors.positive[500],
+          backgroundColor: hexToRgba(lfxColors.positive[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -337,8 +170,8 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: Array.from({ length: 30 }, () => Math.floor(Math.random() * 3)),
-          borderColor: '#93c5fd',
-          backgroundColor: 'rgba(147, 197, 253, 0.1)',
+          borderColor: lfxColors.brand[300],
+          backgroundColor: hexToRgba(lfxColors.brand[300], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -378,8 +211,8 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
             const base = 28 - i * 0.75;
             return Math.max(15, Math.floor(base + (Math.random() * 4 - 2)));
           }),
-          borderColor: '#ef4444',
-          backgroundColor: 'rgba(239, 68, 68, 0.1)',
+          borderColor: lfxColors.negative[500],
+          backgroundColor: hexToRgba(lfxColors.negative[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -410,8 +243,8 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: generateMockData(30, 1, 5),
-          borderColor: '#0094FF',
-          backgroundColor: 'rgba(0, 148, 255, 0.1)',
+          borderColor: lfxColors.brand[500],
+          backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -443,27 +276,27 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
         {
           label: 'Opened Issues',
           data: generateMockData(30, 5, 15),
-          borderColor: '#0094FF',
-          backgroundColor: 'rgba(0, 148, 255, 0.1)',
+          borderColor: lfxColors.brand[500],
+          backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
           fill: false,
           tension: 0.4,
           borderWidth: 2,
           pointRadius: 0,
-          pointHoverBackgroundColor: '#0094FF',
-          pointHoverBorderColor: '#fff',
+          pointHoverBackgroundColor: lfxColors.brand[500],
+          pointHoverBorderColor: lfxColors.white,
           pointHoverBorderWidth: 2,
         },
         {
           label: 'Closed Issues',
           data: generateMockData(30, 8, 18),
-          borderColor: '#10b981',
-          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          borderColor: lfxColors.positive[500],
+          backgroundColor: hexToRgba(lfxColors.positive[500], 0.1),
           fill: false,
           tension: 0.4,
           borderWidth: 2,
           pointRadius: 0,
-          pointHoverBackgroundColor: '#10b981',
-          pointHoverBorderColor: '#fff',
+          pointHoverBackgroundColor: lfxColors.positive[500],
+          pointHoverBorderColor: lfxColors.white,
           pointHoverBorderWidth: 2,
         },
       ],
@@ -482,9 +315,9 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
           mode: 'index',
           intersect: false,
           backgroundColor: 'rgba(255, 255, 255, 0.98)',
-          titleColor: '#1f2937',
-          bodyColor: '#4b5563',
-          borderColor: 'rgba(209, 213, 219, 0.8)',
+          titleColor: lfxColors.neutral[900],
+          bodyColor: lfxColors.neutral[600],
+          borderColor: `${lfxColors.neutral[300]}CC`,
           borderWidth: 1,
           padding: 12,
           displayColors: true,
@@ -532,8 +365,8 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: generateMockData(30, 4, 8),
-          borderColor: '#8b5cf6',
-          backgroundColor: 'rgba(139, 92, 246, 0.1)',
+          borderColor: lfxColors.violet[500],
+          backgroundColor: hexToRgba(lfxColors.violet[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -564,7 +397,7 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: generateMockData(4, 18, 30),
-          backgroundColor: 'rgba(0, 148, 255, 0.8)',
+          backgroundColor: hexToRgba(lfxColors.brand[500], 0.8),
           borderColor: 'transparent',
           borderWidth: 0,
           borderRadius: 2,
@@ -594,8 +427,8 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: generateMockData(30, 80, 90),
-          borderColor: '#10b981',
-          backgroundColor: 'rgba(16, 185, 129, 0.1)',
+          borderColor: lfxColors.positive[500],
+          backgroundColor: hexToRgba(lfxColors.positive[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,

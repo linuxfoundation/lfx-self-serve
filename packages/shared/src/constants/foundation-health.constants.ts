@@ -9,6 +9,7 @@ import {
   ProjectHealthDistribution,
   TopProjectByValue,
 } from '../interfaces';
+import { lfxColors } from './colors.constants';
 
 /**
  * Generate smooth trend data for sparkline charts
@@ -63,42 +64,6 @@ export const FOUNDATION_HEALTH_DATA: Foundation = {
     riskLevel: 'low',
   },
   healthScore: 'excellent',
-};
-
-/**
- * Chart.js configuration for sparkline charts (line charts showing trends)
- * Used for displaying small trend visualizations in foundation health metrics
- */
-export const FOUNDATION_SPARKLINE_CHART_OPTIONS = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: { legend: { display: false }, tooltip: { enabled: false } },
-  scales: {
-    x: { display: false },
-    y: { display: false },
-  },
-};
-
-/**
- * Chart.js configuration for bar charts
- * Used for displaying bar chart visualizations in foundation health metrics
- */
-export const FOUNDATION_BAR_CHART_OPTIONS = {
-  responsive: true,
-  maintainAspectRatio: false,
-  plugins: { legend: { display: false }, tooltip: { enabled: false } },
-  scales: {
-    x: { display: false },
-    y: { display: false },
-  },
-  datasets: {
-    bar: {
-      barPercentage: 0.9,
-      categoryPercentage: 0.95,
-      borderRadius: 4,
-      borderSkipped: false,
-    },
-  },
 };
 
 /**
@@ -182,7 +147,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: PrimaryFoundationHealthMetric[] 
     category: 'projects',
     testId: 'foundation-health-card-total-projects',
     customContentType: 'sparkline',
-    sparklineColor: '#0094FF',
+    sparklineColor: lfxColors.brand[500],
   },
   {
     title: 'Total Members',
@@ -190,7 +155,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: PrimaryFoundationHealthMetric[] 
     category: 'projects',
     testId: 'foundation-health-card-total-members',
     customContentType: 'sparkline',
-    sparklineColor: '#0094FF',
+    sparklineColor: lfxColors.brand[500],
   },
   {
     title: 'Software Value',
@@ -212,7 +177,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: PrimaryFoundationHealthMetric[] 
     category: 'contributors',
     testId: 'foundation-health-card-active-contributors',
     customContentType: 'sparkline',
-    sparklineColor: '#64748B',
+    sparklineColor: lfxColors.neutral[500],
   },
   {
     title: 'Maintainers',
@@ -220,7 +185,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: PrimaryFoundationHealthMetric[] 
     category: 'contributors',
     testId: 'foundation-health-card-maintainers',
     customContentType: 'sparkline',
-    sparklineColor: '#0094FF',
+    sparklineColor: lfxColors.brand[500],
   },
   {
     title: 'Events',
@@ -228,7 +193,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: PrimaryFoundationHealthMetric[] 
     category: 'events',
     testId: 'foundation-health-card-events',
     customContentType: 'bar-chart',
-    chartColor: '#64748B',
+    chartColor: lfxColors.neutral[500],
   },
   {
     title: 'Project Health Scores',

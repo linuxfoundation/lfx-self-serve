@@ -9,8 +9,9 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import {
   AGGREGATE_FOUNDATION_METRICS,
-  FOUNDATION_BAR_CHART_OPTIONS,
-  FOUNDATION_SPARKLINE_CHART_OPTIONS,
+  BASE_BAR_CHART_OPTIONS,
+  BASE_LINE_CHART_OPTIONS,
+  lfxColors,
   PRIMARY_FOUNDATION_HEALTH_METRICS,
 } from '@lfx-one/shared/constants';
 import { FoundationMetricCard, MetricCategory, PrimaryFoundationHealthMetric, TopProjectDisplay } from '@lfx-one/shared/interfaces';
@@ -60,9 +61,9 @@ export class FoundationHealthComponent {
     { id: 'events', label: 'Event' },
   ];
 
-  public readonly sparklineOptions = FOUNDATION_SPARKLINE_CHART_OPTIONS;
+  public readonly sparklineOptions = BASE_LINE_CHART_OPTIONS;
 
-  public readonly barChartOptions = FOUNDATION_BAR_CHART_OPTIONS;
+  public readonly barChartOptions = BASE_BAR_CHART_OPTIONS;
 
   public readonly metricCards = computed<FoundationMetricCard[]>(() => {
     const filter = this.selectedFilter();
@@ -109,11 +110,11 @@ export class FoundationHealthComponent {
     const distribution = this.healthScoresData();
 
     const data = [
-      { category: 'Critical', count: distribution.critical, color: '#EF4444' },
-      { category: 'Unsteady', count: distribution.unsteady, color: '#FB923C' },
-      { category: 'Stable', count: distribution.stable, color: '#F59E0B' },
-      { category: 'Healthy', count: distribution.healthy, color: '#0094FF' },
-      { category: 'Excellent', count: distribution.excellent, color: '#10bc8a' },
+      { category: 'Critical', count: distribution.critical, color: lfxColors.negative[500] },
+      { category: 'Unsteady', count: distribution.unsteady, color: lfxColors.warning[400] },
+      { category: 'Stable', count: distribution.stable, color: lfxColors.warning[500] },
+      { category: 'Healthy', count: distribution.healthy, color: lfxColors.brand[500] },
+      { category: 'Excellent', count: distribution.excellent, color: lfxColors.positive[500] },
     ];
 
     const maxCount = Math.max(...data.map((d) => d.count));
@@ -204,8 +205,8 @@ export class FoundationHealthComponent {
         datasets: [
           {
             data: data.monthlyData,
-            borderColor: metric.sparklineColor || '#0094FF',
-            backgroundColor: hexToRgba(metric.sparklineColor || '#0094FF', 0.1),
+            borderColor: metric.sparklineColor || lfxColors.brand[500],
+            backgroundColor: hexToRgba(metric.sparklineColor || lfxColors.brand[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -215,16 +216,10 @@ export class FoundationHealthComponent {
       },
       chartOptions: {
         ...this.sparklineOptions,
-        interaction: {
-          mode: 'index',
-          intersect: false,
-        },
         plugins: {
           ...this.sparklineOptions.plugins,
           tooltip: {
-            enabled: true,
-            mode: 'index',
-            intersect: false,
+            ...(this.sparklineOptions.plugins?.tooltip ?? {}),
             callbacks: {
               title: (context: TooltipItem<'line'>[]) => context[0].label,
               label: (context: TooltipItem<'line'>) => {
@@ -254,8 +249,8 @@ export class FoundationHealthComponent {
         datasets: [
           {
             data: data.monthlyData,
-            borderColor: metric.sparklineColor || '#0094FF',
-            backgroundColor: hexToRgba(metric.sparklineColor || '#0094FF', 0.1),
+            borderColor: metric.sparklineColor || lfxColors.brand[500],
+            backgroundColor: hexToRgba(metric.sparklineColor || lfxColors.brand[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -265,16 +260,10 @@ export class FoundationHealthComponent {
       },
       chartOptions: {
         ...this.sparklineOptions,
-        interaction: {
-          mode: 'index',
-          intersect: false,
-        },
         plugins: {
           ...this.sparklineOptions.plugins,
           tooltip: {
-            enabled: true,
-            mode: 'index',
-            intersect: false,
+            ...(this.sparklineOptions.plugins?.tooltip ?? {}),
             callbacks: {
               title: (context: TooltipItem<'line'>[]) => context[0].label,
               label: (context: TooltipItem<'line'>) => {
@@ -331,7 +320,7 @@ export class FoundationHealthComponent {
       category: metric.category as MetricCategory,
       testId: metric.testId,
       customContentType: metric.customContentType,
-      chartData: this.createSparklineData(metrics.activeContributorsData, metric.sparklineColor || '#0094FF'),
+      chartData: this.createSparklineData(metrics.activeContributorsData, metric.sparklineColor || lfxColors.brand[500]),
     };
   }
 
@@ -351,8 +340,8 @@ export class FoundationHealthComponent {
         datasets: [
           {
             data: data.trendData,
-            borderColor: metric.sparklineColor || '#0094FF',
-            backgroundColor: hexToRgba(metric.sparklineColor || '#0094FF', 0.1),
+            borderColor: metric.sparklineColor || lfxColors.brand[500],
+            backgroundColor: hexToRgba(metric.sparklineColor || lfxColors.brand[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -362,16 +351,10 @@ export class FoundationHealthComponent {
       },
       chartOptions: {
         ...this.sparklineOptions,
-        interaction: {
-          mode: 'index',
-          intersect: false,
-        },
         plugins: {
           ...this.sparklineOptions.plugins,
           tooltip: {
-            enabled: true,
-            mode: 'index',
-            intersect: false,
+            ...(this.sparklineOptions.plugins?.tooltip ?? {}),
             callbacks: {
               title: (context: TooltipItem<'line'>[]) => context[0].label,
               label: (context: TooltipItem<'line'>) => {
@@ -397,7 +380,7 @@ export class FoundationHealthComponent {
       category: metric.category as MetricCategory,
       testId: metric.testId,
       customContentType: metric.customContentType,
-      chartData: this.createBarChartData(metrics.eventsMonthlyData, metric.chartColor || '#0094FF'),
+      chartData: this.createBarChartData(metrics.eventsMonthlyData, metric.chartColor || lfxColors.brand[500]),
     };
   }
 

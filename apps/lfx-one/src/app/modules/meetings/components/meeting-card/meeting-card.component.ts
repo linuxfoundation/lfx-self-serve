@@ -194,7 +194,8 @@ export class MeetingCardComponent implements OnInit {
   }
 
   public openCommitteeModal(): void {
-    const header = this.meeting().committees && this.meeting().committees!.length > 0 ? 'Manage Committees' : 'Connect Committees';
+    const header =
+      this.meeting().committees && this.meeting().committees!.length > 0 ? 'Manage ' + this.committeeLabel.singular : 'Connect ' + this.committeeLabel.singular;
     this.dialogService
       .open(MeetingCommitteeModalComponent, {
         header,

@@ -101,19 +101,19 @@ export class DataCopilotComponent {
     const params = new URLSearchParams();
 
     if (this.includeOrganizationId()) {
-      params.append('organization_id', this.organizationId());
+      params.append('organization_id', encodeURIComponent(this.organizationId()));
     }
 
     if (this.includeOrganizationName()) {
-      params.append('organization_name', this.organizationName());
+      params.append('organization_name', encodeURIComponent(this.organizationName()));
     }
 
     if (this.includeProjectSlug()) {
-      params.append('project_slug', this.projectSlug());
+      params.append('project_slug', encodeURIComponent(this.projectSlug()));
     }
 
     if (this.includeProjectName()) {
-      params.append('project_name', this.projectName());
+      params.append('project_name', encodeURIComponent(this.projectName()));
     }
 
     iframe.src = `https://lfx-data-copilot.onrender.com/embed?${params.toString()}`;

@@ -50,6 +50,8 @@ export class MeetingCommitteeModalComponent {
   public membersLoading: WritableSignal<boolean> = signal(false);
   public form: FormGroup;
   public filteredCommitteeMembers: Signal<CommitteeMemberDisplay[]> = signal([]);
+  public project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+  public projectUid = computed(() => this.project()?.uid || '');
 
   // Track loaded committees to avoid duplicate API calls
   private loadedCommitteeIds: Set<string> = new Set();
@@ -61,7 +63,7 @@ export class MeetingCommitteeModalComponent {
 
   // Load committees using toSignal
   public committees: Signal<Committee[]> = toSignal(
-    this.committeeService.getCommitteesByProject(this.projectContextService.getProjectUid() || '').pipe(
+    this.committeeService.getCommitteesByProject(this.projectUid()).pipe(
       tap(() => this.committeesLoading.set(false)),
       catchError((error) => {
         console.error(`Failed to load ${COMMITTEE_LABEL.plural.toLowerCase()}:`, error);

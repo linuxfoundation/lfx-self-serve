@@ -211,7 +211,25 @@ export class ApiClientService {
   }
 
   private getFullUrl(url: string, query?: Record<string, any>): string {
-    const queryString = query ? new URLSearchParams(query).toString() : '';
+    if (!query) {
+      return url;
+    }
+
+    const params = new URLSearchParams();
+
+    for (const [key, value] of Object.entries(query)) {
+      if (Array.isArray(value)) {
+        // Handle arrays by appending each value with the same key
+        // This creates: tags_all=val1&tags_all=val2
+        for (const item of value) {
+          params.append(key, String(item));
+        }
+      } else if (value !== undefined && value !== null) {
+        params.append(key, String(value));
+      }
+    }
+
+    const queryString = params.toString();
     return queryString ? `${url}?${queryString}` : url;
   }
 }

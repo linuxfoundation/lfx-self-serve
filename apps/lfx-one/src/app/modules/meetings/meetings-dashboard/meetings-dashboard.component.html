@@ -6,7 +6,7 @@
     <div class="mb-8">
       <div class="flex justify-between items-center w-full gap-4">
         <h1>Meetings</h1>
-        @if (isMaintainer() && isNonFoundationProjectSelected()) {
+        @if (canCreateMeeting()) {
           <lfx-button
             icon="fa-light fa-plus"
             severity="primary"

@@ -7,14 +7,15 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ChartComponent } from '@components/chart/chart.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import {
+  BAR_CHART_WITH_FOOTER_OPTIONS,
+  BASE_BAR_CHART_OPTIONS,
+  BASE_LINE_CHART_OPTIONS,
   CORE_DEVELOPER_PROGRESS_METRICS,
+  DUAL_LINE_CHART_OPTIONS,
+  lfxColors,
   MAINTAINER_PROGRESS_METRICS,
-  PROGRESS_BAR_CHART_OPTIONS,
-  PROGRESS_BAR_CHART_WITH_FOOTER_OPTIONS,
-  PROGRESS_DUAL_LINE_CHART_OPTIONS,
-  PROGRESS_LINE_CHART_OPTIONS,
 } from '@lfx-one/shared/constants';
-import { parseLocalDateString } from '@lfx-one/shared/utils';
+import { hexToRgba, parseLocalDateString } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -130,8 +131,8 @@ export class RecentProgressComponent {
         datasets: [
           {
             data: chartData.map((row) => row.IS_ACTIVE),
-            borderColor: '#10b981',
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            borderColor: lfxColors.positive[500],
+            backgroundColor: hexToRgba(lfxColors.positive[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -140,11 +141,15 @@ export class RecentProgressComponent {
         ],
       },
       chartOptions: {
-        ...PROGRESS_BAR_CHART_OPTIONS,
+        ...BASE_BAR_CHART_OPTIONS,
+        scales: {
+          x: { display: false },
+          y: { display: false, min: 0, max: 1, grace: '5%' },
+        },
         plugins: {
-          ...PROGRESS_BAR_CHART_OPTIONS.plugins,
+          ...BASE_BAR_CHART_OPTIONS.plugins,
           tooltip: {
-            ...(PROGRESS_BAR_CHART_OPTIONS.plugins?.tooltip ?? {}),
+            ...(BASE_BAR_CHART_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
               title: (context: TooltipItem<'bar'>[]) => context[0].label,
               label: (context: TooltipItem<'bar'>) => {
@@ -172,8 +177,8 @@ export class RecentProgressComponent {
         datasets: [
           {
             data: chartData.map((row) => row.DAILY_COUNT),
-            borderColor: '#0094FF',
-            backgroundColor: 'rgba(0, 148, 255, 0.1)',
+            borderColor: lfxColors.brand[500],
+            backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
             fill: true,
             tension: 0,
             borderWidth: 2,
@@ -182,11 +187,11 @@ export class RecentProgressComponent {
         ],
       },
       chartOptions: {
-        ...PROGRESS_LINE_CHART_OPTIONS,
+        ...BASE_LINE_CHART_OPTIONS,
         plugins: {
-          ...PROGRESS_LINE_CHART_OPTIONS.plugins,
+          ...BASE_LINE_CHART_OPTIONS.plugins,
           tooltip: {
-            ...(PROGRESS_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
+            ...(BASE_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
               title: (context: TooltipItem<'line'>[]) => {
                 const dateStr = context[0].label;
@@ -218,8 +223,8 @@ export class RecentProgressComponent {
         datasets: [
           {
             data: chartData.map((row) => row.DAILY_COUNT),
-            borderColor: '#0094FF',
-            backgroundColor: 'rgba(0, 148, 255, 0.1)',
+            borderColor: lfxColors.brand[500],
+            backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -228,11 +233,11 @@ export class RecentProgressComponent {
         ],
       },
       chartOptions: {
-        ...PROGRESS_LINE_CHART_OPTIONS,
+        ...BASE_LINE_CHART_OPTIONS,
         plugins: {
-          ...PROGRESS_LINE_CHART_OPTIONS.plugins,
+          ...BASE_LINE_CHART_OPTIONS.plugins,
           tooltip: {
-            ...(PROGRESS_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
+            ...(BASE_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
               title: (context: TooltipItem<'line'>[]) => {
                 const dateStr = context[0].label;
@@ -284,8 +289,8 @@ export class RecentProgressComponent {
           {
             label: 'Opened Issues',
             data: chartData.map((row) => row.OPENED_ISSUES_COUNT),
-            borderColor: '#0094FF',
-            backgroundColor: 'rgba(0, 148, 255, 0.1)',
+            borderColor: lfxColors.brand[500],
+            backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
             fill: false,
             tension: 0.4,
             borderWidth: 2,
@@ -295,8 +300,8 @@ export class RecentProgressComponent {
           {
             label: 'Closed Issues',
             data: chartData.map((row) => row.CLOSED_ISSUES_COUNT),
-            borderColor: '#10b981',
-            backgroundColor: 'rgba(16, 185, 129, 0.1)',
+            borderColor: lfxColors.positive[500],
+            backgroundColor: hexToRgba(lfxColors.positive[500], 0.1),
             fill: false,
             tension: 0.4,
             borderWidth: 2,
@@ -306,11 +311,11 @@ export class RecentProgressComponent {
         ],
       },
       chartOptions: {
-        ...PROGRESS_DUAL_LINE_CHART_OPTIONS,
+        ...DUAL_LINE_CHART_OPTIONS,
         plugins: {
-          ...PROGRESS_DUAL_LINE_CHART_OPTIONS.plugins,
+          ...DUAL_LINE_CHART_OPTIONS.plugins,
           tooltip: {
-            ...(PROGRESS_DUAL_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
+            ...(DUAL_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
               title: (context: TooltipItem<'line'>[]) => {
                 const dateStr = context[0].label;
@@ -364,8 +369,8 @@ export class RecentProgressComponent {
           {
             label: 'Avg Days to Merge',
             data: chartData.map((row) => row.AVG_MERGED_IN_DAYS),
-            borderColor: '#0094FF',
-            backgroundColor: 'rgba(0, 148, 255, 0.5)',
+            borderColor: lfxColors.brand[500],
+            backgroundColor: hexToRgba(lfxColors.brand[500], 0.5),
             borderWidth: 0,
             borderRadius: 2,
             barPercentage: 0.95,
@@ -374,11 +379,11 @@ export class RecentProgressComponent {
         ],
       },
       chartOptions: {
-        ...PROGRESS_BAR_CHART_WITH_FOOTER_OPTIONS,
+        ...BAR_CHART_WITH_FOOTER_OPTIONS,
         plugins: {
-          ...PROGRESS_BAR_CHART_WITH_FOOTER_OPTIONS.plugins,
+          ...BAR_CHART_WITH_FOOTER_OPTIONS.plugins,
           tooltip: {
-            ...(PROGRESS_BAR_CHART_WITH_FOOTER_OPTIONS.plugins?.tooltip ?? {}),
+            ...(BAR_CHART_WITH_FOOTER_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
               title: (context: TooltipItem<'bar'>[]) => {
                 try {
@@ -439,8 +444,8 @@ export class RecentProgressComponent {
           {
             label: 'Total Contributors Mentored',
             data: chartData.map((row) => row.MENTORED_CONTRIBUTOR_COUNT),
-            borderColor: '#8b5cf6',
-            backgroundColor: 'rgba(139, 92, 246, 0.1)',
+            borderColor: lfxColors.violet[500],
+            backgroundColor: hexToRgba(lfxColors.violet[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -448,7 +453,7 @@ export class RecentProgressComponent {
           },
         ],
       },
-      chartOptions: PROGRESS_LINE_CHART_OPTIONS,
+      chartOptions: BASE_LINE_CHART_OPTIONS,
     };
   }
 
@@ -486,8 +491,8 @@ export class RecentProgressComponent {
           {
             label: 'Unique Contributors',
             data: chartData.map((row) => row.UNIQUE_CONTRIBUTORS),
-            backgroundColor: 'rgba(0, 148, 255, 0.5)',
-            borderColor: '#0094FF',
+            backgroundColor: hexToRgba(lfxColors.brand[500], 0.5),
+            borderColor: lfxColors.brand[500],
             borderWidth: 0,
             borderRadius: 2,
             barPercentage: 0.95,
@@ -496,11 +501,11 @@ export class RecentProgressComponent {
         ],
       },
       chartOptions: {
-        ...PROGRESS_BAR_CHART_WITH_FOOTER_OPTIONS,
+        ...BAR_CHART_WITH_FOOTER_OPTIONS,
         plugins: {
-          ...PROGRESS_BAR_CHART_WITH_FOOTER_OPTIONS.plugins,
+          ...BAR_CHART_WITH_FOOTER_OPTIONS.plugins,
           tooltip: {
-            ...(PROGRESS_BAR_CHART_WITH_FOOTER_OPTIONS.plugins?.tooltip ?? {}),
+            ...(BAR_CHART_WITH_FOOTER_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
               title: (context: TooltipItem<'bar'>[]) => {
                 try {

@@ -8,7 +8,7 @@ import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-c
 import { ChartComponent } from '@components/chart/chart.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { BAR_CHART_OPTIONS, PRIMARY_INVOLVEMENT_METRICS, SPARKLINE_CHART_OPTIONS } from '@lfx-one/shared/constants';
+import { BASE_BAR_CHART_OPTIONS, BASE_LINE_CHART_OPTIONS, PRIMARY_INVOLVEMENT_METRICS } from '@lfx-one/shared/constants';
 import { OrganizationInvolvementMetricWithChart, PrimaryInvolvementMetric } from '@lfx-one/shared/interfaces';
 import { hexToRgba } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
@@ -43,8 +43,8 @@ export class OrganizationInvolvementComponent {
   public readonly isLoading = computed<boolean>(() => this.contributionsLoading() || this.dashboardLoading() || this.eventsLoading());
   public readonly selectedFilter = signal<string>('all');
   public readonly accountName = computed<string>(() => this.accountContextService.selectedAccount().accountName || 'Organization');
-  public readonly sparklineChartOptions = SPARKLINE_CHART_OPTIONS;
-  public readonly barChartOptions = BAR_CHART_OPTIONS;
+  public readonly sparklineChartOptions = BASE_LINE_CHART_OPTIONS;
+  public readonly barChartOptions = BASE_BAR_CHART_OPTIONS;
   public readonly filterOptions: FilterOption[] = [
     { id: 'all', label: 'All' },
     { id: 'contributions', label: 'Contribution' },
@@ -231,7 +231,7 @@ export class OrganizationInvolvementComponent {
       subtitle: 'Contributors from our organization',
       icon: metric.icon ?? '',
       chartData: {
-        labels: Array.from({ length: metric.sparklineData?.length ?? 0 }, (_, i) => `Point ${i + 1}`),
+        labels: Array.from({ length: metric.sparklineData?.length ?? 0 }, (_, i) => `Month ${i + 1}`),
         datasets: [
           {
             data: metric.sparklineData ?? [],
@@ -254,7 +254,7 @@ export class OrganizationInvolvementComponent {
       subtitle: `Across ${data.projects} projects`,
       icon: metric.icon ?? '',
       chartData: {
-        labels: Array.from({ length: metric.sparklineData?.length ?? 0 }, (_, i) => `Point ${i + 1}`),
+        labels: Array.from({ length: metric.sparklineData?.length ?? 0 }, (_, i) => `Month ${i + 1}`),
         datasets: [
           {
             data: metric.sparklineData ?? [],
@@ -319,7 +319,7 @@ export class OrganizationInvolvementComponent {
       subtitle: 'Employees at foundation events',
       icon: metric.icon ?? '',
       chartData: {
-        labels: Array.from({ length: metric.sparklineData?.length ?? 0 }, (_, i) => `Point ${i + 1}`),
+        labels: Array.from({ length: metric.sparklineData?.length ?? 0 }, (_, i) => `Day ${i + 1}`),
         datasets: [
           {
             data: metric.sparklineData ?? [],
@@ -345,7 +345,7 @@ export class OrganizationInvolvementComponent {
       subtitle: 'Employee speakers at events',
       icon: metric.icon ?? '',
       chartData: {
-        labels: Array.from({ length: metric.sparklineData?.length ?? 0 }, (_, i) => `Point ${i + 1}`),
+        labels: Array.from({ length: metric.sparklineData?.length ?? 0 }, (_, i) => `Day ${i + 1}`),
         datasets: [
           {
             data: metric.sparklineData ?? [],
@@ -371,7 +371,7 @@ export class OrganizationInvolvementComponent {
       subtitle: `${data.certifications} total certifications`,
       icon: metric.icon ?? '',
       chartData: {
-        labels: Array.from({ length: metric.sparklineData?.length ?? 0 }, (_, i) => `Point ${i + 1}`),
+        labels: Array.from({ length: metric.sparklineData?.length ?? 0 }, (_, i) => `Day ${i + 1}`),
         datasets: [
           {
             data: metric.sparklineData ?? [],
@@ -394,7 +394,7 @@ export class OrganizationInvolvementComponent {
       subtitle: 'Employees enrolled in training',
       icon: metric.icon ?? '',
       chartData: {
-        labels: Array.from({ length: metric.sparklineData?.length ?? 0 }, (_, i) => `Point ${i + 1}`),
+        labels: Array.from({ length: metric.sparklineData?.length ?? 0 }, (_, i) => `Day ${i + 1}`),
         datasets: [
           {
             data: metric.sparklineData ?? [],

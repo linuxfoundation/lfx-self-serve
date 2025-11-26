@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
+import { HttpParams } from '@angular/common/http';
 import { Component, computed, inject, input } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
@@ -12,7 +13,7 @@ import { Project, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interf
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { tap } from 'rxjs';
+import { distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-sidebar',
@@ -34,9 +35,19 @@ export class SidebarComponent {
   public readonly showProjectSelector = input<boolean>(false);
   public readonly mobile = input<boolean>(false);
 
-  // Load all projects using toSignal with tap to set default
+  // Load TLF project and its children, merging into a single array
   protected readonly projects = toSignal(
-    this.projectService.getProjects().pipe(
+    // TODO: DEMO - Remove this once we are done with the demo and will use typeahead search
+    this.projectService.getProject('tlf').pipe(
+      distinctUntilChanged(),
+      switchMap((tlfProject: Project | null) => {
+        if (!tlfProject) {
+          return of([]);
+        }
+        return this.projectService
+          .getProjects(new HttpParams().set('tags', `parent_uid:${tlfProject.uid}`))
+          .pipe(map((childProjects: Project[]) => [tlfProject, ...childProjects]));
+      }),
       tap((loadedProjects: Project[]) => {
         const currentFoundation = this.projectContextService.selectedFoundation();
         const currentProject = this.projectContextService.selectedProject();

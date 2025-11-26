@@ -12,7 +12,6 @@ import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AppService } from '@services/app.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
-import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 import { filter } from 'rxjs';
 
@@ -29,10 +28,8 @@ export class MainLayoutComponent {
   private readonly appService = inject(AppService);
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly personaService = inject(PersonaService);
-  private readonly projectContextService = inject(ProjectContextService);
 
   // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
-  protected readonly selectedProject = this.projectContextService.selectedProject;
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
 
   // Feature flags

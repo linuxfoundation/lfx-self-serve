@@ -8,7 +8,7 @@
       (click)="handleFilterChange(option.id)"
       [class]="
         selectedFilter() === option.id
-          ? 'px-3 py-1 rounded-full text-sm transition-colors bg-[#0094FF] text-white'
+          ? 'px-3 py-1 rounded-full text-sm transition-colors bg-blue-500 text-white'
           : 'px-3 py-1 rounded-full text-sm transition-colors bg-slate-100 text-slate-700 hover:bg-slate-200'
       "
       [attr.data-testid]="'filter-pill-' + option.id">

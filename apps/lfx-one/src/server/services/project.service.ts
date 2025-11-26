@@ -69,12 +69,29 @@ export class ProjectService {
       type: 'project',
     };
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
+    const resources: Project[] = [];
 
-    const projects = resources.map((resource) => resource.data);
+    let response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
+
+    resources.push(...response.resources.map((resource) => resource.data));
+    // If there is a page_token, we need to paginate to get the rest fo the projects and merge
+    while (response.page_token) {
+      const pagedResponse: QueryServiceResponse<Project> = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        {
+          ...params,
+          page_token: response.page_token,
+        }
+      );
+      resources.push(...pagedResponse.resources.map((resource) => resource.data));
+      response = pagedResponse;
+    }
 
     // Add writer access field to all projects
-    return await this.accessCheckService.addAccessToResources(req, projects, 'project');
+    return await this.accessCheckService.addAccessToResources(req, resources, 'project');
   }
 
   /**

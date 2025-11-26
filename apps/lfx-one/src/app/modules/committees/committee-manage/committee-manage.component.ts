@@ -36,6 +36,7 @@ export class CommitteeManageComponent {
 
   // Initialize committee data
   public committee = this.initializeCommittee();
+  public project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
 
   // Form state
   public form: FormGroup = this.createCommitteeFormGroup();
@@ -87,7 +88,7 @@ export class CommitteeManageComponent {
       },
       display_name: this.form.value.display_name || this.form.value.name,
       website: this.form.value.website || null,
-      project_uid: this.projectContextService.getProjectUid() || this.projectContextService.getFoundationId() || null,
+      project_uid: this.project()?.uid || null,
     };
 
     const committeeData = this.cleanFormData(formValue);

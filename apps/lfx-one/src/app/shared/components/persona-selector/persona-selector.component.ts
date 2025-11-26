@@ -27,7 +27,7 @@ export class PersonaSelectorComponent {
   // Whether persona is auto-detected (read-only)
   protected readonly isAutoDetected = this.personaService.isAutoDetected;
   // Feature flag for role selector
-  protected readonly showRoleSelector = this.featureFlagService.getBooleanFlag('role-selector', true);
+  protected readonly showRoleSelector = this.featureFlagService.getBooleanFlag('role-selector', false);
   // Show selector if not autodetected OR feature flag is enabled
   protected readonly shouldShowSelector = computed(() => !this.isAutoDetected() || this.showRoleSelector());
 

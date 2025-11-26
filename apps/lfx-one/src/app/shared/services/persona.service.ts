@@ -33,6 +33,8 @@ export class PersonaService {
     } else {
       // No auto-detected persona, allow manual selection
       this.isAutoDetected.set(false);
+      // Default to maintainer persona if no auto-detected persona is available
+      this.setPersona('maintainer');
     }
   }
 

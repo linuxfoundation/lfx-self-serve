@@ -386,7 +386,7 @@ export class CommitteeService {
     const params = {
       v: '1',
       type: 'committee_member',
-      tags: `committee_category:${category}`,
+      tags_all: [`username:${username}`, `committee_category:${category}`],
     };
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(
@@ -397,13 +397,7 @@ export class CommitteeService {
       params
     );
 
-    // Filter to only include memberships for this specific user
-    const userMemberships = resources
-      .map((resource) => resource.data)
-      .filter((member) => {
-        // Match by username or email
-        return member.username === username || (userEmail && member.email.toLowerCase() === userEmail.toLowerCase());
-      });
+    const userMemberships = resources.map((resource) => resource.data);
 
     req.log.debug(
       {

@@ -23,3 +23,4 @@ export * from './organization-involvement.constants';
 export * from './foundation-health.constants';
 export * from './accounts.constants';
 export * from './analytics.constants';
+export * from './chart-options.constants';
