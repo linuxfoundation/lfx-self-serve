@@ -5,6 +5,8 @@ import { inject, Injectable } from '@angular/core';
 import { PendingActionItem } from '@lfx-one/shared';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 
+import { CookieRegistryService } from './cookie-registry.service';
+
 /**
  * Service for managing hidden pending actions using browser cookies.
  * Provides 24-hour automatic expiration without manual cleanup.
@@ -15,6 +17,7 @@ import { SsrCookieService } from 'ngx-cookie-service-ssr';
 })
 export class HiddenActionsService {
   private readonly cookieService = inject(SsrCookieService);
+  private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly cookiePrefix = 'lfx_hidden_';
   private readonly maxAgeDays = 1; // 24 hours
 
@@ -32,6 +35,8 @@ export class HiddenActionsService {
       path: '/',
       sameSite: 'Strict',
     });
+    // Register cookie for tracking
+    this.cookieRegistry.registerCookie(cookieName);
   }
 
   /**

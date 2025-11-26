@@ -44,11 +44,14 @@ export class PersonaSelectorComponent {
       .subscribe((value: PersonaType) => {
         if (value === 'board-member') {
           // TODO: DEMO - Remove when proper permissions are implemented
-          this.projectContextService.setFoundation({
-            uid: 'tlf',
-            name: 'The Linux Foundation',
-            slug: 'tlf',
-          });
+          const tlfProject = this.projectContextService.availableProjects.find((p) => p.slug === 'tlf');
+          if (tlfProject) {
+            this.projectContextService.setFoundation({
+              uid: tlfProject.uid,
+              name: tlfProject.name,
+              slug: tlfProject.slug,
+            });
+          }
         }
 
         this.personaService.setPersona(value);

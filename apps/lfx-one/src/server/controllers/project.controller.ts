@@ -478,7 +478,6 @@ export class ProjectController {
       const pendingActions = await this.projectService.getPendingActionSurveys(userEmail, projectSlug);
 
       Logger.success(req, 'get_pending_action_surveys', startTime, {
-        email: userEmail,
         project_slug: projectSlug,
         survey_count: pendingActions.length,
       });

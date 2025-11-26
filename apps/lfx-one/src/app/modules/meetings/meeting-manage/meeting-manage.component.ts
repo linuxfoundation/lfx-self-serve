@@ -94,7 +94,8 @@ export class MeetingManageComponent {
   // Initialize meeting attachments with refresh capability
   private attachmentsRefresh$ = new BehaviorSubject<void>(undefined);
   public attachments = this.initializeAttachments();
-  // Stepper state
+  // Stepper state - internal step tracking for create mode
+  private internalStep = signal<number>(1);
   public currentStep = toSignal(of(1), { initialValue: 1 });
   public readonly totalSteps = TOTAL_STEPS;
   // Form state
@@ -124,18 +125,25 @@ export class MeetingManageComponent {
   );
 
   public constructor() {
-    // Initialize step from query parameter
+    // Initialize step based on mode
+    // In edit mode, read from query parameters
+    // In create mode, use internal step tracking
     this.currentStep = toSignal(
       this.route.queryParamMap.pipe(
         switchMap((params) => {
-          const stepParam = params.get('step');
-          if (stepParam) {
-            const step = parseInt(stepParam, 10);
-            if (step >= 1 && step <= this.totalSteps) {
-              return of(step);
+          // In edit mode, use query parameters
+          if (this.isEditMode()) {
+            const stepParam = params.get('step');
+            if (stepParam) {
+              const step = parseInt(stepParam, 10);
+              if (step >= 1 && step <= this.totalSteps) {
+                return of(step);
+              }
             }
+            return of(1);
           }
-          return of(1);
+          // In create mode, use internal step signal
+          return toObservable(this.internalStep);
         })
       ),
       { initialValue: 1 }
@@ -169,7 +177,13 @@ export class MeetingManageComponent {
 
   public goToStep(step: number | undefined): void {
     if (step !== undefined && this.canNavigateToStep(step)) {
-      this.router.navigate([], { queryParams: { step: step } });
+      if (this.isEditMode()) {
+        // In edit mode, update query params
+        this.router.navigate([], { queryParams: { step: step } });
+      } else {
+        // In create mode, update internal step
+        this.internalStep.set(step);
+      }
       this.scrollToStepper();
     }
   }
@@ -182,7 +196,13 @@ export class MeetingManageComponent {
         this.generateMeetingTitle();
       }
 
-      this.router.navigate([], { queryParams: { step: next } });
+      if (this.isEditMode()) {
+        // In edit mode, update query params
+        this.router.navigate([], { queryParams: { step: next } });
+      } else {
+        // In create mode, update internal step
+        this.internalStep.set(next);
+      }
       this.scrollToStepper();
     }
   }
@@ -190,7 +210,13 @@ export class MeetingManageComponent {
   public previousStep(): void {
     const previous = this.currentStep() - 1;
     if (previous >= 1) {
-      this.router.navigate([], { queryParams: { step: previous } });
+      if (this.isEditMode()) {
+        // In edit mode, update query params
+        this.router.navigate([], { queryParams: { step: previous } });
+      } else {
+        // In create mode, update internal step
+        this.internalStep.set(previous);
+      }
       this.scrollToStepper();
     }
   }
@@ -389,7 +415,7 @@ export class MeetingManageComponent {
     }
 
     return {
-      project_uid: formValue.selectedProjectUid || this.project()?.uid,
+      project_uid: this.projectContextService.selectedProject()?.uid || this.projectContextService.selectedFoundation()?.uid || '',
       title: formValue.title,
       description: formValue.description || '',
       start_time: startDateTime,
@@ -814,7 +840,6 @@ export class MeetingManageComponent {
     return new FormGroup(
       {
         // Step 1: Meeting Type
-        selectedProjectUid: new FormControl(''),
         meeting_type: new FormControl('', [Validators.required]),
         visibility: new FormControl(MeetingVisibility.PRIVATE),
         restricted: new FormControl(false),

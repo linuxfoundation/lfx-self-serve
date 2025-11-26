@@ -6,6 +6,10 @@ import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
   ActiveWeeksStreakRow,
+  Meeting,
+  MeetingOccurrence,
+  PendingActionItem,
+  PersonaType,
   ProjectCountRow,
   ProjectItem,
   UserCodeCommitsResponse,
@@ -22,7 +26,9 @@ import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
 import { serverLogger } from '../server';
+import { MeetingService } from './meeting.service';
 import { NatsService } from './nats.service';
+import { ProjectService } from './project.service';
 import { SnowflakeService } from './snowflake.service';
 
 /**
@@ -31,10 +37,16 @@ import { SnowflakeService } from './snowflake.service';
 export class UserService {
   private natsService: NatsService;
   private snowflakeService: SnowflakeService;
+  private meetingService: MeetingService;
+  private projectService: ProjectService;
+
+  private readonly twoWeeksMs = 14 * 24 * 60 * 60 * 1000;
 
   public constructor() {
     this.natsService = new NatsService();
     this.snowflakeService = new SnowflakeService();
+    this.meetingService = new MeetingService();
+    this.projectService = new ProjectService();
   }
 
   /**
@@ -435,6 +447,101 @@ export class UserService {
     return {
       data: projects,
       totalProjects,
+    };
+  }
+
+  /**
+   * Get all pending actions for a user based on persona
+   * @param req - Express request object
+   * @param persona - User persona type (board-member, maintainer, core-developer)
+   * @param projectUid - Project UID for filtering
+   * @param email - User email
+   * @param projectSlug - Project slug for survey filtering
+   * @returns Array of pending action items
+   */
+  public async getPendingActions(req: Request, persona: PersonaType, projectUid: string, email: string, projectSlug: string): Promise<PendingActionItem[]> {
+    if (persona === 'board-member') {
+      return this.getBoardMemberActions(req, email, projectSlug, projectUid);
+    }
+    // Future personas: maintainer, core-developer can be added here
+    return [];
+  }
+
+  /**
+   * Get pending actions for board member persona
+   * Fetches surveys from Snowflake and meetings from LFX microservice
+   */
+  private async getBoardMemberActions(req: Request, email: string, projectSlug: string, projectUid: string): Promise<PendingActionItem[]> {
+    // Fetch surveys and meetings in parallel
+    const [surveys, meetings] = await Promise.all([
+      this.projectService.getPendingActionSurveys(email, projectSlug).catch((error) => {
+        req.log.warn({ err: error }, 'Failed to fetch surveys for pending actions');
+        return [];
+      }),
+      this.meetingService.getMeetings(req, { tags_all: `project_uid:${projectUid}` }, 'meeting', false).catch((error) => {
+        req.log.warn({ err: error }, 'Failed to fetch meetings for pending actions');
+        return [];
+      }),
+    ]);
+
+    // Transform meetings to actions (within 2 weeks)
+    const meetingActions = this.transformMeetingsToActions(meetings);
+
+    return [...surveys, ...meetingActions];
+  }
+
+  /**
+   * Transform meetings within 2 weeks to pending action items
+   */
+  private transformMeetingsToActions(meetings: Meeting[]): PendingActionItem[] {
+    const now = new Date();
+    const twoWeeksFromNow = new Date(now.getTime() + this.twoWeeksMs);
+    const actions: PendingActionItem[] = [];
+
+    for (const meeting of meetings) {
+      if (meeting.occurrences && meeting.occurrences.length > 0) {
+        // Filter active occurrences (not cancelled)
+        const activeOccurrences = meeting.occurrences.filter((occ) => !occ.is_cancelled);
+
+        for (const occurrence of activeOccurrences) {
+          const startTime = new Date(occurrence.start_time);
+          if (startTime >= now && startTime <= twoWeeksFromNow) {
+            actions.push(this.createMeetingAction(meeting, occurrence));
+          }
+        }
+      } else {
+        const startTime = new Date(meeting.start_time);
+        if (startTime >= now && startTime <= twoWeeksFromNow) {
+          actions.push(this.createMeetingAction(meeting));
+        }
+      }
+    }
+
+    return actions;
+  }
+
+  /**
+   * Create a PendingActionItem from a meeting
+   */
+  private createMeetingAction(meeting: Meeting, occurrence?: MeetingOccurrence): PendingActionItem {
+    const startTime = occurrence ? new Date(occurrence.start_time) : new Date(meeting.start_time);
+    const title = occurrence?.title || meeting.title;
+
+    const dateStr = startTime.toLocaleDateString('en-US', {
+      month: 'short',
+      day: 'numeric',
+    });
+
+    const buttonLink = meeting.password ? `/meetings/${meeting.uid}?password=${meeting.password}` : `/meetings/${meeting.uid}`;
+
+    return {
+      type: 'Review Minutes',
+      badge: dateStr,
+      text: `Review ${title} Agenda and Materials`,
+      icon: 'fa-light fa-calendar-check',
+      color: 'amber',
+      buttonText: 'Review Agenda',
+      buttonLink,
     };
   }
 

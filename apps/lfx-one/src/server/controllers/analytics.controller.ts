@@ -43,7 +43,6 @@ export class AnalyticsController {
       const response = await this.userService.getActiveWeeksStreak(userEmail);
 
       Logger.success(req, 'get_active_weeks_streak', startTime, {
-        email: userEmail,
         total_weeks: response.totalWeeks,
         current_streak: response.currentStreak,
       });
@@ -74,7 +73,6 @@ export class AnalyticsController {
       const response = await this.userService.getPullRequestsMerged(userEmail);
 
       Logger.success(req, 'get_pull_requests_merged', startTime, {
-        email: userEmail,
         total_days: response.totalDays,
         total_pull_requests: response.totalPullRequests,
       });
@@ -105,7 +103,6 @@ export class AnalyticsController {
       const response = await this.userService.getCodeCommits(userEmail);
 
       Logger.success(req, 'get_code_commits', startTime, {
-        email: userEmail,
         total_days: response.totalDays,
         total_commits: response.totalCommits,
       });

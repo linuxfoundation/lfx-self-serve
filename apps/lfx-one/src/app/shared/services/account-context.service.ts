@@ -6,11 +6,14 @@ import { ACCOUNTS, DEFAULT_ACCOUNT } from '@lfx-one/shared/constants';
 import { Account } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 
+import { CookieRegistryService } from './cookie-registry.service';
+
 @Injectable({
   providedIn: 'root',
 })
 export class AccountContextService {
   private readonly cookieService = inject(SsrCookieService);
+  private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly storageKey = 'lfx-selected-account';
   public readonly selectedAccount: WritableSignal<Account>;
 
@@ -87,6 +90,8 @@ export class AccountContextService {
       sameSite: 'Lax',
       secure: process.env['NODE_ENV'] === 'production',
     });
+    // Register cookie for tracking
+    this.cookieRegistry.registerCookie(this.storageKey);
   }
 
   private loadFromStorage(): Account | null {

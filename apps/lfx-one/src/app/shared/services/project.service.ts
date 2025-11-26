@@ -63,4 +63,22 @@ export class ProjectService {
       })
     );
   }
+
+  /**
+   * Get all pending actions (surveys + meetings) for the current user
+   * @param projectSlug - Project slug for survey filtering
+   * @param projectUid - Project UID for meeting filtering
+   * @param persona - User persona type (default: 'board-member')
+   * @returns Observable of pending action items
+   */
+  public getPendingActions(projectSlug: string, projectUid: string, persona: string = 'board-member'): Observable<PendingActionItem[]> {
+    const params = new HttpParams().set('projectSlug', projectSlug).set('projectUid', projectUid).set('persona', persona);
+
+    return this.http.get<PendingActionItem[]>('/api/user/pending-actions', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch pending actions:', error);
+        return of([]);
+      })
+    );
+  }
 }

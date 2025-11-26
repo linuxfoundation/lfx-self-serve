@@ -81,15 +81,14 @@ export class BoardMemberDashboardComponent {
           return project$.pipe(
             switchMap((project) => {
               // If no project/foundation selected, return empty array
-              if (!project?.slug) {
+              if (!project?.slug || !project?.uid) {
                 return of([]);
               }
 
-              // Fetch survey actions from API
-              return this.projectService.getPendingActionSurveys(project.slug).pipe(
+              // Fetch all pending actions from unified backend endpoint
+              return this.projectService.getPendingActions(project.slug, project.uid, 'board-member').pipe(
                 catchError((error) => {
-                  console.error('Failed to fetch survey actions:', error);
-                  // Return empty array on error
+                  console.error('Failed to fetch pending actions:', error);
                   return of([]);
                 })
               );

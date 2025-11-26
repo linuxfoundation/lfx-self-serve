@@ -2,23 +2,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-6">
-  @if (projectOptions().length > 0) {
-    <div data-testid="meeting-project-selector">
-      <label for="project-select" class="text-sm font-semibold text-slate-900 mb-2 block">Select Project</label>
-      <p class="text-xs text-slate-500 mb-3">Choose which project this meeting is for. If not selected, the current project will be used.</p>
-      <lfx-select
-        class="w-full"
-        styleClass="w-full"
-        id="project-select"
-        [form]="form()"
-        control="selectedProjectUid"
-        [options]="projectOptions()"
-        placeholder="Select a project (optional)"
-        [showClear]="true"
-        data-testid="project-select-dropdown" />
-    </div>
-  }
-
   <div class="flex flex-col">
     <div class="text-center mb-4">
       <h2 class="mb-2">Meeting Type & Privacy</h2>

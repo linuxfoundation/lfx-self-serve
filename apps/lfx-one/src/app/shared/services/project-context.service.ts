@@ -5,17 +5,20 @@ import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { ProjectContext } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 
+import { CookieRegistryService } from './cookie-registry.service';
+
 @Injectable({
   providedIn: 'root',
 })
 export class ProjectContextService {
   private readonly cookieService = inject(SsrCookieService);
+  private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly foundationStorageKey = 'lfx-selected-foundation';
   private readonly projectStorageKey = 'lfx-selected-project';
 
   public readonly selectedFoundation: WritableSignal<ProjectContext | null>;
   public readonly selectedProject: WritableSignal<ProjectContext | null>;
-  public readonly availableProjects: ProjectContext[] = [];
+  public availableProjects: ProjectContext[] = [];
 
   public constructor() {
     const storedFoundation = this.loadFromStorage(this.foundationStorageKey);
@@ -81,6 +84,8 @@ export class ProjectContextService {
       sameSite: 'Lax',
       secure: process.env['NODE_ENV'] === 'production',
     });
+    // Register cookie for tracking
+    this.cookieRegistry.registerCookie(key);
   }
 
   private loadFromStorage(key: string): ProjectContext | null {

@@ -27,6 +27,7 @@ import profileRouter from './routes/profile.route';
 import projectsRouter from './routes/projects.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
 import searchRouter from './routes/search.route';
+import userRouter from './routes/user.route';
 import { fetchUserPersonaAndOrganizations } from './utils/persona-helper';
 import { matchOrganizationNamesToAccounts } from './utils/organization-matcher';
 
@@ -222,6 +223,7 @@ app.use('/api/past-meetings', pastMeetingsRouter);
 app.use('/api/profile', profileRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/analytics', analyticsRouter);
+app.use('/api/user', userRouter);
 
 // Add API error handler middleware
 app.use('/api/*', apiErrorHandler);

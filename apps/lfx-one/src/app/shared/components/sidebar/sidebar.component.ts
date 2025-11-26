@@ -10,6 +10,8 @@ import { BadgeComponent } from '@components/badge/badge.component';
 import { PersonaSelectorComponent } from '@components/persona-selector/persona-selector.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { Project, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { CookieRegistryService } from '@services/cookie-registry.service';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -26,6 +28,8 @@ export class SidebarComponent {
   private readonly projectService = inject(ProjectService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
+  private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly cookieRegistry = inject(CookieRegistryService);
 
   // Input properties
   public readonly items = input.required<SidebarMenuItem[]>();
@@ -49,6 +53,7 @@ export class SidebarComponent {
           .pipe(map((childProjects: Project[]) => [tlfProject, ...childProjects]));
       }),
       tap((loadedProjects: Project[]) => {
+        this.projectContextService.availableProjects = loadedProjects;
         const currentFoundation = this.projectContextService.selectedFoundation();
         const currentProject = this.projectContextService.selectedProject();
         const foundationExists = loadedProjects.some((p: Project) => p.uid === currentFoundation?.uid);
@@ -75,6 +80,17 @@ export class SidebarComponent {
   // TODO: DEMO - Remove this once we have proper project permissions
   public readonly isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
   protected readonly foundationProjects = computed(() => this.projects().filter((p: Project) => (this.isBoardMember() ? p.slug === 'tlf' : true)));
+
+  // Feature flag for clear cache nav item
+  protected readonly showClearCacheButton = this.featureFlagService.getBooleanFlag('lfx-one-clear-cache', false);
+
+  // Clear cache menu item for sidebar footer
+  protected readonly clearCacheMenuItem: SidebarMenuItem = {
+    label: 'Clear Cache',
+    icon: 'fa-solid fa-trash-can',
+    command: () => this.clearCache(),
+    testId: 'sidebar-clear-cache',
+  };
 
   protected readonly selectedProject = computed(() => {
     // First check if a specific project is selected (child project)
@@ -145,5 +161,17 @@ export class SidebarComponent {
   protected onLogoClick(): void {
     // Navigate to home page
     window.location.href = '/';
+  }
+
+  /**
+   * Clear all LFX-related cookies and refresh the page
+   * Uses the cookie registry to clear all tracked cookies
+   */
+  protected clearCache(): void {
+    this.cookieRegistry.clearAllCookies();
+
+    if (typeof window !== 'undefined') {
+      window.location.reload();
+    }
   }
 }
