@@ -57,7 +57,7 @@ export class DashboardMeetingCardComponent {
       label: config.label,
       className: `${config.bgColor} ${config.textColor}`,
       severity,
-      icon: config.icon,
+      icon: `${config.icon} mr-2`,
     };
   });
 

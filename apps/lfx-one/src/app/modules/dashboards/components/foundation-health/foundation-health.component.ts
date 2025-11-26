@@ -5,26 +5,20 @@ import { CommonModule } from '@angular/common';
 import { Component, computed, ElementRef, inject, input, signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
-import { ChartComponent } from '@components/chart/chart.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
-import {
-  AGGREGATE_FOUNDATION_METRICS,
-  BASE_BAR_CHART_OPTIONS,
-  BASE_LINE_CHART_OPTIONS,
-  lfxColors,
-  PRIMARY_FOUNDATION_HEALTH_METRICS,
-} from '@lfx-one/shared/constants';
-import { FoundationMetricCard, MetricCategory, PrimaryFoundationHealthMetric, TopProjectDisplay } from '@lfx-one/shared/interfaces';
+import { MetricCardComponent } from '@components/metric-card/metric-card.component';
+import { BASE_BAR_CHART_OPTIONS, BASE_LINE_CHART_OPTIONS, COMPANY_BUS_FACTOR, lfxColors, PRIMARY_FOUNDATION_HEALTH_METRICS } from '@lfx-one/shared/constants';
 import { hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { finalize, map, switchMap } from 'rxjs';
 
+import type { DashboardMetricCard, HealthEventsMonthlyResponse, TopProjectDisplay, UniqueContributorsDailyResponse } from '@lfx-one/shared/interfaces';
 import type { TooltipItem } from 'chart.js';
 @Component({
   selector: 'lfx-foundation-health',
   standalone: true,
-  imports: [CommonModule, FilterPillsComponent, ChartComponent, DataCopilotComponent],
+  imports: [CommonModule, FilterPillsComponent, MetricCardComponent, DataCopilotComponent],
   templateUrl: './foundation-health.component.html',
   styleUrl: './foundation-health.component.scss',
 })
@@ -41,6 +35,8 @@ export class FoundationHealthComponent {
   private readonly softwareValueLoading = signal(true);
   private readonly maintainersLoading = signal(true);
   private readonly healthScoresLoading = signal(true);
+  private readonly activeContributorsLoading = signal(true);
+  private readonly eventsLoading = signal(true);
   private readonly selectedFoundationSlug$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((foundation) => foundation?.slug || ''));
   public readonly hasFoundationSelected = computed<boolean>(() => !!this.projectContextService.selectedFoundation());
   private readonly totalProjectsData = this.initializeTotalProjectsData();
@@ -48,8 +44,17 @@ export class FoundationHealthComponent {
   private readonly softwareValueData = this.initializeSoftwareValueData();
   private readonly maintainersData = this.initializeMaintainersData();
   private readonly healthScoresData = this.initializeHealthScoresData();
+  private readonly activeContributorsData = this.initializeActiveContributorsData();
+  private readonly eventsData = this.initializeEventsData();
   public readonly isLoading = computed<boolean>(
-    () => this.totalProjectsLoading() || this.totalMembersLoading() || this.softwareValueLoading() || this.maintainersLoading() || this.healthScoresLoading()
+    () =>
+      this.totalProjectsLoading() ||
+      this.totalMembersLoading() ||
+      this.softwareValueLoading() ||
+      this.maintainersLoading() ||
+      this.healthScoresLoading() ||
+      this.activeContributorsLoading() ||
+      this.eventsLoading()
   );
 
   public readonly selectedFilter = signal<string>('all');
@@ -65,7 +70,7 @@ export class FoundationHealthComponent {
 
   public readonly barChartOptions = BASE_BAR_CHART_OPTIONS;
 
-  public readonly metricCards = computed<FoundationMetricCard[]>(() => {
+  public readonly metricCards = computed<DashboardMetricCard[]>(() => {
     const filter = this.selectedFilter();
     const allCards = this.allMetricCards();
 
@@ -76,7 +81,7 @@ export class FoundationHealthComponent {
     return allCards.filter((card) => card.category === filter);
   });
 
-  private readonly allMetricCards = computed<FoundationMetricCard[]>(() => {
+  private readonly allMetricCards = computed<DashboardMetricCard[]>(() => {
     return PRIMARY_FOUNDATION_HEALTH_METRICS.map((metric) => {
       if (metric.title === 'Total Projects') {
         return this.transformTotalProjects(metric);
@@ -156,57 +161,20 @@ export class FoundationHealthComponent {
     }));
   }
 
-  private createSparklineData(data: number[], color: string) {
-    return {
-      labels: Array.from({ length: data.length }, (_, i) => `Day ${i + 1}`),
-      datasets: [
-        {
-          data,
-          borderColor: color,
-          backgroundColor: hexToRgba(color, 0.1),
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2,
-          pointRadius: 0,
-        },
-      ],
-    };
-  }
-
-  private createBarChartData(data: number[], color: string) {
-    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
-
-    return {
-      labels: months,
-      datasets: [
-        {
-          data,
-          backgroundColor: color,
-          borderColor: color,
-          borderWidth: 0,
-        },
-      ],
-    };
-  }
-
-  private transformTotalProjects(metric: PrimaryFoundationHealthMetric): FoundationMetricCard {
+  private transformTotalProjects(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.totalProjectsData();
 
     return {
-      icon: metric.icon,
-      title: metric.title,
+      ...metric,
       value: data.totalProjects.toLocaleString(),
       subtitle: `Total ${this.projectContextService.selectedFoundation()?.name} projects`,
-      category: metric.category as MetricCategory,
-      testId: metric.testId,
-      customContentType: metric.customContentType,
       chartData: {
         labels: data.monthlyLabels,
         datasets: [
           {
             data: data.monthlyData,
-            borderColor: metric.sparklineColor || lfxColors.blue[500],
-            backgroundColor: hexToRgba(metric.sparklineColor || lfxColors.blue[500], 0.1),
+            borderColor: lfxColors.blue[500],
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -233,24 +201,20 @@ export class FoundationHealthComponent {
     };
   }
 
-  private transformTotalMembers(metric: PrimaryFoundationHealthMetric): FoundationMetricCard {
+  private transformTotalMembers(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.totalMembersData();
 
     return {
-      icon: metric.icon,
-      title: metric.title,
+      ...metric,
       value: data.totalMembers.toLocaleString(),
       subtitle: `Total ${this.projectContextService.selectedFoundation()?.name} members`,
-      category: metric.category as MetricCategory,
-      testId: metric.testId,
-      customContentType: metric.customContentType,
       chartData: {
         labels: data.monthlyLabels,
         datasets: [
           {
             data: data.monthlyData,
-            borderColor: metric.sparklineColor || lfxColors.blue[500],
-            backgroundColor: hexToRgba(metric.sparklineColor || lfxColors.blue[500], 0.1),
+            borderColor: lfxColors.blue[500],
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -277,71 +241,89 @@ export class FoundationHealthComponent {
     };
   }
 
-  private transformSoftwareValue(metric: PrimaryFoundationHealthMetric): FoundationMetricCard {
+  private transformSoftwareValue(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.softwareValueData();
 
     return {
-      icon: metric.icon,
-      title: metric.title,
+      ...metric,
       value: this.formatSoftwareValue(data.totalValue),
       subtitle: 'Estimated total value of software managed',
-      category: metric.category as MetricCategory,
-      testId: metric.testId,
-      customContentType: metric.customContentType,
       topProjects: this.formatTopProjects(data.topProjects),
     };
   }
 
-  private transformCompanyBusFactor(metric: PrimaryFoundationHealthMetric): FoundationMetricCard {
+  private transformCompanyBusFactor(metric: DashboardMetricCard): DashboardMetricCard {
     // TODO: Replace with real API data when endpoint is available
-    const metrics = AGGREGATE_FOUNDATION_METRICS;
-
     return {
-      icon: metric.icon,
-      title: metric.title,
-      value: metrics.companyBusFactor.topCompaniesCount.toString(),
+      ...metric,
+      value: COMPANY_BUS_FACTOR.topCompaniesCount.toString(),
       subtitle: 'Companies account for >50% code contributions',
-      category: metric.category as MetricCategory,
-      testId: metric.testId,
-      customContentType: metric.customContentType,
-      busFactor: metrics.companyBusFactor,
+      busFactor: COMPANY_BUS_FACTOR,
     };
   }
 
-  private transformActiveContributors(metric: PrimaryFoundationHealthMetric): FoundationMetricCard {
-    // TODO: Replace with real API data when endpoint is available
-    const metrics = AGGREGATE_FOUNDATION_METRICS;
+  private transformActiveContributors(metric: DashboardMetricCard): DashboardMetricCard {
+    const data = this.activeContributorsData();
+
+    // Reverse the data to show oldest to newest for chart rendering
+    const chartData = [...data.data].reverse();
+    const contributorValues = chartData.map((row) => row.DAILY_UNIQUE_CONTRIBUTORS);
+    const chartLabels = chartData.map((row) => {
+      const date = new Date(row.ACTIVITY_DATE);
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    });
 
     return {
-      icon: metric.icon,
-      title: metric.title,
-      value: metrics.avgActiveContributors.toLocaleString(),
+      ...metric,
+      value: data.avgContributors.toLocaleString(),
       subtitle: 'Average active contributors over the past year',
-      category: metric.category as MetricCategory,
-      testId: metric.testId,
-      customContentType: metric.customContentType,
-      chartData: this.createSparklineData(metrics.activeContributorsData, metric.sparklineColor || lfxColors.blue[500]),
+      chartData: {
+        labels: chartLabels,
+        datasets: [
+          {
+            data: contributorValues,
+            borderColor: lfxColors.blue[500],
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
+            fill: true,
+            tension: 0.4,
+            borderWidth: 2,
+            pointRadius: 0,
+          },
+        ],
+      },
+      chartOptions: {
+        ...this.sparklineOptions,
+        plugins: {
+          ...this.sparklineOptions.plugins,
+          tooltip: {
+            ...(this.sparklineOptions.plugins?.tooltip ?? {}),
+            callbacks: {
+              title: (context: TooltipItem<'line'>[]) => context[0].label,
+              label: (context: TooltipItem<'line'>) => {
+                const count = context.parsed.y;
+                return `Active contributors: ${count.toLocaleString()}`;
+              },
+            },
+          },
+        },
+      },
     };
   }
 
-  private transformMaintainers(metric: PrimaryFoundationHealthMetric): FoundationMetricCard {
+  private transformMaintainers(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.maintainersData();
 
     return {
-      icon: metric.icon,
-      title: metric.title,
+      ...metric,
       value: data.avgMaintainers.toString(),
       subtitle: 'Average maintainers over the past year',
-      category: metric.category as MetricCategory,
-      testId: metric.testId,
-      customContentType: metric.customContentType,
       chartData: {
         labels: data.trendLabels,
         datasets: [
           {
             data: data.trendData,
-            borderColor: metric.sparklineColor || lfxColors.blue[500],
-            backgroundColor: hexToRgba(metric.sparklineColor || lfxColors.blue[500], 0.1),
+            borderColor: lfxColors.blue[500],
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -368,46 +350,67 @@ export class FoundationHealthComponent {
     };
   }
 
-  private transformEvents(metric: PrimaryFoundationHealthMetric): FoundationMetricCard {
-    // TODO: Replace with real API data when endpoint is available
-    const metrics = AGGREGATE_FOUNDATION_METRICS;
+  private transformEvents(metric: DashboardMetricCard): DashboardMetricCard {
+    const data = this.eventsData();
+
+    // Reverse the data to show oldest to newest for chart rendering
+    const chartData = [...data.data].reverse();
+    const eventCounts = chartData.map((row) => row.EVENT_COUNT);
+    const chartLabels = chartData.map((row) => {
+      const date = new Date(row.MONTH_START_DATE);
+      return date.toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+    });
 
     return {
-      icon: metric.icon,
-      title: metric.title,
-      value: metrics.totalEvents.toString(),
-      subtitle: 'Total events over 12 months',
-      category: metric.category as MetricCategory,
-      testId: metric.testId,
-      customContentType: metric.customContentType,
-      chartData: this.createBarChartData(metrics.eventsMonthlyData, metric.chartColor || lfxColors.blue[500]),
+      ...metric,
+      value: data.totalEvents.toLocaleString(),
+      subtitle: `Total events over ${data.totalMonths} months`,
+      chartData: {
+        labels: chartLabels,
+        datasets: [
+          {
+            data: eventCounts,
+            backgroundColor: metric.chartColor || lfxColors.blue[500],
+            borderColor: metric.chartColor || lfxColors.blue[500],
+            borderWidth: 0,
+          },
+        ],
+      },
+      chartOptions: {
+        ...this.barChartOptions,
+        plugins: {
+          ...this.barChartOptions.plugins,
+          tooltip: {
+            ...(this.barChartOptions.plugins?.tooltip ?? {}),
+            callbacks: {
+              title: (context: TooltipItem<'bar'>[]) => context[0].label,
+              label: (context: TooltipItem<'bar'>) => {
+                const count = context.parsed.y;
+                return `Events: ${count.toLocaleString()}`;
+              },
+            },
+          },
+        },
+      },
     };
   }
 
-  private transformProjectHealthScores(metric: PrimaryFoundationHealthMetric): FoundationMetricCard {
+  private transformProjectHealthScores(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.healthScoresData();
 
     return {
-      icon: metric.icon,
-      title: metric.title,
+      ...metric,
       value: '',
       subtitle: '',
-      category: metric.category as MetricCategory,
-      testId: metric.testId,
-      customContentType: metric.customContentType,
       healthScores: data,
     };
   }
 
-  private transformDefault(metric: PrimaryFoundationHealthMetric): FoundationMetricCard {
+  private transformDefault(metric: DashboardMetricCard): DashboardMetricCard {
     return {
-      icon: metric.icon,
-      title: metric.title,
+      ...metric,
       value: 'N/A',
       subtitle: 'No data available',
-      category: metric.category as MetricCategory,
-      testId: metric.testId,
-      customContentType: metric.customContentType,
     };
   }
 
@@ -503,6 +506,44 @@ export class FoundationHealthComponent {
           unsteady: 0,
           critical: 0,
         },
+      }
+    );
+  }
+
+  private initializeActiveContributorsData() {
+    return toSignal(
+      this.selectedFoundationSlug$.pipe(
+        switchMap((foundationSlug) => {
+          this.activeContributorsLoading.set(true);
+
+          return this.analyticsService.getUniqueContributorsDaily(foundationSlug, 'foundation').pipe(finalize(() => this.activeContributorsLoading.set(false)));
+        })
+      ),
+      {
+        initialValue: {
+          data: [],
+          avgContributors: 0,
+          totalDays: 0,
+        } as UniqueContributorsDailyResponse,
+      }
+    );
+  }
+
+  private initializeEventsData() {
+    return toSignal(
+      this.selectedFoundationSlug$.pipe(
+        switchMap((foundationSlug) => {
+          this.eventsLoading.set(true);
+
+          return this.analyticsService.getHealthEventsMonthly(foundationSlug, 'foundation').pipe(finalize(() => this.eventsLoading.set(false)));
+        })
+      ),
+      {
+        initialValue: {
+          data: [],
+          totalEvents: 0,
+          totalMonths: 0,
+        } as HealthEventsMonthlyResponse,
       }
     );
   }

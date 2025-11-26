@@ -4,8 +4,8 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, ElementRef, inject, signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ChartComponent } from '@components/chart/chart.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
+import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import {
   BAR_CHART_WITH_FOOTER_OPTIONS,
   BASE_BAR_CHART_OPTIONS,
@@ -19,13 +19,13 @@ import { hexToRgba, parseLocalDateString } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { TooltipModule } from 'primeng/tooltip';
 import { finalize, switchMap } from 'rxjs';
 
 import type {
   ActiveWeeksStreakResponse,
+  DashboardMetricCard,
   FoundationContributorsMentoredResponse,
-  ProgressItemWithChart,
+  HealthMetricsDailyResponse,
   ProjectIssuesResolutionResponse,
   ProjectPullRequestsWeeklyResponse,
   UniqueContributorsWeeklyResponse,
@@ -37,7 +37,7 @@ import type { TooltipItem } from 'chart.js';
 @Component({
   selector: 'lfx-recent-progress',
   standalone: true,
-  imports: [CommonModule, ChartComponent, TooltipModule, FilterPillsComponent],
+  imports: [CommonModule, FilterPillsComponent, MetricCardComponent],
   templateUrl: './recent-progress.component.html',
   styleUrl: './recent-progress.component.scss',
 })
@@ -58,6 +58,7 @@ export class RecentProgressComponent {
     projectPullRequestsWeekly: true,
     contributorsMentored: true,
     uniqueContributorsWeekly: true,
+    healthMetricsDaily: true,
   });
   public readonly projectSlug = computed(() => this.projectContextService.selectedFoundation()?.slug || this.projectContextService.selectedProject()?.slug);
   private readonly entityType = computed<'foundation' | 'project'>(() => (this.projectContextService.selectedFoundation() ? 'foundation' : 'project'));
@@ -68,6 +69,7 @@ export class RecentProgressComponent {
   private readonly projectPullRequestsWeeklyData = this.initializeProjectPullRequestsWeeklyData();
   private readonly contributorsMentoredData = this.initializeContributorsMentoredData();
   private readonly uniqueContributorsWeeklyData = this.initializeUniqueContributorsWeeklyData();
+  private readonly healthMetricsDailyData = this.initializeHealthMetricsDailyData();
   private readonly issuesTooltipData = this.initializeIssuesTooltipData();
   private readonly prVelocityTooltipData = this.initializePrVelocityTooltipData();
   private readonly uniqueContributorsTooltipData = this.initializeUniqueContributorsTooltipData();
@@ -117,15 +119,60 @@ export class RecentProgressComponent {
     container.scrollBy({ left: 300, behavior: 'smooth' });
   }
 
-  private transformActiveWeeksStreak(data: ActiveWeeksStreakResponse): ProgressItemWithChart {
+  private initializeProgressItems() {
+    return computed<DashboardMetricCard[]>(() => {
+      const persona = this.personaService.currentPersona();
+      const activeWeeksData = this.activeWeeksStreakData();
+      const pullRequestsData = this.pullRequestsMergedData();
+      const codeCommitsDataValue = this.codeCommitsData();
+      const issuesResolutionData = this.projectIssuesResolutionData();
+      const prWeeklyData = this.projectPullRequestsWeeklyData();
+      const contributorsMentoredData = this.contributorsMentoredData();
+      const uniqueContributorsData = this.uniqueContributorsWeeklyData();
+      const healthMetricsData = this.healthMetricsDailyData();
+      const issuesTooltip = this.issuesTooltipData();
+      const prVelocityTooltip = this.prVelocityTooltipData();
+      const uniqueContributorsTooltip = this.uniqueContributorsTooltipData();
+
+      const baseMetrics = persona === 'maintainer' ? MAINTAINER_PROGRESS_METRICS : CORE_DEVELOPER_PROGRESS_METRICS;
+
+      return baseMetrics.map((metric) => {
+        if (metric.title === 'Active Weeks Streak') {
+          return this.transformActiveWeeksStreak(activeWeeksData, metric);
+        }
+        if (metric.title === 'Pull Requests Merged') {
+          return this.transformPullRequestsMerged(pullRequestsData, metric);
+        }
+        if (metric.title === 'Code Commits') {
+          return this.transformCodeCommits(codeCommitsDataValue, metric);
+        }
+        if (metric.title === 'Open vs Closed Issues Trend') {
+          return this.transformProjectIssuesResolution(issuesResolutionData, issuesTooltip, metric);
+        }
+        if (metric.title === 'PR Review & Merge Velocity') {
+          return this.transformProjectPullRequestsWeekly(prWeeklyData, prVelocityTooltip, metric);
+        }
+        if (metric.title === 'Contributors Mentored') {
+          return this.transformContributorsMentored(contributorsMentoredData, metric);
+        }
+        if (metric.title === 'Unique Contributors per Week') {
+          return this.transformUniqueContributorsWeekly(uniqueContributorsData, uniqueContributorsTooltip, metric);
+        }
+        if (metric.title === 'Health Score') {
+          return this.transformHealthMetricsDaily(healthMetricsData, metric);
+        }
+        return metric;
+      });
+    });
+  }
+
+  private transformActiveWeeksStreak(data: ActiveWeeksStreakResponse, metric: DashboardMetricCard): DashboardMetricCard {
     const chartData = data.data;
 
     return {
-      label: 'Active Weeks Streak',
+      ...metric,
       value: data.currentStreak.toString(),
       trend: data.currentStreak > 0 ? 'up' : 'down',
-      subtitle: 'Current streak',
-      chartType: 'bar',
       chartData: {
         labels: chartData.map((row) => `Week ${row.WEEKS_AGO}`),
         datasets: [
@@ -163,15 +210,13 @@ export class RecentProgressComponent {
     };
   }
 
-  private transformPullRequestsMerged(data: UserPullRequestsResponse): ProgressItemWithChart {
+  private transformPullRequestsMerged(data: UserPullRequestsResponse, metric: DashboardMetricCard): DashboardMetricCard {
     const chartData = data.data;
 
     return {
-      label: 'Pull Requests Merged',
+      ...metric,
       value: data.totalPullRequests.toString(),
       trend: data.totalPullRequests > 0 ? 'up' : 'down',
-      subtitle: 'Last 30 days',
-      chartType: 'line',
       chartData: {
         labels: chartData.map((row) => row.ACTIVITY_DATE),
         datasets: [
@@ -209,15 +254,13 @@ export class RecentProgressComponent {
     };
   }
 
-  private transformCodeCommits(data: UserCodeCommitsResponse): ProgressItemWithChart {
+  private transformCodeCommits(data: UserCodeCommitsResponse, metric: DashboardMetricCard): DashboardMetricCard {
     const chartData = data.data;
 
     return {
-      label: 'Code Commits',
+      ...metric,
       value: data.totalCommits.toString(),
       trend: data.totalCommits > 0 ? 'up' : 'down',
-      subtitle: 'Last 30 days',
-      chartType: 'line',
       chartData: {
         labels: chartData.map((row) => row.ACTIVITY_DATE),
         datasets: [
@@ -257,8 +300,9 @@ export class RecentProgressComponent {
 
   private transformProjectIssuesResolution(
     data: ProjectIssuesResolutionResponse,
-    tooltipData: { opened: string; closed: string; median: string } | null
-  ): ProgressItemWithChart {
+    tooltipData: { opened: string; closed: string; median: string } | null,
+    metric: DashboardMetricCard
+  ): DashboardMetricCard {
     // Reverse the data to show oldest date on the left
     const chartData = [...data.data].reverse();
 
@@ -274,15 +318,11 @@ export class RecentProgressComponent {
       : undefined;
 
     return {
-      label: 'Open vs Closed Issues Trend',
-      icon: 'fa-light fa-chart-line',
+      ...metric,
       value: `${resolutionRate}%`,
       trend: resolutionRate >= 50 ? 'up' : 'down',
-      subtitle: 'Issue resolution rate',
       tooltipText,
       isConnected: true,
-      chartType: 'line',
-      category: 'code',
       chartData: {
         labels: chartData.map((row) => row.METRIC_DATE),
         datasets: [
@@ -340,8 +380,9 @@ export class RecentProgressComponent {
 
   private transformProjectPullRequestsWeekly(
     data: ProjectPullRequestsWeeklyResponse,
-    tooltipData: { total: string; reviewers: string; pending: string } | null
-  ): ProgressItemWithChart {
+    tooltipData: { total: string; reviewers: string; pending: string } | null,
+    metric: DashboardMetricCard
+  ): DashboardMetricCard {
     // Reverse the data to show oldest week on the left
     const chartData = [...data.data].reverse();
 
@@ -357,12 +398,10 @@ export class RecentProgressComponent {
       : undefined;
 
     return {
-      label: 'PR Review & Merge Velocity',
+      ...metric,
       value: `${avgMergeTime}`,
-      subtitle: 'Avg days to merge',
       tooltipText,
       isConnected: true,
-      chartType: 'bar',
       chartData: {
         labels: chartData.map((row) => row.WEEK_START_DATE),
         datasets: [
@@ -425,18 +464,14 @@ export class RecentProgressComponent {
     };
   }
 
-  private transformContributorsMentored(data: FoundationContributorsMentoredResponse): ProgressItemWithChart {
+  private transformContributorsMentored(data: FoundationContributorsMentoredResponse, metric: DashboardMetricCard): DashboardMetricCard {
     // Reverse the data to show oldest week on the left
     const chartData = [...data.data].reverse();
 
     return {
-      label: 'Contributors Mentored',
-      icon: 'fa-light fa-user-graduate',
+      ...metric,
       value: data.totalMentored.toString(),
       trend: data.avgWeeklyNew > 0 ? 'up' : undefined,
-      subtitle: 'Total contributors mentored',
-      chartType: 'line',
-      category: 'projectHealth',
       isConnected: true,
       chartData: {
         labels: chartData.map((row) => row.WEEK_START_DATE),
@@ -459,8 +494,9 @@ export class RecentProgressComponent {
 
   private transformUniqueContributorsWeekly(
     data: UniqueContributorsWeeklyResponse,
-    tooltipData: { total: string; avgNew: string; avgReturning: string } | null
-  ): ProgressItemWithChart {
+    tooltipData: { total: string; avgNew: string; avgReturning: string } | null,
+    metric: DashboardMetricCard
+  ): DashboardMetricCard {
     // Reverse the data to show oldest week on the left
     const chartData = [...data.data].reverse();
 
@@ -476,15 +512,11 @@ export class RecentProgressComponent {
       : undefined;
 
     return {
-      label: 'Unique Contributors per Week',
-      icon: 'fa-light fa-users',
+      ...metric,
       value: avgUniqueContributors.toString(),
       trend: avgUniqueContributors > 0 ? 'up' : 'down',
-      subtitle: 'Active contributors',
       tooltipText,
       isConnected: true,
-      chartType: 'bar',
-      category: 'code',
       chartData: {
         labels: chartData.map((row) => row.WEEK_START_DATE),
         datasets: [
@@ -550,9 +582,74 @@ export class RecentProgressComponent {
     };
   }
 
+  private transformHealthMetricsDaily(data: HealthMetricsDailyResponse, metric: DashboardMetricCard): DashboardMetricCard {
+    // Reverse the data to show oldest date on the left
+    const chartData = [...data.data].reverse();
+
+    // Current average health score from the API
+    const currentAvgHealthScore = data.currentAvgHealthScore || 0;
+
+    // Determine trend based on health score
+    const trend = currentAvgHealthScore >= 50 ? 'up' : 'down';
+
+    return {
+      ...metric,
+      value: currentAvgHealthScore.toString(),
+      trend,
+      isConnected: true,
+      chartData: {
+        labels: chartData.map((row) => row.METRIC_DATE),
+        datasets: [
+          {
+            label: 'Health Score',
+            data: chartData.map((row) => row.AVG_HEALTH_SCORE),
+            borderColor: lfxColors.emerald[500],
+            backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
+            fill: true,
+            tension: 0.4,
+            borderWidth: 2,
+            pointRadius: 0,
+          },
+        ],
+      },
+      chartOptions: {
+        ...BASE_LINE_CHART_OPTIONS,
+        plugins: {
+          ...BASE_LINE_CHART_OPTIONS.plugins,
+          tooltip: {
+            ...(BASE_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
+            callbacks: {
+              title: (context: TooltipItem<'line'>[]) => {
+                const dateStr = context[0].label;
+                const date = parseLocalDateString(dateStr);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              },
+              label: (context: TooltipItem<'line'>) => {
+                const score = Math.round(context.parsed.y);
+                return `Avg Health Score: ${score}`;
+              },
+            },
+          },
+        },
+      },
+    };
+  }
+
   private initializeActiveWeeksStreakData() {
     return toSignal(
-      this.analyticsService.getActiveWeeksStreak().pipe(finalize(() => this.loadingState.update((state) => ({ ...state, activeWeeksStreak: false })))),
+      toObservable(this.personaService.currentPersona).pipe(
+        switchMap((persona) => {
+          // Only fetch for core-developer persona
+          if (persona === 'maintainer') {
+            this.loadingState.update((state) => ({ ...state, activeWeeksStreak: false }));
+            return [{ data: [], currentStreak: 0, totalWeeks: 0 }];
+          }
+          this.loadingState.update((state) => ({ ...state, activeWeeksStreak: true }));
+          return this.analyticsService
+            .getActiveWeeksStreak()
+            .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, activeWeeksStreak: false }))));
+        })
+      ),
       {
         initialValue: {
           data: [],
@@ -565,7 +662,19 @@ export class RecentProgressComponent {
 
   private initializePullRequestsMergedData() {
     return toSignal(
-      this.analyticsService.getPullRequestsMerged().pipe(finalize(() => this.loadingState.update((state) => ({ ...state, pullRequestsMerged: false })))),
+      toObservable(this.personaService.currentPersona).pipe(
+        switchMap((persona) => {
+          // Only fetch for core-developer persona
+          if (persona === 'maintainer') {
+            this.loadingState.update((state) => ({ ...state, pullRequestsMerged: false }));
+            return [{ data: [], totalPullRequests: 0, totalDays: 0 }];
+          }
+          this.loadingState.update((state) => ({ ...state, pullRequestsMerged: true }));
+          return this.analyticsService
+            .getPullRequestsMerged()
+            .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, pullRequestsMerged: false }))));
+        })
+      ),
       {
         initialValue: {
           data: [],
@@ -577,13 +686,26 @@ export class RecentProgressComponent {
   }
 
   private initializeCodeCommitsData() {
-    return toSignal(this.analyticsService.getCodeCommits().pipe(finalize(() => this.loadingState.update((state) => ({ ...state, codeCommits: false })))), {
-      initialValue: {
-        data: [],
-        totalCommits: 0,
-        totalDays: 0,
-      },
-    });
+    return toSignal(
+      toObservable(this.personaService.currentPersona).pipe(
+        switchMap((persona) => {
+          // Only fetch for core-developer persona
+          if (persona === 'maintainer') {
+            this.loadingState.update((state) => ({ ...state, codeCommits: false }));
+            return [{ data: [], totalCommits: 0, totalDays: 0 }];
+          }
+          this.loadingState.update((state) => ({ ...state, codeCommits: true }));
+          return this.analyticsService.getCodeCommits().pipe(finalize(() => this.loadingState.update((state) => ({ ...state, codeCommits: false }))));
+        })
+      ),
+      {
+        initialValue: {
+          data: [],
+          totalCommits: 0,
+          totalDays: 0,
+        },
+      }
+    );
   }
 
   private initializeProjectIssuesResolutionData() {
@@ -691,53 +813,35 @@ export class RecentProgressComponent {
     );
   }
 
+  private initializeHealthMetricsDailyData() {
+    return toSignal(
+      toObservable(this.projectSlug).pipe(
+        switchMap((projectSlug) => {
+          if (!projectSlug) {
+            this.loadingState.update((state) => ({ ...state, healthMetricsDaily: false }));
+            return [{ data: [], currentAvgHealthScore: 0, totalDays: 0 }];
+          }
+          this.loadingState.update((state) => ({ ...state, healthMetricsDaily: true }));
+          const entityType = this.entityType();
+          return this.analyticsService
+            .getHealthMetricsDaily(projectSlug, entityType)
+            .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, healthMetricsDaily: false }))));
+        })
+      ),
+      {
+        initialValue: {
+          data: [],
+          currentAvgHealthScore: 0,
+          totalDays: 0,
+        },
+      }
+    );
+  }
+
   private initializeIsLoading() {
     return computed<boolean>(() => {
       const state = this.loadingState();
       return Object.values(state).some((loading) => loading);
-    });
-  }
-
-  private initializeProgressItems() {
-    return computed<ProgressItemWithChart[]>(() => {
-      const persona = this.personaService.currentPersona();
-      const activeWeeksData = this.activeWeeksStreakData();
-      const pullRequestsData = this.pullRequestsMergedData();
-      const codeCommitsDataValue = this.codeCommitsData();
-      const issuesResolutionData = this.projectIssuesResolutionData();
-      const prWeeklyData = this.projectPullRequestsWeeklyData();
-      const contributorsMentoredData = this.contributorsMentoredData();
-      const uniqueContributorsData = this.uniqueContributorsWeeklyData();
-      const issuesTooltip = this.issuesTooltipData();
-      const prVelocityTooltip = this.prVelocityTooltipData();
-      const uniqueContributorsTooltip = this.uniqueContributorsTooltipData();
-
-      const baseMetrics = persona === 'maintainer' ? MAINTAINER_PROGRESS_METRICS : CORE_DEVELOPER_PROGRESS_METRICS;
-
-      return baseMetrics.map((metric) => {
-        if (metric.label === 'Active Weeks Streak') {
-          return this.transformActiveWeeksStreak(activeWeeksData);
-        }
-        if (metric.label === 'Pull Requests Merged') {
-          return this.transformPullRequestsMerged(pullRequestsData);
-        }
-        if (metric.label === 'Code Commits') {
-          return this.transformCodeCommits(codeCommitsDataValue);
-        }
-        if (metric.label === 'Open vs Closed Issues Trend') {
-          return this.transformProjectIssuesResolution(issuesResolutionData, issuesTooltip);
-        }
-        if (metric.label === 'PR Review & Merge Velocity') {
-          return this.transformProjectPullRequestsWeekly(prWeeklyData, prVelocityTooltip);
-        }
-        if (metric.label === 'Contributors Mentored') {
-          return this.transformContributorsMentored(contributorsMentoredData);
-        }
-        if (metric.label === 'Unique Contributors per Week') {
-          return this.transformUniqueContributorsWeekly(uniqueContributorsData, uniqueContributorsTooltip);
-        }
-        return metric;
-      });
     });
   }
 

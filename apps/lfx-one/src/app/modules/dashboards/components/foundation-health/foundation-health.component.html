@@ -62,65 +62,64 @@
     <div class="overflow-hidden">
       <div #carouselScroll class="flex gap-4 overflow-x-auto pb-2 hide-scrollbar scroll-smooth" data-testid="foundation-health-carousel">
         @for (card of metricCards(); track card.title) {
-          <div class="p-4 bg-white rounded-lg border border-slate-200 flex-shrink-0 w-[calc(100vw-3rem)] md:w-80" [attr.data-testid]="card.testId">
-            <div class="flex flex-col h-full justify-between">
-              <!-- Card Header -->
-              <div class="flex items-center gap-2">
-                <i [class]="card.icon + ' w-4 h-4 text-muted-foreground'"></i>
-                <h5 class="text-sm font-medium">{{ card.title }}</h5>
-              </div>
+          @switch (card.customContentType) {
+            <!-- Bar Chart - Use shared metric card -->
+            @case ('bar-chart') {
+              <lfx-metric-card
+                [title]="card.title"
+                [icon]="card.icon"
+                [testId]="card.testId"
+                [chartType]="card.chartType"
+                [chartData]="card.chartData"
+                [chartOptions]="barChartOptions"
+                [value]="card.value"
+                [subtitle]="card.subtitle"></lfx-metric-card>
+            }
 
-              <!-- Custom Content -->
-              @switch (card.customContentType) {
-                <!-- Sparkline Chart -->
-                @case ('sparkline') {
-                  @if (card.chartData) {
-                    <div class="mt-3 w-full h-16">
-                      <lfx-chart [type]="'line'" [data]="card.chartData" [options]="card.chartOptions || sparklineOptions" height="100%"></lfx-chart>
-                    </div>
-                  }
-                }
-
-                <!-- Bar Chart -->
-                @case ('bar-chart') {
-                  @if (card.chartData) {
-                    <div class="mt-3 flex justify-center">
-                      <div class="w-[200px] h-[60px]">
-                        <lfx-chart [type]="'bar'" [data]="card.chartData" [options]="barChartOptions" height="100%"></lfx-chart>
-                      </div>
-                    </div>
-                  }
-                }
-
-                <!-- Top Projects List -->
-                @case ('top-projects') {
+            <!-- Top Projects List - Custom content -->
+            @case ('top-projects') {
+              <lfx-metric-card
+                [title]="card.title"
+                [icon]="card.icon"
+                [testId]="card.testId"
+                [chartType]="card.chartType"
+                [value]="card.value"
+                [subtitle]="card.subtitle">
+                <ng-template #customContent>
                   @if (card.topProjects) {
                     <div class="space-y-0.5 p-0 pl-[60px] m-0 mb-[5px]">
-                      <div class="text-xs font-medium text-muted-foreground">Top 3 Projects by Value</div>
+                      <div class="text-xs font-medium text-gray-500">Top 3 Projects by Value</div>
                       @for (project of card.topProjects; track project.name) {
                         <div class="flex items-center justify-between text-sm">
-                          <span class="text-muted-foreground">{{ project.name }}</span>
+                          <span class="text-gray-500">{{ project.name }}</span>
                           <span class="font-medium">{{ project.formattedValue }}</span>
                         </div>
                       }
                     </div>
                   }
-                }
+                </ng-template>
+              </lfx-metric-card>
+            }
 
-                <!-- Company Bus Factor (Inline) -->
-                @case ('bus-factor') {
+            <!-- Company Bus Factor - Custom content -->
+            @case ('bus-factor') {
+              <lfx-metric-card
+                [title]="card.title"
+                [icon]="card.icon"
+                [testId]="card.testId"
+                [chartType]="card.chartType"
+                [value]="card.value"
+                [subtitle]="card.subtitle">
+                <ng-template #customContent>
                   @if (card.busFactor) {
                     <div class="flex-1 flex flex-col justify-end pb-2">
                       <div class="flex gap-0">
-                        <!-- Top Companies Section -->
                         <div [style.width.%]="card.busFactor.topCompaniesPercentage" class="flex flex-col gap-1">
                           <div class="text-xs font-medium text-slate-700">
                             {{ card.busFactor.topCompaniesCount }} Companies ({{ card.busFactor.topCompaniesPercentage }}%)
                           </div>
                           <div class="h-4 rounded-l-sm bg-gray-300"></div>
                         </div>
-
-                        <!-- Other Companies Section -->
                         <div [style.width.%]="card.busFactor.otherCompaniesPercentage" class="flex flex-col gap-1">
                           <div class="text-xs text-slate-600 text-right">{{ card.busFactor.otherCompaniesCount }} Other Companies</div>
                           <div class="h-4 bg-slate-200 rounded-r-sm"></div>
@@ -128,10 +127,20 @@
                       </div>
                     </div>
                   }
-                }
+                </ng-template>
+              </lfx-metric-card>
+            }
 
-                <!-- Project Health Scores -->
-                @case ('health-scores') {
+            <!-- Project Health Scores - Custom content -->
+            @case ('health-scores') {
+              <lfx-metric-card
+                [title]="card.title"
+                [icon]="card.icon"
+                [testId]="card.testId"
+                [chartType]="card.chartType"
+                [value]="card.value"
+                [subtitle]="card.subtitle">
+                <ng-template #customContent>
                   @if (card.healthScores) {
                     <div class="flex-1 flex flex-col justify-end p-0">
                       <div class="flex items-end justify-between gap-2 h-16">
@@ -143,29 +152,30 @@
                               [style.height.px]="item.heightPx"></div>
                             <div class="text-[10px] text-center whitespace-nowrap">
                               <div class="font-medium">{{ item.category }}</div>
-                              <div class="text-muted-foreground">{{ item.count }}</div>
+                              <div class="text-gray-500">{{ item.count }}</div>
                             </div>
                           </div>
                         }
                       </div>
                     </div>
                   }
-                }
-              }
+                </ng-template>
+              </lfx-metric-card>
+            }
 
-              <!-- Card Footer (Value and Subtitle) -->
-              @if (card.value || card.subtitle) {
-                <div class="space-y-1">
-                  @if (card.value) {
-                    <div class="text-xl font-medium">{{ card.value }}</div>
-                  }
-                  @if (card.subtitle) {
-                    <div class="text-xs text-gray-500">{{ card.subtitle }}</div>
-                  }
-                </div>
-              }
-            </div>
-          </div>
+            <!-- Default fallback -->
+            @default {
+              <lfx-metric-card
+                [title]="card.title"
+                [icon]="card.icon"
+                [testId]="card.testId"
+                [chartType]="card.chartType"
+                [chartData]="card.chartData"
+                [chartOptions]="card.chartOptions"
+                [value]="card.value"
+                [subtitle]="card.subtitle"></lfx-metric-card>
+            }
+          }
         }
       </div>
     </div>

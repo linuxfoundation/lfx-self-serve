@@ -5,18 +5,24 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import {
   ActiveWeeksStreakResponse,
-  BoardMemberDashboardResponse,
+  CertifiedEmployeesResponse,
   FoundationContributorsMentoredResponse,
   FoundationHealthScoreDistributionResponse,
   FoundationMaintainersResponse,
   FoundationSoftwareValueResponse,
   FoundationTotalMembersResponse,
   FoundationTotalProjectsResponse,
-  OrganizationContributionsOverviewResponse,
+  HealthEventsMonthlyResponse,
+  HealthMetricsDailyResponse,
+  MembershipTierResponse,
+  OrganizationContributorsResponse,
   OrganizationEventsOverviewResponse,
+  OrganizationMaintainersResponse,
   ProjectIssuesResolutionResponse,
   ProjectPullRequestsWeeklyResponse,
   ProjectsListResponse,
+  TrainingEnrollmentsResponse,
+  UniqueContributorsDailyResponse,
   UniqueContributorsWeeklyResponse,
   UserCodeCommitsResponse,
   UserProjectsResponse,
@@ -105,28 +111,17 @@ export class AnalyticsService {
   }
 
   /**
-   * Get consolidated organization contributions overview (maintainers + contributors) in a single API call
-   * Optimized endpoint that reduces API roundtrips by combining related metrics
+   * Get organization maintainers data
    * @param accountId - Required account ID to filter by specific organization
-   * @returns Observable of consolidated contributions overview response
+   * @returns Observable of organization maintainers response
    */
-  public getOrganizationContributionsOverview(accountId: string): Observable<OrganizationContributionsOverviewResponse> {
-    return this.http.get<OrganizationContributionsOverviewResponse>('/api/analytics/organization-contributions-overview', { params: { accountId } }).pipe(
+  public getOrganizationMaintainers(accountId: string): Observable<OrganizationMaintainersResponse> {
+    return this.http.get<OrganizationMaintainersResponse>('/api/analytics/organization-maintainers', { params: { accountId } }).pipe(
       catchError((error) => {
-        console.error('Failed to fetch organization contributions overview:', error);
+        console.error('Failed to fetch organization maintainers:', error);
         return of({
-          maintainers: {
-            maintainers: 0,
-            projects: 0,
-          },
-          contributors: {
-            contributors: 0,
-            projects: 0,
-          },
-          technicalCommittee: {
-            totalRepresentatives: 0,
-            totalProjects: 0,
-          },
+          maintainers: 0,
+          projects: 0,
           accountId: '',
           accountName: '',
         });
@@ -135,30 +130,91 @@ export class AnalyticsService {
   }
 
   /**
-   * Get consolidated board member dashboard data (membership tier + certified employees)
-   * Optimized endpoint that reduces API roundtrips by combining related metrics in a single API call
+   * Get organization contributors data
+   * @param accountId - Required account ID to filter by specific organization
+   * @returns Observable of organization contributors response
+   */
+  public getOrganizationContributors(accountId: string): Observable<OrganizationContributorsResponse> {
+    return this.http.get<OrganizationContributorsResponse>('/api/analytics/organization-contributors', { params: { accountId } }).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch organization contributors:', error);
+        return of({
+          contributors: 0,
+          projects: 0,
+          accountId: '',
+          accountName: '',
+        });
+      })
+    );
+  }
+
+  /**
+   * Get membership tier data for an organization
    * @param accountId - Required account ID to filter by specific organization
    * @param projectSlug - Required foundation project slug to filter data
-   * @returns Observable of consolidated board member dashboard response
+   * @returns Observable of membership tier response
    */
-  public getBoardMemberDashboard(accountId: string, projectSlug: string): Observable<BoardMemberDashboardResponse> {
+  public getMembershipTier(accountId: string, projectSlug: string): Observable<MembershipTierResponse> {
     const params = { accountId, projectSlug };
-    return this.http.get<BoardMemberDashboardResponse>('/api/analytics/board-member-dashboard', { params }).pipe(
+    return this.http.get<MembershipTierResponse>('/api/analytics/membership-tier', { params }).pipe(
       catchError((error) => {
-        console.error('Failed to fetch board member dashboard:', error);
+        console.error('Failed to fetch membership tier:', error);
         return of({
-          membershipTier: {
-            tier: '',
-            membershipStartDate: '',
-            membershipEndDate: '',
-            membershipStatus: '',
-          },
-          certifiedEmployees: {
-            certifications: 0,
-            certifiedEmployees: 0,
-          },
+          projectId: '',
+          projectName: '',
+          projectSlug: '',
+          isProjectActive: false,
           accountId: '',
-          uid: '',
+          accountName: '',
+          membershipTier: '',
+          membershipPrice: 0,
+          startDate: '',
+          endDate: '',
+          renewalPrice: 0,
+          membershipStatus: '',
+        });
+      })
+    );
+  }
+
+  /**
+   * Get certified employees data for an organization
+   * @param accountId - Required account ID to filter by specific organization
+   * @param projectSlug - Required foundation project slug to filter data
+   * @returns Observable of certified employees response
+   */
+  public getCertifiedEmployees(accountId: string, projectSlug: string): Observable<CertifiedEmployeesResponse> {
+    const params = { accountId, projectSlug };
+    return this.http.get<CertifiedEmployeesResponse>('/api/analytics/certified-employees', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch certified employees:', error);
+        return of({
+          certifications: 0,
+          certifiedEmployees: 0,
+          accountId: '',
+          projectId: '',
+          projectSlug: '',
+        });
+      })
+    );
+  }
+
+  /**
+   * Get training enrollments data for an organization
+   * @param accountId - Required account ID to filter by specific organization
+   * @param projectSlug - Required foundation project slug to filter data
+   * @returns Observable of training enrollments response with cumulative daily data
+   */
+  public getTrainingEnrollments(accountId: string, projectSlug: string): Observable<TrainingEnrollmentsResponse> {
+    const params = { accountId, projectSlug };
+    return this.http.get<TrainingEnrollmentsResponse>('/api/analytics/training-enrollments', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch training enrollments:', error);
+        return of({
+          totalEnrollments: 0,
+          dailyData: [],
+          accountId: '',
+          projectSlug: '',
         });
       })
     );
@@ -389,6 +445,78 @@ export class AnalyticsService {
             totalUniqueContributors: 0,
             avgUniqueContributors: 0,
             totalWeeks: 0,
+          });
+        })
+      );
+  }
+
+  /**
+   * Get health metrics daily data from Snowflake
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (foundation-level data) or 'project' (single project data)
+   * @returns Observable of health metrics daily response with current average health score
+   */
+  public getHealthMetricsDaily(slug: string, entityType: 'foundation' | 'project'): Observable<HealthMetricsDailyResponse> {
+    const params = { slug, entityType };
+    return this.http
+      .get<HealthMetricsDailyResponse>('/api/analytics/health-metrics-daily', {
+        params,
+      })
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to fetch health metrics daily:', error);
+          return of({
+            data: [],
+            currentAvgHealthScore: 0,
+            totalDays: 0,
+          });
+        })
+      );
+  }
+
+  /**
+   * Get unique contributors daily data from Snowflake
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (foundation-level data) or 'project' (single project data)
+   * @returns Observable of unique contributors daily response with average contributors
+   */
+  public getUniqueContributorsDaily(slug: string, entityType: 'foundation' | 'project'): Observable<UniqueContributorsDailyResponse> {
+    const params = { slug, entityType };
+    return this.http
+      .get<UniqueContributorsDailyResponse>('/api/analytics/unique-contributors-daily', {
+        params,
+      })
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to fetch unique contributors daily:', error);
+          return of({
+            data: [],
+            avgContributors: 0,
+            totalDays: 0,
+          });
+        })
+      );
+  }
+
+  /**
+   * Get health events monthly data from Snowflake
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (foundation-level data) or 'project' (single project data)
+   * @returns Observable of health events monthly response with total events
+   */
+  public getHealthEventsMonthly(slug: string, entityType: 'foundation' | 'project'): Observable<HealthEventsMonthlyResponse> {
+    const params = { slug, entityType };
+    return this.http
+      .get<HealthEventsMonthlyResponse>('/api/analytics/health-events-monthly', {
+        params,
+      })
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to fetch health events monthly:', error);
+          return of({
+            data: [],
+            totalEvents: 0,
+            totalMonths: 0,
           });
         })
       );

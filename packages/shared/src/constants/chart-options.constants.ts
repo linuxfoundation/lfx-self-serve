@@ -1,8 +1,17 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { ChartOptions } from 'chart.js';
+import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 import { lfxColors } from './colors.constants';
+
+/**
+ * Empty chart data placeholder for metrics populated by live data
+ * Used across dashboard metrics that receive data from APIs
+ */
+export const EMPTY_CHART_DATA: ChartData<ChartType> = {
+  labels: [],
+  datasets: [],
+};
 
 /**
  * Base tooltip configuration for index-based hovering
@@ -160,5 +169,22 @@ export const BAR_CHART_WITH_FOOTER_OPTIONS: ChartOptions<'bar'> = {
   scales: {
     x: { display: false },
     y: { display: false, min: 0, grace: '5%' },
+  },
+};
+
+/**
+ * Base chart options without tooltips
+ * Used for simple sparkline visualizations where tooltips are not needed
+ */
+export const NO_TOOLTIP_CHART_OPTIONS: ChartOptions<'line' | 'bar'> = {
+  responsive: true,
+  maintainAspectRatio: false,
+  plugins: {
+    legend: { display: false },
+    tooltip: { enabled: false },
+  },
+  scales: {
+    x: { display: false },
+    y: { display: false },
   },
 };

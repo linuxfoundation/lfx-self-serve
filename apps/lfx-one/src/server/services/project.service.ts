@@ -6,6 +6,8 @@ import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
   FoundationContributorsMentoredResponse,
   FoundationContributorsMentoredRow,
+  FoundationHealthEventsMonthlyRow,
+  FoundationHealthMetricsDailyRow,
   FoundationHealthScoreDistributionResponse,
   FoundationHealthScoreDistributionRow,
   FoundationMaintainersDailyRow,
@@ -14,11 +16,16 @@ import {
   FoundationTopProjectBySoftwareValueRow,
   FoundationTotalMembersResponse,
   FoundationTotalProjectsResponse,
+  FoundationUniqueContributorsDailyRow,
+  HealthEventsMonthlyResponse,
+  HealthMetricsDailyResponse,
   MonthlyMemberCountWithFoundation,
   MonthlyProjectCountWithFoundation,
   PendingActionItem,
   PendingSurveyRow,
   Project,
+  ProjectHealthEventsMonthlyRow,
+  ProjectHealthMetricsDailyRow,
   ProjectIssuesResolutionAggregatedRow,
   ProjectIssuesResolutionResponse,
   ProjectIssuesResolutionRow,
@@ -28,7 +35,9 @@ import {
   ProjectSettings,
   ProjectsListResponse,
   ProjectSlugToIdResponse,
+  ProjectUniqueContributorsDailyRow,
   QueryServiceResponse,
+  UniqueContributorsDailyResponse,
   UniqueContributorsWeeklyResponse,
   UniqueContributorsWeeklyRow,
 } from '@lfx-one/shared/interfaces';
@@ -1088,6 +1097,171 @@ export class ProjectService {
     });
 
     return distribution;
+  }
+
+  /**
+   * Get health metrics daily data from Snowflake
+   * Queries FOUNDATION_HEALTH_METRICS_DAILY or PROJECT_HEALTH_METRICS_DAILY table
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (foundation-level data) or 'project' (single project data)
+   * @returns Daily health metrics data with current average health score
+   */
+  public async getHealthMetricsDaily(slug: string, entityType: 'foundation' | 'project'): Promise<HealthMetricsDailyResponse> {
+    // Query switching based on entity type
+    const query =
+      entityType === 'foundation'
+        ? `
+      SELECT
+        FOUNDATION_ID,
+        FOUNDATION_SLUG,
+        METRIC_DATE,
+        AVG_HEALTH_SCORE,
+        MIN_HEALTH_SCORE,
+        MAX_HEALTH_SCORE,
+        PROJECTS_WITH_HEALTH_SCORE_COUNT,
+        TOTAL_SOFTWARE_VALUE,
+        AVG_SOFTWARE_VALUE,
+        PROJECTS_WITH_SOFTWARE_VALUE_COUNT,
+        TOTAL_PROJECTS_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_METRICS_DAILY
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY METRIC_DATE DESC
+    `
+        : `
+      SELECT
+        PROJECT_ID,
+        PROJECT_SLUG,
+        METRIC_DATE,
+        AVG_HEALTH_SCORE,
+        MIN_HEALTH_SCORE,
+        MAX_HEALTH_SCORE,
+        PROJECTS_WITH_HEALTH_SCORE_COUNT,
+        TOTAL_SOFTWARE_VALUE,
+        AVG_SOFTWARE_VALUE,
+        PROJECTS_WITH_SOFTWARE_VALUE_COUNT,
+        TOTAL_SUB_PROJECTS_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_HEALTH_METRICS_DAILY
+      WHERE PROJECT_SLUG = ?
+      ORDER BY METRIC_DATE DESC
+    `;
+
+    const result =
+      entityType === 'foundation'
+        ? await this.snowflakeService.execute<FoundationHealthMetricsDailyRow>(query, [slug])
+        : await this.snowflakeService.execute<ProjectHealthMetricsDailyRow>(query, [slug]);
+
+    // Get current average health score from most recent date
+    const currentAvgHealthScore = result.rows.length > 0 ? Math.round(result.rows[0].AVG_HEALTH_SCORE) : 0;
+
+    return {
+      data: result.rows,
+      currentAvgHealthScore,
+      totalDays: result.rows.length,
+    };
+  }
+
+  /**
+   * Get unique contributors daily data from Snowflake
+   * Queries FOUNDATION_UNIQUE_CONTRIBUTORS_DAILY or PROJECT_UNIQUE_CONTRIBUTORS_DAILY table
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (foundation-level data) or 'project' (single project data)
+   * @returns Daily unique contributors data with average contributors
+   */
+  public async getUniqueContributorsDaily(slug: string, entityType: 'foundation' | 'project'): Promise<UniqueContributorsDailyResponse> {
+    // Query switching based on entity type
+    const query =
+      entityType === 'foundation'
+        ? `
+      SELECT
+        FOUNDATION_ID,
+        FOUNDATION_NAME,
+        FOUNDATION_SLUG,
+        ACTIVITY_DATE,
+        DAILY_UNIQUE_CONTRIBUTORS,
+        AVG_CONTRIBUTORS,
+        TOTAL_DAYS
+      FROM ANALYTICS_DEV.DEV_MSALOMAO_PLATINUM_LFX_ONE.FOUNDATION_UNIQUE_CONTRIBUTORS_DAILY
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY ACTIVITY_DATE DESC
+    `
+        : `
+      SELECT
+        PROJECT_ID,
+        PROJECT_NAME,
+        PROJECT_SLUG,
+        ACTIVITY_DATE,
+        DAILY_UNIQUE_CONTRIBUTORS,
+        AVG_CONTRIBUTORS,
+        TOTAL_DAYS
+      FROM ANALYTICS_DEV.DEV_MSALOMAO_PLATINUM_LFX_ONE.PROJECT_UNIQUE_CONTRIBUTORS_DAILY
+      WHERE PROJECT_SLUG = ?
+      ORDER BY ACTIVITY_DATE DESC
+    `;
+
+    const result =
+      entityType === 'foundation'
+        ? await this.snowflakeService.execute<FoundationUniqueContributorsDailyRow>(query, [slug])
+        : await this.snowflakeService.execute<ProjectUniqueContributorsDailyRow>(query, [slug]);
+
+    // Get average contributors from first row (same across all rows from SQL calculation)
+    const avgContributors = result.rows.length > 0 ? Math.round(result.rows[0].AVG_CONTRIBUTORS) : 0;
+
+    return {
+      data: result.rows,
+      avgContributors,
+      totalDays: result.rows.length,
+    };
+  }
+
+  /**
+   * Get health events monthly data from Snowflake
+   * Queries FOUNDATION_HEALTH_EVENTS_MONTHLY or PROJECT_HEALTH_EVENTS_MONTHLY table
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (foundation-level data) or 'project' (single project data)
+   * @returns Monthly events data with total events count
+   */
+  public async getHealthEventsMonthly(slug: string, entityType: 'foundation' | 'project'): Promise<HealthEventsMonthlyResponse> {
+    // Query switching based on entity type
+    const query =
+      entityType === 'foundation'
+        ? `
+      SELECT
+        FOUNDATION_ID,
+        FOUNDATION_NAME,
+        FOUNDATION_SLUG,
+        MONTH_START_DATE,
+        EVENT_COUNT,
+        TOTAL_EVENTS
+      FROM ANALYTICS_DEV.DEV_MSALOMAO_PLATINUM_LFX_ONE.FOUNDATION_HEALTH_EVENTS_MONTHLY
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY MONTH_START_DATE DESC
+    `
+        : `
+      SELECT
+        PROJECT_ID,
+        PROJECT_NAME,
+        PROJECT_SLUG,
+        MONTH_START_DATE,
+        EVENT_COUNT,
+        TOTAL_EVENTS
+      FROM ANALYTICS_DEV.DEV_MSALOMAO_PLATINUM_LFX_ONE.PROJECT_HEALTH_EVENTS_MONTHLY
+      WHERE PROJECT_SLUG = ?
+      ORDER BY MONTH_START_DATE DESC
+    `;
+
+    const result =
+      entityType === 'foundation'
+        ? await this.snowflakeService.execute<FoundationHealthEventsMonthlyRow>(query, [slug])
+        : await this.snowflakeService.execute<ProjectHealthEventsMonthlyRow>(query, [slug]);
+
+    // Get total events from first row (same across all rows from SQL calculation)
+    const totalEvents = result.rows.length > 0 ? result.rows[0].TOTAL_EVENTS : 0;
+
+    return {
+      data: result.rows,
+      totalEvents,
+      totalMonths: result.rows.length,
+    };
   }
 
   /**

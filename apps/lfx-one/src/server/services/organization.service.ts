@@ -2,14 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import {
-  BoardMemberDashboardConsolidatedRow,
-  BoardMemberDashboardResponse,
-  OrganizationContributionsConsolidatedRow,
-  OrganizationContributionsOverviewResponse,
+  CertifiedEmployeesResponse,
+  CertifiedEmployeesRow,
+  MembershipTierResponse,
+  MembershipTierRow,
+  OrganizationContributorsResponse,
+  OrganizationContributorsRow,
   OrganizationEventAttendanceRow,
   OrganizationEventsOverviewResponse,
+  OrganizationMaintainersResponse,
+  OrganizationMaintainersRow,
   OrganizationSuggestion,
   OrganizationSuggestionsResponse,
+  TrainingEnrollmentDailyRow,
+  TrainingEnrollmentsResponse,
 } from '@lfx-one/shared';
 import { Request } from 'express';
 
@@ -44,60 +50,6 @@ export class OrganizationService {
     const response = await this.microserviceProxy.proxyRequest<OrganizationSuggestionsResponse>(req, 'LFX_V2_SERVICE', '/query/orgs/suggest', 'GET', params);
 
     return response.suggestions || [];
-  }
-
-  /**
-   * Get organization contributions overview (maintainers + contributors + technical committee)
-   * @param accountId - Organization account ID
-   * @returns Complete contributions overview
-   */
-  public async getContributionsOverview(accountId: string): Promise<OrganizationContributionsOverviewResponse> {
-    const data = await this.getContributionsData(accountId);
-
-    return {
-      maintainers: {
-        maintainers: data.MAINTAINERS || 0,
-        projects: data.MAINTAINER_PROJECTS || 0,
-      },
-      contributors: {
-        contributors: data.CONTRIBUTORS || 0,
-        projects: data.CONTRIBUTOR_PROJECTS || 0,
-      },
-      technicalCommittee: {
-        totalRepresentatives: data.TOTAL_REPRESENTATIVES || 0,
-        totalProjects: data.TOTAL_TC_PROJECTS || 0,
-      },
-      accountId: data.ACCOUNT_ID,
-      accountName: data.ACCOUNT_NAME,
-    };
-  }
-
-  /**
-   * Get board member dashboard (membership tier + certified employees)
-   * @param accountId - Organization account ID
-   * @param projectSlug - Project slug
-   * @returns Complete board member dashboard
-   */
-  public async getBoardMemberDashboardData(accountId: string, projectSlug: string): Promise<BoardMemberDashboardResponse> {
-    const data = await this.getDashboardData(accountId, projectSlug);
-
-    // Extract tier name (remove " Membership" suffix if present)
-    const tier = data.MEMBERSHIP_TIER ? data.MEMBERSHIP_TIER.replace(' Membership', '') : '';
-
-    return {
-      membershipTier: {
-        tier,
-        membershipStartDate: data.START_DATE || '',
-        membershipEndDate: data.LAST_END_DATE || '',
-        membershipStatus: data.MEMBERSHIP_STATUS || '',
-      },
-      certifiedEmployees: {
-        certifications: data.CERTIFICATIONS || 0,
-        certifiedEmployees: data.CERTIFIED_EMPLOYEES || 0,
-      },
-      accountId: data.ACCOUNT_ID,
-      uid: data.PROJECT_ID,
-    };
   }
 
   /**
@@ -140,85 +92,181 @@ export class OrganizationService {
   }
 
   /**
-   * Get organization contributions data from database
+   * Get certified employees data for an organization
    * @param accountId - Organization account ID
-   * @returns Contributions data row
+   * @param projectSlug - Project slug
+   * @returns Certified employees data
    */
-  private async getContributionsData(accountId: string): Promise<OrganizationContributionsConsolidatedRow> {
+  public async getCertifiedEmployees(accountId: string, projectSlug: string): Promise<CertifiedEmployeesResponse> {
     const query = `
-      WITH base AS (SELECT ? AS ACCOUNT_ID)
-      SELECT
-        m.MAINTAINERS,
-        m.PROJECTS AS MAINTAINER_PROJECTS,
-        c.CONTRIBUTORS,
-        c.PROJECTS AS CONTRIBUTOR_PROJECTS,
-        tc.TOTAL_REPRESENTATIVES,
-        tc.TOTAL_PROJECTS AS TOTAL_TC_PROJECTS,
-        COALESCE(m.ACCOUNT_ID, c.ACCOUNT_ID, tc.ACCOUNT_ID, base.ACCOUNT_ID) AS ACCOUNT_ID,
-        COALESCE(m.ACCOUNT_NAME, c.ACCOUNT_NAME) AS ACCOUNT_NAME
-      FROM base
-      LEFT JOIN ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MAINTAINERS m
-        ON base.ACCOUNT_ID = m.ACCOUNT_ID
-      LEFT JOIN ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_CONTRIBUTORS c
-        ON base.ACCOUNT_ID = c.ACCOUNT_ID
-      LEFT JOIN (
-        SELECT
-          SUM(COUNT) AS TOTAL_REPRESENTATIVES,
-          COUNT(DISTINCT PROJECT_ID) AS TOTAL_PROJECTS,
-          ACCOUNT_ID
-        FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.TECHNICAL_COMMITTEE_MEMBER_COUNT
-        WHERE ACCOUNT_ID = ?
-        GROUP BY ACCOUNT_ID
-      ) tc
-        ON base.ACCOUNT_ID = tc.ACCOUNT_ID
-      LIMIT 1
+      SELECT CERTIFICATIONS, CERTIFIED_EMPLOYEES, ACCOUNT_ID, PROJECT_ID, PROJECT_SLUG
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_CERTIFIED_EMPLOYEES
+      WHERE PROJECT_SLUG = ? AND ACCOUNT_ID = ?
     `;
 
-    const result = await this.snowflakeService.execute<OrganizationContributionsConsolidatedRow>(query, [accountId, accountId]);
+    const result = await this.snowflakeService.execute<CertifiedEmployeesRow>(query, [projectSlug, accountId]);
 
     if (result.rows.length === 0) {
-      throw new ResourceNotFoundError('Organization contributions data', accountId, {
-        operation: 'get_contributions_data',
+      throw new ResourceNotFoundError('Certified employees data', accountId, {
+        operation: 'get_certified_employees',
       });
     }
 
-    return result.rows[0];
+    const row = result.rows[0];
+
+    return {
+      certifications: row.CERTIFICATIONS || 0,
+      certifiedEmployees: row.CERTIFIED_EMPLOYEES || 0,
+      accountId: row.ACCOUNT_ID,
+      projectId: row.PROJECT_ID,
+      projectSlug: row.PROJECT_SLUG,
+    };
   }
 
   /**
-   * Get board member dashboard data from database
+   * Get membership tier data for an organization
    * @param accountId - Organization account ID
    * @param projectSlug - Project slug
-   * @returns Dashboard data row
+   * @returns Membership tier data
    */
-  private async getDashboardData(accountId: string, projectSlug: string): Promise<BoardMemberDashboardConsolidatedRow> {
+  public async getMembershipTier(accountId: string, projectSlug: string): Promise<MembershipTierResponse> {
     const query = `
-      WITH base AS (SELECT ? AS ACCOUNT_ID, ? AS PROJECT_SLUG)
-      SELECT
-        mt.MEMBERSHIP_TIER,
-        mt.START_DATE,
-        mt.LAST_END_DATE,
-        mt.MEMBERSHIP_STATUS,
-        ce.CERTIFICATIONS,
-        ce.CERTIFIED_EMPLOYEES,
-        COALESCE(mt.ACCOUNT_ID, ce.ACCOUNT_ID, base.ACCOUNT_ID) AS ACCOUNT_ID,
-        COALESCE(mt.PROJECT_ID, ce.PROJECT_ID) AS PROJECT_ID
-      FROM base
-      LEFT JOIN ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER mt
-        ON base.ACCOUNT_ID = mt.ACCOUNT_ID AND base.PROJECT_SLUG = mt.PROJECT_SLUG
-      LEFT JOIN ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_CERTIFIED_EMPLOYEES ce
-        ON base.ACCOUNT_ID = ce.ACCOUNT_ID AND base.PROJECT_SLUG = ce.PROJECT_SLUG
-      LIMIT 1
+      SELECT PROJECT_ID, PROJECT_NAME, PROJECT_SLUG, IS_PROJECT_ACTIVE, ACCOUNT_ID,
+             ACCOUNT_NAME, MEMBERSHIP_TIER, MEMBERSHIP_PRICE, START_DATE, LAST_END_DATE,
+             RENEWAL_PRICE, MEMBERSHIP_STATUS
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
+      WHERE PROJECT_SLUG = ? AND ACCOUNT_ID = ?
     `;
 
-    const result = await this.snowflakeService.execute<BoardMemberDashboardConsolidatedRow>(query, [accountId, projectSlug]);
+    const result = await this.snowflakeService.execute<MembershipTierRow>(query, [projectSlug, accountId]);
 
     if (result.rows.length === 0) {
-      throw new ResourceNotFoundError('Board member dashboard data', accountId, {
-        operation: 'get_dashboard_data',
+      throw new ResourceNotFoundError('Membership tier data', accountId, {
+        operation: 'get_membership_tier',
       });
     }
 
-    return result.rows[0];
+    const row = result.rows[0];
+
+    // Extract tier name (remove " Membership" suffix if present)
+    const tier = row.MEMBERSHIP_TIER ? row.MEMBERSHIP_TIER.replace(' Membership', '') : '';
+
+    return {
+      projectId: row.PROJECT_ID,
+      projectName: row.PROJECT_NAME,
+      projectSlug: row.PROJECT_SLUG,
+      isProjectActive: row.IS_PROJECT_ACTIVE,
+      accountId: row.ACCOUNT_ID,
+      accountName: row.ACCOUNT_NAME,
+      membershipTier: tier,
+      membershipPrice: row.MEMBERSHIP_PRICE || 0,
+      startDate: row.START_DATE || '',
+      endDate: row.LAST_END_DATE || '',
+      renewalPrice: row.RENEWAL_PRICE || 0,
+      membershipStatus: row.MEMBERSHIP_STATUS || '',
+    };
+  }
+
+  /**
+   * Get maintainers data for an organization
+   * @param accountId - Organization account ID
+   * @returns Maintainers data
+   */
+  public async getOrganizationMaintainers(accountId: string): Promise<OrganizationMaintainersResponse> {
+    const query = `
+      SELECT MAINTAINERS, PROJECTS, ACCOUNT_ID, ACCOUNT_NAME
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MAINTAINERS
+      WHERE ACCOUNT_ID = ?
+    `;
+
+    const result = await this.snowflakeService.execute<OrganizationMaintainersRow>(query, [accountId]);
+
+    if (result.rows.length === 0) {
+      throw new ResourceNotFoundError('Organization maintainers data', accountId, {
+        operation: 'get_organization_maintainers',
+      });
+    }
+
+    const row = result.rows[0];
+
+    return {
+      maintainers: row.MAINTAINERS || 0,
+      projects: row.PROJECTS || 0,
+      accountId: row.ACCOUNT_ID,
+      accountName: row.ACCOUNT_NAME,
+    };
+  }
+
+  /**
+   * Get contributors data for an organization
+   * @param accountId - Organization account ID
+   * @returns Contributors data
+   */
+  public async getOrganizationContributors(accountId: string): Promise<OrganizationContributorsResponse> {
+    const query = `
+      SELECT CONTRIBUTORS, PROJECTS, ACCOUNT_ID, ACCOUNT_NAME
+      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_CONTRIBUTORS
+      WHERE ACCOUNT_ID = ?
+    `;
+
+    const result = await this.snowflakeService.execute<OrganizationContributorsRow>(query, [accountId]);
+
+    if (result.rows.length === 0) {
+      throw new ResourceNotFoundError('Organization contributors data', accountId, {
+        operation: 'get_organization_contributors',
+      });
+    }
+
+    const row = result.rows[0];
+
+    return {
+      contributors: row.CONTRIBUTORS || 0,
+      projects: row.PROJECTS || 0,
+      accountId: row.ACCOUNT_ID,
+      accountName: row.ACCOUNT_NAME,
+    };
+  }
+
+  /**
+   * Get training enrollments data for an organization
+   * Returns count of enrollments this year with cumulative daily data for chart visualization
+   * @param accountId - Organization account ID
+   * @param projectSlug - Project slug
+   * @returns Training enrollments data with daily cumulative counts
+   */
+  public async getTrainingEnrollments(accountId: string, projectSlug: string): Promise<TrainingEnrollmentsResponse> {
+    const query = `
+      WITH daily_enrollments AS (
+        SELECT
+          DATE(ENROLLMENT_TS) AS ENROLLMENT_DATE,
+          COUNT(*) AS DAILY_COUNT
+        FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_TRAINING_ENROLLMENTS
+        WHERE PROJECT_SLUG = ? AND ACCOUNT_ID = ?
+          AND YEAR(ENROLLMENT_TS) = YEAR(CURRENT_DATE())
+        GROUP BY DATE(ENROLLMENT_TS)
+      )
+      SELECT
+        ENROLLMENT_DATE,
+        DAILY_COUNT,
+        SUM(DAILY_COUNT) OVER (ORDER BY ENROLLMENT_DATE ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS CUMULATIVE_COUNT
+      FROM daily_enrollments
+      ORDER BY ENROLLMENT_DATE ASC
+    `;
+
+    const result = await this.snowflakeService.execute<TrainingEnrollmentDailyRow>(query, [projectSlug, accountId]);
+
+    // Calculate total from the last cumulative count or sum of daily counts
+    const totalEnrollments = result.rows.length > 0 ? result.rows[result.rows.length - 1].CUMULATIVE_COUNT : 0;
+
+    return {
+      totalEnrollments,
+      dailyData: result.rows.map((row) => ({
+        date: row.ENROLLMENT_DATE,
+        count: row.DAILY_COUNT,
+        cumulativeCount: row.CUMULATIVE_COUNT,
+      })),
+      accountId,
+      projectSlug,
+    };
   }
 }
