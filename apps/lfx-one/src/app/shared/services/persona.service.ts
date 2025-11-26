@@ -19,7 +19,7 @@ export class PersonaService {
 
   public constructor() {
     // Default persona - will be overridden by initializeFromAuth if backend provides one
-    this.currentPersona = signal<PersonaType>('board-member');
+    this.currentPersona = signal<PersonaType>('maintainer');
   }
 
   /**
@@ -51,9 +51,8 @@ export class PersonaService {
       // Board members should only work at the foundation level
       if (persona === 'board-member') {
         this.projectContextService.clearProject();
+        this.router.navigate(['/']);
       }
-
-      this.router.navigate(['/']);
     }
   }
 }

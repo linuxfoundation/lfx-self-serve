@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { Account } from './account.interface';
 import type { PersonaType } from './persona.interface';
 
 /**
@@ -55,6 +56,8 @@ export interface AuthContext {
   user: User | null;
   /** User's persona type (auto-determined from committee memberships, null if not a member of any committees) */
   persona?: PersonaType | null;
+  /** User's affiliated organizations from committee memberships */
+  organizations?: Account[];
 }
 
 /**

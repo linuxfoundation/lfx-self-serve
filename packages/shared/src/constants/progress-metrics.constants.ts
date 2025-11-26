@@ -45,8 +45,8 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: Array.from({ length: 30 }, () => Math.floor(Math.random() * 6)),
-          borderColor: lfxColors.brand[500],
-          backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
+          borderColor: lfxColors.blue[500],
+          backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -75,8 +75,8 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: Array.from({ length: 30 }, () => Math.floor(Math.random() * 3)),
-          borderColor: lfxColors.brand[500],
-          backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
+          borderColor: lfxColors.blue[500],
+          backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -105,8 +105,8 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: Array.from({ length: 30 }, () => Math.floor(Math.random() * 5)),
-          borderColor: lfxColors.brand[500],
-          backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
+          borderColor: lfxColors.blue[500],
+          backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -140,8 +140,8 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: ProgressItemWithChart[] = [
             }
             return Math.random() > 0.5 ? 1 : 0;
           }),
-          borderColor: lfxColors.positive[500],
-          backgroundColor: hexToRgba(lfxColors.positive[500], 0.1),
+          borderColor: lfxColors.emerald[500],
+          backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -170,8 +170,8 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: Array.from({ length: 30 }, () => Math.floor(Math.random() * 3)),
-          borderColor: lfxColors.brand[300],
-          backgroundColor: hexToRgba(lfxColors.brand[300], 0.1),
+          borderColor: lfxColors.blue[300],
+          backgroundColor: hexToRgba(lfxColors.blue[300], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -211,8 +211,8 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
             const base = 28 - i * 0.75;
             return Math.max(15, Math.floor(base + (Math.random() * 4 - 2)));
           }),
-          borderColor: lfxColors.negative[500],
-          backgroundColor: hexToRgba(lfxColors.negative[500], 0.1),
+          borderColor: lfxColors.red[500],
+          backgroundColor: hexToRgba(lfxColors.red[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -243,8 +243,8 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: generateMockData(30, 1, 5),
-          borderColor: lfxColors.brand[500],
-          backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
+          borderColor: lfxColors.blue[500],
+          backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,
@@ -276,26 +276,26 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
         {
           label: 'Opened Issues',
           data: generateMockData(30, 5, 15),
-          borderColor: lfxColors.brand[500],
-          backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
+          borderColor: lfxColors.blue[500],
+          backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
           fill: false,
           tension: 0.4,
           borderWidth: 2,
           pointRadius: 0,
-          pointHoverBackgroundColor: lfxColors.brand[500],
+          pointHoverBackgroundColor: lfxColors.blue[500],
           pointHoverBorderColor: lfxColors.white,
           pointHoverBorderWidth: 2,
         },
         {
           label: 'Closed Issues',
           data: generateMockData(30, 8, 18),
-          borderColor: lfxColors.positive[500],
-          backgroundColor: hexToRgba(lfxColors.positive[500], 0.1),
+          borderColor: lfxColors.emerald[500],
+          backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
           fill: false,
           tension: 0.4,
           borderWidth: 2,
           pointRadius: 0,
-          pointHoverBackgroundColor: lfxColors.positive[500],
+          pointHoverBackgroundColor: lfxColors.emerald[500],
           pointHoverBorderColor: lfxColors.white,
           pointHoverBorderWidth: 2,
         },
@@ -315,9 +315,9 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
           mode: 'index',
           intersect: false,
           backgroundColor: 'rgba(255, 255, 255, 0.98)',
-          titleColor: lfxColors.neutral[900],
-          bodyColor: lfxColors.neutral[600],
-          borderColor: `${lfxColors.neutral[300]}CC`,
+          titleColor: lfxColors.gray[900],
+          bodyColor: lfxColors.gray[600],
+          borderColor: `${lfxColors.gray[300]}CC`,
           borderWidth: 1,
           padding: 12,
           displayColors: true,
@@ -397,7 +397,7 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: generateMockData(4, 18, 30),
-          backgroundColor: hexToRgba(lfxColors.brand[500], 0.8),
+          backgroundColor: hexToRgba(lfxColors.blue[500], 0.8),
           borderColor: 'transparent',
           borderWidth: 0,
           borderRadius: 2,
@@ -427,8 +427,8 @@ export const MAINTAINER_PROGRESS_METRICS: ProgressItemWithChart[] = [
       datasets: [
         {
           data: generateMockData(30, 80, 90),
-          borderColor: lfxColors.positive[500],
-          backgroundColor: hexToRgba(lfxColors.positive[500], 0.1),
+          borderColor: lfxColors.emerald[500],
+          backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
           fill: true,
           tension: 0.4,
           borderWidth: 2,

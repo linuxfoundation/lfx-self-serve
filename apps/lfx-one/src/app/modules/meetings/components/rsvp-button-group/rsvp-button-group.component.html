@@ -5,7 +5,7 @@
 <div
   [ngClass]="{
     'bg-cyan-50 border border-cyan-400': selectedResponse() === null,
-    'bg-[rgba(236,236,240,0.5)]': selectedResponse() !== null,
+    'bg-gray-200/50': selectedResponse() !== null,
   }"
   class="rounded-[6px] p-[12px] space-y-2 flex-1"
   [attr.data-testid]="'meeting-rsvp-container'">
@@ -13,7 +13,7 @@
   <div
     [ngClass]="{
       'text-cyan-600': selectedResponse() === null,
-      'text-[#717182]': selectedResponse() !== null,
+      'text-gray-500': selectedResponse() !== null,
     }"
     class="flex items-center gap-[7px]"
     [attr.data-testid]="'meeting-rsvp-header'">

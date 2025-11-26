@@ -12,6 +12,7 @@ import { BehaviorSubject, finalize, switchMap, tap } from 'rxjs';
 import type { ChartData, ChartOptions } from 'chart.js';
 import type { LazyLoadEvent } from 'primeng/api';
 import type { ProjectItemWithCharts } from '@lfx-one/shared/interfaces';
+import { hexToRgba, lfxColors } from '@lfx-one/shared';
 
 @Component({
   selector: 'lfx-my-projects',
@@ -51,8 +52,8 @@ export class MyProjectsComponent {
     const response = this.projectsResponse();
     return response.data.map((project) => ({
       ...project,
-      codeActivitiesChartData: this.createChartData(project.codeActivities, '#009AFF', 'rgba(0, 154, 255, 0.1)'),
-      nonCodeActivitiesChartData: this.createChartData(project.nonCodeActivities, '#10b981', 'rgba(16, 185, 129, 0.1)'),
+      codeActivitiesChartData: this.createChartData(project.codeActivities, lfxColors.blue[500], hexToRgba(lfxColors.blue[500], 0.1)),
+      nonCodeActivitiesChartData: this.createChartData(project.nonCodeActivities, lfxColors.emerald[500], hexToRgba(lfxColors.emerald[500], 0.1)),
     }));
   });
 

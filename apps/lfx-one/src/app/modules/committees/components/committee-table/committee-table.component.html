@@ -6,12 +6,12 @@
     <table class="min-w-full" data-testid="committee-dashboard-table">
       <thead>
         <tr>
-          <th class="px-3 py-3 text-left text-xs font-medium text-[#62748e] min-w-[250px]">{{ committeeLabel() }}</th>
-          <th class="px-3 py-3 text-left text-xs font-medium text-[#62748e] min-w-[300px]">Description</th>
-          <th class="px-3 py-3 text-left text-xs font-medium text-[#62748e] w-[80px]">Members</th>
-          <th class="px-3 py-3 text-left text-xs font-medium text-[#62748e] w-[80px]">Voting</th>
-          <th class="px-3 py-3 text-left text-xs font-medium text-[#62748e] w-[100px]">Last Updated</th>
-          <th class="px-3 py-3 text-left text-xs font-medium text-[#62748e] w-[120px]"></th>
+          <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 min-w-[250px]">{{ committeeLabel() }}</th>
+          <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 min-w-[300px]">Description</th>
+          <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 w-[80px]">Members</th>
+          <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 w-[80px]">Voting</th>
+          <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 w-[100px]">Last Updated</th>
+          <th class="px-3 py-3 text-left text-xs font-medium text-gray-500 w-[120px]"></th>
         </tr>
       </thead>
       <tbody>
@@ -21,7 +21,7 @@
               <div class="flex flex-col gap-1">
                 <lfx-tag [value]="committee.category || 'Other'" [severity]="getCategorySeverity(committee.category || 'Other')"></lfx-tag>
                 <div class="flex items-center gap-2">
-                  <p class="font-inter font-medium leading-[16px] not-italic text-[#0f172b] text-[12px] text-nowrap whitespace-pre">
+                  <p class="font-inter font-medium leading-[16px] not-italic text-gray-900 text-[12px] text-nowrap whitespace-pre">
                     {{ committee.name }}
                   </p>
                   @if (!committee.public) {
@@ -32,16 +32,16 @@
             </td>
             <td class="px-3 py-3 text-xs min-w-[300px]">{{ committee.description || '-' }}</td>
             <td class="px-3 py-3 w-[140px]">
-              <a [routerLink]="['/groups', committee.uid]" class="text-xs text-brand-500 hover:text-brand-600 hover:underline cursor-pointer">
+              <a [routerLink]="['/groups', committee.uid]" class="text-xs text-blue-500 hover:text-blue-600 hover:underline cursor-pointer">
                 {{ committee.total_members || 0 }}
               </a>
             </td>
-            <td class="px-3 py-3 text-xs text-[#0f172b] w-[80px]">
+            <td class="px-3 py-3 text-xs text-gray-900 w-[80px]">
               @if (committee.enable_voting) {
                 <i class="fa-light fa-check w-4 h-4 text-green-600"></i>
               }
             </td>
-            <td class="px-3 py-3 text-xs text-[#0f172b] w-[100px] whitespace-nowrap">{{ committee.updated_at | date: 'MMM d, y' }}</td>
+            <td class="px-3 py-3 text-xs text-gray-900 w-[100px] whitespace-nowrap">{{ committee.updated_at | date: 'MMM d, y' }}</td>
             <td class="px-3 py-3 text-xs w-[120px]">
               @if (canManageCommittee()) {
                 <div class="flex items-center gap-1">

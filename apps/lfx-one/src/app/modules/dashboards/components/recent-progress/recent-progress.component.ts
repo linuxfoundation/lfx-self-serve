@@ -131,8 +131,8 @@ export class RecentProgressComponent {
         datasets: [
           {
             data: chartData.map((row) => row.IS_ACTIVE),
-            borderColor: lfxColors.positive[500],
-            backgroundColor: hexToRgba(lfxColors.positive[500], 0.1),
+            borderColor: lfxColors.emerald[500],
+            backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -177,8 +177,8 @@ export class RecentProgressComponent {
         datasets: [
           {
             data: chartData.map((row) => row.DAILY_COUNT),
-            borderColor: lfxColors.brand[500],
-            backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
+            borderColor: lfxColors.blue[500],
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
             fill: true,
             tension: 0,
             borderWidth: 2,
@@ -223,8 +223,8 @@ export class RecentProgressComponent {
         datasets: [
           {
             data: chartData.map((row) => row.DAILY_COUNT),
-            borderColor: lfxColors.brand[500],
-            backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
+            borderColor: lfxColors.blue[500],
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -289,8 +289,8 @@ export class RecentProgressComponent {
           {
             label: 'Opened Issues',
             data: chartData.map((row) => row.OPENED_ISSUES_COUNT),
-            borderColor: lfxColors.brand[500],
-            backgroundColor: hexToRgba(lfxColors.brand[500], 0.1),
+            borderColor: lfxColors.blue[500],
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
             fill: false,
             tension: 0.4,
             borderWidth: 2,
@@ -300,8 +300,8 @@ export class RecentProgressComponent {
           {
             label: 'Closed Issues',
             data: chartData.map((row) => row.CLOSED_ISSUES_COUNT),
-            borderColor: lfxColors.positive[500],
-            backgroundColor: hexToRgba(lfxColors.positive[500], 0.1),
+            borderColor: lfxColors.emerald[500],
+            backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
             fill: false,
             tension: 0.4,
             borderWidth: 2,
@@ -369,8 +369,8 @@ export class RecentProgressComponent {
           {
             label: 'Avg Days to Merge',
             data: chartData.map((row) => row.AVG_MERGED_IN_DAYS),
-            borderColor: lfxColors.brand[500],
-            backgroundColor: hexToRgba(lfxColors.brand[500], 0.5),
+            borderColor: lfxColors.blue[500],
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.5),
             borderWidth: 0,
             borderRadius: 2,
             barPercentage: 0.95,
@@ -491,8 +491,8 @@ export class RecentProgressComponent {
           {
             label: 'Unique Contributors',
             data: chartData.map((row) => row.UNIQUE_CONTRIBUTORS),
-            backgroundColor: hexToRgba(lfxColors.brand[500], 0.5),
-            borderColor: lfxColors.brand[500],
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.5),
+            borderColor: lfxColors.blue[500],
             borderWidth: 0,
             borderRadius: 2,
             barPercentage: 0.95,

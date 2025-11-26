@@ -3,6 +3,7 @@
 
 import { ArtifactVisibility } from '../enums';
 import { ComponentSeverity } from '../interfaces';
+import { lfxColors } from './colors.constants';
 
 /**
  * Available meeting platforms and their configurations
@@ -15,7 +16,7 @@ export const MEETING_PLATFORMS = [
     description: 'Video conferencing with recording and chat features',
     available: true,
     icon: 'fa-light fa-video',
-    color: '#0094FF',
+    color: lfxColors.blue[500],
   },
   {
     value: 'Microsoft Teams',
@@ -23,7 +24,7 @@ export const MEETING_PLATFORMS = [
     description: 'Integrated collaboration with Office 365',
     available: false,
     icon: 'fa-light fa-desktop',
-    color: '#6b7280',
+    color: lfxColors.gray[500],
   },
   {
     value: 'In-Person',
@@ -31,7 +32,7 @@ export const MEETING_PLATFORMS = [
     description: 'Physical meeting location',
     available: false,
     icon: 'fa-light fa-location-dot',
-    color: '#6b7280',
+    color: lfxColors.gray[500],
   },
 ];
 
@@ -46,7 +47,7 @@ export const MEETING_FEATURES = [
     title: 'Enable Recording',
     description: 'Record the meeting for those who cannot attend live',
     recommended: true,
-    color: '#3b82f6', // blue - matches bg-blue-50 text-blue-700
+    color: lfxColors.blue[500],
   },
   {
     key: 'zoom_ai_enabled',
@@ -54,7 +55,7 @@ export const MEETING_FEATURES = [
     title: 'AI Meeting Summary',
     description: 'Generate key takeaways and action items automatically',
     recommended: true,
-    color: '#16a34a', // green - matches bg-green-50 text-green-700
+    color: lfxColors.emerald[500],
   },
   {
     key: 'transcript_enabled',
@@ -62,7 +63,7 @@ export const MEETING_FEATURES = [
     title: 'Generate Transcripts',
     description: 'Automatically create searchable text transcripts',
     recommended: false,
-    color: '#8b5cf6', // purple - matches bg-purple-50 text-purple-700
+    color: lfxColors.violet[500],
   },
   {
     key: 'youtube_upload_enabled',
@@ -70,7 +71,7 @@ export const MEETING_FEATURES = [
     title: 'YouTube Auto-upload',
     description: "Automatically publish recordings to your project's YouTube channel",
     recommended: false,
-    color: '#dc2626', // red - matches bg-red-50 text-red-700
+    color: lfxColors.red[500],
   },
   {
     key: 'visibility',
@@ -78,7 +79,7 @@ export const MEETING_FEATURES = [
     title: 'Show in Public Calendar',
     description: 'Make this meeting visible in the public project calendar',
     recommended: true,
-    color: '#ea580c', // orange - unique color for calendar visibility
+    color: lfxColors.amber[500],
     trueValue: 'public',
     falseValue: 'private',
   },

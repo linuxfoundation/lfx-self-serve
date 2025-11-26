@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, signal } from '@angular/core';
-import { MAINTAINER_ACTION_ITEMS } from '@lfx-one/shared/constants';
 import { HiddenActionsService } from '@services/hidden-actions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { BehaviorSubject } from 'rxjs';
@@ -25,7 +24,7 @@ export class MaintainerDashboardComponent {
 
   public readonly selectedProject = computed(() => this.projectContextService.selectedFoundation() || this.projectContextService.selectedProject());
   public readonly refresh$: BehaviorSubject<void> = new BehaviorSubject<void>(undefined);
-  private readonly rawMaintainerActions = signal(MAINTAINER_ACTION_ITEMS);
+  private readonly rawMaintainerActions = signal([]);
   public readonly maintainerActions = computed(() => {
     return this.rawMaintainerActions().filter((item) => !this.hiddenActionsService.isActionHidden(item));
   });

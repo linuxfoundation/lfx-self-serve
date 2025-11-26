@@ -27,7 +27,8 @@ import profileRouter from './routes/profile.route';
 import projectsRouter from './routes/projects.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
 import searchRouter from './routes/search.route';
-import { fetchUserPersona } from './utils/persona-helper';
+import { fetchUserPersonaAndOrganizations } from './utils/persona-helper';
+import { matchOrganizationNamesToAccounts } from './utils/organization-matcher';
 
 if (process.env['NODE_ENV'] !== 'production') {
   dotenv.config();
@@ -234,6 +235,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     authenticated: false,
     user: null,
     persona: null,
+    organizations: [],
   };
 
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
@@ -259,9 +261,13 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       return;
     }
 
-    // Fetch user persona based on committee membership (non-critical, don't block SSR)
-    // Note: fetchUserPersona handles errors internally and returns null on failure
-    auth.persona = await fetchUserPersona(req);
+    // Fetch user persona and organizations based on committee membership (non-critical, don't block SSR)
+    // Note: fetchUserPersonaAndOrganizations handles errors internally and returns defaults on failure
+    const personaResult = await fetchUserPersonaAndOrganizations(req);
+    auth.persona = personaResult.persona;
+
+    // Match organization names to predefined accounts
+    auth.organizations = matchOrganizationNamesToAccounts(personaResult.organizationNames);
   }
 
   angularApp

@@ -58,8 +58,8 @@ export interface QueryServiceItem<T = unknown> {
 export interface QueryServiceResponse<T = unknown> {
   /** Array of resource items */
   resources: QueryServiceItem<T>[];
-  /** Page token for pagination */
-  page_token: string;
+  /** Page token for pagination (optional - not present on first/last page) */
+  page_token?: string;
 }
 
 /**

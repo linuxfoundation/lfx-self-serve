@@ -147,7 +147,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: PrimaryFoundationHealthMetric[] 
     category: 'projects',
     testId: 'foundation-health-card-total-projects',
     customContentType: 'sparkline',
-    sparklineColor: lfxColors.brand[500],
+    sparklineColor: lfxColors.blue[500],
   },
   {
     title: 'Total Members',
@@ -155,7 +155,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: PrimaryFoundationHealthMetric[] 
     category: 'projects',
     testId: 'foundation-health-card-total-members',
     customContentType: 'sparkline',
-    sparklineColor: lfxColors.brand[500],
+    sparklineColor: lfxColors.blue[500],
   },
   {
     title: 'Software Value',
@@ -177,7 +177,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: PrimaryFoundationHealthMetric[] 
     category: 'contributors',
     testId: 'foundation-health-card-active-contributors',
     customContentType: 'sparkline',
-    sparklineColor: lfxColors.neutral[500],
+    sparklineColor: lfxColors.gray[500],
   },
   {
     title: 'Maintainers',
@@ -185,7 +185,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: PrimaryFoundationHealthMetric[] 
     category: 'contributors',
     testId: 'foundation-health-card-maintainers',
     customContentType: 'sparkline',
-    sparklineColor: lfxColors.brand[500],
+    sparklineColor: lfxColors.blue[500],
   },
   {
     title: 'Events',
@@ -193,7 +193,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: PrimaryFoundationHealthMetric[] 
     category: 'events',
     testId: 'foundation-health-card-events',
     customContentType: 'bar-chart',
-    chartColor: lfxColors.neutral[500],
+    chartColor: lfxColors.gray[500],
   },
   {
     title: 'Project Health Scores',

@@ -9,6 +9,7 @@ import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
+import { lfxColors } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import { Project } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
@@ -87,43 +88,43 @@ export class MeetingTypeSelectionComponent {
       icon: 'fa-light fa-user-crown',
       description: 'Governance meetings for project direction, funding, and strategic decisions',
       examples: 'Quarterly reviews, budget planning, strategic roadmap discussions',
-      color: '#ef4444', // red-500
+      color: lfxColors.red[500],
     },
     [MeetingType.MAINTAINERS]: {
       icon: 'fa-light fa-gear',
       description: 'Regular sync meetings for core maintainers to discuss project health',
       examples: 'Weekly standups, release planning, code review discussions',
-      color: '#3b82f6', // blue-500
+      color: lfxColors.blue[500],
     },
     [MeetingType.MARKETING]: {
       icon: 'fa-light fa-chart-line-up',
       description: 'Community growth, outreach, and marketing strategy meetings',
       examples: 'Conference planning, community campaigns, website updates',
-      color: '#10b981', // green-500
+      color: lfxColors.emerald[500],
     },
     [MeetingType.TECHNICAL]: {
       icon: 'fa-light fa-brackets-curly',
       description: 'Technical discussions, architecture decisions, and development planning',
       examples: 'RFC reviews, API design, performance optimization planning',
-      color: '#8b5cf6', // purple-500
+      color: lfxColors.violet[500],
     },
     [MeetingType.LEGAL]: {
       icon: 'fa-light fa-scale-balanced',
       description: 'Legal compliance, licensing, and policy discussions',
       examples: 'License reviews, contributor agreements, compliance audits',
-      color: '#f59e0b', // amber-500
+      color: lfxColors.amber[500],
     },
     [MeetingType.OTHER]: {
       icon: 'fa-light fa-folder-open',
       description: "General project meetings that don't fit other categories",
       examples: 'Community events, workshops, informal discussions',
-      color: '#6b7280', // gray-500
+      color: lfxColors.gray[500],
     },
     [MeetingType.NONE]: {
       icon: 'fa-light fa-folder-open',
       description: 'No specific meeting type',
       examples: 'General meetings',
-      color: '#6b7280', // gray-500
+      color: lfxColors.gray[500],
     },
   };
 

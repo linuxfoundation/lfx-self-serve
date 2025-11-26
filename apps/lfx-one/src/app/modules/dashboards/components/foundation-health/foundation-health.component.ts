@@ -110,11 +110,11 @@ export class FoundationHealthComponent {
     const distribution = this.healthScoresData();
 
     const data = [
-      { category: 'Critical', count: distribution.critical, color: lfxColors.negative[500] },
-      { category: 'Unsteady', count: distribution.unsteady, color: lfxColors.warning[400] },
-      { category: 'Stable', count: distribution.stable, color: lfxColors.warning[500] },
-      { category: 'Healthy', count: distribution.healthy, color: lfxColors.brand[500] },
-      { category: 'Excellent', count: distribution.excellent, color: lfxColors.positive[500] },
+      { category: 'Critical', count: distribution.critical, color: lfxColors.red[500] },
+      { category: 'Unsteady', count: distribution.unsteady, color: lfxColors.amber[400] },
+      { category: 'Stable', count: distribution.stable, color: lfxColors.amber[500] },
+      { category: 'Healthy', count: distribution.healthy, color: lfxColors.blue[500] },
+      { category: 'Excellent', count: distribution.excellent, color: lfxColors.emerald[500] },
     ];
 
     const maxCount = Math.max(...data.map((d) => d.count));
@@ -205,8 +205,8 @@ export class FoundationHealthComponent {
         datasets: [
           {
             data: data.monthlyData,
-            borderColor: metric.sparklineColor || lfxColors.brand[500],
-            backgroundColor: hexToRgba(metric.sparklineColor || lfxColors.brand[500], 0.1),
+            borderColor: metric.sparklineColor || lfxColors.blue[500],
+            backgroundColor: hexToRgba(metric.sparklineColor || lfxColors.blue[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -249,8 +249,8 @@ export class FoundationHealthComponent {
         datasets: [
           {
             data: data.monthlyData,
-            borderColor: metric.sparklineColor || lfxColors.brand[500],
-            backgroundColor: hexToRgba(metric.sparklineColor || lfxColors.brand[500], 0.1),
+            borderColor: metric.sparklineColor || lfxColors.blue[500],
+            backgroundColor: hexToRgba(metric.sparklineColor || lfxColors.blue[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -320,7 +320,7 @@ export class FoundationHealthComponent {
       category: metric.category as MetricCategory,
       testId: metric.testId,
       customContentType: metric.customContentType,
-      chartData: this.createSparklineData(metrics.activeContributorsData, metric.sparklineColor || lfxColors.brand[500]),
+      chartData: this.createSparklineData(metrics.activeContributorsData, metric.sparklineColor || lfxColors.blue[500]),
     };
   }
 
@@ -340,8 +340,8 @@ export class FoundationHealthComponent {
         datasets: [
           {
             data: data.trendData,
-            borderColor: metric.sparklineColor || lfxColors.brand[500],
-            backgroundColor: hexToRgba(metric.sparklineColor || lfxColors.brand[500], 0.1),
+            borderColor: metric.sparklineColor || lfxColors.blue[500],
+            backgroundColor: hexToRgba(metric.sparklineColor || lfxColors.blue[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -380,7 +380,7 @@ export class FoundationHealthComponent {
       category: metric.category as MetricCategory,
       testId: metric.testId,
       customContentType: metric.customContentType,
-      chartData: this.createBarChartData(metrics.eventsMonthlyData, metric.chartColor || lfxColors.brand[500]),
+      chartData: this.createBarChartData(metrics.eventsMonthlyData, metric.chartColor || lfxColors.blue[500]),
     };
   }
 

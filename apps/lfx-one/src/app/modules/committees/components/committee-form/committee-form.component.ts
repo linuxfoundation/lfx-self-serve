@@ -10,9 +10,10 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
-import { COMMITTEE_LABEL, FILTERED_COMMITTEE_CATEGORIES } from '@lfx-one/shared/constants';
+import { COMMITTEE_CATEGORIES, COMMITTEE_LABEL, FILTERED_COMMITTEE_CATEGORIES } from '@lfx-one/shared/constants';
 import { Committee } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
 import { map } from 'rxjs';
@@ -27,7 +28,7 @@ import { map } from 'rxjs';
 export class CommitteeFormComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly projectContextService = inject(ProjectContextService);
-
+  private readonly personaService = inject(PersonaService);
   // Signal inputs
   public form = input.required<FormGroup>();
   public isEditMode = input.required<boolean>();
@@ -39,7 +40,9 @@ export class CommitteeFormComponent {
   public readonly formCancel = output<void>();
 
   // Category options from constants (using filtered list)
-  public readonly categoryOptions = FILTERED_COMMITTEE_CATEGORIES;
+  public readonly categoryOptions = computed(() => {
+    return this.personaService.currentPersona() === 'maintainer' ? FILTERED_COMMITTEE_CATEGORIES : COMMITTEE_CATEGORIES;
+  });
 
   // Load parent committee options
   public parentCommitteeOptions: Signal<{ label: string; value: string | null }[]> = this.initializeParentCommitteeOptions();

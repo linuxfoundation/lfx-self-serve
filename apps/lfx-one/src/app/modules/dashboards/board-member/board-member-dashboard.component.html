@@ -36,11 +36,10 @@
 
     <!-- Middle Row - Two Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <!-- Pending Actions -->
-      <lfx-pending-actions class="h-full" [pendingActions]="boardMemberActions()" (actionClick)="handleActionClick()" />
-
       <!-- My Meetings -->
       <lfx-my-meetings class="h-full" />
+      <!-- Pending Actions -->
+      <lfx-pending-actions class="h-full" [pendingActions]="boardMemberActions()" (actionClick)="handleActionClick()" />
     </div>
 
     <!-- Foundation Health - Full Width -->

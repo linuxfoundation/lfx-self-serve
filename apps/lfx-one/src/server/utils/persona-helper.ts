@@ -8,6 +8,16 @@ import { CommitteeService } from '../services/committee.service';
 import { getUsernameFromAuth } from './auth-helper';
 
 /**
+ * Result of user persona and organization determination
+ */
+export interface UserPersonaResult {
+  /** User's determined persona type */
+  persona: PersonaType | null;
+  /** Organization names from committee memberships */
+  organizationNames: string[];
+}
+
+/**
  * Mapping of committee categories to their corresponding personas
  * Add new mappings here to support additional persona types
  */
@@ -24,21 +34,28 @@ const COMMITTEE_CATEGORY_TO_PERSONA: Record<string, PersonaType> = {
 const PERSONA_PRIORITY: PersonaType[] = ['core-developer', 'maintainer', 'board-member'];
 
 /**
- * Fetches and determines user's persona based on committee membership
+ * Fetches and determines user's persona and organizations based on committee membership
  * Checks all configured committee categories and returns the highest priority persona
+ * along with all unique organization names from the user's committee memberships
  */
-export async function fetchUserPersona(req: Request): Promise<PersonaType | null> {
+export async function fetchUserPersonaAndOrganizations(req: Request): Promise<UserPersonaResult> {
+  const result: UserPersonaResult = {
+    persona: null,
+    organizationNames: [],
+  };
+
   try {
     // Get username from auth context
     const username = await getUsernameFromAuth(req);
     if (!username) {
       req.log.warn('No username found in auth context for persona determination');
-      return null;
+      return result;
     }
 
     const committeeService = new CommitteeService();
     const userEmail = req.oidc?.user?.['email'];
     const matchedPersonas: PersonaType[] = [];
+    const organizationNamesSet = new Set<string>();
 
     // Check each committee category mapping
     for (const [category, persona] of Object.entries(COMMITTEE_CATEGORY_TO_PERSONA)) {
@@ -55,16 +72,26 @@ export async function fetchUserPersona(req: Request): Promise<PersonaType | null
           `User has ${category} committee membership - matched persona ${persona}`
         );
         matchedPersonas.push(persona);
+
+        // Collect unique organization names from memberships
+        for (const membership of memberships) {
+          if (membership.organization?.name) {
+            organizationNamesSet.add(membership.organization.name);
+          }
+        }
       }
     }
 
+    // Convert Set to array
+    result.organizationNames = Array.from(organizationNamesSet);
+
     // No committee memberships found
     if (matchedPersonas.length === 0) {
-      return null;
+      return result;
     }
 
     // Return highest priority persona if user belongs to multiple categories
-    const selectedPersona = matchedPersonas.reduce((highest, current) => {
+    result.persona = matchedPersonas.reduce((highest, current) => {
       const currentPriority = PERSONA_PRIORITY.indexOf(current);
       const highestPriority = PERSONA_PRIORITY.indexOf(highest);
       return currentPriority > highestPriority ? current : highest;
@@ -74,12 +101,13 @@ export async function fetchUserPersona(req: Request): Promise<PersonaType | null
       {
         username,
         matched_personas: matchedPersonas,
-        selected_persona: selectedPersona,
+        selected_persona: result.persona,
+        organization_count: result.organizationNames.length,
       },
-      'Determined user persona from committee memberships'
+      'Determined user persona and organizations from committee memberships'
     );
 
-    return selectedPersona;
+    return result;
   } catch (error) {
     // Log error but don't fail SSR - persona determination is non-critical
     req.log.warn(
@@ -88,6 +116,15 @@ export async function fetchUserPersona(req: Request): Promise<PersonaType | null
       },
       'Failed to determine user persona from committee membership'
     );
-    return null;
+    return result;
   }
+}
+
+/**
+ * @deprecated Use fetchUserPersonaAndOrganizations instead
+ * Fetches and determines user's persona based on committee membership
+ */
+export async function fetchUserPersona(req: Request): Promise<PersonaType | null> {
+  const result = await fetchUserPersonaAndOrganizations(req);
+  return result.persona;
 }

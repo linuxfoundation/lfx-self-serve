@@ -55,7 +55,7 @@
               (click)="selectProject(foundation, popover)"
               [attr.data-testid]="'foundation-' + foundation.slug">
               <!-- Foundation Logo (32px) -->
-              <div class="bg-[#f3f3f3] overflow-clip rounded-full shrink-0 size-[32px]">
+              <div class="bg-gray-100 overflow-clip rounded-full shrink-0 size-[32px]">
                 <div class="flex items-center justify-center size-full p-[8px]">
                   @if (foundation.logo_url) {
                     <img [alt]="foundation.name" class="w-full h-full object-contain" [src]="foundation.logo_url" />
@@ -66,7 +66,7 @@
               <!-- Foundation Info -->
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
-                  <p class="font-medium text-sm text-neutral-900 mb-0">{{ foundation.name }}</p>
+                  <p class="font-medium text-sm text-gray-900 mb-0">{{ foundation.name }}</p>
                   <lfx-tag value="Foundation" severity="info"></lfx-tag>
                 </div>
                 <p class="text-xs text-gray-500 line-clamp-1">{{ foundation.description }}</p>
@@ -82,7 +82,7 @@
                     (click)="selectProject(project, popover)"
                     [attr.data-testid]="'project-' + project.slug">
                     <!-- Project Logo (28px) -->
-                    <div class="bg-[#f3f3f3] overflow-clip rounded-full shrink-0 size-[28px]">
+                    <div class="bg-gray-100 overflow-clip rounded-full shrink-0 size-[28px]">
                       <div class="flex items-center justify-center size-full p-[6px]">
                         @if (project.logo_url) {
                           <img [alt]="project.name" class="w-full h-full object-contain" [src]="project.logo_url" />
@@ -97,7 +97,7 @@
 
                     <!-- Project Info -->
                     <div class="flex-1 min-w-0">
-                      <p class="font-medium text-sm text-neutral-900">{{ project.name }}</p>
+                      <p class="font-medium text-sm text-gray-900">{{ project.name }}</p>
                       <p class="text-xs text-gray-500 line-clamp-1">{{ project.description }}</p>
                     </div>
                   </div>

@@ -59,10 +59,10 @@
   @if (item.routerLink) {
     <a
       [routerLink]="item.routerLink"
-      routerLinkActive="bg-[#ecf4ff] font-medium !text-[#0f172b]"
+      routerLinkActive="bg-blue-100 font-medium !text-gray-900"
       [routerLinkActiveOptions]="{ exact: true }"
       [ngClass]="{
-        'flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-base text-[#45556c] font-normal hover:bg-slate-50': true,
+        'flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-base text-gray-600 font-normal hover:bg-slate-50': true,
         'opacity-50 pointer-events-none cursor-not-allowed': item.disabled,
       }"
       [attr.data-testid]="item.testId"
@@ -84,7 +84,7 @@
       [target]="item.target || '_blank'"
       [rel]="item.rel || 'noopener noreferrer'"
       [ngClass]="{
-        'flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-base text-[#45556c] font-normal hover:bg-slate-50': true,
+        'flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-base text-gray-600 font-normal hover:bg-slate-50': true,
         'opacity-50 pointer-events-none cursor-not-allowed': item.disabled,
       }"
       [attr.data-testid]="item.testId"
@@ -105,7 +105,7 @@
       type="button"
       (click)="item.command()"
       [ngClass]="{
-        'flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-left text-base text-[#45556c] font-normal hover:bg-slate-50': true,
+        'flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-left text-base text-gray-600 font-normal hover:bg-slate-50': true,
         'opacity-50 cursor-not-allowed': item.disabled,
       }"
       [disabled]="item.disabled"

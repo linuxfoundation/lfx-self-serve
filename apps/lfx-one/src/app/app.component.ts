@@ -7,6 +7,7 @@ import { RouterOutlet } from '@angular/router';
 import { AuthContext } from '@lfx-one/shared/interfaces';
 import { ToastModule } from 'primeng/toast';
 
+import { AccountContextService } from './shared/services/account-context.service';
 import { FeatureFlagService } from './shared/services/feature-flag.service';
 import { PersonaService } from './shared/services/persona.service';
 import { SegmentService } from './shared/services/segment.service';
@@ -23,6 +24,7 @@ export class AppComponent {
   private readonly personaService = inject(PersonaService);
   private readonly segmentService = inject(SegmentService);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly accountContextService = inject(AccountContextService);
 
   public auth: AuthContext | undefined;
   public transferState = inject(TransferState);
@@ -49,6 +51,7 @@ export class AppComponent {
       authenticated: false,
       user: null,
       persona: null,
+      organizations: [],
     });
 
     if (this.auth?.authenticated && this.auth.user) {
@@ -57,6 +60,11 @@ export class AppComponent {
 
       // Initialize persona from backend (auto-detected from committee membership)
       this.personaService.initializeFromAuth(this.auth.persona);
+
+      // Initialize user organizations from backend (matched from committee memberships)
+      if (this.auth.organizations && this.auth.organizations.length > 0) {
+        this.accountContextService.initializeUserOrganizations(this.auth.organizations);
+      }
 
       // Identify user with Segment tracking (pass entire Auth0 user object)
       this.segmentService.identifyUser(this.auth.user);

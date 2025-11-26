@@ -111,26 +111,26 @@ const COMMITTEE_TYPE_COLORS = {
   'Government Advisory Council': 'bg-violet-100 text-violet-800',
 
   // Legal and compliance
-  'Legal Committee': 'bg-negative-100 text-negative-800',
-  'Code of Conduct': 'bg-negative-100 text-negative-800',
-  'Product Security': 'bg-negative-100 text-negative-800',
+  'Legal Committee': 'bg-red-100 text-red-800',
+  'Code of Conduct': 'bg-red-100 text-red-800',
+  'Product Security': 'bg-red-100 text-red-800',
 
   // Special interest groups
-  'Special Interest Group': 'bg-brand-100 text-brand-800',
-  'Expert Group': 'bg-brand-100 text-brand-800',
+  'Special Interest Group': 'bg-blue-100 text-blue-800',
+  'Expert Group': 'bg-blue-100 text-blue-800',
 
   // Working groups
-  'Working Group': 'bg-warning-100 text-warning-800',
+  'Working Group': 'bg-amber-100 text-amber-800',
 
   // Technical committees
-  'Technical Steering Committee': 'bg-positive-100 text-positive-800',
-  'Technical Advisory Committee': 'bg-brand-100 text-brand-700',
-  'Technical Oversight Committee': 'bg-brand-100 text-brand-700',
-  'Technical Mailing List': 'bg-brand-100 text-brand-700',
+  'Technical Steering Committee': 'bg-emerald-100 text-emerald-800',
+  'Technical Advisory Committee': 'bg-blue-100 text-blue-700',
+  'Technical Oversight Committee': 'bg-blue-100 text-blue-700',
+  'Technical Mailing List': 'bg-blue-100 text-blue-700',
 
   // Technical roles
-  Maintainers: 'bg-brand-100 text-brand-800',
-  Committers: 'bg-brand-100 text-brand-800',
+  Maintainers: 'bg-blue-100 text-blue-800',
+  Committers: 'bg-blue-100 text-blue-800',
 
   // Marketing and outreach
   'Marketing Oversight Committee/Marketing Advisory Committee': 'bg-violet-100 text-violet-700',
@@ -139,17 +139,17 @@ const COMMITTEE_TYPE_COLORS = {
   Ambassador: 'bg-violet-100 text-violet-700',
 
   // Finance
-  'Finance Committee': 'bg-positive-100 text-positive-800',
+  'Finance Committee': 'bg-emerald-100 text-emerald-800',
 
   // Other/miscellaneous
-  Other: 'bg-neutral-100 text-neutral-800',
+  Other: 'bg-gray-100 text-gray-800',
 } as const;
 
 /**
  * Internal default color scheme for unknown committee types
  * @private
  */
-const DEFAULT_COMMITTEE_TYPE_COLOR = 'bg-neutral-100 text-neutral-800';
+const DEFAULT_COMMITTEE_TYPE_COLOR = 'bg-gray-100 text-gray-800';
 
 /**
  * Get valid committee category values for validation
@@ -173,26 +173,26 @@ export function getCommitteeTypeColor(category: string | undefined): string {
   if (lowerCategory.includes('government')) return 'bg-violet-100 text-violet-800';
 
   // Legal and compliance
-  if (lowerCategory.includes('legal')) return 'bg-negative-100 text-negative-800';
-  if (lowerCategory.includes('code of conduct')) return 'bg-negative-100 text-negative-800';
-  if (lowerCategory.includes('product security')) return 'bg-negative-100 text-negative-800';
+  if (lowerCategory.includes('legal')) return 'bg-red-100 text-red-800';
+  if (lowerCategory.includes('code of conduct')) return 'bg-red-100 text-red-800';
+  if (lowerCategory.includes('product security')) return 'bg-red-100 text-red-800';
 
   // Special interest groups
-  if (lowerCategory.includes('special interest')) return 'bg-brand-100 text-brand-800';
-  if (lowerCategory.includes('expert')) return 'bg-brand-100 text-brand-800';
+  if (lowerCategory.includes('special interest')) return 'bg-blue-100 text-blue-800';
+  if (lowerCategory.includes('expert')) return 'bg-blue-100 text-blue-800';
 
   // Working groups
-  if (lowerCategory.includes('working group')) return 'bg-warning-100 text-warning-800';
+  if (lowerCategory.includes('working group')) return 'bg-amber-100 text-amber-800';
 
   // Technical committees
-  if (lowerCategory.includes('technical steering')) return 'bg-positive-100 text-positive-800';
-  if (lowerCategory.includes('technical advisory')) return 'bg-brand-100 text-brand-700';
-  if (lowerCategory.includes('technical oversight')) return 'bg-brand-100 text-brand-700';
-  if (lowerCategory.includes('technical mailing')) return 'bg-brand-100 text-brand-700';
+  if (lowerCategory.includes('technical steering')) return 'bg-emerald-100 text-emerald-800';
+  if (lowerCategory.includes('technical advisory')) return 'bg-blue-100 text-blue-700';
+  if (lowerCategory.includes('technical oversight')) return 'bg-blue-100 text-blue-700';
+  if (lowerCategory.includes('technical mailing')) return 'bg-blue-100 text-blue-700';
 
   // Technical roles
-  if (lowerCategory.includes('maintainer')) return 'bg-brand-100 text-brand-800';
-  if (lowerCategory.includes('committer')) return 'bg-brand-100 text-brand-800';
+  if (lowerCategory.includes('maintainer')) return 'bg-blue-100 text-blue-800';
+  if (lowerCategory.includes('committer')) return 'bg-blue-100 text-blue-800';
 
   // Marketing and outreach
   if (lowerCategory.includes('marketing oversight')) return 'bg-violet-100 text-violet-700';
@@ -201,10 +201,10 @@ export function getCommitteeTypeColor(category: string | undefined): string {
   if (lowerCategory.includes('ambassador')) return 'bg-violet-100 text-violet-700';
 
   // Finance
-  if (lowerCategory.includes('finance')) return 'bg-positive-100 text-positive-800';
+  if (lowerCategory.includes('finance')) return 'bg-emerald-100 text-emerald-800';
 
   // Other/miscellaneous
-  if (lowerCategory.includes('other')) return 'bg-neutral-100 text-neutral-800';
+  if (lowerCategory.includes('other')) return 'bg-gray-100 text-gray-800';
 
   // Fallback to exact match or default
   return COMMITTEE_TYPE_COLORS[category as keyof typeof COMMITTEE_TYPE_COLORS] || DEFAULT_COMMITTEE_TYPE_COLOR;
