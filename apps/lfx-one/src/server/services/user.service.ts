@@ -1,17 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NATS_CONFIG } from '@lfx-one/shared/constants';
-import { NatsSubjects } from '@lfx-one/shared/enums';
+import { DEFAULT_QUERY_PARAMS, NATS_CONFIG } from '@lfx-one/shared/constants';
+import { MeetingVisibility, NatsSubjects } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
   ActiveWeeksStreakRow,
   Meeting,
   MeetingOccurrence,
+  MeetingRegistrant,
   PendingActionItem,
   PersonaType,
   ProjectCountRow,
   ProjectItem,
+  QueryServiceResponse,
   UserCodeCommitsResponse,
   UserCodeCommitsRow,
   UserMetadata,
@@ -26,6 +28,8 @@ import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
 import { serverLogger } from '../server';
+import { generateM2MToken } from '../utils/m2m-token.util';
+import { ApiClientService } from './api-client.service';
 import { MeetingService } from './meeting.service';
 import { NatsService } from './nats.service';
 import { ProjectService } from './project.service';
@@ -35,6 +39,7 @@ import { SnowflakeService } from './snowflake.service';
  * Service for handling user-related operations and user analytics
  */
 export class UserService {
+  private apiClientService: ApiClientService;
   private natsService: NatsService;
   private snowflakeService: SnowflakeService;
   private meetingService: MeetingService;
@@ -43,6 +48,7 @@ export class UserService {
   private readonly twoWeeksMs = 14 * 24 * 60 * 60 * 1000;
 
   public constructor() {
+    this.apiClientService = new ApiClientService();
     this.natsService = new NatsService();
     this.snowflakeService = new SnowflakeService();
     this.meetingService = new MeetingService();
@@ -468,18 +474,141 @@ export class UserService {
   }
 
   /**
+   * Fetches all meetings for the current user filtered by project
+   * Gets meetings the user has access to, then filters public meetings by registration status
+   * @param req - Express request object
+   * @param email - User's email address for registration check
+   * @param projectUid - Project UID to filter meetings by
+   * @returns Array of Meeting objects the user is registered for or has access to
+   */
+  public async getUserMeetings(req: Request, email: string, projectUid: string, query: Record<string, any>): Promise<Meeting[]> {
+    try {
+      // Step 1: Get all meetings the user has access to, filtered by project
+      const meetings = await this.meetingService.getMeetings(req, query, 'meeting', false);
+
+      req.log.info(
+        {
+          operation: 'get_user_meetings',
+          project_uid: projectUid,
+          total_accessible_meetings: meetings.length,
+        },
+        'Fetched all accessible meetings for user'
+      );
+
+      if (meetings.length === 0) {
+        return [];
+      }
+
+      // Step 2: Separate public and private meetings
+      const publicMeetings = meetings.filter((m) => m.visibility === MeetingVisibility.PUBLIC);
+      const privateMeetings = meetings.filter((m) => m.visibility !== MeetingVisibility.PUBLIC);
+
+      req.log.debug(
+        {
+          operation: 'get_user_meetings',
+          public_meetings: publicMeetings.length,
+          private_meetings: privateMeetings.length,
+        },
+        'Separated meetings by visibility'
+      );
+
+      // Step 3: For public meetings, check if user is registered using M2M token
+      let filteredPublicMeetings: Meeting[] = [];
+
+      if (publicMeetings.length > 0) {
+        const m2mToken = await generateM2MToken(req);
+        const baseUrl = process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local';
+
+        // Check registration status for each public meeting in parallel
+        const registrationChecks = await Promise.all(
+          publicMeetings.map(async (meeting) => {
+            try {
+              const query = {
+                v: 1,
+                type: 'meeting_registrant',
+                parent: `meeting:${meeting.uid}`,
+                tags: `email:${email}`,
+                ...DEFAULT_QUERY_PARAMS,
+              };
+
+              const response = await this.apiClientService.request<QueryServiceResponse<MeetingRegistrant>>(
+                'GET',
+                `${baseUrl}/query/resources`,
+                m2mToken,
+                query
+              );
+
+              // If resources array has items, user is registered
+              const isRegistered = response.data.resources && response.data.resources.length > 0;
+
+              req.log.debug(
+                {
+                  operation: 'get_user_meetings',
+                  meeting_uid: meeting.uid,
+                  is_registered: isRegistered,
+                },
+                'Checked user registration for public meeting'
+              );
+
+              return isRegistered ? meeting : null;
+            } catch (error) {
+              req.log.warn(
+                {
+                  operation: 'get_user_meetings',
+                  meeting_uid: meeting.uid,
+                  err: error,
+                },
+                'Failed to check registration for public meeting, excluding from results'
+              );
+              return null;
+            }
+          })
+        );
+
+        filteredPublicMeetings = registrationChecks.filter((m): m is Meeting => m !== null);
+      }
+
+      // Step 4: Combine private meetings (user has access = implicitly allowed) with filtered public meetings
+      const result = [...privateMeetings, ...filteredPublicMeetings];
+
+      req.log.info(
+        {
+          operation: 'get_user_meetings',
+          private_meetings_count: privateMeetings.length,
+          filtered_public_meetings_count: filteredPublicMeetings.length,
+          total_result_count: result.length,
+        },
+        'User meetings retrieved successfully'
+      );
+
+      return result;
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'get_user_meetings',
+          err: error,
+          project_uid: projectUid,
+        },
+        'Failed to get user meetings'
+      );
+      throw error;
+    }
+  }
+
+  /**
    * Get pending actions for board member persona
-   * Fetches surveys from Snowflake and meetings from LFX microservice
+   * Fetches surveys from Snowflake and user-specific meetings from LFX microservice
    */
   private async getBoardMemberActions(req: Request, email: string, projectSlug: string, projectUid: string): Promise<PendingActionItem[]> {
-    // Fetch surveys and meetings in parallel
+    // Fetch surveys and user-specific meetings in parallel
     const [surveys, meetings] = await Promise.all([
       this.projectService.getPendingActionSurveys(email, projectSlug).catch((error) => {
         req.log.warn({ err: error }, 'Failed to fetch surveys for pending actions');
         return [];
       }),
-      this.meetingService.getMeetings(req, { tags_all: `project_uid:${projectUid}` }, 'meeting', false).catch((error) => {
-        req.log.warn({ err: error }, 'Failed to fetch meetings for pending actions');
+
+      this.getUserMeetings(req, email, projectUid, { tags_all: [`project_uid:${projectUid}`, 'meeting_type:Board'] }).catch((error) => {
+        req.log.warn({ err: error }, 'Failed to fetch user meetings for pending actions');
         return [];
       }),
     ]);

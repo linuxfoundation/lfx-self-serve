@@ -7,10 +7,10 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DashboardMeetingCardComponent } from '@app/modules/dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { getActiveOccurrences } from '@lfx-one/shared';
-import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, finalize, of, switchMap } from 'rxjs';
+import { catchError, finalize, of, switchMap, tap } from 'rxjs';
 
 import type { MeetingWithOccurrence } from '@lfx-one/shared/interfaces';
 
@@ -22,11 +22,11 @@ import type { MeetingWithOccurrence } from '@lfx-one/shared/interfaces';
   styleUrl: './my-meetings.component.scss',
 })
 export class MyMeetingsComponent {
-  private readonly meetingService = inject(MeetingService);
+  private readonly userService = inject(UserService);
   private readonly projectContextService = inject(ProjectContextService);
 
   protected readonly loading = signal(true);
-  private readonly project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+  private readonly selectedProject = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
   private readonly allMeetings = this.initializeAllMeetings();
   protected readonly todayMeetings = this.initializeTodayMeetings();
   protected readonly upcomingMeetings = this.initializeUpcomingMeetings();
@@ -144,20 +144,21 @@ export class MyMeetingsComponent {
   }
 
   private initializeAllMeetings() {
-    const project$ = toObservable(this.project);
+    // Convert project signal to observable to react to project changes
+    const project$ = toObservable(this.selectedProject);
 
     return toSignal(
       project$.pipe(
+        tap(() => this.loading.set(true)),
         switchMap((project) => {
+          // If no project/foundation selected, return empty array
           if (!project?.uid) {
-            this.loading.set(false);
             return of([]);
           }
-          this.loading.set(true);
-          return this.meetingService.getMeetingsByProject(project.uid).pipe(
+
+          return this.userService.getUserMeetings(project.uid).pipe(
             catchError((error) => {
-              console.error('Failed to load meetings:', error);
-              this.loading.set(false);
+              console.error('Failed to load user meetings:', error);
               return of([]);
             }),
             finalize(() => this.loading.set(false))

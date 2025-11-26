@@ -100,4 +100,62 @@ export class UserController {
       next(error);
     }
   }
+
+  /**
+   * GET /api/user/meetings - Get all meetings for the authenticated user
+   * Returns meetings the user is registered for or has access to, filtered by project
+   * TODO: DEMO - Revisit this after the demo as this is not an efficient way of getting current users meetings
+   * @query projectUid - Required project UID to filter meetings
+   */
+  public async getUserMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_user_meetings', {
+      project_uid: req.query['projectUid'],
+    });
+
+    try {
+      // Extract and validate projectUid
+      const projectUid = req.query['projectUid'] as string | undefined;
+      if (!projectUid) {
+        Logger.error(req, 'get_user_meetings', startTime, new Error('Missing projectUid parameter'));
+
+        const validationError = ServiceValidationError.forField('projectUid', 'projectUid query parameter is required', {
+          operation: 'get_user_meetings',
+          service: 'user_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Extract user email from OIDC
+      const userEmail = req.oidc?.user?.['email'];
+      if (!userEmail) {
+        Logger.error(req, 'get_user_meetings', startTime, new Error('User email not found in OIDC context'));
+
+        const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
+          operation: 'get_user_meetings',
+          service: 'user_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Get user's meetings from service
+      const query = { tags_all: `project_uid:${projectUid}` };
+      const meetings = await this.userService.getUserMeetings(req, userEmail, projectUid, query);
+
+      Logger.success(req, 'get_user_meetings', startTime, {
+        project_uid: projectUid,
+        meeting_count: meetings.length,
+      });
+
+      res.json(meetings);
+    } catch (error) {
+      Logger.error(req, 'get_user_meetings', startTime, error);
+      next(error);
+    }
+  }
 }

@@ -10,13 +10,14 @@ import {
   CreateUserPermissionRequest,
   EmailManagementData,
   EmailPreferences,
+  Meeting,
   ProfileUpdateRequest,
   TwoFactorSettings,
   UpdateEmailPreferencesRequest,
   User,
   UserEmail,
 } from '@lfx-one/shared/interfaces';
-import { Observable, take } from 'rxjs';
+import { catchError, Observable, of, take } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -122,5 +123,19 @@ export class UserService {
    */
   public getDeveloperTokenInfo(): Observable<{ token: string; type: string }> {
     return this.http.get<{ token: string; type: string }>('/api/profile/developer').pipe(take(1));
+  }
+
+  /**
+   * Gets all meetings for the current authenticated user filtered by project
+   * Returns meetings the user is registered for or has access to
+   * @param projectUid - Project UID to filter meetings by
+   */
+  public getUserMeetings(projectUid: string): Observable<Meeting[]> {
+    return this.http.get<Meeting[]>('/api/user/meetings', { params: { projectUid } }).pipe(
+      catchError((error) => {
+        console.error('Failed to load user meetings:', error);
+        return of([]);
+      })
+    );
   }
 }

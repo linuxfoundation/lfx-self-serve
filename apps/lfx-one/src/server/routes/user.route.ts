@@ -11,4 +11,7 @@ const userController = new UserController();
 // GET /api/user/pending-actions - Get all pending actions for the authenticated user
 router.get('/pending-actions', (req, res, next) => userController.getPendingActions(req, res, next));
 
+// GET /api/user/meetings - Get all meetings for the authenticated user
+router.get('/meetings', (req, res, next) => userController.getUserMeetings(req, res, next));
+
 export default router;
