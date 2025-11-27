@@ -11,7 +11,7 @@
 
   <!-- Organization Selector -->
   @if (showOrganizationSelector()) {
-    <div class="mb-6 flex items-center gap-4" data-testid="organization-selector">
+    <div class="mb-6 flex flex-wrap items-center gap-4" data-testid="organization-selector">
       <label for="organization-select" class="text-sm font-semibold text-gray-700">Organization:</label>
       <lfx-select
         [form]="form"
@@ -23,7 +23,7 @@
         filterPlaceholder="Search organizations..."
         placeholder="Select an organization"
         [showClear]="false"
-        styleClass="min-w-[300px]"
+        styleClass="w-full sm:min-w-[300px]"
         inputId="organization-select"
         data-testid="organization-select" />
     </div>

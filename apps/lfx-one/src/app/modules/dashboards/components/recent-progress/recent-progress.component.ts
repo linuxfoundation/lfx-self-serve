@@ -19,7 +19,7 @@ import { hexToRgba, parseLocalDateString } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { finalize, switchMap } from 'rxjs';
+import { catchError, of, switchMap, tap } from 'rxjs';
 
 import type {
   ActiveWeeksStreakResponse,
@@ -74,24 +74,23 @@ export class RecentProgressComponent {
   private readonly prVelocityTooltipData = this.initializePrVelocityTooltipData();
   private readonly uniqueContributorsTooltipData = this.initializeUniqueContributorsTooltipData();
   protected readonly isLoading = this.initializeIsLoading();
-  protected readonly progressItems = this.initializeProgressItems();
   protected readonly selectedFilter = signal<string>('all');
-  protected readonly filteredProgressItems = computed(() => {
-    const items = this.progressItems();
-    const filter = this.selectedFilter();
-    const persona = this.personaService.currentPersona();
 
-    // Only apply filtering for maintainer persona
-    if (persona !== 'maintainer') {
-      return items;
-    }
+  // Individual computed signals for each card - each only depends on its own data
+  // Core Developer metrics
+  private readonly activeWeeksStreakCard = this.initializeActiveWeeksStreakCard();
+  private readonly pullRequestsMergedCard = this.initializePullRequestsMergedCard();
+  private readonly codeCommitsCard = this.initializeCodeCommitsCard();
 
-    if (filter === 'all') {
-      return items;
-    }
+  // Maintainer metrics
+  private readonly issuesTrendCard = this.initializeIssuesTrendCard();
+  private readonly prVelocityCard = this.initializePrVelocityCard();
+  private readonly contributorsMentoredCard = this.initializeContributorsMentoredCard();
+  private readonly uniqueContributorsCard = this.initializeUniqueContributorsCard();
+  private readonly healthScoreCard = this.initializeHealthScoreCard();
 
-    return items.filter((item) => item.category === filter);
-  });
+  // Filtered cards - materializes card values while benefiting from individual signal memoization
+  protected readonly filteredProgressItems = this.initializeFilteredProgressItems();
 
   protected readonly currentPersona = computed(() => this.personaService.currentPersona());
   protected readonly showFilterPills = computed(() => this.currentPersona() === 'maintainer');
@@ -119,51 +118,10 @@ export class RecentProgressComponent {
     container.scrollBy({ left: 300, behavior: 'smooth' });
   }
 
-  private initializeProgressItems() {
-    return computed<DashboardMetricCard[]>(() => {
-      const persona = this.personaService.currentPersona();
-      const activeWeeksData = this.activeWeeksStreakData();
-      const pullRequestsData = this.pullRequestsMergedData();
-      const codeCommitsDataValue = this.codeCommitsData();
-      const issuesResolutionData = this.projectIssuesResolutionData();
-      const prWeeklyData = this.projectPullRequestsWeeklyData();
-      const contributorsMentoredData = this.contributorsMentoredData();
-      const uniqueContributorsData = this.uniqueContributorsWeeklyData();
-      const healthMetricsData = this.healthMetricsDailyData();
-      const issuesTooltip = this.issuesTooltipData();
-      const prVelocityTooltip = this.prVelocityTooltipData();
-      const uniqueContributorsTooltip = this.uniqueContributorsTooltipData();
-
-      const baseMetrics = persona === 'maintainer' ? MAINTAINER_PROGRESS_METRICS : CORE_DEVELOPER_PROGRESS_METRICS;
-
-      return baseMetrics.map((metric) => {
-        if (metric.title === 'Active Weeks Streak') {
-          return this.transformActiveWeeksStreak(activeWeeksData, metric);
-        }
-        if (metric.title === 'Pull Requests Merged') {
-          return this.transformPullRequestsMerged(pullRequestsData, metric);
-        }
-        if (metric.title === 'Code Commits') {
-          return this.transformCodeCommits(codeCommitsDataValue, metric);
-        }
-        if (metric.title === 'Open vs Closed Issues Trend') {
-          return this.transformProjectIssuesResolution(issuesResolutionData, issuesTooltip, metric);
-        }
-        if (metric.title === 'PR Review & Merge Velocity') {
-          return this.transformProjectPullRequestsWeekly(prWeeklyData, prVelocityTooltip, metric);
-        }
-        if (metric.title === 'Contributors Mentored') {
-          return this.transformContributorsMentored(contributorsMentoredData, metric);
-        }
-        if (metric.title === 'Unique Contributors per Week') {
-          return this.transformUniqueContributorsWeekly(uniqueContributorsData, uniqueContributorsTooltip, metric);
-        }
-        if (metric.title === 'Health Score') {
-          return this.transformHealthMetricsDaily(healthMetricsData, metric);
-        }
-        return metric;
-      });
-    });
+  private getMetricConfig(title: string): DashboardMetricCard {
+    const persona = this.personaService.currentPersona();
+    const baseMetrics = persona === 'maintainer' ? MAINTAINER_PROGRESS_METRICS : CORE_DEVELOPER_PROGRESS_METRICS;
+    return baseMetrics.find((m) => m.title === title) || MAINTAINER_PROGRESS_METRICS.find((m) => m.title === title)!;
   }
 
   private transformActiveWeeksStreak(data: ActiveWeeksStreakResponse, metric: DashboardMetricCard): DashboardMetricCard {
@@ -171,6 +129,7 @@ export class RecentProgressComponent {
 
     return {
       ...metric,
+      loading: this.loadingState().activeWeeksStreak,
       value: data.currentStreak.toString(),
       trend: data.currentStreak > 0 ? 'up' : 'down',
       chartData: {
@@ -215,6 +174,7 @@ export class RecentProgressComponent {
 
     return {
       ...metric,
+      loading: this.loadingState().pullRequestsMerged,
       value: data.totalPullRequests.toString(),
       trend: data.totalPullRequests > 0 ? 'up' : 'down',
       chartData: {
@@ -259,6 +219,7 @@ export class RecentProgressComponent {
 
     return {
       ...metric,
+      loading: this.loadingState().codeCommits,
       value: data.totalCommits.toString(),
       trend: data.totalCommits > 0 ? 'up' : 'down',
       chartData: {
@@ -319,10 +280,10 @@ export class RecentProgressComponent {
 
     return {
       ...metric,
+      loading: this.loadingState().projectIssuesResolution,
       value: `${resolutionRate}%`,
       trend: resolutionRate >= 50 ? 'up' : 'down',
       tooltipText,
-      isConnected: true,
       chartData: {
         labels: chartData.map((row) => row.METRIC_DATE),
         datasets: [
@@ -399,9 +360,9 @@ export class RecentProgressComponent {
 
     return {
       ...metric,
+      loading: this.loadingState().projectPullRequestsWeekly,
       value: `${avgMergeTime}`,
       tooltipText,
-      isConnected: true,
       chartData: {
         labels: chartData.map((row) => row.WEEK_START_DATE),
         datasets: [
@@ -470,9 +431,9 @@ export class RecentProgressComponent {
 
     return {
       ...metric,
+      loading: this.loadingState().contributorsMentored,
       value: data.totalMentored.toString(),
       trend: data.avgWeeklyNew > 0 ? 'up' : undefined,
-      isConnected: true,
       chartData: {
         labels: chartData.map((row) => row.WEEK_START_DATE),
         datasets: [
@@ -513,10 +474,10 @@ export class RecentProgressComponent {
 
     return {
       ...metric,
+      loading: this.loadingState().uniqueContributorsWeekly,
       value: avgUniqueContributors.toString(),
       trend: avgUniqueContributors > 0 ? 'up' : 'down',
       tooltipText,
-      isConnected: true,
       chartData: {
         labels: chartData.map((row) => row.WEEK_START_DATE),
         datasets: [
@@ -594,9 +555,9 @@ export class RecentProgressComponent {
 
     return {
       ...metric,
+      loading: this.loadingState().healthMetricsDaily,
       value: currentAvgHealthScore.toString(),
       trend,
-      isConnected: true,
       chartData: {
         labels: chartData.map((row) => row.METRIC_DATE),
         datasets: [
@@ -645,9 +606,13 @@ export class RecentProgressComponent {
             return [{ data: [], currentStreak: 0, totalWeeks: 0 }];
           }
           this.loadingState.update((state) => ({ ...state, activeWeeksStreak: true }));
-          return this.analyticsService
-            .getActiveWeeksStreak()
-            .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, activeWeeksStreak: false }))));
+          return this.analyticsService.getActiveWeeksStreak().pipe(
+            tap(() => this.loadingState.update((state) => ({ ...state, activeWeeksStreak: false }))),
+            catchError(() => {
+              this.loadingState.update((state) => ({ ...state, activeWeeksStreak: false }));
+              return of({ data: [], currentStreak: 0, totalWeeks: 0 });
+            })
+          );
         })
       ),
       {
@@ -670,9 +635,13 @@ export class RecentProgressComponent {
             return [{ data: [], totalPullRequests: 0, totalDays: 0 }];
           }
           this.loadingState.update((state) => ({ ...state, pullRequestsMerged: true }));
-          return this.analyticsService
-            .getPullRequestsMerged()
-            .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, pullRequestsMerged: false }))));
+          return this.analyticsService.getPullRequestsMerged().pipe(
+            tap(() => this.loadingState.update((state) => ({ ...state, pullRequestsMerged: false }))),
+            catchError(() => {
+              this.loadingState.update((state) => ({ ...state, pullRequestsMerged: false }));
+              return of({ data: [], totalPullRequests: 0, totalDays: 0 });
+            })
+          );
         })
       ),
       {
@@ -695,7 +664,13 @@ export class RecentProgressComponent {
             return [{ data: [], totalCommits: 0, totalDays: 0 }];
           }
           this.loadingState.update((state) => ({ ...state, codeCommits: true }));
-          return this.analyticsService.getCodeCommits().pipe(finalize(() => this.loadingState.update((state) => ({ ...state, codeCommits: false }))));
+          return this.analyticsService.getCodeCommits().pipe(
+            tap(() => this.loadingState.update((state) => ({ ...state, codeCommits: false }))),
+            catchError(() => {
+              this.loadingState.update((state) => ({ ...state, codeCommits: false }));
+              return of({ data: [], totalCommits: 0, totalDays: 0 });
+            })
+          );
         })
       ),
       {
@@ -718,9 +693,13 @@ export class RecentProgressComponent {
           }
           this.loadingState.update((state) => ({ ...state, projectIssuesResolution: true }));
           const entityType = this.entityType();
-          return this.analyticsService
-            .getProjectIssuesResolution(projectSlug, entityType)
-            .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, projectIssuesResolution: false }))));
+          return this.analyticsService.getProjectIssuesResolution(projectSlug, entityType).pipe(
+            tap(() => this.loadingState.update((state) => ({ ...state, projectIssuesResolution: false }))),
+            catchError(() => {
+              this.loadingState.update((state) => ({ ...state, projectIssuesResolution: false }));
+              return of({ data: [], totalOpenedIssues: 0, totalClosedIssues: 0, resolutionRatePct: 0, medianDaysToClose: 0, totalDays: 0 });
+            })
+          );
         })
       ),
       {
@@ -746,9 +725,13 @@ export class RecentProgressComponent {
           }
           this.loadingState.update((state) => ({ ...state, projectPullRequestsWeekly: true }));
           const entityType = this.entityType();
-          return this.analyticsService
-            .getProjectPullRequestsWeekly(projectSlug, entityType)
-            .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, projectPullRequestsWeekly: false }))));
+          return this.analyticsService.getProjectPullRequestsWeekly(projectSlug, entityType).pipe(
+            tap(() => this.loadingState.update((state) => ({ ...state, projectPullRequestsWeekly: false }))),
+            catchError(() => {
+              this.loadingState.update((state) => ({ ...state, projectPullRequestsWeekly: false }));
+              return of({ data: [], totalMergedPRs: 0, avgMergeTime: 0, totalWeeks: 0 });
+            })
+          );
         })
       ),
       {
@@ -771,9 +754,13 @@ export class RecentProgressComponent {
             return [{ data: [], totalMentored: 0, avgWeeklyNew: 0, totalWeeks: 0 }];
           }
           this.loadingState.update((state) => ({ ...state, contributorsMentored: true }));
-          return this.analyticsService
-            .getContributorsMentored(projectSlug)
-            .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, contributorsMentored: false }))));
+          return this.analyticsService.getContributorsMentored(projectSlug).pipe(
+            tap(() => this.loadingState.update((state) => ({ ...state, contributorsMentored: false }))),
+            catchError(() => {
+              this.loadingState.update((state) => ({ ...state, contributorsMentored: false }));
+              return of({ data: [], totalMentored: 0, avgWeeklyNew: 0, totalWeeks: 0 });
+            })
+          );
         })
       ),
       {
@@ -797,9 +784,13 @@ export class RecentProgressComponent {
           }
           this.loadingState.update((state) => ({ ...state, uniqueContributorsWeekly: true }));
           const entityType = this.entityType();
-          return this.analyticsService
-            .getUniqueContributorsWeekly(projectSlug, entityType)
-            .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, uniqueContributorsWeekly: false }))));
+          return this.analyticsService.getUniqueContributorsWeekly(projectSlug, entityType).pipe(
+            tap(() => this.loadingState.update((state) => ({ ...state, uniqueContributorsWeekly: false }))),
+            catchError(() => {
+              this.loadingState.update((state) => ({ ...state, uniqueContributorsWeekly: false }));
+              return of({ data: [], totalUniqueContributors: 0, avgUniqueContributors: 0, totalWeeks: 0 });
+            })
+          );
         })
       ),
       {
@@ -823,9 +814,13 @@ export class RecentProgressComponent {
           }
           this.loadingState.update((state) => ({ ...state, healthMetricsDaily: true }));
           const entityType = this.entityType();
-          return this.analyticsService
-            .getHealthMetricsDaily(projectSlug, entityType)
-            .pipe(finalize(() => this.loadingState.update((state) => ({ ...state, healthMetricsDaily: false }))));
+          return this.analyticsService.getHealthMetricsDaily(projectSlug, entityType).pipe(
+            tap(() => this.loadingState.update((state) => ({ ...state, healthMetricsDaily: false }))),
+            catchError(() => {
+              this.loadingState.update((state) => ({ ...state, healthMetricsDaily: false }));
+              return of({ data: [], currentAvgHealthScore: 0, totalDays: 0 });
+            })
+          );
         })
       ),
       {
@@ -841,7 +836,21 @@ export class RecentProgressComponent {
   private initializeIsLoading() {
     return computed<boolean>(() => {
       const state = this.loadingState();
-      return Object.values(state).some((loading) => loading);
+      const persona = this.personaService.currentPersona();
+
+      if (persona === 'maintainer') {
+        // For maintainer, only check maintainer-specific metrics
+        return (
+          state.projectIssuesResolution ||
+          state.projectPullRequestsWeekly ||
+          state.contributorsMentored ||
+          state.uniqueContributorsWeekly ||
+          state.healthMetricsDaily
+        );
+      }
+
+      // For core-developer, only check core-developer-specific metrics
+      return state.activeWeeksStreak || state.pullRequestsMerged || state.codeCommits;
     });
   }
 
@@ -899,6 +908,79 @@ export class RecentProgressComponent {
         avgNew: avgNew.toString(),
         avgReturning: avgReturning.toString(),
       };
+    });
+  }
+
+  // Card signal initialization methods
+  private initializeActiveWeeksStreakCard() {
+    return computed(() => this.transformActiveWeeksStreak(this.activeWeeksStreakData(), this.getMetricConfig('Active Weeks Streak')));
+  }
+
+  private initializePullRequestsMergedCard() {
+    return computed(() => this.transformPullRequestsMerged(this.pullRequestsMergedData(), this.getMetricConfig('Pull Requests Merged')));
+  }
+
+  private initializeCodeCommitsCard() {
+    return computed(() => this.transformCodeCommits(this.codeCommitsData(), this.getMetricConfig('Code Commits')));
+  }
+
+  private initializeIssuesTrendCard() {
+    return computed(() =>
+      this.transformProjectIssuesResolution(this.projectIssuesResolutionData(), this.issuesTooltipData(), this.getMetricConfig('Open vs Closed Issues Trend'))
+    );
+  }
+
+  private initializePrVelocityCard() {
+    return computed(() =>
+      this.transformProjectPullRequestsWeekly(
+        this.projectPullRequestsWeeklyData(),
+        this.prVelocityTooltipData(),
+        this.getMetricConfig('PR Review & Merge Velocity')
+      )
+    );
+  }
+
+  private initializeContributorsMentoredCard() {
+    return computed(() => this.transformContributorsMentored(this.contributorsMentoredData(), this.getMetricConfig('Contributors Mentored')));
+  }
+
+  private initializeUniqueContributorsCard() {
+    return computed(() =>
+      this.transformUniqueContributorsWeekly(
+        this.uniqueContributorsWeeklyData(),
+        this.uniqueContributorsTooltipData(),
+        this.getMetricConfig('Unique Contributors per Week')
+      )
+    );
+  }
+
+  private initializeHealthScoreCard() {
+    return computed(() => this.transformHealthMetricsDaily(this.healthMetricsDailyData(), this.getMetricConfig('Health Score')));
+  }
+
+  private initializeFilteredProgressItems() {
+    return computed<DashboardMetricCard[]>(() => {
+      const persona = this.personaService.currentPersona();
+      const filter = this.selectedFilter();
+
+      if (persona === 'maintainer') {
+        // Materialize maintainer card values
+        const allCards = [
+          { card: this.issuesTrendCard(), category: 'code' },
+          { card: this.prVelocityCard(), category: 'code' },
+          { card: this.contributorsMentoredCard(), category: 'projectHealth' },
+          { card: this.uniqueContributorsCard(), category: 'projectHealth' },
+          { card: this.healthScoreCard(), category: 'projectHealth' },
+        ];
+
+        if (filter === 'all') {
+          return allCards.map((item) => item.card);
+        }
+        return allCards.filter((item) => item.category === filter).map((item) => item.card);
+      }
+
+      // Core developer - no filtering, just materialize card values
+      return [this.activeWeeksStreakCard(), this.pullRequestsMergedCard(), this.codeCommitsCard()];
     });
   }
 }

@@ -11,10 +11,11 @@ import { BASE_BAR_CHART_OPTIONS, BASE_LINE_CHART_OPTIONS, COMPANY_BUS_FACTOR, lf
 import { hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { finalize, map, switchMap } from 'rxjs';
+import { catchError, map, of, switchMap, tap } from 'rxjs';
 
 import type { DashboardMetricCard, HealthEventsMonthlyResponse, TopProjectDisplay, UniqueContributorsDailyResponse } from '@lfx-one/shared/interfaces';
 import type { TooltipItem } from 'chart.js';
+
 @Component({
   selector: 'lfx-foundation-health',
   standalone: true,
@@ -30,6 +31,7 @@ export class FoundationHealthComponent {
 
   public readonly title = input<string>('Foundation Health');
 
+  // Loading signals for each data source
   private readonly totalProjectsLoading = signal(true);
   private readonly totalMembersLoading = signal(true);
   private readonly softwareValueLoading = signal(true);
@@ -37,8 +39,11 @@ export class FoundationHealthComponent {
   private readonly healthScoresLoading = signal(true);
   private readonly activeContributorsLoading = signal(true);
   private readonly eventsLoading = signal(true);
+
   private readonly selectedFoundationSlug$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((foundation) => foundation?.slug || ''));
   public readonly hasFoundationSelected = computed<boolean>(() => !!this.projectContextService.selectedFoundation());
+
+  // Data signals - each fetches its own data independently
   private readonly totalProjectsData = this.initializeTotalProjectsData();
   private readonly totalMembersData = this.initializeTotalMembersData();
   private readonly softwareValueData = this.initializeSoftwareValueData();
@@ -46,16 +51,6 @@ export class FoundationHealthComponent {
   private readonly healthScoresData = this.initializeHealthScoresData();
   private readonly activeContributorsData = this.initializeActiveContributorsData();
   private readonly eventsData = this.initializeEventsData();
-  public readonly isLoading = computed<boolean>(
-    () =>
-      this.totalProjectsLoading() ||
-      this.totalMembersLoading() ||
-      this.softwareValueLoading() ||
-      this.maintainersLoading() ||
-      this.healthScoresLoading() ||
-      this.activeContributorsLoading() ||
-      this.eventsLoading()
-  );
 
   public readonly selectedFilter = signal<string>('all');
 
@@ -67,68 +62,21 @@ export class FoundationHealthComponent {
   ];
 
   public readonly sparklineOptions = BASE_LINE_CHART_OPTIONS;
-
   public readonly barChartOptions = BASE_BAR_CHART_OPTIONS;
 
-  public readonly metricCards = computed<DashboardMetricCard[]>(() => {
-    const filter = this.selectedFilter();
-    const allCards = this.allMetricCards();
+  // Individual computed signals for each card - each only depends on its own data
+  private readonly totalProjectsCard = this.initializeTotalProjectsCard();
+  private readonly totalMembersCard = this.initializeTotalMembersCard();
+  private readonly softwareValueCard = this.initializeSoftwareValueCard();
+  private readonly companyBusFactorCard = this.initializeCompanyBusFactorCard();
+  private readonly activeContributorsCard = this.initializeActiveContributorsCard();
+  private readonly maintainersCard = this.initializeMaintainersCard();
+  private readonly eventsCard = this.initializeEventsCard();
+  private readonly projectHealthScoresCard = this.initializeProjectHealthScoresCard();
 
-    if (filter === 'all') {
-      return allCards;
-    }
-
-    return allCards.filter((card) => card.category === filter);
-  });
-
-  private readonly allMetricCards = computed<DashboardMetricCard[]>(() => {
-    return PRIMARY_FOUNDATION_HEALTH_METRICS.map((metric) => {
-      if (metric.title === 'Total Projects') {
-        return this.transformTotalProjects(metric);
-      }
-      if (metric.title === 'Total Members') {
-        return this.transformTotalMembers(metric);
-      }
-      if (metric.title === 'Software Value') {
-        return this.transformSoftwareValue(metric);
-      }
-      if (metric.title === 'Company Bus Factor') {
-        return this.transformCompanyBusFactor(metric);
-      }
-      if (metric.title === 'Active Contributors') {
-        return this.transformActiveContributors(metric);
-      }
-      if (metric.title === 'Maintainers') {
-        return this.transformMaintainers(metric);
-      }
-      if (metric.title === 'Events') {
-        return this.transformEvents(metric);
-      }
-      if (metric.title === 'Project Health Scores') {
-        return this.transformProjectHealthScores(metric);
-      }
-      return this.transformDefault(metric);
-    });
-  });
-
-  public readonly healthScoreDistribution = computed(() => {
-    const distribution = this.healthScoresData();
-
-    const data = [
-      { category: 'Critical', count: distribution.critical, color: lfxColors.red[500] },
-      { category: 'Unsteady', count: distribution.unsteady, color: lfxColors.amber[400] },
-      { category: 'Stable', count: distribution.stable, color: lfxColors.amber[500] },
-      { category: 'Healthy', count: distribution.healthy, color: lfxColors.blue[500] },
-      { category: 'Excellent', count: distribution.excellent, color: lfxColors.emerald[500] },
-    ];
-
-    const maxCount = Math.max(...data.map((d) => d.count));
-
-    return data.map((item) => ({
-      ...item,
-      heightPx: Math.round((item.count / maxCount) * 64),
-    }));
-  });
+  // Filtered cards - materializes card values while benefiting from individual signal memoization
+  public readonly metricCards = this.initializeMetricCards();
+  public readonly healthScoreDistribution = this.initializeHealthScoreDistribution();
 
   public handleFilterChange(filter: string): void {
     this.selectedFilter.set(filter);
@@ -144,6 +92,84 @@ export class FoundationHealthComponent {
     if (!this.carouselScrollContainer?.nativeElement) return;
     const container = this.carouselScrollContainer.nativeElement;
     container.scrollBy({ left: 320, behavior: 'smooth' });
+  }
+
+  private initializeTotalProjectsCard() {
+    return computed(() => this.transformTotalProjects(this.getMetricConfig('Total Projects')));
+  }
+
+  private initializeTotalMembersCard() {
+    return computed(() => this.transformTotalMembers(this.getMetricConfig('Total Members')));
+  }
+
+  private initializeSoftwareValueCard() {
+    return computed(() => this.transformSoftwareValue(this.getMetricConfig('Software Value')));
+  }
+
+  private initializeCompanyBusFactorCard() {
+    return computed(() => this.transformCompanyBusFactor(this.getMetricConfig('Company Bus Factor')));
+  }
+
+  private initializeActiveContributorsCard() {
+    return computed(() => this.transformActiveContributors(this.getMetricConfig('Active Contributors')));
+  }
+
+  private initializeMaintainersCard() {
+    return computed(() => this.transformMaintainers(this.getMetricConfig('Maintainers')));
+  }
+
+  private initializeEventsCard() {
+    return computed(() => this.transformEvents(this.getMetricConfig('Events')));
+  }
+
+  private initializeProjectHealthScoresCard() {
+    return computed(() => this.transformProjectHealthScores(this.getMetricConfig('Project Health Scores')));
+  }
+
+  private initializeMetricCards() {
+    return computed(() => {
+      const filter = this.selectedFilter();
+      const allCards = [
+        { card: this.totalProjectsCard(), category: 'projects' },
+        { card: this.totalMembersCard(), category: 'projects' },
+        { card: this.softwareValueCard(), category: 'projects' },
+        { card: this.companyBusFactorCard(), category: 'contributors' },
+        { card: this.activeContributorsCard(), category: 'contributors' },
+        { card: this.maintainersCard(), category: 'contributors' },
+        { card: this.eventsCard(), category: 'events' },
+        { card: this.projectHealthScoresCard(), category: 'projects' },
+      ];
+
+      if (filter === 'all') {
+        return allCards.map((item) => item.card);
+      }
+      return allCards.filter((item) => item.category === filter).map((item) => item.card);
+    });
+  }
+
+  private initializeHealthScoreDistribution() {
+    return computed(() => {
+      const distribution = this.healthScoresData();
+
+      const data = [
+        { category: 'Critical', count: distribution.critical, color: lfxColors.red[500] },
+        { category: 'Unsteady', count: distribution.unsteady, color: lfxColors.amber[400] },
+        { category: 'Stable', count: distribution.stable, color: lfxColors.amber[500] },
+        { category: 'Healthy', count: distribution.healthy, color: lfxColors.blue[500] },
+        { category: 'Excellent', count: distribution.excellent, color: lfxColors.emerald[500] },
+      ];
+
+      const maxCount = Math.max(...data.map((d) => d.count));
+
+      return data.map((item) => ({
+        ...item,
+        heightPx: maxCount > 0 ? Math.round((item.count / maxCount) * 64) : 0,
+      }));
+    });
+  }
+
+  private getMetricConfig(title: string): DashboardMetricCard {
+    return PRIMARY_FOUNDATION_HEALTH_METRICS.find((m) => m.title === title)!;
   }
 
   private formatSoftwareValue(valueInMillions: number): string {
@@ -166,6 +192,7 @@ export class FoundationHealthComponent {
 
     return {
       ...metric,
+      loading: this.totalProjectsLoading(),
       value: data.totalProjects.toLocaleString(),
       subtitle: `Total ${this.projectContextService.selectedFoundation()?.name} projects`,
       chartData: {
@@ -206,6 +233,7 @@ export class FoundationHealthComponent {
 
     return {
       ...metric,
+      loading: this.totalMembersLoading(),
       value: data.totalMembers.toLocaleString(),
       subtitle: `Total ${this.projectContextService.selectedFoundation()?.name} members`,
       chartData: {
@@ -246,6 +274,7 @@ export class FoundationHealthComponent {
 
     return {
       ...metric,
+      loading: this.softwareValueLoading(),
       value: this.formatSoftwareValue(data.totalValue),
       subtitle: 'Estimated total value of software managed',
       topProjects: this.formatTopProjects(data.topProjects),
@@ -275,6 +304,7 @@ export class FoundationHealthComponent {
 
     return {
       ...metric,
+      loading: this.activeContributorsLoading(),
       value: data.avgContributors.toLocaleString(),
       subtitle: 'Average active contributors over the past year',
       chartData: {
@@ -315,6 +345,7 @@ export class FoundationHealthComponent {
 
     return {
       ...metric,
+      loading: this.maintainersLoading(),
       value: data.avgMaintainers.toString(),
       subtitle: 'Average maintainers over the past year',
       chartData: {
@@ -363,6 +394,7 @@ export class FoundationHealthComponent {
 
     return {
       ...metric,
+      loading: this.eventsLoading(),
       value: data.totalEvents.toLocaleString(),
       subtitle: `Total events over ${data.totalMonths} months`,
       chartData: {
@@ -400,151 +432,179 @@ export class FoundationHealthComponent {
 
     return {
       ...metric,
+      loading: this.healthScoresLoading(),
       value: '',
       subtitle: '',
       healthScores: data,
     };
   }
 
-  private transformDefault(metric: DashboardMetricCard): DashboardMetricCard {
-    return {
-      ...metric,
-      value: 'N/A',
-      subtitle: 'No data available',
-    };
-  }
-
   private initializeTotalProjectsData() {
+    const defaultValue = {
+      totalProjects: 0,
+      monthlyData: [] as number[],
+      monthlyLabels: [] as string[],
+    };
+
     return toSignal(
       this.selectedFoundationSlug$.pipe(
-        switchMap((foundationSlug) => {
-          this.totalProjectsLoading.set(true);
-
-          return this.analyticsService.getFoundationTotalProjects(foundationSlug).pipe(finalize(() => this.totalProjectsLoading.set(false)));
-        })
+        tap(() => this.totalProjectsLoading.set(true)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getFoundationTotalProjects(foundationSlug).pipe(
+            tap(() => this.totalProjectsLoading.set(false)),
+            catchError(() => {
+              this.totalProjectsLoading.set(false);
+              return of(defaultValue);
+            })
+          )
+        )
       ),
-      {
-        initialValue: {
-          totalProjects: 0,
-          monthlyData: [],
-          monthlyLabels: [],
-        },
-      }
+      { initialValue: defaultValue }
     );
   }
 
   private initializeTotalMembersData() {
+    const defaultValue = {
+      totalMembers: 0,
+      monthlyData: [] as number[],
+      monthlyLabels: [] as string[],
+    };
+
     return toSignal(
       this.selectedFoundationSlug$.pipe(
-        switchMap((foundationSlug) => {
-          this.totalMembersLoading.set(true);
-
-          return this.analyticsService.getFoundationTotalMembers(foundationSlug).pipe(finalize(() => this.totalMembersLoading.set(false)));
-        })
+        tap(() => this.totalMembersLoading.set(true)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getFoundationTotalMembers(foundationSlug).pipe(
+            tap(() => this.totalMembersLoading.set(false)),
+            catchError(() => {
+              this.totalMembersLoading.set(false);
+              return of(defaultValue);
+            })
+          )
+        )
       ),
-      {
-        initialValue: {
-          totalMembers: 0,
-          monthlyData: [],
-          monthlyLabels: [],
-        },
-      }
+      { initialValue: defaultValue }
     );
   }
 
   private initializeSoftwareValueData() {
+    const defaultValue = {
+      totalValue: 0,
+      topProjects: [] as { name: string; value: number }[],
+    };
+
     return toSignal(
       this.selectedFoundationSlug$.pipe(
-        switchMap((foundationSlug) => {
-          this.softwareValueLoading.set(true);
-
-          return this.analyticsService.getFoundationSoftwareValue(foundationSlug).pipe(finalize(() => this.softwareValueLoading.set(false)));
-        })
+        tap(() => this.softwareValueLoading.set(true)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getFoundationSoftwareValue(foundationSlug).pipe(
+            tap(() => this.softwareValueLoading.set(false)),
+            catchError(() => {
+              this.softwareValueLoading.set(false);
+              return of(defaultValue);
+            })
+          )
+        )
       ),
-      {
-        initialValue: {
-          totalValue: 0,
-          topProjects: [],
-        },
-      }
+      { initialValue: defaultValue }
     );
   }
 
   private initializeMaintainersData() {
+    const defaultValue = {
+      avgMaintainers: 0,
+      trendData: [] as number[],
+      trendLabels: [] as string[],
+    };
+
     return toSignal(
       this.selectedFoundationSlug$.pipe(
-        switchMap((foundationSlug) => {
-          this.maintainersLoading.set(true);
-
-          return this.analyticsService.getFoundationMaintainers(foundationSlug).pipe(finalize(() => this.maintainersLoading.set(false)));
-        })
+        tap(() => this.maintainersLoading.set(true)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getFoundationMaintainers(foundationSlug).pipe(
+            tap(() => this.maintainersLoading.set(false)),
+            catchError(() => {
+              this.maintainersLoading.set(false);
+              return of(defaultValue);
+            })
+          )
+        )
       ),
-      {
-        initialValue: {
-          avgMaintainers: 0,
-          trendData: [],
-          trendLabels: [],
-        },
-      }
+      { initialValue: defaultValue }
     );
   }
 
   private initializeHealthScoresData() {
+    const defaultValue = {
+      excellent: 0,
+      healthy: 0,
+      stable: 0,
+      unsteady: 0,
+      critical: 0,
+    };
+
     return toSignal(
       this.selectedFoundationSlug$.pipe(
-        switchMap((foundationSlug) => {
-          this.healthScoresLoading.set(true);
-
-          return this.analyticsService.getFoundationHealthScoreDistribution(foundationSlug).pipe(finalize(() => this.healthScoresLoading.set(false)));
-        })
+        tap(() => this.healthScoresLoading.set(true)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getFoundationHealthScoreDistribution(foundationSlug).pipe(
+            tap(() => this.healthScoresLoading.set(false)),
+            catchError(() => {
+              this.healthScoresLoading.set(false);
+              return of(defaultValue);
+            })
+          )
+        )
       ),
-      {
-        initialValue: {
-          excellent: 0,
-          healthy: 0,
-          stable: 0,
-          unsteady: 0,
-          critical: 0,
-        },
-      }
+      { initialValue: defaultValue }
     );
   }
 
   private initializeActiveContributorsData() {
+    const defaultValue: UniqueContributorsDailyResponse = {
+      data: [],
+      avgContributors: 0,
+      totalDays: 0,
+    };
+
     return toSignal(
       this.selectedFoundationSlug$.pipe(
-        switchMap((foundationSlug) => {
-          this.activeContributorsLoading.set(true);
-
-          return this.analyticsService.getUniqueContributorsDaily(foundationSlug, 'foundation').pipe(finalize(() => this.activeContributorsLoading.set(false)));
-        })
+        tap(() => this.activeContributorsLoading.set(true)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getUniqueContributorsDaily(foundationSlug, 'foundation').pipe(
+            tap(() => this.activeContributorsLoading.set(false)),
+            catchError(() => {
+              this.activeContributorsLoading.set(false);
+              return of(defaultValue);
+            })
+          )
+        )
       ),
-      {
-        initialValue: {
-          data: [],
-          avgContributors: 0,
-          totalDays: 0,
-        } as UniqueContributorsDailyResponse,
-      }
+      { initialValue: defaultValue }
     );
   }
 
   private initializeEventsData() {
+    const defaultValue: HealthEventsMonthlyResponse = {
+      data: [],
+      totalEvents: 0,
+      totalMonths: 0,
+    };
+
     return toSignal(
       this.selectedFoundationSlug$.pipe(
-        switchMap((foundationSlug) => {
-          this.eventsLoading.set(true);
-
-          return this.analyticsService.getHealthEventsMonthly(foundationSlug, 'foundation').pipe(finalize(() => this.eventsLoading.set(false)));
-        })
+        tap(() => this.eventsLoading.set(true)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getHealthEventsMonthly(foundationSlug, 'foundation').pipe(
+            tap(() => this.eventsLoading.set(false)),
+            catchError(() => {
+              this.eventsLoading.set(false);
+              return of(defaultValue);
+            })
+          )
+        )
       ),
-      {
-        initialValue: {
-          data: [],
-          totalEvents: 0,
-          totalMonths: 0,
-        } as HealthEventsMonthlyResponse,
-      }
+      { initialValue: defaultValue }
     );
   }
 }

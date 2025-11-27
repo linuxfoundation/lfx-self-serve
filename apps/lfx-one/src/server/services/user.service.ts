@@ -50,7 +50,7 @@ export class UserService {
   public constructor() {
     this.apiClientService = new ApiClientService();
     this.natsService = new NatsService();
-    this.snowflakeService = new SnowflakeService();
+    this.snowflakeService = SnowflakeService.getInstance();
     this.meetingService = new MeetingService();
     this.projectService = new ProjectService();
   }

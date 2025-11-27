@@ -13,7 +13,7 @@ import { hexToRgba } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { combineLatest, finalize, map, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, map, of, switchMap, tap } from 'rxjs';
 
 import type {
   CertifiedEmployeesResponse,
@@ -72,63 +72,17 @@ export class OrganizationInvolvementComponent {
     { id: 'education', label: 'Education' },
   ];
 
-  public readonly primaryMetrics = computed<DashboardMetricCard[]>((): DashboardMetricCard[] => {
-    const maintainersData = this.maintainersData();
-    const contributorsData = this.contributorsData();
-    const membershipTierData = this.membershipTierData();
-    const certifiedEmployeesData = this.certifiedEmployeesData();
-    const trainingEnrollmentsData = this.trainingEnrollmentsData();
-    const eventsData = this.eventsOverviewData();
-    const filter = this.selectedFilter();
+  // Individual computed signals for each card - each only depends on its own data
+  private readonly membershipTierCard = this.initializeMembershipTierCard();
+  private readonly activeContributorsCard = this.initializeActiveContributorsCard();
+  private readonly maintainersCard = this.initializeMaintainersCard();
+  private readonly eventAttendeesCard = this.initializeEventAttendeesCard();
+  private readonly eventSpeakersCard = this.initializeEventSpeakersCard();
+  private readonly certifiedEmployeesCard = this.initializeCertifiedEmployeesCard();
+  private readonly trainingEnrollmentsCard = this.initializeTrainingEnrollmentsCard();
 
-    const allMetrics = PRIMARY_INVOLVEMENT_METRICS.map((metric) => {
-      if (metric.title === 'Active Contributors') {
-        return this.transformActiveContributors(contributorsData, metric);
-      }
-      if (metric.title === 'Maintainers') {
-        return this.transformMaintainers(maintainersData, metric);
-      }
-      if (metric.title === 'Event Attendees') {
-        return this.transformEventAttendees(eventsData.eventAttendance, metric);
-      }
-      if (metric.title === 'Event Speakers') {
-        return this.transformEventSpeakers(eventsData.eventAttendance, metric);
-      }
-      if (metric.title === 'Certified Employees') {
-        return this.transformCertifiedEmployees(certifiedEmployeesData, metric);
-      }
-      if (metric.title === 'Training Enrollments') {
-        return this.transformTrainingEnrollments(trainingEnrollmentsData, metric);
-      }
-      if (metric.isMembershipTier) {
-        return this.transformMembershipTier(membershipTierData, metric);
-      }
-      return this.transformDefaultMetric(metric);
-    });
-
-    // Filter metrics based on selected filter
-    if (filter === 'all') {
-      return allMetrics;
-    }
-
-    // Always show Membership Tier
-    const filteredMetrics = allMetrics.filter((metric) => {
-      if (metric.isMembershipTier) return true;
-
-      if (filter === 'contributions') {
-        return metric.title === 'Active Contributors' || metric.title === 'Maintainers';
-      }
-      if (filter === 'events') {
-        return metric.title === 'Event Attendees' || metric.title === 'Event Speakers';
-      }
-      if (filter === 'education') {
-        return metric.title === 'Certified Employees' || metric.title === 'Training Enrollments';
-      }
-      return false;
-    });
-
-    return filteredMetrics;
-  });
+  // Filtered cards - materializes card values while benefiting from individual signal memoization
+  public readonly primaryMetrics = this.initializePrimaryMetrics();
 
   public handleFilterChange(filter: string): void {
     this.selectedFilter.set(filter);
@@ -146,12 +100,72 @@ export class OrganizationInvolvementComponent {
     container.scrollBy({ left: 300, behavior: 'smooth' });
   }
 
+  private getMetricConfig(title: string): DashboardMetricCard {
+    return PRIMARY_INVOLVEMENT_METRICS.find((m) => m.title === title || (title === 'Membership Tier' && m.isMembershipTier))!;
+  }
+
+  private initializeMembershipTierCard() {
+    return computed(() => this.transformMembershipTier(this.membershipTierData(), this.getMetricConfig('Membership Tier')));
+  }
+
+  private initializeActiveContributorsCard() {
+    return computed(() => this.transformActiveContributors(this.contributorsData(), this.getMetricConfig('Active Contributors')));
+  }
+
+  private initializeMaintainersCard() {
+    return computed(() => this.transformMaintainers(this.maintainersData(), this.getMetricConfig('Maintainers')));
+  }
+
+  private initializeEventAttendeesCard() {
+    return computed(() => this.transformEventAttendees(this.eventsOverviewData().eventAttendance, this.getMetricConfig('Event Attendees')));
+  }
+
+  private initializeEventSpeakersCard() {
+    return computed(() => this.transformEventSpeakers(this.eventsOverviewData().eventAttendance, this.getMetricConfig('Event Speakers')));
+  }
+
+  private initializeCertifiedEmployeesCard() {
+    return computed(() => this.transformCertifiedEmployees(this.certifiedEmployeesData(), this.getMetricConfig('Certified Employees')));
+  }
+
+  private initializeTrainingEnrollmentsCard() {
+    return computed(() => this.transformTrainingEnrollments(this.trainingEnrollmentsData(), this.getMetricConfig('Training Enrollments')));
+  }
+
+  private initializePrimaryMetrics() {
+    return computed<DashboardMetricCard[]>(() => {
+      const filter = this.selectedFilter();
+
+      const allCards = [
+        { card: this.membershipTierCard(), category: 'membership' },
+        { card: this.activeContributorsCard(), category: 'contributions' },
+        { card: this.maintainersCard(), category: 'contributions' },
+        { card: this.eventAttendeesCard(), category: 'events' },
+        { card: this.eventSpeakersCard(), category: 'events' },
+        { card: this.certifiedEmployeesCard(), category: 'education' },
+        { card: this.trainingEnrollmentsCard(), category: 'education' },
+      ];
+
+      if (filter === 'all') {
+        return allCards.map((item) => item.card);
+      }
+
+      return allCards.filter((item) => item.category === 'membership' || item.category === filter).map((item) => item.card);
+    });
+  }
+
   private initializeMaintainersData() {
     return toSignal(
       this.selectedAccountId$.pipe(
         switchMap((accountId) => {
           this.maintainersLoading.set(true);
-          return this.analyticsService.getOrganizationMaintainers(accountId).pipe(finalize(() => this.maintainersLoading.set(false)));
+          return this.analyticsService.getOrganizationMaintainers(accountId).pipe(
+            tap(() => this.maintainersLoading.set(false)),
+            catchError(() => {
+              this.maintainersLoading.set(false);
+              return of({ maintainers: 0, projects: 0, accountId: '', accountName: '' } as OrganizationMaintainersResponse);
+            })
+          );
         })
       ),
       {
@@ -170,7 +184,13 @@ export class OrganizationInvolvementComponent {
       this.selectedAccountId$.pipe(
         switchMap((accountId) => {
           this.contributorsLoading.set(true);
-          return this.analyticsService.getOrganizationContributors(accountId).pipe(finalize(() => this.contributorsLoading.set(false)));
+          return this.analyticsService.getOrganizationContributors(accountId).pipe(
+            tap(() => this.contributorsLoading.set(false)),
+            catchError(() => {
+              this.contributorsLoading.set(false);
+              return of({ contributors: 0, projects: 0, accountId: '', accountName: '' } as OrganizationContributorsResponse);
+            })
+          );
         })
       ),
       {
@@ -209,7 +229,26 @@ export class OrganizationInvolvementComponent {
             } as MembershipTierResponse);
           }
 
-          return this.analyticsService.getMembershipTier(accountId, foundationSlug).pipe(finalize(() => this.membershipTierLoading.set(false)));
+          return this.analyticsService.getMembershipTier(accountId, foundationSlug).pipe(
+            tap(() => this.membershipTierLoading.set(false)),
+            catchError(() => {
+              this.membershipTierLoading.set(false);
+              return of({
+                projectId: '',
+                projectName: '',
+                projectSlug: '',
+                isProjectActive: false,
+                accountId: '',
+                accountName: '',
+                membershipTier: '',
+                membershipPrice: 0,
+                startDate: '',
+                endDate: '',
+                renewalPrice: 0,
+                membershipStatus: '',
+              } as MembershipTierResponse);
+            })
+          );
         })
       ),
       {
@@ -249,7 +288,13 @@ export class OrganizationInvolvementComponent {
             } as CertifiedEmployeesResponse);
           }
 
-          return this.analyticsService.getCertifiedEmployees(accountId, foundationSlug).pipe(finalize(() => this.certifiedEmployeesLoading.set(false)));
+          return this.analyticsService.getCertifiedEmployees(accountId, foundationSlug).pipe(
+            tap(() => this.certifiedEmployeesLoading.set(false)),
+            catchError(() => {
+              this.certifiedEmployeesLoading.set(false);
+              return of({ certifications: 0, certifiedEmployees: 0, accountId: '', projectId: '', projectSlug: '' } as CertifiedEmployeesResponse);
+            })
+          );
         })
       ),
       {
@@ -281,7 +326,13 @@ export class OrganizationInvolvementComponent {
             } as TrainingEnrollmentsResponse);
           }
 
-          return this.analyticsService.getTrainingEnrollments(accountId, foundationSlug).pipe(finalize(() => this.trainingEnrollmentsLoading.set(false)));
+          return this.analyticsService.getTrainingEnrollments(accountId, foundationSlug).pipe(
+            tap(() => this.trainingEnrollmentsLoading.set(false)),
+            catchError(() => {
+              this.trainingEnrollmentsLoading.set(false);
+              return of({ totalEnrollments: 0, dailyData: [], accountId: '', projectSlug: '' } as TrainingEnrollmentsResponse);
+            })
+          );
         })
       ),
       {
@@ -300,7 +351,16 @@ export class OrganizationInvolvementComponent {
       this.selectedAccountId$.pipe(
         switchMap((accountId) => {
           this.eventsLoading.set(true);
-          return this.analyticsService.getOrganizationEventsOverview(accountId).pipe(finalize(() => this.eventsLoading.set(false)));
+          return this.analyticsService.getOrganizationEventsOverview(accountId).pipe(
+            tap(() => this.eventsLoading.set(false)),
+            catchError(() => {
+              this.eventsLoading.set(false);
+              return of({
+                eventAttendance: { totalAttendees: 0, totalSpeakers: 0, totalEvents: 0, accountName: '' },
+                accountId: '',
+              });
+            })
+          );
         })
       ),
       {
@@ -320,6 +380,7 @@ export class OrganizationInvolvementComponent {
   private transformActiveContributors(data: OrganizationContributorsResponse, metric: DashboardMetricCard): DashboardMetricCard {
     return {
       ...metric,
+      loading: this.contributorsLoading(),
       value: data.contributors.toString(),
       subtitle: 'Contributors from our organization',
       chartOptions: this.createBarChartOptions('Active contributors'),
@@ -329,6 +390,7 @@ export class OrganizationInvolvementComponent {
   private transformMaintainers(data: OrganizationMaintainersResponse, metric: DashboardMetricCard): DashboardMetricCard {
     return {
       ...metric,
+      loading: this.maintainersLoading(),
       value: data.maintainers.toString(),
       subtitle: `Across ${data.projects} projects`,
       chartOptions: this.createBarChartOptions('Maintainers'),
@@ -339,6 +401,7 @@ export class OrganizationInvolvementComponent {
     if (!data.membershipTier) {
       return {
         ...metric,
+        loading: this.membershipTierLoading(),
         value: 'No Membership',
         subtitle: 'Not a member',
         tier: '',
@@ -354,6 +417,7 @@ export class OrganizationInvolvementComponent {
 
     return {
       ...metric,
+      loading: this.membershipTierLoading(),
       value: data.membershipTier,
       subtitle: `Active membership`,
       tier: data.membershipTier,
@@ -368,6 +432,7 @@ export class OrganizationInvolvementComponent {
   ): DashboardMetricCard {
     return {
       ...metric,
+      loading: this.eventsLoading(),
       value: data.totalAttendees.toString(),
       subtitle: 'Employees at foundation events',
       chartOptions: this.createLineChartOptions('Event attendees'),
@@ -380,6 +445,7 @@ export class OrganizationInvolvementComponent {
   ): DashboardMetricCard {
     return {
       ...metric,
+      loading: this.eventsLoading(),
       value: data.totalSpeakers.toString(),
       subtitle: 'Employee speakers at events',
       chartOptions: this.createLineChartOptions('Event speakers'),
@@ -389,6 +455,7 @@ export class OrganizationInvolvementComponent {
   private transformCertifiedEmployees(data: CertifiedEmployeesResponse, metric: DashboardMetricCard): DashboardMetricCard {
     return {
       ...metric,
+      loading: this.certifiedEmployeesLoading(),
       value: `${data.certifiedEmployees} employees`,
       subtitle: `${data.certifications} total certifications`,
       chartOptions: this.createLineChartOptions('Certified employees'),
@@ -398,6 +465,7 @@ export class OrganizationInvolvementComponent {
   private transformTrainingEnrollments(data: TrainingEnrollmentsResponse, metric: DashboardMetricCard): DashboardMetricCard {
     return {
       ...metric,
+      loading: this.trainingEnrollmentsLoading(),
       value: data.totalEnrollments.toString(),
       subtitle: 'Training courses enrolled this year',
       chartOptions: this.createLineChartOptions('Training enrollments'),
@@ -418,15 +486,6 @@ export class OrganizationInvolvementComponent {
           },
         ],
       },
-    };
-  }
-
-  private transformDefaultMetric(metric: DashboardMetricCard): DashboardMetricCard {
-    return {
-      ...metric,
-      value: metric.value ?? 'N/A',
-      subtitle: metric.subtitle ?? 'No data available',
-      chartOptions: metric.chartType === 'bar' ? BASE_BAR_CHART_OPTIONS : BASE_LINE_CHART_OPTIONS,
     };
   }
 

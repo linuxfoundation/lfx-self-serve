@@ -106,11 +106,13 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     icon: 'fa-light fa-dollar-sign',
     chartType: 'line',
     isMembershipTier: true,
+    testId: 'org-involvement-card-membership-tier',
   },
   {
     title: 'Active Contributors',
     icon: 'fa-light fa-code',
     chartType: 'bar',
+    testId: 'org-involvement-card-active-contributors',
     chartData: {
       labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
       datasets: [
@@ -131,6 +133,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     title: 'Maintainers',
     icon: 'fa-light fa-user-check',
     chartType: 'bar',
+    testId: 'org-involvement-card-maintainers',
     chartData: {
       labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
       datasets: [
@@ -151,6 +154,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     title: 'Event Attendees',
     icon: 'fa-light fa-user-group',
     chartType: 'line',
+    testId: 'org-involvement-card-event-attendees',
     chartData: {
       labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
       datasets: [
@@ -173,6 +177,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     title: 'Event Speakers',
     icon: 'fa-light fa-award-simple',
     chartType: 'line',
+    testId: 'org-involvement-card-event-speakers',
     chartData: {
       labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
       datasets: [
@@ -195,6 +200,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     title: 'Certified Employees',
     icon: 'fa-light fa-graduation-cap',
     chartType: 'line',
+    testId: 'org-involvement-card-certified-employees',
     chartData: {
       labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
       datasets: [
@@ -217,6 +223,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     title: 'Training Enrollments',
     icon: 'fa-light fa-graduation-cap',
     chartType: 'line',
+    testId: 'org-involvement-card-training-enrollments',
     chartData: EMPTY_CHART_DATA,
   },
 ];
@@ -236,6 +243,7 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: DashboardMetricCard[] = [
     trend: 'up',
     subtitle: 'Last 30 days',
     chartType: 'line',
+    testId: 'core-dev-progress-card-code-commits',
     chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },
@@ -245,6 +253,7 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: DashboardMetricCard[] = [
     trend: 'up',
     subtitle: 'Last 30 days',
     chartType: 'line',
+    testId: 'core-dev-progress-card-pull-requests-merged',
     chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },
@@ -254,6 +263,7 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: DashboardMetricCard[] = [
     trend: 'up',
     subtitle: 'Combined activity last 30 days',
     chartType: 'line',
+    testId: 'core-dev-progress-card-issues-resolved',
     chartData: {
       labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
       datasets: [
@@ -276,6 +286,7 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: DashboardMetricCard[] = [
     trend: 'up',
     subtitle: 'Current streak',
     chartType: 'bar',
+    testId: 'core-dev-progress-card-active-weeks-streak',
     chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },
@@ -285,6 +296,7 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: DashboardMetricCard[] = [
     trend: 'up',
     subtitle: 'Last 30 days',
     chartType: 'line',
+    testId: 'core-dev-progress-card-learning-hours',
     chartData: {
       labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
       datasets: [
@@ -316,6 +328,7 @@ export const MAINTAINER_PROGRESS_METRICS: DashboardMetricCard[] = [
     subtitle: 'Open critical security vulnerabilities',
     chartType: 'line',
     category: 'projectHealth',
+    testId: 'maintainer-progress-card-critical-security-issues',
     chartData: {
       labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
       datasets: [
@@ -342,6 +355,7 @@ export const MAINTAINER_PROGRESS_METRICS: DashboardMetricCard[] = [
     subtitle: 'Avg days to merge',
     chartType: 'bar',
     category: 'code',
+    testId: 'maintainer-progress-card-pr-review-merge-velocity',
     chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },
@@ -352,6 +366,7 @@ export const MAINTAINER_PROGRESS_METRICS: DashboardMetricCard[] = [
     subtitle: 'Issue resolution rate',
     chartType: 'line',
     category: 'code',
+    testId: 'maintainer-progress-card-open-vs-closed-issues',
     chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },
@@ -362,6 +377,7 @@ export const MAINTAINER_PROGRESS_METRICS: DashboardMetricCard[] = [
     subtitle: 'Total contributors mentored',
     chartType: 'line',
     category: 'projectHealth',
+    testId: 'maintainer-progress-card-contributors-mentored',
     chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },
@@ -372,6 +388,7 @@ export const MAINTAINER_PROGRESS_METRICS: DashboardMetricCard[] = [
     subtitle: 'Active contributors',
     chartType: 'bar',
     category: 'code',
+    testId: 'maintainer-progress-card-unique-contributors',
     chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },
@@ -382,6 +399,7 @@ export const MAINTAINER_PROGRESS_METRICS: DashboardMetricCard[] = [
     subtitle: 'Avg health score',
     chartType: 'line',
     category: 'projectHealth',
+    testId: 'maintainer-progress-card-health-score',
     chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },

@@ -4,6 +4,7 @@
 import { CommonModule } from '@angular/common';
 import { Component, ContentChild, input, TemplateRef } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
+import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
@@ -11,7 +12,7 @@ import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 @Component({
   selector: 'lfx-metric-card',
   standalone: true,
-  imports: [CommonModule, ChartComponent, TooltipModule],
+  imports: [CommonModule, ChartComponent, SkeletonModule, TooltipModule],
   templateUrl: './metric-card.component.html',
 })
 export class MetricCardComponent {
@@ -32,7 +33,6 @@ export class MetricCardComponent {
   public readonly subtitle = input<string>();
   public readonly valueTooltip = input<string>();
 
-  // Optional indicators
-  public readonly showConnectedIndicator = input<boolean>(false);
-  public readonly isConnected = input<boolean>(false);
+  // Loading state
+  public readonly loading = input<boolean | undefined>(undefined);
 }

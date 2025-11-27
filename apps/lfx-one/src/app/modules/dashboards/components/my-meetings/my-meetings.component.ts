@@ -10,7 +10,7 @@ import { getActiveOccurrences } from '@lfx-one/shared';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, finalize, of, switchMap, tap } from 'rxjs';
+import { catchError, of, switchMap, tap } from 'rxjs';
 
 import type { MeetingWithOccurrence } from '@lfx-one/shared/interfaces';
 
@@ -153,15 +153,17 @@ export class MyMeetingsComponent {
         switchMap((project) => {
           // If no project/foundation selected, return empty array
           if (!project?.uid) {
+            this.loading.set(false);
             return of([]);
           }
 
           return this.userService.getUserMeetings(project.uid).pipe(
+            tap(() => this.loading.set(false)),
             catchError((error) => {
               console.error('Failed to load user meetings:', error);
+              this.loading.set(false);
               return of([]);
-            }),
-            finalize(() => this.loading.set(false))
+            })
           );
         })
       ),

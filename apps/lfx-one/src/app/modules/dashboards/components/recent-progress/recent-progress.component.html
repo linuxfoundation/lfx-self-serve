@@ -35,32 +35,21 @@
     </div>
   </div>
 
-  @if (isLoading()) {
-    <!-- Loading State -->
-    <div class="flex items-center justify-center p-12">
-      <div class="text-center space-y-3">
-        <i class="fa-light fa-spinner-third fa-spin text-4xl text-blue-500"></i>
-        <p class="text-sm text-gray-500">Loading project data...</p>
-      </div>
+  <div class="overflow-hidden">
+    <div #progressScroll class="flex gap-4 overflow-x-auto pb-2 hide-scrollbar scroll-smooth" data-testid="dashboard-recent-progress-items">
+      @for (item of filteredProgressItems(); track item.testId) {
+        <lfx-metric-card
+          [title]="item.title"
+          [icon]="item.icon"
+          [testId]="item.testId"
+          [chartType]="item.chartType"
+          [chartData]="item.chartData"
+          [chartOptions]="item.chartOptions"
+          [value]="item.value"
+          [subtitle]="item.subtitle"
+          [valueTooltip]="item.tooltipText"
+          [loading]="!!item.loading"></lfx-metric-card>
+      }
     </div>
-  } @else {
-    <div class="overflow-hidden">
-      <div #progressScroll class="flex gap-4 overflow-x-auto pb-2 hide-scrollbar scroll-smooth" data-testid="dashboard-recent-progress-items">
-        @for (item of filteredProgressItems(); track item.title) {
-          <lfx-metric-card
-            [title]="item.title"
-            [icon]="item.icon"
-            [testId]="'dashboard-recent-progress-item-' + item.title"
-            [chartType]="item.chartType"
-            [chartData]="item.chartData"
-            [chartOptions]="item.chartOptions"
-            [value]="item.value"
-            [subtitle]="item.subtitle"
-            [valueTooltip]="item.tooltipText"
-            [showConnectedIndicator]="true"
-            [isConnected]="item.isConnected ?? false"></lfx-metric-card>
-        }
-      </div>
-    </div>
-  }
+  </div>
 </section>

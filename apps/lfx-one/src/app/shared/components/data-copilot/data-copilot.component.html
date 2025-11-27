@@ -4,12 +4,12 @@
 <!-- Trigger Button -->
 @if (isLfxLensEnabled()) {
   <lfx-button
-    severity="secondary"
     icon="fa-light fa-microchip-ai"
     (click)="openDrawer()"
     data-testid="data-copilot-button"
     label="Ask LFX Lens"
-    size="small"></lfx-button>
+    size="small"
+    styleClass="bg-gradient-to-r from-blue-400 to-purple-500 hover:from-blue-500 hover:to-purple-600 text-white text-sm h-8 border-0 shadow-none"></lfx-button>
 }
 
 <!-- Drawer -->

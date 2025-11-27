@@ -1,50 +1,58 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="p-4 bg-white rounded-lg border border-slate-200 flex-shrink-0 w-[calc(100vw-3rem)] md:w-80 h-full" [attr.data-testid]="testId()">
-  <div class="flex flex-col h-full justify-between">
-    <!-- Header: Icon + Title + Optional Connected Indicator -->
-    <div class="flex items-center gap-2">
-      @if (icon()) {
-        <i [class]="icon() + ' w-4 h-4 text-gray-500 flex-shrink-0'"></i>
-      }
-      <h5 class="text-sm font-medium flex-1">{{ title() }}</h5>
-      @if (showConnectedIndicator()) {
-        <span
-          [class]="isConnected() ? 'text-green-500' : 'text-gray-400'"
-          class="text-xs cursor-help"
-          [pTooltip]="isConnected() ? 'Connected to live data' : 'Using placeholder data'"
-          tooltipPosition="top">
-          ●
-        </span>
-      }
-    </div>
-
-    <!-- Body: Chart or Custom Content -->
-    @if (customContentTemplate) {
-      <ng-container *ngTemplateOutlet="customContentTemplate"></ng-container>
-    } @else if (chartData()) {
+<div
+  class="p-4 bg-white border border-slate-200 hover:border-blue-500 rounded-lg flex-shrink-0 w-[calc(100vw-3rem)] md:w-80 h-full"
+  [attr.data-testid]="testId()">
+  <div class="flex flex-col gap-2 h-full justify-between">
+    @if (loading()) {
+      <!-- Loading Skeleton State -->
+      <div class="flex items-center gap-2">
+        <p-skeleton width="1rem" height="1rem" borderRadius="4px" />
+        <p-skeleton width="6rem" height="0.875rem" />
+      </div>
       <div class="mt-3 w-full h-16">
-        <lfx-chart [type]="chartType()" [data]="chartData()!" [options]="chartOptions()" height="100%"></lfx-chart>
+        <p-skeleton width="100%" height="100%" borderRadius="8px" />
       </div>
-    }
+      <div class="flex flex-col gap-1 mt-auto">
+        <p-skeleton width="3rem" height="1.75rem" />
+        <p-skeleton width="70%" height="0.75rem" />
+      </div>
+    } @else {
+      <!-- Header: Icon + Title -->
+      <div class="flex items-center gap-2">
+        @if (icon()) {
+          <i [class]="icon() + ' w-4 h-4 text-gray-500 flex-shrink-0'"></i>
+        }
+        <h5 class="text-sm font-medium flex-1">{{ title() }}</h5>
+      </div>
 
-    <!-- Footer: Value + Subtitle -->
-    @if (value() || subtitle()) {
-      <div class="space-y-1">
-        @if (value()) {
-          @if (valueTooltip()) {
-            <div class="text-xl font-medium cursor-help" [pTooltip]="valueTooltip()!" [escape]="false" tooltipPosition="top">
-              {{ value() }}
-            </div>
-          } @else {
-            <div class="text-xl font-medium">{{ value() }}</div>
+      <!-- Body: Chart or Custom Content -->
+      @if (customContentTemplate) {
+        <ng-container *ngTemplateOutlet="customContentTemplate"></ng-container>
+      } @else if (chartData()) {
+        <div class="mt-3 w-full h-16">
+          <lfx-chart [type]="chartType()" [data]="chartData()!" [options]="chartOptions()" height="100%"></lfx-chart>
+        </div>
+      }
+
+      <!-- Footer: Value + Subtitle -->
+      @if (value() || subtitle()) {
+        <div class="space-y-1">
+          @if (value()) {
+            @if (valueTooltip()) {
+              <div class="text-xl font-medium cursor-help" [pTooltip]="valueTooltip()!" [escape]="false" tooltipPosition="top">
+                {{ value() }}
+              </div>
+            } @else {
+              <div class="text-xl font-medium">{{ value() }}</div>
+            }
           }
-        }
-        @if (subtitle()) {
-          <div class="text-xs text-gray-500">{{ subtitle() }}</div>
-        }
-      </div>
+          @if (subtitle()) {
+            <div class="text-xs text-gray-500">{{ subtitle() }}</div>
+          }
+        </div>
+      }
     }
   </div>
 </div>

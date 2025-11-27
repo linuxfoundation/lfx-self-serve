@@ -2,15 +2,17 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <section data-testid="dashboard-organization-involvement-section">
-  <div class="flex items-center justify-between mb-4">
-    <div class="flex flex-col md:flex-row md:items-center gap-3">
-      <h2>{{ accountName() }}'s Involvement</h2>
-
-      <div class="flex items-center gap-2">
-        <!-- Filter Pills -->
-        <lfx-filter-pills [options]="filterOptions" [selectedFilter]="selectedFilter()" (filterChange)="handleFilterChange($event)"></lfx-filter-pills>
+  <div class="flex flex-wrap gap-3 items-end justify-between mb-4">
+    <div class="flex flex-col gap-3">
+      <div class="flex justify-between gap-3 flex-wrap">
+        <h2 class="mb-0">{{ accountName() }}'s Involvement</h2>
         <!-- Data Copilot Button -->
         <lfx-data-copilot></lfx-data-copilot>
+      </div>
+
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Filter Pills -->
+        <lfx-filter-pills [options]="filterOptions" [selectedFilter]="selectedFilter()" (filterChange)="handleFilterChange($event)"></lfx-filter-pills>
       </div>
     </div>
 
@@ -44,23 +46,15 @@
         <p class="text-xs text-gray-500">Use the project selector in the sidebar to choose a foundation</p>
       </div>
     </div>
-  } @else if (isLoading() && !primaryMetrics()) {
-    <!-- Loading State -->
-    <div class="flex items-center justify-center p-12">
-      <div class="text-center space-y-3">
-        <i class="fa-light fa-spinner-third fa-spin text-4xl text-blue-500"></i>
-        <p class="text-sm text-gray-500">Loading organization data...</p>
-      </div>
-    </div>
   } @else {
     <div class="overflow-hidden">
       <div #carouselScroll class="flex gap-4 overflow-x-auto pb-2 hide-scrollbar scroll-smooth" data-testid="dashboard-involvement-carousel">
-        @for (metric of primaryMetrics(); track metric.title) {
+        @for (metric of primaryMetrics(); track metric.testId) {
           <!-- Membership Tier Card (Special) -->
           @if (metric.isMembershipTier) {
             <div
-              class="p-4 bg-white rounded-lg border border-slate-200 transition-colors cursor-pointer flex-shrink-0 w-80"
-              [attr.data-testid]="'dashboard-involvement-metric-' + metric.title">
+              class="p-4 bg-white hover:border-blue-500 hover:border hover:border-solid rounded-lg border border-slate-200 transition-colors flex-shrink-0 w-80"
+              [attr.data-testid]="metric.testId">
               <div class="space-y-3">
                 <div class="flex items-center gap-1">
                   <i [class]="metric.icon + ' text-gray-500'" class="w-4 h-4"></i>
@@ -89,12 +83,13 @@
             <lfx-metric-card
               [title]="metric.title"
               [icon]="metric.icon"
-              [testId]="'dashboard-involvement-metric-' + metric.title"
+              [testId]="metric.testId"
               [chartType]="metric.chartType"
               [chartData]="metric.chartData"
               [chartOptions]="metric.chartOptions"
               [value]="metric.value"
-              [subtitle]="metric.subtitle"></lfx-metric-card>
+              [subtitle]="metric.subtitle"
+              [loading]="metric.loading"></lfx-metric-card>
           }
         }
       </div>

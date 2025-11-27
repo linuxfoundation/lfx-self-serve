@@ -79,11 +79,11 @@ export interface DashboardMetricCard {
   // Status & Metadata
   // ============================================
 
-  /** Indicates if the metric is connected to live data */
-  isConnected?: boolean;
-
   /** Optional tooltip text to display on hover */
   tooltipText?: string;
+
+  /** Loading state for the card - when true, shows skeleton UI */
+  loading?: boolean;
 
   // ============================================
   // Foundation Health Specific

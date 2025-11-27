@@ -66,7 +66,7 @@ export class ProjectService {
     this.microserviceProxy = new MicroserviceProxyService();
     this.natsService = new NatsService();
     this.etagService = new ETagService();
-    this.snowflakeService = new SnowflakeService();
+    this.snowflakeService = SnowflakeService.getInstance();
   }
 
   /**

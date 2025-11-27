@@ -32,7 +32,7 @@ export class OrganizationService {
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
-    this.snowflakeService = new SnowflakeService();
+    this.snowflakeService = SnowflakeService.getInstance();
   }
 
   /**

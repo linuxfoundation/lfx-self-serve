@@ -23,7 +23,12 @@ export const SNOWFLAKE_CONFIG = {
   /**
    * Maximum number of connections in the pool
    */
-  MAX_CONNECTIONS: 10,
+  MAX_CONNECTIONS: 20,
+
+  /**
+   * Maximum number of clients waiting when pool is exhausted
+   */
+  MAX_WAITING_CLIENTS: 50,
 
   /**
    * Timeout for acquiring a connection from the pool in milliseconds

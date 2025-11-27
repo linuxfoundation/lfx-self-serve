@@ -22,13 +22,40 @@ const { createPool } = snowflakeSdk;
  * - SQL injection protection via parameterized queries
  * - Read-only enforcement at multiple layers
  * - Private key JWT authentication
+ * - Singleton pattern for shared connection pool across all services
  */
 export class SnowflakeService {
+  private static instance: SnowflakeService | null = null;
   private pool: Pool<Connection> | null = null;
   private poolPromise: Promise<Pool<Connection>> | null = null;
   private lockManager: LockManager;
 
-  public constructor() {
+  /**
+   * Get the singleton instance of SnowflakeService
+   * All services should use this method to share the same connection pool
+   */
+  public static getInstance(): SnowflakeService {
+    if (!SnowflakeService.instance) {
+      SnowflakeService.instance = new SnowflakeService();
+      // Safe logging - serverLogger may not be initialized during SSR build
+      serverLogger?.info('SnowflakeService singleton instance created');
+    }
+    return SnowflakeService.instance;
+  }
+
+  /**
+   * Reset the singleton instance (primarily for testing)
+   */
+  public static resetInstance(): void {
+    if (SnowflakeService.instance) {
+      SnowflakeService.instance.shutdown().catch((err) => {
+        serverLogger?.error({ err }, 'Error shutting down SnowflakeService during reset');
+      });
+      SnowflakeService.instance = null;
+    }
+  }
+
+  private constructor() {
     // Configure Snowflake SDK logging (defaults to ERROR to minimize verbose logs)
     // Valid levels: 'OFF', 'ERROR', 'WARN', 'INFO', 'DEBUG', 'TRACE'
     const logLevel = (process.env['SNOWFLAKE_LOG_LEVEL'] || 'ERROR') as LogLevel;
@@ -303,7 +330,7 @@ export class SnowflakeService {
       // Close idle connections after 10 minutes
       idleTimeoutMillis: SNOWFLAKE_CONFIG.IDLE_TIMEOUT,
       // Maximum waiting clients when pool is exhausted
-      maxWaitingClients: 10,
+      maxWaitingClients: Number(process.env['SNOWFLAKE_MAX_WAITING_CLIENTS']) || SNOWFLAKE_CONFIG.MAX_WAITING_CLIENTS,
       // Timeout for acquiring a connection from pool
       acquireTimeoutMillis: SNOWFLAKE_CONFIG.CONNECTION_ACQUIRE_TIMEOUT,
     };

@@ -371,8 +371,6 @@ export interface ProgressItemWithChart extends ProgressItem {
   subtitle?: string;
   /** Optional tooltip text to display on hover */
   tooltipText?: string;
-  /** Indicates if the metric is connected to live data */
-  isConnected?: boolean;
   /** Category for filtering metrics (maintainer dashboard) */
   category?: 'code' | 'projectHealth';
   /** FontAwesome icon class (e.g., 'fa-light fa-shield') */
