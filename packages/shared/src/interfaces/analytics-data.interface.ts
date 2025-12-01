@@ -198,187 +198,124 @@ export interface OrganizationEventAttendanceRow {
 }
 
 /**
- * Consolidated Snowflake response joining membership tier and certified employees
- * Uses LEFT JOINs to handle partial data scenarios with nullable fields
- * All fields from joined tables are nullable to support flexible NULL handling
+ * Organization Event Attendance Monthly row from Snowflake
+ * Raw response from FOUNDATION_EVENT_ATTENDANCE_ORG_MONTHLY table
+ * Contains monthly event attendance metrics for board member dashboard charts
  */
-export interface BoardMemberDashboardConsolidatedRow {
-  // Membership Tier fields
-  MEMBERSHIP_TIER: string | null;
-  START_DATE: string | null;
-  LAST_END_DATE: string | null;
-  MEMBERSHIP_STATUS: string | null;
+export interface OrganizationEventAttendanceMonthlyRow {
+  /**
+   * Foundation unique identifier
+   */
+  FOUNDATION_ID: string;
 
-  // Certified Employees fields
-  CERTIFICATIONS: number | null;
-  CERTIFIED_EMPLOYEES: number | null;
+  /**
+   * Foundation display name
+   */
+  FOUNDATION_NAME: string;
 
-  // Common fields
+  /**
+   * Foundation URL slug
+   */
+  FOUNDATION_SLUG: string;
+
+  /**
+   * Organization account ID (Salesforce)
+   */
   ACCOUNT_ID: string;
-  PROJECT_ID: string;
-}
 
-/**
- * Consolidated Snowflake response joining organization-level contributions (maintainers + contributors)
- * Uses LEFT JOIN to combine data from maintainers and contributors tables
- * Nullable fields support partial data scenarios
- */
-export interface OrganizationContributionsConsolidatedRow {
-  // Maintainers fields
-  MAINTAINERS: number | null;
-  MAINTAINER_PROJECTS: number | null;
-
-  // Contributors fields
-  CONTRIBUTORS: number | null;
-  CONTRIBUTOR_PROJECTS: number | null;
-
-  // Technical Committee fields
-  TOTAL_REPRESENTATIVES: number | null;
-  TOTAL_TC_PROJECTS: number | null;
-
-  // Common fields
-  ACCOUNT_ID: string;
+  /**
+   * Organization account name
+   */
   ACCOUNT_NAME: string;
+
+  /**
+   * Month start date (first day of month) - returned as Date object from Snowflake
+   */
+  MONTH_START_DATE: Date;
+
+  /**
+   * Number of event registrations for this month
+   */
+  REGISTRATION_COUNT: number;
+
+  /**
+   * Number of attendees for this month
+   */
+  ATTENDED_COUNT: number;
+
+  /**
+   * Number of speakers for this month
+   */
+  SPEAKER_COUNT: number;
+
+  /**
+   * Total registrations (aggregated yearly)
+   */
+  TOTAL_REGISTRATIONS: number;
+
+  /**
+   * Total attendees (aggregated yearly)
+   */
+  TOTAL_ATTENDED: number;
+
+  /**
+   * Total speakers (aggregated yearly)
+   */
+  TOTAL_SPEAKERS: number;
+
+  /**
+   * Cumulative attendees up to this month (calculated via SQL window function)
+   */
+  CUMULATIVE_ATTENDED: number;
+
+  /**
+   * Cumulative speakers up to this month (calculated via SQL window function)
+   */
+  CUMULATIVE_SPEAKERS: number;
 }
 
 /**
- * Consolidated API response for organization contributions overview
- * Combines maintainers, contributors, and technical committee data in a single response
+ * API response for Organization Event Attendance Monthly query
+ * Contains event attendance data for an organization with monthly trend data
  */
-export interface OrganizationContributionsOverviewResponse {
+export interface OrganizationEventAttendanceMonthlyResponse {
   /**
-   * Maintainer statistics
+   * Total attendees from the organization (yearly total from TOTAL_ATTENDED)
    */
-  maintainers: {
-    maintainers: number;
-    projects: number;
-  };
+  totalAttended: number;
 
   /**
-   * Contributor statistics
+   * Total speakers from the organization (yearly total from TOTAL_SPEAKERS)
    */
-  contributors: {
-    contributors: number;
-    projects: number;
-  };
+  totalSpeakers: number;
 
   /**
-   * Technical Committee statistics (TOC/TSC/TAG)
-   */
-  technicalCommittee: {
-    totalRepresentatives: number;
-    totalProjects: number;
-  };
-
-  /**
-   * Salesforce account ID for the organization
+   * Organization account ID
    */
   accountId: string;
 
   /**
-   * Organization/account name
+   * Organization account name
    */
   accountName: string;
-}
-
-/**
- * Consolidated API response for board member dashboard
- * Combines membership tier and certified employees in a single response
- */
-export interface BoardMemberDashboardResponse {
-  /**
-   * Membership tier information
-   */
-  membershipTier: {
-    tier: string;
-    membershipStartDate: string;
-    membershipEndDate: string;
-    membershipStatus: string;
-  };
 
   /**
-   * Certified employees information
+   * Monthly cumulative attendee count data for trend visualization
+   * Array of cumulative attendee counts (oldest to newest)
    */
-  certifiedEmployees: {
-    certifications: number;
-    certifiedEmployees: number;
-  };
+  attendeesMonthlyData: number[];
 
   /**
-   * Salesforce account ID for the organization
+   * Monthly cumulative speaker count data for trend visualization
+   * Array of cumulative speaker counts (oldest to newest)
    */
-  accountId: string;
+  speakersMonthlyData: number[];
 
   /**
-   * Project unique identifier
+   * Month labels for chart visualization
+   * Array of month strings (e.g., ['Jan 2024', 'Feb 2024']) matching monthlyData
    */
-  uid: string;
-}
-
-/**
- * Consolidated API response for organization events overview
- * Contains event attendance data including attendees and speakers
- *
- * Generated with [Claude Code](https://claude.ai/code)
- */
-export interface OrganizationEventsOverviewResponse {
-  /**
-   * Event attendance information
-   */
-  eventAttendance: {
-    totalAttendees: number;
-    totalSpeakers: number;
-    totalEvents: number;
-    accountName: string;
-  };
-
-  /**
-   * Salesforce account ID for the organization
-   */
-  accountId: string;
-}
-
-/**
- * Snowflake aggregated response from MEMBER_DASHBOARD_EVENT_SPONSORSHIPS query (per currency)
- * Contains calculated totals via SQL aggregation grouped by currency
- * Includes window function for total event count (repeated across rows)
- */
-export interface OrganizationEventSponsorshipsAggregateRow {
-  /**
-   * Total sponsorship amount for this currency (SUM of PRICE)
-   */
-  TOTAL_AMOUNT: number;
-
-  /**
-   * Currency code for this row (e.g., USD, INR, EUR)
-   */
-  CURRENCY_CODE: string;
-
-  /**
-   * Salesforce account ID for the organization
-   */
-  ACCOUNT_ID: string;
-
-  /**
-   * Total number of distinct events sponsored (across all currencies)
-   * Computed via window function, repeated in each row
-   */
-  TOTAL_EVENTS: number;
-}
-
-/**
- * Currency-specific sponsorship summary
- */
-export interface CurrencySummary {
-  /**
-   * Total amount in this currency
-   */
-  amount: number;
-
-  /**
-   * Currency code (e.g., USD, INR, EUR)
-   */
-  currencyCode: string;
+  monthlyLabels: string[];
 }
 
 /**
@@ -704,73 +641,6 @@ export interface UniqueContributorsWeeklyResponse {
    * Total number of weeks with data
    */
   totalWeeks: number;
-}
-
-/**
- * Monthly project count aggregation from Snowflake
- * Raw response with Snowflake naming conventions (ALL_CAPS)
- */
-export interface MonthlyProjectCountRow {
-  /**
-   * Month start date (first day of month)
-   */
-  MONTH_START: string;
-
-  /**
-   * Number of projects added in this month
-   */
-  PROJECT_COUNT: number;
-}
-
-/**
- * Foundation total projects row from Snowflake MEMBER_DASHBOARD_TOTAL_PROJECTS table
- * Raw response with Snowflake naming conventions (ALL_CAPS)
- */
-export interface FoundationTotalProjectsRow {
-  /**
-   * Foundation segment ID (parent)
-   */
-  FOUNDATION_SEGMENT_ID: string;
-
-  /**
-   * Foundation name (parent)
-   */
-  FOUNDATION_NAME: string;
-
-  /**
-   * Foundation source ID from Salesforce (parent)
-   */
-  FOUNDATION_SOURCE_ID: string;
-
-  /**
-   * Foundation URL slug (parent)
-   */
-  FOUNDATION_SLUG: string;
-
-  /**
-   * Child project segment ID
-   */
-  CHILD_SEGMENT_ID: string;
-
-  /**
-   * Child project name
-   */
-  CHILD_NAME: string;
-
-  /**
-   * Child project source ID from Salesforce
-   */
-  CHILD_SOURCE_ID: string;
-
-  /**
-   * Child project URL slug
-   */
-  CHILD_SLUG: string;
-
-  /**
-   * Date when the child project started (YYYY-MM-DD format)
-   */
-  CHILD_START_DATE: string;
 }
 
 /**
@@ -1435,48 +1305,74 @@ export interface HealthEventsMonthlyResponse {
 }
 
 /**
- * Certified Employees row from Snowflake MEMBER_DASHBOARD_CERTIFIED_EMPLOYEES table
+ * Certified Employees Monthly row from Snowflake
  * Raw response with Snowflake naming conventions (ALL_CAPS)
+ * Contains monthly certification metrics for board member dashboard charts
  */
-export interface CertifiedEmployeesRow {
-  /**
-   * Total number of certifications held by employees
-   */
-  CERTIFICATIONS: number;
-
-  /**
-   * Number of certified employees
-   */
-  CERTIFIED_EMPLOYEES: number;
-
+export interface CertifiedEmployeesMonthlyRow {
   /**
    * Organization account ID
    */
   ACCOUNT_ID: string;
 
   /**
-   * Project ID
+   * Foundation unique identifier
    */
-  PROJECT_ID: string;
+  FOUNDATION_ID: string;
 
   /**
-   * Project URL slug
+   * Foundation display name
    */
-  PROJECT_SLUG: string;
+  FOUNDATION_NAME: string;
+
+  /**
+   * Foundation URL slug
+   */
+  FOUNDATION_SLUG: string;
+
+  /**
+   * Month start date (first day of month) - returned as Date object from Snowflake
+   */
+  MONTH_START_DATE: Date;
+
+  /**
+   * Number of certifications for this month
+   */
+  MONTHLY_CERTIFICATIONS: number;
+
+  /**
+   * Number of certified employees for this month
+   */
+  MONTHLY_CERTIFIED_EMPLOYEES: number;
+
+  /**
+   * Total certifications (aggregated yearly)
+   */
+  TOTAL_CERTIFICATIONS: number;
+
+  /**
+   * Total certified employees (aggregated yearly)
+   */
+  TOTAL_CERTIFIED_EMPLOYEES: number;
+
+  /**
+   * Cumulative certifications up to this month (calculated via SQL window function)
+   */
+  CUMULATIVE_CERTIFICATIONS: number;
 }
 
 /**
  * API response for Certified Employees query
- * Contains certification data for an organization within a foundation
+ * Contains certification data for an organization with monthly trend data
  */
 export interface CertifiedEmployeesResponse {
   /**
-   * Total number of certifications held by employees
+   * Total number of certifications held by employees (from TOTAL_CERTIFICATIONS)
    */
   certifications: number;
 
   /**
-   * Number of certified employees
+   * Number of certified employees (from TOTAL_CERTIFIED_EMPLOYEES)
    */
   certifiedEmployees: number;
 
@@ -1486,14 +1382,16 @@ export interface CertifiedEmployeesResponse {
   accountId: string;
 
   /**
-   * Project ID
+   * Monthly certified employees count data for trend visualization
+   * Array of certified employee counts (oldest to newest, from MONTHLY_CERTIFIED_EMPLOYEES)
    */
-  projectId: string;
+  monthlyData: number[];
 
   /**
-   * Project URL slug
+   * Month labels for chart visualization
+   * Array of month strings (e.g., ['Jan 2024', 'Feb 2024']) matching monthlyData
    */
-  projectSlug: string;
+  monthlyLabels: string[];
 }
 
 /**
@@ -1629,19 +1527,25 @@ export interface MembershipTierResponse {
 }
 
 /**
- * Maintainers row from Snowflake MEMBER_DASHBOARD_MAINTAINERS table
+ * Organization Maintainers Monthly row from Snowflake
  * Raw response with Snowflake naming conventions (ALL_CAPS)
+ * Contains monthly maintainer metrics for board member dashboard charts
  */
-export interface OrganizationMaintainersRow {
+export interface OrganizationMaintainersMonthlyRow {
   /**
-   * Number of maintainers from the organization
+   * Foundation unique identifier
    */
-  MAINTAINERS: number;
+  FOUNDATION_ID: string;
 
   /**
-   * Number of projects where the organization has maintainers
+   * Foundation display name
    */
-  PROJECTS: number;
+  FOUNDATION_NAME: string;
+
+  /**
+   * Foundation URL slug
+   */
+  FOUNDATION_SLUG: string;
 
   /**
    * Organization account ID
@@ -1652,20 +1556,50 @@ export interface OrganizationMaintainersRow {
    * Organization account name
    */
   ACCOUNT_NAME: string;
+
+  /**
+   * Metric month date (first day of month) - returned as Date object from Snowflake
+   */
+  METRIC_MONTH: Date;
+
+  /**
+   * Number of active maintainers for this month
+   */
+  ACTIVE_MAINTAINERS: number;
+
+  /**
+   * Number of active projects for this month
+   */
+  ACTIVE_PROJECTS: number;
+
+  /**
+   * Total maintainers yearly (aggregated)
+   */
+  TOTAL_MAINTAINERS_YEARLY: number;
+
+  /**
+   * Total projects yearly (aggregated)
+   */
+  TOTAL_PROJECTS_YEARLY: number;
+
+  /**
+   * Average maintainers yearly (calculated aggregate)
+   */
+  AVG_MAINTAINERS_YEARLY: number;
 }
 
 /**
  * API response for Organization Maintainers query
- * Contains maintainer data for an organization
+ * Contains maintainer data for an organization with monthly trend data
  */
 export interface OrganizationMaintainersResponse {
   /**
-   * Number of maintainers from the organization
+   * Number of maintainers from the organization (yearly total)
    */
   maintainers: number;
 
   /**
-   * Number of projects where the organization has maintainers
+   * Number of projects where the organization has maintainers (yearly total)
    */
   projects: number;
 
@@ -1678,25 +1612,48 @@ export interface OrganizationMaintainersResponse {
    * Organization account name
    */
   accountName: string;
+
+  /**
+   * Monthly maintainer count data for trend visualization
+   * Array of active maintainer counts (oldest to newest)
+   */
+  monthlyData: number[];
+
+  /**
+   * Month labels for chart visualization
+   * Array of month strings (e.g., ['Jan 2024', 'Feb 2024']) matching monthlyData
+   */
+  monthlyLabels: string[];
 }
 
 /**
- * Contributors row from Snowflake MEMBER_DASHBOARD_CONTRIBUTORS table
+ * Organization Contributors Monthly row from Snowflake
  * Raw response with Snowflake naming conventions (ALL_CAPS)
+ * Contains monthly contributor metrics for board member dashboard charts
  */
-export interface OrganizationContributorsRow {
+export interface OrganizationContributorsMonthlyRow {
   /**
-   * Number of contributors from the organization
+   * Foundation unique identifier
    */
-  CONTRIBUTORS: number;
+  FOUNDATION_ID: string;
 
   /**
-   * Number of projects where the organization has contributors
+   * Foundation display name
    */
-  PROJECTS: number;
+  FOUNDATION_NAME: string;
 
   /**
-   * Organization account ID
+   * Foundation URL slug
+   */
+  FOUNDATION_SLUG: string;
+
+  /**
+   * Organization unique identifier
+   */
+  ORGANIZATION_ID: string;
+
+  /**
+   * Organization account ID (Salesforce)
    */
   ACCOUNT_ID: string;
 
@@ -1704,22 +1661,32 @@ export interface OrganizationContributorsRow {
    * Organization account name
    */
   ACCOUNT_NAME: string;
+
+  /**
+   * Month start date (first day of month) - returned as Date object from Snowflake
+   */
+  MONTH_START_DATE: Date;
+
+  /**
+   * Number of unique contributors for this month
+   */
+  UNIQUE_CONTRIBUTORS: number;
+
+  /**
+   * Total active contributors (aggregated yearly)
+   */
+  TOTAL_ACTIVE_CONTRIBUTORS: number;
 }
 
 /**
  * API response for Organization Contributors query
- * Contains contributor data for an organization
+ * Contains contributor data for an organization with monthly trend data
  */
 export interface OrganizationContributorsResponse {
   /**
-   * Number of contributors from the organization
+   * Total active contributors from the organization (yearly total from TOTAL_ACTIVE_CONTRIBUTORS)
    */
   contributors: number;
-
-  /**
-   * Number of projects where the organization has contributors
-   */
-  projects: number;
 
   /**
    * Organization account ID
@@ -1730,67 +1697,102 @@ export interface OrganizationContributorsResponse {
    * Organization account name
    */
   accountName: string;
+
+  /**
+   * Monthly contributor count data for trend visualization
+   * Array of unique contributor counts (oldest to newest, from UNIQUE_CONTRIBUTORS)
+   */
+  monthlyData: number[];
+
+  /**
+   * Month labels for chart visualization
+   * Array of month strings (e.g., ['Jan 2024', 'Feb 2024']) matching monthlyData
+   */
+  monthlyLabels: string[];
 }
 
 /**
- * Training Enrollment row from Snowflake MEMBER_DASHBOARD_TRAINING_ENROLLMENTS table
- * Raw response with Snowflake naming conventions (ALL_CAPS)
+ * Foundation Company Bus Factor row from Snowflake
+ * Raw response from FOUNDATION_COMPANY_BUS_FACTOR table
+ * Contains company concentration risk metrics for foundation health dashboard
  */
-export interface TrainingEnrollmentRow {
+export interface FoundationCompanyBusFactorRow {
   /**
-   * Unique enrollment identifier
+   * Foundation unique identifier
    */
-  ENROLLMENT_ID: string;
+  FOUNDATION_ID: string;
 
   /**
-   * Course identifier
+   * Foundation display name
    */
-  COURSE_ID: string;
+  FOUNDATION_NAME: string;
 
   /**
-   * Course display name
+   * Foundation URL slug
    */
-  COURSE_NAME: string;
+  FOUNDATION_SLUG: string;
 
   /**
-   * Course URL slug
+   * Number of companies accounting for >50% of contributions
    */
-  COURSE_SLUG: string;
+  BUS_FACTOR_COMPANY_COUNT: number;
 
   /**
-   * Enrollment timestamp (ISO format)
+   * Percentage of contributions from bus factor companies (rounded to 2 decimals)
    */
-  ENROLLMENT_TS: string;
+  BUS_FACTOR_CONTRIBUTION_PCT: number;
 
   /**
-   * User identifier
+   * Total number of contributing companies
    */
-  USER_ID: string;
+  TOTAL_COMPANIES: number;
 
   /**
-   * User email address
+   * Total contributions across all companies
    */
-  USER_EMAIL: string;
+  TOTAL_CONTRIBUTIONS: number;
 
   /**
-   * Organization account ID
+   * Total contributions from bus factor companies
    */
-  ACCOUNT_ID: string;
+  BUS_FACTOR_CONTRIBUTIONS: number;
 
   /**
-   * Project ID
+   * Number of other contributing companies (calculated: TOTAL_COMPANIES - BUS_FACTOR_COMPANY_COUNT)
    */
-  PROJECT_ID: string;
+  OTHER_COMPANIES_COUNT: number;
 
   /**
-   * Project URL slug
+   * Percentage of contributions from other companies (calculated: 100 - BUS_FACTOR_CONTRIBUTION_PCT, rounded to 2 decimals)
    */
-  PROJECT_SLUG: string;
+  OTHER_COMPANIES_PCT: number;
+}
+
+/**
+ * API response for Foundation Company Bus Factor query
+ * Contains company concentration risk metrics for foundation health dashboard
+ * Maps to existing CompanyBusFactor interface format for UI consistency
+ */
+export interface FoundationCompanyBusFactorResponse {
+  /**
+   * Number of top companies accounting for >50% contributions
+   */
+  topCompaniesCount: number;
 
   /**
-   * Segment ID
+   * Percentage of contributions from top companies
    */
-  SEGMENT_ID: string;
+  topCompaniesPercentage: number;
+
+  /**
+   * Number of other contributing companies
+   */
+  otherCompaniesCount: number;
+
+  /**
+   * Percentage of contributions from other companies
+   */
+  otherCompaniesPercentage: number;
 }
 
 /**

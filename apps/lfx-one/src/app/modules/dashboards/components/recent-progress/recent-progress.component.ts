@@ -429,13 +429,19 @@ export class RecentProgressComponent {
     // Reverse the data to show oldest week on the left
     const chartData = [...data.data].reverse();
 
+    // Format labels to match Active Contributors format
+    const chartLabels = chartData.map((row) => {
+      const date = parseLocalDateString(row.WEEK_START_DATE);
+      return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+    });
+
     return {
       ...metric,
       loading: this.loadingState().contributorsMentored,
       value: data.totalMentored.toString(),
       trend: data.avgWeeklyNew > 0 ? 'up' : undefined,
       chartData: {
-        labels: chartData.map((row) => row.WEEK_START_DATE),
+        labels: chartLabels,
         datasets: [
           {
             label: 'Total Contributors Mentored',
@@ -449,7 +455,22 @@ export class RecentProgressComponent {
           },
         ],
       },
-      chartOptions: BASE_LINE_CHART_OPTIONS,
+      chartOptions: {
+        ...BASE_LINE_CHART_OPTIONS,
+        plugins: {
+          ...BASE_LINE_CHART_OPTIONS.plugins,
+          tooltip: {
+            ...(BASE_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
+            callbacks: {
+              title: (context: TooltipItem<'line'>[]) => context[0].label,
+              label: (context: TooltipItem<'line'>) => {
+                const count = context.parsed.y;
+                return `Contributors mentored: ${count.toLocaleString()}`;
+              },
+            },
+          },
+        },
+      },
     };
   }
 

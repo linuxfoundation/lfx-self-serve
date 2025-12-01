@@ -32,7 +32,6 @@
           <!-- TODAY Section - only show if there are meetings today -->
           @if (todayMeetings().length > 0) {
             <div>
-              <h4 class="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wide">Today</h4>
               <div class="flex flex-col gap-3">
                 @for (item of todayMeetings(); track item.meeting.uid) {
                   <lfx-dashboard-meeting-card
@@ -47,7 +46,6 @@
           <!-- UPCOMING Section - only show if there are upcoming meetings -->
           @if (upcomingMeetings().length > 0) {
             <div>
-              <h4 class="text-xs font-medium text-gray-500 mb-3 uppercase tracking-wide">Upcoming</h4>
               <div class="flex flex-col gap-3">
                 @for (item of upcomingMeetings(); track item.meeting.uid) {
                   <lfx-dashboard-meeting-card

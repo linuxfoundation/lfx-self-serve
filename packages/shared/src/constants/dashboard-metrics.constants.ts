@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { CompanyBusFactor, DashboardMetricCard } from '../interfaces';
+import type { DashboardMetricCard } from '../interfaces';
 import { hexToRgba } from '../utils';
 import { EMPTY_CHART_DATA, NO_TOOLTIP_CHART_OPTIONS } from './chart-options.constants';
 import { lfxColors } from './colors.constants';
@@ -9,18 +9,6 @@ import { lfxColors } from './colors.constants';
 // ============================================
 // Foundation Health Metrics
 // ============================================
-
-/**
- * Company bus factor data
- * Shows concentration risk from top contributing companies
- * TODO: Replace with real API data when endpoint is available
- */
-export const COMPANY_BUS_FACTOR: CompanyBusFactor = {
-  topCompaniesCount: 28,
-  topCompaniesPercentage: 52,
-  otherCompaniesCount: 142,
-  otherCompaniesPercentage: 48,
-};
 
 /**
  * Primary foundation health metrics configuration
@@ -113,111 +101,35 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     icon: 'fa-light fa-code',
     chartType: 'bar',
     testId: 'org-involvement-card-active-contributors',
-    chartData: {
-      labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
-      datasets: [
-        {
-          data: Array.from({ length: 12 }, (_, i) => {
-            const base = 15 + i * 3;
-            return Math.floor(base + Math.random() * 10);
-          }),
-          borderColor: lfxColors.gray[500],
-          backgroundColor: hexToRgba(lfxColors.gray[500], 0.5),
-          borderWidth: 0,
-          borderRadius: 4,
-        },
-      ],
-    },
+    chartData: EMPTY_CHART_DATA,
   },
   {
     title: 'Maintainers',
     icon: 'fa-light fa-user-check',
     chartType: 'bar',
     testId: 'org-involvement-card-maintainers',
-    chartData: {
-      labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
-      datasets: [
-        {
-          data: Array.from({ length: 12 }, (_, i) => {
-            const base = 5 + i * 1;
-            return Math.floor(base + Math.random() * 4);
-          }),
-          borderColor: lfxColors.gray[500],
-          backgroundColor: hexToRgba(lfxColors.gray[500], 0.5),
-          borderWidth: 0,
-          borderRadius: 4,
-        },
-      ],
-    },
+    chartData: EMPTY_CHART_DATA,
   },
   {
     title: 'Event Attendees',
     icon: 'fa-light fa-user-group',
     chartType: 'line',
     testId: 'org-involvement-card-event-attendees',
-    chartData: {
-      labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
-      datasets: [
-        {
-          data: Array.from({ length: 12 }, (_, i) => {
-            const base = 20 + i * 5;
-            return Math.floor(base + Math.random() * 15);
-          }),
-          borderColor: lfxColors.gray[500],
-          backgroundColor: hexToRgba(lfxColors.gray[500], 0.1),
-          fill: true,
-          tension: 0,
-          borderWidth: 2,
-          pointRadius: 0,
-        },
-      ],
-    },
+    chartData: EMPTY_CHART_DATA,
   },
   {
     title: 'Event Speakers',
     icon: 'fa-light fa-award-simple',
     chartType: 'line',
     testId: 'org-involvement-card-event-speakers',
-    chartData: {
-      labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
-      datasets: [
-        {
-          data: Array.from({ length: 12 }, (_, i) => {
-            const base = 3 + i * 2;
-            return Math.floor(base + Math.random() * 5);
-          }),
-          borderColor: lfxColors.gray[500],
-          backgroundColor: hexToRgba(lfxColors.gray[500], 0.1),
-          fill: true,
-          tension: 0,
-          borderWidth: 2,
-          pointRadius: 0,
-        },
-      ],
-    },
+    chartData: EMPTY_CHART_DATA,
   },
   {
     title: 'Certified Employees',
     icon: 'fa-light fa-graduation-cap',
     chartType: 'line',
     testId: 'org-involvement-card-certified-employees',
-    chartData: {
-      labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
-      datasets: [
-        {
-          data: Array.from({ length: 12 }, (_, i) => {
-            const base = 5 + i * 3;
-            return Math.floor(base + Math.random() * 8);
-          }),
-          borderColor: lfxColors.gray[500],
-          backgroundColor: hexToRgba(lfxColors.gray[500], 0.1),
-          fill: true,
-          tension: 0,
-          borderWidth: 2,
-          pointRadius: 0,
-        },
-      ],
-    },
+    chartData: EMPTY_CHART_DATA,
   },
   {
     title: 'Training Enrollments',

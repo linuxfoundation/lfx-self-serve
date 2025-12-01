@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div data-testid="meeting-card-container" [class]="containerClass()">
-  <div [ngClass]="{ 'p-6': showBorder() }">
+  <div [ngClass]="{ 'p-6': showBorder() }" class="border rounded-lg hover:border-blue-500 transition-all">
     <!-- Header with badges and action menu -->
     <div class="flex items-start justify-between mb-4" data-testid="meeting-details-header">
       <div class="flex items-center gap-2 flex-wrap">

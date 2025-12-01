@@ -5,7 +5,7 @@
   <!-- Committee Members Section -->
   <lfx-card>
     <div class="flex justify-between gap-4 mb-8">
-      <h3 class="text-lg font-medium text-gray-900">Committee Members</h3>
+      <h3 class="text-lg font-medium text-gray-900">{{ committeeLabel.singular }} Members</h3>
       <!-- Add Member Button -->
       @if (committee()?.writer) {
         <lfx-button label="Add Member" icon="fa-light fa-user-plus" size="small" severity="secondary" (onClick)="openAddMemberDialog()"> </lfx-button>
@@ -177,7 +177,7 @@
                 <div class="text-center">
                   <i class="fa-light fa-users text-4xl text-gray-400 mb-4"></i>
                   <h3 class="text-lg font-medium text-gray-900 mb-2">No Members Yet</h3>
-                  <p class="text-gray-600">This committee doesn't have any members yet.</p>
+                  <p class="text-gray-600">This {{ committeeLabel.singular }} doesn't have any members yet.</p>
                 </div>
               </td>
             </tr>

@@ -9,7 +9,7 @@
   @if (isCommitteeMember) {
     <div class="bg-blue-50 border border-blue-200 rounded-lg p-3 text-sm text-blue-700" data-testid="registrant-modal-committee-info">
       <i class="fa-light fa-info-circle mr-2"></i>
-      This is a committee member. To update their details or remove them, please edit the individual committee(s).
+      This is a {{ committeeLabel.singular }} member. To update their details or remove them, please edit the individual {{ committeeLabel.plural }}.
     </div>
   }
 
@@ -23,7 +23,7 @@
           size="small"
           type="button"
           [disabled]="isCommitteeMember"
-          [tooltip]="isCommitteeMember ? 'Committee members must be removed via the committee' : ''"
+          [tooltip]="isCommitteeMember ? committeeLabel.singular + ' members must be removed via the ' + committeeLabel.singular : ''"
           tooltipPosition="top"
           (onClick)="onDeleteRegistrant()"
           data-testid="registrant-modal-delete-button">
@@ -65,7 +65,7 @@
         [label]="isEditMode ? 'Update Registrant' : 'Add Registrant'"
         [loading]="submitting()"
         [disabled]="form.invalid || submitting() || isCommitteeMember"
-        [tooltip]="isCommitteeMember ? 'Committee member details must be updated via the committee' : ''"
+        [tooltip]="isCommitteeMember ? committeeLabel.singular + ' member details must be updated via the ' + committeeLabel.singular : ''"
         tooltipPosition="top"
         type="submit"
         size="small"

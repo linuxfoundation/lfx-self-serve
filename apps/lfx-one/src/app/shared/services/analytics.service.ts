@@ -6,6 +6,7 @@ import { inject, Injectable } from '@angular/core';
 import {
   ActiveWeeksStreakResponse,
   CertifiedEmployeesResponse,
+  FoundationCompanyBusFactorResponse,
   FoundationContributorsMentoredResponse,
   FoundationHealthScoreDistributionResponse,
   FoundationMaintainersResponse,
@@ -16,11 +17,10 @@ import {
   HealthMetricsDailyResponse,
   MembershipTierResponse,
   OrganizationContributorsResponse,
-  OrganizationEventsOverviewResponse,
+  OrganizationEventAttendanceMonthlyResponse,
   OrganizationMaintainersResponse,
   ProjectIssuesResolutionResponse,
   ProjectPullRequestsWeeklyResponse,
-  ProjectsListResponse,
   TrainingEnrollmentsResponse,
   UniqueContributorsDailyResponse,
   UniqueContributorsWeeklyResponse,
@@ -111,12 +111,14 @@ export class AnalyticsService {
   }
 
   /**
-   * Get organization maintainers data
+   * Get organization maintainers data with monthly trend
    * @param accountId - Required account ID to filter by specific organization
-   * @returns Observable of organization maintainers response
+   * @param foundationSlug - Required foundation slug to filter by
+   * @returns Observable of organization maintainers response with monthly data
    */
-  public getOrganizationMaintainers(accountId: string): Observable<OrganizationMaintainersResponse> {
-    return this.http.get<OrganizationMaintainersResponse>('/api/analytics/organization-maintainers', { params: { accountId } }).pipe(
+  public getOrganizationMaintainers(accountId: string, foundationSlug: string): Observable<OrganizationMaintainersResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrganizationMaintainersResponse>('/api/analytics/organization-maintainers', { params }).pipe(
       catchError((error) => {
         console.error('Failed to fetch organization maintainers:', error);
         return of({
@@ -124,25 +126,30 @@ export class AnalyticsService {
           projects: 0,
           accountId: '',
           accountName: '',
+          monthlyData: [],
+          monthlyLabels: [],
         });
       })
     );
   }
 
   /**
-   * Get organization contributors data
+   * Get organization contributors data with monthly trend
    * @param accountId - Required account ID to filter by specific organization
+   * @param foundationSlug - Required foundation slug to filter data
    * @returns Observable of organization contributors response
    */
-  public getOrganizationContributors(accountId: string): Observable<OrganizationContributorsResponse> {
-    return this.http.get<OrganizationContributorsResponse>('/api/analytics/organization-contributors', { params: { accountId } }).pipe(
+  public getOrganizationContributors(accountId: string, foundationSlug: string): Observable<OrganizationContributorsResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrganizationContributorsResponse>('/api/analytics/organization-contributors', { params }).pipe(
       catchError((error) => {
         console.error('Failed to fetch organization contributors:', error);
         return of({
           contributors: 0,
-          projects: 0,
           accountId: '',
           accountName: '',
+          monthlyData: [],
+          monthlyLabels: [],
         });
       })
     );
@@ -178,13 +185,13 @@ export class AnalyticsService {
   }
 
   /**
-   * Get certified employees data for an organization
+   * Get certified employees data for an organization with monthly trend
    * @param accountId - Required account ID to filter by specific organization
-   * @param projectSlug - Required foundation project slug to filter data
+   * @param foundationSlug - Required foundation slug to filter data
    * @returns Observable of certified employees response
    */
-  public getCertifiedEmployees(accountId: string, projectSlug: string): Observable<CertifiedEmployeesResponse> {
-    const params = { accountId, projectSlug };
+  public getCertifiedEmployees(accountId: string, foundationSlug: string): Observable<CertifiedEmployeesResponse> {
+    const params = { accountId, foundationSlug };
     return this.http.get<CertifiedEmployeesResponse>('/api/analytics/certified-employees', { params }).pipe(
       catchError((error) => {
         console.error('Failed to fetch certified employees:', error);
@@ -192,8 +199,8 @@ export class AnalyticsService {
           certifications: 0,
           certifiedEmployees: 0,
           accountId: '',
-          projectId: '',
-          projectSlug: '',
+          monthlyData: [],
+          monthlyLabels: [],
         });
       })
     );
@@ -221,23 +228,25 @@ export class AnalyticsService {
   }
 
   /**
-   * Get consolidated organization events overview (event attendance + event sponsorships) in a single API call
-   * Optimized endpoint that reduces API roundtrips by combining related event metrics
+   * Get event attendance monthly data for an organization with cumulative trends
+   * Returns separate data for event attendees and event speakers charts
    * @param accountId - Required account ID to filter by specific organization
-   * @returns Observable of consolidated events overview response
+   * @param foundationSlug - Required foundation slug to filter data
+   * @returns Observable of event attendance monthly response with cumulative monthly data
    */
-  public getOrganizationEventsOverview(accountId: string): Observable<OrganizationEventsOverviewResponse> {
-    return this.http.get<OrganizationEventsOverviewResponse>('/api/analytics/organization-events-overview', { params: { accountId } }).pipe(
+  public getEventAttendanceMonthly(accountId: string, foundationSlug: string): Observable<OrganizationEventAttendanceMonthlyResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrganizationEventAttendanceMonthlyResponse>('/api/analytics/event-attendance-monthly', { params }).pipe(
       catchError((error) => {
-        console.error('Failed to fetch organization events overview:', error);
+        console.error('Failed to fetch event attendance monthly:', error);
         return of({
-          eventAttendance: {
-            totalAttendees: 0,
-            totalSpeakers: 0,
-            totalEvents: 0,
-            accountName: '',
-          },
+          totalAttended: 0,
+          totalSpeakers: 0,
           accountId: '',
+          accountName: '',
+          attendeesMonthlyData: [],
+          speakersMonthlyData: [],
+          monthlyLabels: [],
         });
       })
     );
@@ -335,15 +344,19 @@ export class AnalyticsService {
   }
 
   /**
-   * Get list of all projects from Snowflake
-   * @returns Observable of projects list response
+   * Get company bus factor data for a foundation
+   * @param foundationSlug - Required foundation slug to filter by (e.g., 'tlf', 'cncf')
+   * @returns Observable of company bus factor response with top companies concentration metrics
    */
-  public getProjects(): Observable<ProjectsListResponse> {
-    return this.http.get<ProjectsListResponse>('/api/analytics/projects').pipe(
+  public getCompanyBusFactor(foundationSlug: string): Observable<FoundationCompanyBusFactorResponse> {
+    return this.http.get<FoundationCompanyBusFactorResponse>('/api/analytics/company-bus-factor', { params: { foundationSlug } }).pipe(
       catchError((error) => {
-        console.error('Failed to fetch projects:', error);
+        console.error('Failed to fetch company bus factor:', error);
         return of({
-          projects: [],
+          topCompaniesCount: 0,
+          topCompaniesPercentage: 0,
+          otherCompaniesCount: 0,
+          otherCompaniesPercentage: 0,
         });
       })
     );

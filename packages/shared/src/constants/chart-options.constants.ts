@@ -14,8 +14,32 @@ export const EMPTY_CHART_DATA: ChartData<ChartType> = {
 };
 
 /**
+ * Base tooltip styling configuration
+ * Consistent white background with LFX color palette
+ */
+const BASE_TOOLTIP_STYLE = {
+  backgroundColor: 'rgba(255, 255, 255, 0.98)',
+  titleColor: lfxColors.gray[900],
+  bodyColor: lfxColors.gray[600],
+  borderColor: `${lfxColors.gray[300]}CC`,
+  borderWidth: 1,
+  padding: 12,
+  cornerRadius: 8,
+  caretSize: 6,
+  caretPadding: 8,
+  titleFont: {
+    size: 13,
+    weight: 'bold' as const,
+  },
+  bodyFont: {
+    size: 12,
+  },
+};
+
+/**
  * Base tooltip configuration for index-based hovering
  * Shows tooltip when hovering anywhere on the chart (not just data points)
+ * Uses consistent white background styling
  */
 const BASE_TOOLTIP_CONFIG = {
   enabled: true,
@@ -23,7 +47,8 @@ const BASE_TOOLTIP_CONFIG = {
   intersect: false,
   yAlign: 'bottom' as const,
   position: 'nearest' as const,
-  caretSize: 0,
+  displayColors: false,
+  ...BASE_TOOLTIP_STYLE,
 };
 
 /**
@@ -36,34 +61,18 @@ const BASE_INTERACTION_CONFIG = {
 
 /**
  * Styled tooltip configuration for enhanced tooltips
- * Used for multi-dataset charts with formatted tooltips
+ * Used for multi-dataset charts with formatted tooltips and color indicators
  */
 const STYLED_TOOLTIP_CONFIG = {
   ...BASE_TOOLTIP_CONFIG,
-  backgroundColor: 'rgba(255, 255, 255, 0.98)',
-  titleColor: lfxColors.gray[900],
-  bodyColor: lfxColors.gray[600],
-  footerColor: lfxColors.gray[500],
-  borderColor: `${lfxColors.gray[300]}CC`,
-  borderWidth: 1,
-  padding: 12,
   displayColors: true,
+  footerColor: lfxColors.gray[500],
   bodySpacing: 6,
   footerSpacing: 4,
   footerMarginTop: 8,
-  cornerRadius: 8,
-  caretSize: 6,
-  caretPadding: 8,
   usePointStyle: true,
   boxWidth: 8,
   boxHeight: 8,
-  titleFont: {
-    size: 13,
-    weight: 'bold' as const,
-  },
-  bodyFont: {
-    size: 12,
-  },
   footerFont: {
     size: 11,
     weight: 'normal' as const,

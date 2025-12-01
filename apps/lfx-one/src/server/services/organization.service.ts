@@ -2,16 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import {
+  CertifiedEmployeesMonthlyRow,
   CertifiedEmployeesResponse,
-  CertifiedEmployeesRow,
+  FoundationCompanyBusFactorResponse,
+  FoundationCompanyBusFactorRow,
   MembershipTierResponse,
   MembershipTierRow,
+  OrganizationContributorsMonthlyRow,
   OrganizationContributorsResponse,
-  OrganizationContributorsRow,
-  OrganizationEventAttendanceRow,
-  OrganizationEventsOverviewResponse,
+  OrganizationEventAttendanceMonthlyResponse,
+  OrganizationEventAttendanceMonthlyRow,
+  OrganizationMaintainersMonthlyRow,
   OrganizationMaintainersResponse,
-  OrganizationMaintainersRow,
   OrganizationSuggestion,
   OrganizationSuggestionsResponse,
   TrainingEnrollmentDailyRow,
@@ -53,58 +55,34 @@ export class OrganizationService {
   }
 
   /**
-   * Get organization events overview (event attendance + event sponsorships)
+   * Get certified employees data for an organization with monthly trend data
+   * Queries the monthly certified employees table for board member dashboard charts
    * @param accountId - Organization account ID
-   * @returns Events overview
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Certified employees data with monthly trend for chart visualization (12 months)
    */
-  public async getEventsOverview(accountId: string): Promise<OrganizationEventsOverviewResponse> {
-    const attendanceQuery = `
-      SELECT
-        SUM(ATTENDEES) AS TOTAL_ATTENDEES,
-        SUM(SPEAKERS) AS TOTAL_SPEAKERS,
-        COUNT(*) AS TOTAL_EVENTS,
-        MAX(ACCOUNT_ID) AS ACCOUNT_ID,
-        MAX(ACCOUNT_NAME) AS ACCOUNT_NAME
-      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_EVENT_ATTENDANCE
-      WHERE ACCOUNT_ID = ?
-      GROUP BY ACCOUNT_ID
-    `;
-
-    const attendanceResult = await this.snowflakeService.execute<OrganizationEventAttendanceRow>(attendanceQuery, [accountId]);
-
-    if (attendanceResult.rows.length === 0) {
-      throw new ResourceNotFoundError('Organization event attendance data', accountId, {
-        operation: 'get_organization_events_overview',
-      });
-    }
-
-    const attendanceRow = attendanceResult.rows[0];
-
-    return {
-      eventAttendance: {
-        totalAttendees: attendanceRow.TOTAL_ATTENDEES,
-        totalSpeakers: attendanceRow.TOTAL_SPEAKERS,
-        totalEvents: attendanceRow.TOTAL_EVENTS,
-        accountName: attendanceRow.ACCOUNT_NAME,
-      },
-      accountId: attendanceRow.ACCOUNT_ID,
-    };
-  }
-
-  /**
-   * Get certified employees data for an organization
-   * @param accountId - Organization account ID
-   * @param projectSlug - Project slug
-   * @returns Certified employees data
-   */
-  public async getCertifiedEmployees(accountId: string, projectSlug: string): Promise<CertifiedEmployeesResponse> {
+  public async getCertifiedEmployees(accountId: string, foundationSlug: string): Promise<CertifiedEmployeesResponse> {
     const query = `
-      SELECT CERTIFICATIONS, CERTIFIED_EMPLOYEES, ACCOUNT_ID, PROJECT_ID, PROJECT_SLUG
-      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_CERTIFIED_EMPLOYEES
-      WHERE PROJECT_SLUG = ? AND ACCOUNT_ID = ?
+      SELECT
+        ACCOUNT_ID,
+        FOUNDATION_ID,
+        FOUNDATION_NAME,
+        FOUNDATION_SLUG,
+        MONTH_START_DATE,
+        MONTHLY_CERTIFICATIONS,
+        MONTHLY_CERTIFIED_EMPLOYEES,
+        TOTAL_CERTIFICATIONS,
+        TOTAL_CERTIFIED_EMPLOYEES,
+        SUM(MONTHLY_CERTIFICATIONS) OVER (
+          ORDER BY MONTH_START_DATE ASC
+          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS CUMULATIVE_CERTIFICATIONS
+      FROM ANALYTICS_DEV.DEV_MSALOMAO_PLATINUM_LFX_ONE.FOUNDATION_CERTIFIED_EMPLOYEES_ORG_MONTHLY
+      WHERE ACCOUNT_ID = ? AND FOUNDATION_SLUG = ?
+      ORDER BY MONTH_START_DATE ASC
     `;
 
-    const result = await this.snowflakeService.execute<CertifiedEmployeesRow>(query, [projectSlug, accountId]);
+    const result = await this.snowflakeService.execute<CertifiedEmployeesMonthlyRow>(query, [accountId, foundationSlug]);
 
     if (result.rows.length === 0) {
       throw new ResourceNotFoundError('Certified employees data', accountId, {
@@ -112,14 +90,19 @@ export class OrganizationService {
       });
     }
 
-    const row = result.rows[0];
+    // Get yearly totals from the first row (same across all rows)
+    const firstRow = result.rows[0];
+
+    // Build cumulative monthly trend data and labels from SQL window function
+    const monthlyData = result.rows.map((row) => row.CUMULATIVE_CERTIFICATIONS || 0);
+    const monthlyLabels = result.rows.map((row) => row.MONTH_START_DATE.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
 
     return {
-      certifications: row.CERTIFICATIONS || 0,
-      certifiedEmployees: row.CERTIFIED_EMPLOYEES || 0,
-      accountId: row.ACCOUNT_ID,
-      projectId: row.PROJECT_ID,
-      projectSlug: row.PROJECT_SLUG,
+      certifications: firstRow.TOTAL_CERTIFICATIONS || 0,
+      certifiedEmployees: firstRow.TOTAL_CERTIFIED_EMPLOYEES || 0,
+      accountId: firstRow.ACCOUNT_ID,
+      monthlyData,
+      monthlyLabels,
     };
   }
 
@@ -168,18 +151,32 @@ export class OrganizationService {
   }
 
   /**
-   * Get maintainers data for an organization
+   * Get maintainers data for an organization with monthly trend data
+   * Queries the monthly maintainers table for board member dashboard charts
    * @param accountId - Organization account ID
-   * @returns Maintainers data
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Maintainers data with monthly trend for chart visualization (12 months)
    */
-  public async getOrganizationMaintainers(accountId: string): Promise<OrganizationMaintainersResponse> {
+  public async getOrganizationMaintainers(accountId: string, foundationSlug: string): Promise<OrganizationMaintainersResponse> {
     const query = `
-      SELECT MAINTAINERS, PROJECTS, ACCOUNT_ID, ACCOUNT_NAME
-      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MAINTAINERS
-      WHERE ACCOUNT_ID = ?
+      SELECT
+        FOUNDATION_ID,
+        FOUNDATION_NAME,
+        FOUNDATION_SLUG,
+        ACCOUNT_ID,
+        ACCOUNT_NAME,
+        METRIC_MONTH,
+        ACTIVE_MAINTAINERS,
+        ACTIVE_PROJECTS,
+        TOTAL_MAINTAINERS_YEARLY,
+        TOTAL_PROJECTS_YEARLY,
+        AVG_MAINTAINERS_YEARLY
+      FROM ANALYTICS_DEV.DEV_MSALOMAO_PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_ORG_MONTHLY
+      WHERE ACCOUNT_ID = ? AND FOUNDATION_SLUG = ?
+      ORDER BY METRIC_MONTH ASC
     `;
 
-    const result = await this.snowflakeService.execute<OrganizationMaintainersRow>(query, [accountId]);
+    const result = await this.snowflakeService.execute<OrganizationMaintainersMonthlyRow>(query, [accountId, foundationSlug]);
 
     if (result.rows.length === 0) {
       throw new ResourceNotFoundError('Organization maintainers data', accountId, {
@@ -187,29 +184,48 @@ export class OrganizationService {
       });
     }
 
-    const row = result.rows[0];
+    // Get yearly totals from the first row (same across all rows)
+    const firstRow = result.rows[0];
+
+    // Build monthly trend data and labels
+    const monthlyData = result.rows.map((row) => row.ACTIVE_MAINTAINERS || 0);
+    const monthlyLabels = result.rows.map((row) => row.METRIC_MONTH.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
 
     return {
-      maintainers: row.MAINTAINERS || 0,
-      projects: row.PROJECTS || 0,
-      accountId: row.ACCOUNT_ID,
-      accountName: row.ACCOUNT_NAME,
+      maintainers: firstRow.TOTAL_MAINTAINERS_YEARLY || 0,
+      projects: firstRow.TOTAL_PROJECTS_YEARLY || 0,
+      accountId: firstRow.ACCOUNT_ID,
+      accountName: firstRow.ACCOUNT_NAME,
+      monthlyData,
+      monthlyLabels,
     };
   }
 
   /**
-   * Get contributors data for an organization
+   * Get contributors data for an organization with monthly trend data
+   * Queries the monthly contributors table for board member dashboard charts
    * @param accountId - Organization account ID
-   * @returns Contributors data
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Contributors data with monthly trend for chart visualization (12 months)
    */
-  public async getOrganizationContributors(accountId: string): Promise<OrganizationContributorsResponse> {
+  public async getOrganizationContributors(accountId: string, foundationSlug: string): Promise<OrganizationContributorsResponse> {
     const query = `
-      SELECT CONTRIBUTORS, PROJECTS, ACCOUNT_ID, ACCOUNT_NAME
-      FROM ANALYTICS_DEV.DEV_ADESILVA_PLATINUM_LFX_ONE.MEMBER_DASHBOARD_CONTRIBUTORS
-      WHERE ACCOUNT_ID = ?
+      SELECT
+        FOUNDATION_ID,
+        FOUNDATION_NAME,
+        FOUNDATION_SLUG,
+        ORGANIZATION_ID,
+        ACCOUNT_ID,
+        ACCOUNT_NAME,
+        MONTH_START_DATE,
+        UNIQUE_CONTRIBUTORS,
+        TOTAL_ACTIVE_CONTRIBUTORS
+      FROM ANALYTICS_DEV.DEV_MSALOMAO_PLATINUM_LFX_ONE.FOUNDATION_UNIQUE_CONTRIBUTORS_ORG_MONTHLY
+      WHERE ACCOUNT_ID = ? AND FOUNDATION_SLUG = ?
+      ORDER BY MONTH_START_DATE ASC
     `;
 
-    const result = await this.snowflakeService.execute<OrganizationContributorsRow>(query, [accountId]);
+    const result = await this.snowflakeService.execute<OrganizationContributorsMonthlyRow>(query, [accountId, foundationSlug]);
 
     if (result.rows.length === 0) {
       throw new ResourceNotFoundError('Organization contributors data', accountId, {
@@ -217,13 +233,19 @@ export class OrganizationService {
       });
     }
 
-    const row = result.rows[0];
+    // Get yearly totals from the first row (same across all rows)
+    const firstRow = result.rows[0];
+
+    // Build monthly trend data and labels
+    const monthlyData = result.rows.map((row) => row.UNIQUE_CONTRIBUTORS || 0);
+    const monthlyLabels = result.rows.map((row) => row.MONTH_START_DATE.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
 
     return {
-      contributors: row.CONTRIBUTORS || 0,
-      projects: row.PROJECTS || 0,
-      accountId: row.ACCOUNT_ID,
-      accountName: row.ACCOUNT_NAME,
+      contributors: firstRow.TOTAL_ACTIVE_CONTRIBUTORS || 0,
+      accountId: firstRow.ACCOUNT_ID,
+      accountName: firstRow.ACCOUNT_NAME,
+      monthlyData,
+      monthlyLabels,
     };
   }
 
@@ -267,6 +289,110 @@ export class OrganizationService {
       })),
       accountId,
       projectSlug,
+    };
+  }
+
+  /**
+   * Get event attendance monthly data for an organization
+   * Queries the monthly event attendance table for board member dashboard charts
+   * Returns cumulative attendees and speakers data for chart visualization
+   * @param accountId - Organization account ID
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Event attendance data with monthly cumulative counts for attendees and speakers
+   */
+  public async getEventAttendanceMonthly(accountId: string, foundationSlug: string): Promise<OrganizationEventAttendanceMonthlyResponse> {
+    const query = `
+      SELECT
+        FOUNDATION_ID,
+        FOUNDATION_NAME,
+        FOUNDATION_SLUG,
+        ACCOUNT_ID,
+        ACCOUNT_NAME,
+        MONTH_START_DATE,
+        REGISTRATION_COUNT,
+        ATTENDED_COUNT,
+        SPEAKER_COUNT,
+        TOTAL_REGISTRATIONS,
+        TOTAL_ATTENDED,
+        TOTAL_SPEAKERS,
+        SUM(ATTENDED_COUNT) OVER (
+          ORDER BY MONTH_START_DATE ASC
+          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS CUMULATIVE_ATTENDED,
+        SUM(SPEAKER_COUNT) OVER (
+          ORDER BY MONTH_START_DATE ASC
+          ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW
+        ) AS CUMULATIVE_SPEAKERS
+      FROM ANALYTICS_DEV.DEV_MSALOMAO_PLATINUM_LFX_ONE.FOUNDATION_EVENT_ATTENDANCE_ORG_MONTHLY
+      WHERE ACCOUNT_ID = ? AND FOUNDATION_SLUG = ?
+      ORDER BY MONTH_START_DATE ASC
+    `;
+
+    const result = await this.snowflakeService.execute<OrganizationEventAttendanceMonthlyRow>(query, [accountId, foundationSlug]);
+
+    if (result.rows.length === 0) {
+      throw new ResourceNotFoundError('Organization event attendance data', accountId, {
+        operation: 'get_event_attendance_monthly',
+      });
+    }
+
+    // Get yearly totals from the first row (same across all rows)
+    const firstRow = result.rows[0];
+
+    // Build cumulative monthly trend data and labels from SQL window function
+    const attendeesMonthlyData = result.rows.map((row) => row.CUMULATIVE_ATTENDED || 0);
+    const speakersMonthlyData = result.rows.map((row) => row.CUMULATIVE_SPEAKERS || 0);
+    const monthlyLabels = result.rows.map((row) => row.MONTH_START_DATE.toLocaleDateString('en-US', { month: 'short', year: 'numeric' }));
+
+    return {
+      totalAttended: firstRow.TOTAL_ATTENDED || 0,
+      totalSpeakers: firstRow.TOTAL_SPEAKERS || 0,
+      accountId: firstRow.ACCOUNT_ID,
+      accountName: firstRow.ACCOUNT_NAME,
+      attendeesMonthlyData,
+      speakersMonthlyData,
+      monthlyLabels,
+    };
+  }
+
+  /**
+   * Get company bus factor data for a foundation
+   * Shows concentration risk from top contributing companies
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Company bus factor data with top companies percentage breakdown
+   */
+  public async getCompanyBusFactor(foundationSlug: string): Promise<FoundationCompanyBusFactorResponse> {
+    const query = `
+      SELECT
+        FOUNDATION_ID,
+        FOUNDATION_NAME,
+        FOUNDATION_SLUG,
+        BUS_FACTOR_COMPANY_COUNT,
+        ROUND(BUS_FACTOR_CONTRIBUTION_PCT, 2) AS BUS_FACTOR_CONTRIBUTION_PCT,
+        TOTAL_COMPANIES,
+        TOTAL_CONTRIBUTIONS,
+        BUS_FACTOR_CONTRIBUTIONS,
+        (TOTAL_COMPANIES - BUS_FACTOR_COMPANY_COUNT) AS OTHER_COMPANIES_COUNT,
+        ROUND(100 - BUS_FACTOR_CONTRIBUTION_PCT, 2) AS OTHER_COMPANIES_PCT
+      FROM ANALYTICS_DEV.DEV_MSALOMAO_PLATINUM_LFX_ONE.FOUNDATION_COMPANY_BUS_FACTOR
+      WHERE FOUNDATION_SLUG = ?
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationCompanyBusFactorRow>(query, [foundationSlug]);
+
+    if (result.rows.length === 0) {
+      throw new ResourceNotFoundError('Company bus factor data', foundationSlug, {
+        operation: 'get_company_bus_factor',
+      });
+    }
+
+    const row = result.rows[0];
+
+    return {
+      topCompaniesCount: row.BUS_FACTOR_COMPANY_COUNT,
+      topCompaniesPercentage: row.BUS_FACTOR_CONTRIBUTION_PCT,
+      otherCompaniesCount: row.OTHER_COMPANIES_COUNT,
+      otherCompaniesPercentage: row.OTHER_COMPANIES_PCT,
     };
   }
 }

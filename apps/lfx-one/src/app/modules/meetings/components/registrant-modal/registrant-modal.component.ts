@@ -6,6 +6,7 @@ import { Component, inject, output, signal, WritableSignal } from '@angular/core
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
+import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { MeetingRegistrant } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -43,6 +44,7 @@ export class RegistrantModalComponent {
   public resendingInvitation: WritableSignal<boolean>;
   public form: FormGroup;
   public isEditMode = !!this.registrant;
+  public committeeLabel = COMMITTEE_LABEL;
 
   public constructor() {
     this.submitting = signal<boolean>(false);

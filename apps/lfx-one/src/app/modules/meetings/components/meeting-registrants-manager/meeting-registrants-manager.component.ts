@@ -10,6 +10,7 @@ import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
+import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { MeetingRegistrant, MeetingRegistrantWithState, RegistrantPendingChanges, RegistrantState } from '@lfx-one/shared/interfaces';
 import { generateTempId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -78,7 +79,7 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   public statusOptions = [
     { label: 'All Registrants', value: null },
     { label: 'Hosts Only', value: 'host' },
-    { label: 'Committee Members', value: 'member' },
+    { label: COMMITTEE_LABEL.singular + ' Members', value: 'member' },
   ];
 
   public constructor() {

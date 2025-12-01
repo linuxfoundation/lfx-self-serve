@@ -12,6 +12,7 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
+import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { Committee, CommitteeMember } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
@@ -63,6 +64,7 @@ export class CommitteeMembersComponent implements OnInit {
   public selectedMember: WritableSignal<CommitteeMember | null>;
   public isDeleting: WritableSignal<boolean>;
   public memberActionMenuItems: MenuItem[] = [];
+  public committeeLabel = COMMITTEE_LABEL;
 
   // Filter-related variables
   public filterForm: FormGroup;

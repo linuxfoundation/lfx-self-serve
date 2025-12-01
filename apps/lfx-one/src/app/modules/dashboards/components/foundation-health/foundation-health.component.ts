@@ -7,13 +7,20 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
-import { BASE_BAR_CHART_OPTIONS, BASE_LINE_CHART_OPTIONS, COMPANY_BUS_FACTOR, lfxColors, PRIMARY_FOUNDATION_HEALTH_METRICS } from '@lfx-one/shared/constants';
+import { BASE_BAR_CHART_OPTIONS, BASE_LINE_CHART_OPTIONS, lfxColors, PRIMARY_FOUNDATION_HEALTH_METRICS } from '@lfx-one/shared/constants';
 import { hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
-import type { DashboardMetricCard, HealthEventsMonthlyResponse, TopProjectDisplay, UniqueContributorsDailyResponse } from '@lfx-one/shared/interfaces';
+import type {
+  CompanyBusFactor,
+  DashboardMetricCard,
+  FoundationCompanyBusFactorResponse,
+  HealthEventsMonthlyResponse,
+  TopProjectDisplay,
+  UniqueContributorsDailyResponse,
+} from '@lfx-one/shared/interfaces';
 import type { TooltipItem } from 'chart.js';
 
 @Component({
@@ -35,6 +42,7 @@ export class FoundationHealthComponent {
   private readonly totalProjectsLoading = signal(true);
   private readonly totalMembersLoading = signal(true);
   private readonly softwareValueLoading = signal(true);
+  private readonly companyBusFactorLoading = signal(true);
   private readonly maintainersLoading = signal(true);
   private readonly healthScoresLoading = signal(true);
   private readonly activeContributorsLoading = signal(true);
@@ -47,6 +55,7 @@ export class FoundationHealthComponent {
   private readonly totalProjectsData = this.initializeTotalProjectsData();
   private readonly totalMembersData = this.initializeTotalMembersData();
   private readonly softwareValueData = this.initializeSoftwareValueData();
+  private readonly companyBusFactorData = this.initializeCompanyBusFactorData();
   private readonly maintainersData = this.initializeMaintainersData();
   private readonly healthScoresData = this.initializeHealthScoresData();
   private readonly activeContributorsData = this.initializeActiveContributorsData();
@@ -282,12 +291,21 @@ export class FoundationHealthComponent {
   }
 
   private transformCompanyBusFactor(metric: DashboardMetricCard): DashboardMetricCard {
-    // TODO: Replace with real API data when endpoint is available
+    const data = this.companyBusFactorData();
+
+    const busFactor: CompanyBusFactor = {
+      topCompaniesCount: data.topCompaniesCount,
+      topCompaniesPercentage: data.topCompaniesPercentage,
+      otherCompaniesCount: data.otherCompaniesCount,
+      otherCompaniesPercentage: data.otherCompaniesPercentage,
+    };
+
     return {
       ...metric,
-      value: COMPANY_BUS_FACTOR.topCompaniesCount.toString(),
+      loading: this.companyBusFactorLoading(),
+      value: data.topCompaniesCount.toString(),
       subtitle: 'Companies account for >50% code contributions',
-      busFactor: COMPANY_BUS_FACTOR,
+      busFactor,
     };
   }
 
@@ -501,6 +519,31 @@ export class FoundationHealthComponent {
             tap(() => this.softwareValueLoading.set(false)),
             catchError(() => {
               this.softwareValueLoading.set(false);
+              return of(defaultValue);
+            })
+          )
+        )
+      ),
+      { initialValue: defaultValue }
+    );
+  }
+
+  private initializeCompanyBusFactorData() {
+    const defaultValue: FoundationCompanyBusFactorResponse = {
+      topCompaniesCount: 0,
+      topCompaniesPercentage: 0,
+      otherCompaniesCount: 0,
+      otherCompaniesPercentage: 0,
+    };
+
+    return toSignal(
+      this.selectedFoundationSlug$.pipe(
+        tap(() => this.companyBusFactorLoading.set(true)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getCompanyBusFactor(foundationSlug).pipe(
+            tap(() => this.companyBusFactorLoading.set(false)),
+            catchError(() => {
+              this.companyBusFactorLoading.set(false);
               return of(defaultValue);
             })
           )

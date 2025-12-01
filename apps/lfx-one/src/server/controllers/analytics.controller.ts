@@ -144,49 +144,16 @@ export class AnalyticsController {
   }
 
   /**
-   * GET /api/analytics/organization-events-overview
-   * Get consolidated organization events data (event attendance + event sponsorships) in a single request
-   * Query params: accountId (required) - Organization account ID
-   *   */
-  public async getOrganizationEventsOverview(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'get_organization_events_overview');
-
-    try {
-      const accountId = req.query['accountId'] as string | undefined;
-
-      if (!accountId) {
-        throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
-          operation: 'get_organization_events_overview',
-        });
-      }
-
-      // Query for event metrics
-      const response = await this.organizationService.getEventsOverview(accountId);
-
-      Logger.success(req, 'get_organization_events_overview', startTime, {
-        account_id: accountId,
-        total_attendees: response.eventAttendance.totalAttendees,
-        total_speakers: response.eventAttendance.totalSpeakers,
-      });
-
-      res.json(response);
-    } catch (error) {
-      Logger.error(req, 'get_organization_events_overview', startTime, error);
-      next(error);
-    }
-  }
-
-  /**
    * GET /api/analytics/certified-employees
-   * Get certified employees data for an organization
-   * Query params: accountId (required) - Organization account ID, projectSlug (required) - Foundation project slug
+   * Get certified employees data for an organization with monthly trend data
+   * Query params: accountId (required) - Organization account ID, foundationSlug (required) - Foundation slug
    */
   public async getCertifiedEmployees(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = Logger.start(req, 'get_certified_employees');
 
     try {
       const accountId = req.query['accountId'] as string | undefined;
-      const projectSlug = req.query['projectSlug'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
 
       if (!accountId) {
         throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
@@ -194,19 +161,20 @@ export class AnalyticsController {
         });
       }
 
-      if (!projectSlug) {
-        throw ServiceValidationError.forField('projectSlug', 'projectSlug query parameter is required', {
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
           operation: 'get_certified_employees',
         });
       }
 
-      const response = await this.organizationService.getCertifiedEmployees(accountId, projectSlug);
+      const response = await this.organizationService.getCertifiedEmployees(accountId, foundationSlug);
 
       Logger.success(req, 'get_certified_employees', startTime, {
         account_id: accountId,
-        project_slug: projectSlug,
-        certifications: response.certifications,
-        certified_employees: response.certifiedEmployees,
+        foundation_slug: foundationSlug,
+        total_certifications: response.certifications,
+        total_certified_employees: response.certifiedEmployees,
+        monthly_data_points: response.monthlyData.length,
       });
 
       res.json(response);
@@ -258,14 +226,15 @@ export class AnalyticsController {
 
   /**
    * GET /api/analytics/organization-maintainers
-   * Get maintainers data for an organization
-   * Query params: accountId (required) - Organization account ID
+   * Get maintainers data for an organization with monthly trend data
+   * Query params: accountId (required) - Organization account ID, foundationSlug (required) - Foundation slug
    */
   public async getOrganizationMaintainers(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = Logger.start(req, 'get_organization_maintainers');
 
     try {
       const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
 
       if (!accountId) {
         throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
@@ -273,12 +242,20 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.organizationService.getOrganizationMaintainers(accountId);
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_organization_maintainers',
+        });
+      }
+
+      const response = await this.organizationService.getOrganizationMaintainers(accountId, foundationSlug);
 
       Logger.success(req, 'get_organization_maintainers', startTime, {
         account_id: accountId,
+        foundation_slug: foundationSlug,
         maintainers: response.maintainers,
         projects: response.projects,
+        monthly_data_points: response.monthlyData.length,
       });
 
       res.json(response);
@@ -290,14 +267,15 @@ export class AnalyticsController {
 
   /**
    * GET /api/analytics/organization-contributors
-   * Get contributors data for an organization
-   * Query params: accountId (required) - Organization account ID
+   * Get contributors data for an organization with monthly trend data
+   * Query params: accountId (required) - Organization account ID, foundationSlug (required) - Foundation slug
    */
   public async getOrganizationContributors(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = Logger.start(req, 'get_organization_contributors');
 
     try {
       const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
 
       if (!accountId) {
         throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
@@ -305,12 +283,19 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.organizationService.getOrganizationContributors(accountId);
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_organization_contributors',
+        });
+      }
+
+      const response = await this.organizationService.getOrganizationContributors(accountId, foundationSlug);
 
       Logger.success(req, 'get_organization_contributors', startTime, {
         account_id: accountId,
-        contributors: response.contributors,
-        projects: response.projects,
+        foundation_slug: foundationSlug,
+        total_active_contributors: response.contributors,
+        monthly_data_points: response.monthlyData.length,
       });
 
       res.json(response);
@@ -361,22 +346,42 @@ export class AnalyticsController {
   }
 
   /**
-   * GET /api/analytics/projects
-   * Get list of projects with maintainers from Snowflake
-   *   */
-  public async getProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'get_projects_list');
+   * GET /api/analytics/event-attendance-monthly
+   * Get event attendance monthly data for an organization with cumulative trends
+   * Query params: accountId (required) - Organization account ID, foundationSlug (required) - Foundation slug
+   */
+  public async getEventAttendanceMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_event_attendance_monthly');
 
     try {
-      const response = await this.projectService.getProjectsWithMaintainersList();
+      const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
 
-      Logger.success(req, 'get_projects_list', startTime, {
-        project_count: response.projects.length,
+      if (!accountId) {
+        throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
+          operation: 'get_event_attendance_monthly',
+        });
+      }
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_event_attendance_monthly',
+        });
+      }
+
+      const response = await this.organizationService.getEventAttendanceMonthly(accountId, foundationSlug);
+
+      Logger.success(req, 'get_event_attendance_monthly', startTime, {
+        account_id: accountId,
+        foundation_slug: foundationSlug,
+        total_attended: response.totalAttended,
+        total_speakers: response.totalSpeakers,
+        monthly_data_points: response.monthlyLabels.length,
       });
 
       res.json(response);
     } catch (error) {
-      Logger.error(req, 'get_projects_list', startTime, error);
+      Logger.error(req, 'get_event_attendance_monthly', startTime, error);
       next(error);
     }
   }
@@ -722,6 +727,38 @@ export class AnalyticsController {
       res.json(response);
     } catch (error) {
       Logger.error(req, 'get_foundation_health_score_distribution', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/company-bus-factor
+   * Get company bus factor data for a foundation
+   * Query params: foundationSlug (required)
+   */
+  public async getCompanyBusFactor(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_company_bus_factor');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_company_bus_factor',
+        });
+      }
+
+      const response = await this.organizationService.getCompanyBusFactor(foundationSlug);
+
+      Logger.success(req, 'get_company_bus_factor', startTime, {
+        foundation_slug: foundationSlug,
+        top_companies_count: response.topCompaniesCount,
+        top_companies_percentage: response.topCompaniesPercentage,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_company_bus_factor', startTime, error);
       next(error);
     }
   }

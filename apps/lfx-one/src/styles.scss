@@ -25,21 +25,21 @@
 
   /* Heading styles - only apply to elements without text or font classes */
   h1:not([class*='text-']):not([class*='font-']) {
-    @apply text-xl font-semibold leading-normal;
+    @apply text-xl font-semibold;
   }
 
   h2:not([class*='text-']):not([class*='font-']) {
-    @apply text-lg font-normal leading-normal;
+    @apply text-lg font-normal;
   }
 
   h3:not([class*='text-']):not([class*='font-']) {
-    @apply text-base font-normal leading-normal;
+    @apply text-base font-normal;
   }
 
   h4:not([class*='text-']):not([class*='font-']),
   h5:not([class*='text-']):not([class*='font-']),
   h6:not([class*='text-']):not([class*='font-']) {
-    @apply text-sm font-normal leading-normal;
+    @apply text-sm font-normal;
   }
 
   /* Text element styles - only apply to elements without text or font classes */

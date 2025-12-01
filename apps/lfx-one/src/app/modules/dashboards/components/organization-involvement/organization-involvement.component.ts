@@ -20,6 +20,7 @@ import type {
   DashboardMetricCard,
   MembershipTierResponse,
   OrganizationContributorsResponse,
+  OrganizationEventAttendanceMonthlyResponse,
   OrganizationMaintainersResponse,
   TrainingEnrollmentsResponse,
 } from '@lfx-one/shared/interfaces';
@@ -53,7 +54,7 @@ export class OrganizationInvolvementComponent {
   private readonly membershipTierData = this.initializeMembershipTierData();
   private readonly certifiedEmployeesData = this.initializeCertifiedEmployeesData();
   private readonly trainingEnrollmentsData = this.initializeTrainingEnrollmentsData();
-  private readonly eventsOverviewData = this.initializeEventsOverviewData();
+  private readonly eventAttendanceMonthlyData = this.initializeEventAttendanceMonthlyData();
   public readonly isLoading = computed<boolean>(
     () =>
       this.maintainersLoading() ||
@@ -117,11 +118,11 @@ export class OrganizationInvolvementComponent {
   }
 
   private initializeEventAttendeesCard() {
-    return computed(() => this.transformEventAttendees(this.eventsOverviewData().eventAttendance, this.getMetricConfig('Event Attendees')));
+    return computed(() => this.transformEventAttendees(this.eventAttendanceMonthlyData(), this.getMetricConfig('Event Attendees')));
   }
 
   private initializeEventSpeakersCard() {
-    return computed(() => this.transformEventSpeakers(this.eventsOverviewData().eventAttendance, this.getMetricConfig('Event Speakers')));
+    return computed(() => this.transformEventSpeakers(this.eventAttendanceMonthlyData(), this.getMetricConfig('Event Speakers')));
   }
 
   private initializeCertifiedEmployeesCard() {
@@ -150,20 +151,41 @@ export class OrganizationInvolvementComponent {
         return allCards.map((item) => item.card);
       }
 
-      return allCards.filter((item) => item.category === 'membership' || item.category === filter).map((item) => item.card);
+      return allCards.filter((item) => item.category === filter).map((item) => item.card);
     });
   }
 
   private initializeMaintainersData() {
     return toSignal(
-      this.selectedAccountId$.pipe(
-        switchMap((accountId) => {
+      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$]).pipe(
+        switchMap(([accountId, foundationSlug]) => {
           this.maintainersLoading.set(true);
-          return this.analyticsService.getOrganizationMaintainers(accountId).pipe(
+
+          // Return empty data if no foundation is selected
+          if (!foundationSlug) {
+            this.maintainersLoading.set(false);
+            return of({
+              maintainers: 0,
+              projects: 0,
+              accountId: '',
+              accountName: '',
+              monthlyData: [],
+              monthlyLabels: [],
+            } as OrganizationMaintainersResponse);
+          }
+
+          return this.analyticsService.getOrganizationMaintainers(accountId, foundationSlug).pipe(
             tap(() => this.maintainersLoading.set(false)),
             catchError(() => {
               this.maintainersLoading.set(false);
-              return of({ maintainers: 0, projects: 0, accountId: '', accountName: '' } as OrganizationMaintainersResponse);
+              return of({
+                maintainers: 0,
+                projects: 0,
+                accountId: '',
+                accountName: '',
+                monthlyData: [],
+                monthlyLabels: [],
+              } as OrganizationMaintainersResponse);
             })
           );
         })
@@ -174,6 +196,8 @@ export class OrganizationInvolvementComponent {
           projects: 0,
           accountId: '',
           accountName: '',
+          monthlyData: [],
+          monthlyLabels: [],
         } as OrganizationMaintainersResponse,
       }
     );
@@ -181,14 +205,33 @@ export class OrganizationInvolvementComponent {
 
   private initializeContributorsData() {
     return toSignal(
-      this.selectedAccountId$.pipe(
-        switchMap((accountId) => {
+      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$]).pipe(
+        switchMap(([accountId, foundationSlug]) => {
           this.contributorsLoading.set(true);
-          return this.analyticsService.getOrganizationContributors(accountId).pipe(
+
+          // Return empty data if no foundation is selected
+          if (!foundationSlug) {
+            this.contributorsLoading.set(false);
+            return of({
+              contributors: 0,
+              accountId: '',
+              accountName: '',
+              monthlyData: [],
+              monthlyLabels: [],
+            } as OrganizationContributorsResponse);
+          }
+
+          return this.analyticsService.getOrganizationContributors(accountId, foundationSlug).pipe(
             tap(() => this.contributorsLoading.set(false)),
             catchError(() => {
               this.contributorsLoading.set(false);
-              return of({ contributors: 0, projects: 0, accountId: '', accountName: '' } as OrganizationContributorsResponse);
+              return of({
+                contributors: 0,
+                accountId: '',
+                accountName: '',
+                monthlyData: [],
+                monthlyLabels: [],
+              } as OrganizationContributorsResponse);
             })
           );
         })
@@ -196,9 +239,10 @@ export class OrganizationInvolvementComponent {
       {
         initialValue: {
           contributors: 0,
-          projects: 0,
           accountId: '',
           accountName: '',
+          monthlyData: [],
+          monthlyLabels: [],
         } as OrganizationContributorsResponse,
       }
     );
@@ -283,8 +327,8 @@ export class OrganizationInvolvementComponent {
               certifications: 0,
               certifiedEmployees: 0,
               accountId: '',
-              projectId: '',
-              projectSlug: '',
+              monthlyData: [],
+              monthlyLabels: [],
             } as CertifiedEmployeesResponse);
           }
 
@@ -292,7 +336,13 @@ export class OrganizationInvolvementComponent {
             tap(() => this.certifiedEmployeesLoading.set(false)),
             catchError(() => {
               this.certifiedEmployeesLoading.set(false);
-              return of({ certifications: 0, certifiedEmployees: 0, accountId: '', projectId: '', projectSlug: '' } as CertifiedEmployeesResponse);
+              return of({
+                certifications: 0,
+                certifiedEmployees: 0,
+                accountId: '',
+                monthlyData: [],
+                monthlyLabels: [],
+              } as CertifiedEmployeesResponse);
             })
           );
         })
@@ -302,8 +352,8 @@ export class OrganizationInvolvementComponent {
           certifications: 0,
           certifiedEmployees: 0,
           accountId: '',
-          projectId: '',
-          projectSlug: '',
+          monthlyData: [],
+          monthlyLabels: [],
         } as CertifiedEmployeesResponse,
       }
     );
@@ -346,33 +396,53 @@ export class OrganizationInvolvementComponent {
     );
   }
 
-  private initializeEventsOverviewData() {
+  private initializeEventAttendanceMonthlyData() {
     return toSignal(
-      this.selectedAccountId$.pipe(
-        switchMap((accountId) => {
+      combineLatest([this.selectedAccountId$, this.selectedFoundationSlug$]).pipe(
+        switchMap(([accountId, foundationSlug]) => {
           this.eventsLoading.set(true);
-          return this.analyticsService.getOrganizationEventsOverview(accountId).pipe(
+
+          // Return empty data if no foundation is selected
+          if (!foundationSlug) {
+            this.eventsLoading.set(false);
+            return of({
+              totalAttended: 0,
+              totalSpeakers: 0,
+              accountId: '',
+              accountName: '',
+              attendeesMonthlyData: [],
+              speakersMonthlyData: [],
+              monthlyLabels: [],
+            } as OrganizationEventAttendanceMonthlyResponse);
+          }
+
+          return this.analyticsService.getEventAttendanceMonthly(accountId, foundationSlug).pipe(
             tap(() => this.eventsLoading.set(false)),
             catchError(() => {
               this.eventsLoading.set(false);
               return of({
-                eventAttendance: { totalAttendees: 0, totalSpeakers: 0, totalEvents: 0, accountName: '' },
+                totalAttended: 0,
+                totalSpeakers: 0,
                 accountId: '',
-              });
+                accountName: '',
+                attendeesMonthlyData: [],
+                speakersMonthlyData: [],
+                monthlyLabels: [],
+              } as OrganizationEventAttendanceMonthlyResponse);
             })
           );
         })
       ),
       {
         initialValue: {
-          eventAttendance: {
-            totalAttendees: 0,
-            totalSpeakers: 0,
-            totalEvents: 0,
-            accountName: '',
-          },
+          totalAttended: 0,
+          totalSpeakers: 0,
           accountId: '',
-        },
+          accountName: '',
+          attendeesMonthlyData: [],
+          speakersMonthlyData: [],
+          monthlyLabels: [],
+        } as OrganizationEventAttendanceMonthlyResponse,
       }
     );
   }
@@ -384,16 +454,47 @@ export class OrganizationInvolvementComponent {
       value: data.contributors.toString(),
       subtitle: 'Contributors from our organization',
       chartOptions: this.createBarChartOptions('Active contributors'),
+      chartData:
+        data.monthlyData.length > 0
+          ? {
+              labels: data.monthlyLabels,
+              datasets: [
+                {
+                  data: data.monthlyData,
+                  borderColor: lfxColors.blue[500],
+                  backgroundColor: hexToRgba(lfxColors.blue[500], 0.5),
+                  borderWidth: 0,
+                  borderRadius: 4,
+                },
+              ],
+            }
+          : metric.chartData,
     };
   }
 
   private transformMaintainers(data: OrganizationMaintainersResponse, metric: DashboardMetricCard): DashboardMetricCard {
+    const projectLabel = data.projects === 1 ? 'project' : 'projects';
     return {
       ...metric,
       loading: this.maintainersLoading(),
       value: data.maintainers.toString(),
-      subtitle: `Across ${data.projects} projects`,
+      subtitle: `Across ${data.projects} ${projectLabel}`,
       chartOptions: this.createBarChartOptions('Maintainers'),
+      chartData:
+        data.monthlyData.length > 0
+          ? {
+              labels: data.monthlyLabels,
+              datasets: [
+                {
+                  data: data.monthlyData,
+                  borderColor: lfxColors.blue[500],
+                  backgroundColor: hexToRgba(lfxColors.blue[500], 0.5),
+                  borderWidth: 0,
+                  borderRadius: 4,
+                },
+              ],
+            }
+          : metric.chartData,
     };
   }
 
@@ -426,29 +527,57 @@ export class OrganizationInvolvementComponent {
     };
   }
 
-  private transformEventAttendees(
-    data: { totalAttendees: number; totalSpeakers: number; totalEvents: number; accountName: string },
-    metric: DashboardMetricCard
-  ): DashboardMetricCard {
+  private transformEventAttendees(data: OrganizationEventAttendanceMonthlyResponse, metric: DashboardMetricCard): DashboardMetricCard {
     return {
       ...metric,
       loading: this.eventsLoading(),
-      value: data.totalAttendees.toString(),
+      value: data.totalAttended.toString(),
       subtitle: 'Employees at foundation events',
       chartOptions: this.createLineChartOptions('Event attendees'),
+      chartData:
+        data.attendeesMonthlyData.length > 0
+          ? {
+              labels: data.monthlyLabels,
+              datasets: [
+                {
+                  data: data.attendeesMonthlyData,
+                  borderColor: lfxColors.emerald[500],
+                  backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
+                  fill: true,
+                  tension: 0,
+                  borderWidth: 2,
+                  pointRadius: 0,
+                },
+              ],
+            }
+          : metric.chartData,
     };
   }
 
-  private transformEventSpeakers(
-    data: { totalAttendees: number; totalSpeakers: number; totalEvents: number; accountName: string },
-    metric: DashboardMetricCard
-  ): DashboardMetricCard {
+  private transformEventSpeakers(data: OrganizationEventAttendanceMonthlyResponse, metric: DashboardMetricCard): DashboardMetricCard {
     return {
       ...metric,
       loading: this.eventsLoading(),
       value: data.totalSpeakers.toString(),
       subtitle: 'Employee speakers at events',
       chartOptions: this.createLineChartOptions('Event speakers'),
+      chartData:
+        data.speakersMonthlyData.length > 0
+          ? {
+              labels: data.monthlyLabels,
+              datasets: [
+                {
+                  data: data.speakersMonthlyData,
+                  borderColor: lfxColors.amber[500],
+                  backgroundColor: hexToRgba(lfxColors.amber[500], 0.1),
+                  fill: true,
+                  tension: 0,
+                  borderWidth: 2,
+                  pointRadius: 0,
+                },
+              ],
+            }
+          : metric.chartData,
     };
   }
 
@@ -458,7 +587,24 @@ export class OrganizationInvolvementComponent {
       loading: this.certifiedEmployeesLoading(),
       value: `${data.certifiedEmployees} employees`,
       subtitle: `${data.certifications} total certifications`,
-      chartOptions: this.createLineChartOptions('Certified employees'),
+      chartOptions: this.createLineChartOptions('Certifications'),
+      chartData:
+        data.monthlyData.length > 0
+          ? {
+              labels: data.monthlyLabels,
+              datasets: [
+                {
+                  data: data.monthlyData,
+                  borderColor: lfxColors.violet[500],
+                  backgroundColor: hexToRgba(lfxColors.violet[500], 0.1),
+                  fill: true,
+                  tension: 0,
+                  borderWidth: 2,
+                  pointRadius: 0,
+                },
+              ],
+            }
+          : metric.chartData,
     };
   }
 

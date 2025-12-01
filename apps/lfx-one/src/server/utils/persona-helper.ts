@@ -39,6 +39,13 @@ const PERSONA_PRIORITY: PersonaType[] = ['core-developer', 'maintainer', 'board-
  * along with all unique organization names from the user's committee memberships
  */
 export async function fetchUserPersonaAndOrganizations(req: Request): Promise<UserPersonaResult> {
+  req.log.info(
+    {
+      operation: 'fetch_user_persona_and_organizations',
+    },
+    'Fetching user persona and organizations'
+  );
+
   const result: UserPersonaResult = {
     persona: null,
     organizationNames: [],
@@ -59,8 +66,23 @@ export async function fetchUserPersonaAndOrganizations(req: Request): Promise<Us
 
     // Check each committee category mapping
     for (const [category, persona] of Object.entries(COMMITTEE_CATEGORY_TO_PERSONA)) {
+      req.log.info(
+        {
+          operation: 'fetch_user_persona_and_organizations',
+          category,
+        },
+        'Checking committee category'
+      );
       const memberships = await committeeService.getCommitteeMembersByCategory(req, username, userEmail || '', category);
 
+      req.log.info(
+        {
+          operation: 'fetch_user_persona_and_organizations',
+          category,
+          memberships_count: memberships.length,
+        },
+        'Found committee memberships'
+      );
       if (memberships.length > 0) {
         req.log.info(
           {
@@ -79,6 +101,14 @@ export async function fetchUserPersonaAndOrganizations(req: Request): Promise<Us
             organizationNamesSet.add(membership.organization.name);
           }
         }
+      } else {
+        req.log.info(
+          {
+            operation: 'fetch_user_persona_and_organizations',
+            category,
+          },
+          'No committee memberships found'
+        );
       }
     }
 

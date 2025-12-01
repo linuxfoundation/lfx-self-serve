@@ -7,7 +7,7 @@
       <div class="flex gap-3 flex-wrap">
         <h2 class="mb-0">{{ title() }}</h2>
         <!-- Data Copilot Button -->
-        <lfx-data-copilot></lfx-data-copilot>
+        <lfx-data-copilot [includeOrganizationId]="false" [includeOrganizationName]="false"></lfx-data-copilot>
       </div>
 
       <div class="flex flex-wrap items-center gap-2">
@@ -114,11 +114,11 @@
                           <div class="text-xs font-medium text-slate-700">
                             {{ card.busFactor.topCompaniesCount }} Companies ({{ card.busFactor.topCompaniesPercentage }}%)
                           </div>
-                          <div class="h-4 rounded-l-sm bg-gray-300"></div>
+                          <div class="h-4 rounded-l-sm bg-blue-500"></div>
                         </div>
                         <div [style.width.%]="card.busFactor.otherCompaniesPercentage" class="flex flex-col gap-1">
                           <div class="text-xs text-slate-600 text-right">{{ card.busFactor.otherCompaniesCount }} Other Companies</div>
-                          <div class="h-4 bg-slate-200 rounded-r-sm"></div>
+                          <div class="h-4 bg-blue-200 rounded-r-sm"></div>
                         </div>
                       </div>
                     </div>
