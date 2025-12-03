@@ -31,8 +31,16 @@ export class MeetingController {
     });
 
     try {
-      // Get the meetings
-      const meetings = await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'meeting', true);
+      // TODO(v1-migration): Remove V1 meeting fetch once all meetings are migrated to V2
+      // Get both 'meeting' and 'v1_meeting' types in parallel
+      const [regularMeetings, v1Meetings] = await Promise.all([
+        this.meetingService.getMeetings(req, req.query as Record<string, any>, 'meeting', true),
+        this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_meeting', true),
+      ]);
+
+      // Combine the meetings
+      const meetings = [...regularMeetings, ...v1Meetings];
+
       // TODO: Remove this once we have a way to get the registrants count
       const counts = await Promise.all(
         meetings.map(async (m) => {
@@ -54,6 +62,8 @@ export class MeetingController {
       // Log the success
       Logger.success(req, 'get_meetings', startTime, {
         meeting_count: meetings.length,
+        regular_meeting_count: regularMeetings.length,
+        v1_meeting_count: v1Meetings.length,
       });
 
       // Send the meetings data to the client

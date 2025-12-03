@@ -27,6 +27,8 @@ export class MeetingRsvpDetailsComponent {
   public readonly backgroundColor: InputSignal<string | undefined> = input<string | undefined>(undefined);
   public readonly borderColor: InputSignal<string | undefined> = input<string | undefined>(undefined);
   public readonly additionalRegistrantsCount: InputSignal<number> = input<number>(0);
+  public readonly disabled: InputSignal<boolean> = input<boolean>(false);
+  public readonly disabledMessage: InputSignal<string> = input<string>('RSVP not available for this meeting');
 
   public readonly rsvps: Signal<MeetingRsvp[]> = this.initializeRsvps();
   public readonly rsvpCounts: Signal<RsvpCounts> = this.initializeRsvpCounts();

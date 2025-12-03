@@ -57,7 +57,10 @@ export class AiService {
               properties: {
                 agenda: {
                   type: 'string',
-                  description: 'Well-structured meeting agenda with time allocations and clear objectives',
+                  description:
+                    'Well-structured meeting agenda with time allocations and clear objectives. ' +
+                    `Must not exceed ${request.maxCharacters || 2000} characters.`,
+                  maxLength: request.maxCharacters || 2000,
                 },
                 duration: {
                   type: 'number',
@@ -95,6 +98,10 @@ export class AiService {
     }
 
     prompt += '\n\nPlease create a professional, well-structured agenda that includes appropriate time allocations and clear objectives for each item.';
+
+    if (request.maxCharacters) {
+      prompt += ` The agenda must not exceed ${request.maxCharacters} characters.`;
+    }
 
     return prompt;
   }

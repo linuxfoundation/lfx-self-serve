@@ -58,3 +58,10 @@ export enum ArtifactVisibility {
   /** Artifacts are publicly accessible */
   PUBLIC = 'public',
 }
+
+// TODO(v1-migration): Remove v1_meeting and v1_past_meeting types once all meetings are migrated to V2
+/**
+ * Query service meeting resource types
+ * @description Types used when fetching meetings from the query service
+ */
+export type QueryServiceMeetingType = 'meeting' | 'past_meeting' | 'v1_meeting' | 'v1_past_meeting';

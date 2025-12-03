@@ -1,14 +1,17 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="rounded-md p-3 space-y-2 flex-1" [ngClass]="[backgroundClasses(), borderClasses()]" [attr.data-testid]="'rsvp-details-card'">
+<div
+  class="rounded-md p-3 space-y-2 flex-1"
+  [ngClass]="disabled() ? 'bg-gray-100/60' : [backgroundClasses(), borderClasses()]"
+  [attr.data-testid]="'rsvp-details-card'">
   <!-- Header -->
   <div class="flex items-center justify-between gap-2">
-    <div class="flex items-center gap-2 text-xs tracking-wide" [ngClass]="headerTextClasses()">
+    <div class="flex items-center gap-2 text-xs tracking-wide" [ngClass]="disabled() ? 'text-gray-500' : headerTextClasses()">
       <i class="fa-light fa-users text-xs"></i>
       <span>{{ pastMeeting() ? 'Attendees' : 'People Invited' }}</span>
     </div>
-    @if (showAddButton()) {
+    @if (showAddButton() && !disabled()) {
       <lfx-button
         icon="fa-light fa-user-plus text-xs"
         label="Add"
@@ -21,69 +24,76 @@
     }
   </div>
 
-  <div class="space-y-2">
-    <!-- Attendance Summary -->
-    <div class="flex items-center justify-between">
-      <span class="text-[12.25px] leading-tight tracking-tight" [ngClass]="summaryTextClasses()">
-        @if (pastMeeting()) {
-          {{ attendedCount() }} of {{ meetingRegistrantCount() }} attended
-        } @else {
-          {{ acceptedCount() }} of {{ meetingRegistrantCount() }} attending
-        }
-      </span>
-      <span class="text-gray-600 text-xs tracking-wide">{{ attendancePercentage() }}%</span>
+  @if (disabled()) {
+    <!-- Disabled Message -->
+    <div class="flex items-center justify-center py-2" [attr.data-testid]="'rsvp-details-disabled-message'">
+      <span class="text-[12.25px] leading-tight tracking-tight text-gray-500">{{ disabledMessage() }}</span>
     </div>
+  } @else {
+    <div class="space-y-2">
+      <!-- Attendance Summary -->
+      <div class="flex items-center justify-between">
+        <span class="text-[12.25px] leading-tight tracking-tight" [ngClass]="summaryTextClasses()">
+          @if (pastMeeting()) {
+            {{ attendedCount() }} of {{ meetingRegistrantCount() }} attended
+          } @else {
+            {{ acceptedCount() }} of {{ meetingRegistrantCount() }} attending
+          }
+        </span>
+        <span class="text-gray-600 text-xs tracking-wide">{{ attendancePercentage() }}%</span>
+      </div>
 
-    <!-- Progress Bar -->
-    <div class="w-full bg-gray-200/80 rounded-full h-[5.25px] flex overflow-hidden">
-      @if (pastMeeting()) {
-        <!-- Past meeting: Show attended vs not attended -->
-        @if (attendedCount() > 0) {
-          <div class="h-[5.25px] transition-all duration-300 bg-blue-500" [style.width.%]="(attendedCount() / meetingRegistrantCount()) * 100"></div>
+      <!-- Progress Bar -->
+      <div class="w-full bg-gray-200/80 rounded-full h-[5.25px] flex overflow-hidden">
+        @if (pastMeeting()) {
+          <!-- Past meeting: Show attended vs not attended -->
+          @if (attendedCount() > 0) {
+            <div class="h-[5.25px] transition-all duration-300 bg-blue-500" [style.width.%]="(attendedCount() / meetingRegistrantCount()) * 100"></div>
+          }
+          @if (meetingRegistrantCount() - attendedCount() > 0) {
+            <div
+              class="h-[5.25px] transition-all duration-300 bg-red-500"
+              [style.width.%]="((meetingRegistrantCount() - attendedCount()) / meetingRegistrantCount()) * 100"></div>
+          }
+        } @else {
+          <!-- Upcoming meeting: Show accepted/maybe/declined -->
+          @if (acceptedCount() > 0) {
+            <div class="h-[5.25px] transition-all duration-300 bg-blue-500" [style.width.%]="(acceptedCount() / meetingRegistrantCount()) * 100"></div>
+          }
+          @if (maybeCount() > 0) {
+            <div class="h-[5.25px] transition-all duration-300 bg-amber-500" [style.width.%]="(maybeCount() / meetingRegistrantCount()) * 100"></div>
+          }
+          @if (declinedCount() > 0) {
+            <div class="h-[5.25px] transition-all duration-300 bg-red-500" [style.width.%]="(declinedCount() / meetingRegistrantCount()) * 100"></div>
+          }
         }
-        @if (meetingRegistrantCount() - attendedCount() > 0) {
-          <div
-            class="h-[5.25px] transition-all duration-300 bg-red-500"
-            [style.width.%]="((meetingRegistrantCount() - attendedCount()) / meetingRegistrantCount()) * 100"></div>
-        }
-      } @else {
-        <!-- Upcoming meeting: Show accepted/maybe/declined -->
-        @if (acceptedCount() > 0) {
-          <div class="h-[5.25px] transition-all duration-300 bg-blue-500" [style.width.%]="(acceptedCount() / meetingRegistrantCount()) * 100"></div>
-        }
-        @if (maybeCount() > 0) {
-          <div class="h-[5.25px] transition-all duration-300 bg-amber-500" [style.width.%]="(maybeCount() / meetingRegistrantCount()) * 100"></div>
-        }
-        @if (declinedCount() > 0) {
-          <div class="h-[5.25px] transition-all duration-300 bg-red-500" [style.width.%]="(declinedCount() / meetingRegistrantCount()) * 100"></div>
-        }
+      </div>
+
+      <!-- Response Breakdown -->
+      @if (!pastMeeting()) {
+        <div class="flex items-center justify-between text-gray-600">
+          <div class="flex items-center gap-1">
+            <i class="flex fa-light fa-check-circle text-xs text-blue-500"></i>
+            <span class="text-xs tracking-wide">{{ acceptedCount() }} Yes</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <i class="flex fa-light fa-question-circle text-xs text-amber-500"></i>
+            <span class="text-xs tracking-wide">{{ maybeCount() }} Maybe</span>
+          </div>
+          <div class="flex items-center gap-1">
+            <i class="flex fa-light fa-times-circle text-xs text-red-500"></i>
+            <span class="text-xs tracking-wide">{{ declinedCount() }} No</span>
+          </div>
+        </div>
+      }
+
+      <!-- Poor Attendance Warning -->
+      @if (showPoorAttendanceWarning()) {
+        <div class="flex items-center justify-center gap-2 mt-2 pt-2">
+          <i class="fa-light fa-triangle-exclamation w-3.5 h-3.5 text-amber-600 flex-shrink-0"></i>
+          <p class="text-xs tracking-wide text-amber-900">This meeting was poorly attended</p>
+        </div>
       }
     </div>
-
-    <!-- Response Breakdown -->
-    @if (!pastMeeting()) {
-      <div class="flex items-center justify-between text-gray-600">
-        <div class="flex items-center gap-1">
-          <i class="flex fa-light fa-check-circle text-xs text-blue-500"></i>
-          <span class="text-xs tracking-wide">{{ acceptedCount() }} Yes</span>
-        </div>
-        <div class="flex items-center gap-1">
-          <i class="flex fa-light fa-question-circle text-xs text-amber-500"></i>
-          <span class="text-xs tracking-wide">{{ maybeCount() }} Maybe</span>
-        </div>
-        <div class="flex items-center gap-1">
-          <i class="flex fa-light fa-times-circle text-xs text-red-500"></i>
-          <span class="text-xs tracking-wide">{{ declinedCount() }} No</span>
-        </div>
-      </div>
-    }
-
-    <!-- Poor Attendance Warning -->
-    @if (showPoorAttendanceWarning()) {
-      <div class="flex items-center justify-center gap-2 mt-2 pt-2">
-        <i class="fa-light fa-triangle-exclamation w-3.5 h-3.5 text-amber-600 flex-shrink-0"></i>
-        <p class="text-xs tracking-wide text-amber-900">This meeting was poorly attended</p>
-      </div>
-    }
-  </div>
+  }
 </div>

@@ -17,10 +17,22 @@ import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, finalize, of, switchMap } from 'rxjs';
 
+import { ProfileNavComponent } from '../components/profile-nav/profile-nav.component';
+
 @Component({
   selector: 'lfx-profile-password',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, CardComponent, InputTextComponent, MessageComponent, ButtonComponent, ToastModule, TooltipModule],
+  imports: [
+    CommonModule,
+    ReactiveFormsModule,
+    CardComponent,
+    InputTextComponent,
+    MessageComponent,
+    ButtonComponent,
+    ToastModule,
+    TooltipModule,
+    ProfileNavComponent,
+  ],
   providers: [MessageService],
   templateUrl: './profile-password.component.html',
 })

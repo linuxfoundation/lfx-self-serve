@@ -131,6 +131,16 @@ export class MeetingCardComponent implements OnInit {
   public readonly joinUrl: Signal<string | null>;
   public readonly authenticated: Signal<boolean> = this.userService.authenticated;
 
+  // TODO(v1-migration): Remove V1/V2 fallback fields and legacy meeting handling once all meetings are migrated to V2
+  public readonly isLegacyMeeting: Signal<boolean> = this.initIsLegacyMeeting();
+  public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
+
+  // V1/V2 fallback fields
+  public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
+  public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
+  public readonly hasAiCompanion: Signal<boolean> = this.initHasAiCompanion();
+  public readonly meetingIdentifier: Signal<string> = this.initMeetingIdentifier();
+
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
   public readonly committeeLabel = COMMITTEE_LABEL;
@@ -157,10 +167,16 @@ export class MeetingCardComponent implements OnInit {
     const user$ = toObservable(this.userService.user);
     const authenticated$ = toObservable(this.userService.authenticated);
     const pastMeeting$ = toObservable(this.pastMeeting);
+    const isLegacyMeeting$ = toObservable(this.isLegacyMeeting);
 
-    const joinUrl$ = combineLatest([meeting$, occurrence$, user$, authenticated$, pastMeeting$]).pipe(
-      switchMap(([meeting, occurrence, user, authenticated, isPastMeeting]) => {
-        // Only fetch join URL for meetings that can be joined with authenticated users
+    const joinUrl$ = combineLatest([meeting$, occurrence$, user$, authenticated$, pastMeeting$, isLegacyMeeting$]).pipe(
+      switchMap(([meeting, occurrence, user, authenticated, isPastMeeting, isLegacy]) => {
+        // For v1 meetings, use the join_url directly from the meeting object
+        if (isLegacy && meeting.join_url && !isPastMeeting && canJoinMeeting(meeting, occurrence)) {
+          return of(meeting.join_url);
+        }
+
+        // For v2 meetings, fetch join URL from API for authenticated users
         if (meeting.uid && authenticated && user?.email && !isPastMeeting && canJoinMeeting(meeting, occurrence)) {
           return this.meetingService.getPublicMeetingJoinUrl(meeting.uid, meeting.password, { email: user.email }).pipe(
             map((res) => buildJoinUrlWithParams(res.join_url, user)),
@@ -216,8 +232,17 @@ export class MeetingCardComponent implements OnInit {
   }
 
   public copyMeetingLink(): void {
-    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + this.meeting().uid);
-    meetingUrl.searchParams.set('password', this.meeting().password || '');
+    const meeting = this.meeting();
+    const identifier = this.meetingIdentifier();
+    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + identifier);
+
+    if (meeting.password) {
+      meetingUrl.searchParams.set('password', meeting.password);
+    }
+    if (this.isLegacyMeeting()) {
+      meetingUrl.searchParams.set('v1', 'true');
+    }
+
     this.clipboard.copy(meetingUrl.toString());
     this.messageService.add({
       severity: 'success',
@@ -258,8 +283,8 @@ export class MeetingCardComponent implements OnInit {
       data: {
         summaryContent: this.summaryContent(),
         summaryUid: this.summaryUid(),
-        pastMeetingUid: this.meeting().uid,
-        meetingTitle: this.meeting().title,
+        pastMeetingUid: this.meeting().uid || this.meeting().id,
+        meetingTitle: this.meetingTitle(),
         approved: this.summaryApproved(),
       },
     });
@@ -423,14 +448,16 @@ export class MeetingCardComponent implements OnInit {
 
   private initAttachments(): Signal<MeetingAttachment[]> {
     return runInInjectionContext(this.injector, () => {
-      return toSignal(this.meetingService.getMeetingAttachments(this.meetingInput().uid).pipe(catchError(() => of([]))), { initialValue: [] });
+      return toSignal(this.meetingService.getMeetingAttachments(this.meetingIdentifier()).pipe(catchError(() => of([]))), {
+        initialValue: [],
+      });
     });
   }
 
   private initRecording(): void {
     runInInjectionContext(this.injector, () => {
       toSignal(
-        this.meetingService.getPastMeetingRecording(this.meetingInput().uid).pipe(
+        this.meetingService.getPastMeetingRecording(this.meetingIdentifier(), this.isLegacyMeeting()).pipe(
           catchError(() => of(null)),
           tap((recording) => this.recording.set(recording))
         ),
@@ -442,7 +469,7 @@ export class MeetingCardComponent implements OnInit {
   private initSummary(): void {
     runInInjectionContext(this.injector, () => {
       toSignal(
-        this.meetingService.getPastMeetingSummary(this.meetingInput().uid).pipe(
+        this.meetingService.getPastMeetingSummary(this.meetingIdentifier(), this.isLegacyMeeting()).pipe(
           catchError(() => of(null)),
           tap((summary) => this.summary.set(summary))
         ),
@@ -622,15 +649,66 @@ export class MeetingCardComponent implements OnInit {
     return computed(() => this.recordingShareUrl() !== null);
   }
 
+  // TODO(v1-migration): Simplify to use V2 format only once all meetings are migrated to V2
   private initSummaryContent(): Signal<string | null> {
     return computed(() => {
       const summary = this.summary();
-      return summary?.summary_data ? summary.summary_data.edited_content || summary.summary_data.content : null;
+      if (!summary) return null;
+
+      // V2 format: use summary_data content
+      if (summary.summary_data) {
+        return summary.summary_data.edited_content || summary.summary_data.content;
+      }
+
+      // V1 format: construct content from v1 fields
+      if (summary.summary_overview || summary.summary_details || summary.next_steps) {
+        return this.formatV1SummaryContent(summary);
+      }
+
+      return null;
     });
   }
 
+  // TODO(v1-migration): Remove formatV1SummaryContent once all meetings are migrated to V2
+  private formatV1SummaryContent(summary: PastMeetingSummary): string {
+    const parts: string[] = [];
+
+    // Use edited versions if available, otherwise use original
+    const overview = summary.edited_summary_overview || summary.summary_overview;
+    const details = summary.edited_summary_details || summary.summary_details;
+    const nextSteps = summary.edited_next_steps || summary.next_steps;
+
+    // Add overview
+    if (overview) {
+      parts.push(`## Overview\n${overview}`);
+    }
+
+    // Add details
+    if (details && details.length > 0) {
+      parts.push('## Key Topics');
+      details.forEach((detail) => {
+        parts.push(`### ${detail.label}\n${detail.summary}`);
+      });
+    }
+
+    // Add next steps
+    if (nextSteps && nextSteps.length > 0) {
+      parts.push('## Next Steps');
+      nextSteps.forEach((step) => {
+        parts.push(`- ${step}`);
+      });
+    }
+
+    return parts.join('\n\n');
+  }
+
+  // TODO(v1-migration): Simplify to use V2 uid only once all meetings are migrated to V2
   private initSummaryUid(): Signal<string | null> {
-    return computed(() => this.summary()?.uid || null);
+    return computed(() => {
+      const summary = this.summary();
+      // V2 uses 'uid', V1 uses 'id'
+      return summary?.uid || summary?.id || null;
+    });
   }
 
   private initSummaryApproved(): Signal<boolean> {
@@ -639,5 +717,70 @@ export class MeetingCardComponent implements OnInit {
 
   private initHasSummary(): Signal<boolean> {
     return computed(() => this.summaryContent() !== null);
+  }
+
+  // TODO(v1-migration): Remove once all meetings are migrated to V2
+  private initIsLegacyMeeting(): Signal<boolean> {
+    return computed(() => this.meetingInput().version === 'v1');
+  }
+
+  // TODO(v1-migration): Remove V1 parameter handling once all meetings are migrated to V2
+  private initMeetingDetailUrl(): Signal<string> {
+    return computed(() => {
+      const meeting = this.meetingInput();
+      const identifier = this.meetingIdentifier();
+      const params = new URLSearchParams();
+
+      if (meeting.password) {
+        params.set('password', meeting.password);
+      }
+
+      if (this.isLegacyMeeting()) {
+        params.set('v1', 'true');
+      }
+
+      const queryString = params.toString();
+      return queryString ? `/meetings/${identifier}?${queryString}` : `/meetings/${identifier}`;
+    });
+  }
+
+  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
+  private initMeetingTitle(): Signal<string> {
+    return computed(() => {
+      const occurrence = this.occurrence();
+      const meeting = this.meeting();
+
+      // Priority: occurrence title > meeting title > meeting topic (v1)
+      return occurrence?.title || meeting.title || meeting.topic || '';
+    });
+  }
+
+  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
+  private initMeetingDescription(): Signal<string> {
+    return computed(() => {
+      const occurrence = this.occurrence();
+      const meeting = this.meeting();
+
+      // Priority: occurrence description > meeting description > meeting agenda (v1)
+      return occurrence?.description || meeting.description || meeting.agenda || '';
+    });
+  }
+
+  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
+  private initHasAiCompanion(): Signal<boolean> {
+    return computed(() => {
+      const meeting = this.meeting();
+
+      // V2: zoom_config.ai_companion_enabled, V1: zoom_ai_enabled
+      return meeting.zoom_config?.ai_companion_enabled || meeting.zoom_ai_enabled || false;
+    });
+  }
+
+  // TODO(v1-migration): Simplify to use V2 uid only once all meetings are migrated to V2
+  private initMeetingIdentifier(): Signal<string> {
+    return computed(() => {
+      const meeting = this.meetingInput();
+      return this.isLegacyMeeting() && meeting.id ? (meeting.id as string) : meeting.uid;
+    });
   }
 }

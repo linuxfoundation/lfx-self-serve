@@ -346,7 +346,7 @@ export class ProjectService {
     try {
       req.log.debug({ email: normalizedEmail }, 'Resolving email to sub via NATS');
 
-      const response = await this.natsService.request(NatsSubjects.EMAIL_TO_USERNAME, codec.encode(normalizedEmail), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
+      const response = await this.natsService.request(NatsSubjects.EMAIL_TO_SUB, codec.encode(normalizedEmail), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
 
       const responseText = codec.decode(response.data);
 
@@ -875,6 +875,13 @@ export class ProjectService {
         year: 'numeric',
       });
 
+      // Format due date for display below title
+      const displayDate = cutoffDate.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      });
+
       return {
         type: 'Submit Feedback',
         badge: row.PROJECT_NAME,
@@ -883,6 +890,7 @@ export class ProjectService {
         color: 'amber',
         buttonText: 'Submit Survey',
         buttonLink: row.SURVEY_LINK,
+        date: `Due ${displayDate}`,
       };
     });
   }

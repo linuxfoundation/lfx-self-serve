@@ -82,8 +82,10 @@ function checkAuthentication(req: Request): boolean {
 
 /**
  * Extracts bearer token from OIDC session if available
+ * @param req - Express request object
+ * @param attemptRefresh - Whether to attempt token refresh if expired (default: true)
  */
-async function extractBearerToken(req: Request): Promise<TokenExtractionResult> {
+async function extractBearerToken(req: Request, attemptRefresh: boolean = true): Promise<TokenExtractionResult> {
   try {
     req.log.debug(
       {
@@ -93,6 +95,7 @@ async function extractBearerToken(req: Request): Promise<TokenExtractionResult> 
         hasAccessToken: !!req.oidc?.accessToken,
         isTokenExpired: req.oidc?.accessToken?.isExpired(),
         tokenValue: req.oidc?.accessToken?.access_token ? 'present' : 'missing',
+        attemptRefresh,
       },
       'Bearer token extraction debug'
     );
@@ -100,6 +103,12 @@ async function extractBearerToken(req: Request): Promise<TokenExtractionResult> 
     if (req.oidc?.isAuthenticated()) {
       // Check if token exists and is expired
       if (req.oidc.accessToken?.isExpired()) {
+        // For optional routes, don't attempt refresh - just skip token extraction
+        if (!attemptRefresh) {
+          req.log.debug({ path: req.path }, 'Token expired but refresh not attempted (optional route)');
+          return { success: false, needsLogout: false };
+        }
+
         try {
           // Attempt to refresh the token
           const refreshedToken = await req.oidc.accessToken.refresh();
@@ -114,7 +123,7 @@ async function extractBearerToken(req: Request): Promise<TokenExtractionResult> 
               error: refreshError,
               path: req.path,
             },
-            'Token refresh failed - logging user out'
+            'Token refresh failed - user needs to re-authenticate'
           );
           // Token refresh failed, user needs to re-authenticate
           return { success: false, needsLogout: true };
@@ -149,7 +158,50 @@ async function extractBearerToken(req: Request): Promise<TokenExtractionResult> 
 function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecision {
   const { route, authenticated, hasToken, needsLogout } = result;
 
-  // If user needs logout due to failed token refresh
+  // Public routes - always allow (check first to short-circuit)
+  if (route.auth === 'public') {
+    req.log.debug(
+      {
+        path: req.path,
+        routeType: route.type,
+        authLevel: route.auth,
+      },
+      'Public route - allowing access'
+    );
+    return { action: 'allow' };
+  }
+
+  // Optional auth routes - always allow but may have enhanced features
+  // Check this BEFORE needsLogout to ensure optional routes aren't blocked
+  // when token refresh fails (the token is optional, so failure is acceptable)
+  if (route.auth === 'optional') {
+    // For optional routes where token is not required, don't fail on token refresh issues
+    if (!route.tokenRequired && needsLogout) {
+      req.log.debug(
+        {
+          path: req.path,
+          routeType: route.type,
+          authLevel: route.auth,
+          tokenRequired: route.tokenRequired,
+        },
+        'Optional auth route with tokenRequired=false - ignoring token refresh failure'
+      );
+    }
+
+    req.log.debug(
+      {
+        path: req.path,
+        routeType: route.type,
+        authLevel: route.auth,
+        authenticated,
+        hasToken,
+      },
+      'Optional auth route - allowing access'
+    );
+    return { action: 'allow' };
+  }
+
+  // If user needs logout due to failed token refresh (only for required auth routes now)
   if (needsLogout) {
     req.log.info(
       {
@@ -188,34 +240,6 @@ function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecis
       'SSR GET request - proceeding with logout redirect'
     );
     return { action: 'logout' };
-  }
-
-  // Public routes - always allow
-  if (route.auth === 'public') {
-    req.log.debug(
-      {
-        path: req.path,
-        routeType: route.type,
-        authLevel: route.auth,
-      },
-      'Public route - allowing access'
-    );
-    return { action: 'allow' };
-  }
-
-  // Optional auth routes - always allow but may have enhanced features
-  if (route.auth === 'optional') {
-    req.log.debug(
-      {
-        path: req.path,
-        routeType: route.type,
-        authLevel: route.auth,
-        authenticated,
-        hasToken,
-      },
-      'Optional auth route - allowing access'
-    );
-    return { action: 'allow' };
   }
 
   // Required auth routes
@@ -331,7 +355,8 @@ async function executeAuthDecision(decision: AuthDecision, req: Request, res: Re
         },
         'Logging user out due to token refresh failure'
       );
-      res.oidc.logout();
+      // Redirect to home page after logout to avoid redirect loops
+      res.oidc.logout({ returnTo: '/' });
       break;
 
     case 'error': {
@@ -379,7 +404,10 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
       let hasToken = false;
       let needsLogout = false;
       if (routeConfig.tokenRequired || routeConfig.auth === 'optional') {
-        const tokenResult = await extractBearerToken(req);
+        // For optional routes, don't attempt token refresh to avoid redirect loops
+        // when refresh token is invalid - just use existing valid token or none
+        const attemptRefresh = routeConfig.auth !== 'optional';
+        const tokenResult = await extractBearerToken(req, attemptRefresh);
         hasToken = tokenResult.success;
         needsLogout = tokenResult.needsLogout;
       }

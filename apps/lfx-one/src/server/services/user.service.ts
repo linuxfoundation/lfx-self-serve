@@ -46,6 +46,7 @@ export class UserService {
   private projectService: ProjectService;
 
   private readonly twoWeeksMs = 14 * 24 * 60 * 60 * 1000;
+  private readonly bufferMinutes = 40;
 
   public constructor() {
     this.apiClientService = new ApiClientService();
@@ -485,27 +486,33 @@ export class UserService {
     try {
       // Step 1: Get all meetings the user has access to, filtered by project
       const meetings = await this.meetingService.getMeetings(req, query, 'meeting', false);
+      const v1Meetings = await this.meetingService.getMeetings(req, query, 'v1_meeting', false);
+
+      const allMeetings = [...meetings, ...v1Meetings];
 
       req.log.info(
         {
           operation: 'get_user_meetings',
           project_uid: projectUid,
-          total_accessible_meetings: meetings.length,
+          total_accessible_meetings: allMeetings.length,
         },
         'Fetched all accessible meetings for user'
       );
 
-      if (meetings.length === 0) {
+      if (allMeetings.length === 0) {
         return [];
       }
 
       // Step 2: Separate public and private meetings
-      const publicMeetings = meetings.filter((m) => m.visibility === MeetingVisibility.PUBLIC);
-      const privateMeetings = meetings.filter((m) => m.visibility !== MeetingVisibility.PUBLIC);
+      const publicMeetings = allMeetings.filter((m) => m.visibility === MeetingVisibility.PUBLIC);
+      const privateMeetings = allMeetings.filter((m) => m.visibility !== MeetingVisibility.PUBLIC);
 
       req.log.debug(
         {
           operation: 'get_user_meetings',
+          total_meetings: allMeetings.length,
+          regular_meetings: meetings.length,
+          v1_meetings: v1Meetings.length,
           public_meetings: publicMeetings.length,
           private_meetings: privateMeetings.length,
         },
@@ -527,9 +534,16 @@ export class UserService {
                 v: 1,
                 type: 'meeting_registrant',
                 parent: `meeting:${meeting.uid}`,
-                tags: `email:${email}`,
+                tags_all: [`email:${email}`],
                 ...DEFAULT_QUERY_PARAMS,
               };
+
+              // If meeting is v1, use v1_meeting_registrant type and tags_all format
+              if (meeting.version === 'v1') {
+                query.type = 'v1_meeting_registrant';
+                query.tags_all.push(`meeting_uid:${meeting.id}`);
+                query.parent = '';
+              }
 
               const response = await this.apiClientService.request<QueryServiceResponse<MeetingRegistrant>>(
                 'GET',
@@ -621,6 +635,7 @@ export class UserService {
 
   /**
    * Transform meetings within 2 weeks to pending action items
+   * Only includes meetings that haven't ended yet (accounting for duration + buffer)
    */
   private transformMeetingsToActions(meetings: Meeting[]): PendingActionItem[] {
     const now = new Date();
@@ -634,13 +649,23 @@ export class UserService {
 
         for (const occurrence of activeOccurrences) {
           const startTime = new Date(occurrence.start_time);
-          if (startTime >= now && startTime <= twoWeeksFromNow) {
+          const durationMinutes = occurrence.duration || meeting.duration || 0;
+          // Calculate meeting end time + buffer
+          const meetingEndWithBuffer = new Date(startTime.getTime() + (durationMinutes + this.bufferMinutes) * 60 * 1000);
+
+          // Only include if meeting hasn't ended (with buffer) and is within 2 weeks
+          if (now < meetingEndWithBuffer && startTime <= twoWeeksFromNow) {
             actions.push(this.createMeetingAction(meeting, occurrence));
           }
         }
       } else {
         const startTime = new Date(meeting.start_time);
-        if (startTime >= now && startTime <= twoWeeksFromNow) {
+        const durationMinutes = meeting.duration || 0;
+        // Calculate meeting end time + buffer
+        const meetingEndWithBuffer = new Date(startTime.getTime() + (durationMinutes + this.bufferMinutes) * 60 * 1000);
+
+        // Only include if meeting hasn't ended (with buffer) and is within 2 weeks
+        if (now < meetingEndWithBuffer && startTime <= twoWeeksFromNow) {
           actions.push(this.createMeetingAction(meeting));
         }
       }
@@ -654,23 +679,37 @@ export class UserService {
    */
   private createMeetingAction(meeting: Meeting, occurrence?: MeetingOccurrence): PendingActionItem {
     const startTime = occurrence ? new Date(occurrence.start_time) : new Date(meeting.start_time);
-    const title = occurrence?.title || meeting.title;
+    const title = occurrence?.title || meeting.title || meeting.topic;
 
     const dateStr = startTime.toLocaleDateString('en-US', {
       month: 'short',
       day: 'numeric',
     });
 
-    const buttonLink = meeting.password ? `/meetings/${meeting.uid}?password=${meeting.password}` : `/meetings/${meeting.uid}`;
+    // Format date with time for display below title
+    const formattedDate = startTime.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+
+    let buttonLink = meeting.password ? `/meetings/${meeting.uid}?password=${meeting.password}` : `/meetings/${meeting.uid}`;
+
+    if (meeting.version === 'v1') {
+      buttonLink = `/meetings/${meeting.id}?password=${meeting.password}&v1=true`;
+    }
 
     return {
-      type: 'Review Minutes',
+      type: 'Review Agenda',
       badge: dateStr,
       text: `Review ${title} Agenda and Materials`,
       icon: 'fa-light fa-calendar-check',
       color: 'amber',
       buttonText: 'Review Agenda',
       buttonLink,
+      date: formattedDate,
     };
   }
 

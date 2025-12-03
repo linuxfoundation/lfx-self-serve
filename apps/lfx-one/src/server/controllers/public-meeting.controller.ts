@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MeetingVisibility } from '@lfx-one/shared/enums';
+import { getEarlyJoinTimeMinutes, isUuid, Meeting } from '@lfx-one/shared';
+import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
@@ -25,10 +26,19 @@ export class PublicMeetingController {
    * GET /public/api/meetings/:id
    * Retrieves a single meeting by ID without requiring authentication
    */
+  // TODO(v1-migration): Remove V1 detection and handling once all meetings are migrated to V2
   public async getMeetingById(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
+    let v1 = false; // Default to v2 meetings
+
+    // Validate the meeting ID is a UUID -- if not, set v1 to true
+    if (!isUuid(id)) {
+      v1 = true;
+    }
+
     const startTime = Logger.start(req, 'get_public_meeting_by_id', {
       meeting_uid: id,
+      v1,
     });
 
     try {
@@ -42,7 +52,7 @@ export class PublicMeetingController {
 
       // Get the meeting by ID using M2M token
       Logger.start(req, 'get_public_meeting_by_id_fetch_meeting', { meeting_uid: id });
-      let meeting = await this.fetchMeetingWithM2M(req, id);
+      let meeting = await this.fetchMeetingWithM2M(req, id, v1 ? 'v1_meeting' : 'meeting');
       if (!meeting) {
         // Log the error
         Logger.error(req, 'get_public_meeting_by_id_fetch_meeting', startTime, new Error('Meeting not found'));
@@ -74,7 +84,7 @@ export class PublicMeetingController {
 
       // Fetch the registrants
       Logger.start(req, 'get_public_meeting_by_id_fetch_registrants', { meeting_uid: id, project_uid: meeting.project_uid });
-      const registrants = await this.meetingService.getMeetingRegistrants(req, meeting.uid);
+      const registrants = v1 ? [] : await this.meetingService.getMeetingRegistrants(req, meeting.uid);
       Logger.success(req, 'get_public_meeting_by_id_fetch_registrants', startTime, { meeting_uid: id, registrant_count: registrants.length });
       const committeeMembers = registrants.filter((r) => r.type === 'committee').length ?? 0;
       meeting.individual_registrants_count = (registrants?.length ?? 0) - (committeeMembers ?? 0);
@@ -87,10 +97,25 @@ export class PublicMeetingController {
       if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
         // Only get join URL if within allowed join time window
         if (this.isWithinJoinWindow(meeting)) {
-          await this.handleJoinUrlForPublicMeeting(req, meeting, id);
+          // Only get join URL if not a legacy meeting
+          if (!v1) {
+            await this.handleJoinUrlForPublicMeeting(req, meeting, id);
+          }
+        } else {
+          // Delete join URL and passcode if not within allowed join time window for legacy meetings
+          if (v1) {
+            delete meeting.join_url;
+            delete meeting.passcode;
+          }
         }
         res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url } });
         return;
+      }
+
+      // Delete join URL and passcode if not within allowed join time window for legacy meetings
+      if (v1) {
+        delete meeting.join_url;
+        delete meeting.passcode;
       }
 
       // Check if the user has passed in a password, if so, check if it's correct
@@ -142,6 +167,7 @@ export class PublicMeetingController {
     }
   }
 
+  // TODO(v1-migration): Remove V1 detection and handling once all meetings are migrated to V2
   public async postMeetingJoinUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
     const { password } = req.query;
@@ -149,6 +175,7 @@ export class PublicMeetingController {
     const startTime = Logger.start(req, 'post_meeting_join_url', {
       meeting_uid: id,
     });
+    const v1 = !isUuid(id);
 
     try {
       // Check if the meeting UID is provided
@@ -156,7 +183,7 @@ export class PublicMeetingController {
         return;
       }
 
-      const meeting = await this.fetchMeetingWithM2M(req, id);
+      const meeting = await this.fetchMeetingWithM2M(req, id, v1 ? 'v1_meeting' : 'meeting');
 
       if (!meeting) {
         throw new ResourceNotFoundError('Meeting', id, {
@@ -173,7 +200,7 @@ export class PublicMeetingController {
 
       // Check if the meeting is within the allowed join time window
       if (!this.isWithinJoinWindow(meeting)) {
-        const earlyJoinMinutes = meeting.early_join_time_minutes || 10;
+        const earlyJoinMinutes = getEarlyJoinTimeMinutes(meeting) || 10;
 
         Logger.error(req, 'post_meeting_join_url', startTime, new Error('Meeting join not available yet'));
 
@@ -191,6 +218,12 @@ export class PublicMeetingController {
       // Restricted meetings require an email to be provided
       if (meeting.restricted) {
         await this.restrictedMeetingCheck(req, next, email, id, startTime);
+      }
+
+      if (v1) {
+        // If the meeting is v1, return the join URL
+        res.json({ join_url: meeting.join_url });
+        return;
       }
 
       const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
@@ -268,14 +301,14 @@ export class PublicMeetingController {
   /**
    * Fetches meeting with M2M token setup
    */
-  private async fetchMeetingWithM2M(req: Request, id: string) {
+  private async fetchMeetingWithM2M(req: Request, id: string, meetingType: QueryServiceMeetingType = 'meeting') {
     const startTime = Logger.start(req, 'fetch_meeting_with_m2m', {
       meeting_id: id,
     });
 
     try {
       await this.setupM2MToken(req);
-      const meeting = await this.meetingService.getMeetingById(req, id, 'meetings', false);
+      const meeting = await this.meetingService.getMeetingById(req, id, meetingType, false);
 
       Logger.success(req, 'fetch_meeting_with_m2m', startTime, {
         meeting_id: id,
@@ -319,14 +352,14 @@ export class PublicMeetingController {
   /**
    * Checks if the current time is within the allowed join window for a meeting
    */
-  private isWithinJoinWindow(meeting: any): boolean {
+  private isWithinJoinWindow(meeting: Meeting): boolean {
     if (!meeting?.start_time) {
       return false;
     }
 
     const now = new Date();
     const startTime = new Date(meeting.start_time);
-    const earlyJoinMinutes = meeting.early_join_time_minutes || 10; // Default to 10 minutes
+    const earlyJoinMinutes = getEarlyJoinTimeMinutes(meeting) || 10; // Default to 10 minutes
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
 
     return now >= earliestJoinTime;

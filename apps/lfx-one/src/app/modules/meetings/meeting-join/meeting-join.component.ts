@@ -3,7 +3,6 @@
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
 import { CommonModule } from '@angular/common';
-import { HttpParams } from '@angular/common/http';
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -17,7 +16,18 @@ import { HeaderComponent } from '@components/header/header.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
-import { canJoinMeeting, ComponentSeverity, getCurrentOrNextOccurrence, Meeting, MeetingAttachment, MeetingOccurrence, Project, User } from '@lfx-one/shared';
+import {
+  buildJoinUrlWithParams,
+  canJoinMeeting,
+  ComponentSeverity,
+  getCurrentOrNextOccurrence,
+  getEarlyJoinTimeMinutes,
+  Meeting,
+  MeetingAttachment,
+  MeetingOccurrence,
+  Project,
+  User,
+} from '@lfx-one/shared';
 import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
@@ -92,6 +102,14 @@ export class MeetingJoinComponent {
   private hasAutoJoined: WritableSignal<boolean> = signal<boolean>(false);
   public showRegistrants: WritableSignal<boolean> = signal<boolean>(false);
 
+  // TODO(v1-migration): Remove V1/V2 fallback fields once all meetings are migrated to V2
+  // V1/V2 fallback fields
+  public meetingTitle: Signal<string>;
+  public meetingDescription: Signal<string>;
+  public hasAiCompanion: Signal<boolean>;
+  public isLegacyMeeting: Signal<boolean>;
+  public meetingIdentifier: Signal<string>;
+
   // Form value signals for reactivity
   public formValues: Signal<{ name: string; email: string; organization: string }>;
 
@@ -103,6 +121,15 @@ export class MeetingJoinComponent {
     this.joinForm = this.initializeJoinForm();
     this.formValues = this.initializeFormValues();
     this.meetingTypeBadge = this.initializeMeetingTypeBadge();
+
+    // TODO(v1-migration): Remove V1/V2 fallback field initialization once all meetings are migrated to V2
+    // V1/V2 fallback fields - must be initialized before returnTo and attachments
+    this.meetingTitle = this.initializeMeetingTitle();
+    this.meetingDescription = this.initializeMeetingDescription();
+    this.hasAiCompanion = this.initializeHasAiCompanion();
+    this.isLegacyMeeting = this.initializeIsLegacyMeeting();
+    this.meetingIdentifier = this.initializeMeetingIdentifier();
+
     this.returnTo = this.initializeReturnTo();
     this.canJoinMeeting = this.initializeCanJoinMeeting();
     this.fetchedJoinUrl = this.initializeFetchedJoinUrl();
@@ -114,8 +141,17 @@ export class MeetingJoinComponent {
   }
 
   public handleCopyLink(): void {
-    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + this.meeting().uid);
-    meetingUrl.searchParams.set('password', this.password() || '');
+    const meeting = this.meeting();
+    const identifier = this.meetingIdentifier();
+    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + identifier);
+
+    if (meeting.password) {
+      meetingUrl.searchParams.set('password', meeting.password);
+    }
+    if (this.isLegacyMeeting()) {
+      meetingUrl.searchParams.set('v1', 'true');
+    }
+
     this.clipboard.copy(meetingUrl.toString());
     this.messageService.add({
       severity: 'success',
@@ -274,7 +310,19 @@ export class MeetingJoinComponent {
 
   private initializeReturnTo(): Signal<string | undefined> {
     return computed(() => {
-      return `${environment.urls.home}/meetings/${this.meeting().uid}?password=${this.password()}`;
+      const meeting = this.meeting();
+      const identifier = this.meetingIdentifier();
+      const params = new URLSearchParams();
+
+      if (meeting.password) {
+        params.set('password', meeting.password);
+      }
+      if (this.isLegacyMeeting()) {
+        params.set('v1', 'true');
+      }
+
+      const queryString = params.toString();
+      return queryString ? `${environment.urls.home}/meetings/${identifier}?${queryString}` : `${environment.urls.home}/meetings/${identifier}`;
     });
   }
 
@@ -282,36 +330,6 @@ export class MeetingJoinComponent {
     return computed(() => {
       return canJoinMeeting(this.meeting(), this.currentOccurrence());
     });
-  }
-
-  private buildJoinUrlWithParams(joinUrl: string, formValues?: { name: string; email: string; organization: string }): string {
-    if (!joinUrl) {
-      return joinUrl;
-    }
-
-    // Get user name from authenticated user or form
-    const userName = this.authenticated() ? this.user()?.name : formValues?.name || this.joinForm.get('name')?.value;
-    const organization = this.authenticated() ? '' : formValues?.organization || this.joinForm.get('organization')?.value;
-
-    if (!userName) {
-      return joinUrl;
-    }
-
-    // Build the display name with organization if available
-    const displayName = organization ? `${userName} (${organization})` : userName;
-
-    // Create base64 encoded version
-    const encodedName = btoa(unescape(encodeURIComponent(displayName)));
-
-    // Build query parameters
-    const queryParams = new HttpParams().set('uname', displayName).set('un', encodedName);
-    const queryString = queryParams.toString();
-
-    // Append to URL, handling existing query strings
-    if (joinUrl.includes('?')) {
-      return `${joinUrl}&${queryString}`;
-    }
-    return `${joinUrl}?${queryString}`;
   }
 
   private initializeMessageSeverity(): Signal<'success' | 'info' | 'warn'> {
@@ -348,7 +366,7 @@ export class MeetingJoinComponent {
           this.joinUrlError.set(null);
 
           // Only fetch when meeting is joinable and we have necessary user info
-          if (!canJoin || !meeting?.uid) {
+          if (!canJoin || (!meeting?.uid && !meeting?.id)) {
             this.isLoadingJoinUrl.set(false);
             return of(undefined);
           }
@@ -388,11 +406,20 @@ export class MeetingJoinComponent {
   private fetchJoinUrl(meeting: Meeting, email: string): Observable<string | undefined> {
     this.isLoadingJoinUrl.set(true);
 
-    return this.meetingService.getPublicMeetingJoinUrl(meeting.uid, meeting.password, { email }).pipe(
+    return this.meetingService.getPublicMeetingJoinUrl(this.meetingIdentifier(), meeting.password, { email }).pipe(
       map((res) => {
         this.isLoadingJoinUrl.set(false);
         if (res.join_url) {
-          return this.buildJoinUrlWithParams(res.join_url);
+          // For authenticated users, use the user object
+          // For guests, pass name and organization from form
+          if (this.authenticated()) {
+            return buildJoinUrlWithParams(res.join_url, this.user());
+          }
+
+          return buildJoinUrlWithParams(res.join_url, null, {
+            name: this.joinForm.get('name')?.value,
+            organization: this.joinForm.get('organization')?.value,
+          });
         }
         return undefined;
       }),
@@ -407,12 +434,12 @@ export class MeetingJoinComponent {
   private initializeAttachments(): Signal<MeetingAttachment[]> {
     // Convert meeting signal to observable to react to changes
     return toSignal(
-      toObservable(this.meeting).pipe(
-        switchMap((meeting) => {
-          if (meeting?.uid) {
-            return this.meetingService.getMeetingAttachments(meeting.uid).pipe(
+      toObservable(this.meetingIdentifier).pipe(
+        switchMap((identifier) => {
+          if (identifier) {
+            return this.meetingService.getMeetingAttachments(identifier).pipe(
               catchError((error) => {
-                console.error(`Failed to load attachments for meeting ${meeting.uid}:`, error);
+                console.error(`Failed to load attachments for meeting ${identifier}:`, error);
                 return of([]);
               })
             );
@@ -428,12 +455,57 @@ export class MeetingJoinComponent {
     return computed(() => {
       const canJoin = this.canJoinMeeting();
       const meeting = this.meeting();
-      const earlyJoinMinutes = meeting?.early_join_time_minutes || 10;
+      const earlyJoinMinutes = getEarlyJoinTimeMinutes(meeting) || 10;
 
       if (canJoin) {
         return 'The meeting is in progress.';
       }
       return `You may only join the meeting up to ${earlyJoinMinutes} minutes before the start time.`;
+    });
+  }
+
+  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
+  private initializeMeetingTitle(): Signal<string> {
+    return computed(() => {
+      const occurrence = this.currentOccurrence();
+      const meeting = this.meeting();
+
+      // Priority: occurrence title > meeting title > meeting topic (v1)
+      return occurrence?.title || meeting?.title || meeting?.topic || '';
+    });
+  }
+
+  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
+  private initializeMeetingDescription(): Signal<string> {
+    return computed(() => {
+      const occurrence = this.currentOccurrence();
+      const meeting = this.meeting();
+
+      // Priority: occurrence description > meeting description > meeting agenda (v1)
+      return occurrence?.description || meeting?.description || meeting?.agenda || '';
+    });
+  }
+
+  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
+  private initializeHasAiCompanion(): Signal<boolean> {
+    return computed(() => {
+      const meeting = this.meeting();
+
+      // V2: zoom_config.ai_companion_enabled, V1: zoom_ai_enabled
+      return meeting?.zoom_config?.ai_companion_enabled || meeting?.zoom_ai_enabled || false;
+    });
+  }
+
+  // TODO(v1-migration): Remove once all meetings are migrated to V2
+  private initializeIsLegacyMeeting(): Signal<boolean> {
+    return computed(() => this.meeting()?.version === 'v1');
+  }
+
+  // TODO(v1-migration): Simplify to use V2 uid only once all meetings are migrated to V2
+  private initializeMeetingIdentifier(): Signal<string> {
+    return computed(() => {
+      const meeting = this.meeting();
+      return this.isLegacyMeeting() && meeting?.id ? (meeting.id as string) : meeting?.uid;
     });
   }
 }

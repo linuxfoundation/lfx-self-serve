@@ -1,10 +1,21 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="container mx-auto pb-8">
+<div class="container mx-auto px-4 sm:px-6 lg:px-8">
+  <div class="mb-8">
+    <div class="mb-8">
+      <!-- Page Title -->
+      <h1 data-testid="profile-page-title">Profile Settings</h1>
+      <p class="mt-2 text-gray-500">Manage your personal information, security settings, and developer credentials</p>
+    </div>
+
+    <!-- Profile Navigation -->
+    <lfx-profile-nav />
+  </div>
+
   @if (isLoading()) {
-    <div class="flex flex-col gap-2 items-center justify-center py-12" data-testid="profile-edit-loading-container">
-      <i class="fa-light fa-circle-notch fa-spin text-4xl text-blue-400" data-testid="profile-edit-loading-spinner"></i>
+    <div class="flex flex-col gap-2 items-center justify-center py-12" data-testid="profile-manage-loading-container">
+      <i class="fa-light fa-circle-notch fa-spin text-4xl text-blue-400" data-testid="profile-manage-loading-spinner"></i>
       <span class="ml-3 text-gray-600">Loading profile...</span>
     </div>
   } @else {
@@ -26,7 +37,7 @@
           <!-- Personal Information Section -->
           <div class="flex flex-col gap-4">
             <div>
-              <h3 class="text-base font-medium text-gray-900" data-testid="profile-edit-personal-heading">Personal Information</h3>
+              <h3 class="text-base font-medium text-gray-900" data-testid="profile-manage-personal-heading">Personal Information</h3>
               <p class="text-sm text-gray-500 mt-1">Helps community members identify and connect with you in discussions and contributions</p>
             </div>
 
@@ -41,7 +52,7 @@
                   id="first-name"
                   placeholder="Enter your first name"
                   styleClass="w-full"
-                  data-testid="profile-edit-personal-first-name">
+                  data-testid="profile-manage-personal-first-name">
                 </lfx-input-text>
               </div>
 
@@ -55,7 +66,7 @@
                   id="last-name"
                   placeholder="Enter your last name"
                   styleClass="w-full"
-                  data-testid="profile-edit-personal-last-name">
+                  data-testid="profile-manage-personal-last-name">
                 </lfx-input-text>
               </div>
 
@@ -67,7 +78,7 @@
                     class="fa-light fa-info-circle text-gray-400 cursor-help"
                     pTooltip="Your username is used for @mentions in discussions and appears in contributor rankings and recognition"
                     tooltipPosition="right"
-                    data-testid="profile-edit-personal-username-tooltip">
+                    data-testid="profile-manage-personal-username-tooltip">
                   </i>
                 </div>
                 <lfx-input-text
@@ -77,7 +88,7 @@
                   id="username"
                   placeholder="Enter your username"
                   styleClass="w-full"
-                  data-testid="profile-edit-personal-username">
+                  data-testid="profile-manage-personal-username">
                 </lfx-input-text>
               </div>
             </div>
@@ -86,7 +97,7 @@
           <!-- Professional Information Section -->
           <div class="flex flex-col gap-4">
             <div>
-              <h3 class="text-base font-medium text-gray-900" data-testid="profile-edit-professional-heading">Professional Information</h3>
+              <h3 class="text-base font-medium text-gray-900" data-testid="profile-manage-professional-heading">Professional Information</h3>
               <p class="text-sm text-gray-500 mt-1">Showcase your expertise and affiliations to build credibility and unlock networking opportunities</p>
             </div>
 
@@ -101,7 +112,7 @@
                   id="job-title"
                   placeholder="Enter your job title"
                   styleClass="w-full"
-                  data-testid="profile-edit-professional-title">
+                  data-testid="profile-manage-professional-title">
                 </lfx-input-text>
               </div>
 
@@ -113,7 +124,7 @@
                     class="fa-light fa-info-circle text-gray-400 cursor-help"
                     pTooltip="Your organization appears in contributor rankings and helps maintainers understand your company's involvement in the project"
                     tooltipPosition="right"
-                    data-testid="profile-edit-professional-organization-tooltip">
+                    data-testid="profile-manage-professional-organization-tooltip">
                   </i>
                 </div>
                 <lfx-input-text
@@ -123,7 +134,7 @@
                   id="organization"
                   placeholder="Enter your organization"
                   styleClass="w-full"
-                  data-testid="profile-edit-professional-organization">
+                  data-testid="profile-manage-professional-organization">
                 </lfx-input-text>
               </div>
             </div>
@@ -132,7 +143,7 @@
           <!-- Location Information Section -->
           <div class="flex flex-col gap-4">
             <div>
-              <h3 class="text-base font-medium text-gray-900" data-testid="profile-edit-location-heading">Location Information</h3>
+              <h3 class="text-base font-medium text-gray-900" data-testid="profile-manage-location-heading">Location Information</h3>
               <lfx-message severity="secondary" icon="fa-light fa-info-circle" styleClass="mt-2">
                 <ng-template #content>
                   <p class="text-sm text-gray-600">
@@ -156,7 +167,7 @@
                   placeholder="Select your country"
                   styleClass="w-full"
                   [filter]="true"
-                  data-testid="profile-edit-location-country">
+                  data-testid="profile-manage-location-country">
                 </lfx-select>
               </div>
 
@@ -173,7 +184,7 @@
                     placeholder="Select your state"
                     styleClass="w-full"
                     [filter]="true"
-                    data-testid="profile-edit-location-state-select">
+                    data-testid="profile-manage-location-state-select">
                   </lfx-select>
                 } @else {
                   <lfx-input-text
@@ -183,7 +194,7 @@
                     id="state"
                     placeholder="Enter your state or province"
                     styleClass="w-full"
-                    data-testid="profile-edit-location-state-input">
+                    data-testid="profile-manage-location-state-input">
                   </lfx-input-text>
                 }
               </div>
@@ -198,7 +209,7 @@
                   id="city"
                   placeholder="Enter your city"
                   styleClass="w-full"
-                  data-testid="profile-edit-location-city">
+                  data-testid="profile-manage-location-city">
                 </lfx-input-text>
               </div>
 
@@ -212,7 +223,7 @@
                   id="address"
                   placeholder="Enter your address"
                   styleClass="w-full"
-                  data-testid="profile-edit-location-address">
+                  data-testid="profile-manage-location-address">
                 </lfx-input-text>
               </div>
 
@@ -226,7 +237,7 @@
                   id="zipcode"
                   placeholder="Enter your postal or zip code"
                   styleClass="w-full"
-                  data-testid="profile-edit-location-zipcode">
+                  data-testid="profile-manage-location-zipcode">
                 </lfx-input-text>
               </div>
 
@@ -240,7 +251,7 @@
                   id="phone"
                   placeholder="Enter your phone number"
                   styleClass="w-full"
-                  data-testid="profile-edit-location-phone">
+                  data-testid="profile-manage-location-phone">
                 </lfx-input-text>
                 <p class="text-xs text-gray-500 mt-1">Optional - Only used for urgent event notifications and is kept private</p>
               </div>
@@ -250,7 +261,7 @@
           <!-- Additional Information Section -->
           <div class="flex flex-col gap-4">
             <div>
-              <h3 class="text-base font-medium text-gray-900" data-testid="profile-edit-additional-heading">Additional Information</h3>
+              <h3 class="text-base font-medium text-gray-900" data-testid="profile-manage-additional-heading">Additional Information</h3>
               <p class="text-sm text-gray-500 mt-1">Helps us send you the right swag and plan for community events</p>
             </div>
 
@@ -263,7 +274,7 @@
                     class="fa-light fa-info-circle text-gray-400 cursor-help"
                     pTooltip="For community events, contributor appreciation swag, and conference giveaways"
                     tooltipPosition="right"
-                    data-testid="profile-edit-additional-tshirt-tooltip">
+                    data-testid="profile-manage-additional-tshirt-tooltip">
                   </i>
                 </div>
                 <lfx-select
@@ -274,7 +285,7 @@
                   id="tshirt-size"
                   placeholder="Select your t-shirt size"
                   styleClass="w-full"
-                  data-testid="profile-edit-additional-tshirt-size">
+                  data-testid="profile-manage-additional-tshirt-size">
                 </lfx-select>
               </div>
             </div>
@@ -282,7 +293,7 @@
 
           <!-- Form Actions -->
           <div class="flex justify-end space-x-4 pt-6 border-t border-gray-200">
-            <lfx-button type="button" variant="outlined" label="Reset" (onClick)="onReset()" size="small" data-testid="profile-edit-actions-reset-button">
+            <lfx-button type="button" variant="outlined" label="Reset" (onClick)="onReset()" size="small" data-testid="profile-manage-actions-reset-button">
             </lfx-button>
 
             <lfx-button
@@ -292,7 +303,7 @@
               [loading]="isSaving()"
               [disabled]="profileForm.invalid || isSaving()"
               size="small"
-              data-testid="profile-edit-actions-save-button">
+              data-testid="profile-manage-actions-save-button">
             </lfx-button>
           </div>
         </div>

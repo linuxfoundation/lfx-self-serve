@@ -23,8 +23,15 @@ export class PastMeetingController {
     });
 
     try {
-      // Get the past meetings using meetingType 'past_meeting'
-      const meetings = (await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'past_meeting')) as PastMeeting[];
+      // TODO(v1-migration): Remove V1 past meeting fetch once all meetings are migrated to V2
+      // Get both 'past_meeting' and 'v1_past_meeting' types in parallel
+      const [regularPastMeetings, v1PastMeetings] = await Promise.all([
+        this.meetingService.getMeetings(req, req.query as Record<string, any>, 'past_meeting'),
+        this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_past_meeting'),
+      ]);
+
+      // Combine the meetings
+      const meetings = [...regularPastMeetings, ...v1PastMeetings] as PastMeeting[];
 
       // TODO: Remove this once we have a way to get the registrants count
       // Process each meeting individually to add registrant and participant counts
@@ -41,6 +48,8 @@ export class PastMeetingController {
       // Log the success
       Logger.success(req, 'get_past_meetings', startTime, {
         meeting_count: meetings.length,
+        regular_past_meeting_count: regularPastMeetings.length,
+        v1_past_meeting_count: v1PastMeetings.length,
       });
 
       // Send the meetings data to the client
@@ -48,57 +57,6 @@ export class PastMeetingController {
     } catch (error) {
       // Log the error
       Logger.error(req, 'get_past_meetings', startTime, error);
-      next(error);
-    }
-  }
-
-  /**
-   * GET /past-meetings/:uid
-   */
-  public async getPastMeetingById(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { uid } = req.params;
-    const startTime = Logger.start(req, 'get_past_meeting_by_id', {
-      meeting_uid: uid,
-    });
-
-    try {
-      // Check if the meeting UID is provided
-      if (
-        !validateUidParameter(uid, req, next, {
-          operation: 'get_past_meeting_by_id',
-          service: 'past_meeting_controller',
-          logStartTime: startTime,
-        })
-      ) {
-        return;
-      }
-
-      // Get the past meeting by ID using meetingType 'past_meeting'
-      const meeting = (await this.meetingService.getMeetingById(req, uid, 'past_meetings')) as PastMeeting;
-
-      // Log the success
-      Logger.success(req, 'get_past_meeting_by_id', startTime, {
-        meeting_uid: uid,
-        project_uid: meeting.project_uid,
-        title: meeting.title,
-      });
-
-      // TODO: Remove this once we have a way to get the registrants count
-      const counts = await this.addParticipantsCount(req, meeting.uid);
-      meeting.individual_registrants_count = counts.individual_registrants_count;
-      meeting.committee_members_count = counts.committee_members_count;
-      meeting.participant_count = counts.participant_count;
-      meeting.attended_count = counts.attended_count;
-
-      // Send the meeting data to the client
-      res.json(meeting);
-    } catch (error) {
-      // Log the error
-      Logger.error(req, 'get_past_meeting_by_id', startTime, error, {
-        meeting_uid: uid,
-      });
-
-      // Send the error to the next middleware
       next(error);
     }
   }
@@ -149,10 +107,13 @@ export class PastMeetingController {
   /**
    * GET /past-meetings/:uid/recording
    */
+  // TODO(v1-migration): Remove V1 query parameter once all meetings are migrated to V2
   public async getPastMeetingRecording(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
+    const v1 = req.query['v1'] === 'true';
     const startTime = Logger.start(req, 'get_past_meeting_recording', {
       past_meeting_uid: uid,
+      v1,
     });
 
     try {
@@ -167,8 +128,8 @@ export class PastMeetingController {
         return;
       }
 
-      // Get the past meeting recording
-      const recording: PastMeetingRecording | null = await this.meetingService.getPastMeetingRecording(req, uid);
+      // Get the past meeting recording (use v1 type for legacy meetings)
+      const recording: PastMeetingRecording | null = await this.meetingService.getPastMeetingRecording(req, uid, v1);
 
       // If no recording found, return 404
       if (!recording) {
@@ -203,10 +164,13 @@ export class PastMeetingController {
   /**
    * GET /past-meetings/:uid/summary
    */
+  // TODO(v1-migration): Remove V1 query parameter once all meetings are migrated to V2
   public async getPastMeetingSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
+    const v1 = req.query['v1'] === 'true';
     const startTime = Logger.start(req, 'get_past_meeting_summary', {
       past_meeting_uid: uid,
+      v1,
     });
 
     try {
@@ -221,8 +185,8 @@ export class PastMeetingController {
         return;
       }
 
-      // Get the past meeting summary
-      const summary: PastMeetingSummary | null = await this.meetingService.getPastMeetingSummary(req, uid);
+      // Get the past meeting summary (use v1 type for legacy meetings)
+      const summary: PastMeetingSummary | null = await this.meetingService.getPastMeetingSummary(req, uid, v1);
 
       // If no summary found, return 404
       if (!summary) {

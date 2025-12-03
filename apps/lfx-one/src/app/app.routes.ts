@@ -31,6 +31,10 @@ export const routes: Routes = [
         path: 'settings',
         loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
       },
+      {
+        path: 'profile',
+        loadChildren: () => import('./modules/profile/profile.routes').then((m) => m.PROFILE_ROUTES),
+      },
     ],
   },
   {
@@ -40,11 +44,5 @@ export const routes: Routes = [
   {
     path: 'meetings/:id',
     loadComponent: () => import('./modules/meetings/meeting-join/meeting-join.component').then((m) => m.MeetingJoinComponent),
-  },
-  {
-    path: 'profile',
-    loadComponent: () => import('./layouts/profile-layout/profile-layout.component').then((m) => m.ProfileLayoutComponent),
-    loadChildren: () => import('./modules/profile/profile.routes').then((m) => m.PROFILE_ROUTES),
-    canActivate: [authGuard],
   },
 ];

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
@@ -18,6 +19,7 @@ import {
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
+import { isUuid } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
@@ -54,7 +56,7 @@ export class MeetingService {
   public async getMeetings(
     req: Request,
     query: Record<string, any> = {},
-    meetingType: 'meeting' | 'past_meeting' = 'meeting',
+    meetingType: QueryServiceMeetingType = 'meeting',
     access: boolean = true
   ): Promise<Meeting[]> {
     const params = {
@@ -64,7 +66,15 @@ export class MeetingService {
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
-    let meetings = resources.map((resource) => resource.data);
+    // TODO(v1-migration): Remove V1 version determination once all meetings are migrated to V2
+    // Determine meeting version based on type
+    const isV1 = meetingType === 'v1_meeting' || meetingType === 'v1_past_meeting';
+    const version: 'v1' | 'v2' = isV1 ? 'v1' : 'v2';
+
+    let meetings: Meeting[] = resources.map((resource) => ({
+      ...resource.data,
+      version,
+    }));
 
     // Get project name for each meeting
     meetings = await this.getMeetingProjectName(req, meetings);
@@ -99,10 +109,35 @@ export class MeetingService {
   /**
    * Fetches a single meeting by UID
    */
-  public async getMeetingById(req: Request, meetingUid: string, meetingType: string = 'meetings', access: boolean = true): Promise<Meeting> {
-    let meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/${meetingType}/${meetingUid}`, 'GET');
+  public async getMeetingById(req: Request, meetingUid: string, meetingType: QueryServiceMeetingType = 'meeting', access: boolean = true): Promise<Meeting> {
+    // TODO(v1-migration): Remove V1 meeting handling branch once all meetings are migrated to V2
+    let meeting;
+    if (meetingType === 'v1_meeting') {
+      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', `/query/resources`, 'GET', {
+        type: 'v1_meeting',
+        tags: `${meetingUid}`,
+      });
 
-    if (!meeting || !meeting.uid) {
+      if (!resources || resources.length === 0) {
+        throw new ResourceNotFoundError('Meeting', meetingUid, {
+          operation: 'get_meeting_by_id',
+          service: 'meeting_service',
+          path: `/meetings/${meetingUid}`,
+        });
+      }
+
+      meeting = resources[0].data;
+      // Remove join_url, passcode, host_key, user_id from V1 meetings
+      delete meeting.host_key;
+      delete meeting.user_id;
+
+      // Set version to v1 for legacy meetings
+      meeting.version = 'v1';
+    } else {
+      meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}`, 'GET');
+    }
+
+    if (!meeting || (!meeting.uid && !meeting.id)) {
       throw new ResourceNotFoundError('Meeting', meetingUid, {
         operation: 'get_meeting_by_id',
         service: 'meeting_service',
@@ -327,11 +362,49 @@ export class MeetingService {
    * Fetches all registrants for a meeting by email
    */
   public async getMeetingRegistrantsByEmail(req: Request, meetingUid: string, email: string): Promise<QueryServiceResponse<MeetingRegistrant[]>> {
-    return await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant[]>>(req, 'LFX_V2_SERVICE', `/query/resources`, 'GET', {
+    req.log.info(
+      {
+        operation: 'get_meeting_registrants_by_email',
+        meeting_uid: meetingUid,
+        email: email,
+      },
+      'Fetching meeting registrants by email'
+    );
+
+    // TODO(v1-migration): Remove V1 registrant type detection once all meetings are migrated to V2
+    const v1 = !isUuid(meetingUid);
+
+    const params = {
       type: 'meeting_registrant',
       parent: `meeting:${meetingUid}`,
-      tags: `email:${email}`,
-    });
+      tags_all: [`email:${email}`],
+    };
+
+    if (v1) {
+      params.type = 'v1_meeting_registrant';
+      params.tags_all.push(`meeting_uid:${meetingUid}`);
+      params.parent = '';
+    }
+
+    req.log.info(
+      {
+        operation: 'get_meeting_registrants_by_email',
+        meeting_uid: meetingUid,
+        email: email,
+        v1,
+      },
+      'Fetching meeting registrants by email params'
+    );
+
+    const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant[]>>(
+      req,
+      'LFX_V2_SERVICE',
+      `/query/resources`,
+      'GET',
+      params
+    );
+
+    return response;
   }
 
   /**
@@ -538,12 +611,15 @@ export class MeetingService {
 
   /**
    * Fetches past meeting recording by past meeting UID
+   * @param v1 - If true, use v1_past_meeting_recording type and id tag format for legacy meetings
    */
-  public async getPastMeetingRecording(req: Request, pastMeetingUid: string): Promise<PastMeetingRecording | null> {
+  // TODO(v1-migration): Remove V1 recording type parameter and handling once all meetings are migrated to V2
+  public async getPastMeetingRecording(req: Request, pastMeetingUid: string, v1: boolean = false): Promise<PastMeetingRecording | null> {
     try {
+      // V1 legacy meetings use different type and tag format
       const params = {
-        type: 'past_meeting_recording',
-        tags: `past_meeting_uid:${pastMeetingUid}`,
+        type: v1 ? 'v1_past_meeting_recording' : 'past_meeting_recording',
+        tags: v1 ? pastMeetingUid : `past_meeting_uid:${pastMeetingUid}`,
       };
 
       const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingRecording>>(
@@ -559,6 +635,8 @@ export class MeetingService {
           {
             operation: 'get_past_meeting_recording',
             past_meeting_uid: pastMeetingUid,
+            v1,
+            type: params.type,
           },
           'No recording found for past meeting'
         );
@@ -571,6 +649,7 @@ export class MeetingService {
         {
           operation: 'get_past_meeting_recording',
           past_meeting_uid: pastMeetingUid,
+          v1,
           recording_uid: recording.uid,
           recording_count: recording.recording_count,
           session_count: recording.sessions?.length || 0,
@@ -584,6 +663,7 @@ export class MeetingService {
         {
           operation: 'get_past_meeting_recording',
           past_meeting_uid: pastMeetingUid,
+          v1,
           err: error,
         },
         'Failed to retrieve past meeting recording'
@@ -594,11 +674,14 @@ export class MeetingService {
 
   /**
    * Fetches past meeting summary by past meeting UID
+   * @param v1 - If true, use v1_past_meeting_summary type for legacy meetings
    */
-  public async getPastMeetingSummary(req: Request, pastMeetingUid: string): Promise<PastMeetingSummary | null> {
+  // TODO(v1-migration): Remove V1 summary type parameter and handling once all meetings are migrated to V2
+  public async getPastMeetingSummary(req: Request, pastMeetingUid: string, v1: boolean = false): Promise<PastMeetingSummary | null> {
     try {
+      // V1 legacy meetings use different type and tag format
       const params = {
-        type: 'past_meeting_summary',
+        type: v1 ? 'v1_past_meeting_summary' : 'past_meeting_summary',
         tags: `past_meeting_uid:${pastMeetingUid}`,
       };
 
@@ -615,6 +698,8 @@ export class MeetingService {
           {
             operation: 'get_past_meeting_summary',
             past_meeting_uid: pastMeetingUid,
+            v1,
+            type: params.type,
           },
           'No summary found for past meeting'
         );
@@ -627,6 +712,7 @@ export class MeetingService {
         {
           operation: 'get_past_meeting_summary',
           past_meeting_uid: pastMeetingUid,
+          v1,
           summary_uid: summary.uid,
           approved: summary.approved,
           requires_approval: summary.requires_approval,
@@ -640,6 +726,7 @@ export class MeetingService {
         {
           operation: 'get_past_meeting_summary',
           past_meeting_uid: pastMeetingUid,
+          v1,
           err: error,
         },
         'Failed to retrieve past meeting summary'
