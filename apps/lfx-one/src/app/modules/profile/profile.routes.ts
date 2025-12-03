@@ -6,7 +6,7 @@ import { Routes } from '@angular/router';
 export const PROFILE_ROUTES: Routes = [
   {
     path: '',
-    loadComponent: () => import('./edit/profile-edit.component').then((m) => m.ProfileEditComponent),
+    loadComponent: () => import('./manage-profile/profile-manage.component').then((m) => m.ProfileManageComponent),
   },
   {
     path: 'password',

@@ -46,6 +46,7 @@ export class UserService {
   private projectService: ProjectService;
 
   private readonly twoWeeksMs = 14 * 24 * 60 * 60 * 1000;
+  private readonly bufferMinutes = 40;
 
   public constructor() {
     this.apiClientService = new ApiClientService();
@@ -634,6 +635,7 @@ export class UserService {
 
   /**
    * Transform meetings within 2 weeks to pending action items
+   * Only includes meetings that haven't ended yet (accounting for duration + buffer)
    */
   private transformMeetingsToActions(meetings: Meeting[]): PendingActionItem[] {
     const now = new Date();
@@ -647,13 +649,23 @@ export class UserService {
 
         for (const occurrence of activeOccurrences) {
           const startTime = new Date(occurrence.start_time);
-          if (startTime >= now && startTime <= twoWeeksFromNow) {
+          const durationMinutes = occurrence.duration || meeting.duration || 0;
+          // Calculate meeting end time + buffer
+          const meetingEndWithBuffer = new Date(startTime.getTime() + (durationMinutes + this.bufferMinutes) * 60 * 1000);
+
+          // Only include if meeting hasn't ended (with buffer) and is within 2 weeks
+          if (now < meetingEndWithBuffer && startTime <= twoWeeksFromNow) {
             actions.push(this.createMeetingAction(meeting, occurrence));
           }
         }
       } else {
         const startTime = new Date(meeting.start_time);
-        if (startTime >= now && startTime <= twoWeeksFromNow) {
+        const durationMinutes = meeting.duration || 0;
+        // Calculate meeting end time + buffer
+        const meetingEndWithBuffer = new Date(startTime.getTime() + (durationMinutes + this.bufferMinutes) * 60 * 1000);
+
+        // Only include if meeting hasn't ended (with buffer) and is within 2 weeks
+        if (now < meetingEndWithBuffer && startTime <= twoWeeksFromNow) {
           actions.push(this.createMeetingAction(meeting));
         }
       }
@@ -667,7 +679,7 @@ export class UserService {
    */
   private createMeetingAction(meeting: Meeting, occurrence?: MeetingOccurrence): PendingActionItem {
     const startTime = occurrence ? new Date(occurrence.start_time) : new Date(meeting.start_time);
-    const title = occurrence?.title || meeting.title;
+    const title = occurrence?.title || meeting.title || meeting.topic;
 
     const dateStr = startTime.toLocaleDateString('en-US', {
       month: 'short',
@@ -683,10 +695,14 @@ export class UserService {
       minute: '2-digit',
     });
 
-    const buttonLink = meeting.password ? `/meetings/${meeting.uid}?password=${meeting.password}` : `/meetings/${meeting.uid}`;
+    let buttonLink = meeting.password ? `/meetings/${meeting.uid}?password=${meeting.password}` : `/meetings/${meeting.uid}`;
+
+    if (meeting.version === 'v1') {
+      buttonLink = `/meetings/${meeting.id}?password=${meeting.password}&v1=true`;
+    }
 
     return {
-      type: 'Review Minutes',
+      type: 'Review Agenda',
       badge: dateStr,
       text: `Review ${title} Agenda and Materials`,
       icon: 'fa-light fa-calendar-check',

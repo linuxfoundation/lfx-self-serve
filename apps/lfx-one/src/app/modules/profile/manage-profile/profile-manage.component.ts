@@ -18,8 +18,10 @@ import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, finalize, of, switchMap, tap } from 'rxjs';
 
+import { ProfileNavComponent } from '../components/profile-nav/profile-nav.component';
+
 @Component({
-  selector: 'lfx-profile-edit',
+  selector: 'lfx-profile-manage',
   standalone: true,
   imports: [
     CommonModule,
@@ -31,11 +33,12 @@ import { BehaviorSubject, catchError, finalize, of, switchMap, tap } from 'rxjs'
     ButtonComponent,
     ToastModule,
     TooltipModule,
+    ProfileNavComponent,
   ],
   providers: [MessageService],
-  templateUrl: './profile-edit.component.html',
+  templateUrl: './profile-manage.component.html',
 })
-export class ProfileEditComponent implements OnInit {
+export class ProfileManageComponent implements OnInit {
   private readonly fb = inject(FormBuilder);
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);

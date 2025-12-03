@@ -19,6 +19,8 @@ import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, finalize, switchMap, tap } from 'rxjs';
 
+import { ProfileNavComponent } from '../components/profile-nav/profile-nav.component';
+
 interface EmailOption {
   label: string;
   value: string | null;
@@ -39,6 +41,7 @@ interface EmailOption {
     ConfirmDialogModule,
     ToastModule,
     TooltipModule,
+    ProfileNavComponent,
   ],
   templateUrl: './profile-email.component.html',
 })

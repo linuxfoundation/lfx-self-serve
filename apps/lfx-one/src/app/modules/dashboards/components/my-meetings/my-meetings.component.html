@@ -35,6 +35,7 @@
               <div class="flex flex-col gap-3">
                 @for (item of todayMeetings(); track item.meeting.uid) {
                   <lfx-dashboard-meeting-card
+                    class="-mt-2 py-2"
                     [meeting]="item.meeting"
                     [occurrence]="item.occurrence"
                     [attr.data-testid]="'dashboard-my-meetings-today-item-' + item.meeting.uid" />
