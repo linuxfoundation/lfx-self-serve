@@ -191,6 +191,7 @@ export class MeetingDetailsComponent implements OnInit {
       title,
       projectName: currentProject.name,
       context,
+      maxCharacters: 2000,
     };
 
     this.isGeneratingAgenda.set(true);

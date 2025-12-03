@@ -7,4 +7,5 @@ export * from './file.utils';
 export * from './form.utils';
 export * from './meeting.utils';
 export * from './rsvp-calculator.util';
+export * from './string.utils';
 export * from './url.utils';

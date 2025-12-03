@@ -125,21 +125,12 @@ export class MeetingService {
     );
   }
 
-  public getPastMeeting(id: string): Observable<PastMeeting> {
-    return this.http.get<PastMeeting>(`/api/past-meetings/${id}`).pipe(
-      catchError((error) => {
-        console.error(`Failed to load past meeting ${id}:`, error);
-        return throwError(() => error);
-      }),
-      tap((meeting) => this.meeting.set(meeting))
-    );
-  }
-
   public getPublicMeeting(id: string, password: string | null): Observable<{ meeting: Meeting; project: Project }> {
     let params = new HttpParams();
     if (password) {
       params = params.set('password', password);
     }
+
     return this.http.get<{ meeting: Meeting; project: Project }>(`/public/api/meetings/${id}`, { params }).pipe(
       catchError((error) => {
         console.error(`Failed to load public meeting ${id}:`, error);
@@ -330,12 +321,20 @@ export class MeetingService {
     );
   }
 
-  public getPastMeetingRecording(pastMeetingUid: string): Observable<PastMeetingRecording> {
-    return this.http.get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`);
+  public getPastMeetingRecording(pastMeetingUid: string, v1: boolean = false): Observable<PastMeetingRecording> {
+    let params = new HttpParams();
+    if (v1) {
+      params = params.set('v1', 'true');
+    }
+    return this.http.get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`, { params });
   }
 
-  public getPastMeetingSummary(pastMeetingUid: string): Observable<PastMeetingSummary> {
-    return this.http.get<PastMeetingSummary>(`/api/past-meetings/${pastMeetingUid}/summary`);
+  public getPastMeetingSummary(pastMeetingUid: string, v1: boolean = false): Observable<PastMeetingSummary> {
+    let params = new HttpParams();
+    if (v1) {
+      params = params.set('v1', 'true');
+    }
+    return this.http.get<PastMeetingSummary>(`/api/past-meetings/${pastMeetingUid}/summary`, { params });
   }
 
   public getPastMeetingAttachments(pastMeetingUid: string): Observable<PastMeetingAttachment[]> {

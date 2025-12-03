@@ -35,6 +35,8 @@ export class RsvpButtonGroupComponent {
   public meeting: InputSignal<Meeting> = input.required<Meeting>();
   public showHeader: InputSignal<boolean> = input<boolean>(true);
   public occurrenceId: InputSignal<string | undefined> = input<string | undefined>(undefined);
+  public disabled: InputSignal<boolean> = input<boolean>(false);
+  public disabledMessage: InputSignal<string> = input<string>('RSVP not available for this meeting');
 
   // Outputs
   public readonly rsvpChanged: OutputEmitterRef<MeetingRsvp> = output<MeetingRsvp>();

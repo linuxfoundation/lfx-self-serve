@@ -28,8 +28,8 @@ import projectsRouter from './routes/projects.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
 import searchRouter from './routes/search.route';
 import userRouter from './routes/user.route';
-import { fetchUserPersonaAndOrganizations } from './utils/persona-helper';
 import { matchOrganizationNamesToAccounts } from './utils/organization-matcher';
+import { fetchUserPersonaAndOrganizations } from './utils/persona-helper';
 
 if (process.env['NODE_ENV'] !== 'production') {
   dotenv.config();
@@ -188,7 +188,7 @@ const authConfig: ConfigParams = {
 app.use(auth(authConfig));
 
 app.use('/login', (req: Request, res: Response) => {
-  if (req.oidc?.isAuthenticated()) {
+  if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
     const returnTo = req.query['returnTo'] as string;
     const validatedReturnTo = validateAndSanitizeUrl(returnTo, [process.env['PCC_BASE_URL'] as string]);
     if (validatedReturnTo) {

@@ -7,6 +7,38 @@ import { RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constant
 import { CustomRecurrencePattern, Meeting, MeetingOccurrence, RecurrenceSummary, User } from '../interfaces';
 
 /**
+ * Get the early join time in minutes from a meeting, handling both v1 and v2 formats
+ * @param meeting The meeting object
+ * @returns Early join time in minutes (default: 10 minutes)
+ * @description
+ * V1 meetings use `early_join_time` as a string (e.g., "60")
+ * V2 meetings use `early_join_time_minutes` as a number
+ */
+export function getEarlyJoinTimeMinutes(meeting: Meeting): number {
+  // Handle null/undefined meeting
+  if (!meeting) {
+    return 10;
+  }
+
+  // V2 format: early_join_time_minutes as number
+  if (meeting.early_join_time_minutes !== undefined && meeting.early_join_time_minutes !== null) {
+    return meeting.early_join_time_minutes;
+  }
+
+  // TODO(v1-migration): Remove V1 format handling once all meetings are migrated to V2
+  // V1 format: early_join_time as string
+  if (meeting.early_join_time !== undefined && meeting.early_join_time !== null) {
+    const parsed = parseInt(meeting.early_join_time, 10);
+    if (!isNaN(parsed)) {
+      return parsed;
+    }
+  }
+
+  // Default to 10 minutes
+  return 10;
+}
+
+/**
  * Build a human-readable recurrence summary from custom recurrence pattern
  * @param pattern The custom recurrence pattern
  * @returns RecurrenceSummary with description, endDescription, and fullSummary
@@ -125,7 +157,7 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
   }
 
   const now = new Date();
-  const earlyJoinMinutes = meeting.early_join_time_minutes || 10;
+  const earlyJoinMinutes = getEarlyJoinTimeMinutes(meeting);
 
   // Filter out cancelled occurrences
   const activeOccurrences = getActiveOccurrences(meeting.occurrences);
@@ -166,11 +198,12 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
  * - Current time is before (start time + duration + 40 minute buffer)
  */
 export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence | null): boolean {
+  const earlyJoinMinutes = getEarlyJoinTimeMinutes(meeting);
+
   // If we have an occurrence, use its timing
   if (occurrence) {
     const now = new Date();
     const startTime = new Date(occurrence.start_time);
-    const earlyJoinMinutes = meeting.early_join_time_minutes || 10;
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
     const latestJoinTime = new Date(startTime.getTime() + occurrence.duration * 60000 + 40 * 60000); // 40 minutes after end
 
@@ -184,7 +217,6 @@ export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence 
 
   const now = new Date();
   const startTime = new Date(meeting.start_time);
-  const earlyJoinMinutes = meeting.early_join_time_minutes || 10; // Default to 10 minutes
   const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
   const latestJoinTime = new Date(startTime.getTime() + meeting.duration * 60000 + 40 * 60000); // 40 minutes after end
 
@@ -223,18 +255,45 @@ export function hasMeetingEnded(meeting: Meeting, occurrence?: MeetingOccurrence
 }
 
 /**
+ * Options for building join URL with user parameters
+ */
+export interface BuildJoinUrlOptions {
+  /** User's name (takes precedence over user object) */
+  name?: string;
+  /** User's organization (optional, appended to display name) */
+  organization?: string;
+}
+
+/**
  * Build join URL with user parameters for meeting join link
  * @param joinUrl - Base join URL from API
- * @param user - Authenticated user
- * @returns Join URL with encoded user parameters (uname and un)
+ * @param user - Authenticated user (optional if name is provided in options)
+ * @param options - Optional parameters for name and organization
+ * @returns Join URL with encoded user parameters (uname and un), or original URL if no name available
  * @description
  * Adds user display name and encoded name as query parameters to the join URL.
- * The display name is either the user's name or email, and is encoded for the meeting platform.
+ * The display name is built from: options.name > user.name > user.email
+ * If organization is provided, it's appended as "Name (Organization)"
  */
-export function buildJoinUrlWithParams(joinUrl: string, user: User): string {
-  const displayName = user.name || user.email;
-  const encodedName = btoa(unescape(encodeURIComponent(displayName)));
+export function buildJoinUrlWithParams(joinUrl: string, user?: User | null, options?: BuildJoinUrlOptions): string {
+  if (!joinUrl) {
+    return joinUrl;
+  }
 
+  // Determine display name: options.name > user.name > user.email
+  const userName = options?.name || user?.name || user?.email;
+
+  if (!userName) {
+    return joinUrl;
+  }
+
+  // Build display name with optional organization
+  const displayName = options?.organization ? `${userName} (${options.organization})` : userName;
+
+  // Create base64 encoded version (handles UTF-8 characters)
+  const encodedName = btoa(encodeURIComponent(displayName).replace(/%([0-9A-F]{2})/g, (_, p1) => String.fromCharCode(parseInt(p1, 16))));
+
+  // Build query parameters
   const queryParams = new HttpParams().set('uname', displayName).set('un', encodedName);
 
   const separator = joinUrl.includes('?') ? '&' : '?';

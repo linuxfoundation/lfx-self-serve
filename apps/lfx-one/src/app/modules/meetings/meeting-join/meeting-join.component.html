@@ -61,7 +61,7 @@
               <div class="flex flex-col gap-4 h-full">
                 <!-- Meeting Title -->
                 <h1 [attr.data-testid]="'meeting-title'">
-                  {{ currentOccurrence()?.title || meeting().title }}
+                  {{ meetingTitle() }}
                 </h1>
 
                 <!-- Feature Badges Row -->
@@ -91,7 +91,7 @@
                   }
 
                   <!-- AI Summary Badge -->
-                  @if (meeting().zoom_config?.ai_companion_enabled) {
+                  @if (hasAiCompanion()) {
                     <lfx-tag value="AI Summary" severity="success" icon="fa-light fa-sparkles" [attr.data-testid]="'meeting-badge-live-chat'"></lfx-tag>
                   }
                 </div>
@@ -119,16 +119,15 @@
                   icon="fa-light fa-video"
                   severity="success"
                   size="large"
-                  styleClass="w-full h-[40px]"
-                  [href]="fetchedJoinUrl()"
+                  [href]="fetchedJoinUrl() && !isLoadingJoinUrl() ? fetchedJoinUrl() : undefined"
                   [disabled]="!fetchedJoinUrl() || isLoadingJoinUrl()"
                   target="_blank"
-                  [styleClass]="!fetchedJoinUrl() || isLoadingJoinUrl() ? 'cursor-not-allowed w-full' : 'w-full'"
+                  [styleClass]="!fetchedJoinUrl() || isLoadingJoinUrl() ? 'cursor-not-allowed w-full h-[40px]' : 'w-full h-[40px]'"
                   rel="noopener noreferrer"
                   [attr.data-testid]="'join-meeting-button-immediate'">
                 </lfx-button>
               </div>
-            } @else if (authenticated() && meeting().organizer) {
+            } @else if (authenticated() && meeting().organizer && !isLegacyMeeting()) {
               <!-- RSVP Details - Future Meeting (Authenticated Organizers) -->
               <div class="w-full md:w-[296px] flex flex-col gap-3">
                 <lfx-meeting-rsvp-details
@@ -155,7 +154,7 @@
                   data-testid="view-guests-button">
                 </lfx-button>
               </div>
-            } @else if (authenticated()) {
+            } @else if (authenticated() && !isLegacyMeeting()) {
               <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) -->
               <div class="w-full md:w-[296px]">
                 @defer (when meeting()) {
@@ -183,7 +182,7 @@
               </div>
 
               <!-- Description -->
-              @if (currentOccurrence()?.description || meeting().description; as description) {
+              @if (meetingDescription(); as description) {
                 <div class="text-gray-600 text-xs leading-relaxed" [attr.data-testid]="'meeting-description'">
                   <lfx-expandable-text [maxHeight]="200">
                     <div [innerHTML]="description | linkify" class="text-sm leading-relaxed"></div>

@@ -140,20 +140,51 @@ export class DashboardMeetingCardComponent {
     return this.meeting().transcript_enabled === true;
   });
 
+  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
   public readonly hasAiSummary: Signal<boolean> = computed(() => {
-    return this.meeting().zoom_config?.ai_companion_enabled === true;
+    const meeting = this.meeting();
+    // V2: zoom_config.ai_companion_enabled, V1: zoom_ai_enabled
+    return meeting.zoom_config?.ai_companion_enabled === true || meeting.zoom_ai_enabled === true;
   });
 
+  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
   public readonly meetingTitle: Signal<string> = computed(() => {
     const occurrence = this.occurrence();
     const meeting = this.meeting();
 
-    // Use occurrence title if available, otherwise use meeting title
-    return occurrence?.title || meeting.title;
+    // Priority: occurrence title > meeting title > meeting topic (v1)
+    return occurrence?.title || meeting.title || meeting.topic || '';
   });
 
   public readonly canJoinMeeting: Signal<boolean> = computed(() => {
     return canJoinMeeting(this.meeting(), this.occurrence());
+  });
+
+  // TODO(v1-migration): Remove once all meetings are migrated to V2
+  public readonly isLegacyMeeting: Signal<boolean> = computed(() => {
+    return this.meeting().version === 'v1';
+  });
+
+  // TODO(v1-migration): Simplify to use V2 uid only once all meetings are migrated to V2
+  public readonly meetingDetailRouterLink: Signal<string[]> = computed(() => {
+    const meeting = this.meeting();
+    const identifier = this.isLegacyMeeting() && meeting.id ? meeting.id : meeting.uid;
+    return ['/meetings', identifier];
+  });
+
+  // TODO(v1-migration): Remove V1 parameter handling once all meetings are migrated to V2
+  public readonly meetingDetailQueryParams: Signal<Record<string, string>> = computed(() => {
+    const meeting = this.meeting();
+    const params: Record<string, string> = {};
+
+    if (meeting.password) {
+      params['password'] = meeting.password;
+    }
+    if (this.isLegacyMeeting()) {
+      params['v1'] = 'true';
+    }
+
+    return params;
   });
 
   public constructor() {
@@ -170,13 +201,20 @@ export class DashboardMeetingCardComponent {
 
     this.attachments = toSignal(attachments$, { initialValue: [] });
 
+    // TODO(v1-migration): Remove V1 join URL handling once all meetings are migrated to V2
     // Convert user signal to observable and create reactive join URL stream
     const user$ = toObservable(this.userService.user);
     const authenticated$ = toObservable(this.userService.authenticated);
+    const isLegacyMeeting$ = toObservable(this.isLegacyMeeting);
 
-    const joinUrl$ = combineLatest([meeting$, user$, authenticated$]).pipe(
-      switchMap(([meeting, user, authenticated]) => {
-        // Only fetch join URL for meetings that can be joined with authenticated users
+    const joinUrl$ = combineLatest([meeting$, user$, authenticated$, isLegacyMeeting$]).pipe(
+      switchMap(([meeting, user, authenticated, isLegacy]) => {
+        // For v1 meetings, use the join_url directly from the meeting object
+        if (isLegacy && meeting.join_url && this.canJoinMeeting()) {
+          return of(meeting.join_url);
+        }
+
+        // For v2 meetings, fetch join URL from API for authenticated users
         if (meeting.uid && authenticated && user?.email && this.canJoinMeeting()) {
           return this.meetingService.getPublicMeetingJoinUrl(meeting.uid, meeting.password, { email: user.email }).pipe(
             map((res) => buildJoinUrlWithParams(res.join_url, user)),

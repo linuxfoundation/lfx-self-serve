@@ -50,7 +50,7 @@
             data-testid="share-meeting-button"
             tooltip="Share Meeting"></lfx-button>
         }
-        @if (meeting().project_slug && meeting().organizer && !pastMeeting()) {
+        @if (meeting().project_slug && meeting().organizer && !pastMeeting() && !isLegacyMeeting()) {
           <lfx-button
             icon="fa-light fa-edit"
             [text]="true"
@@ -73,7 +73,7 @@
               meeting().committees && meeting().committees!.length > 0 ? 'Manage ' + committeeLabel.plural : 'Connect ' + committeeLabel.plural
             "></lfx-button>
         }
-        @if (meeting().organizer) {
+        @if (meeting().organizer && !isLegacyMeeting()) {
           <lfx-button
             icon="fa-light fa-trash"
             [text]="true"
@@ -89,9 +89,9 @@
 
     <!-- Meeting Title -->
     <div class="flex items-center gap-2 mb-2" data-testid="meeting-title-section">
-      @if (occurrence()?.title || meeting().title) {
+      @if (meetingTitle()) {
         <h3 class="text-base font-medium text-gray-900 leading-tight tracking-tight" data-testid="meeting-title">
-          {{ occurrence()?.title || meeting().title }}
+          {{ meetingTitle() }}
         </h3>
       }
     </div>
@@ -114,24 +114,24 @@
       @if (meeting().transcript_enabled) {
         <lfx-tag value="Transcripts" severity="secondary" icon="fa-light fa-file-lines"></lfx-tag>
       }
-      @if (meeting().zoom_config?.ai_companion_enabled) {
+      @if (hasAiCompanion()) {
         <lfx-tag value="AI Summary" severity="success" icon="fa-light fa-sparkles"></lfx-tag>
       }
     </div>
 
     <!-- Description Section -->
-    @if (occurrence()?.description || meeting().description) {
+    @if (meetingDescription()) {
       <div class="my-3" data-testid="meeting-description">
         <lfx-expandable-text [maxHeight]="85">
           <div class="text-gray-600 text-[12.25px] leading-relaxed tracking-tight">
-            <div [innerHTML]="occurrence()?.description || meeting().description | linkify"></div>
+            <div [innerHTML]="meetingDescription() | linkify"></div>
           </div>
         </lfx-expandable-text>
       </div>
     }
 
     <!-- AI Summary Review Banner for Organizers -->
-    @if (pastMeeting() && meeting().organizer && hasSummary() && !summaryApproved()) {
+    @if (pastMeeting() && meeting().organizer && !isLegacyMeeting() && hasSummary() && !summaryApproved()) {
       <div class="flex items-center gap-2.5 px-3.5 py-3 bg-blue-50 border border-blue-200 rounded-md mb-3">
         <i class="fa-light fa-sparkles text-base text-blue-600 flex-shrink-0 mt-0.5"></i>
         <div class="flex-1 flex items-center justify-between gap-3">
@@ -227,7 +227,7 @@
             }
           </div>
         }
-        @if (pastMeeting() && meeting().organizer) {
+        @if (pastMeeting() && meeting().organizer && !isLegacyMeeting()) {
           <div class="flex flex-col md:flex-row gap-2 mt-3.5">
             @if (hasRecording()) {
               <lfx-button
@@ -259,18 +259,25 @@
 
       <!-- People/Attendees Card Column -->
       <div class="flex flex-col">
-        @if (meeting().organizer) {
+        @if (meeting().organizer && !isLegacyMeeting()) {
           <!-- Show RSVP Details for organizers and past meetings -->
           <lfx-meeting-rsvp-details
             [meeting]="meeting()"
             [currentOccurrence]="currentOccurrence()"
             [pastMeeting]="pastMeeting()"
             [showAddButton]="!pastMeeting()"
-            [additionalRegistrantsCount]="additionalRegistrantsCount()">
+            [additionalRegistrantsCount]="additionalRegistrantsCount()"
+            [disabled]="isLegacyMeeting()"
+            disabledMessage="Meetings created outside of LFX One do not have RSVP functionality">
           </lfx-meeting-rsvp-details>
         } @else if (!pastMeeting()) {
           <!-- Show RSVP Selection for authenticated non-organizers (upcoming meetings only) -->
-          <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+          <lfx-rsvp-button-group
+            [meeting]="meeting()"
+            [occurrenceId]="occurrence()?.occurrence_id"
+            [disabled]="isLegacyMeeting()"
+            disabledMessage="Meetings created outside of LFX One do not have RSVP functionality">
+          </lfx-rsvp-button-group>
         } @else if (pastMeeting() && !meeting().organizer) {
           <!-- Show Recording and AI Summary buttons for past meetings (non-organizers) -->
           <div class="flex flex-col gap-2">
@@ -303,7 +310,7 @@
 
         <!-- Action Buttons for People Column -->
         <div class="flex gap-2" [ngClass]="{ 'mt-3.5': !pastMeeting() || meeting().organizer }">
-          @if (meeting().organizer) {
+          @if (meeting().organizer && !isLegacyMeeting()) {
             <lfx-button
               class="w-full"
               icon="fa-light fa-users"
@@ -324,7 +331,7 @@
               severity="secondary"
               styleClass="w-full"
               data-testid="see-meeting-details-button"
-              [href]="'/meetings/' + meeting().uid + '?password=' + meeting().password"
+              [href]="meetingDetailUrl()"
               target="_blank">
             </lfx-button>
           }
@@ -332,14 +339,16 @@
       </div>
     </div>
 
-    <!-- Meeting Registrants -->
-    <lfx-meeting-registrants-display
-      [meeting]="meeting()"
-      [pastMeeting]="pastMeeting()"
-      [visible]="showRegistrants()"
-      [showAddRegistrant]="!pastMeeting()"
-      (registrantsCountChange)="additionalRegistrantsCount.set($event)">
-    </lfx-meeting-registrants-display>
+    <!-- Meeting Registrants (v2 meetings only) -->
+    @if (!isLegacyMeeting()) {
+      <lfx-meeting-registrants-display
+        [meeting]="meeting()"
+        [pastMeeting]="pastMeeting()"
+        [visible]="showRegistrants()"
+        [showAddRegistrant]="!pastMeeting()"
+        (registrantsCountChange)="additionalRegistrantsCount.set($event)">
+      </lfx-meeting-registrants-display>
+    }
 
     <!-- Confirmation Dialog -->
     <p-confirmDialog></p-confirmDialog>

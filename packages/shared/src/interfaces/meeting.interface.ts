@@ -91,6 +91,8 @@ export interface Meeting {
   // API Response fields - not in create payload
   /** UUID of the LFX Meeting */
   uid: string;
+  /** Legacy meeting ID for v1 meetings (response only) */
+  id?: string;
   /** Timestamp when meeting was created */
   created_at: string;
   /** Timestamp when meeting was last updated */
@@ -164,6 +166,45 @@ export interface Meeting {
   project_name: string;
   /** Project slug */
   project_slug: string;
+  /** Meeting version - v1 for legacy meetings, v2 for new meetings (response only) */
+  version?: 'v1' | 'v2';
+
+  // TODO(v1-migration): Remove V1 legacy fields once all meetings are migrated to V2
+  // V1 Legacy Meeting Fields (only present for v1_meeting type)
+  /** V1: Meeting topic/title (v1 uses 'topic', v2 uses 'title') */
+  topic?: string;
+  /** V1: Meeting agenda/description (v1 uses 'agenda', v2 uses 'description') */
+  agenda?: string;
+  /** V1: Early join time as string (v1 uses string, v2 uses early_join_time_minutes as number) */
+  early_join_time?: string;
+  /** V1: Zoom host key */
+  host_key?: string;
+  /** V1: Zoom passcode (different from password which is the LFX meeting password) */
+  passcode?: string;
+  /** V1: Zoom user ID */
+  user_id?: string;
+  /** V1: AI summary access level */
+  ai_summary_access?: 'public' | 'private';
+  /** V1: Recording access level */
+  recording_access?: 'public' | 'private';
+  /** V1: Transcript access level */
+  transcript_access?: 'public' | 'private';
+  /** V1: Whether AI summary requires approval */
+  require_ai_summary_approval?: boolean;
+  /** V1: Whether Zoom AI is enabled */
+  zoom_ai_enabled?: boolean;
+  /** V1: Whether concurrent Zoom user is enabled */
+  concurrent_zoom_user_enabled?: boolean;
+  /** V1: Whether to use new invite email address */
+  use_new_invite_email_address?: boolean;
+  /** V1: Last bulk registrant job status */
+  last_bulk_registrant_job_status?: string;
+  /** V1: Last mailing list members sync job status */
+  last_mailing_list_members_sync_job_status?: string;
+  /** V1: Last end time (Unix timestamp as string) */
+  last_end_time?: string;
+  /** V1: Modified at timestamp (v1 uses 'modified_at', v2 uses 'updated_at') */
+  modified_at?: string;
 }
 
 /**
@@ -691,6 +732,18 @@ export interface ZoomSummaryConfig {
   meeting_uuid: string;
 }
 
+// TODO(v1-migration): Remove V1SummaryDetail interface once all meetings are migrated to V2
+/**
+ * V1 Legacy summary detail item
+ * @description Structure for individual summary topics in v1 format
+ */
+export interface V1SummaryDetail {
+  /** Topic label */
+  label: string;
+  /** Summary content for this topic */
+  summary: string;
+}
+
 /**
  * Past meeting summary information
  * @description AI-generated summary data for a completed past meeting
@@ -720,6 +773,51 @@ export interface PastMeetingSummary {
   created_at: string;
   /** Last update timestamp */
   updated_at: string;
+
+  // TODO(v1-migration): Remove V1 legacy summary fields once all meetings are migrated to V2
+  // V1 Legacy Summary Fields (only present for v1_past_meeting_summary type)
+  /** V1: Unique identifier (v1 uses 'id', v2 uses 'uid') */
+  id?: string;
+  /** V1: Zoom meeting ID */
+  meeting_id?: string;
+  /** V1: Occurrence ID for recurring meetings */
+  occurrence_id?: string;
+  /** V1: Combined meeting and occurrence ID */
+  meeting_and_occurrence_id?: string;
+  /** V1: Summary title */
+  summary_title?: string;
+  /** V1: Summary overview/high-level summary */
+  summary_overview?: string;
+  /** V1: Detailed summary sections */
+  summary_details?: V1SummaryDetail[];
+  /** V1: Action items/next steps */
+  next_steps?: string[];
+  /** V1: User-edited summary overview */
+  edited_summary_overview?: string;
+  /** V1: User-edited summary details */
+  edited_summary_details?: V1SummaryDetail[] | null;
+  /** V1: User-edited next steps */
+  edited_next_steps?: string[] | null;
+  /** V1: Summary creation timestamp */
+  summary_created_time?: string;
+  /** V1: Summary start time */
+  summary_start_time?: string;
+  /** V1: Summary end time */
+  summary_end_time?: string;
+  /** V1: Summary last modified time */
+  summary_last_modified_time?: string;
+  /** V1: Zoom meeting host email */
+  zoom_meeting_host_email?: string;
+  /** V1: Zoom meeting host ID */
+  zoom_meeting_host_id?: string;
+  /** V1: Zoom meeting topic */
+  zoom_meeting_topic?: string;
+  /** V1: Zoom meeting UUID */
+  zoom_meeting_uuid?: string;
+  /** V1: Raw Zoom webhook event data */
+  zoom_webhook_event?: string;
+  /** V1: Modified at timestamp */
+  modified_at?: string;
 }
 
 /**

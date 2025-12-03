@@ -485,27 +485,33 @@ export class UserService {
     try {
       // Step 1: Get all meetings the user has access to, filtered by project
       const meetings = await this.meetingService.getMeetings(req, query, 'meeting', false);
+      const v1Meetings = await this.meetingService.getMeetings(req, query, 'v1_meeting', false);
+
+      const allMeetings = [...meetings, ...v1Meetings];
 
       req.log.info(
         {
           operation: 'get_user_meetings',
           project_uid: projectUid,
-          total_accessible_meetings: meetings.length,
+          total_accessible_meetings: allMeetings.length,
         },
         'Fetched all accessible meetings for user'
       );
 
-      if (meetings.length === 0) {
+      if (allMeetings.length === 0) {
         return [];
       }
 
       // Step 2: Separate public and private meetings
-      const publicMeetings = meetings.filter((m) => m.visibility === MeetingVisibility.PUBLIC);
-      const privateMeetings = meetings.filter((m) => m.visibility !== MeetingVisibility.PUBLIC);
+      const publicMeetings = allMeetings.filter((m) => m.visibility === MeetingVisibility.PUBLIC);
+      const privateMeetings = allMeetings.filter((m) => m.visibility !== MeetingVisibility.PUBLIC);
 
       req.log.debug(
         {
           operation: 'get_user_meetings',
+          total_meetings: allMeetings.length,
+          regular_meetings: meetings.length,
+          v1_meetings: v1Meetings.length,
           public_meetings: publicMeetings.length,
           private_meetings: privateMeetings.length,
         },
@@ -527,9 +533,16 @@ export class UserService {
                 v: 1,
                 type: 'meeting_registrant',
                 parent: `meeting:${meeting.uid}`,
-                tags: `email:${email}`,
+                tags_all: [`email:${email}`],
                 ...DEFAULT_QUERY_PARAMS,
               };
+
+              // If meeting is v1, use v1_meeting_registrant type and tags_all format
+              if (meeting.version === 'v1') {
+                query.type = 'v1_meeting_registrant';
+                query.tags_all.push(`meeting_uid:${meeting.id}`);
+                query.parent = '';
+              }
 
               const response = await this.apiClientService.request<QueryServiceResponse<MeetingRegistrant>>(
                 'GET',
@@ -661,6 +674,15 @@ export class UserService {
       day: 'numeric',
     });
 
+    // Format date with time for display below title
+    const formattedDate = startTime.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+
     const buttonLink = meeting.password ? `/meetings/${meeting.uid}?password=${meeting.password}` : `/meetings/${meeting.uid}`;
 
     return {
@@ -671,6 +693,7 @@ export class UserService {
       color: 'amber',
       buttonText: 'Review Agenda',
       buttonLink,
+      date: formattedDate,
     };
   }
 

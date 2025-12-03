@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { AddUserToProjectRequest, UpdateUserRoleRequest } from '@lfx-one/shared/interfaces';
+import { isUuid } from '@lfx-one/shared/utils';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -129,7 +130,7 @@ export class ProjectController {
       }
 
       // Check if slug is a uuid
-      if (this.isUuid(slug)) {
+      if (isUuid(slug)) {
         // If the slug is a uuid, get the project by id
         const project = await this.projectService.getProjectById(req, slug);
         res.json(project);
@@ -487,9 +488,5 @@ export class ProjectController {
       Logger.error(req, 'get_pending_action_surveys', startTime, error);
       next(error);
     }
-  }
-
-  private isUuid(slug: string): boolean {
-    return /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(slug);
   }
 }

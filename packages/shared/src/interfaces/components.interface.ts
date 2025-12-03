@@ -396,6 +396,8 @@ export interface PendingActionItem {
   buttonText: string;
   /** Button link */
   buttonLink?: string;
+  /** Optional date string for display (e.g., "Jan 15, 2025 at 10:00 AM") */
+  date?: string;
 }
 
 /**

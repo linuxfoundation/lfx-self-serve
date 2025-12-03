@@ -15,6 +15,8 @@ export interface GenerateAgendaRequest {
   projectName: string;
   /** Additional context or specific requirements */
   context?: string;
+  /** Maximum characters allowed for the generated agenda */
+  maxCharacters?: number;
 }
 
 /**

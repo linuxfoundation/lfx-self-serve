@@ -16,7 +16,7 @@
       <div class="flex flex-col gap-3" data-testid="dashboard-pending-actions-list">
         @for (item of pendingActions(); track $index) {
           <div
-            class="p-4 border rounded-lg shadow-md"
+            class="p-4 border rounded-lg shadow-md space-y-3"
             [ngClass]="{
               'bg-yellow-50 hover:border-yellow-300': item.color === 'amber',
               'bg-blue-200 hover:border-blue-300': item.color === 'blue',
@@ -25,7 +25,7 @@
             }"
             [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
             <!-- Header with Type -->
-            <div class="flex items-start justify-between mb-3">
+            <div class="flex items-center gap-2 flex-wrap">
               <div
                 class="flex items-center gap-2 px-2 py-1 rounded-md text-xs"
                 [ngClass]="{
@@ -57,36 +57,45 @@
             </div>
 
             <!-- Action Text -->
-            <div class="mb-4">
-              <p class="text-base font-normal">
-                {{ item.text }}
-              </p>
+            <div class="flex items-start justify-between gap-2">
+              <div class="flex flex-col gap-1">
+                <p class="text-sm leading-tight font-medium text-gray-900">
+                  {{ item.text }}
+                </p>
+                @if (item.date) {
+                  <div class="flex items-center gap-2 flex-wrap mt-0.5">
+                    <span class="text-xs text-gray-600 whitespace-nowrap">{{ item.date }}</span>
+                  </div>
+                }
+              </div>
             </div>
 
             <!-- Action Button -->
-            @if (item.buttonLink) {
-              <lfx-button
-                size="small"
-                class="w-full"
-                styleClass="w-full text-sm"
-                severity="secondary"
-                rel="noopener noreferrer"
-                [link]="true"
-                [href]="item.buttonLink"
-                target="_blank"
-                (onClick)="handleActionClick(item)"
-                [label]="item.buttonText">
-              </lfx-button>
-            } @else {
-              <lfx-button
-                size="small"
-                class="w-full text-sm"
-                styleClass="w-full text-sm"
-                severity="secondary"
-                (onClick)="handleActionClick(item)"
-                [label]="item.buttonText">
-              </lfx-button>
-            }
+            <div class="flex gap-2">
+              @if (item.buttonLink) {
+                <lfx-button
+                  size="small"
+                  class="w-full"
+                  styleClass="w-full text-sm"
+                  severity="secondary"
+                  rel="noopener noreferrer"
+                  [link]="true"
+                  [href]="item.buttonLink"
+                  target="_blank"
+                  (onClick)="handleActionClick(item)"
+                  [label]="item.buttonText">
+                </lfx-button>
+              } @else {
+                <lfx-button
+                  size="small"
+                  class="w-full text-sm"
+                  styleClass="w-full text-sm"
+                  severity="secondary"
+                  (onClick)="handleActionClick(item)"
+                  [label]="item.buttonText">
+                </lfx-button>
+              }
+            </div>
           </div>
         }
       </div>
