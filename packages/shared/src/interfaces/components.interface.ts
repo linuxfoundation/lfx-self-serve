@@ -390,8 +390,8 @@ export interface PendingActionItem {
   text: string;
   /** Icon class for the action type */
   icon: string;
-  /** Color theme for the action */
-  color: 'amber' | 'blue' | 'green' | 'purple';
+  /** Severity theme for the action */
+  severity: ComponentSeverity;
   /** Button text */
   buttonText: string;
   /** Button link */

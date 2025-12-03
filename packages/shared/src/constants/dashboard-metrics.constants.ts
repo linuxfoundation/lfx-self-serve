@@ -315,4 +315,15 @@ export const MAINTAINER_PROGRESS_METRICS: DashboardMetricCard[] = [
     chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },
+  {
+    title: 'Code Commits',
+    icon: 'fa-light fa-code-commit',
+    value: '0',
+    subtitle: 'Total commits',
+    chartType: 'line',
+    category: 'code',
+    testId: 'maintainer-progress-card-code-commits',
+    chartData: EMPTY_CHART_DATA,
+    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+  },
 ];

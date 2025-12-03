@@ -706,7 +706,7 @@ export class UserService {
       badge: dateStr,
       text: `Review ${title} Agenda and Materials`,
       icon: 'fa-light fa-calendar-check',
-      color: 'amber',
+      severity: 'warn',
       buttonText: 'Review Agenda',
       buttonLink,
       date: formattedDate,

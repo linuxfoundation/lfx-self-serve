@@ -4,14 +4,15 @@
 import { CommonModule } from '@angular/common';
 import { Component, inject, input, output } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { HiddenActionsService } from '@shared/services/hidden-actions.service';
+import { TooltipModule } from 'primeng/tooltip';
 
 import type { PendingActionItem } from '@lfx-one/shared/interfaces';
-
 @Component({
   selector: 'lfx-pending-actions',
   standalone: true,
-  imports: [CommonModule, ButtonComponent],
+  imports: [CommonModule, ButtonComponent, TagComponent, TooltipModule],
   templateUrl: './pending-actions.component.html',
   styleUrl: './pending-actions.component.scss',
 })

@@ -12,7 +12,7 @@ export const CORE_DEVELOPER_ACTION_ITEMS: PendingActionItem[] = [
     badge: 'React',
     text: 'CI pipeline failed on latest PR due to linting errors in React components.',
     icon: 'fa-light fa-circle-exclamation',
-    color: 'amber',
+    severity: 'warn',
     buttonText: 'Fix CI Error',
   },
   {
@@ -20,7 +20,7 @@ export const CORE_DEVELOPER_ACTION_ITEMS: PendingActionItem[] = [
     badge: 'Kubernetes',
     text: 'A teammate requested your review on k8s-config-refactor before merge deadline.',
     icon: 'fa-light fa-file-lines',
-    color: 'amber',
+    severity: 'warn',
     buttonText: 'Review Pull Request',
   },
   {
@@ -28,7 +28,7 @@ export const CORE_DEVELOPER_ACTION_ITEMS: PendingActionItem[] = [
     badge: 'React',
     text: 'Critical React security patch available (react-dom 18.3.1).',
     icon: 'fa-light fa-shield',
-    color: 'amber',
+    severity: 'warn',
     buttonText: 'Update Package',
   },
 ];
@@ -42,7 +42,7 @@ export const MAINTAINER_ACTION_ITEMS: PendingActionItem[] = [
     badge: 'Kubernetes',
     text: '3 approved PRs awaiting merge.',
     icon: 'fa-light fa-file-lines',
-    color: 'amber',
+    severity: 'warn',
     buttonText: 'Merge Now',
   },
   {
@@ -50,7 +50,7 @@ export const MAINTAINER_ACTION_ITEMS: PendingActionItem[] = [
     badge: 'React',
     text: 'Prod bug in ClusterView.',
     icon: 'fa-light fa-circle-exclamation',
-    color: 'amber',
+    severity: 'warn',
     buttonText: 'Open Fix',
   },
   {
@@ -58,7 +58,7 @@ export const MAINTAINER_ACTION_ITEMS: PendingActionItem[] = [
     badge: 'General',
     text: 'GPL dependency flagged.',
     icon: 'fa-light fa-shield',
-    color: 'amber',
+    severity: 'warn',
     buttonText: 'Review Report',
   },
 ];
@@ -72,7 +72,7 @@ export const BOARD_MEMBER_ACTION_ITEMS: PendingActionItem[] = [
     badge: 'Q4 Board',
     text: 'Review Q4 Board Meeting Agenda and Materials',
     icon: 'fa-light fa-file-check',
-    color: 'blue',
+    severity: 'info',
     buttonText: 'Review',
   },
   {
@@ -80,7 +80,7 @@ export const BOARD_MEMBER_ACTION_ITEMS: PendingActionItem[] = [
     badge: 'Due Today',
     text: 'Submit Quarterly NPS Survey',
     icon: 'fa-light fa-chart-line',
-    color: 'amber',
+    severity: 'warn',
     buttonText: 'Submit',
   },
 ];

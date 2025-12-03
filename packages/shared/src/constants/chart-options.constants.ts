@@ -97,6 +97,12 @@ export const BASE_LINE_CHART_OPTIONS: ChartOptions<'line'> = {
     x: { display: false },
     y: { display: false, min: 0, grace: '5%' },
   },
+  datasets: {
+    line: {
+      tension: 0.4,
+      borderWidth: 2,
+    },
+  },
 };
 
 /**
@@ -150,6 +156,11 @@ export const DUAL_LINE_CHART_OPTIONS: ChartOptions<'line'> = {
   scales: {
     x: { display: false },
     y: { display: false, min: 0, grace: '5%' },
+  },
+  datasets: {
+    line: {
+      borderWidth: 6,
+    },
   },
 };
 

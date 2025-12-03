@@ -1796,6 +1796,111 @@ export interface FoundationCompanyBusFactorResponse {
 }
 
 /**
+ * Foundation Code Commits Daily row from Snowflake
+ * Raw response from FOUNDATION_CODE_COMMITS table
+ * Contains daily code commit metrics for maintainer dashboard charts
+ */
+export interface FoundationCodeCommitsDailyRow {
+  /**
+   * Foundation unique identifier
+   */
+  FOUNDATION_ID: string;
+
+  /**
+   * Foundation display name
+   */
+  FOUNDATION_NAME: string;
+
+  /**
+   * Foundation URL slug
+   */
+  FOUNDATION_SLUG: string;
+
+  /**
+   * Date of the activity (YYYY-MM-DD format)
+   */
+  ACTIVITY_DATE: string;
+
+  /**
+   * Number of commits on this date
+   */
+  DAILY_COMMIT_COUNT: number;
+
+  /**
+   * Total commits across all dates (from SQL window function)
+   */
+  TOTAL_COMMITS: number;
+}
+
+/**
+ * Project Code Commits Daily row from Snowflake
+ * Raw response from PROJECT_CODE_COMMITS table
+ * Contains daily code commit metrics for maintainer dashboard charts
+ */
+export interface ProjectCodeCommitsDailyRow {
+  /**
+   * Project unique identifier
+   */
+  PROJECT_ID: string;
+
+  /**
+   * Project display name
+   */
+  PROJECT_NAME: string;
+
+  /**
+   * Project URL slug
+   */
+  PROJECT_SLUG: string;
+
+  /**
+   * Date of the activity (YYYY-MM-DD format)
+   */
+  ACTIVITY_DATE: string;
+
+  /**
+   * Number of commits on this date
+   */
+  DAILY_COMMIT_COUNT: number;
+
+  /**
+   * Total commits across all dates (from SQL window function)
+   */
+  TOTAL_COMMITS: number;
+}
+
+/**
+ * API response for Code Commits query
+ * Contains daily code commit data for trend visualization
+ */
+export interface CodeCommitsDailyResponse {
+  /**
+   * Array of daily code commit data
+   */
+  data: {
+    /**
+     * Date of the activity (YYYY-MM-DD format)
+     */
+    ACTIVITY_DATE: string;
+
+    /**
+     * Number of commits on this date
+     */
+    DAILY_COMMIT_COUNT: number;
+  }[];
+
+  /**
+   * Total commits across all dates
+   */
+  totalCommits: number;
+
+  /**
+   * Number of days with data
+   */
+  totalDays: number;
+}
+
+/**
  * Daily training enrollment aggregation from Snowflake
  * Used for cumulative chart visualization
  */

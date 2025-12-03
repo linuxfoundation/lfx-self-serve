@@ -6,6 +6,7 @@ import { inject, Injectable } from '@angular/core';
 import {
   ActiveWeeksStreakResponse,
   CertifiedEmployeesResponse,
+  CodeCommitsDailyResponse,
   FoundationCompanyBusFactorResponse,
   FoundationContributorsMentoredResponse,
   FoundationHealthScoreDistributionResponse,
@@ -530,6 +531,30 @@ export class AnalyticsService {
             data: [],
             totalEvents: 0,
             totalMonths: 0,
+          });
+        })
+      );
+  }
+
+  /**
+   * Get code commits daily data from Snowflake
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (foundation-level data) or 'project' (single project data)
+   * @returns Observable of code commits daily response with commit metrics
+   */
+  public getCodeCommitsDaily(slug: string, entityType: 'foundation' | 'project'): Observable<CodeCommitsDailyResponse> {
+    const params = { slug, entityType };
+    return this.http
+      .get<CodeCommitsDailyResponse>('/api/analytics/code-commits-daily', {
+        params,
+      })
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to fetch code commits daily:', error);
+          return of({
+            data: [],
+            totalCommits: 0,
+            totalDays: 0,
           });
         })
       );

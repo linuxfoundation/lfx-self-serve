@@ -903,4 +903,51 @@ export class AnalyticsController {
       next(error);
     }
   }
+
+  /**
+   * GET /api/analytics/code-commits-daily
+   * Get code commits daily data from Snowflake
+   * Query params: slug (required), entityType (required)
+   */
+  public async getCodeCommitsDaily(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = Logger.start(req, 'get_code_commits_daily');
+
+    try {
+      const slug = req.query['slug'] as string | undefined;
+      const entityType = req.query['entityType'] as 'foundation' | 'project' | undefined;
+
+      if (!slug) {
+        throw ServiceValidationError.forField('slug', 'slug query parameter is required', {
+          operation: 'get_code_commits_daily',
+        });
+      }
+
+      if (!entityType) {
+        throw ServiceValidationError.forField('entityType', 'entityType query parameter is required', {
+          operation: 'get_code_commits_daily',
+        });
+      }
+
+      // Validate entityType
+      if (entityType !== 'foundation' && entityType !== 'project') {
+        throw ServiceValidationError.forField('entityType', 'entityType must be "foundation" or "project"', {
+          operation: 'get_code_commits_daily',
+        });
+      }
+
+      const response = await this.projectService.getCodeCommitsDaily(slug, entityType);
+
+      Logger.success(req, 'get_code_commits_daily', startTime, {
+        slug,
+        entity_type: entityType,
+        total_days: response.totalDays,
+        total_commits: response.totalCommits,
+      });
+
+      res.json(response);
+    } catch (error) {
+      Logger.error(req, 'get_code_commits_daily', startTime, error);
+      next(error);
+    }
+  }
 }

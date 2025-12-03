@@ -23,6 +23,7 @@ import { catchError, of, switchMap, tap } from 'rxjs';
 
 import type {
   ActiveWeeksStreakResponse,
+  CodeCommitsDailyResponse,
   DashboardMetricCard,
   FoundationContributorsMentoredResponse,
   HealthMetricsDailyResponse,
@@ -59,6 +60,7 @@ export class RecentProgressComponent {
     contributorsMentored: true,
     uniqueContributorsWeekly: true,
     healthMetricsDaily: true,
+    codeCommitsDaily: true,
   });
   public readonly projectSlug = computed(() => this.projectContextService.selectedFoundation()?.slug || this.projectContextService.selectedProject()?.slug);
   private readonly entityType = computed<'foundation' | 'project'>(() => (this.projectContextService.selectedFoundation() ? 'foundation' : 'project'));
@@ -70,6 +72,7 @@ export class RecentProgressComponent {
   private readonly contributorsMentoredData = this.initializeContributorsMentoredData();
   private readonly uniqueContributorsWeeklyData = this.initializeUniqueContributorsWeeklyData();
   private readonly healthMetricsDailyData = this.initializeHealthMetricsDailyData();
+  private readonly codeCommitsDailyData = this.initializeCodeCommitsDailyData();
   private readonly issuesTooltipData = this.initializeIssuesTooltipData();
   private readonly prVelocityTooltipData = this.initializePrVelocityTooltipData();
   private readonly uniqueContributorsTooltipData = this.initializeUniqueContributorsTooltipData();
@@ -88,6 +91,7 @@ export class RecentProgressComponent {
   private readonly contributorsMentoredCard = this.initializeContributorsMentoredCard();
   private readonly uniqueContributorsCard = this.initializeUniqueContributorsCard();
   private readonly healthScoreCard = this.initializeHealthScoreCard();
+  private readonly codeCommitsDailyCard = this.initializeCodeCommitsDailyCard();
 
   // Filtered cards - materializes card values while benefiting from individual signal memoization
   protected readonly filteredProgressItems = this.initializeFilteredProgressItems();
@@ -140,8 +144,6 @@ export class RecentProgressComponent {
             borderColor: lfxColors.emerald[500],
             backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
             fill: true,
-            tension: 0.4,
-            borderWidth: 2,
             pointRadius: 0,
           },
         ],
@@ -185,8 +187,6 @@ export class RecentProgressComponent {
             borderColor: lfxColors.blue[500],
             backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
             fill: true,
-            tension: 0,
-            borderWidth: 2,
             pointRadius: 0,
           },
         ],
@@ -230,8 +230,6 @@ export class RecentProgressComponent {
             borderColor: lfxColors.blue[500],
             backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
             fill: true,
-            tension: 0.4,
-            borderWidth: 2,
             pointRadius: 0,
           },
         ],
@@ -371,7 +369,6 @@ export class RecentProgressComponent {
             data: chartData.map((row) => row.AVG_MERGED_IN_DAYS),
             borderColor: lfxColors.blue[500],
             backgroundColor: hexToRgba(lfxColors.blue[500], 0.5),
-            borderWidth: 0,
             borderRadius: 2,
             barPercentage: 0.95,
             categoryPercentage: 0.95,
@@ -449,8 +446,6 @@ export class RecentProgressComponent {
             borderColor: lfxColors.violet[500],
             backgroundColor: hexToRgba(lfxColors.violet[500], 0.1),
             fill: true,
-            tension: 0.4,
-            borderWidth: 2,
             pointRadius: 0,
           },
         ],
@@ -507,7 +502,6 @@ export class RecentProgressComponent {
             data: chartData.map((row) => row.UNIQUE_CONTRIBUTORS),
             backgroundColor: hexToRgba(lfxColors.blue[500], 0.5),
             borderColor: lfxColors.blue[500],
-            borderWidth: 0,
             borderRadius: 2,
             barPercentage: 0.95,
             categoryPercentage: 0.95,
@@ -588,8 +582,6 @@ export class RecentProgressComponent {
             borderColor: lfxColors.emerald[500],
             backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
             fill: true,
-            tension: 0.4,
-            borderWidth: 2,
             pointRadius: 0,
           },
         ],
@@ -609,6 +601,55 @@ export class RecentProgressComponent {
               label: (context: TooltipItem<'line'>) => {
                 const score = Math.round(context.parsed.y);
                 return `Avg Health Score: ${score}`;
+              },
+            },
+          },
+        },
+      },
+    };
+  }
+
+  private transformCodeCommitsDaily(data: CodeCommitsDailyResponse, metric: DashboardMetricCard): DashboardMetricCard {
+    // Total commits from the API
+    const totalCommits = data.totalCommits || 0;
+
+    // Determine trend based on commit count
+    const trend = totalCommits > 0 ? 'up' : 'down';
+
+    return {
+      ...metric,
+      loading: this.loadingState().codeCommitsDaily,
+      value: totalCommits.toLocaleString(),
+      trend,
+      chartData: {
+        labels: data.data.map((row) => row.ACTIVITY_DATE),
+        datasets: [
+          {
+            label: 'Daily Commits',
+            data: data.data.map((row) => row.DAILY_COMMIT_COUNT),
+            borderColor: lfxColors.blue[500],
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
+            fill: true,
+            pointRadius: 0,
+          },
+        ],
+      },
+      chartOptions: {
+        ...BASE_LINE_CHART_OPTIONS,
+        plugins: {
+          ...BASE_LINE_CHART_OPTIONS.plugins,
+          tooltip: {
+            ...(BASE_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
+            callbacks: {
+              title: (context: TooltipItem<'line'>[]) => {
+                const dateStr = context[0]?.label || '';
+                if (!dateStr) return '';
+                const date = parseLocalDateString(dateStr);
+                return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
+              },
+              label: (context: TooltipItem<'line'>) => {
+                const count = context.parsed.y;
+                return `Commits: ${count.toLocaleString()}`;
               },
             },
           },
@@ -854,6 +895,35 @@ export class RecentProgressComponent {
     );
   }
 
+  private initializeCodeCommitsDailyData() {
+    return toSignal(
+      toObservable(this.projectSlug).pipe(
+        switchMap((projectSlug) => {
+          if (!projectSlug) {
+            this.loadingState.update((state) => ({ ...state, codeCommitsDaily: false }));
+            return [{ data: [], totalCommits: 0, totalDays: 0 }];
+          }
+          this.loadingState.update((state) => ({ ...state, codeCommitsDaily: true }));
+          const entityType = this.entityType();
+          return this.analyticsService.getCodeCommitsDaily(projectSlug, entityType).pipe(
+            tap(() => this.loadingState.update((state) => ({ ...state, codeCommitsDaily: false }))),
+            catchError(() => {
+              this.loadingState.update((state) => ({ ...state, codeCommitsDaily: false }));
+              return of({ data: [], totalCommits: 0, totalDays: 0 });
+            })
+          );
+        })
+      ),
+      {
+        initialValue: {
+          data: [],
+          totalCommits: 0,
+          totalDays: 0,
+        },
+      }
+    );
+  }
+
   private initializeIsLoading() {
     return computed<boolean>(() => {
       const state = this.loadingState();
@@ -866,7 +936,8 @@ export class RecentProgressComponent {
           state.projectPullRequestsWeekly ||
           state.contributorsMentored ||
           state.uniqueContributorsWeekly ||
-          state.healthMetricsDaily
+          state.healthMetricsDaily ||
+          state.codeCommitsDaily
         );
       }
 
@@ -979,6 +1050,10 @@ export class RecentProgressComponent {
     return computed(() => this.transformHealthMetricsDaily(this.healthMetricsDailyData(), this.getMetricConfig('Health Score')));
   }
 
+  private initializeCodeCommitsDailyCard() {
+    return computed(() => this.transformCodeCommitsDaily(this.codeCommitsDailyData(), this.getMetricConfig('Code Commits')));
+  }
+
   private initializeFilteredProgressItems() {
     return computed<DashboardMetricCard[]>(() => {
       const persona = this.personaService.currentPersona();
@@ -989,6 +1064,7 @@ export class RecentProgressComponent {
         const allCards = [
           { card: this.issuesTrendCard(), category: 'code' },
           { card: this.prVelocityCard(), category: 'code' },
+          { card: this.codeCommitsDailyCard(), category: 'code' },
           { card: this.contributorsMentoredCard(), category: 'projectHealth' },
           { card: this.uniqueContributorsCard(), category: 'projectHealth' },
           { card: this.healthScoreCard(), category: 'projectHealth' },

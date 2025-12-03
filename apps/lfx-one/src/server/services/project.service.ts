@@ -4,6 +4,8 @@
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
+  CodeCommitsDailyResponse,
+  FoundationCodeCommitsDailyRow,
   FoundationContributorsMentoredResponse,
   FoundationContributorsMentoredRow,
   FoundationHealthEventsMonthlyRow,
@@ -24,6 +26,7 @@ import {
   PendingActionItem,
   PendingSurveyRow,
   Project,
+  ProjectCodeCommitsDailyRow,
   ProjectHealthEventsMonthlyRow,
   ProjectHealthMetricsDailyRow,
   ProjectIssuesResolutionAggregatedRow,
@@ -887,7 +890,7 @@ export class ProjectService {
         badge: row.PROJECT_NAME,
         text: `${row.SURVEY_TITLE} is due ${formattedDate}`,
         icon: 'fa-regular fa-clipboard-list',
-        color: 'amber',
+        severity: 'warn',
         buttonText: 'Submit Survey',
         buttonLink: row.SURVEY_LINK,
         date: `Due ${displayDate}`,
@@ -1269,6 +1272,54 @@ export class ProjectService {
       data: result.rows,
       totalEvents,
       totalMonths: result.rows.length,
+    };
+  }
+
+  /**
+   * Get code commits daily data from Snowflake
+   * Queries FOUNDATION_CODE_COMMITS or PROJECT_CODE_COMMITS table
+   * @param slug - Foundation or project slug
+   * @param entityType - Query scope: 'foundation' (foundation-level data) or 'project' (single project data)
+   * @returns Daily code commit data for trend visualization
+   */
+  public async getCodeCommitsDaily(slug: string, entityType: 'foundation' | 'project'): Promise<CodeCommitsDailyResponse> {
+    // Query switching based on entity type
+    const query =
+      entityType === 'foundation'
+        ? `
+      SELECT
+        ACTIVITY_DATE,
+        DAILY_COMMIT_COUNT,
+        TOTAL_COMMITS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_CODE_COMMITS
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY ACTIVITY_DATE ASC
+    `
+        : `
+      SELECT
+        ACTIVITY_DATE,
+        DAILY_COMMIT_COUNT,
+        TOTAL_COMMITS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_CODE_COMMITS
+      WHERE PROJECT_SLUG = ?
+      ORDER BY ACTIVITY_DATE ASC
+    `;
+
+    const result =
+      entityType === 'foundation'
+        ? await this.snowflakeService.execute<FoundationCodeCommitsDailyRow>(query, [slug])
+        : await this.snowflakeService.execute<ProjectCodeCommitsDailyRow>(query, [slug]);
+
+    // Get total commits from first row (same across all rows from SQL window function)
+    const totalCommits = result.rows.length > 0 ? result.rows[0].TOTAL_COMMITS : 0;
+
+    return {
+      data: result.rows.map((row) => ({
+        ACTIVITY_DATE: row.ACTIVITY_DATE,
+        DAILY_COMMIT_COUNT: row.DAILY_COMMIT_COUNT,
+      })),
+      totalCommits,
+      totalDays: result.rows.length,
     };
   }
 

@@ -72,4 +72,7 @@ router.get('/unique-contributors-daily', (req, res, next) => analyticsController
 // Health events monthly endpoint
 router.get('/health-events-monthly', (req, res, next) => analyticsController.getHealthEventsMonthly(req, res, next));
 
+// Code commits daily endpoint
+router.get('/code-commits-daily', (req, res, next) => analyticsController.getCodeCommitsDaily(req, res, next));
+
 export default router;
