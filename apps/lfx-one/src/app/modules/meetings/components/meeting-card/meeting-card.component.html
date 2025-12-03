@@ -292,6 +292,8 @@
                 (click)="registerForMeeting()">
               </lfx-button>
             </div>
+          } @else {
+            <div class="h-full flex items-center justify-center"></div>
           }
         } @else if (pastMeeting() && !meeting().organizer) {
           <!-- Show Recording and AI Summary buttons for past meetings (non-organizers) -->

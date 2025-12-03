@@ -52,6 +52,15 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
     };
   }
 
+  // A meeting with end_times of 1 is essentially a one-time meeting
+  if (pattern.end_times === 1) {
+    return {
+      description: 'One-time meeting',
+      endDescription: '',
+      fullSummary: 'One-time meeting',
+    };
+  }
+
   let description = '';
   let endDescription = '';
 
