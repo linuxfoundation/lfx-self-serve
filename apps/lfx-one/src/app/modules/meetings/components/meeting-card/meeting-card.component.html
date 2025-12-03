@@ -271,13 +271,28 @@
             disabledMessage="Meetings created outside of LFX One do not have RSVP functionality">
           </lfx-meeting-rsvp-details>
         } @else if (!pastMeeting()) {
-          <!-- Show RSVP Selection for authenticated non-organizers (upcoming meetings only) -->
-          <lfx-rsvp-button-group
-            [meeting]="meeting()"
-            [occurrenceId]="occurrence()?.occurrence_id"
-            [disabled]="isLegacyMeeting()"
-            disabledMessage="Meetings created outside of LFX One do not have RSVP functionality">
-          </lfx-rsvp-button-group>
+          <!-- Show RSVP Selection for authenticated invited non-organizers (upcoming meetings only) -->
+          @if (isInvited()) {
+            <lfx-rsvp-button-group
+              [meeting]="meeting()"
+              [occurrenceId]="occurrence()?.occurrence_id"
+              [disabled]="isLegacyMeeting()"
+              disabledMessage="Meetings created outside of LFX One do not have RSVP functionality">
+            </lfx-rsvp-button-group>
+          } @else if (canRegisterForMeeting()) {
+            <div class="h-full flex items-center justify-center">
+              <lfx-button
+                class="w-full"
+                icon="fa-light fa-user-plus"
+                label="Register for Meeting"
+                size="small"
+                severity="secondary"
+                styleClass="w-full"
+                data-testid="register-meeting-button"
+                (click)="registerForMeeting()">
+              </lfx-button>
+            </div>
+          }
         } @else if (pastMeeting() && !meeting().organizer) {
           <!-- Show Recording and AI Summary buttons for past meetings (non-organizers) -->
           <div class="flex flex-col gap-2">

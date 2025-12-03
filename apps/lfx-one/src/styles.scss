@@ -29,7 +29,7 @@
   }
 
   h2:not([class*='text-']):not([class*='font-']) {
-    @apply text-lg font-normal;
+    @apply text-lg font-normal leading-8;
   }
 
   h3:not([class*='text-']):not([class*='font-']) {

@@ -32,11 +32,10 @@
       <!-- Yes Button -->
       <button
         (click)="handleRsvpClick('accepted')"
-        [disabled]="isLoading() || (selectedResponse() !== null && selectedResponse() !== 'accepted')"
+        [disabled]="isLoading()"
         [ngClass]="{
           'bg-blue-500 border-blue-500 text-white': selectedResponse() === 'accepted',
-          'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed': selectedResponse() !== null && selectedResponse() !== 'accepted',
-          'bg-white border-blue-500 text-blue-700 hover:bg-blue-50': selectedResponse() === null,
+          'bg-white border-blue-500 text-blue-700 hover:bg-blue-50': selectedResponse() !== 'accepted',
         }"
         class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
         [attr.data-testid]="'meeting-rsvp-button-yes'">
@@ -47,11 +46,10 @@
       <!-- No Button -->
       <button
         (click)="handleRsvpClick('declined')"
-        [disabled]="isLoading() || (selectedResponse() !== null && selectedResponse() !== 'declined')"
+        [disabled]="isLoading()"
         [ngClass]="{
           'bg-red-500 border-red-500 text-white': selectedResponse() === 'declined',
-          'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed': selectedResponse() !== null && selectedResponse() !== 'declined',
-          'bg-white border-red-500 text-red-700 hover:bg-red-50': selectedResponse() === null,
+          'bg-white border-red-500 text-red-700 hover:bg-red-50': selectedResponse() !== 'declined',
         }"
         class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
         [attr.data-testid]="'meeting-rsvp-button-no'">
@@ -62,11 +60,10 @@
       <!-- Maybe Button -->
       <button
         (click)="handleRsvpClick('maybe')"
-        [disabled]="isLoading() || (selectedResponse() !== null && selectedResponse() !== 'maybe')"
+        [disabled]="isLoading()"
         [ngClass]="{
           'bg-amber-500 border-amber-500 text-white': selectedResponse() === 'maybe',
-          'bg-gray-100 border-gray-200 text-gray-400 cursor-not-allowed': selectedResponse() !== null && selectedResponse() !== 'maybe',
-          'bg-white border-amber-500 text-amber-700 hover:bg-amber-50': selectedResponse() === null,
+          'bg-white border-amber-500 text-amber-700 hover:bg-amber-50': selectedResponse() !== 'maybe',
         }"
         class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
         [attr.data-testid]="'meeting-rsvp-button-maybe'">

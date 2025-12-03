@@ -478,6 +478,16 @@ export class MeetingService {
     );
   }
 
+  public registerForPublicMeeting(registrantData: CreateMeetingRegistrantRequest): Observable<MeetingRegistrant> {
+    return this.http.post<MeetingRegistrant>('/public/api/meetings/register', registrantData).pipe(
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to register for public meeting ${registrantData.meeting_uid}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
   private readFileAsBase64(file: File): Promise<string> {
     return new Promise((resolve, reject) => {
       const reader = new FileReader();

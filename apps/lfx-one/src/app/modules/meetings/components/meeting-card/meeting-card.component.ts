@@ -54,6 +54,7 @@ import { catchError, combineLatest, map, of, switchMap, take, tap } from 'rxjs';
 
 import { CancelOccurrenceConfirmationComponent } from '../../components/cancel-occurrence-confirmation/cancel-occurrence-confirmation.component';
 import { MeetingRsvpDetailsComponent } from '../../components/meeting-rsvp-details/meeting-rsvp-details.component';
+import { PublicRegistrationModalComponent } from '../../components/public-registration-modal/public-registration-modal.component';
 
 @Component({
   selector: 'lfx-meeting-card',
@@ -135,6 +136,12 @@ export class MeetingCardComponent implements OnInit {
   public readonly isLegacyMeeting: Signal<boolean> = this.initIsLegacyMeeting();
   public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
 
+  // Computed signals for invited/registration status to ensure reactivity after registration
+  public readonly isInvited: Signal<boolean> = computed(() => this.meeting().invited ?? false);
+  public readonly canRegisterForMeeting: Signal<boolean> = computed(
+    () => !this.isInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
+  );
+
   // V1/V2 fallback fields
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
@@ -147,7 +154,9 @@ export class MeetingCardComponent implements OnInit {
 
   public constructor() {
     effect(() => {
-      this.meeting.set(this.meetingInput());
+      if (!this.meeting()?.uid && !this.meeting()?.id) {
+        this.meeting.set(this.meetingInput());
+      }
       // Priority: explicit occurrenceInput > current occurrence for upcoming > null for past without input
       if (this.occurrenceInput()) {
         // If explicitly passed an occurrence, always use it
@@ -249,6 +258,32 @@ export class MeetingCardComponent implements OnInit {
       summary: 'Meeting Link Copied',
       detail: 'The meeting link has been copied to your clipboard',
     });
+  }
+
+  public registerForMeeting(): void {
+    const meeting = this.meeting();
+    const user = this.userService.user();
+
+    this.dialogService
+      .open(PublicRegistrationModalComponent, {
+        header: 'Register for Meeting',
+        width: '500px',
+        modal: true,
+        closable: true,
+        dismissableMask: true,
+        data: {
+          meetingId: meeting.uid,
+          meetingTitle: this.meetingTitle(),
+          user: user,
+        },
+      })
+      .onClose.pipe(take(1))
+      .subscribe((result: { registered: boolean } | undefined) => {
+        if (result?.registered) {
+          this.additionalRegistrantsCount.set(this.additionalRegistrantsCount() + 1);
+          this.refreshMeeting();
+        }
+      });
   }
 
   public openRecordingModal(): void {

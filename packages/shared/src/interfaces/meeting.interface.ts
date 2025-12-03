@@ -144,6 +144,8 @@ export interface Meeting {
   zoom_config?: ZoomConfig | null;
 
   // Fields NOT in API - likely response-only
+  /** Invited to meeting (response only) */
+  invited: boolean;
   /** Meeting join URL */
   join_url?: string;
   /** Count fields (response only) */

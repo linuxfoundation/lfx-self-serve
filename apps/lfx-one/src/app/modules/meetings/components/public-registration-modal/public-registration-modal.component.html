@@ -1,0 +1,104 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4" data-testid="public-registration-modal-form">
+  <p class="text-sm text-gray-600 mb-2">
+    Register for <span class="font-semibold">{{ meetingTitle }}</span>
+  </p>
+
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <!-- First Name -->
+    <div class="flex flex-col gap-1" data-testid="public-registration-firstname-field">
+      <label for="first_name" class="text-sm font-medium text-gray-700">First Name <span class="text-red-500">*</span></label>
+      <lfx-input-text
+        size="small"
+        [form]="form"
+        control="first_name"
+        label="First Name"
+        placeholder="Enter first name"
+        data-testid="public-registration-firstname-input">
+      </lfx-input-text>
+    </div>
+
+    <!-- Last Name -->
+    <div class="flex flex-col gap-1" data-testid="public-registration-lastname-field">
+      <label for="last_name" class="text-sm font-medium text-gray-700">Last Name <span class="text-red-500">*</span></label>
+      <lfx-input-text
+        size="small"
+        [form]="form"
+        control="last_name"
+        label="Last Name"
+        placeholder="Enter last name"
+        data-testid="public-registration-lastname-input">
+      </lfx-input-text>
+    </div>
+
+    <!-- Email -->
+    <div class="md:col-span-2 flex flex-col gap-1" data-testid="public-registration-email-field">
+      <label for="email" class="text-sm font-medium text-gray-700">Email <span class="text-red-500">*</span></label>
+      <lfx-input-text
+        size="small"
+        [form]="form"
+        control="email"
+        label="Email"
+        placeholder="Enter email address"
+        type="email"
+        data-testid="public-registration-email-input">
+      </lfx-input-text>
+      @if (form.get('email')?.errors?.['required'] && form.get('email')?.touched && form.get('email')?.dirty) {
+        <p class="text-sm text-red-500">Email is required</p>
+      }
+      @if (form.get('email')?.errors?.['email'] && form.get('email')?.touched && form.get('email')?.dirty) {
+        <p class="text-sm text-red-500">Invalid email address</p>
+      }
+    </div>
+
+    <!-- Job Title -->
+    <div class="flex flex-col gap-1" data-testid="public-registration-jobtitle-field">
+      <label for="job_title" class="text-sm font-medium text-gray-700">Job Title</label>
+      <lfx-input-text
+        size="small"
+        [form]="form"
+        control="job_title"
+        label="Job Title"
+        placeholder="Enter job title"
+        data-testid="public-registration-jobtitle-input">
+      </lfx-input-text>
+    </div>
+
+    <!-- Organization -->
+    <div class="flex flex-col gap-1" data-testid="public-registration-organization-field">
+      <label for="org_name" class="text-sm font-medium text-gray-700">Organization</label>
+      <lfx-organization-search
+        [form]="form"
+        nameControl="org_name"
+        placeholder="Search organizations..."
+        styleClass="w-full"
+        inputStyleClass="text-sm w-full"
+        panelStyleClass="text-sm w-full"
+        dataTestId="public-registration-organization-input">
+      </lfx-organization-search>
+    </div>
+  </div>
+
+  <!-- Action Buttons -->
+  <div class="flex border-t border-gray-200 pt-4 justify-end gap-2" data-testid="public-registration-modal-actions">
+    <lfx-button
+      label="Cancel"
+      severity="secondary"
+      [text]="true"
+      size="small"
+      type="button"
+      (onClick)="onCancel()"
+      data-testid="public-registration-cancel-button">
+    </lfx-button>
+    <lfx-button
+      label="Register"
+      [loading]="submitting()"
+      [disabled]="form.invalid || submitting()"
+      type="submit"
+      size="small"
+      data-testid="public-registration-submit-button">
+    </lfx-button>
+  </div>
+</form>

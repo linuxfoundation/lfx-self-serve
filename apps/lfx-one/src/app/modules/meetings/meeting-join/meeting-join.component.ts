@@ -37,9 +37,11 @@ import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, debounceTime, filter, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, filter, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
 import { MeetingRsvpDetailsComponent } from '../components/meeting-rsvp-details/meeting-rsvp-details.component';
+import { PublicRegistrationModalComponent } from '../components/public-registration-modal/public-registration-modal.component';
+import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 
 @Component({
   selector: 'lfx-meeting-join',
@@ -63,6 +65,7 @@ import { MeetingRsvpDetailsComponent } from '../components/meeting-rsvp-details/
     FileTypeIconPipe,
     ExpandableTextComponent,
     HeaderComponent,
+    DynamicDialogModule,
   ],
   providers: [],
   templateUrl: './meeting-join.component.html',
@@ -75,6 +78,7 @@ export class MeetingJoinComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
   private readonly clipboard = inject(Clipboard);
+  private readonly dialogService = inject(DialogService);
 
   // Class variables with types
   public authenticated: WritableSignal<boolean>;
@@ -101,6 +105,7 @@ export class MeetingJoinComponent {
   public alertMessage: Signal<string>;
   private hasAutoJoined: WritableSignal<boolean> = signal<boolean>(false);
   public showRegistrants: WritableSignal<boolean> = signal<boolean>(false);
+  private refreshTrigger$ = new BehaviorSubject<void>(undefined);
 
   // TODO(v1-migration): Remove V1/V2 fallback fields once all meetings are migrated to V2
   // V1/V2 fallback fields
@@ -109,6 +114,10 @@ export class MeetingJoinComponent {
   public hasAiCompanion: Signal<boolean>;
   public isLegacyMeeting: Signal<boolean>;
   public meetingIdentifier: Signal<string>;
+
+  // Computed signals for invited/registration status
+  public isInvited: Signal<boolean>;
+  public canRegisterForMeeting: Signal<boolean>;
 
   // Form value signals for reactivity
   public formValues: Signal<{ name: string; email: string; organization: string }>;
@@ -129,6 +138,10 @@ export class MeetingJoinComponent {
     this.hasAiCompanion = this.initializeHasAiCompanion();
     this.isLegacyMeeting = this.initializeIsLegacyMeeting();
     this.meetingIdentifier = this.initializeMeetingIdentifier();
+
+    // Initialize invited/registration signals
+    this.isInvited = this.initializeIsInvited();
+    this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
 
     this.returnTo = this.initializeReturnTo();
     this.canJoinMeeting = this.initializeCanJoinMeeting();
@@ -162,6 +175,32 @@ export class MeetingJoinComponent {
 
   public onRegistrantsToggle(): void {
     this.showRegistrants.set(!this.showRegistrants());
+  }
+
+  public registerForMeeting(): void {
+    const meeting = this.meeting();
+    const user = this.user();
+
+    this.dialogService
+      .open(PublicRegistrationModalComponent, {
+        header: 'Register for Meeting',
+        width: '500px',
+        modal: true,
+        closable: true,
+        dismissableMask: true,
+        data: {
+          meetingId: meeting.uid,
+          meetingTitle: this.meetingTitle(),
+          user: user,
+        },
+      })
+      .onClose.pipe(take(1))
+      .subscribe((result: { registered: boolean } | undefined) => {
+        if (result?.registered) {
+          // Trigger refresh to update meeting data with invitation status
+          this.refreshTrigger$.next();
+        }
+      });
   }
 
   private initializeAutoJoin(): void {
@@ -214,7 +253,7 @@ export class MeetingJoinComponent {
 
   private initializeMeeting() {
     return toSignal<Meeting & { project: Project }>(
-      combineLatest([this.activatedRoute.paramMap, this.activatedRoute.queryParamMap]).pipe(
+      combineLatest([this.activatedRoute.paramMap, this.activatedRoute.queryParamMap, this.refreshTrigger$]).pipe(
         switchMap(([params, queryParams]) => {
           const meetingId = params.get('id');
           this.password.set(queryParams.get('password'));
@@ -506,6 +545,17 @@ export class MeetingJoinComponent {
     return computed(() => {
       const meeting = this.meeting();
       return this.isLegacyMeeting() && meeting?.id ? (meeting.id as string) : meeting?.uid;
+    });
+  }
+
+  private initializeIsInvited(): Signal<boolean> {
+    return computed(() => this.meeting()?.invited ?? false);
+  }
+
+  private initializeCanRegisterForMeeting(): Signal<boolean> {
+    return computed(() => {
+      const meeting = this.meeting();
+      return !this.isInvited() && !meeting?.restricted && meeting?.visibility === 'public';
     });
   }
 }

@@ -157,8 +157,21 @@
             } @else if (authenticated() && !isLegacyMeeting()) {
               <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) -->
               <div class="w-full md:w-[296px]">
-                @defer (when meeting()) {
-                  <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+                @if (isInvited()) {
+                  @defer (when meeting()) {
+                    <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+                  }
+                } @else if (canRegisterForMeeting()) {
+                  <lfx-button
+                    class="w-full"
+                    styleClass="w-full"
+                    icon="fa-light fa-user-plus"
+                    label="Register for Meeting"
+                    size="small"
+                    severity="secondary"
+                    (onClick)="registerForMeeting()"
+                    data-testid="register-meeting-button">
+                  </lfx-button>
                 }
               </div>
             }

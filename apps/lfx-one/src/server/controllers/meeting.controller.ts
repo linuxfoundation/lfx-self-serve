@@ -13,6 +13,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { Logger } from '../helpers/logger';
+import { addInvitedStatusToMeeting, addInvitedStatusToMeetings } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { MeetingService } from '../services/meeting.service';
 
@@ -44,6 +45,13 @@ export class MeetingController {
       // TODO: Remove this once we have a way to get the registrants count
       const counts = await Promise.all(
         meetings.map(async (m) => {
+          if (!m.organizer) {
+            return {
+              individual_registrants_count: 0,
+              committee_members_count: 0,
+            };
+          }
+
           const registrants = await this.meetingService.getMeetingRegistrants(req, m.uid);
           const committeeMembers = registrants.filter((r) => r.type === 'committee').length ?? 0;
 
@@ -54,7 +62,11 @@ export class MeetingController {
         })
       );
 
-      meetings.forEach((m, i) => {
+      // Check if the user is invited to the meeting
+      const userEmail = (req.oidc.user?.['email'] as string) || '';
+      const invitedMeetings = await addInvitedStatusToMeetings(req, meetings, userEmail);
+
+      invitedMeetings.forEach((m, i) => {
         m.individual_registrants_count = counts[i].individual_registrants_count;
         m.committee_members_count = counts[i].committee_members_count;
       });
@@ -67,7 +79,7 @@ export class MeetingController {
       });
 
       // Send the meetings data to the client
-      res.json(meetings);
+      res.json(invitedMeetings);
     } catch (error) {
       // Log the error
       Logger.error(req, 'get_meetings', startTime, error);
@@ -146,8 +158,12 @@ export class MeetingController {
         });
       }
 
+      // Check if the user is invited to the meeting
+      const userEmail = (req.oidc.user?.['email'] as string) || '';
+      const meetingWithInvitedStatus = await addInvitedStatusToMeeting(req, meeting, userEmail);
+
       // Send the meeting data to the client
-      res.json(meeting);
+      res.json(meetingWithInvitedStatus);
     } catch (error) {
       // Log the error
       Logger.error(req, 'get_meeting_by_id', startTime, error, {

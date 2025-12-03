@@ -361,7 +361,12 @@ export class MeetingService {
   /**
    * Fetches all registrants for a meeting by email
    */
-  public async getMeetingRegistrantsByEmail(req: Request, meetingUid: string, email: string): Promise<QueryServiceResponse<MeetingRegistrant[]>> {
+  public async getMeetingRegistrantsByEmail(
+    req: Request,
+    meetingUid: string,
+    email: string,
+    m2mToken?: string
+  ): Promise<QueryServiceResponse<MeetingRegistrant[]>> {
     req.log.info(
       {
         operation: 'get_meeting_registrants_by_email',
@@ -396,12 +401,16 @@ export class MeetingService {
       'Fetching meeting registrants by email params'
     );
 
+    const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
+
     const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant[]>>(
       req,
       'LFX_V2_SERVICE',
       `/query/resources`,
       'GET',
-      params
+      params,
+      undefined,
+      headers
     );
 
     return response;
@@ -1225,6 +1234,52 @@ export class MeetingService {
           err: error,
         },
         'Failed to get past meeting attachments'
+      );
+      throw error;
+    }
+  }
+
+  /**
+   * Creates a new meeting registrant using M2M token (for public endpoints)
+   * @param req - Express request object
+   * @param registrantData - Registrant data to create
+   * @param m2mToken - M2M token for authentication
+   * @returns The created meeting registrant
+   */
+  public async addMeetingRegistrantWithM2M(req: Request, registrantData: CreateMeetingRegistrantRequest, m2mToken: string): Promise<MeetingRegistrant> {
+    try {
+      const sanitizedPayload = Logger.sanitize({ registrantData });
+      req.log.debug(sanitizedPayload, 'Creating meeting registrant with M2M token');
+
+      const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
+        req,
+        'LFX_V2_SERVICE',
+        `/meetings/${registrantData.meeting_uid}/registrants`,
+        'POST',
+        undefined,
+        registrantData,
+        { Authorization: `Bearer ${m2mToken}`, ['X-Sync']: 'true' }
+      );
+
+      req.log.info(
+        {
+          operation: 'add_meeting_registrant_with_m2m',
+          meeting_uid: registrantData.meeting_uid,
+          registrant_uid: newRegistrant.uid,
+          host: registrantData.host || false,
+        },
+        'Meeting registrant created successfully with M2M token'
+      );
+
+      return newRegistrant;
+    } catch (error) {
+      req.log.error(
+        {
+          operation: 'add_meeting_registrant_with_m2m',
+          meeting_uid: registrantData.meeting_uid,
+          err: error,
+        },
+        'Failed to create meeting registrant with M2M token'
       );
       throw error;
     }

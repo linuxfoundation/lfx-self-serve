@@ -3,11 +3,13 @@
 
 import { getEarlyJoinTimeMinutes, isUuid, Meeting } from '@lfx-one/shared';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
+import { CreateMeetingRegistrantRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { AuthorizationError } from '../errors/authentication.error';
 import { Logger } from '../helpers/logger';
+import { addInvitedStatusToMeeting } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { MeetingService } from '../services/meeting.service';
@@ -50,9 +52,12 @@ export class PublicMeetingController {
       // Save the user's original token before setting M2M token
       const originalToken = req.bearerToken;
 
+      // Generate M2M token once for all operations
+      const m2mToken = await this.setupM2MToken(req);
+
       // Get the meeting by ID using M2M token
       Logger.start(req, 'get_public_meeting_by_id_fetch_meeting', { meeting_uid: id });
-      let meeting = await this.fetchMeetingWithM2M(req, id, v1 ? 'v1_meeting' : 'meeting');
+      let meeting = await this.fetchMeetingWithM2M(req, id, v1 ? 'v1_meeting' : 'meeting', m2mToken);
       if (!meeting) {
         // Log the error
         Logger.error(req, 'get_public_meeting_by_id_fetch_meeting', startTime, new Error('Meeting not found'));
@@ -89,6 +94,14 @@ export class PublicMeetingController {
       const committeeMembers = registrants.filter((r) => r.type === 'committee').length ?? 0;
       meeting.individual_registrants_count = (registrants?.length ?? 0) - (committeeMembers ?? 0);
       meeting.committee_members_count = committeeMembers ?? 0;
+
+      // Check if authenticated user is invited to the meeting
+      if (req.oidc?.isAuthenticated()) {
+        const userEmail = (req.oidc.user?.['email'] as string) || '';
+        meeting = await addInvitedStatusToMeeting(req, meeting, userEmail, m2mToken);
+      } else {
+        meeting.invited = false;
+      }
 
       // Log the success
       Logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_uid: id, project_uid: meeting.project_uid, title: meeting.title });
@@ -248,6 +261,115 @@ export class PublicMeetingController {
   }
 
   /**
+   * POST /public/api/meetings/register
+   * Registers a user to a public, non-restricted meeting
+   */
+  public async registerForPublicMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const registrantData: CreateMeetingRegistrantRequest = req.body;
+    const meetingId = registrantData.meeting_uid;
+
+    const startTime = Logger.start(req, 'register_for_public_meeting', {
+      meeting_uid: meetingId,
+    });
+
+    try {
+      // Validate the meeting ID is provided
+      if (!meetingId) {
+        const validationError = ServiceValidationError.forField('meeting_uid', 'Meeting ID is required', {
+          operation: 'register_for_public_meeting',
+          service: 'public_meeting_controller',
+          path: req.path,
+        });
+
+        Logger.error(req, 'register_for_public_meeting', startTime, validationError);
+        return next(validationError);
+      }
+
+      // Validate required fields
+      if (!registrantData.email || !registrantData.first_name || !registrantData.last_name) {
+        const validationError = ServiceValidationError.fromFieldErrors(
+          {
+            email: !registrantData.email ? 'Email is required' : [],
+            first_name: !registrantData.first_name ? 'First name is required' : [],
+            last_name: !registrantData.last_name ? 'Last name is required' : [],
+          },
+          'Registration data validation failed',
+          {
+            operation: 'register_for_public_meeting',
+            service: 'public_meeting_controller',
+            path: req.path,
+          }
+        );
+
+        Logger.error(req, 'register_for_public_meeting', startTime, validationError);
+        return next(validationError);
+      }
+
+      // Generate M2M token
+      const m2mToken = await this.setupM2MToken(req);
+
+      // Fetch the meeting to validate it's public and non-restricted
+      const meeting = await this.meetingService.getMeetingById(req, meetingId, 'meeting', false);
+
+      if (!meeting) {
+        throw new ResourceNotFoundError('Meeting', meetingId, {
+          operation: 'register_for_public_meeting',
+          service: 'public_meeting_controller',
+          path: `/meetings/${meetingId}`,
+        });
+      }
+
+      // Validate the meeting is public
+      if (meeting.visibility !== MeetingVisibility.PUBLIC) {
+        const authError = new AuthorizationError('Registration is not allowed for non-public meetings', {
+          operation: 'register_for_public_meeting',
+          service: 'public_meeting_controller',
+          path: req.path,
+        });
+
+        Logger.error(req, 'register_for_public_meeting', startTime, authError, {
+          meeting_uid: meetingId,
+          visibility: meeting.visibility,
+        });
+
+        return next(authError);
+      }
+
+      // Validate the meeting is not restricted
+      if (meeting.restricted) {
+        const authError = new AuthorizationError('Registration is not allowed for restricted meetings', {
+          operation: 'register_for_public_meeting',
+          service: 'public_meeting_controller',
+          path: req.path,
+        });
+
+        Logger.error(req, 'register_for_public_meeting', startTime, authError, {
+          meeting_uid: meetingId,
+          restricted: meeting.restricted,
+        });
+
+        return next(authError);
+      }
+
+      // Add the registrant using M2M token
+      const newRegistrant = await this.meetingService.addMeetingRegistrantWithM2M(req, registrantData, m2mToken);
+
+      Logger.success(req, 'register_for_public_meeting', startTime, {
+        meeting_uid: meetingId,
+        registrant_uid: newRegistrant.uid,
+      });
+
+      res.status(201).json(newRegistrant);
+    } catch (error) {
+      Logger.error(req, 'register_for_public_meeting', startTime, error, {
+        meeting_uid: meetingId,
+      });
+
+      next(error);
+    }
+  }
+
+  /**
    * Sets up M2M token for API calls
    */
   private async setupM2MToken(req: Request): Promise<string> {
@@ -300,14 +422,23 @@ export class PublicMeetingController {
 
   /**
    * Fetches meeting with M2M token setup
+   * @param req - Express request object
+   * @param id - Meeting ID
+   * @param meetingType - Type of meeting query
+   * @param m2mToken - Optional pre-generated M2M token (will be generated if not provided)
    */
-  private async fetchMeetingWithM2M(req: Request, id: string, meetingType: QueryServiceMeetingType = 'meeting') {
+  private async fetchMeetingWithM2M(req: Request, id: string, meetingType: QueryServiceMeetingType = 'meeting', m2mToken?: string) {
     const startTime = Logger.start(req, 'fetch_meeting_with_m2m', {
       meeting_id: id,
     });
 
     try {
-      await this.setupM2MToken(req);
+      // Use provided token or generate a new one
+      if (m2mToken) {
+        req.bearerToken = m2mToken;
+      } else {
+        await this.setupM2MToken(req);
+      }
       const meeting = await this.meetingService.getMeetingById(req, id, meetingType, false);
 
       Logger.success(req, 'fetch_meeting_with_m2m', startTime, {
