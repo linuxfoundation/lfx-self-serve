@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="container py-6 px-8">
+<div class="max-w-4xl mx-auto px-8" id="committee-manage">
   <!-- Back Navigation -->
   <div class="mb-4">
     <a routerLink="/groups" class="inline-flex items-center text-gray-500 hover:text-gray-700 transition-colors">
@@ -10,19 +10,155 @@
     </a>
   </div>
 
-  <!-- Header -->
-  <div class="mb-6">
-    <h1 class="text-xl font-semibold text-gray-900">{{ isEditMode() ? 'Edit ' : 'Create ' }} {{ committeeLabel }}</h1>
-  </div>
+  <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
+    <!-- Header -->
+    <div class="border-b border-slate-200 p-6">
+      <div class="flex items-center justify-between">
+        <h1 data-testid="committee-manage-title">
+          {{ isEditMode() ? 'Edit ' + committeeLabel : 'Create ' + committeeLabel }}
+        </h1>
+        <div class="text-sm text-slate-500" data-testid="committee-manage-step-indicator">Step {{ currentStep() }} of {{ totalSteps }}</div>
+      </div>
+    </div>
 
-  <!-- Form Card -->
-  <div class="bg-white rounded-lg p-4 md:p-8 shadow-md">
-    <lfx-committee-form
-      [form]="form"
-      [isEditMode]="isEditMode()"
-      [committeeId]="committeeId()"
-      [submitting]="submitting()"
-      (formSubmit)="onSubmit()"
-      (formCancel)="onCancel()" />
+    <!-- Content -->
+    <div class="p-8">
+      <!-- Stepper Layout -->
+      <p-stepper
+        [value]="currentStep()"
+        (valueChange)="goToStep($event)"
+        [linear]="!isEditMode()"
+        styleClass="committee-manage-stepper"
+        data-testid="committee-manage-stepper">
+        <p-step-list>
+          <p-step [value]="1" data-testid="committee-manage-step-1"></p-step>
+          <p-step [value]="2" data-testid="committee-manage-step-2"></p-step>
+          <p-step [value]="3" data-testid="committee-manage-step-3"></p-step>
+          <p-step [value]="4" data-testid="committee-manage-step-4"></p-step>
+        </p-step-list>
+
+        <p-step-panels>
+          <!-- Step 1: Category Selection -->
+          <p-step-panel [value]="1" data-testid="committee-manage-panel-1">
+            <ng-template #content let-activateCallback="activateCallback">
+              <lfx-committee-category-selection [form]="form"></lfx-committee-category-selection>
+            </ng-template>
+          </p-step-panel>
+
+          <!-- Step 2: Basic Information -->
+          <p-step-panel [value]="2" data-testid="committee-manage-panel-2">
+            <ng-template #content let-activateCallback="activateCallback">
+              <lfx-committee-basic-info [form]="form" [committeeId]="committeeId()"></lfx-committee-basic-info>
+            </ng-template>
+          </p-step-panel>
+
+          <!-- Step 3: Settings -->
+          <p-step-panel [value]="3" data-testid="committee-manage-panel-3">
+            <ng-template #content let-activateCallback="activateCallback">
+              <lfx-committee-settings [form]="form"></lfx-committee-settings>
+            </ng-template>
+          </p-step-panel>
+
+          <!-- Step 4: Add Members -->
+          <p-step-panel [value]="4" data-testid="committee-manage-panel-4">
+            <ng-template #content let-activateCallback="activateCallback">
+              @if (committeeId()) {
+                <lfx-committee-members-manager
+                  [committeeId]="committeeId()"
+                  [memberUpdates]="memberUpdates()"
+                  (memberUpdatesChange)="onMemberUpdatesChange($event)">
+                </lfx-committee-members-manager>
+              } @else {
+                <div class="text-center py-8 text-gray-500">
+                  <p>{{ committeeLabel }} must be created before managing members.</p>
+                </div>
+              }
+            </ng-template>
+          </p-step-panel>
+        </p-step-panels>
+      </p-stepper>
+    </div>
+
+    <!-- Footer Navigation -->
+    <div class="border-t border-slate-200 p-6">
+      <div class="flex justify-between">
+        <!-- Previous Button -->
+        @if (!isLastStep()) {
+          <lfx-button
+            label="Previous"
+            icon="fa-light fa-arrow-left"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            [disabled]="isFirstStep()"
+            (onClick)="previousStep()"
+            data-testid="committee-manage-previous-btn">
+          </lfx-button>
+        } @else {
+          <div></div>
+        }
+
+        <!-- Next / Submit / Done Buttons -->
+        <div class="flex gap-2">
+          @if (!isEditMode()) {
+            <lfx-button
+              [label]="isLastStep() ? 'Skip For Now' : 'Cancel'"
+              severity="secondary"
+              [outlined]="true"
+              size="small"
+              (onClick)="onCancel()"
+              data-testid="committee-manage-cancel-btn">
+            </lfx-button>
+          }
+
+          @if (!isLastFormStep() && !isLastStep()) {
+            <!-- Steps 1-2: Next Button -->
+            <lfx-button
+              label="Next"
+              icon="fa-light fa-arrow-right"
+              iconPos="right"
+              size="small"
+              [disabled]="!canProceed()"
+              (onClick)="nextStep()"
+              data-testid="committee-manage-next-btn">
+            </lfx-button>
+          } @else if (isLastFormStep() && !isEditMode()) {
+            <!-- Step 3 Create Mode: Create Committee Button -->
+            <lfx-button
+              [label]="'Create ' + committeeLabel"
+              icon="fa-light fa-check"
+              iconPos="right"
+              size="small"
+              [loading]="submitting()"
+              [disabled]="!canProceed() || submitting()"
+              (onClick)="onSubmit()"
+              data-testid="committee-manage-submit-btn">
+            </lfx-button>
+          } @else if (isLastFormStep() && isEditMode()) {
+            <!-- Step 3 Edit Mode: Next Button -->
+            <lfx-button label="Next" icon="fa-light fa-arrow-right" iconPos="right" size="small" (onClick)="nextStep()" data-testid="committee-manage-next-btn">
+            </lfx-button>
+          } @else if (isLastStep() && !isEditMode()) {
+            <!-- Step 4 Create Mode: Done Button -->
+            <lfx-button label="Done" icon="fa-light fa-check" iconPos="right" size="small" (onClick)="onDone()" data-testid="committee-manage-done-btn">
+            </lfx-button>
+          } @else {
+            <!-- Step 4 Edit Mode: Update Committee Button -->
+            <lfx-button
+              [label]="'Update ' + committeeLabel"
+              icon="fa-light fa-check"
+              iconPos="right"
+              size="small"
+              [loading]="submitting()"
+              [disabled]="submitting()"
+              (onClick)="onSubmitAll()"
+              data-testid="committee-manage-update-btn">
+            </lfx-button>
+          }
+        </div>
+      </div>
+    </div>
   </div>
 </div>
+
+<p-confirmDialog></p-confirmDialog>

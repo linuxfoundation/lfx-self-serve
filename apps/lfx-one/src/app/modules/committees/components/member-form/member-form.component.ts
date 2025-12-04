@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CalendarComponent } from '@components/calendar/calendar.component';
@@ -10,7 +10,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectComponent } from '@components/select/select.component';
 import { MEMBER_ROLES, VOTING_STATUSES } from '@lfx-one/shared/constants';
-import { CreateCommitteeMemberRequest } from '@lfx-one/shared/interfaces';
+import { Committee, CommitteeMember, CreateCommitteeMemberRequest } from '@lfx-one/shared/interfaces';
 import { formatDateToISOString, parseISODateString } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MessageService } from 'primeng/api';
@@ -36,16 +36,26 @@ export class MemberFormComponent {
   public form = signal<FormGroup>(this.createMemberFormGroup());
   public loading = signal<boolean>(false);
 
-  public isEditing = computed(() => this.config.data?.isEditing || false);
-  public memberId = computed(() => this.config.data?.memberId);
-  public member = computed(() => this.config.data?.member);
-  public committee = computed(() => this.config.data?.committee);
+  // Config-based properties (static, set once on dialog open)
+  public readonly isEditing: boolean;
+  public readonly memberId: string | undefined;
+  public readonly member: CommitteeMember | undefined;
+  public readonly committee: Committee | undefined;
+  // Wizard mode: returns data instead of calling API (used when committee doesn't exist yet)
+  public readonly wizardMode: boolean;
 
   // Member options
   public roleOptions = MEMBER_ROLES;
   public votingStatusOptions = VOTING_STATUSES;
 
   public constructor() {
+    // Initialize config-based properties
+    this.isEditing = this.config.data?.isEditing || false;
+    this.memberId = this.config.data?.memberId;
+    this.member = this.config.data?.member;
+    this.committee = this.config.data?.committee;
+    this.wizardMode = this.config.data?.wizardMode || false;
+
     // Initialize form with data when component is created
     this.initializeForm();
   }
@@ -59,17 +69,6 @@ export class MemberFormComponent {
     if (this.form().valid) {
       this.submitting.set(true);
       const formValue = this.form().value;
-      const committeeId = this.committee().uid;
-
-      if (!committeeId) {
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Error',
-          detail: 'Committee ID is required',
-        });
-        this.submitting.set(false);
-        return;
-      }
 
       // Prepare member data using form values, mapping to new structure
       const memberData: CreateCommitteeMemberRequest = {
@@ -101,8 +100,27 @@ export class MemberFormComponent {
             : null,
       };
 
-      const operation = this.isEditing()
-        ? this.committeeService.updateCommitteeMember(committeeId, this.member()!.uid, memberData)
+      // In wizard mode, return the data without calling API
+      if (this.wizardMode) {
+        this.submitting.set(false);
+        this.dialogRef.close(memberData);
+        return;
+      }
+
+      // Normal mode: call API
+      const committeeId = this.committee?.uid;
+      if (!committeeId) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Committee ID is required',
+        });
+        this.submitting.set(false);
+        return;
+      }
+
+      const operation = this.isEditing
+        ? this.committeeService.updateCommitteeMember(committeeId, this.member!.uid as string, memberData)
         : this.committeeService.createCommitteeMember(committeeId, memberData);
 
       operation.subscribe({
@@ -111,7 +129,7 @@ export class MemberFormComponent {
           this.messageService.add({
             severity: 'success',
             summary: 'Success',
-            detail: `Member ${this.isEditing() ? 'updated' : 'created'} successfully`,
+            detail: `Member ${this.isEditing ? 'updated' : 'created'} successfully`,
           });
           this.dialogRef.close(true);
         },
@@ -129,7 +147,7 @@ export class MemberFormComponent {
             this.messageService.add({
               severity: 'error',
               summary: 'Error',
-              detail: `Failed to ${this.isEditing() ? 'update' : 'create'} member`,
+              detail: `Failed to ${this.isEditing ? 'update' : 'create'} member`,
             });
           }
         },
@@ -143,8 +161,8 @@ export class MemberFormComponent {
   }
 
   private initializeForm(): void {
-    if (this.isEditing() && this.member()) {
-      const member = this.member()!;
+    if (this.isEditing && this.member) {
+      const member = this.member;
       this.form().patchValue({
         first_name: member.first_name,
         last_name: member.last_name,

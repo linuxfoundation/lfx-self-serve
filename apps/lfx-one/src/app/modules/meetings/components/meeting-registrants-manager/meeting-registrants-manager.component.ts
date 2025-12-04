@@ -91,13 +91,19 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
     this.addRegistrantForm = this.meetingService.createRegistrantFormGroup();
 
     // Subscribe to form changes and update signals
-    this.searchForm.get('search')?.valueChanges.subscribe((value) => {
-      this.searchTerm.set(value || '');
-    });
+    this.searchForm
+      .get('search')
+      ?.valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((value) => {
+        this.searchTerm.set(value || '');
+      });
 
-    this.searchForm.get('status')?.valueChanges.subscribe((value) => {
-      this.statusFilter.set(value);
-    });
+    this.searchForm
+      .get('status')
+      ?.valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((value) => {
+        this.statusFilter.set(value);
+      });
   }
 
   public ngOnInit(): void {

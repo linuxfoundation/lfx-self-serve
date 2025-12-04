@@ -4,24 +4,18 @@
 import { CommonModule } from '@angular/common';
 import { Component, computed, inject, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { CardSelectorComponent } from '@components/card-selector/card-selector.component';
 import { MessageComponent } from '@components/message/message.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { lfxColors } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
+import { CardSelectorOption, CardSelectorOptionInfo } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
-import { TooltipModule } from 'primeng/tooltip';
-
-interface MeetingTypeInfo {
-  icon: string;
-  description: string;
-  examples: string;
-  color: string;
-}
 
 @Component({
   selector: 'lfx-meeting-type-selection',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, MessageComponent, ToggleComponent, TooltipModule],
+  imports: [CommonModule, ReactiveFormsModule, MessageComponent, ToggleComponent, CardSelectorComponent],
   templateUrl: './meeting-type-selection.component.html',
 })
 export class MeetingTypeSelectionComponent {
@@ -32,7 +26,7 @@ export class MeetingTypeSelectionComponent {
 
   // Meeting type options with their info - computed for template efficiency
   // Filtered based on user role (currently showing only maintainers, technical, and other)
-  public readonly meetingTypeOptions = computed(() => {
+  public readonly meetingTypeOptions = computed<CardSelectorOption<MeetingType>[]>(() => {
     const allOptions = [
       { label: 'Board', value: MeetingType.BOARD },
       { label: 'Maintainers', value: MeetingType.MAINTAINERS },
@@ -53,20 +47,8 @@ export class MeetingTypeSelectionComponent {
     }));
   });
 
-  // Computed grid columns based on number of meeting types
-  public readonly gridColumns = computed(() => {
-    const count = this.meetingTypeOptions().length;
-    // If divisible by 3, show 3 columns; if divisible by 2, show 2 columns; otherwise show 1
-    if (count % 3 === 0) {
-      return 3;
-    } else if (count % 2 === 0) {
-      return 2;
-    }
-    return 1;
-  });
-
   // Meeting type info mapping (using colors consistent with committee colors)
-  private readonly meetingTypeInfo: Record<MeetingType, MeetingTypeInfo> = {
+  private readonly meetingTypeInfo: Record<MeetingType, CardSelectorOptionInfo> = {
     [MeetingType.BOARD]: {
       icon: 'fa-light fa-user-crown',
       description: 'Governance meetings for project direction, funding, and strategic decisions',
@@ -110,10 +92,4 @@ export class MeetingTypeSelectionComponent {
       color: lfxColors.gray[500],
     },
   };
-
-  // Handle meeting type selection
-  public onMeetingTypeSelect(meetingType: MeetingType): void {
-    this.form().get('meeting_type')?.setValue(meetingType);
-    this.form().get('meeting_type')?.markAsTouched();
-  }
 }

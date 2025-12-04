@@ -1,0 +1,33 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="space-y-6">
+  <!-- Header -->
+  <div class="text-center mb-8">
+    <h2 class="mb-2">Select {{ committeeLabel }} Type</h2>
+    <p class="text-gray-500 text-base">Choose the type that best describes your {{ committeeLabel.toLowerCase() }}</p>
+  </div>
+
+  <!-- Info Section -->
+  <lfx-message severity="info" icon="fa-light fa-info-circle">
+    <ng-template #content>
+      <h4 class="text-sm font-semibold mb-1">{{ committeeLabel }} Types</h4>
+      <p class="text-sm">
+        Select the category that best matches your {{ committeeLabel.toLowerCase() }}'s purpose. This helps organize and identify your
+        {{ committeeLabel.toLowerCase() }} within the project.
+      </p>
+    </ng-template>
+  </lfx-message>
+
+  <!-- Category Card Selector -->
+  <div class="space-y-4">
+    <lfx-card-selector
+      [options]="categoryOptions()"
+      [form]="form()"
+      control="category"
+      [label]="'Select ' + committeeLabel + ' Type'"
+      [required]="true"
+      errorMessage="Please select a type to continue"
+      testIdPrefix="committee-category" />
+  </div>
+</div>

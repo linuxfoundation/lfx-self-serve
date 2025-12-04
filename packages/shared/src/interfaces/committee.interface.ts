@@ -56,42 +56,6 @@ export interface Committee {
 }
 
 /**
- * Committee settings configuration
- * @description Administrative settings for committee governance and compliance
- */
-export interface CommitteeSettings {
-  /** Committee UID these settings apply to */
-  uid: string;
-  /** Whether members must use business email addresses */
-  business_email_required: boolean;
-  /** Timestamp of last settings review */
-  last_reviewed_at?: string;
-  /** User ID who last reviewed the settings */
-  last_reviewed_by?: string;
-  /** Array of user IDs with write permissions */
-  writers: string[];
-  /** Array of user IDs with audit permissions */
-  auditors: string[];
-  /** Timestamp when settings were created */
-  created_at: string;
-  /** Timestamp when settings were last updated */
-  updated_at: string;
-}
-
-/**
- * Minimal committee information for lists and dropdowns
- * @description Lightweight committee representation for UI components
- */
-export interface CommitteeSummary {
-  /** Committee unique identifier */
-  uid: string;
-  /** Committee display name */
-  name: string;
-  /** Committee category/type */
-  category: string;
-}
-
-/**
  * Data required to create a new committee
  * @description Input payload for committee creation API
  */
@@ -141,28 +105,4 @@ export interface CommitteeSettingsData {
   business_email_required?: boolean;
   /** Update audit logging setting */
   is_audit_enabled?: boolean;
-}
-
-/**
- * Validation error for committee operations
- * @description Detailed error information for form validation
- */
-export interface CommitteeValidationError {
-  /** Field name that failed validation */
-  field: string;
-  /** Human-readable error message */
-  message: string;
-  /** Error code for programmatic handling */
-  code: string;
-}
-
-/**
- * Result of committee validation
- * @description Validation outcome with any errors found
- */
-export interface CommitteeValidationResult {
-  /** Whether validation passed */
-  isValid: boolean;
-  /** Array of validation errors (empty if valid) */
-  errors: CommitteeValidationError[];
 }

@@ -1,0 +1,45 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div>
+  @if (label()) {
+    <label class="text-sm font-semibold text-slate-900 mb-4 block">
+      {{ label() }}
+      @if (required()) {
+        <span class="text-red-500">*</span>
+      }
+    </label>
+  }
+  <div
+    class="grid gap-3"
+    [ngClass]="{
+      'grid-cols-1 md:grid-cols-3': gridColumns() === 3,
+      'grid-cols-1 md:grid-cols-2': gridColumns() === 2,
+      'grid-cols-1': gridColumns() === 1,
+    }">
+    @for (option of options(); track option.value) {
+      <div
+        class="p-4 border rounded-lg cursor-pointer transition-all hover:border-blue-600 hover:bg-blue-50"
+        [ngClass]="{
+          'border-blue-600 bg-blue-50': form().get(control())?.value === option.value,
+          'border-slate-200 bg-white': form().get(control())?.value !== option.value,
+        }"
+        (click)="onSelect(option.value)"
+        [attr.data-testid]="testIdPrefix() + '-option-' + option.value">
+        <div class="flex items-start gap-3">
+          <div class="p-2 rounded-lg flex-shrink-0" [style.background-color]="option.info.color + '1A'" [style.color]="option.info.color">
+            <i [class]="option.info.icon + ' text-base'"></i>
+          </div>
+          <div>
+            <h4 class="text-sm font-semibold text-slate-900">{{ option.label }}</h4>
+            <p class="text-xs text-slate-600 mt-1">{{ option.info.description }}</p>
+            <p class="text-xs text-slate-500 mt-1 italic">Examples: {{ option.info.examples }}</p>
+          </div>
+        </div>
+      </div>
+    }
+  </div>
+  @if (form().get(control())?.errors?.['required'] && form().get(control())?.touched) {
+    <p class="text-sm text-red-600 mt-2">{{ errorMessage() }}</p>
+  }
+</div>

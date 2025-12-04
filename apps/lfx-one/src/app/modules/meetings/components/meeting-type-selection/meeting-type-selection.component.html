@@ -21,41 +21,14 @@
   </div>
 
   <div class="space-y-6">
-    <div>
-      <label class="text-sm font-semibold text-slate-900 mb-4 block">Select Meeting Type <span class="text-red-500">*</span></label>
-      <div
-        class="grid gap-3"
-        [ngClass]="{
-          'grid-cols-1 md:grid-cols-1': gridColumns() === 3,
-          'grid-cols-1 md:grid-cols-2': gridColumns() === 2,
-          'grid-cols-1': gridColumns() === 1,
-        }">
-        @for (option of meetingTypeOptions(); track option.value) {
-          <div
-            class="p-4 border rounded-lg cursor-pointer transition-all hover:border-blue-600 hover:bg-blue-50"
-            [ngClass]="{
-              'border-blue-600 bg-blue-50': form().get('meeting_type')?.value === option.value,
-              'border-slate-200 bg-white': form().get('meeting_type')?.value !== option.value,
-            }"
-            (click)="onMeetingTypeSelect(option.value)"
-            [attr.data-testid]="'meeting-type-option-' + option.value.toLowerCase()">
-            <div class="flex items-start gap-3">
-              <div class="p-2 rounded-lg flex-shrink-0" [style.background-color]="option.info.color + '1A'" [style.color]="option.info.color">
-                <i [class]="option.info.icon + ' text-base'"></i>
-              </div>
-              <div>
-                <h4 class="text-sm font-semibold text-slate-900">{{ option.label }}</h4>
-                <p class="text-xs text-slate-600 mt-1">{{ option.info.description }}</p>
-                <p class="text-xs text-slate-500 mt-1 italic">Examples: {{ option.info.examples }}</p>
-              </div>
-            </div>
-          </div>
-        }
-      </div>
-      @if (form().get('meeting_type')?.errors?.['required'] && form().get('meeting_type')?.touched) {
-        <p class="text-sm text-red-600 mt-2">Meeting type is required</p>
-      }
-    </div>
+    <lfx-card-selector
+      [options]="meetingTypeOptions()"
+      [form]="form()"
+      control="meeting_type"
+      label="Select Meeting Type"
+      [required]="true"
+      errorMessage="Meeting type is required"
+      testIdPrefix="meeting-type" />
   </div>
 
   <div class="space-y-4">

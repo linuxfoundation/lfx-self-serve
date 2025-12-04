@@ -81,7 +81,7 @@ export class CommitteeService {
     return this.http.post<CommitteeMember>(`/api/committees/${committeeId}/members`, memberData).pipe(take(1));
   }
 
-  public updateCommitteeMember(committeeId: string, memberId: string, memberData: CreateCommitteeMemberRequest): Observable<CommitteeMember> {
+  public updateCommitteeMember(committeeId: string, memberId: string, memberData: Partial<CreateCommitteeMemberRequest>): Observable<CommitteeMember> {
     return this.http.put<CommitteeMember>(`/api/committees/${committeeId}/members/${memberId}`, memberData).pipe(take(1));
   }
 

@@ -112,3 +112,35 @@ export interface CreateCommitteeMemberRequest {
     website?: string | null;
   } | null;
 }
+
+/**
+ * State types for tracking member changes
+ * @description Tracks the lifecycle state of a committee member during editing
+ */
+export type CommitteeMemberState = 'existing' | 'new' | 'modified' | 'deleted';
+
+/**
+ * Enhanced committee member with state tracking
+ * @description Extends CommitteeMember with metadata for local state management in forms
+ */
+export interface CommitteeMemberWithState extends CommitteeMember {
+  /** Current state of this member */
+  state: CommitteeMemberState;
+  /** Original data from API (for existing members, used for change detection) */
+  originalData?: CommitteeMember;
+  /** Temporary ID for new members before API creates uid */
+  tempId?: string;
+}
+
+/**
+ * Pending changes summary for committee members
+ * @description Tracks all member changes to be submitted as a batch
+ */
+export interface MemberPendingChanges {
+  /** Members to be created via API */
+  toAdd: CreateCommitteeMemberRequest[];
+  /** Members to be updated via API (full member object) */
+  toUpdate: { uid: string; changes: CreateCommitteeMemberRequest }[];
+  /** Member UIDs to be deleted via API */
+  toDelete: string[];
+}

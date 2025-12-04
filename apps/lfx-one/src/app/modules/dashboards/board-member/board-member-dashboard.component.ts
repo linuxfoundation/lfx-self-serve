@@ -52,7 +52,7 @@ export class BoardMemberDashboardComponent {
       .get('selectedAccountId')
       ?.valueChanges.pipe(takeUntilDestroyed())
       .subscribe((value) => {
-        const selectedAccount = this.accountContextService.availableAccounts.find((acc) => acc.accountId === value);
+        const selectedAccount = ACCOUNTS.find((acc) => acc.accountId === value);
         if (selectedAccount) {
           this.accountContextService.setAccount(selectedAccount as Account);
         }

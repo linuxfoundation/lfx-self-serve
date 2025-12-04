@@ -1,0 +1,167 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="committee-members-manager-container max-w-4xl mx-auto" data-testid="committee-members-manager-container">
+  <!-- Confirm Dialog for member deletion -->
+  <p-confirmDialog></p-confirmDialog>
+
+  <!-- Header -->
+  <div class="text-center mb-8">
+    <h2 class="mb-2">Add Members</h2>
+    <p class="text-gray-500 text-base">Add members to your {{ committeeLabel.toLowerCase() }} to enable collaboration</p>
+  </div>
+
+  <div class="flex items-center mb-4">
+    <div class="flex items-center gap-3">
+      <lfx-button
+        size="small"
+        label="Add Member"
+        icon="fa-light fa-user-plus"
+        severity="secondary"
+        data-testid="add-member-button"
+        (click)="openAddMemberDialog()">
+      </lfx-button>
+    </div>
+  </div>
+
+  <!-- Main members content -->
+  <div class="space-y-4">
+    <!-- Stats and filters section -->
+    <div class="flex items-center justify-between">
+      <h3 class="text-lg font-semibold text-gray-900">Members ({{ memberCount() }})</h3>
+      <span class="text-sm text-gray-500" data-testid="stats">{{ votingCount() }} voting</span>
+    </div>
+
+    <!-- Search and filters -->
+    <div class="flex items-center gap-4 p-4 bg-gray-50 rounded-lg" [formGroup]="searchForm">
+      <div class="flex-1">
+        <lfx-input-text
+          size="small"
+          [form]="searchForm"
+          control="search"
+          placeholder="Search members..."
+          icon="fa-light fa-search"
+          styleClass="w-full"
+          dataTest="search-input">
+        </lfx-input-text>
+      </div>
+      <lfx-select [form]="searchForm" control="status" [options]="statusOptions" placeholder="Filter by status" styleClass="w-full" data-testid="status-filter">
+      </lfx-select>
+    </div>
+
+    <!-- Loading state -->
+    @if (loading()) {
+      <div class="text-center py-8" data-testid="loading-state">
+        <i class="fa-light fa-circle-notch fa-spin text-2xl text-blue-600 mb-2"></i>
+        <p class="text-sm text-gray-500">Loading members...</p>
+      </div>
+    }
+
+    <!-- Empty state -->
+    @if (!loading() && filteredMembers().length === 0) {
+      <div class="text-center py-8" data-testid="empty-state">
+        <i class="fa-light fa-users text-4xl text-gray-300 mb-4"></i>
+        <h3 class="text-lg font-medium text-gray-600 mb-2">No members found</h3>
+        <p class="text-gray-500 mb-4">
+          @if (memberCount() === 0) {
+            Get started by adding your first member
+          } @else {
+            Try adjusting your search terms or filters
+          }
+        </p>
+      </div>
+    }
+
+    <!-- Members list -->
+    @if (!loading() && filteredMembers().length > 0) {
+      <div class="flex flex-col gap-2" data-testid="members-list">
+        @for (member of filteredMembers(); track member.uid ?? member.tempId) {
+          <div
+            class="flex items-center justify-between p-4 bg-white border border-gray-200 rounded-lg hover:border-gray-300 transition-colors"
+            data-testid="member-card">
+            <!-- Member Info -->
+            <div class="flex items-center gap-4">
+              <!-- Avatar -->
+              <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
+                {{ (member.first_name.charAt(0) || '') + (member.last_name.charAt(0) || '') || member.email.charAt(0).toUpperCase() || 'M' }}
+              </div>
+              <!-- Details -->
+              <div>
+                <div class="font-medium text-gray-900">
+                  {{ member.first_name || '' }} {{ member.last_name || '' }}
+                  @if (!member.first_name && !member.last_name) {
+                    {{ member.email }}
+                  }
+                </div>
+                <div class="text-sm text-gray-500">{{ member.email }}</div>
+                @if (member.organization?.name) {
+                  <div class="text-xs text-gray-400">{{ member.organization?.name }}</div>
+                }
+              </div>
+            </div>
+
+            <!-- Tags and Actions -->
+            <div class="flex items-center gap-3">
+              <!-- New member indicator -->
+              @if (member.state === 'new') {
+                <span class="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">New</span>
+              }
+              <!-- Modified indicator -->
+              @if (member.state === 'modified') {
+                <span class="px-2 py-1 text-xs font-medium bg-amber-100 text-amber-800 rounded">Modified</span>
+              }
+              <!-- Voting status badge -->
+              @if (member.voting?.status) {
+                <span
+                  class="px-2 py-1 text-xs font-medium rounded"
+                  [ngClass]="{
+                    'bg-emerald-100 text-emerald-800': member.voting?.status === 'Voting Rep' || member.voting?.status === 'Alternate Voting Rep',
+                    'bg-gray-100 text-gray-600': member.voting?.status !== 'Voting Rep' && member.voting?.status !== 'Alternate Voting Rep',
+                  }">
+                  {{ member.voting?.status }}
+                </span>
+              }
+              <!-- Role badge -->
+              @if (member.role?.name) {
+                <span class="px-2 py-1 text-xs font-medium bg-blue-100 text-blue-800 rounded">
+                  {{ member.role?.name }}
+                </span>
+              }
+              <!-- Action buttons -->
+              <div class="flex items-center gap-2">
+                <lfx-button
+                  size="small"
+                  icon="fa-light fa-pen"
+                  [text]="true"
+                  styleClass="text-gray-400 hover:text-blue-600"
+                  pTooltip="Edit"
+                  tooltipPosition="top"
+                  data-testid="edit-member-button"
+                  (click)="openEditMemberDialog(member)">
+                </lfx-button>
+                <lfx-button
+                  size="small"
+                  icon="fa-light fa-envelope"
+                  [text]="true"
+                  styleClass="text-gray-400 hover:text-gray-600"
+                  pTooltip="Send Message"
+                  tooltipPosition="top"
+                  (click)="onSendMessage(member)">
+                </lfx-button>
+                <lfx-button
+                  size="small"
+                  icon="fa-light fa-trash"
+                  [text]="true"
+                  styleClass="text-gray-400 hover:text-red-600"
+                  pTooltip="Remove"
+                  tooltipPosition="top"
+                  (click)="handleMemberDelete(member.uid || member.tempId || '')">
+                </lfx-button>
+              </div>
+            </div>
+          </div>
+        }
+      </div>
+    }
+  </div>
+</div>

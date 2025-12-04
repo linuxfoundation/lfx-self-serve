@@ -21,9 +21,11 @@
               <div class="flex flex-col gap-1">
                 <lfx-tag [value]="committee.category || 'Other'" [severity]="getCategorySeverity(committee.category || 'Other')"></lfx-tag>
                 <div class="flex items-center gap-2">
-                  <p class="font-inter font-medium leading-[16px] not-italic text-gray-900 text-[12px] text-nowrap whitespace-pre">
+                  <a
+                    [routerLink]="['/groups', committee.uid]"
+                    class="font-inter font-medium leading-[16px] not-italic text-gray-900 text-[12px] text-nowrap whitespace-pre">
                     {{ committee.name }}
-                  </p>
+                  </a>
                   @if (!committee.public) {
                     <i class="fa-light fa-lock text-slate-500" pTooltip="Private" tooltipPosition="top"></i>
                   }

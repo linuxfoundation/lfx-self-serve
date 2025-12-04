@@ -2,60 +2,37 @@
 // SPDX-License-Identifier: MIT
 
 import { CommonModule } from '@angular/common';
-import { Component, computed, inject, input, output, Signal } from '@angular/core';
+import { Component, computed, inject, input, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { ToggleComponent } from '@components/toggle/toggle.component';
-import { COMMITTEE_CATEGORIES, COMMITTEE_LABEL, FILTERED_COMMITTEE_CATEGORIES } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { Committee } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
-import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { TooltipModule } from 'primeng/tooltip';
 import { map } from 'rxjs';
 
 @Component({
-  selector: 'lfx-committee-form',
+  selector: 'lfx-committee-basic-info',
   standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, InputTextComponent, SelectComponent, TextareaComponent, ToggleComponent, TooltipModule, ButtonComponent],
-  templateUrl: './committee-form.component.html',
-  styleUrl: './committee-form.component.scss',
+  imports: [CommonModule, ReactiveFormsModule, InputTextComponent, SelectComponent, TextareaComponent],
+  templateUrl: './committee-basic-info.component.html',
 })
-export class CommitteeFormComponent {
+export class CommitteeBasicInfoComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly personaService = inject(PersonaService);
+
   // Signal inputs
   public form = input.required<FormGroup>();
-  public isEditMode = input.required<boolean>();
   public committeeId = input<string | null>(null);
-  public submitting = input.required<boolean>();
 
-  // Signal outputs
-  public readonly formSubmit = output<void>();
-  public readonly formCancel = output<void>();
-
-  // Category options from constants (using filtered list)
-  public readonly categoryOptions = computed(() => {
-    return this.personaService.currentPersona() === 'maintainer' ? FILTERED_COMMITTEE_CATEGORIES : COMMITTEE_CATEGORIES;
-  });
+  // UI labels
+  public readonly committeeLabel = COMMITTEE_LABEL.singular;
 
   // Load parent committee options
   public parentCommitteeOptions: Signal<{ label: string; value: string | null }[]> = this.initializeParentCommitteeOptions();
-
-  public readonly committeeLabel = COMMITTEE_LABEL.singular;
-
-  public onSubmit(): void {
-    this.formSubmit.emit();
-  }
-
-  public onCancel(): void {
-    this.formCancel.emit();
-  }
 
   private initializeParentCommitteeOptions(): Signal<{ label: string; value: string | null }[]> {
     // Get project ID from context (project or foundation)

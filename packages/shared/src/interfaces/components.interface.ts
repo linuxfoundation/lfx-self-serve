@@ -4,6 +4,34 @@
 import { ChartData, ChartOptions, ChartType } from 'chart.js';
 
 /**
+ * Card selector option info
+ * @description Information displayed for each card option in card selector
+ */
+export interface CardSelectorOptionInfo {
+  /** Icon class (e.g., 'fa-light fa-user-crown') */
+  icon: string;
+  /** Description text for the option */
+  description: string;
+  /** Example use cases */
+  examples: string;
+  /** Color for the icon background (hex or color token) */
+  color: string;
+}
+
+/**
+ * Card selector option
+ * @description Configuration for individual options in card selector component
+ */
+export interface CardSelectorOption<T = string> {
+  /** Display label for the option */
+  label: string;
+  /** Value to be selected */
+  value: T;
+  /** Card display information */
+  info: CardSelectorOptionInfo;
+}
+
+/**
  * Component severity type
  * @description Standard severity levels used across Tag and other UI components
  */

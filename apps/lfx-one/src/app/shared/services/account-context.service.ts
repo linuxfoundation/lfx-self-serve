@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { ACCOUNTS, DEFAULT_ACCOUNT } from '@lfx-one/shared/constants';
 import { Account } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
@@ -15,30 +15,35 @@ export class AccountContextService {
   private readonly cookieService = inject(SsrCookieService);
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly storageKey = 'lfx-selected-account';
-  public readonly selectedAccount: WritableSignal<Account>;
 
   /**
    * User's organizations from committee memberships (filtered from ACCOUNTS)
    * If empty, falls back to all available accounts
    */
-  private userOrganizations: Account[] = [];
+  private readonly userOrganizations: WritableSignal<Account[]> = signal<Account[]>([]);
 
   /**
    * Whether user organizations have been initialized from auth context
    */
-  private isInitialized = false;
+  private readonly initialized: WritableSignal<boolean> = signal<boolean>(false);
+
+  /**
+   * The currently selected account
+   */
+  public readonly selectedAccount: WritableSignal<Account>;
 
   /**
    * Returns available accounts for the user
    * If user has specific organizations from committee memberships, returns only those
    * Otherwise returns all predefined accounts
    */
-  public get availableAccounts(): Account[] {
-    if (this.isInitialized && this.userOrganizations.length > 0) {
-      return this.userOrganizations;
+  public readonly availableAccounts: Signal<Account[]> = computed(() => {
+    const orgs = this.userOrganizations();
+    if (this.initialized() && orgs.length > 0) {
+      return orgs;
     }
     return ACCOUNTS;
-  }
+  });
 
   public constructor() {
     const stored = this.loadFromStorage();
@@ -51,8 +56,8 @@ export class AccountContextService {
    */
   public initializeUserOrganizations(organizations: Account[]): void {
     if (organizations && organizations.length > 0) {
-      this.userOrganizations = organizations;
-      this.isInitialized = true;
+      this.userOrganizations.set(organizations);
+      this.initialized.set(true);
 
       // If stored account is not in user's organizations, select the first available
       const stored = this.loadFromStorage();

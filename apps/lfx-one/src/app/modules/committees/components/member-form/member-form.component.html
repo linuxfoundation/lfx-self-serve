@@ -61,7 +61,7 @@
     </div>
   </div>
 
-  @if (committee()?.enable_voting) {
+  @if (committee?.enable_voting) {
     <!-- Committee Role Section -->
     <div class="flex flex-col gap-3">
       <div class="grid grid-cols-2 gap-4">
@@ -132,11 +132,6 @@
   <!-- Form Actions -->
   <div class="flex justify-end gap-3 pt-6 border-t">
     <lfx-button label="Cancel" severity="secondary" [outlined]="true" (onClick)="onCancel()" size="small" type="button"></lfx-button>
-    <lfx-button
-      [label]="isEditing() ? 'Update Member' : 'Add Member'"
-      [loading]="submitting()"
-      [disabled]="submitting()"
-      type="submit"
-      size="small"></lfx-button>
+    <lfx-button [label]="isEditing ? 'Update Member' : 'Add Member'" [loading]="submitting()" [disabled]="submitting()" type="submit" size="small"></lfx-button>
   </div>
 </form>
