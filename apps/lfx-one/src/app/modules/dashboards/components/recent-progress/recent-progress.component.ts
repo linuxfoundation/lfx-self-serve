@@ -33,7 +33,6 @@ import type {
   UserCodeCommitsResponse,
   UserPullRequestsResponse,
 } from '@lfx-one/shared/interfaces';
-import type { TooltipItem } from 'chart.js';
 
 @Component({
   selector: 'lfx-recent-progress',
@@ -159,8 +158,8 @@ export class RecentProgressComponent {
           tooltip: {
             ...(BASE_BAR_CHART_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
-              title: (context: TooltipItem<'bar'>[]) => context[0].label,
-              label: (context: TooltipItem<'bar'>) => {
+              title: (context) => context[0].label,
+              label: (context) => {
                 const isActive = context.parsed.y === 1;
                 return isActive ? 'Active' : 'Inactive';
               },
@@ -198,13 +197,13 @@ export class RecentProgressComponent {
           tooltip: {
             ...(BASE_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
-              title: (context: TooltipItem<'line'>[]) => {
+              title: (context) => {
                 const dateStr = context[0].label;
                 const date = parseLocalDateString(dateStr);
                 return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
               },
-              label: (context: TooltipItem<'line'>) => {
-                const count = context.parsed.y;
+              label: (context) => {
+                const count = context.parsed.y ?? 0;
                 return `PRs Merged: ${count}`;
               },
             },
@@ -241,13 +240,13 @@ export class RecentProgressComponent {
           tooltip: {
             ...(BASE_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
-              title: (context: TooltipItem<'line'>[]) => {
+              title: (context) => {
                 const dateStr = context[0].label;
                 const date = parseLocalDateString(dateStr);
                 return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
               },
-              label: (context: TooltipItem<'line'>) => {
-                const count = context.parsed.y;
+              label: (context) => {
+                const count = context.parsed.y ?? 0;
                 return `Commits: ${count}`;
               },
             },
@@ -316,18 +315,18 @@ export class RecentProgressComponent {
           tooltip: {
             ...(DUAL_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
-              title: (context: TooltipItem<'line'>[]) => {
+              title: (context) => {
                 const dateStr = context[0].label;
                 const date = parseLocalDateString(dateStr);
                 return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
               },
-              label: (context: TooltipItem<'line'>) => {
+              label: (context) => {
                 const datasetLabel = context.dataset?.label || '';
-                const count = context.parsed.y;
+                const count = context.parsed.y ?? 0;
                 return `${datasetLabel}: ${count.toLocaleString()}`;
               },
               labelPointStyle: () => ({
-                pointStyle: 'circle',
+                pointStyle: 'circle' as const,
                 rotation: 0,
               }),
             },
@@ -382,7 +381,7 @@ export class RecentProgressComponent {
           tooltip: {
             ...(BAR_CHART_WITH_FOOTER_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
-              title: (context: TooltipItem<'bar'>[]) => {
+              title: (context) => {
                 try {
                   const dateStr = context[0]?.label || '';
                   if (!dateStr) return '';
@@ -394,7 +393,7 @@ export class RecentProgressComponent {
                   return context[0]?.label || '';
                 }
               },
-              label: (context: TooltipItem<'bar'>) => {
+              label: (context) => {
                 try {
                   const dataIndex = context.dataIndex;
                   const weekData = chartData[dataIndex];
@@ -404,7 +403,7 @@ export class RecentProgressComponent {
                   return '';
                 }
               },
-              footer: (context: TooltipItem<'bar'>[]) => {
+              footer: (context) => {
                 try {
                   const dataIndex = context[0]?.dataIndex;
                   if (dataIndex === undefined) return '';
@@ -457,9 +456,9 @@ export class RecentProgressComponent {
           tooltip: {
             ...(BASE_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
-              title: (context: TooltipItem<'line'>[]) => context[0].label,
-              label: (context: TooltipItem<'line'>) => {
-                const count = context.parsed.y;
+              title: (context) => context[0].label,
+              label: (context) => {
+                const count = context.parsed.y ?? 0;
                 return `Contributors mentored: ${count.toLocaleString()}`;
               },
             },
@@ -515,7 +514,7 @@ export class RecentProgressComponent {
           tooltip: {
             ...(BAR_CHART_WITH_FOOTER_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
-              title: (context: TooltipItem<'bar'>[]) => {
+              title: (context) => {
                 try {
                   const dateStr = context[0]?.label || '';
                   if (!dateStr) return '';
@@ -527,7 +526,7 @@ export class RecentProgressComponent {
                   return context[0]?.label || '';
                 }
               },
-              label: (context: TooltipItem<'bar'>) => {
+              label: (context) => {
                 try {
                   const dataIndex = context.dataIndex;
                   const weekData = chartData[dataIndex];
@@ -537,7 +536,7 @@ export class RecentProgressComponent {
                   return '';
                 }
               },
-              footer: (context: TooltipItem<'bar'>[]) => {
+              footer: (context) => {
                 try {
                   const dataIndex = context[0].dataIndex;
                   const weekData = chartData[dataIndex];
@@ -593,13 +592,13 @@ export class RecentProgressComponent {
           tooltip: {
             ...(BASE_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
-              title: (context: TooltipItem<'line'>[]) => {
+              title: (context) => {
                 const dateStr = context[0].label;
                 const date = parseLocalDateString(dateStr);
                 return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
               },
-              label: (context: TooltipItem<'line'>) => {
-                const score = Math.round(context.parsed.y);
+              label: (context) => {
+                const score = Math.round(context.parsed.y ?? 0);
                 return `Avg Health Score: ${score}`;
               },
             },
@@ -641,14 +640,14 @@ export class RecentProgressComponent {
           tooltip: {
             ...(BASE_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
             callbacks: {
-              title: (context: TooltipItem<'line'>[]) => {
+              title: (context) => {
                 const dateStr = context[0]?.label || '';
                 if (!dateStr) return '';
                 const date = parseLocalDateString(dateStr);
                 return date.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' });
               },
-              label: (context: TooltipItem<'line'>) => {
-                const count = context.parsed.y;
+              label: (context) => {
+                const count = context.parsed.y ?? 0;
                 return `Commits: ${count.toLocaleString()}`;
               },
             },

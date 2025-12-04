@@ -29,9 +29,9 @@
     "prepare": "husky"
   },
   "devDependencies": {
-    "@commitlint/cli": "^19.8.1",
-    "@commitlint/config-angular": "^19.8.1",
-    "@linuxfoundation/lfx-ui-core": "^0.0.20",
+    "@commitlint/cli": "^20.1.0",
+    "@commitlint/config-angular": "^20.0.0",
+    "@linuxfoundation/lfx-ui-core": "^0.0.21",
     "@types/node": "^24.2.1",
     "@typescript-eslint/eslint-plugin": "^8.39.1",
     "@typescript-eslint/parser": "^8.39.1",
@@ -39,8 +39,8 @@
     "@typescript-eslint/types": "^8.39.1",
     "@typescript-eslint/utils": "^8.39.1",
     "husky": "^9.1.7",
-    "lint-staged": "^16.1.5",
-    "prettier": "^3.6.2",
+    "lint-staged": "^16.2.7",
+    "prettier": "^3.7.4",
     "tslib": "^2.8.1",
     "turbo": "^2.5.5",
     "typescript": "5.8.3"
@@ -63,6 +63,6 @@
     ]
   },
   "dependencies": {
-    "chart.js": "^4.5.0"
+    "chart.js": "^4.5.1"
   }
 }

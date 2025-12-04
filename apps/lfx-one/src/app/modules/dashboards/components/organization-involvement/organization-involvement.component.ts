@@ -24,7 +24,7 @@ import type {
   OrganizationMaintainersResponse,
   TrainingEnrollmentsResponse,
 } from '@lfx-one/shared/interfaces';
-import type { ChartOptions, TooltipItem } from 'chart.js';
+import type { ChartOptions, ChartType } from 'chart.js';
 
 @Component({
   selector: 'lfx-organization-involvement',
@@ -635,7 +635,7 @@ export class OrganizationInvolvementComponent {
     };
   }
 
-  private createBarChartOptions(label: string): ChartOptions<'bar'> {
+  private createBarChartOptions(label: string): ChartOptions<ChartType> {
     return {
       ...BASE_BAR_CHART_OPTIONS,
       plugins: {
@@ -643,15 +643,15 @@ export class OrganizationInvolvementComponent {
         tooltip: {
           ...(BASE_BAR_CHART_OPTIONS.plugins?.tooltip ?? {}),
           callbacks: {
-            title: (context: TooltipItem<'bar'>[]) => context[0].label,
-            label: (context: TooltipItem<'bar'>) => `${label}: ${context.parsed.y}`,
+            title: (context) => context[0]?.label ?? '',
+            label: (context) => `${label}: ${context.parsed.y ?? 0}`,
           },
         },
       },
     };
   }
 
-  private createLineChartOptions(label: string): ChartOptions<'line'> {
+  private createLineChartOptions(label: string): ChartOptions<ChartType> {
     return {
       ...BASE_LINE_CHART_OPTIONS,
       plugins: {
@@ -659,8 +659,8 @@ export class OrganizationInvolvementComponent {
         tooltip: {
           ...(BASE_LINE_CHART_OPTIONS.plugins?.tooltip ?? {}),
           callbacks: {
-            title: (context: TooltipItem<'line'>[]) => context[0].label,
-            label: (context: TooltipItem<'line'>) => `${label}: ${context.parsed.y}`,
+            title: (context) => context[0]?.label ?? '',
+            label: (context) => `${label}: ${context.parsed.y ?? 0}`,
           },
         },
       },

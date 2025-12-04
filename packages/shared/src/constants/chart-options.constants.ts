@@ -84,7 +84,7 @@ const STYLED_TOOLTIP_CONFIG = {
  * Base chart options for line charts
  * Used for sparkline visualizations with simple tooltips
  */
-export const BASE_LINE_CHART_OPTIONS: ChartOptions<'line'> = {
+export const BASE_LINE_CHART_OPTIONS: ChartOptions<ChartType> = {
   responsive: true,
   maintainAspectRatio: false,
   interaction: BASE_INTERACTION_CONFIG,
@@ -109,7 +109,7 @@ export const BASE_LINE_CHART_OPTIONS: ChartOptions<'line'> = {
  * Base chart options for bar charts
  * Used for bar chart visualizations with simple tooltips
  */
-export const BASE_BAR_CHART_OPTIONS: ChartOptions<'bar'> = {
+export const BASE_BAR_CHART_OPTIONS: ChartOptions<ChartType> = {
   responsive: true,
   maintainAspectRatio: false,
   interaction: BASE_INTERACTION_CONFIG,
@@ -136,7 +136,7 @@ export const BASE_BAR_CHART_OPTIONS: ChartOptions<'bar'> = {
  * Chart options for dual-line charts with styled tooltips
  * Used for multi-dataset charts like Issues Trend (opened vs closed)
  */
-export const DUAL_LINE_CHART_OPTIONS: ChartOptions<'line'> = {
+export const DUAL_LINE_CHART_OPTIONS: ChartOptions<ChartType> = {
   responsive: true,
   maintainAspectRatio: false,
   interaction: BASE_INTERACTION_CONFIG,
@@ -168,7 +168,7 @@ export const DUAL_LINE_CHART_OPTIONS: ChartOptions<'line'> = {
  * Chart options for bar charts with footer tooltips
  * Used for charts that need additional footer information (e.g., PR Velocity)
  */
-export const BAR_CHART_WITH_FOOTER_OPTIONS: ChartOptions<'bar'> = {
+export const BAR_CHART_WITH_FOOTER_OPTIONS: ChartOptions<ChartType> = {
   responsive: true,
   maintainAspectRatio: false,
   layout: {
@@ -196,7 +196,7 @@ export const BAR_CHART_WITH_FOOTER_OPTIONS: ChartOptions<'bar'> = {
  * Base chart options without tooltips
  * Used for simple sparkline visualizations where tooltips are not needed
  */
-export const NO_TOOLTIP_CHART_OPTIONS: ChartOptions<'line' | 'bar'> = {
+export const NO_TOOLTIP_CHART_OPTIONS: ChartOptions<ChartType> = {
   responsive: true,
   maintainAspectRatio: false,
   plugins: {
