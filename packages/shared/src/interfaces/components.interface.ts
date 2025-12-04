@@ -415,23 +415,23 @@ export interface MeetingItem {
 
 /**
  * Project item for project list
- * @description Structure for project information
+ * @description Structure for project information from USER_PROJECT_CONTRIBUTIONS_DAILY
  */
 export interface ProjectItem {
   /** Project name */
   name: string;
+  /** Project URL slug */
+  slug: string;
   /** Project logo URL */
   logo?: string;
-  /** User's role in project */
-  role: string;
-  /** User's affiliations */
+  /** User's role in project (Maintainer or Contributor) */
+  role: 'Maintainer' | 'Contributor';
+  /** User's affiliations (comma-separated if multiple) */
   affiliations: string[];
-  /** Code activity data for chart */
+  /** Code activity data for chart (daily values) */
   codeActivities: number[];
-  /** Non-code activity data for chart */
+  /** Non-code activity data for chart (daily values) */
   nonCodeActivities: number[];
-  /** Project status */
-  status: 'active' | 'archived';
 }
 
 /**

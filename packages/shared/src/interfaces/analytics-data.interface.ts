@@ -122,10 +122,10 @@ export interface UserCodeCommitsResponse {
 }
 
 /**
- * User Project Activity row from Snowflake PROJECT_CODE_ACTIVITY table
- * Represents daily project activity data
+ * User Project Contribution row from Snowflake USER_PROJECT_CONTRIBUTIONS_DAILY table
+ * Represents daily contribution activity for a user's projects
  */
-export interface UserProjectActivityRow {
+export interface UserProjectContributionRow {
   /**
    * Project unique identifier
    */
@@ -142,14 +142,24 @@ export interface UserProjectActivityRow {
   PROJECT_SLUG: string;
 
   /**
+   * Project logo URL
+   */
+  PROJECT_LOGO: string | null;
+
+  /**
    * Date of the activity (YYYY-MM-DD format)
    */
   ACTIVITY_DATE: string;
 
   /**
-   * Total activities (code + non-code) for this date
+   * Whether the user is a maintainer of this project
    */
-  DAILY_TOTAL_ACTIVITIES: number;
+  IS_MAINTAINER: boolean;
+
+  /**
+   * User's affiliation/organization name
+   */
+  AFFILIATION: string | null;
 
   /**
    * Code-related activities for this date

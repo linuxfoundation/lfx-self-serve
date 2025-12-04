@@ -5,6 +5,7 @@ import { Component, computed, inject, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
+import { ACCOUNTS } from '@lfx-one/shared';
 import { Account, PendingActionItem } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -35,7 +36,7 @@ export class BoardMemberDashboardComponent {
     selectedAccountId: new FormControl<string>(this.accountContextService.selectedAccount().accountId),
   });
 
-  public readonly availableAccounts: Signal<Account[]> = computed(() => this.accountContextService.availableAccounts);
+  public readonly availableAccounts = ACCOUNTS;
   public readonly selectedFoundation = computed(() => this.projectContextService.selectedFoundation());
   public readonly selectedProject = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
   public readonly refresh$: BehaviorSubject<void> = new BehaviorSubject<void>(undefined);

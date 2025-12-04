@@ -16,17 +16,7 @@
       </div>
     }
     <div class="overflow-x-auto">
-      <lfx-table
-        [value]="projects()"
-        [lazy]="true"
-        [paginator]="true"
-        [rows]="rows()"
-        [totalRecords]="totalRecords()"
-        [rowsPerPageOptions]="[5, 10, 20, 50]"
-        [showCurrentPageReport]="true"
-        [currentPageReportTemplate]="'Showing {first} to {last} of {totalRecords} projects'"
-        (onLazyLoad)="onPageChange($event)"
-        data-testid="dashboard-my-projects-table">
+      <lfx-table [value]="projects()" data-testid="dashboard-my-projects-table">
         <ng-template #header>
           <tr class="border-b border-border">
             <th class="text-left py-2 px-6 text-xs font-medium text-gray-500 w-1/4">Project</th>
@@ -83,6 +73,17 @@
             <td class="py-2 px-3 border-t border-gray-200">
               <div class="h-12 w-[12.5rem]">
                 <lfx-chart type="line" [data]="project.nonCodeActivitiesChartData" [options]="chartOptions" height="100%"></lfx-chart>
+              </div>
+            </td>
+          </tr>
+        </ng-template>
+
+        <ng-template #emptymessage>
+          <tr>
+            <td colspan="4" class="text-center py-8" data-testid="dashboard-my-projects-empty">
+              <div class="flex flex-col items-center gap-2">
+                <i class="fa-light fa-folder-open text-gray-400 text-3xl"></i>
+                <span class="text-sm text-gray-500">No projects found</span>
               </div>
             </td>
           </tr>

@@ -8,6 +8,7 @@ import { Logger } from '../helpers/logger';
 import { OrganizationService } from '../services/organization.service';
 import { ProjectService } from '../services/project.service';
 import { UserService } from '../services/user.service';
+import { getUsernameFromAuth } from '../utils/auth-helper';
 
 /**
  * Controller for handling analytics HTTP requests
@@ -116,22 +117,24 @@ export class AnalyticsController {
 
   /**
    * GET /api/analytics/my-projects
-   * Get user's projects with activity data for the last 30 days
-   * Supports pagination via query parameters: page (default 1) and limit (default 10)
+   * Get user's projects with activity data
    */
   public async getMyProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = Logger.start(req, 'get_my_projects');
 
     try {
-      // Parse pagination parameters
-      const page = Math.max(1, parseInt(req.query['page'] as string, 10) || 1);
-      const limit = Math.max(1, Math.min(100, parseInt(req.query['limit'] as string, 10) || 10));
+      // Get LF username from OIDC context
+      const lfUsername = await getUsernameFromAuth(req);
 
-      const response = await this.userService.getMyProjects(page, limit);
+      if (!lfUsername) {
+        throw new AuthenticationError('User username not found in authentication context', {
+          operation: 'get_my_projects',
+        });
+      }
+
+      const response = await this.userService.getMyProjects(lfUsername);
 
       Logger.success(req, 'get_my_projects', startTime, {
-        page,
-        limit,
         returned_projects: response.data.length,
         total_projects: response.totalProjects,
       });

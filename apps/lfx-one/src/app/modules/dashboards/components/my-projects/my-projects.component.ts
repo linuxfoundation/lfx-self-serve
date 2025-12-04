@@ -7,10 +7,9 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TableComponent } from '@components/table/table.component';
 import { AnalyticsService } from '@services/analytics.service';
-import { BehaviorSubject, finalize, switchMap, tap } from 'rxjs';
+import { finalize, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type { LazyLoadEvent } from 'primeng/api';
 import type { ProjectItemWithCharts } from '@lfx-one/shared/interfaces';
 import { hexToRgba, lfxColors } from '@lfx-one/shared';
 
@@ -23,7 +22,6 @@ import { hexToRgba, lfxColors } from '@lfx-one/shared';
 })
 export class MyProjectsComponent {
   private readonly analyticsService = inject(AnalyticsService);
-  private readonly paginationState$ = new BehaviorSubject({ page: 1, limit: 10 });
   protected readonly loading = signal(true);
 
   public readonly chartOptions: ChartOptions<'line'> = {
@@ -36,12 +34,10 @@ export class MyProjectsComponent {
     },
   };
 
-  public readonly rows = signal(10);
-
   private readonly projectsResponse = toSignal(
-    this.paginationState$.pipe(
+    this.analyticsService.getMyProjects().pipe(
       tap(() => this.loading.set(true)),
-      switchMap(({ page, limit }) => this.analyticsService.getMyProjects(page, limit).pipe(finalize(() => this.loading.set(false))))
+      finalize(() => this.loading.set(false))
     ),
     {
       initialValue: { data: [], totalProjects: 0 },
@@ -58,12 +54,6 @@ export class MyProjectsComponent {
   });
 
   public readonly totalRecords = computed(() => this.projectsResponse().totalProjects);
-
-  public onPageChange(event: LazyLoadEvent): void {
-    const page = Math.floor((event.first ?? 0) / (event.rows ?? 10)) + 1;
-    this.rows.set(event.rows ?? 10);
-    this.paginationState$.next({ page, limit: event.rows ?? 10 });
-  }
 
   private createChartData(data: number[], borderColor: string, backgroundColor: string): ChartData<'line'> {
     return {

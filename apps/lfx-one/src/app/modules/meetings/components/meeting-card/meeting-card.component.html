@@ -268,7 +268,7 @@
             [showAddButton]="!pastMeeting()"
             [additionalRegistrantsCount]="additionalRegistrantsCount()"
             [disabled]="isLegacyMeeting()"
-            disabledMessage="Meetings created outside of LFX One do not have RSVP functionality">
+            disabledMessage="RSVP functionality will soon be available for all upcoming LFX meetings visible to you">
           </lfx-meeting-rsvp-details>
         } @else if (!pastMeeting()) {
           <!-- Show RSVP Selection for authenticated invited non-organizers (upcoming meetings only) -->
@@ -277,7 +277,7 @@
               [meeting]="meeting()"
               [occurrenceId]="occurrence()?.occurrence_id"
               [disabled]="isLegacyMeeting()"
-              disabledMessage="Meetings created outside of LFX One do not have RSVP functionality">
+              disabledMessage="RSVP functionality will soon be available for all upcoming LFX meetings visible to you">
             </lfx-rsvp-button-group>
           } @else if (canRegisterForMeeting()) {
             <div class="h-full flex items-center justify-center">

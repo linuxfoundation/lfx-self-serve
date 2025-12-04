@@ -94,13 +94,10 @@ export class AnalyticsService {
 
   /**
    * Get user's projects with activity data
-   * @param page - Page number (1-based)
-   * @param limit - Number of projects per page
    * @returns Observable of user projects response
    */
-  public getMyProjects(page: number = 1, limit: number = 10): Observable<UserProjectsResponse> {
-    const params = { page: page.toString(), limit: limit.toString() };
-    return this.http.get<UserProjectsResponse>('/api/analytics/my-projects', { params }).pipe(
+  public getMyProjects(): Observable<UserProjectsResponse> {
+    return this.http.get<UserProjectsResponse>('/api/analytics/my-projects').pipe(
       catchError((error) => {
         console.error('Failed to fetch my projects:', error);
         return of({
