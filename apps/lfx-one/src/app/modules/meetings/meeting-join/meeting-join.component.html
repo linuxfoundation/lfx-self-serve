@@ -112,21 +112,40 @@
 
             <!-- Right Column: Join Button (immediate meetings) or RSVP (future meetings) -->
             @if (canJoinMeeting() && authenticated()) {
-              <!-- Join Button - Immediate Meeting -->
-              <div class="w-full md:w-[296px]">
-                <lfx-button
-                  label="Join Meeting"
-                  icon="fa-light fa-video"
-                  severity="success"
-                  size="large"
-                  [href]="fetchedJoinUrl() && !isLoadingJoinUrl() ? fetchedJoinUrl() : undefined"
-                  [disabled]="!fetchedJoinUrl() || isLoadingJoinUrl()"
-                  target="_blank"
-                  [styleClass]="!fetchedJoinUrl() || isLoadingJoinUrl() ? 'cursor-not-allowed w-full h-[40px]' : 'w-full h-[40px]'"
-                  rel="noopener noreferrer"
-                  [attr.data-testid]="'join-meeting-button-immediate'">
-                </lfx-button>
-              </div>
+              @if (fetchedJoinUrl() && !showGuestForm()) {
+                <div class="w-full md:w-[296px]">
+                  <lfx-button
+                    label="Join Meeting"
+                    icon="fa-light fa-video"
+                    severity="success"
+                    size="large"
+                    [href]="fetchedJoinUrl()"
+                    target="_blank"
+                    [styleClass]="'w-full h-[40px]'"
+                    rel="noopener noreferrer"
+                    [attr.data-testid]="'join-meeting-button-immediate'">
+                  </lfx-button>
+                </div>
+              } @else if (joinUrlError() !== null && !showGuestForm()) {
+                <div class="w-full md:w-[296px] flex flex-col gap-2">
+                  <lfx-button
+                    label="Join Meeting"
+                    icon="fa-light fa-video"
+                    [disabled]="true"
+                    size="large"
+                    styleClass="w-full h-[40px] bg-gray-300 text-gray-500 cursor-not-allowed"
+                    rel="noopener noreferrer"
+                    [attr.data-testid]="'join-meeting-button-error'">
+                  </lfx-button>
+                  <div class="text-xs text-red-500 bg-red-50 border border-red-500/50 rounded px-3 py-2">
+                    <span>{{ joinUrlError() }}</span
+                    >.
+                    @if (emailError()) {
+                      <span><a class="text-primary cursor-pointer" (click)="onEmailErrorClick()">Click here</a> to join using a different email address.</span>
+                    }
+                  </div>
+                </div>
+              }
             } @else if (authenticated() && meeting().organizer && !isLegacyMeeting()) {
               <!-- RSVP Details - Future Meeting (Authenticated Organizers) -->
               <div class="w-full md:w-[296px] flex flex-col gap-3">
@@ -252,21 +271,38 @@
           <!-- Card Footer: Authentication Section -->
           @if (authenticated() && user(); as user) {
             <!-- Signed In State -->
-            <div class="flex flex-col gap-3">
-              <p class="text-sm text-gray-950">You are signed in as:</p>
+            <div class="flex flex-col gap-6">
+              <div class="flex flex-col gap-3">
+                <p class="text-sm text-gray-950">You are signed in as:</p>
 
-              <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex flex-wrap items-center gap-3">
-                <!-- Avatar -->
-                <div class="hidden md:flex w-12 h-12 bg-blue-600 rounded-full items-center justify-center">
-                  <span class="text-white text-2xl font-medium">{{ (user.name || 'User').substring(0, 2).toUpperCase() }}</span>
-                </div>
+                <div class="bg-blue-50 border border-blue-500/50 rounded px-3 py-2 flex flex-wrap items-center gap-3">
+                  <!-- Avatar -->
+                  <div class="hidden md:flex w-12 h-12 bg-blue-600 rounded-full items-center justify-center">
+                    <span class="text-white text-2xl font-medium">{{ (user.name || 'User').substring(0, 2).toUpperCase() }}</span>
+                  </div>
 
-                <!-- User Info -->
-                <div class="flex-1">
-                  <p class="font-semibold text-sm text-blue-900">{{ user.name }}</p>
-                  <p class="text-sm text-blue-900">{{ user.email }}</p>
+                  <!-- User Info -->
+                  <div class="flex-1">
+                    <p class="font-semibold text-sm text-blue-900">{{ user.name }}</p>
+                    <p class="text-sm text-blue-900">{{ user.email }}</p>
+                  </div>
                 </div>
               </div>
+
+              <!-- Guest Form for authenticated users -->
+              @if (showGuestForm()) {
+                <!-- OR Divider -->
+                <div class="relative h-px bg-gray-200">
+                  <span class="absolute left-1/2 top-1/2 -translate-x-1/2 -translate-y-1/2 bg-white px-3 text-xs text-gray-600">OR</span>
+                </div>
+
+                <lfx-guest-form [form]="joinForm" [joinUrl]="fetchedJoinUrl()" [isLoading]="isLoadingJoinUrl()"> </lfx-guest-form>
+                @if (joinUrlError() !== null) {
+                  <div class="text-xs text-red-500 bg-red-50 border border-red-500/50 rounded px-3 py-2 text-center">
+                    <span>{{ joinUrlError() }}. Please contact the meeting organizer or support team if you believe this is an error.</span>
+                  </div>
+                }
+              }
             </div>
           } @else {
             <!-- Signed Out State -->
@@ -298,80 +334,12 @@
               </div>
 
               <!-- Guest Form -->
-              <div class="flex flex-col gap-4">
-                <p class="font-semibold text-sm text-blue-900">Enter your information</p>
-
-                <form [formGroup]="joinForm" class="flex flex-col gap-4">
-                  <!-- Name + Email Row -->
-                  <div class="flex flex-col md:flex-row gap-4">
-                    <div class="flex-1">
-                      <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
-                        <i class="fa-light fa-user text-gray-600"></i>
-                        <span>Full Name</span>
-                        <span class="text-red-500">*</span>
-                      </label>
-                      <lfx-input-text
-                        size="small"
-                        [form]="joinForm"
-                        control="name"
-                        placeholder="John Doe"
-                        styleClass="w-full"
-                        [attr.data-testid]="'guest-form-name'">
-                      </lfx-input-text>
-                    </div>
-
-                    <div class="flex-1">
-                      <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
-                        <i class="fa-light fa-envelope text-gray-600"></i>
-                        <span>Email</span>
-                        <span class="text-red-500">*</span>
-                      </label>
-                      <lfx-input-text
-                        size="small"
-                        [form]="joinForm"
-                        control="email"
-                        type="email"
-                        placeholder="john.doe@example.com"
-                        styleClass="w-full"
-                        [attr.data-testid]="'guest-form-email'">
-                      </lfx-input-text>
-                    </div>
-                  </div>
-
-                  <!-- Organization Row -->
-                  <div>
-                    <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
-                      <i class="fa-light fa-building text-gray-600"></i>
-                      <span>Organization</span>
-                    </label>
-                    <lfx-input-text
-                      size="small"
-                      [form]="joinForm"
-                      control="organization"
-                      placeholder="Your Company"
-                      styleClass="w-full"
-                      [attr.data-testid]="'guest-form-organization'">
-                    </lfx-input-text>
-                  </div>
-
-                  <!-- Submit Button -->
-                  <div class="flex justify-end md:justify-center">
-                    <lfx-button
-                      class="w-full md:w-auto"
-                      styleClass="w-full md:w-auto"
-                      size="small"
-                      label="Join Meeting"
-                      icon="fa-light fa-arrow-right-to-bracket"
-                      severity="info"
-                      [disabled]="joinForm.invalid || !fetchedJoinUrl() || isLoadingJoinUrl()"
-                      [href]="fetchedJoinUrl()"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      [attr.data-testid]="'join-meeting-button-form'">
-                    </lfx-button>
-                  </div>
-                </form>
-              </div>
+              <lfx-guest-form [form]="joinForm" [joinUrl]="fetchedJoinUrl()" [isLoading]="isLoadingJoinUrl()"> </lfx-guest-form>
+              @if (joinUrlError() !== null) {
+                <div class="text-xs text-red-500 bg-red-50 border border-red-500/50 rounded px-3 py-2 text-center">
+                  <span>{{ joinUrlError() }}. Please contact the meeting organizer or support team if you believe this is an error.</span>
+                </div>
+              }
             </div>
           }
         </lfx-card>

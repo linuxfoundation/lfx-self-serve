@@ -1,0 +1,73 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4">
+  <p class="font-semibold text-sm text-blue-900">Enter your information</p>
+
+  <form [formGroup]="form()" class="flex flex-col gap-4">
+    <!-- Name + Email Row -->
+    <div class="flex flex-col md:flex-row gap-4">
+      <div class="flex-1">
+        <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
+          <i class="fa-light fa-user text-gray-600"></i>
+          <span>Full Name</span>
+          <span class="text-red-500">*</span>
+        </label>
+        <lfx-input-text size="small" [form]="form()" control="name" placeholder="John Doe" styleClass="w-full" [attr.data-testid]="'guest-form-name'">
+        </lfx-input-text>
+      </div>
+
+      <div class="flex-1">
+        <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
+          <i class="fa-light fa-envelope text-gray-600"></i>
+          <span>Email</span>
+          <span class="text-red-500">*</span>
+        </label>
+        <lfx-input-text
+          size="small"
+          [form]="form()"
+          control="email"
+          type="email"
+          placeholder="john.doe@example.com"
+          styleClass="w-full"
+          [attr.data-testid]="'guest-form-email'">
+        </lfx-input-text>
+      </div>
+    </div>
+
+    <!-- Organization Row -->
+    <div>
+      <label class="flex items-center gap-1 text-xs text-blue-900 mb-2">
+        <i class="fa-light fa-building text-gray-600"></i>
+        <span>Organization</span>
+      </label>
+      <lfx-input-text
+        size="small"
+        [form]="form()"
+        control="organization"
+        placeholder="Your Company"
+        styleClass="w-full"
+        [attr.data-testid]="'guest-form-organization'">
+      </lfx-input-text>
+    </div>
+
+    <!-- Submit Button -->
+    @if (showSubmitButton()) {
+      <div class="flex justify-end md:justify-center">
+        <lfx-button
+          class="w-full md:w-auto"
+          styleClass="w-full md:w-auto"
+          size="small"
+          [label]="submitButtonLabel()"
+          icon="fa-light fa-arrow-right-to-bracket"
+          severity="info"
+          [disabled]="form().invalid || !joinUrl() || isLoading()"
+          [href]="joinUrl()"
+          target="_blank"
+          rel="noopener noreferrer"
+          [attr.data-testid]="'join-meeting-button-form'">
+        </lfx-button>
+      </div>
+    }
+  </form>
+</div>

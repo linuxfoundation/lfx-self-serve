@@ -13,7 +13,6 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { HeaderComponent } from '@components/header/header.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import {
@@ -35,13 +34,14 @@ import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
+import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, combineLatest, debounceTime, filter, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
 
+import { GuestFormComponent } from '../components/guest-form/guest-form.component';
 import { MeetingRsvpDetailsComponent } from '../components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { PublicRegistrationModalComponent } from '../components/public-registration-modal/public-registration-modal.component';
-import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 
 @Component({
   selector: 'lfx-meeting-join',
@@ -52,11 +52,11 @@ import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
     ReactiveFormsModule,
     ButtonComponent,
     CardComponent,
-    InputTextComponent,
     TagComponent,
     RsvpButtonGroupComponent,
     MeetingRsvpDetailsComponent,
     MeetingRegistrantsDisplayComponent,
+    GuestFormComponent,
     ToastModule,
     TooltipModule,
     MeetingTimePipe,
@@ -105,7 +105,9 @@ export class MeetingJoinComponent {
   public alertMessage: Signal<string>;
   private hasAutoJoined: WritableSignal<boolean> = signal<boolean>(false);
   public showRegistrants: WritableSignal<boolean> = signal<boolean>(false);
+  public showGuestForm: WritableSignal<boolean> = signal<boolean>(false);
   private refreshTrigger$ = new BehaviorSubject<void>(undefined);
+  public emailError: Signal<boolean>;
 
   // TODO(v1-migration): Remove V1/V2 fallback fields once all meetings are migrated to V2
   // V1/V2 fallback fields
@@ -150,6 +152,7 @@ export class MeetingJoinComponent {
     this.messageSeverity = this.initializeMessageSeverity();
     this.messageIcon = this.initializeMessageIcon();
     this.alertMessage = this.initializeAlertMessage();
+    this.emailError = this.initializeEmailError();
     this.initializeAutoJoin();
   }
 
@@ -175,6 +178,11 @@ export class MeetingJoinComponent {
 
   public onRegistrantsToggle(): void {
     this.showRegistrants.set(!this.showRegistrants());
+  }
+
+  public onEmailErrorClick(): void {
+    this.joinUrlError.set(null);
+    this.showGuestForm.set(true);
   }
 
   public registerForMeeting(): void {
@@ -209,13 +217,15 @@ export class MeetingJoinComponent {
     toObservable(this.fetchedJoinUrl)
       .pipe(
         // Take only the first emission where we have a valid URL and haven't auto-joined yet
+        // Only auto-join for authenticated users using their own email (not guest form)
         filter((url) => {
           const authenticated = this.authenticated();
           const user = this.user();
           const canJoin = this.canJoinMeeting();
           const alreadyJoined = this.hasAutoJoined();
+          const usingGuestForm = this.showGuestForm();
 
-          return !!url && authenticated && !!user && !!user.email && canJoin && !alreadyJoined;
+          return !!url && authenticated && !!user && !!user.email && canJoin && !alreadyJoined && !usingGuestForm;
         }),
         // Take only the first valid URL
         take(1)
@@ -294,7 +304,7 @@ export class MeetingJoinComponent {
   private initializeJoinForm(): FormGroup {
     return new FormGroup({
       name: new FormControl<string>(this.user()?.name || '', [Validators.required]),
-      email: new FormControl<string>(this.user()?.email || '', [Validators.required, Validators.email]),
+      email: new FormControl<string>('', [Validators.required, Validators.email]),
       organization: new FormControl<string>(''),
     });
   }
@@ -413,7 +423,7 @@ export class MeetingJoinComponent {
           // Determine email based on authentication status
           let email: string | undefined;
 
-          if (authenticated) {
+          if (authenticated && !this.showGuestForm()) {
             // For authenticated users, use their email from user profile
             email = user?.email;
             if (!email) {
@@ -556,6 +566,12 @@ export class MeetingJoinComponent {
     return computed(() => {
       const meeting = this.meeting();
       return !this.isInvited() && !meeting?.restricted && meeting?.visibility === 'public';
+    });
+  }
+
+  private initializeEmailError(): Signal<boolean> {
+    return computed(() => {
+      return this.joinUrlError()?.toLowerCase().includes('email address is not registered for this restricted meeting') ?? false;
     });
   }
 }

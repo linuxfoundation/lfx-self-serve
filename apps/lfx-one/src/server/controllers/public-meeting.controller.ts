@@ -184,7 +184,7 @@ export class PublicMeetingController {
   public async postMeetingJoinUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
     const { password } = req.query;
-    const email: string = req.oidc.user?.['email'] ?? req.body.email;
+    const email: string = req.body.email ?? req.oidc.user?.['email'] ?? '';
     const startTime = Logger.start(req, 'post_meeting_join_url', {
       meeting_uid: id,
     });

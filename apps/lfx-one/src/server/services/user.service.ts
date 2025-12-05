@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DEFAULT_QUERY_PARAMS, NATS_CONFIG } from '@lfx-one/shared/constants';
-import { MeetingVisibility, NatsSubjects } from '@lfx-one/shared/enums';
+import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
   ActiveWeeksStreakRow,
@@ -478,15 +478,17 @@ export class UserService {
 
   /**
    * Fetches all meetings for the current user filtered by project
-   * Gets meetings the user has access to, then filters public meetings by registration status
+   * Gets meetings the user has access to, then filters ALL meetings by registration status
+   * This ensures "my meetings" only shows meetings the user is actually invited to
    * @param req - Express request object
    * @param email - User's email address for registration check
    * @param projectUid - Project UID to filter meetings by
-   * @returns Array of Meeting objects the user is registered for or has access to
+   * @returns Array of Meeting objects the user is registered for
    */
   public async getUserMeetings(req: Request, email: string, projectUid: string, query: Record<string, any>): Promise<Meeting[]> {
     try {
       // Step 1: Get all meetings the user has access to, filtered by project
+      // Note: Writers have API access to all meetings, but we still filter by registration
       const meetings = await this.meetingService.getMeetings(req, query, 'meeting', false);
       const v1Meetings = await this.meetingService.getMeetings(req, query, 'v1_meeting', false);
 
@@ -505,99 +507,34 @@ export class UserService {
         return [];
       }
 
-      // Step 2: Separate public and private meetings
-      const publicMeetings = allMeetings.filter((m) => m.visibility === MeetingVisibility.PUBLIC);
-      const privateMeetings = allMeetings.filter((m) => m.visibility !== MeetingVisibility.PUBLIC);
-
       req.log.debug(
         {
           operation: 'get_user_meetings',
           total_meetings: allMeetings.length,
           regular_meetings: meetings.length,
           v1_meetings: v1Meetings.length,
-          public_meetings: publicMeetings.length,
-          private_meetings: privateMeetings.length,
         },
-        'Separated meetings by visibility'
+        'Retrieved meetings from API'
       );
 
-      // Step 3: For public meetings, check if user is registered using M2M token
-      let filteredPublicMeetings: Meeting[] = [];
+      const m2mToken = await generateM2MToken(req);
+      const baseUrl = process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local';
 
-      if (publicMeetings.length > 0) {
-        const m2mToken = await generateM2MToken(req);
-        const baseUrl = process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local';
-
-        // Check registration status for each public meeting in parallel
-        const registrationChecks = await Promise.all(
-          publicMeetings.map(async (meeting) => {
-            try {
-              const query = {
-                v: 1,
-                type: 'meeting_registrant',
-                parent: `meeting:${meeting.uid}`,
-                tags_all: [`email:${email}`],
-                ...DEFAULT_QUERY_PARAMS,
-              };
-
-              // If meeting is v1, use v1_meeting_registrant type and tags_all format
-              if (meeting.version === 'v1') {
-                query.type = 'v1_meeting_registrant';
-                query.tags_all.push(`meeting_uid:${meeting.id}`);
-                query.parent = '';
-              }
-
-              const response = await this.apiClientService.request<QueryServiceResponse<MeetingRegistrant>>(
-                'GET',
-                `${baseUrl}/query/resources`,
-                m2mToken,
-                query
-              );
-
-              // If resources array has items, user is registered
-              const isRegistered = response.data.resources && response.data.resources.length > 0;
-
-              req.log.debug(
-                {
-                  operation: 'get_user_meetings',
-                  meeting_uid: meeting.uid,
-                  is_registered: isRegistered,
-                },
-                'Checked user registration for public meeting'
-              );
-
-              return isRegistered ? meeting : null;
-            } catch (error) {
-              req.log.warn(
-                {
-                  operation: 'get_user_meetings',
-                  meeting_uid: meeting.uid,
-                  err: error,
-                },
-                'Failed to check registration for public meeting, excluding from results'
-              );
-              return null;
-            }
-          })
-        );
-
-        filteredPublicMeetings = registrationChecks.filter((m): m is Meeting => m !== null);
-      }
-
-      // Step 4: Combine private meetings (user has access = implicitly allowed) with filtered public meetings
-      const result = [...privateMeetings, ...filteredPublicMeetings];
+      // Step 2: Filter ALL meetings by registration status
+      // For "my meetings", we only show meetings the user is actually registered for
+      // This applies to both public and private meetings, regardless of writer status
+      const filteredMeetings = await this.filterMeetingsByRegistration(req, allMeetings, email, m2mToken, baseUrl);
 
       req.log.info(
         {
           operation: 'get_user_meetings',
-          private_meetings_count: privateMeetings.length,
-          filtered_public_meetings_count: filteredPublicMeetings.length,
-          total_result_count: result.length,
+          total_accessible: allMeetings.length,
+          registered_meetings: filteredMeetings.length,
         },
-        'User meetings retrieved successfully'
+        'User meetings filtered by registration'
       );
 
-      return result;
+      return filteredMeetings;
     } catch (error) {
       req.log.error(
         {
@@ -609,6 +546,65 @@ export class UserService {
       );
       throw error;
     }
+  }
+
+  /**
+   * Filter meetings by user registration status
+   * @private
+   */
+  private async filterMeetingsByRegistration(req: Request, meetings: Meeting[], email: string, m2mToken: string, baseUrl: string): Promise<Meeting[]> {
+    if (meetings.length === 0) {
+      return [];
+    }
+
+    const registrationChecks = await Promise.all(
+      meetings.map(async (meeting) => {
+        try {
+          const query = {
+            v: 1,
+            type: 'meeting_registrant',
+            parent: `meeting:${meeting.uid}`,
+            tags_all: [`email:${email}`],
+            ...DEFAULT_QUERY_PARAMS,
+          };
+
+          // If meeting is v1, use v1_meeting_registrant type and tags_all format
+          if (meeting.version === 'v1') {
+            query.type = 'v1_meeting_registrant';
+            query.tags_all.push(`meeting_uid:${meeting.id}`);
+            query.parent = '';
+          }
+
+          const response = await this.apiClientService.request<QueryServiceResponse<MeetingRegistrant>>('GET', `${baseUrl}/query/resources`, m2mToken, query);
+
+          // If resources array has items, user is registered
+          const isRegistered = response.data.resources && response.data.resources.length > 0;
+
+          req.log.debug(
+            {
+              operation: 'filter_meetings_by_registration',
+              meeting_uid: meeting.uid,
+              is_registered: isRegistered,
+            },
+            'Checked user registration for meeting'
+          );
+
+          return isRegistered ? meeting : null;
+        } catch (error) {
+          req.log.warn(
+            {
+              operation: 'filter_meetings_by_registration',
+              meeting_uid: meeting.uid,
+              err: error,
+            },
+            'Failed to check registration for meeting, excluding from results'
+          );
+          return null;
+        }
+      })
+    );
+
+    return registrationChecks.filter((m): m is Meeting => m !== null);
   }
 
   /**
