@@ -1,0 +1,41 @@
+# Copyright The Linux Foundation and each contributor to LFX.
+---
+site_name: 'LFX One UI'
+site_description: 'Documentation for LFX One UI'
+nav:
+  - Home: index.md
+  - Architecture: architecture.md
+  - Build Time Secrets: build-time-secrets.md
+  - Deployment: deployment.md
+  - Troubleshooting: troubleshooting.md
+  - Architecture Guide:
+    - Overview: architecture/README.md
+    - Backend:
+      - Overview: architecture/backend/README.md
+      - AI Service: architecture/backend/ai-service.md
+      - Authentication: architecture/backend/authentication.md
+      - Error Handling: architecture/backend/error-handling-architecture.md
+      - Logging & Monitoring: architecture/backend/logging-monitoring.md
+      - NATS Integration: architecture/backend/nats-integration.md
+      - Public Meetings: architecture/backend/public-meetings.md
+      - Snowflake Integration: architecture/backend/snowflake-integration.md
+      - SSR Server: architecture/backend/ssr-server.md
+    - Frontend:
+      - Overview: architecture/frontend/README.md
+      - Angular Patterns: architecture/frontend/angular-patterns.md
+      - Component Architecture: architecture/frontend/component-architecture.md
+      - Feature Flags: architecture/frontend/feature-flags.md
+      - Lazy Loading & Preloading: architecture/frontend/lazy-loading-preloading-strategy.md
+      - Performance: architecture/frontend/performance.md
+      - State Management: architecture/frontend/state-management.md
+      - Styling System: architecture/frontend/styling-system.md
+    - Shared:
+      - Overview: architecture/shared/README.md
+      - Development Workflow: architecture/shared/development-workflow.md
+      - Package Architecture: architecture/shared/package-architecture.md
+    - Testing:
+      - Overview: architecture/testing/README.md
+      - E2E Testing: architecture/testing/e2e-testing.md
+      - Testing Best Practices: architecture/testing/testing-best-practices.md
+plugins:
+  - techdocs-core
