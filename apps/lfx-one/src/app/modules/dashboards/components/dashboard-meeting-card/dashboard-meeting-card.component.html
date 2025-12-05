@@ -126,20 +126,6 @@
             icon="fa-light fa-video"
             styleClass="w-full bg-emerald-500 hover:bg-emerald-600 text-white h-8 text-sm font-semibold"
             data-testid="dashboard-meeting-card-join-button" />
-        } @else {
-          <!-- Fallback: redirect to join page -->
-          <lfx-button
-            type="button"
-            size="small"
-            class="w-full"
-            label="Join Meeting"
-            [routerLink]="meetingDetailRouterLink()"
-            [queryParams]="meetingDetailQueryParams()"
-            target="_blank"
-            rel="noopener noreferrer"
-            icon="fa-light fa-video"
-            styleClass="w-full bg-emerald-500 hover:bg-emerald-600 text-white h-8 text-sm font-semibold"
-            data-testid="dashboard-meeting-card-join-button" />
         }
       }
     </div>
