@@ -167,6 +167,24 @@ export function formatTo12Hour(date: Date): string {
 }
 
 /**
+ * Formats a Date object to 12-hour time format in a specific timezone
+ * @param date The date to format (typically a UTC date)
+ * @param timezone The IANA timezone identifier (e.g., "America/Chicago")
+ * @returns Time string in 12-hour format (e.g., "11:30 AM")
+ */
+export function formatTo12HourInTimezone(date: Date, timezone: string): string {
+  try {
+    // Convert the UTC date to the specified timezone
+    const zonedDate = toZonedTime(date, timezone);
+    return formatTo12Hour(zonedDate);
+  } catch (error) {
+    console.error('Error formatting time in timezone:', timezone, error);
+    // Fallback to local timezone formatting
+    return formatTo12Hour(date);
+  }
+}
+
+/**
  * Parses a 12-hour time string and returns hours and minutes
  */
 export function parseTime12Hour(time: string): { hours: number; minutes: number } | null {

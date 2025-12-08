@@ -174,7 +174,9 @@ export class MeetingService {
     const sanitizedPayload = Logger.sanitize({ createPayload });
     req.log.debug(sanitizedPayload, 'Creating meeting payload');
 
-    const newMeeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', '/meetings', 'POST', undefined, createPayload);
+    const newMeeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', '/meetings', 'POST', undefined, createPayload, {
+      ['X-Sync']: 'true',
+    });
 
     req.log.info(
       {

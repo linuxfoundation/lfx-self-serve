@@ -33,7 +33,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import {
   combineDateTime,
-  formatTo12Hour,
+  formatTo12HourInTimezone,
   generateRecurrenceObject,
   getDefaultStartDateTime,
   getUserTimezone,
@@ -42,6 +42,7 @@ import {
 import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { toZonedTime } from 'date-fns-tz';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
@@ -264,7 +265,7 @@ export class MeetingManageComponent {
   }
 
   public onSubmitAll(): void {
-    // Edit mode only - save meeting and registrants together using forkJoin
+    // Edit mode only - save meeting, attachments, and registrants together using forkJoin
     if (!this.isEditMode()) {
       return;
     }
@@ -284,36 +285,68 @@ export class MeetingManageComponent {
 
     // Prepare meeting data
     const meetingData = this.prepareMeetingData();
-    const updateMeeting$ = this.meetingService.updateMeeting(this.meetingId()!, meetingData as UpdateMeetingRequest, 'single');
+    const meetingId = this.meetingId()!;
+    const updateMeeting$ = this.meetingService.updateMeeting(meetingId, meetingData as UpdateMeetingRequest, 'single');
 
     // Prepare registrant operations
     const registrantOperations = this.buildRegistrantOperations();
     const registrants$ = registrantOperations.length > 0 ? concat(...registrantOperations).pipe(toArray()) : of([]);
 
-    // Execute both operations in parallel
+    // Prepare attachment operations
+    const attachments$ = this.processAttachmentOperations(meetingId);
+
+    // Execute all operations in parallel
     forkJoin({
       meeting: updateMeeting$,
       registrants: registrants$,
+      attachments: attachments$,
     })
       .pipe(finalize(() => this.submitting.set(false)))
       .subscribe({
-        next: (result: { meeting: Meeting; registrants: { type: string; success: number; failed: number }[] }) => {
+        next: (result: {
+          meeting: Meeting;
+          registrants: { type: string; success: number; failed: number }[];
+          attachments: {
+            deletions: { successes: number; failures: string[] };
+            uploads: { successes: MeetingAttachment[]; failures: { fileName: string; error: any }[] };
+            links: { successes: MeetingAttachment[]; failures: { linkName: string; error: any }[] };
+          } | null;
+        }) => {
           const registrantResults = result.registrants;
+          const attachmentResults = result.attachments;
 
           // Calculate registrant operation results
-          const totalSuccess = registrantResults.reduce((sum: number, r: { type: string; success: number; failed: number }) => sum + r.success, 0);
-          const totalFailed = registrantResults.reduce((sum: number, r: { type: string; success: number; failed: number }) => sum + r.failed, 0);
+          const totalRegistrantSuccess = registrantResults.reduce((sum: number, r: { type: string; success: number; failed: number }) => sum + r.success, 0);
+          const totalRegistrantFailed = registrantResults.reduce((sum: number, r: { type: string; success: number; failed: number }) => sum + r.failed, 0);
 
-          // Show success message
-          if (totalSuccess > 0 || totalFailed > 0) {
-            this.showRegistrantOperationToast(totalSuccess, totalFailed, totalSuccess + totalFailed);
-          } else {
-            this.messageService.add({
-              severity: 'success',
-              summary: 'Success',
-              detail: 'Meeting updated successfully',
+          // Calculate attachment operation results
+          let totalAttachmentSuccess = 0;
+          let totalAttachmentFailed = 0;
+          if (attachmentResults) {
+            totalAttachmentSuccess =
+              attachmentResults.deletions.successes + attachmentResults.uploads.successes.length + attachmentResults.links.successes.length;
+            totalAttachmentFailed =
+              attachmentResults.deletions.failures.length + attachmentResults.uploads.failures.length + attachmentResults.links.failures.length;
+
+            // Clear pending deletions when operations complete without failures
+            if (attachmentResults.deletions.failures.length === 0 && this.pendingAttachmentDeletions().length > 0) {
+              this.pendingAttachmentDeletions.set([]);
+            }
+
+            // Log individual attachment failures for debugging
+            attachmentResults.uploads.failures.forEach((failure) => {
+              console.error(`Failed to upload attachment ${failure.fileName}:`, failure.error);
+            });
+            attachmentResults.links.failures.forEach((failure) => {
+              console.error(`Failed to add link ${failure.linkName}:`, failure.error);
+            });
+            attachmentResults.deletions.failures.forEach((attachmentId) => {
+              console.error(`Failed to delete attachment ${attachmentId}`);
             });
           }
+
+          // Show appropriate success message
+          this.showSubmitAllOperationToast(totalRegistrantSuccess, totalRegistrantFailed, totalAttachmentSuccess, totalAttachmentFailed);
 
           // Navigate back to meetings list
           this.router.navigate(['/meetings']);
@@ -445,79 +478,59 @@ export class MeetingManageComponent {
   private handleMeetingSuccess(meeting: Meeting): void {
     this.meetingId.set(meeting.uid);
 
-    // If we're in create mode and not on the last step, continue to next step
-    if (!this.isEditMode() && this.currentStep() < this.totalSteps) {
+    // If we're in create mode and before the resources step (step 4), just continue to next step
+    // We need to process attachments starting from step 4 (Resources & Summary) onwards
+    if (!this.isEditMode() && this.currentStep() < this.totalSteps - 1) {
       this.nextStep();
       this.submitting.set(false);
       return;
     }
 
-    const hasPendingDeletions = this.pendingAttachmentDeletions().length > 0;
-    const hasPendingUploads = this.pendingAttachments.length > 0;
-    const importantLinksArray = this.form().get('important_links') as FormArray;
-    const hasPendingLinks = importantLinksArray.length > 0;
+    // Process attachment operations using extracted method
+    this.processAttachmentOperations(meeting.uid).subscribe({
+      next: (result) => {
+        if (result) {
+          // Process attachment operations after meeting save
+          this.handleAttachmentOperationsResults(result);
+        } else {
+          // No attachment operations to process
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: `Meeting ${this.isEditMode() ? 'updated' : 'created'} successfully`,
+          });
 
-    // If we have pending deletions, uploads, or links, process them
-    if (hasPendingDeletions || hasPendingUploads || hasPendingLinks) {
-      // Process deletions, then uploads, then links
-      this.deletePendingAttachments(meeting.uid)
-        .pipe(
-          switchMap((deletionResult) =>
-            this.savePendingAttachments(meeting.uid).pipe(
-              switchMap((uploadResult) =>
-                this.saveLinkAttachments(meeting.uid).pipe(
-                  switchMap((linkResult) =>
-                    of({
-                      deletions: deletionResult,
-                      uploads: uploadResult,
-                      links: linkResult,
-                    })
-                  )
-                )
-              )
-            )
-          ),
-          take(1)
-        )
-        .subscribe({
-          next: (result) => {
-            // Process attachment operations after meeting save
-            this.handleAttachmentOperationsResults(result);
-          },
-          error: (attachmentError: any) => {
-            console.error('Error processing attachments:', attachmentError);
-            const warningMessage = this.isEditMode()
-              ? 'Meeting updated but some attachment operations failed. You can manage them later.'
-              : 'Meeting created but some attachment operations failed. You can manage them later.';
-            this.messageService.add({
-              severity: 'warn',
-              summary: this.isEditMode() ? 'Meeting Updated' : 'Meeting Created',
-              detail: warningMessage,
-            });
-
-            // For edit mode, navigate to step 5 to manage guests
-            if (this.isEditMode()) {
-              this.router.navigate([], { queryParams: { step: '5' } });
-              this.submitting.set(false);
-            } else {
-              this.router.navigate(['/meetings']);
-            }
-          },
+          this.navigateAfterMeetingSave();
+        }
+      },
+      error: (attachmentError: any) => {
+        console.error('Error processing attachments:', attachmentError);
+        const warningMessage = this.isEditMode()
+          ? 'Meeting updated but some attachment operations failed. You can manage them later.'
+          : 'Meeting created but some attachment operations failed. You can manage them later.';
+        this.messageService.add({
+          severity: 'warn',
+          summary: this.isEditMode() ? 'Meeting Updated' : 'Meeting Created',
+          detail: warningMessage,
         });
-    } else {
-      this.messageService.add({
-        severity: 'success',
-        summary: 'Success',
-        detail: `Meeting ${this.isEditMode() ? 'updated' : 'created'} successfully`,
-      });
 
-      // For edit mode, navigate to step 5 to manage guests
-      if (this.isEditMode()) {
-        this.router.navigate([], { queryParams: { step: '5' } });
-        this.submitting.set(false);
-      } else {
-        this.router.navigate(['/meetings']);
-      }
+        this.navigateAfterMeetingSave();
+      },
+    });
+  }
+
+  private navigateAfterMeetingSave(): void {
+    this.submitting.set(false);
+
+    if (this.isEditMode()) {
+      // In edit mode, navigate to step 5 to manage guests
+      this.router.navigate([], { queryParams: { step: '5' } });
+    } else if (this.currentStep() < this.totalSteps) {
+      // In create mode and not on the last step, continue to next step
+      this.nextStep();
+    } else {
+      // In create mode on the last step, navigate to meetings list
+      this.router.navigate(['/meetings']);
     }
   }
 
@@ -618,13 +631,7 @@ export class MeetingManageComponent {
       this.pendingAttachmentDeletions.set([]);
     }
 
-    // For edit mode, navigate to step 5 to manage guests
-    if (this.isEditMode()) {
-      this.router.navigate([], { queryParams: { step: '5' } });
-      this.submitting.set(false);
-    } else {
-      this.router.navigate(['/meetings']);
-    }
+    this.navigateAfterMeetingSave();
   }
 
   private initializeMeeting() {
@@ -666,11 +673,17 @@ export class MeetingManageComponent {
     let startTime = '';
 
     if (meeting.start_time) {
-      const date = new Date(meeting.start_time);
-      startDate = date;
+      const utcDate = new Date(meeting.start_time);
+      const meetingTimezone = meeting.timezone || getUserTimezone();
 
-      // Convert to 12-hour format for display
-      startTime = formatTo12Hour(date);
+      // Convert UTC date to the meeting's timezone for proper display
+      // This ensures the date picker and time picker show the correct values
+      // in the meeting's timezone, not the user's local timezone
+      const zonedDate = toZonedTime(utcDate, meetingTimezone);
+      startDate = zonedDate;
+
+      // Convert to 12-hour format in the meeting's timezone for display
+      startTime = formatTo12HourInTimezone(utcDate, meetingTimezone);
     }
 
     // Map recurrence object back to form value
@@ -926,6 +939,42 @@ export class MeetingManageComponent {
     }
   }
 
+  private processAttachmentOperations(meetingId: string): Observable<{
+    deletions: { successes: number; failures: string[] };
+    uploads: { successes: MeetingAttachment[]; failures: { fileName: string; error: any }[] };
+    links: { successes: MeetingAttachment[]; failures: { linkName: string; error: any }[] };
+  } | null> {
+    const hasPendingDeletions = this.pendingAttachmentDeletions().length > 0;
+    const hasPendingUploads = this.pendingAttachments.length > 0;
+    const importantLinksArray = this.form().get('important_links') as FormArray;
+    const hasPendingLinks = importantLinksArray.length > 0;
+
+    // If no pending operations, return null
+    if (!hasPendingDeletions && !hasPendingUploads && !hasPendingLinks) {
+      return of(null);
+    }
+
+    // Process deletions, then uploads, then links
+    return this.deletePendingAttachments(meetingId).pipe(
+      switchMap((deletionResult) =>
+        this.savePendingAttachments(meetingId).pipe(
+          switchMap((uploadResult) =>
+            this.saveLinkAttachments(meetingId).pipe(
+              switchMap((linkResult) =>
+                of({
+                  deletions: deletionResult,
+                  uploads: uploadResult,
+                  links: linkResult,
+                })
+              )
+            )
+          )
+        )
+      ),
+      take(1)
+    );
+  }
+
   private deletePendingAttachments(meetingId: string): Observable<{ successes: number; failures: string[] }> {
     const attachmentIdsToDelete = this.pendingAttachmentDeletions();
 
@@ -1094,6 +1143,60 @@ export class MeetingManageComponent {
         severity: 'error',
         summary: 'Operation Failed',
         detail: `Failed to update ${totalFailed} guests(s)`,
+      });
+    }
+  }
+
+  private showSubmitAllOperationToast(registrantSuccess: number, registrantFailed: number, attachmentSuccess: number, attachmentFailed: number): void {
+    const totalSuccess = registrantSuccess + attachmentSuccess;
+    const totalFailed = registrantFailed + attachmentFailed;
+    const hasOperations = totalSuccess > 0 || totalFailed > 0;
+
+    if (!hasOperations) {
+      // No additional operations, just meeting update
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Success',
+        detail: 'Meeting updated successfully',
+      });
+      return;
+    }
+
+    if (totalFailed === 0) {
+      // All successful
+      const parts = [];
+      if (registrantSuccess > 0) {
+        parts.push(`${registrantSuccess} guest(s)`);
+      }
+      if (attachmentSuccess > 0) {
+        parts.push(`${attachmentSuccess} attachment(s)`);
+      }
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Success',
+        detail: `Meeting updated successfully with ${parts.join(' and ')}`,
+      });
+    } else if (totalSuccess > 0 && totalFailed > 0) {
+      // Partial success
+      const successParts = [];
+      const failureParts = [];
+
+      if (registrantSuccess > 0) successParts.push(`${registrantSuccess} guest(s)`);
+      if (attachmentSuccess > 0) successParts.push(`${attachmentSuccess} attachment(s)`);
+      if (registrantFailed > 0) failureParts.push(`${registrantFailed} guest(s)`);
+      if (attachmentFailed > 0) failureParts.push(`${attachmentFailed} attachment(s)`);
+
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Partial Success',
+        detail: `Meeting updated. ${successParts.join(' and ')} succeeded, ${failureParts.join(' and ')} failed`,
+      });
+    } else {
+      // All additional operations failed
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Meeting Updated',
+        detail: 'Meeting updated but some operations failed. You can manage them later.',
       });
     }
   }
