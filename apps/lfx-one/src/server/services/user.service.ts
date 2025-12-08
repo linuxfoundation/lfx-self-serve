@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DEFAULT_QUERY_PARAMS, NATS_CONFIG } from '@lfx-one/shared/constants';
+import { parseToInt } from '@lfx-one/shared/utils';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
@@ -647,7 +648,8 @@ export class UserService {
 
         for (const occurrence of activeOccurrences) {
           const startTime = new Date(occurrence.start_time);
-          const durationMinutes = occurrence.duration || meeting.duration || 0;
+          // Parse duration handling both string and number types (v1 meetings return strings)
+          const durationMinutes = parseToInt(occurrence.duration) ?? parseToInt(meeting.duration) ?? 0;
           // Calculate meeting end time + buffer
           const meetingEndWithBuffer = new Date(startTime.getTime() + (durationMinutes + this.bufferMinutes) * 60 * 1000);
 
@@ -658,7 +660,8 @@ export class UserService {
         }
       } else {
         const startTime = new Date(meeting.start_time);
-        const durationMinutes = meeting.duration || 0;
+        // Parse duration handling both string and number types (v1 meetings return strings)
+        const durationMinutes = parseToInt(meeting.duration) ?? 0;
         // Calculate meeting end time + buffer
         const meetingEndWithBuffer = new Date(startTime.getTime() + (durationMinutes + this.bufferMinutes) * 60 * 1000);
 

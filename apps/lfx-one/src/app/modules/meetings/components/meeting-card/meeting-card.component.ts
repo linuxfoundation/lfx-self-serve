@@ -147,6 +147,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
   public readonly hasAiCompanion: Signal<boolean> = this.initHasAiCompanion();
   public readonly meetingIdentifier: Signal<string> = this.initMeetingIdentifier();
+  public readonly joinQueryParams: Signal<Record<string, string>> = this.initJoinQueryParams();
 
   public readonly meetingDeleted = output<void>();
   public readonly project = this.projectService.project;
@@ -816,6 +817,24 @@ export class MeetingCardComponent implements OnInit {
     return computed(() => {
       const meeting = this.meetingInput();
       return this.isLegacyMeeting() && meeting.id ? (meeting.id as string) : meeting.uid;
+    });
+  }
+
+  // TODO(v1-migration): Remove V1 parameter handling once all meetings are migrated to V2
+  private initJoinQueryParams(): Signal<Record<string, string>> {
+    return computed(() => {
+      const meeting = this.meetingInput();
+      const params: Record<string, string> = {};
+
+      if (meeting.password) {
+        params['password'] = meeting.password;
+      }
+
+      if (this.isLegacyMeeting()) {
+        params['v1'] = 'true';
+      }
+
+      return params;
     });
   }
 }

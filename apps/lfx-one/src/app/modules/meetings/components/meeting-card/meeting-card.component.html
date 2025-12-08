@@ -177,7 +177,7 @@
             <div class="grid grid-cols-2 gap-1">
               @for (attachment of attachments(); track attachment.uid) {
                 <a
-                  [href]="attachment.type === 'link' ? attachment.link : '/api/meetings/' + meeting().uid + '/attachments/' + attachment.uid"
+                  [href]="attachment.type === 'link' ? attachment.link : '/api/meetings/' + meetingIdentifier() + '/attachments/' + attachment.uid"
                   target="_blank"
                   rel="noopener noreferrer"
                   class="inline-flex !text-black font-semibold items-center gap-1.5 px-2 py-1.5 bg-gray-200/80 hover:bg-gray-300/80 rounded text-[12px] tracking-wide transition-colors h-[26px]"
@@ -217,8 +217,8 @@
                 size="small"
                 class="w-full"
                 label="Join Meeting"
-                [routerLink]="['/meetings', meeting().uid]"
-                [queryParams]="{ password: meeting().password || '' }"
+                [routerLink]="['/meetings', meetingIdentifier()]"
+                [queryParams]="joinQueryParams()"
                 rel="noopener noreferrer"
                 icon="fa-light fa-video"
                 styleClass="w-full !bg-emerald-500 hover:!bg-emerald-600 !text-white !font-semibold"
