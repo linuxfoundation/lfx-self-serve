@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Pipe, PipeTransform } from '@angular/core';
-import { buildRecurrenceSummary, CustomRecurrencePattern, MeetingRecurrence } from '@lfx-one/shared';
+import { buildRecurrenceSummary, CustomRecurrencePattern, MeetingRecurrence, parseToInt } from '@lfx-one/shared';
 
 @Pipe({
   name: 'recurrenceSummary',
@@ -31,12 +31,12 @@ export class RecurrenceSummaryPipe implements PipeTransform {
   private convertToRecurrencePattern(recurrence: MeetingRecurrence): CustomRecurrencePattern {
     // Parse numeric values that might come as strings from v1 meetings
     // type defaults to 2 (weekly), repeat_interval defaults to 1
-    const type = this.parseToInt(recurrence.type) ?? 2;
-    const monthlyDay = this.parseToInt(recurrence.monthly_day);
-    const monthlyWeek = this.parseToInt(recurrence.monthly_week);
-    const monthlyWeekDay = this.parseToInt(recurrence.monthly_week_day);
-    const endTimes = this.parseToInt(recurrence.end_times);
-    const repeatInterval = this.parseToInt(recurrence.repeat_interval) ?? 1;
+    const type = parseToInt(recurrence.type) ?? 2;
+    const monthlyDay = parseToInt(recurrence.monthly_day);
+    const monthlyWeek = parseToInt(recurrence.monthly_week);
+    const monthlyWeekDay = parseToInt(recurrence.monthly_week_day);
+    const endTimes = parseToInt(recurrence.end_times);
+    const repeatInterval = parseToInt(recurrence.repeat_interval) ?? 1;
 
     // Determine pattern type from recurrence.type
     let patternType: 'daily' | 'weekly' | 'monthly' = 'weekly';
@@ -77,20 +77,5 @@ export class RecurrenceSummaryPipe implements PipeTransform {
       endType,
       weeklyDaysArray,
     };
-  }
-
-  /**
-   * Parse a value to integer, handling both string and number inputs.
-   * Returns undefined if the value is undefined, null, or cannot be parsed.
-   */
-  private parseToInt(value: string | number | undefined | null): number | undefined {
-    if (value === undefined || value === null) {
-      return undefined;
-    }
-    if (typeof value === 'number') {
-      return value;
-    }
-    const parsed = parseInt(value, 10);
-    return isNaN(parsed) ? undefined : parsed;
   }
 }

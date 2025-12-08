@@ -41,159 +41,33 @@ export class DashboardMeetingCardComponent {
   public readonly joinUrl: Signal<string | null>;
 
   // Computed values
-  public readonly meetingTypeInfo: Signal<MeetingTypeBadge> = computed(() => {
-    const type = this.meeting().meeting_type?.toLowerCase();
-    const config = type ? (MEETING_TYPE_CONFIGS[type] ?? DEFAULT_MEETING_TYPE_CONFIG) : DEFAULT_MEETING_TYPE_CONFIG;
-
-    // Map text color to severity
-    let severity: ComponentSeverity = 'secondary';
-    if (config.textColor.includes('red')) severity = 'danger';
-    else if (config.textColor.includes('blue')) severity = 'info';
-    else if (config.textColor.includes('green')) severity = 'success';
-    else if (config.textColor.includes('purple')) severity = 'primary';
-    else if (config.textColor.includes('amber')) severity = 'warn';
-
-    return {
-      label: config.label,
-      className: `${config.bgColor} ${config.textColor}`,
-      severity,
-      icon: `${config.icon} mr-2`,
-    };
-  });
-
-  public readonly meetingStartTime: Signal<string> = computed(() => {
-    const occurrence = this.occurrence();
-    const meeting = this.meeting();
-
-    // Use occurrence start time if available, otherwise use meeting start time
-    return occurrence?.start_time || meeting.start_time;
-  });
-
-  public readonly formattedTime: Signal<string> = computed(() => {
-    const startTime = this.meetingStartTime();
-
-    try {
-      const meetingDate = new Date(startTime);
-
-      if (isNaN(meetingDate.getTime())) {
-        return startTime;
-      }
-
-      const today = new Date();
-      const tomorrow = new Date(today);
-      tomorrow.setDate(tomorrow.getDate() + 1);
-
-      const isToday = meetingDate.toDateString() === today.toDateString();
-      const isTomorrow = meetingDate.toDateString() === tomorrow.toDateString();
-
-      const timeStr = meetingDate.toLocaleTimeString('en-US', {
-        hour: 'numeric',
-        minute: '2-digit',
-        hour12: true,
-      });
-
-      if (isToday) {
-        return `Today, ${timeStr}`;
-      } else if (isTomorrow) {
-        return `Tomorrow, ${timeStr}`;
-      }
-      const dateStr = meetingDate.toLocaleDateString('en-US', {
-        month: 'short',
-        day: 'numeric',
-      });
-      return `${dateStr} at ${timeStr}`;
-    } catch {
-      return startTime;
-    }
-  });
-
-  public readonly isTodayMeeting: Signal<boolean> = computed(() => {
-    const startTime = this.meetingStartTime();
-
-    try {
-      const meetingDate = new Date(startTime);
-
-      if (isNaN(meetingDate.getTime())) {
-        return false;
-      }
-
-      const today = new Date();
-      return meetingDate.toDateString() === today.toDateString();
-    } catch {
-      return false;
-    }
-  });
-
-  public readonly isPrivate: Signal<boolean> = computed(() => {
-    return this.meeting().visibility === 'private';
-  });
-
-  public readonly hasYoutubeUploads: Signal<boolean> = computed(() => {
-    return this.meeting().youtube_upload_enabled === true;
-  });
-
-  public readonly hasRecording: Signal<boolean> = computed(() => {
-    return this.meeting().recording_enabled === true;
-  });
-
-  public readonly hasTranscripts: Signal<boolean> = computed(() => {
-    return this.meeting().transcript_enabled === true;
-  });
+  public readonly meetingTypeInfo: Signal<MeetingTypeBadge> = this.initMeetingTypeInfo();
+  public readonly meetingStartTime: Signal<string> = this.initMeetingStartTime();
+  public readonly formattedTime: Signal<string> = this.initFormattedTime();
+  public readonly isTodayMeeting: Signal<boolean> = this.initIsTodayMeeting();
+  public readonly isPrivate: Signal<boolean> = this.initIsPrivate();
+  public readonly hasYoutubeUploads: Signal<boolean> = this.initHasYoutubeUploads();
+  public readonly hasRecording: Signal<boolean> = this.initHasRecording();
+  public readonly hasTranscripts: Signal<boolean> = this.initHasTranscripts();
+  public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
 
   // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
-  public readonly hasAiSummary: Signal<boolean> = computed(() => {
-    const meeting = this.meeting();
-    // V2: zoom_config.ai_companion_enabled, V1: zoom_ai_enabled
-    return meeting.zoom_config?.ai_companion_enabled === true || meeting.zoom_ai_enabled === true;
-  });
-
-  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
-  public readonly meetingTitle: Signal<string> = computed(() => {
-    const occurrence = this.occurrence();
-    const meeting = this.meeting();
-
-    // Priority: occurrence title > meeting title > meeting topic (v1)
-    return occurrence?.title || meeting.title || meeting.topic || '';
-  });
-
-  public readonly canJoinMeeting: Signal<boolean> = computed(() => {
-    return canJoinMeeting(this.meeting(), this.occurrence());
-  });
+  public readonly hasAiSummary: Signal<boolean> = this.initHasAiSummary();
+  public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
 
   // TODO(v1-migration): Remove once all meetings are migrated to V2
-  public readonly isLegacyMeeting: Signal<boolean> = computed(() => {
-    return this.meeting().version === 'v1';
-  });
-
-  // TODO(v1-migration): Simplify to use V2 uid only once all meetings are migrated to V2
-  public readonly meetingDetailRouterLink: Signal<string[]> = computed(() => {
-    const meeting = this.meeting();
-    const identifier = this.isLegacyMeeting() && meeting.id ? meeting.id : meeting.uid;
-    return ['/meetings', identifier];
-  });
-
-  // TODO(v1-migration): Remove V1 parameter handling once all meetings are migrated to V2
-  public readonly meetingDetailQueryParams: Signal<Record<string, string>> = computed(() => {
-    const meeting = this.meeting();
-    const params: Record<string, string> = {};
-
-    if (meeting.password) {
-      params['password'] = meeting.password;
-    }
-    if (this.isLegacyMeeting()) {
-      params['v1'] = 'true';
-    }
-
-    return params;
-  });
+  public readonly isLegacyMeeting: Signal<boolean> = this.initIsLegacyMeeting();
+  public readonly meetingIdentifier: Signal<string> = this.initMeetingIdentifier();
+  public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
 
   public constructor() {
     // Convert meeting input signal to observable and create reactive attachment stream
     const meeting$ = toObservable(this.meeting);
-    const attachments$ = meeting$.pipe(
-      switchMap((meeting) => {
-        if (meeting.uid) {
-          return this.meetingService.getMeetingAttachments(meeting.uid).pipe(catchError(() => of([])));
+    const meetingIdentifier$ = toObservable(this.meetingIdentifier);
+    const attachments$ = meetingIdentifier$.pipe(
+      switchMap((identifier) => {
+        if (identifier) {
+          return this.meetingService.getMeetingAttachments(identifier).pipe(catchError(() => of([])));
         }
         return of([]);
       })
@@ -226,5 +100,181 @@ export class DashboardMeetingCardComponent {
     );
 
     this.joinUrl = toSignal(joinUrl$, { initialValue: null });
+  }
+
+  private initMeetingTypeInfo(): Signal<MeetingTypeBadge> {
+    return computed(() => {
+      const type = this.meeting().meeting_type?.toLowerCase();
+      const config = type ? (MEETING_TYPE_CONFIGS[type] ?? DEFAULT_MEETING_TYPE_CONFIG) : DEFAULT_MEETING_TYPE_CONFIG;
+
+      // Map text color to severity
+      let severity: ComponentSeverity = 'secondary';
+      if (config.textColor.includes('red')) severity = 'danger';
+      else if (config.textColor.includes('blue')) severity = 'info';
+      else if (config.textColor.includes('green')) severity = 'success';
+      else if (config.textColor.includes('purple')) severity = 'primary';
+      else if (config.textColor.includes('amber')) severity = 'warn';
+
+      return {
+        label: config.label,
+        className: `${config.bgColor} ${config.textColor}`,
+        severity,
+        icon: `${config.icon} mr-2`,
+      };
+    });
+  }
+
+  private initMeetingStartTime(): Signal<string> {
+    return computed(() => {
+      const occurrence = this.occurrence();
+      const meeting = this.meeting();
+
+      // Use occurrence start time if available, otherwise use meeting start time
+      return occurrence?.start_time || meeting.start_time;
+    });
+  }
+
+  private initFormattedTime(): Signal<string> {
+    return computed(() => {
+      const startTime = this.meetingStartTime();
+
+      try {
+        const meetingDate = new Date(startTime);
+
+        if (isNaN(meetingDate.getTime())) {
+          return startTime;
+        }
+
+        const today = new Date();
+        const tomorrow = new Date(today);
+        tomorrow.setDate(tomorrow.getDate() + 1);
+
+        const isToday = meetingDate.toDateString() === today.toDateString();
+        const isTomorrow = meetingDate.toDateString() === tomorrow.toDateString();
+
+        const timeStr = meetingDate.toLocaleTimeString('en-US', {
+          hour: 'numeric',
+          minute: '2-digit',
+          hour12: true,
+        });
+
+        if (isToday) {
+          return `Today, ${timeStr}`;
+        } else if (isTomorrow) {
+          return `Tomorrow, ${timeStr}`;
+        }
+        const dateStr = meetingDate.toLocaleDateString('en-US', {
+          month: 'short',
+          day: 'numeric',
+        });
+        return `${dateStr} at ${timeStr}`;
+      } catch {
+        return startTime;
+      }
+    });
+  }
+
+  private initIsTodayMeeting(): Signal<boolean> {
+    return computed(() => {
+      const startTime = this.meetingStartTime();
+
+      try {
+        const meetingDate = new Date(startTime);
+
+        if (isNaN(meetingDate.getTime())) {
+          return false;
+        }
+
+        const today = new Date();
+        return meetingDate.toDateString() === today.toDateString();
+      } catch {
+        return false;
+      }
+    });
+  }
+
+  private initIsPrivate(): Signal<boolean> {
+    return computed(() => {
+      return this.meeting().visibility === 'private';
+    });
+  }
+
+  private initHasYoutubeUploads(): Signal<boolean> {
+    return computed(() => {
+      return this.meeting().youtube_upload_enabled === true;
+    });
+  }
+
+  private initHasRecording(): Signal<boolean> {
+    return computed(() => {
+      return this.meeting().recording_enabled === true;
+    });
+  }
+
+  private initHasTranscripts(): Signal<boolean> {
+    return computed(() => {
+      return this.meeting().transcript_enabled === true;
+    });
+  }
+
+  private initCanJoinMeeting(): Signal<boolean> {
+    return computed(() => {
+      return canJoinMeeting(this.meeting(), this.occurrence());
+    });
+  }
+
+  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
+  private initHasAiSummary(): Signal<boolean> {
+    return computed(() => {
+      const meeting = this.meeting();
+      // V2: zoom_config.ai_companion_enabled, V1: zoom_ai_enabled
+      return meeting.zoom_config?.ai_companion_enabled === true || meeting.zoom_ai_enabled === true;
+    });
+  }
+
+  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
+  private initMeetingTitle(): Signal<string> {
+    return computed(() => {
+      const occurrence = this.occurrence();
+      const meeting = this.meeting();
+
+      // Priority: occurrence title > meeting title > meeting topic (v1)
+      return occurrence?.title || meeting.title || meeting.topic || '';
+    });
+  }
+
+  // TODO(v1-migration): Remove once all meetings are migrated to V2
+  private initIsLegacyMeeting(): Signal<boolean> {
+    return computed(() => {
+      return this.meeting().version === 'v1';
+    });
+  }
+
+  // TODO(v1-migration): Simplify to use V2 uid only once all meetings are migrated to V2
+  private initMeetingIdentifier(): Signal<string> {
+    return computed(() => {
+      const meeting = this.meeting();
+      return this.isLegacyMeeting() && meeting.id ? (meeting.id as string) : meeting.uid;
+    });
+  }
+
+  // TODO(v1-migration): Remove V1 parameter handling once all meetings are migrated to V2
+  private initMeetingDetailUrl(): Signal<string> {
+    return computed(() => {
+      const meeting = this.meeting();
+      const identifier = this.meetingIdentifier();
+      const params = new URLSearchParams();
+
+      if (meeting.password) {
+        params.set('password', meeting.password);
+      }
+
+      if (this.isLegacyMeeting()) {
+        params.set('v1', 'true');
+      }
+
+      const queryString = params.toString();
+      return queryString ? `/meetings/${identifier}?${queryString}` : `/meetings/${identifier}`;
+    });
   }
 }
