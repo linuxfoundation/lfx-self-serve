@@ -29,7 +29,7 @@
 
       <!-- Body: Chart or Custom Content -->
       @if (customContentTemplate) {
-        <ng-container *ngTemplateOutlet="customContentTemplate"></ng-container>
+        <ng-container [ngTemplateOutlet]="customContentTemplate"></ng-container>
       } @else if (chartData()) {
         <div class="mt-3 w-full h-16">
           <lfx-chart [type]="chartType()" [data]="chartData()!" [options]="chartOptions()" height="100%"></lfx-chart>

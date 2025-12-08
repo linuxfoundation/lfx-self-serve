@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, ContentChild, input, TemplateRef } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -12,7 +12,7 @@ import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 @Component({
   selector: 'lfx-metric-card',
   standalone: true,
-  imports: [CommonModule, ChartComponent, SkeletonModule, TooltipModule],
+  imports: [NgTemplateOutlet, ChartComponent, SkeletonModule, TooltipModule],
   templateUrl: './metric-card.component.html',
 })
 export class MetricCardComponent {
