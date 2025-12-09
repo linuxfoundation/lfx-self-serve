@@ -572,7 +572,7 @@ export class UserService {
           // If meeting is v1, use v1_meeting_registrant type and tags_all format
           if (meeting.version === 'v1') {
             query.type = 'v1_meeting_registrant';
-            query.tags_all.push(`meeting_uid:${meeting.id}`);
+            query.tags_all.push(`meeting_uid:${meeting.uid}`);
             query.parent = '';
           }
 
@@ -680,7 +680,7 @@ export class UserService {
    */
   private createMeetingAction(meeting: Meeting, occurrence?: MeetingOccurrence): PendingActionItem {
     const startTime = occurrence ? new Date(occurrence.start_time) : new Date(meeting.start_time);
-    const title = occurrence?.title || meeting.title || meeting.topic;
+    const title = occurrence?.title || meeting.title;
 
     const dateStr = startTime.toLocaleDateString('en-US', {
       month: 'short',
@@ -696,11 +696,11 @@ export class UserService {
       minute: '2-digit',
     });
 
-    let buttonLink = meeting.password ? `/meetings/${meeting.uid}?password=${meeting.password}` : `/meetings/${meeting.uid}`;
-
-    if (meeting.version === 'v1') {
-      buttonLink = `/meetings/${meeting.id}?password=${meeting.password}&v1=true`;
-    }
+    const params = new URLSearchParams();
+    if (meeting.password) params.set('password', meeting.password);
+    if (meeting.version === 'v1') params.set('v1', 'true');
+    const queryString = params.toString();
+    const buttonLink = queryString ? `/meetings/${meeting.uid}?${queryString}` : `/meetings/${meeting.uid}`;
 
     return {
       type: 'Review Agenda',

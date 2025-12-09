@@ -142,21 +142,16 @@ export class MeetingsDashboardComponent {
               });
 
               // Sort meetings by current or next occurrence start time (earliest first)
+              // Falls back to meeting.start_time when occurrences are not available
               return activeMeetings.sort((a, b) => {
                 const occurrenceA = getCurrentOrNextOccurrence(a);
                 const occurrenceB = getCurrentOrNextOccurrence(b);
 
-                if (!occurrenceA && !occurrenceB) {
-                  return 0;
-                }
-                if (!occurrenceA) {
-                  return 1;
-                }
-                if (!occurrenceB) {
-                  return -1;
-                }
+                // Get the effective start time for each meeting
+                const timeA = occurrenceA ? new Date(occurrenceA.start_time).getTime() : new Date(a.start_time).getTime();
+                const timeB = occurrenceB ? new Date(occurrenceB.start_time).getTime() : new Date(b.start_time).getTime();
 
-                return new Date(occurrenceA.start_time).getTime() - new Date(occurrenceB.start_time).getTime();
+                return timeA - timeB;
               });
             }),
             catchError((error) => {

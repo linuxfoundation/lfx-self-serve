@@ -19,7 +19,7 @@ import {
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils';
+import { isUuid, transformV1MeetingToV2, transformV1SummaryToV2 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
@@ -76,6 +76,11 @@ export class MeetingService {
       version,
     }));
 
+    // Transform V1 meetings to V2 format on the server side
+    if (isV1) {
+      meetings = meetings.map(transformV1MeetingToV2);
+    }
+
     // Get project name for each meeting
     meetings = await this.getMeetingProjectName(req, meetings);
 
@@ -127,12 +132,12 @@ export class MeetingService {
       }
 
       meeting = resources[0].data;
-      // Remove join_url, passcode, host_key, user_id from V1 meetings
-      delete meeting.host_key;
-      delete meeting.user_id;
 
       // Set version to v1 for legacy meetings
       meeting.version = 'v1';
+
+      // Transform V1 meeting to V2 format
+      meeting = transformV1MeetingToV2(meeting);
     } else {
       meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}`, 'GET');
     }
@@ -624,7 +629,6 @@ export class MeetingService {
    * Fetches past meeting recording by past meeting UID
    * @param v1 - If true, use v1_past_meeting_recording type and id tag format for legacy meetings
    */
-  // TODO(v1-migration): Remove V1 recording type parameter and handling once all meetings are migrated to V2
   public async getPastMeetingRecording(req: Request, pastMeetingUid: string, v1: boolean = false): Promise<PastMeetingRecording | null> {
     try {
       // V1 legacy meetings use different type and tag format
@@ -687,7 +691,6 @@ export class MeetingService {
    * Fetches past meeting summary by past meeting UID
    * @param v1 - If true, use v1_past_meeting_summary type for legacy meetings
    */
-  // TODO(v1-migration): Remove V1 summary type parameter and handling once all meetings are migrated to V2
   public async getPastMeetingSummary(req: Request, pastMeetingUid: string, v1: boolean = false): Promise<PastMeetingSummary | null> {
     try {
       // V1 legacy meetings use different type and tag format
@@ -717,7 +720,12 @@ export class MeetingService {
         return null;
       }
 
-      const summary = resources[0].data;
+      let summary = resources[0].data;
+
+      // Transform V1 summary to V2 format
+      if (v1) {
+        summary = transformV1SummaryToV2(summary);
+      }
 
       req.log.info(
         {

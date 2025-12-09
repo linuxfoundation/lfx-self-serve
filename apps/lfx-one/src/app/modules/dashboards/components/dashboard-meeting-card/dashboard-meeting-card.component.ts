@@ -51,23 +51,17 @@ export class DashboardMeetingCardComponent {
   public readonly hasTranscripts: Signal<boolean> = this.initHasTranscripts();
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
 
-  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
   public readonly hasAiSummary: Signal<boolean> = this.initHasAiSummary();
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
-
-  // TODO(v1-migration): Remove once all meetings are migrated to V2
   public readonly isLegacyMeeting: Signal<boolean> = this.initIsLegacyMeeting();
-  public readonly meetingIdentifier: Signal<string> = this.initMeetingIdentifier();
   public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
 
   public constructor() {
-    // Convert meeting input signal to observable and create reactive attachment stream
     const meeting$ = toObservable(this.meeting);
-    const meetingIdentifier$ = toObservable(this.meetingIdentifier);
-    const attachments$ = meetingIdentifier$.pipe(
-      switchMap((identifier) => {
-        if (identifier) {
-          return this.meetingService.getMeetingAttachments(identifier).pipe(catchError(() => of([])));
+    const attachments$ = meeting$.pipe(
+      switchMap((meeting) => {
+        if (meeting?.uid) {
+          return this.meetingService.getMeetingAttachments(meeting.uid).pipe(catchError(() => of([])));
         }
         return of([]);
       })
@@ -75,8 +69,6 @@ export class DashboardMeetingCardComponent {
 
     this.attachments = toSignal(attachments$, { initialValue: [] });
 
-    // TODO(v1-migration): Remove V1 join URL handling once all meetings are migrated to V2
-    // Convert user signal to observable and create reactive join URL stream
     const user$ = toObservable(this.userService.user);
     const authenticated$ = toObservable(this.userService.authenticated);
     const isLegacyMeeting$ = toObservable(this.isLegacyMeeting);
@@ -223,46 +215,25 @@ export class DashboardMeetingCardComponent {
     });
   }
 
-  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
   private initHasAiSummary(): Signal<boolean> {
-    return computed(() => {
-      const meeting = this.meeting();
-      // V2: zoom_config.ai_companion_enabled, V1: zoom_ai_enabled
-      return meeting.zoom_config?.ai_companion_enabled === true || meeting.zoom_ai_enabled === true;
-    });
+    return computed(() => this.meeting().zoom_config?.ai_companion_enabled || false);
   }
 
-  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
   private initMeetingTitle(): Signal<string> {
     return computed(() => {
       const occurrence = this.occurrence();
       const meeting = this.meeting();
-
-      // Priority: occurrence title > meeting title > meeting topic (v1)
-      return occurrence?.title || meeting.title || meeting.topic || '';
+      return occurrence?.title || meeting.title || '';
     });
   }
 
-  // TODO(v1-migration): Remove once all meetings are migrated to V2
   private initIsLegacyMeeting(): Signal<boolean> {
-    return computed(() => {
-      return this.meeting().version === 'v1';
-    });
+    return computed(() => this.meeting().version === 'v1');
   }
 
-  // TODO(v1-migration): Simplify to use V2 uid only once all meetings are migrated to V2
-  private initMeetingIdentifier(): Signal<string> {
-    return computed(() => {
-      const meeting = this.meeting();
-      return this.isLegacyMeeting() && meeting.id ? (meeting.id as string) : meeting.uid;
-    });
-  }
-
-  // TODO(v1-migration): Remove V1 parameter handling once all meetings are migrated to V2
   private initMeetingDetailUrl(): Signal<string> {
     return computed(() => {
       const meeting = this.meeting();
-      const identifier = this.meetingIdentifier();
       const params = new URLSearchParams();
 
       if (meeting.password) {
@@ -274,7 +245,7 @@ export class DashboardMeetingCardComponent {
       }
 
       const queryString = params.toString();
-      return queryString ? `/meetings/${identifier}?${queryString}` : `/meetings/${identifier}`;
+      return queryString ? `/meetings/${meeting.uid}?${queryString}` : `/meetings/${meeting.uid}`;
     });
   }
 }

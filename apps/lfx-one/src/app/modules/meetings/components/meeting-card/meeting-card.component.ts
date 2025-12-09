@@ -107,7 +107,6 @@ export class MeetingCardComponent implements OnInit {
   // Computed values for template
   public readonly meetingRegistrantCount: Signal<number> = this.initMeetingRegistrantCount();
   public readonly summaryContent: Signal<string | null> = this.initSummaryContent();
-  public readonly summaryUid: Signal<string | null> = this.initSummaryUid();
   public readonly summaryApproved: Signal<boolean> = this.initSummaryApproved();
   public readonly hasSummary: Signal<boolean> = this.initHasSummary();
   public readonly attendancePercentage: Signal<number> = this.initAttendancePercentage();
@@ -132,7 +131,6 @@ export class MeetingCardComponent implements OnInit {
   public readonly joinUrl: Signal<string | null>;
   public readonly authenticated: Signal<boolean> = this.userService.authenticated;
 
-  // TODO(v1-migration): Remove V1/V2 fallback fields and legacy meeting handling once all meetings are migrated to V2
   public readonly isLegacyMeeting: Signal<boolean> = this.initIsLegacyMeeting();
   public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
 
@@ -142,11 +140,9 @@ export class MeetingCardComponent implements OnInit {
     () => !this.isInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
 
-  // V1/V2 fallback fields
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
   public readonly hasAiCompanion: Signal<boolean> = this.initHasAiCompanion();
-  public readonly meetingIdentifier: Signal<string> = this.initMeetingIdentifier();
   public readonly joinQueryParams: Signal<Record<string, string>> = this.initJoinQueryParams();
 
   public readonly meetingDeleted = output<void>();
@@ -155,7 +151,7 @@ export class MeetingCardComponent implements OnInit {
 
   public constructor() {
     effect(() => {
-      if (!this.meeting()?.uid && !this.meeting()?.id) {
+      if (!this.meeting()?.uid) {
         this.meeting.set(this.meetingInput());
       }
       // Priority: explicit occurrenceInput > current occurrence for upcoming > null for past without input
@@ -243,8 +239,7 @@ export class MeetingCardComponent implements OnInit {
 
   public copyMeetingLink(): void {
     const meeting = this.meeting();
-    const identifier = this.meetingIdentifier();
-    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + identifier);
+    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + meeting.uid);
 
     if (meeting.password) {
       meetingUrl.searchParams.set('password', meeting.password);
@@ -306,7 +301,7 @@ export class MeetingCardComponent implements OnInit {
   }
 
   public openSummaryModal(): void {
-    if (!this.summaryContent() || !this.summaryUid()) {
+    if (!this.summaryContent() || !this.summary()?.uid) {
       return;
     }
 
@@ -318,8 +313,8 @@ export class MeetingCardComponent implements OnInit {
       dismissableMask: false,
       data: {
         summaryContent: this.summaryContent(),
-        summaryUid: this.summaryUid(),
-        pastMeetingUid: this.meeting().uid || this.meeting().id,
+        summaryUid: this.summary()?.uid,
+        pastMeetingUid: this.meeting().uid,
         meetingTitle: this.meetingTitle(),
         approved: this.summaryApproved(),
       },
@@ -484,7 +479,7 @@ export class MeetingCardComponent implements OnInit {
 
   private initAttachments(): Signal<MeetingAttachment[]> {
     return runInInjectionContext(this.injector, () => {
-      return toSignal(this.meetingService.getMeetingAttachments(this.meetingIdentifier()).pipe(catchError(() => of([]))), {
+      return toSignal(this.meetingService.getMeetingAttachments(this.meeting().uid).pipe(catchError(() => of([]))), {
         initialValue: [],
       });
     });
@@ -493,7 +488,7 @@ export class MeetingCardComponent implements OnInit {
   private initRecording(): void {
     runInInjectionContext(this.injector, () => {
       toSignal(
-        this.meetingService.getPastMeetingRecording(this.meetingIdentifier(), this.isLegacyMeeting()).pipe(
+        this.meetingService.getPastMeetingRecording(this.meeting().uid).pipe(
           catchError(() => of(null)),
           tap((recording) => this.recording.set(recording))
         ),
@@ -505,7 +500,7 @@ export class MeetingCardComponent implements OnInit {
   private initSummary(): void {
     runInInjectionContext(this.injector, () => {
       toSignal(
-        this.meetingService.getPastMeetingSummary(this.meetingIdentifier(), this.isLegacyMeeting()).pipe(
+        this.meetingService.getPastMeetingSummary(this.meeting().uid).pipe(
           catchError(() => of(null)),
           tap((summary) => this.summary.set(summary))
         ),
@@ -685,65 +680,11 @@ export class MeetingCardComponent implements OnInit {
     return computed(() => this.recordingShareUrl() !== null);
   }
 
-  // TODO(v1-migration): Simplify to use V2 format only once all meetings are migrated to V2
   private initSummaryContent(): Signal<string | null> {
     return computed(() => {
       const summary = this.summary();
-      if (!summary) return null;
-
-      // V2 format: use summary_data content
-      if (summary.summary_data) {
-        return summary.summary_data.edited_content || summary.summary_data.content;
-      }
-
-      // V1 format: construct content from v1 fields
-      if (summary.summary_overview || summary.summary_details || summary.next_steps) {
-        return this.formatV1SummaryContent(summary);
-      }
-
-      return null;
-    });
-  }
-
-  // TODO(v1-migration): Remove formatV1SummaryContent once all meetings are migrated to V2
-  private formatV1SummaryContent(summary: PastMeetingSummary): string {
-    const parts: string[] = [];
-
-    // Use edited versions if available, otherwise use original
-    const overview = summary.edited_summary_overview || summary.summary_overview;
-    const details = summary.edited_summary_details || summary.summary_details;
-    const nextSteps = summary.edited_next_steps || summary.next_steps;
-
-    // Add overview
-    if (overview) {
-      parts.push(`## Overview\n${overview}`);
-    }
-
-    // Add details
-    if (details && details.length > 0) {
-      parts.push('## Key Topics');
-      details.forEach((detail) => {
-        parts.push(`### ${detail.label}\n${detail.summary}`);
-      });
-    }
-
-    // Add next steps
-    if (nextSteps && nextSteps.length > 0) {
-      parts.push('## Next Steps');
-      nextSteps.forEach((step) => {
-        parts.push(`- ${step}`);
-      });
-    }
-
-    return parts.join('\n\n');
-  }
-
-  // TODO(v1-migration): Simplify to use V2 uid only once all meetings are migrated to V2
-  private initSummaryUid(): Signal<string | null> {
-    return computed(() => {
-      const summary = this.summary();
-      // V2 uses 'uid', V1 uses 'id'
-      return summary?.uid || summary?.id || null;
+      if (!summary?.summary_data) return null;
+      return summary.summary_data.edited_content || summary.summary_data.content;
     });
   }
 
@@ -755,16 +696,13 @@ export class MeetingCardComponent implements OnInit {
     return computed(() => this.summaryContent() !== null);
   }
 
-  // TODO(v1-migration): Remove once all meetings are migrated to V2
   private initIsLegacyMeeting(): Signal<boolean> {
     return computed(() => this.meetingInput().version === 'v1');
   }
 
-  // TODO(v1-migration): Remove V1 parameter handling once all meetings are migrated to V2
   private initMeetingDetailUrl(): Signal<string> {
     return computed(() => {
       const meeting = this.meetingInput();
-      const identifier = this.meetingIdentifier();
       const params = new URLSearchParams();
 
       if (meeting.password) {
@@ -776,51 +714,32 @@ export class MeetingCardComponent implements OnInit {
       }
 
       const queryString = params.toString();
-      return queryString ? `/meetings/${identifier}?${queryString}` : `/meetings/${identifier}`;
+      return queryString ? `/meetings/${meeting.uid}?${queryString}` : `/meetings/${meeting.uid}`;
     });
   }
 
-  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
   private initMeetingTitle(): Signal<string> {
     return computed(() => {
       const occurrence = this.occurrence();
       const meeting = this.meeting();
-
-      // Priority: occurrence title > meeting title > meeting topic (v1)
-      return occurrence?.title || meeting.title || meeting.topic || '';
+      return occurrence?.title || meeting.title || '';
     });
   }
 
-  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
   private initMeetingDescription(): Signal<string> {
     return computed(() => {
       const occurrence = this.occurrence();
       const meeting = this.meeting();
-
-      // Priority: occurrence description > meeting description > meeting agenda (v1)
-      return occurrence?.description || meeting.description || meeting.agenda || '';
+      return occurrence?.description || meeting.description || '';
     });
   }
 
-  // TODO(v1-migration): Simplify to use V2 fields only once all meetings are migrated to V2
   private initHasAiCompanion(): Signal<boolean> {
     return computed(() => {
-      const meeting = this.meeting();
-
-      // V2: zoom_config.ai_companion_enabled, V1: zoom_ai_enabled
-      return meeting.zoom_config?.ai_companion_enabled || meeting.zoom_ai_enabled || false;
+      return this.meeting().zoom_config?.ai_companion_enabled || false;
     });
   }
 
-  // TODO(v1-migration): Simplify to use V2 uid only once all meetings are migrated to V2
-  private initMeetingIdentifier(): Signal<string> {
-    return computed(() => {
-      const meeting = this.meetingInput();
-      return this.isLegacyMeeting() && meeting.id ? (meeting.id as string) : meeting.uid;
-    });
-  }
-
-  // TODO(v1-migration): Remove V1 parameter handling once all meetings are migrated to V2
   private initJoinQueryParams(): Signal<Record<string, string>> {
     return computed(() => {
       const meeting = this.meetingInput();

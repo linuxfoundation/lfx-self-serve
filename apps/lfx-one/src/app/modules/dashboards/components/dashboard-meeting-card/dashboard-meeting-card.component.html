@@ -80,7 +80,7 @@
         <div class="flex items-center gap-1 flex-shrink-0 mt-0.5">
           @for (attachment of attachments(); track attachment.uid; let index = $index) {
             <a
-              [href]="attachment.type === 'link' ? attachment.link : '/api/meetings/' + meetingIdentifier() + '/attachments/' + attachment.uid"
+              [href]="attachment.type === 'link' ? attachment.link : '/api/meetings/' + meeting().uid + '/attachments/' + attachment.uid"
               target="_blank"
               rel="noopener noreferrer"
               [download]="attachment.type === 'file' ? attachment.name : null"

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { getEarlyJoinTimeMinutes, isUuid, Meeting } from '@lfx-one/shared';
+import { isUuid, Meeting } from '@lfx-one/shared';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import { CreateMeetingRegistrantRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
@@ -115,20 +115,18 @@ export class PublicMeetingController {
             await this.handleJoinUrlForPublicMeeting(req, meeting, id);
           }
         } else {
-          // Delete join URL and passcode if not within allowed join time window for legacy meetings
+          // Delete join URL if not within allowed join time window for legacy meetings
           if (v1) {
             delete meeting.join_url;
-            delete meeting.passcode;
           }
         }
         res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url } });
         return;
       }
 
-      // Delete join URL and passcode if not within allowed join time window for legacy meetings
+      // Delete join URL if not within allowed join time window for legacy meetings
       if (v1) {
         delete meeting.join_url;
-        delete meeting.passcode;
       }
 
       // Check if the user has passed in a password, if so, check if it's correct
@@ -213,7 +211,7 @@ export class PublicMeetingController {
 
       // Check if the meeting is within the allowed join time window
       if (!this.isWithinJoinWindow(meeting)) {
-        const earlyJoinMinutes = getEarlyJoinTimeMinutes(meeting) || 10;
+        const earlyJoinMinutes = meeting?.early_join_time_minutes ?? 10;
 
         Logger.error(req, 'post_meeting_join_url', startTime, new Error('Meeting join not available yet'));
 
@@ -490,7 +488,7 @@ export class PublicMeetingController {
 
     const now = new Date();
     const startTime = new Date(meeting.start_time);
-    const earlyJoinMinutes = getEarlyJoinTimeMinutes(meeting) || 10; // Default to 10 minutes
+    const earlyJoinMinutes = meeting?.early_join_time_minutes ?? 10;
     const earliestJoinTime = new Date(startTime.getTime() - earlyJoinMinutes * 60000);
 
     return now >= earliestJoinTime;

@@ -3,6 +3,225 @@
 
 import { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
 
+// ============================================================================
+// V1 Legacy Meeting Interfaces (for server-side transformation)
+// ============================================================================
+
+/**
+ * V1 user reference (created_by, updated_by)
+ */
+export interface V1UserReference {
+  email?: string;
+  username?: string;
+}
+
+/**
+ * V1 recurrence configuration (all values are strings)
+ */
+export interface V1MeetingRecurrence {
+  type?: string;
+  repeat_interval?: string;
+  end_times?: string;
+  end_date_time?: string;
+  monthly_day?: string;
+  monthly_week?: string;
+  monthly_week_day?: string;
+  weekly_days?: string;
+}
+
+/**
+ * V1 meeting occurrence (topic/agenda instead of title/description, duration as string)
+ */
+export interface V1MeetingOccurrence {
+  occurrence_id: string;
+  topic?: string;
+  agenda?: string;
+  start_time: string;
+  duration: string;
+  status?: string;
+  registrant_count?: string;
+  response_count_yes?: string;
+  response_count_no?: string;
+  is_cancelled?: boolean;
+}
+
+/**
+ * V1 updated occurrence information
+ */
+export interface V1UpdatedOccurrence {
+  old_occurrence_id: string;
+  new_occurrence_id: string;
+  topic?: string;
+  agenda?: string;
+  duration?: string;
+  timezone?: string;
+  all_following?: boolean;
+  recurrence?: V1MeetingRecurrence | null;
+}
+
+/**
+ * V1 committee structure (uses 'filters' instead of 'allowed_voting_statuses')
+ */
+export interface V1MeetingCommittee {
+  uid: string;
+  filters?: string[];
+  allowed_voting_statuses?: string[];
+  name?: string;
+}
+
+/**
+ * V1 Meeting session (for past meetings)
+ */
+export interface V1MeetingSession {
+  uuid: string;
+  start_time: string;
+  end_time: string;
+}
+
+/**
+ * V1 Meeting data structure from the legacy API
+ * @description Raw V1 meeting data before transformation to V2 format
+ */
+export interface V1Meeting {
+  // Identifiers
+  id: string;
+  meeting_id: string;
+  project_id: string;
+  project_sfid?: string;
+  proj_id?: string; // Salesforce ID (appears in past meetings)
+  project_slug?: string;
+
+  // For past meetings with occurrences
+  occurrence_id?: string;
+  meeting_and_occurrence_id?: string;
+
+  // Content (v1 uses topic/agenda instead of title/description)
+  topic: string;
+  agenda?: string;
+
+  // Timing
+  start_time: string;
+  duration: string; // V1 uses string, V2 uses number
+  timezone: string;
+  early_join_time?: string; // V1 uses string, V2 uses early_join_time_minutes as number
+  last_end_time?: string; // Unix timestamp as string
+
+  // Past meeting timing
+  scheduled_start_time?: string;
+  scheduled_end_time?: string;
+  sessions?: V1MeetingSession[];
+
+  // Recurrence
+  recurrence?: V1MeetingRecurrence | null;
+  occurrences?: V1MeetingOccurrence[];
+  cancelled_occurrences?: string[];
+  updated_occurrences?: V1UpdatedOccurrence[];
+  type?: string; // Zoom meeting type (1=instant, 2=scheduled, 3=recurring no fixed time, 8=recurring fixed time)
+
+  // Committee (v1 uses single committee string, v2 uses committees array)
+  committee?: string; // "NONE" or committee UID
+  committee_filters?: string[] | null;
+  committees?: V1MeetingCommittee[] | null; // Some v1 meetings have this
+
+  // Visibility & Access
+  visibility: 'public' | 'private';
+  restricted: boolean;
+  recording_enabled: boolean;
+  transcript_enabled: boolean;
+  recording_access?: string;
+  transcript_access?: string;
+  recording_password?: string;
+
+  // Artifacts (for past meetings)
+  artifacts?: unknown[] | null;
+
+  // Meeting configuration
+  meeting_type: string;
+  password?: string;
+
+  // Zoom-specific
+  join_url?: string;
+  passcode?: string;
+  host_key?: string;
+  user_id?: string;
+  zoom_ai_enabled?: boolean;
+  require_ai_summary_approval?: boolean;
+  concurrent_zoom_user_enabled?: boolean;
+
+  // Email & Sync
+  use_new_invite_email_address?: boolean;
+  use_unique_ics_uid?: string;
+  mailing_list_group_ids?: string[] | null;
+  last_bulk_registrant_job_status?: string;
+  last_bulk_registrants_job_failed_count?: string;
+  last_bulk_registrants_job_warning_count?: string;
+  last_mailing_list_members_sync_job_status?: string;
+  last_mailing_list_members_sync_job_failed_count?: string;
+  last_mailing_list_members_sync_job_warning_count?: string;
+
+  // Timestamps & Audit
+  created_at: string;
+  modified_at?: string; // V1 uses modified_at, V2 uses updated_at
+  created_by?: V1UserReference;
+  updated_by?: V1UserReference;
+  updated_by_list?: V1UserReference[];
+}
+
+/**
+ * V1 Legacy summary detail item
+ * @description Structure for individual summary topics in v1 format
+ */
+export interface V1SummaryDetail {
+  /** Topic label */
+  label: string;
+  /** Summary content for this topic */
+  summary: string;
+}
+
+/**
+ * V1 Past Meeting Summary data structure
+ * @description Raw V1 summary data before transformation to V2 format
+ */
+export interface V1PastMeetingSummary {
+  id: string;
+  meeting_id?: string;
+  occurrence_id?: string;
+  meeting_and_occurrence_id?: string;
+  zoom_meeting_uuid?: string;
+  zoom_meeting_topic?: string;
+  zoom_meeting_host_id?: string;
+  zoom_meeting_host_email?: string;
+  zoom_webhook_event?: string;
+
+  // V1 summary content structure
+  summary_title?: string;
+  summary_overview?: string;
+  summary_details?: V1SummaryDetail[];
+  next_steps?: string[];
+
+  // V1 edited content
+  edited_summary_overview?: string;
+  edited_summary_details?: V1SummaryDetail[] | null;
+  edited_next_steps?: string[] | null;
+
+  // Timestamps
+  summary_created_time?: string;
+  summary_start_time?: string;
+  summary_end_time?: string;
+  summary_last_modified_time?: string;
+  modified_at?: string;
+
+  // Status
+  approved?: boolean;
+  requires_approval?: boolean;
+  email_sent?: boolean;
+  password?: string;
+}
+
+// ============================================================================
+// V2 Meeting Interfaces
+// ============================================================================
+
 /**
  * Zoom-specific meeting configuration
  * @description Settings specific to Zoom platform integration
@@ -170,43 +389,6 @@ export interface Meeting {
   project_slug: string;
   /** Meeting version - v1 for legacy meetings, v2 for new meetings (response only) */
   version?: 'v1' | 'v2';
-
-  // TODO(v1-migration): Remove V1 legacy fields once all meetings are migrated to V2
-  // V1 Legacy Meeting Fields (only present for v1_meeting type)
-  /** V1: Meeting topic/title (v1 uses 'topic', v2 uses 'title') */
-  topic?: string;
-  /** V1: Meeting agenda/description (v1 uses 'agenda', v2 uses 'description') */
-  agenda?: string;
-  /** V1: Early join time as string (v1 uses string, v2 uses early_join_time_minutes as number) */
-  early_join_time?: string;
-  /** V1: Zoom host key */
-  host_key?: string;
-  /** V1: Zoom passcode (different from password which is the LFX meeting password) */
-  passcode?: string;
-  /** V1: Zoom user ID */
-  user_id?: string;
-  /** V1: AI summary access level */
-  ai_summary_access?: 'public' | 'private';
-  /** V1: Recording access level */
-  recording_access?: 'public' | 'private';
-  /** V1: Transcript access level */
-  transcript_access?: 'public' | 'private';
-  /** V1: Whether AI summary requires approval */
-  require_ai_summary_approval?: boolean;
-  /** V1: Whether Zoom AI is enabled */
-  zoom_ai_enabled?: boolean;
-  /** V1: Whether concurrent Zoom user is enabled */
-  concurrent_zoom_user_enabled?: boolean;
-  /** V1: Whether to use new invite email address */
-  use_new_invite_email_address?: boolean;
-  /** V1: Last bulk registrant job status */
-  last_bulk_registrant_job_status?: string;
-  /** V1: Last mailing list members sync job status */
-  last_mailing_list_members_sync_job_status?: string;
-  /** V1: Last end time (Unix timestamp as string) */
-  last_end_time?: string;
-  /** V1: Modified at timestamp (v1 uses 'modified_at', v2 uses 'updated_at') */
-  modified_at?: string;
 }
 
 /**
@@ -734,18 +916,6 @@ export interface ZoomSummaryConfig {
   meeting_uuid: string;
 }
 
-// TODO(v1-migration): Remove V1SummaryDetail interface once all meetings are migrated to V2
-/**
- * V1 Legacy summary detail item
- * @description Structure for individual summary topics in v1 format
- */
-export interface V1SummaryDetail {
-  /** Topic label */
-  label: string;
-  /** Summary content for this topic */
-  summary: string;
-}
-
 /**
  * Past meeting summary information
  * @description AI-generated summary data for a completed past meeting
@@ -775,51 +945,6 @@ export interface PastMeetingSummary {
   created_at: string;
   /** Last update timestamp */
   updated_at: string;
-
-  // TODO(v1-migration): Remove V1 legacy summary fields once all meetings are migrated to V2
-  // V1 Legacy Summary Fields (only present for v1_past_meeting_summary type)
-  /** V1: Unique identifier (v1 uses 'id', v2 uses 'uid') */
-  id?: string;
-  /** V1: Zoom meeting ID */
-  meeting_id?: string;
-  /** V1: Occurrence ID for recurring meetings */
-  occurrence_id?: string;
-  /** V1: Combined meeting and occurrence ID */
-  meeting_and_occurrence_id?: string;
-  /** V1: Summary title */
-  summary_title?: string;
-  /** V1: Summary overview/high-level summary */
-  summary_overview?: string;
-  /** V1: Detailed summary sections */
-  summary_details?: V1SummaryDetail[];
-  /** V1: Action items/next steps */
-  next_steps?: string[];
-  /** V1: User-edited summary overview */
-  edited_summary_overview?: string;
-  /** V1: User-edited summary details */
-  edited_summary_details?: V1SummaryDetail[] | null;
-  /** V1: User-edited next steps */
-  edited_next_steps?: string[] | null;
-  /** V1: Summary creation timestamp */
-  summary_created_time?: string;
-  /** V1: Summary start time */
-  summary_start_time?: string;
-  /** V1: Summary end time */
-  summary_end_time?: string;
-  /** V1: Summary last modified time */
-  summary_last_modified_time?: string;
-  /** V1: Zoom meeting host email */
-  zoom_meeting_host_email?: string;
-  /** V1: Zoom meeting host ID */
-  zoom_meeting_host_id?: string;
-  /** V1: Zoom meeting topic */
-  zoom_meeting_topic?: string;
-  /** V1: Zoom meeting UUID */
-  zoom_meeting_uuid?: string;
-  /** V1: Raw Zoom webhook event data */
-  zoom_webhook_event?: string;
-  /** V1: Modified at timestamp */
-  modified_at?: string;
 }
 
 /**

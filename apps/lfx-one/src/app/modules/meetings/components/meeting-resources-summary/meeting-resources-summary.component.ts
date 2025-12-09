@@ -9,7 +9,7 @@ import { FileUploadComponent } from '@components/file-upload/file-upload.compone
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
 import { RecurrenceType } from '@lfx-one/shared/enums';
 import { CustomRecurrencePattern, MeetingAttachment, PendingAttachment } from '@lfx-one/shared/interfaces';
-import { buildRecurrenceSummary, generateAcceptString } from '@lfx-one/shared/utils';
+import { buildRecurrenceSummary, generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { MessageService } from 'primeng/api';
 
@@ -164,15 +164,16 @@ export class MeetingResourcesSummaryComponent implements OnInit {
 
   // Private methods
   private validateFile(file: File): string | null {
-    // Check file size (10MB limit)
+    // Check file size
     if (file.size > MAX_FILE_SIZE_BYTES) {
       return `File "${file.name}" is too large. Maximum size is ${MAX_FILE_SIZE_MB}MB.`;
     }
 
-    // Check file type
-    if (!ALLOWED_FILE_TYPES.includes(file.type as (typeof ALLOWED_FILE_TYPES)[number])) {
-      const allowedTypes = ALLOWED_FILE_TYPES.map((type) => type.split('/')[1]).join(', ');
-      return `File type "${file.type}" is not supported. Allowed types: ${allowedTypes}.`;
+    // Check file type (with fallback to extension-based validation for empty/generic MIME types)
+    if (!isFileTypeAllowed(file.type, file.name, ALLOWED_FILE_TYPES)) {
+      const fileTypeDisplay = getMimeTypeDisplayName(file.type, file.name);
+      const allowedTypes = getAcceptedFileTypesDisplay();
+      return `File type "${fileTypeDisplay}" is not supported. Allowed types: ${allowedTypes}.`;
     }
 
     // Check for duplicate filenames in current session

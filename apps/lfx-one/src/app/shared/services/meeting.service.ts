@@ -321,20 +321,12 @@ export class MeetingService {
     );
   }
 
-  public getPastMeetingRecording(pastMeetingUid: string, v1: boolean = false): Observable<PastMeetingRecording> {
-    let params = new HttpParams();
-    if (v1) {
-      params = params.set('v1', 'true');
-    }
-    return this.http.get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`, { params });
+  public getPastMeetingRecording(pastMeetingUid: string): Observable<PastMeetingRecording> {
+    return this.http.get<PastMeetingRecording>(`/api/past-meetings/${pastMeetingUid}/recording`);
   }
 
-  public getPastMeetingSummary(pastMeetingUid: string, v1: boolean = false): Observable<PastMeetingSummary> {
-    let params = new HttpParams();
-    if (v1) {
-      params = params.set('v1', 'true');
-    }
-    return this.http.get<PastMeetingSummary>(`/api/past-meetings/${pastMeetingUid}/summary`, { params });
+  public getPastMeetingSummary(pastMeetingUid: string): Observable<PastMeetingSummary> {
+    return this.http.get<PastMeetingSummary>(`/api/past-meetings/${pastMeetingUid}/summary`);
   }
 
   public getPastMeetingAttachments(pastMeetingUid: string): Observable<PastMeetingAttachment[]> {

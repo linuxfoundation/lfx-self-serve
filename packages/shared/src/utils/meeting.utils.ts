@@ -4,39 +4,25 @@
 import { HttpParams } from '@angular/common/http';
 
 import { RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
-import { CustomRecurrencePattern, Meeting, MeetingOccurrence, RecurrenceSummary, User } from '../interfaces';
-
-/**
- * Get the early join time in minutes from a meeting, handling both v1 and v2 formats
- * @param meeting The meeting object
- * @returns Early join time in minutes (default: 10 minutes)
- * @description
- * V1 meetings use `early_join_time` as a string (e.g., "60")
- * V2 meetings use `early_join_time_minutes` as a number
- */
-export function getEarlyJoinTimeMinutes(meeting: Meeting): number {
-  // Handle null/undefined meeting
-  if (!meeting) {
-    return 10;
-  }
-
-  // V2 format: early_join_time_minutes as number
-  if (meeting.early_join_time_minutes !== undefined && meeting.early_join_time_minutes !== null) {
-    return meeting.early_join_time_minutes;
-  }
-
-  // TODO(v1-migration): Remove V1 format handling once all meetings are migrated to V2
-  // V1 format: early_join_time as string
-  if (meeting.early_join_time !== undefined && meeting.early_join_time !== null) {
-    const parsed = parseInt(meeting.early_join_time, 10);
-    if (!isNaN(parsed)) {
-      return parsed;
-    }
-  }
-
-  // Default to 10 minutes
-  return 10;
-}
+import {
+  CustomRecurrencePattern,
+  Meeting,
+  MeetingCommittee,
+  MeetingOccurrence,
+  MeetingRecurrence,
+  PastMeetingSummary,
+  RecurrenceSummary,
+  SummaryData,
+  User,
+  V1Meeting,
+  V1MeetingCommittee,
+  V1MeetingOccurrence,
+  V1MeetingRecurrence,
+  V1PastMeetingSummary,
+  V1SummaryDetail,
+  ZoomConfig,
+} from '../interfaces';
+import { parseToInt } from './string.utils';
 
 /**
  * Build a human-readable recurrence summary from custom recurrence pattern
@@ -166,7 +152,7 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
   }
 
   const now = new Date();
-  const earlyJoinMinutes = getEarlyJoinTimeMinutes(meeting);
+  const earlyJoinMinutes = meeting?.early_join_time_minutes ?? 10;
 
   // Filter out cancelled occurrences
   const activeOccurrences = getActiveOccurrences(meeting.occurrences);
@@ -207,7 +193,7 @@ export function getCurrentOrNextOccurrence(meeting: Meeting): MeetingOccurrence 
  * - Current time is before (start time + duration + 40 minute buffer)
  */
 export function canJoinMeeting(meeting: Meeting, occurrence?: MeetingOccurrence | null): boolean {
-  const earlyJoinMinutes = getEarlyJoinTimeMinutes(meeting);
+  const earlyJoinMinutes = meeting?.early_join_time_minutes ?? 10;
 
   // If we have an occurrence, use its timing
   if (occurrence) {
@@ -307,4 +293,274 @@ export function buildJoinUrlWithParams(joinUrl: string, user?: User | null, opti
 
   const separator = joinUrl.includes('?') ? '&' : '?';
   return `${joinUrl}${separator}${queryParams.toString()}`;
+}
+
+/**
+ * Transform v1 recurrence object to v2 format (string values to numbers)
+ * @param recurrence - V1 recurrence object with string values
+ * @returns V2 recurrence object with number values
+ */
+function transformV1RecurrenceToV2(recurrence: V1MeetingRecurrence | null | undefined): MeetingRecurrence | null {
+  if (!recurrence) {
+    return null;
+  }
+
+  return {
+    type: parseToInt(recurrence.type) ?? 2,
+    repeat_interval: parseToInt(recurrence.repeat_interval) ?? 1,
+    end_times: parseToInt(recurrence.end_times),
+    end_date_time: recurrence.end_date_time,
+    monthly_day: parseToInt(recurrence.monthly_day),
+    monthly_week: parseToInt(recurrence.monthly_week),
+    monthly_week_day: parseToInt(recurrence.monthly_week_day),
+    weekly_days: recurrence.weekly_days,
+  };
+}
+
+/**
+ * Transform v1 occurrence to v2 format
+ * @param occurrence - V1 occurrence object
+ * @returns V2 occurrence object
+ */
+function transformV1OccurrenceToV2(occurrence: V1MeetingOccurrence): MeetingOccurrence {
+  return {
+    occurrence_id: occurrence.occurrence_id,
+    title: occurrence.topic || '',
+    description: occurrence.agenda || '',
+    start_time: occurrence.start_time,
+    duration: parseToInt(occurrence.duration) ?? 0,
+    is_cancelled: occurrence.is_cancelled,
+  };
+}
+
+/**
+ * Transform v1 committees to v2 format
+ * @param v1Meeting - V1 meeting object with committee/committees fields
+ * @returns V2 committees array
+ */
+function transformV1CommitteesToV2(v1Meeting: V1Meeting): MeetingCommittee[] {
+  // If committees array already exists, normalize it
+  if (Array.isArray(v1Meeting.committees) && v1Meeting.committees.length > 0) {
+    return v1Meeting.committees.map((committee: V1MeetingCommittee) => ({
+      uid: committee.uid,
+      // V1 uses 'filters', V2 uses 'allowed_voting_statuses'
+      allowed_voting_statuses: committee.allowed_voting_statuses || committee.filters,
+      name: committee.name,
+    }));
+  }
+
+  // If single committee field exists, convert to array
+  if (v1Meeting.committee && v1Meeting.committee !== 'NONE') {
+    return [
+      {
+        uid: v1Meeting.committee,
+        allowed_voting_statuses: v1Meeting.committee_filters || undefined,
+      },
+    ];
+  }
+
+  return [];
+}
+
+/**
+ * Transform v1 zoom config fields to v2 zoom_config object
+ * @param v1Meeting - V1 meeting object
+ * @returns V2 zoom_config object or null
+ */
+function transformV1ZoomConfigToV2(v1Meeting: V1Meeting): ZoomConfig | null {
+  // Build from v1 fields
+  const hasZoomFields =
+    v1Meeting.zoom_ai_enabled !== undefined ||
+    v1Meeting.require_ai_summary_approval !== undefined ||
+    v1Meeting.passcode !== undefined ||
+    v1Meeting.meeting_id !== undefined;
+
+  if (!hasZoomFields) {
+    return null;
+  }
+
+  return {
+    ai_companion_enabled: v1Meeting.zoom_ai_enabled,
+    ai_summary_require_approval: v1Meeting.require_ai_summary_approval,
+    passcode: v1Meeting.passcode,
+    meeting_id: v1Meeting.meeting_id,
+  };
+}
+
+/**
+ * Transform v1 meeting data to v2 format
+ * @param meeting - V1 meeting object from API
+ * @returns Meeting object normalized to v2 format
+ * @description
+ * Transforms v1 meeting fields to v2 equivalents:
+ * - topic → title
+ * - agenda → description
+ * - id → uid
+ * - project_id → project_uid
+ * - duration (string) → duration (number)
+ * - early_join_time (string) → early_join_time_minutes (number)
+ * - modified_at → updated_at
+ * - zoom_ai_enabled → zoom_config.ai_companion_enabled
+ * - recurrence fields (string → number)
+ * - occurrences fields transformation
+ * - committee → committees array
+ */
+export function transformV1MeetingToV2(meeting: Meeting): Meeting {
+  // If not v1, return as-is
+  if (meeting.version !== 'v1') {
+    return meeting;
+  }
+
+  // Cast to V1Meeting for accessing v1-specific fields with type safety
+  const v1Meeting = meeting as unknown as V1Meeting;
+
+  // Transform occurrences if present
+  const occurrences = Array.isArray(v1Meeting.occurrences) ? v1Meeting.occurrences.map(transformV1OccurrenceToV2) : [];
+
+  // Build transformed meeting
+  const transformed: Meeting = {
+    // V2 required fields - use v2 field or fall back to v1 equivalent
+    uid: meeting.uid || v1Meeting.id || '',
+    project_uid: meeting.project_uid || v1Meeting.project_id || '',
+    title: meeting.title || v1Meeting.topic || '',
+    description: meeting.description || v1Meeting.agenda || '',
+    start_time: meeting.start_time,
+    duration: parseToInt(v1Meeting.duration) ?? meeting.duration ?? 0,
+    timezone: meeting.timezone || v1Meeting.timezone || '',
+    created_at: meeting.created_at || v1Meeting.created_at || '',
+    updated_at: meeting.updated_at || v1Meeting.modified_at || meeting.created_at || '',
+
+    // Transform early join time
+    early_join_time_minutes: parseToInt(v1Meeting.early_join_time) ?? meeting.early_join_time_minutes ?? 10,
+
+    // Transform recurrence
+    recurrence: transformV1RecurrenceToV2(v1Meeting.recurrence),
+
+    // Transform occurrences
+    occurrences,
+
+    // Transform committees
+    committees: transformV1CommitteesToV2(v1Meeting),
+
+    // Transform zoom config
+    zoom_config: transformV1ZoomConfigToV2(v1Meeting),
+
+    // Pass through other fields
+    platform: meeting.platform,
+    meeting_type: meeting.meeting_type || v1Meeting.meeting_type || null,
+    visibility: meeting.visibility,
+    restricted: meeting.restricted,
+    recording_enabled: meeting.recording_enabled,
+    transcript_enabled: meeting.transcript_enabled,
+    youtube_upload_enabled: meeting.youtube_upload_enabled,
+    artifact_visibility: meeting.artifact_visibility,
+    organizers: meeting.organizers || [],
+    password: meeting.password || v1Meeting.password || null,
+    invited: meeting.invited,
+    join_url: meeting.join_url || v1Meeting.join_url,
+    individual_registrants_count: meeting.individual_registrants_count || 0,
+    committee_members_count: meeting.committee_members_count || 0,
+    registrants_accepted_count: meeting.registrants_accepted_count || 0,
+    registrants_declined_count: meeting.registrants_declined_count || 0,
+    registrants_pending_count: meeting.registrants_pending_count || 0,
+    participant_count: meeting.participant_count,
+    attended_count: meeting.attended_count,
+    project_name: meeting.project_name || '',
+    project_slug: meeting.project_slug || v1Meeting.project_slug || '',
+    organizer: meeting.organizer,
+
+    // Keep version for reference
+    version: 'v1',
+  };
+
+  return transformed;
+}
+
+/**
+ * Build v2 summary_data from v1 summary fields
+ * @param v1Summary - V1 summary object
+ * @returns V2 SummaryData object
+ */
+function buildV2SummaryDataFromV1(v1Summary: V1PastMeetingSummary): SummaryData {
+  // Build markdown content from v1 fields
+  const parts: string[] = [];
+
+  // Use edited content if available, otherwise use original
+  const overview = v1Summary.edited_summary_overview || v1Summary.summary_overview;
+  const details = v1Summary.edited_summary_details || v1Summary.summary_details;
+  const nextSteps = v1Summary.edited_next_steps || v1Summary.next_steps;
+
+  if (overview) {
+    parts.push(`## Overview\n${overview}`);
+  }
+
+  if (details && details.length > 0) {
+    parts.push('## Key Topics');
+    details.forEach((detail: V1SummaryDetail) => {
+      parts.push(`### ${detail.label}\n${detail.summary}`);
+    });
+  }
+
+  if (nextSteps && nextSteps.length > 0) {
+    parts.push('## Next Steps');
+    nextSteps.forEach((step: string) => {
+      parts.push(`- ${step}`);
+    });
+  }
+
+  return {
+    title: v1Summary.summary_title || '',
+    content: parts.join('\n\n'),
+    edited_content: '',
+    doc_url: '',
+    start_time: v1Summary.summary_start_time || '',
+    end_time: v1Summary.summary_end_time || '',
+  };
+}
+
+/**
+ * Transform v1 summary data to v2 format
+ * @param summary - V1 summary object from API
+ * @returns PastMeetingSummary object normalized to v2 format
+ * @description
+ * Transforms v1 summary fields to v2 equivalents:
+ * - id → uid
+ * - summary_overview, summary_details, next_steps → summary_data.content
+ * - summary_title → summary_data.title
+ * - summary_start_time → summary_data.start_time
+ * - summary_end_time → summary_data.end_time
+ */
+export function transformV1SummaryToV2(summary: PastMeetingSummary): PastMeetingSummary {
+  // If already has v2 format (uid and summary_data.content), return as-is
+  if (summary.uid && summary.summary_data?.content) {
+    return summary;
+  }
+
+  // Cast to V1PastMeetingSummary for accessing v1-specific fields with type safety
+  const v1Summary = summary as unknown as V1PastMeetingSummary;
+
+  return {
+    // V2 fields - use v2 field or fall back to v1 equivalent
+    uid: summary.uid || v1Summary.id || '',
+    meeting_uid: summary.meeting_uid || v1Summary.meeting_id || '',
+    past_meeting_uid: summary.past_meeting_uid || '',
+    platform: summary.platform || 'Zoom',
+    approved: summary.approved ?? v1Summary.approved ?? false,
+    requires_approval: summary.requires_approval ?? v1Summary.requires_approval ?? false,
+    email_sent: summary.email_sent ?? v1Summary.email_sent ?? false,
+    password: summary.password || v1Summary.password || '',
+
+    // Transform summary_data from v1 fields
+    summary_data: buildV2SummaryDataFromV1(v1Summary),
+
+    // Build zoom_config from v1 fields if not present
+    zoom_config: summary.zoom_config || {
+      meeting_id: v1Summary.meeting_id || '',
+      meeting_uuid: v1Summary.zoom_meeting_uuid || '',
+    },
+
+    // Timestamps
+    created_at: summary.created_at || v1Summary.summary_created_time || '',
+    updated_at: summary.updated_at || v1Summary.summary_last_modified_time || v1Summary.modified_at || '',
+  };
 }

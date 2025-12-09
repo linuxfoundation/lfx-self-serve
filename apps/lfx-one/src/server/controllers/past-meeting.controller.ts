@@ -4,6 +4,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { PastMeeting, PastMeetingRecording, PastMeetingSummary, UpdatePastMeetingSummaryRequest } from '@lfx-one/shared/interfaces';
+import { isUuid } from '@lfx-one/shared/utils';
 import { Logger } from '../helpers/logger';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { MeetingService } from '../services/meeting.service';
@@ -107,13 +108,10 @@ export class PastMeetingController {
   /**
    * GET /past-meetings/:uid/recording
    */
-  // TODO(v1-migration): Remove V1 query parameter once all meetings are migrated to V2
   public async getPastMeetingRecording(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const v1 = req.query['v1'] === 'true';
     const startTime = Logger.start(req, 'get_past_meeting_recording', {
       past_meeting_uid: uid,
-      v1,
     });
 
     try {
@@ -128,8 +126,11 @@ export class PastMeetingController {
         return;
       }
 
-      // Get the past meeting recording (use v1 type for legacy meetings)
-      const recording: PastMeetingRecording | null = await this.meetingService.getPastMeetingRecording(req, uid, v1);
+      // Determine if this is a v1 meeting based on UID format
+      const isV1 = !isUuid(uid);
+
+      // Get the past meeting recording
+      const recording: PastMeetingRecording | null = await this.meetingService.getPastMeetingRecording(req, uid, isV1);
 
       // If no recording found, return 404
       if (!recording) {
@@ -164,13 +165,10 @@ export class PastMeetingController {
   /**
    * GET /past-meetings/:uid/summary
    */
-  // TODO(v1-migration): Remove V1 query parameter once all meetings are migrated to V2
   public async getPastMeetingSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const v1 = req.query['v1'] === 'true';
     const startTime = Logger.start(req, 'get_past_meeting_summary', {
       past_meeting_uid: uid,
-      v1,
     });
 
     try {
@@ -185,8 +183,11 @@ export class PastMeetingController {
         return;
       }
 
-      // Get the past meeting summary (use v1 type for legacy meetings)
-      const summary: PastMeetingSummary | null = await this.meetingService.getPastMeetingSummary(req, uid, v1);
+      // Determine if this is a v1 meeting based on UID format
+      const isV1 = !isUuid(uid);
+
+      // Get the past meeting summary
+      const summary: PastMeetingSummary | null = await this.meetingService.getPastMeetingSummary(req, uid, isV1);
 
       // If no summary found, return 404
       if (!summary) {

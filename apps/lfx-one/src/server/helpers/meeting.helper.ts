@@ -37,8 +37,8 @@ export async function isUserInvitedToMeeting(req: Request, meetingUid: string, e
  * @returns The meeting with the invited property added
  */
 export async function addInvitedStatusToMeeting(req: Request, meeting: Meeting, email: string, m2mToken?: string): Promise<Meeting> {
-  const meetingUid = meeting.uid || (meeting.id as string);
-  const invited = meeting.organizer ? false : await isUserInvitedToMeeting(req, meetingUid, email, m2mToken);
+  // V1 meetings are now transformed server-side to have uid populated
+  const invited = meeting.organizer ? false : await isUserInvitedToMeeting(req, meeting.uid, email, m2mToken);
 
   return {
     ...meeting,

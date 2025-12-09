@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Pipe, PipeTransform } from '@angular/core';
-import { buildRecurrenceSummary, CustomRecurrencePattern, MeetingRecurrence, parseToInt } from '@lfx-one/shared';
+import { buildRecurrenceSummary, CustomRecurrencePattern, MeetingRecurrence } from '@lfx-one/shared';
 
 @Pipe({
   name: 'recurrenceSummary',
@@ -29,14 +29,12 @@ export class RecurrenceSummaryPipe implements PipeTransform {
   }
 
   private convertToRecurrencePattern(recurrence: MeetingRecurrence): CustomRecurrencePattern {
-    // Parse numeric values that might come as strings from v1 meetings
-    // type defaults to 2 (weekly), repeat_interval defaults to 1
-    const type = parseToInt(recurrence.type) ?? 2;
-    const monthlyDay = parseToInt(recurrence.monthly_day);
-    const monthlyWeek = parseToInt(recurrence.monthly_week);
-    const monthlyWeekDay = parseToInt(recurrence.monthly_week_day);
-    const endTimes = parseToInt(recurrence.end_times);
-    const repeatInterval = parseToInt(recurrence.repeat_interval) ?? 1;
+    const type = recurrence.type ?? 2;
+    const monthlyDay = recurrence.monthly_day;
+    const monthlyWeek = recurrence.monthly_week;
+    const monthlyWeekDay = recurrence.monthly_week_day;
+    const endTimes = recurrence.end_times;
+    const repeatInterval = recurrence.repeat_interval ?? 1;
 
     // Determine pattern type from recurrence.type
     let patternType: 'daily' | 'weekly' | 'monthly' = 'weekly';
