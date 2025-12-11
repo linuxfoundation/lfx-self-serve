@@ -7,7 +7,6 @@ import { extractUrls } from '@lfx-one/shared';
 
 @Pipe({
   name: 'linkify',
-  standalone: true,
 })
 export class LinkifyPipe implements PipeTransform {
   private readonly sanitizer = inject(DomSanitizer);

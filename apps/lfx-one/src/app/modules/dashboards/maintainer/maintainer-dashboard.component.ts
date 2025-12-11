@@ -13,7 +13,6 @@ import { RecentProgressComponent } from '../components/recent-progress/recent-pr
 
 @Component({
   selector: 'lfx-maintainer-dashboard',
-  standalone: true,
   imports: [RecentProgressComponent, PendingActionsComponent, MyMeetingsComponent, MyProjectsComponent],
   templateUrl: './maintainer-dashboard.component.html',
   styleUrl: './maintainer-dashboard.component.scss',

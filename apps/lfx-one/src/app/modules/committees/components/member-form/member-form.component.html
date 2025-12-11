@@ -68,7 +68,15 @@
         <!-- Role -->
         <div>
           <label for="role" class="block text-sm font-medium text-gray-700 mb-1"> Role </label>
-          <lfx-select size="small" [form]="form()" control="role" [options]="roleOptions" placeholder="Select role" styleClass="w-full" id="role"></lfx-select>
+          <lfx-select
+            size="small"
+            [form]="form()"
+            control="role"
+            appendTo="body"
+            [options]="roleOptions"
+            placeholder="Select role"
+            styleClass="w-full"
+            id="role"></lfx-select>
         </div>
 
         <!-- Role Start and End Dates -->
@@ -76,13 +84,25 @@
           <!-- Role Start Date -->
           <div>
             <label for="role-start" class="block text-sm font-medium text-gray-700 mb-1"> Role Start Date </label>
-            <lfx-calendar [form]="form()" control="role_start" placeholder="Select start date" [showButtonBar]="true" [showIcon]="true"></lfx-calendar>
+            <lfx-calendar
+              [form]="form()"
+              control="role_start"
+              placeholder="Select start date"
+              [showButtonBar]="true"
+              appendTo="body"
+              [showIcon]="true"></lfx-calendar>
           </div>
 
           <!-- Role End Date -->
           <div>
             <label for="role-end" class="block text-sm font-medium text-gray-700 mb-1"> Role End Date </label>
-            <lfx-calendar [form]="form()" control="role_end" placeholder="Select end date" [showButtonBar]="true" [showIcon]="true"></lfx-calendar>
+            <lfx-calendar
+              [form]="form()"
+              control="role_end"
+              placeholder="Select end date"
+              [showButtonBar]="true"
+              appendTo="body"
+              [showIcon]="true"></lfx-calendar>
           </div>
         </div>
 
@@ -96,6 +116,7 @@
             [options]="votingStatusOptions"
             placeholder="Select voting status"
             styleClass="w-full"
+            appendTo="body"
             id="voting-status"></lfx-select>
         </div>
 
@@ -104,13 +125,25 @@
           <!-- Voting Status Start Date -->
           <div>
             <label for="voting-status-start" class="block text-sm font-medium text-gray-700 mb-1"> Voting Status Start Date </label>
-            <lfx-calendar [form]="form()" control="voting_status_start" placeholder="Select start date" [showButtonBar]="true" [showIcon]="true"></lfx-calendar>
+            <lfx-calendar
+              [form]="form()"
+              control="voting_status_start"
+              placeholder="Select start date"
+              [showButtonBar]="true"
+              appendTo="body"
+              [showIcon]="true"></lfx-calendar>
           </div>
 
           <!-- Voting Status End Date -->
           <div>
             <label for="voting-status-end" class="block text-sm font-medium text-gray-700 mb-1"> Voting Status End Date </label>
-            <lfx-calendar [form]="form()" control="voting_status_end" placeholder="Select end date" [showButtonBar]="true" [showIcon]="true"></lfx-calendar>
+            <lfx-calendar
+              [form]="form()"
+              control="voting_status_end"
+              placeholder="Select end date"
+              [showButtonBar]="true"
+              appendTo="body"
+              [showIcon]="true"></lfx-calendar>
           </div>
         </div>
       </div>

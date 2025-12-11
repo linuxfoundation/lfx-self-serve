@@ -1,15 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectModule } from 'primeng/multiselect';
 
 @Component({
   selector: 'lfx-multi-select',
-  standalone: true,
-  imports: [CommonModule, MultiSelectModule, ReactiveFormsModule],
+  imports: [MultiSelectModule, ReactiveFormsModule],
   templateUrl: './multi-select.component.html',
 })
 export class MultiSelectComponent {

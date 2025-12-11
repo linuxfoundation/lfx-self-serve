@@ -1,20 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, inject, signal } from '@angular/core';
-import { CommonModule } from '@angular/common';
-import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
-import { MeetingService } from '@services/meeting.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
+import { Meeting, MeetingOccurrence } from '@lfx-one/shared/interfaces';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
-import { HttpErrorResponse } from '@angular/common/http';
+import { MeetingService } from '@services/meeting.service';
+import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 @Component({
   selector: 'lfx-cancel-occurrence-confirmation',
-  standalone: true,
-  imports: [CommonModule, ButtonComponent, MessageComponent, MeetingTimePipe],
+  imports: [ButtonComponent, MessageComponent, MeetingTimePipe],
   templateUrl: './cancel-occurrence-confirmation.component.html',
 })
 export class CancelOccurrenceConfirmationComponent {

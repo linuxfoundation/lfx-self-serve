@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, input, OnDestroy, OnInit, signal, viewChild } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { TimePickerProps } from '@lfx-one/shared/interfaces';
@@ -22,8 +21,7 @@ interface TimePickerData {
 
 @Component({
   selector: 'lfx-time-picker',
-  standalone: true,
-  imports: [InputTextModule, PopoverModule, ButtonModule, ReactiveFormsModule, CommonModule],
+  imports: [InputTextModule, PopoverModule, ButtonModule, ReactiveFormsModule],
   templateUrl: './time-picker.component.html',
   styleUrls: ['./time-picker.component.scss'],
 })

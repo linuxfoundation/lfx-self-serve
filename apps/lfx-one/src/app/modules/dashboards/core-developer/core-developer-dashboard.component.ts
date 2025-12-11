@@ -14,7 +14,6 @@ import { RecentProgressComponent } from '../components/recent-progress/recent-pr
 
 @Component({
   selector: 'lfx-core-developer-dashboard',
-  standalone: true,
   imports: [RecentProgressComponent, PendingActionsComponent, MyMeetingsComponent, MyProjectsComponent],
   templateUrl: './core-developer-dashboard.component.html',
   styleUrl: './core-developer-dashboard.component.scss',

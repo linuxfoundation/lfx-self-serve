@@ -5,7 +5,6 @@ import { Pipe, PipeTransform } from '@angular/core';
 
 @Pipe({
   name: 'meetingTime',
-  standalone: true,
 })
 export class MeetingTimePipe implements PipeTransform {
   public transform(startTime: string | null, duration: number | null, format: 'full' | 'full-start' | 'date' | 'time' | 'compact' = 'full'): string {

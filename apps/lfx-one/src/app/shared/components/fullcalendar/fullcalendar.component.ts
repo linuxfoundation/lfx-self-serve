@@ -9,7 +9,6 @@ import timeGridPlugin from '@fullcalendar/timegrid';
 
 @Component({
   selector: 'lfx-fullcalendar',
-  standalone: true,
   imports: [FullCalendarModule],
   templateUrl: './fullcalendar.component.html',
   styleUrl: './fullcalendar.component.scss',

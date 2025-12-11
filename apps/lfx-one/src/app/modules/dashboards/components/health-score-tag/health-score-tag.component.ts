@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, input } from '@angular/core';
-import { CommonModule } from '@angular/common';
+
 import { FoundationHealthScore } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-health-score-tag',
-  imports: [CommonModule],
+  imports: [],
   templateUrl: './health-score-tag.component.html',
   styleUrl: './health-score-tag.component.scss',
 })

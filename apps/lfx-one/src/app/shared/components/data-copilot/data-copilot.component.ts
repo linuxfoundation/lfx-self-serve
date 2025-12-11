@@ -10,7 +10,6 @@ import { DrawerModule } from 'primeng/drawer';
 
 @Component({
   selector: 'lfx-data-copilot',
-  standalone: true,
   imports: [DrawerModule, ButtonComponent],
   templateUrl: './data-copilot.component.html',
   styleUrl: './data-copilot.component.scss',

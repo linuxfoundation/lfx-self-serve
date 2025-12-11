@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, effect, inject, input, output, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -14,7 +13,7 @@ import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
 
 @Component({
   selector: 'lfx-user-search',
-  imports: [AutocompleteComponent, ReactiveFormsModule, CommonModule],
+  imports: [AutocompleteComponent, ReactiveFormsModule],
   templateUrl: './user-search.component.html',
 })
 export class UserSearchComponent {

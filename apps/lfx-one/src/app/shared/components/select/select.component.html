@@ -39,7 +39,6 @@
     [autofocus]="autofocus()"
     [resetFilterOnHide]="resetFilterOnHide()"
     [dropdownIcon]="dropdownIcon()"
-    [autoDisplayFirst]="autoDisplayFirst()"
     [focusOnHover]="focusOnHover()"
     [filterFields]="filterFields()"
     [id]="id()"
@@ -52,6 +51,9 @@
     [tooltipPositionStyle]="tooltipPositionStyle()"
     [tooltipStyleClass]="tooltipStyleClass()"
     [autofocusFilter]="autofocusFilter()"
-    (onChange)="handleChange($event)"
-    [size]="size()"></p-select>
+    [size]="size()"
+    [variant]="variant()"
+    [checkmark]="checkmark()"
+    [loading]="loading()"
+    (onChange)="handleChange($event)"></p-select>
 </ng-container>

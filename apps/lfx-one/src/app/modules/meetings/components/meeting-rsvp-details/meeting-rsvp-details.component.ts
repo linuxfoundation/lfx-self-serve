@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, InputSignal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
@@ -11,8 +11,7 @@ import { catchError, of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-rsvp-details',
-  standalone: true,
-  imports: [CommonModule, ButtonComponent],
+  imports: [NgClass, ButtonComponent],
   templateUrl: './meeting-rsvp-details.component.html',
 })
 export class MeetingRsvpDetailsComponent {

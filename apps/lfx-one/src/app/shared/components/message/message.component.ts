@@ -1,15 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, ContentChild, input, output, TemplateRef } from '@angular/core';
 import { MessageProps } from '@lfx-one/shared/interfaces';
 import { MessageModule } from 'primeng/message';
 
 @Component({
   selector: 'lfx-message',
-  standalone: true,
-  imports: [CommonModule, MessageModule],
+  imports: [NgTemplateOutlet, MessageModule],
   templateUrl: './message.component.html',
 })
 export class MessageComponent {
@@ -29,10 +28,6 @@ export class MessageComponent {
   public readonly variant = input<MessageProps['variant']>(undefined);
   public readonly icon = input<string | undefined>(undefined);
   public readonly closeIcon = input<string | undefined>(undefined);
-
-  // Animation properties
-  public readonly showTransitionOptions = input<string>('300ms ease-out');
-  public readonly hideTransitionOptions = input<string>('200ms cubic-bezier(0.86, 0, 0.07, 1)');
 
   // Auto-dismiss functionality
   public readonly life = input<number | undefined>(undefined);

@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, DestroyRef, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -23,9 +22,7 @@ import { CommitteeSettingsComponent } from '../components/committee-settings/com
 
 @Component({
   selector: 'lfx-committee-manage',
-  standalone: true,
   imports: [
-    CommonModule,
     RouterLink,
     ReactiveFormsModule,
     StepperModule,

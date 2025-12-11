@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ClipboardModule } from '@angular/cdk/clipboard';
-import { CommonModule } from '@angular/common';
+import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
@@ -10,13 +10,13 @@ import { TagComponent } from '@components/tag/tag.component';
 import {
   buildJoinUrlWithParams,
   canJoinMeeting,
-  ComponentSeverity,
   DEFAULT_MEETING_TYPE_CONFIG,
   Meeting,
   MEETING_TYPE_CONFIGS,
   MeetingAttachment,
   MeetingOccurrence,
   MeetingTypeBadge,
+  TagSeverity,
 } from '@lfx-one/shared';
 import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
 import { MeetingService } from '@services/meeting.service';
@@ -26,8 +26,7 @@ import { catchError, combineLatest, map, of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-dashboard-meeting-card',
-  standalone: true,
-  imports: [CommonModule, ButtonComponent, TagComponent, TooltipModule, ClipboardModule, FileTypeIconPipe],
+  imports: [NgClass, ButtonComponent, TagComponent, TooltipModule, ClipboardModule, FileTypeIconPipe],
   templateUrl: './dashboard-meeting-card.component.html',
 })
 export class DashboardMeetingCardComponent {
@@ -100,11 +99,11 @@ export class DashboardMeetingCardComponent {
       const config = type ? (MEETING_TYPE_CONFIGS[type] ?? DEFAULT_MEETING_TYPE_CONFIG) : DEFAULT_MEETING_TYPE_CONFIG;
 
       // Map text color to severity
-      let severity: ComponentSeverity = 'secondary';
+      let severity: TagSeverity = 'secondary';
       if (config.textColor.includes('red')) severity = 'danger';
       else if (config.textColor.includes('blue')) severity = 'info';
       else if (config.textColor.includes('green')) severity = 'success';
-      else if (config.textColor.includes('purple')) severity = 'primary';
+      else if (config.textColor.includes('purple')) severity = 'contrast';
       else if (config.textColor.includes('amber')) severity = 'warn';
 
       return {

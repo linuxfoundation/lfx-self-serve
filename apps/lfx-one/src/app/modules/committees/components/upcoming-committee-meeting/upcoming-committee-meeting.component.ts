@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, Injector, input, OnInit, runInInjectionContext, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
@@ -14,8 +13,7 @@ import { filter, map, of } from 'rxjs';
 
 @Component({
   selector: 'lfx-upcoming-committee-meeting',
-  standalone: true,
-  imports: [CommonModule, RouterLink, MeetingTimePipe, TooltipModule],
+  imports: [RouterLink, MeetingTimePipe, TooltipModule],
   templateUrl: './upcoming-committee-meeting.component.html',
 })
 export class UpcomingCommitteeMeetingComponent implements OnInit {

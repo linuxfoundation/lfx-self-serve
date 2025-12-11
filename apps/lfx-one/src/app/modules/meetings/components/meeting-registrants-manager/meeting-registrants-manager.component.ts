@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, OnInit, output, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -24,7 +23,6 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
 @Component({
   selector: 'lfx-meeting-registrants-manager',
   imports: [
-    CommonModule,
     ReactiveFormsModule,
     ButtonComponent,
     CardComponent,

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgClass } from '@angular/common';
 import { Component, inject, input, output } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -11,8 +11,7 @@ import { TooltipModule } from 'primeng/tooltip';
 import type { PendingActionItem } from '@lfx-one/shared/interfaces';
 @Component({
   selector: 'lfx-pending-actions',
-  standalone: true,
-  imports: [CommonModule, ButtonComponent, TagComponent, TooltipModule],
+  imports: [NgClass, ButtonComponent, TagComponent, TooltipModule],
   templateUrl: './pending-actions.component.html',
   styleUrl: './pending-actions.component.scss',
 })

@@ -11,7 +11,6 @@ import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 
 @Component({
   selector: 'lfx-metric-card',
-  standalone: true,
   imports: [NgTemplateOutlet, ChartComponent, SkeletonModule, TooltipModule],
   templateUrl: './metric-card.component.html',
 })

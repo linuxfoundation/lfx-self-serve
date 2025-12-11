@@ -1,15 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CheckboxModule } from 'primeng/checkbox';
 
 @Component({
   selector: 'lfx-checkbox',
-  standalone: true,
-  imports: [CommonModule, CheckboxModule, ReactiveFormsModule],
+  imports: [CheckboxModule, ReactiveFormsModule],
   templateUrl: './checkbox.component.html',
 })
 export class CheckboxComponent {

@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -16,8 +15,7 @@ import { map } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-basic-info',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, InputTextComponent, SelectComponent, TextareaComponent],
+  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, TextareaComponent],
   templateUrl: './committee-basic-info.component.html',
 })
 export class CommitteeBasicInfoComponent {

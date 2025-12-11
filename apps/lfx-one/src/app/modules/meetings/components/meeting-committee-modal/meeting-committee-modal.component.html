@@ -23,7 +23,7 @@
         [filterPlaceHolder]="'Search ' + committeeLabel.plural.toLowerCase()"
         [showToggleAll]="true"
         appendTo="body"
-        styleClass="w-full"
+        class="w-full"
         data-testid="meeting-committee-multi-select"></lfx-multi-select>
     </div>
     @if (selectedCommitteeIds().length === 0) {
@@ -54,7 +54,7 @@
           filterPlaceHolder="Search voting statuses"
           [showToggleAll]="true"
           appendTo="body"
-          styleClass="w-full"
+          class="w-full"
           data-testid="meeting-voting-status-multi-select"></lfx-multi-select>
       </div>
     }
@@ -202,7 +202,7 @@
     data-testid="meeting-committee-modal-cancel-button"></lfx-button>
   <lfx-button
     label="Save"
-    severity="primary"
+    severity="info"
     size="small"
     [icon]="saving() ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-save'"
     (onClick)="onSave()"

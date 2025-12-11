@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardSelectorComponent } from '@components/card-selector/card-selector.component';
@@ -12,8 +11,7 @@ import { PersonaService } from '@services/persona.service';
 
 @Component({
   selector: 'lfx-committee-category-selection',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, CardSelectorComponent, MessageComponent],
+  imports: [ReactiveFormsModule, CardSelectorComponent, MessageComponent],
   templateUrl: './committee-category-selection.component.html',
 })
 export class CommitteeCategorySelectionComponent {

@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, inject, signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -15,8 +14,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 @Component({
   selector: 'lfx-public-registration-modal',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, InputTextComponent, OrganizationSearchComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, InputTextComponent, OrganizationSearchComponent],
   templateUrl: './public-registration-modal.component.html',
 })
 export class PublicRegistrationModalComponent {

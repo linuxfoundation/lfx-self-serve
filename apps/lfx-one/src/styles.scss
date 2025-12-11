@@ -119,6 +119,10 @@
   /* Tag component styling */
   --p-tag-font-size: 10.5px;
   --p-tag-font-weight: 400;
+
+  .p-button-icon-only::after {
+    display: none;
+  }
 }
 
 html {
@@ -141,6 +145,10 @@ a:not([pButton]) {
   &:not(:disabled):active {
     @apply bg-gray-100;
   }
+}
+
+.p-button.p-button-text {
+  @apply ring-0 outline-none;
 }
 
 /* Small button sizing for cards */

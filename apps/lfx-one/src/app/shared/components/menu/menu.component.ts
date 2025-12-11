@@ -1,15 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgIf, NgTemplateOutlet } from '@angular/common';
 import { Component, ContentChild, input, output, TemplateRef, viewChild } from '@angular/core';
 import { MenuItem } from 'primeng/api';
 import { Menu, MenuModule } from 'primeng/menu';
 
 @Component({
   selector: 'lfx-menu',
-  standalone: true,
-  imports: [CommonModule, MenuModule],
+  imports: [NgIf, NgTemplateOutlet, MenuModule],
   templateUrl: './menu.component.html',
 })
 export class MenuComponent {
@@ -33,8 +32,6 @@ export class MenuComponent {
   public readonly appendTo = input<any>(undefined);
   public readonly autoZIndex = input<boolean>(true);
   public readonly baseZIndex = input<number>(0);
-  public readonly showTransitionOptions = input<string>('0.12s cubic-bezier(0, 0, 0.2, 1)');
-  public readonly hideTransitionOptions = input<string>('0.12s cubic-bezier(0, 0, 0.2, 1)');
 
   // Accessibility
   public readonly id = input<string | undefined>(undefined);

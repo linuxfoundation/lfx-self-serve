@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpParams } from '@angular/common/http';
 import { Component, computed, inject, input } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -19,8 +19,7 @@ import { distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-sidebar',
-  standalone: true,
-  imports: [CommonModule, RouterModule, BadgeComponent, PersonaSelectorComponent, ProjectSelectorComponent],
+  imports: [NgClass, NgTemplateOutlet, RouterModule, BadgeComponent, PersonaSelectorComponent, ProjectSelectorComponent],
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.scss',
 })

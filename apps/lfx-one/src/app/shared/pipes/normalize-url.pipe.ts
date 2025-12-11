@@ -6,7 +6,6 @@ import { normalizeToUrl } from '@lfx-one/shared';
 
 @Pipe({
   name: 'normalizeUrl',
-  standalone: true,
 })
 export class NormalizeUrlPipe implements PipeTransform {
   /**

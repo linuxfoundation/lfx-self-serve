@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, OnInit, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -20,8 +19,7 @@ import { getWeekOfMonth } from '@lfx-one/shared/utils';
 
 @Component({
   selector: 'lfx-meeting-recurrence-pattern',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, CalendarComponent, InputTextComponent, RadioButtonComponent, SelectComponent],
+  imports: [ReactiveFormsModule, CalendarComponent, InputTextComponent, RadioButtonComponent, SelectComponent],
   templateUrl: './meeting-recurrence-pattern.component.html',
 })
 export class MeetingRecurrencePatternComponent implements OnInit {

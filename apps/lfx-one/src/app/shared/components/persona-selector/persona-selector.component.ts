@@ -13,7 +13,6 @@ import { ProjectContextService } from '@services/project-context.service';
 
 @Component({
   selector: 'lfx-persona-selector',
-  standalone: true,
   imports: [ReactiveFormsModule, SelectComponent],
   templateUrl: './persona-selector.component.html',
 })

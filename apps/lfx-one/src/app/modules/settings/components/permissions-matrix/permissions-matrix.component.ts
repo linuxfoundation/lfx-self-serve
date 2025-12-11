@@ -8,7 +8,6 @@ import { PermissionMatrixItem } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-permissions-matrix',
-  standalone: true,
   imports: [CardComponent, TagComponent],
   templateUrl: './permissions-matrix.component.html',
 })

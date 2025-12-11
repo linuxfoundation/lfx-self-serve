@@ -7,7 +7,6 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 @Component({
   selector: 'lfx-meeting-modal',
-  standalone: true,
   imports: [MeetingCardComponent],
   templateUrl: './meeting-modal.component.html',
 })

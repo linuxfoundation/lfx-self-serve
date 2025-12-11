@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, inject, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -18,8 +17,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 @Component({
   selector: 'lfx-member-form',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, SelectComponent, InputTextComponent, CalendarComponent, OrganizationSearchComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, SelectComponent, InputTextComponent, CalendarComponent, OrganizationSearchComponent],
   templateUrl: './member-form.component.html',
   styleUrl: './member-form.component.scss',
 })

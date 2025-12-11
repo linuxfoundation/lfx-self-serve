@@ -19,14 +19,14 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Public API routes - optional authentication with token benefits
   { pattern: '/public/api', type: 'api', auth: 'optional', tokenRequired: false },
 
-  // Meetings - Angular SSR route with optional authentication
-  { pattern: '/meetings', type: 'ssr', auth: 'optional' },
+  // Public meeting join - no authentication required
+  { pattern: '/meetings/', type: 'ssr', auth: 'optional' },
 
   // Protected API routes - require authentication and token
   { pattern: '/api', type: 'api', auth: 'required', tokenRequired: true },
 
-  // All other routes - Angular SSR routes with optional authentication
-  { pattern: '/', type: 'ssr', auth: 'optional' },
+  // All other routes - Angular SSR routes requiring authentication
+  { pattern: '/', type: 'ssr', auth: 'required' },
 ];
 
 /**

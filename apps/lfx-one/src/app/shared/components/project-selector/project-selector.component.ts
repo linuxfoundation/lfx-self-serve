@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, input, output, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -14,8 +13,7 @@ import { TagComponent } from '../tag/tag.component';
 
 @Component({
   selector: 'lfx-project-selector',
-  standalone: true,
-  imports: [CommonModule, PopoverModule, ButtonComponent, InputTextModule, FormsModule, AutoFocus, TagComponent],
+  imports: [PopoverModule, ButtonComponent, InputTextModule, FormsModule, AutoFocus, TagComponent],
   templateUrl: './project-selector.component.html',
   styleUrl: './project-selector.component.scss',
 })

@@ -8,7 +8,6 @@ import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-toggle',
-  standalone: true,
   imports: [ToggleSwitchModule, ReactiveFormsModule, TooltipModule],
   templateUrl: './toggle.component.html',
 })

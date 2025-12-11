@@ -7,7 +7,6 @@ import { ButtonComponent } from '@app/shared/components/button/button.component'
 
 @Component({
   selector: 'lfx-profile-nav',
-  standalone: true,
   imports: [RouterLink, ButtonComponent],
   templateUrl: './profile-nav.component.html',
 })

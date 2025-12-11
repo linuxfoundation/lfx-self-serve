@@ -8,7 +8,6 @@ export type ChartType = 'bar' | 'line' | 'scatter' | 'bubble' | 'pie' | 'doughnu
 
 @Component({
   selector: 'lfx-chart',
-  standalone: true,
   imports: [ChartModule],
   templateUrl: './chart.component.html',
 })

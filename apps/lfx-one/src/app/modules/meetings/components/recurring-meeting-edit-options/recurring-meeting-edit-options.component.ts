@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -16,8 +15,7 @@ export interface RecurringEditOption {
 
 @Component({
   selector: 'lfx-recurring-meeting-edit-options',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, RadioButtonComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, RadioButtonComponent],
   templateUrl: './recurring-meeting-edit-options.component.html',
 })
 export class RecurringMeetingEditOptionsComponent {

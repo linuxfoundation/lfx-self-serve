@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { TitleCasePipe } from '@angular/common';
 import { Component, computed, inject, input, OnInit, output, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -27,7 +27,7 @@ import { MemberFormComponent } from '../member-form/member-form.component';
 @Component({
   selector: 'lfx-committee-members',
   imports: [
-    CommonModule,
+    TitleCasePipe,
     ReactiveFormsModule,
     CardComponent,
     MemberCardComponent,
@@ -60,7 +60,6 @@ export class CommitteeMembersComponent implements OnInit {
   public readonly refresh = output<void>();
 
   // Class variables with types
-  private dialogRef: DynamicDialogRef | undefined;
   public selectedMember: WritableSignal<CommitteeMember | null>;
   public isDeleting: WritableSignal<boolean>;
   public memberActionMenuItems: MenuItem[] = [];
@@ -124,7 +123,7 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   public openAddMemberDialog(): void {
-    this.dialogRef = this.dialogService.open(MemberFormComponent, {
+    const dialogRef = this.dialogService.open(MemberFormComponent, {
       header: 'Add Member',
       width: '700px',
       modal: true,
@@ -136,9 +135,9 @@ export class CommitteeMembersComponent implements OnInit {
           // Dialog will close itself
         },
       },
-    });
+    }) as DynamicDialogRef;
 
-    this.dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
+    dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
       if (result) {
         this.refreshMembers();
       }
@@ -156,7 +155,7 @@ export class CommitteeMembersComponent implements OnInit {
   private editMember(): void {
     const member = this.selectedMember();
     if (member) {
-      this.dialogRef = this.dialogService.open(MemberFormComponent, {
+      const dialogRef = this.dialogService.open(MemberFormComponent, {
         header: 'Edit Member',
         width: '700px',
         modal: true,
@@ -170,9 +169,9 @@ export class CommitteeMembersComponent implements OnInit {
             // Dialog will close itself
           },
         },
-      });
+      }) as DynamicDialogRef;
 
-      this.dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
+      dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
         if (result) {
           this.refreshMembers();
         }

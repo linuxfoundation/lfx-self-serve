@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, ElementRef, inject, input, signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
@@ -24,8 +23,7 @@ import type {
 
 @Component({
   selector: 'lfx-foundation-health',
-  standalone: true,
-  imports: [CommonModule, FilterPillsComponent, MetricCardComponent, DataCopilotComponent],
+  imports: [FilterPillsComponent, MetricCardComponent, DataCopilotComponent],
   templateUrl: './foundation-health.component.html',
   styleUrl: './foundation-health.component.scss',
 })

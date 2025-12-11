@@ -2,17 +2,25 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <p-card [header]="header()" [subheader]="subheader()" [styleClass]="styleClass()" [style]="style()">
-  <ng-template #header *ngIf="headerTemplate">
-    <ng-container *ngTemplateOutlet="headerTemplate || null"></ng-container>
-  </ng-template>
-  <ng-template #title *ngIf="titleTemplate">
-    <ng-container *ngTemplateOutlet="titleTemplate || null"></ng-container>
-  </ng-template>
-  <ng-template #subtitle *ngIf="subtitleTemplate">
-    <ng-container *ngTemplateOutlet="subtitleTemplate || null"></ng-container>
-  </ng-template>
+  @if (headerTemplate) {
+    <ng-template #header>
+      <ng-container *ngTemplateOutlet="headerTemplate || null"></ng-container>
+    </ng-template>
+  }
+  @if (titleTemplate) {
+    <ng-template #title>
+      <ng-container *ngTemplateOutlet="titleTemplate || null"></ng-container>
+    </ng-template>
+  }
+  @if (subtitleTemplate) {
+    <ng-template #subtitle>
+      <ng-container *ngTemplateOutlet="subtitleTemplate || null"></ng-container>
+    </ng-template>
+  }
   <ng-content></ng-content>
-  <ng-template #footer *ngIf="footerTemplate">
-    <ng-container *ngTemplateOutlet="footerTemplate || null"></ng-container>
-  </ng-template>
+  @if (footerTemplate) {
+    <ng-template #footer>
+      <ng-container *ngTemplateOutlet="footerTemplate || null"></ng-container>
+    </ng-template>
+  }
 </p-card>

@@ -99,13 +99,12 @@
     <div class="flex gap-2">
       <!-- See Meeting button - full width when alone, flex-1 when both buttons present -->
       <lfx-button
-        class="w-full"
+        class="w-full border border-gray-300 text-gray-900 hover:bg-gray-50 h-8 text-sm font-medium"
         label="See Meeting Details"
         [href]="meetingDetailUrl()"
         target="_blank"
         type="button"
         rel="noopener noreferrer"
-        [styleClass]="'border border-gray-300 text-gray-900 hover:bg-gray-50 h-8 text-sm font-medium w-full'"
         [outlined]="true"
         icon="fa-light fa-up-right-from-square text-xs"
         data-testid="dashboard-meeting-card-see-button" />

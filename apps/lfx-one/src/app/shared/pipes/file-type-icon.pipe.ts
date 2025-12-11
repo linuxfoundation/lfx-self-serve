@@ -5,7 +5,6 @@ import { Pipe, PipeTransform } from '@angular/core';
 
 @Pipe({
   name: 'fileTypeIcon',
-  standalone: true,
 })
 export class FileTypeIconPipe implements PipeTransform {
   public transform(mimeType: string): string {

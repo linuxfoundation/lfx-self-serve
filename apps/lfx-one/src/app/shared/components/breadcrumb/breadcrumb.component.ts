@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, ContentChild, input, output, TemplateRef } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { MenuItem } from 'primeng/api';
@@ -9,12 +9,8 @@ import { BreadcrumbItemClickEvent, BreadcrumbModule } from 'primeng/breadcrumb';
 
 @Component({
   selector: 'lfx-breadcrumb',
-  standalone: true,
-  imports: [CommonModule, RouterModule, BreadcrumbModule],
+  imports: [NgTemplateOutlet, RouterModule, BreadcrumbModule],
   templateUrl: './breadcrumb.component.html',
-  // TODO: Remove ngSkipHydration when upgrading to Angular 20 - zoneless hydration compatibility
-  // https://github.com/angular/angular/issues/50543
-  host: { ngSkipHydration: 'true' },
 })
 export class BreadcrumbComponent {
   @ContentChild('item', { static: false, descendants: false }) public itemTemplate?: TemplateRef<any>;

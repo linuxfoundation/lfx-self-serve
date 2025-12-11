@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, input, OnInit, output } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MessageComponent } from '@components/message/message.component';
@@ -11,8 +10,7 @@ import { MEETING_TEMPLATES } from '@lfx-one/shared/constants';
 
 @Component({
   selector: 'lfx-agenda-template-selector',
-  standalone: true,
-  imports: [CommonModule, ButtonComponent, MessageComponent, TagComponent],
+  imports: [ButtonComponent, MessageComponent, TagComponent],
   templateUrl: './agenda-template-selector.component.html',
 })
 export class AgendaTemplateSelectorComponent implements OnInit {

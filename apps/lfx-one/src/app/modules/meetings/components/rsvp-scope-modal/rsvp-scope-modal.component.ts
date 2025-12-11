@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgClass } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -11,8 +11,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 
 @Component({
   selector: 'lfx-rsvp-scope-modal',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, RadioButtonComponent],
+  imports: [NgClass, ReactiveFormsModule, ButtonComponent, RadioButtonComponent],
   templateUrl: './rsvp-scope-modal.component.html',
 })
 export class RsvpScopeModalComponent {

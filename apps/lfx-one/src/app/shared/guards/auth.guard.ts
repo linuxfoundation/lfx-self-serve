@@ -12,21 +12,30 @@ import { UserService } from '../services/user.service';
  *
  * Redirects unauthenticated users to the login page with a returnTo parameter
  * containing the originally requested URL.
+ *
+ * SSR-compatible: During SSR, authentication is handled by Express middleware
+ * which redirects unauthenticated users before Angular processes the route.
+ * This guard only handles client-side navigation after initial page load.
  */
 export const authGuard: CanActivateFn = (_route, state) => {
-  const userService = inject(UserService);
   const platformId = inject(PLATFORM_ID);
 
-  // Check if user is authenticated using the signal
+  // On server: Trust that Express middleware already handled authentication
+  // If we're rendering on server, user must be authenticated (middleware redirected otherwise)
+  if (!isPlatformBrowser(platformId)) {
+    return true;
+  }
+
+  // On client: Check authentication state from UserService
+  const userService = inject(UserService);
+
   if (userService.authenticated()) {
     return true;
   }
 
-  // Redirect to login with returnTo parameter using Router for SSR compatibility
+  // Client-side: Redirect to login with returnTo parameter
   const returnTo = encodeURIComponent(state.url);
-  if (isPlatformBrowser(platformId)) {
-    window.location.href = `/login?returnTo=${returnTo}`;
-  }
+  window.location.href = `/login?returnTo=${returnTo}`;
 
   return false;
 };

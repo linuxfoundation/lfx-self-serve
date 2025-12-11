@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, ElementRef, inject, Signal, signal, viewChild, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -21,14 +20,10 @@ import { MenuComponent } from '../menu/menu.component';
 
 @Component({
   selector: 'lfx-header',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, MenubarComponent, RippleModule, RouterModule, AvatarComponent, MenuComponent],
+  imports: [ReactiveFormsModule, MenubarComponent, RippleModule, RouterModule, AvatarComponent, MenuComponent],
   templateUrl: './header.component.html',
   styleUrl: './header.component.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
-  // TODO: Remove ngSkipHydration when upgrading to Angular 20 - zoneless hydration compatibility
-  // https://github.com/angular/angular/issues/50543
-  host: { ngSkipHydration: 'true' },
 })
 export class HeaderComponent {
   private readonly router = inject(Router);

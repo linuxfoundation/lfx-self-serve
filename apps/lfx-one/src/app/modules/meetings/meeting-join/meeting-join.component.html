@@ -115,13 +115,13 @@
               @if (fetchedJoinUrl() && !showGuestForm()) {
                 <div class="w-full md:w-[296px]">
                   <lfx-button
+                    class="w-full h-[40px]"
                     label="Join Meeting"
                     icon="fa-light fa-video"
                     severity="success"
                     size="large"
                     [href]="fetchedJoinUrl()"
                     target="_blank"
-                    [styleClass]="'w-full h-[40px]'"
                     rel="noopener noreferrer"
                     [attr.data-testid]="'join-meeting-button-immediate'">
                   </lfx-button>
@@ -133,7 +133,7 @@
                     icon="fa-light fa-video"
                     [disabled]="true"
                     size="large"
-                    styleClass="w-full h-[40px] bg-gray-300 text-gray-500 cursor-not-allowed"
+                    styleClass="w-full h-[40px] bg-gray-300 text-gray-500 border-none cursor-not-allowed"
                     rel="noopener noreferrer"
                     [attr.data-testid]="'join-meeting-button-error'">
                   </lfx-button>

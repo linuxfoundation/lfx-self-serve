@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgClass } from '@angular/common';
 import { Component, inject } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { Meeting } from '@lfx-one/shared/interfaces';
@@ -13,8 +13,7 @@ export interface MeetingDeleteTypeResult {
 
 @Component({
   selector: 'lfx-meeting-delete-type-selection',
-  standalone: true,
-  imports: [CommonModule, ButtonComponent],
+  imports: [NgClass, ButtonComponent],
   templateUrl: './meeting-delete-type-selection.component.html',
 })
 export class MeetingDeleteTypeSelectionComponent {

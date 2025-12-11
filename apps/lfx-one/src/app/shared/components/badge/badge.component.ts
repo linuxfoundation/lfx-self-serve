@@ -1,15 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, input } from '@angular/core';
 import { BadgeProps } from '@lfx-one/shared/interfaces';
 import { BadgeModule } from 'primeng/badge';
 
 @Component({
   selector: 'lfx-badge',
-  standalone: true,
-  imports: [CommonModule, BadgeModule],
+  imports: [BadgeModule],
   templateUrl: './badge.component.html',
 })
 export class BadgeComponent {

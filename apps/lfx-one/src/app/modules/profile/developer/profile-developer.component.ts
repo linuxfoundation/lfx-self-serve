@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard } from '@angular/cdk/clipboard';
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
@@ -17,8 +16,7 @@ import { ProfileNavComponent } from '../components/profile-nav/profile-nav.compo
 
 @Component({
   selector: 'lfx-profile-developer',
-  standalone: true,
-  imports: [CommonModule, ButtonComponent, CardComponent, MessageComponent, ToastModule, ProfileNavComponent],
+  imports: [ButtonComponent, CardComponent, MessageComponent, ToastModule, ProfileNavComponent],
   providers: [],
   templateUrl: './profile-developer.component.html',
 })

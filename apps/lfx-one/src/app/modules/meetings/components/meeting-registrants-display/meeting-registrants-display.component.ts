@@ -1,21 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, effect, inject, input, InputSignal, output, OutputEmitterRef, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { Meeting, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared';
 import { RegistrantModalComponent } from '@modules/meetings/components/registrant-modal/registrant-modal.component';
 import { MeetingService } from '@services/meeting.service';
-import { DialogService } from 'primeng/dynamicdialog';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, filter, finalize, map, of, switchMap, take, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-registrants-display',
-  standalone: true,
-  imports: [CommonModule, AvatarComponent, TooltipModule],
+  imports: [AvatarComponent, TooltipModule],
   templateUrl: './meeting-registrants-display.component.html',
 })
 export class MeetingRegistrantsDisplayComponent {
@@ -55,7 +53,7 @@ export class MeetingRegistrantsDisplayComponent {
         meetingId: this.meeting().uid,
         registrant: null,
       },
-    });
+    }) as DynamicDialogRef;
 
     dialogRef.onChildComponentLoaded.pipe(take(1)).subscribe((component) => {
       component.registrantSaved.subscribe(() => {
@@ -65,25 +63,24 @@ export class MeetingRegistrantsDisplayComponent {
   }
 
   public onRegistrantEdit(registrant: MeetingRegistrant): void {
-    this.dialogService
-      .open(RegistrantModalComponent, {
-        header: registrant.type === 'committee' ? 'Committee Member' : 'Edit Guest',
-        width: '650px',
-        modal: true,
-        closable: true,
-        dismissableMask: true,
-        data: {
-          meetingId: this.meeting().uid,
-          registrant: registrant,
-          isCommitteeMember: registrant.type === 'committee',
-        },
-      })
-      .onClose.pipe(take(1))
-      .subscribe((result) => {
-        if (result) {
-          this.refresh();
-        }
-      });
+    const dialogRef = this.dialogService.open(RegistrantModalComponent, {
+      header: registrant.type === 'committee' ? 'Committee Member' : 'Edit Guest',
+      width: '650px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: {
+        meetingId: this.meeting().uid,
+        registrant: registrant,
+        isCommitteeMember: registrant.type === 'committee',
+      },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1)).subscribe((result) => {
+      if (result) {
+        this.refresh();
+      }
+    });
   }
 
   public refresh(): void {

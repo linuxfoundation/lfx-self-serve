@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, input, OnInit, output, signal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { BadgeComponent } from '@components/badge/badge.component';
@@ -13,8 +12,7 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
 
 @Component({
   selector: 'lfx-registrant-card',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, BadgeComponent, ButtonComponent, CardComponent, RegistrantFormComponent],
+  imports: [ReactiveFormsModule, BadgeComponent, ButtonComponent, CardComponent, RegistrantFormComponent],
   templateUrl: './registrant-card.component.html',
 })
 export class RegistrantCardComponent implements OnInit {

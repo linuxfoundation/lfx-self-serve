@@ -128,7 +128,7 @@
               icon="fa-light fa-arrow-right"
               iconPos="right"
               [disabled]="!canProceed()"
-              severity="primary"
+              severity="info"
               (onClick)="nextStep()"
               size="small"
               data-testid="meeting-manage-next-btn">
@@ -141,7 +141,7 @@
               size="small"
               [loading]="submitting()"
               [disabled]="!canProceed() || submitting()"
-              severity="primary"
+              severity="info"
               (onClick)="onSubmit()"
               data-testid="meeting-manage-submit-btn">
             </lfx-button>
@@ -151,7 +151,7 @@
               label="Next"
               icon="fa-light fa-arrow-right"
               iconPos="right"
-              severity="primary"
+              severity="info"
               (onClick)="nextStep()"
               size="small"
               data-testid="meeting-manage-next-btn">
@@ -164,7 +164,7 @@
               size="small"
               [loading]="submitting()"
               [disabled]="!hasRegistrantUpdates() || submitting()"
-              severity="primary"
+              severity="info"
               (onClick)="onManageRegistrants()"
               data-testid="meeting-manage-submit-btn">
             </lfx-button>
@@ -176,7 +176,7 @@
               size="small"
               [loading]="submitting()"
               [disabled]="submitting()"
-              severity="primary"
+              severity="info"
               (onClick)="onSubmitAll()"
               data-testid="meeting-manage-update-btn">
             </lfx-button>

@@ -47,12 +47,11 @@
     "check-types": "tsc --noEmit"
   },
   "devDependencies": {
-    "@angular/forms": "^19.0.0",
     "@fullcalendar/core": "^6.1.19",
     "typescript": "5.8.3"
   },
   "peerDependencies": {
-    "@angular/forms": "^19.0.0",
+    "@angular/forms": "^20.3.15",
     "@fullcalendar/core": "^6.1.19",
     "chart.js": "^4.5.0",
     "snowflake-sdk": "^2.3.1"

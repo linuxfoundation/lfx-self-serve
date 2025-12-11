@@ -18,7 +18,6 @@ import { take } from 'rxjs';
 
 @Component({
   selector: 'lfx-user-form',
-  standalone: true,
   imports: [ReactiveFormsModule, InputTextComponent, ButtonComponent, RadioButtonComponent, TooltipModule, ConfirmDialogModule],
   templateUrl: './user-form.component.html',
 })

@@ -6,7 +6,6 @@ import { Committee } from '@lfx-one/shared/interfaces';
 
 @Pipe({
   name: 'committeeNames',
-  standalone: true,
 })
 export class CommitteeNamesPipe implements PipeTransform {
   public transform(committeePermissions: { committee: Committee; level: string; scope: string }[]): string {

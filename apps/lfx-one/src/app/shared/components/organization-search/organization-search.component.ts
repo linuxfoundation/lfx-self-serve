@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, effect, inject, input, output, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -15,7 +14,7 @@ import { InputTextComponent } from '../input-text/input-text.component';
 
 @Component({
   selector: 'lfx-organization-search',
-  imports: [AutocompleteComponent, ReactiveFormsModule, InputTextComponent, CommonModule],
+  imports: [AutocompleteComponent, ReactiveFormsModule, InputTextComponent],
   templateUrl: './organization-search.component.html',
 })
 export class OrganizationSearchComponent {

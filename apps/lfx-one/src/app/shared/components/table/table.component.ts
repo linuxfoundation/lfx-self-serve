@@ -1,14 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgIf, NgTemplateOutlet } from '@angular/common';
 import { Component, ContentChild, input, output, TemplateRef } from '@angular/core';
 import { TableModule } from 'primeng/table';
 
 @Component({
   selector: 'lfx-table',
-  standalone: true,
-  imports: [CommonModule, TableModule],
+  imports: [NgIf, NgTemplateOutlet, TableModule],
   templateUrl: './table.component.html',
   host: {
     ngSkipHydration: 'true',
@@ -86,7 +85,6 @@ export class TableComponent {
 
   // Scrolling properties
   public readonly scrollable = input<boolean>(false);
-  public readonly scrollDirection = input<'vertical' | 'horizontal' | 'both'>('vertical');
   public readonly scrollHeight = input<string | undefined>(undefined);
   public readonly virtualScroll = input<boolean>(false);
   public readonly virtualScrollItemSize = input<number>(0);
@@ -124,14 +122,12 @@ export class TableComponent {
   public readonly ariaLabel = input<string | undefined>(undefined);
 
   // Responsive properties
-  public readonly responsiveLayout = input<'scroll' | 'stack' | string | undefined>(undefined);
   public readonly breakpoint = input<string>('960px');
 
   // Custom properties
   public readonly showGridlines = input<boolean>(false);
   public readonly stripedRows = input<boolean>(false);
   public readonly customSort = input<boolean>(false);
-  public readonly autoLayout = input<boolean>(false);
   public readonly size = input<'small' | 'large' | undefined>(undefined);
 
   // Events

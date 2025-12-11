@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, OnInit, output, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -30,8 +30,7 @@ import { MemberFormComponent } from '../member-form/member-form.component';
 
 @Component({
   selector: 'lfx-committee-members-manager',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, InputTextComponent, SelectComponent, ConfirmDialogModule, DynamicDialogModule, TooltipModule],
+  imports: [NgClass, ReactiveFormsModule, ButtonComponent, InputTextComponent, SelectComponent, ConfirmDialogModule, DynamicDialogModule, TooltipModule],
   providers: [ConfirmationService, DialogService],
   templateUrl: './committee-members-manager.component.html',
 })
@@ -41,9 +40,6 @@ export class CommitteeMembersManagerComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
-
-  // Dialog reference
-  private dialogRef: DynamicDialogRef | undefined;
 
   // Input signals
   public committeeId = input.required<string | null>();
@@ -119,7 +115,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
   }
 
   public openAddMemberDialog(): void {
-    this.dialogRef = this.dialogService.open(MemberFormComponent, {
+    const dialogRef = this.dialogService.open(MemberFormComponent, {
       header: 'Add Member',
       width: '700px',
       modal: true,
@@ -129,9 +125,9 @@ export class CommitteeMembersManagerComponent implements OnInit {
         wizardMode: true, // Don't call API, return data instead
         committee: this.committee(),
       },
-    });
+    }) as DynamicDialogRef;
 
-    this.dialogRef.onClose.pipe(take(1)).subscribe((result: CreateCommitteeMemberRequest | undefined) => {
+    dialogRef.onClose.pipe(take(1)).subscribe((result: CreateCommitteeMemberRequest | undefined) => {
       if (result) {
         this.handleAddMemberResult(result);
       }
@@ -139,7 +135,7 @@ export class CommitteeMembersManagerComponent implements OnInit {
   }
 
   public openEditMemberDialog(member: CommitteeMemberWithState): void {
-    this.dialogRef = this.dialogService.open(MemberFormComponent, {
+    const dialogRef = this.dialogService.open(MemberFormComponent, {
       header: 'Edit Member',
       width: '700px',
       modal: true,
@@ -150,9 +146,9 @@ export class CommitteeMembersManagerComponent implements OnInit {
         member: member,
         committee: this.committee(),
       },
-    });
+    }) as DynamicDialogRef;
 
-    this.dialogRef.onClose.pipe(take(1)).subscribe((result: CreateCommitteeMemberRequest | undefined) => {
+    dialogRef.onClose.pipe(take(1)).subscribe((result: CreateCommitteeMemberRequest | undefined) => {
       if (result) {
         this.handleEditMemberResult(member, result);
       }

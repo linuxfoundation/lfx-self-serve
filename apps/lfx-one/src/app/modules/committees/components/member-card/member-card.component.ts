@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { DatePipe, TitleCasePipe } from '@angular/common';
 import { Component, computed, input, output } from '@angular/core';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
@@ -12,8 +12,7 @@ import { Tooltip } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-member-card',
-  standalone: true,
-  imports: [CommonModule, AvatarComponent, BadgeComponent, ButtonComponent, MenuComponent, Tooltip],
+  imports: [DatePipe, TitleCasePipe, AvatarComponent, BadgeComponent, ButtonComponent, MenuComponent, Tooltip],
   templateUrl: './member-card.component.html',
 })
 export class MemberCardComponent {

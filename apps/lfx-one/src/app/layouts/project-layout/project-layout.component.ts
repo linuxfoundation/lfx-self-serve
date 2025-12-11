@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, input, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, RouterModule } from '@angular/router';
@@ -14,8 +13,7 @@ import { of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-project-layout',
-  standalone: true,
-  imports: [CommonModule, RouterModule, HeaderComponent, ChipModule],
+  imports: [RouterModule, HeaderComponent, ChipModule],
   templateUrl: './project-layout.component.html',
   styleUrl: './project-layout.component.scss',
 })

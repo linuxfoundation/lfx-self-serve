@@ -7,7 +7,6 @@ import { SelectButtonModule } from 'primeng/selectbutton';
 
 @Component({
   selector: 'lfx-select-button',
-  standalone: true,
   imports: [SelectButtonModule, ReactiveFormsModule],
   templateUrl: './select-button.component.html',
 })

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, OnInit, output, signal } from '@angular/core';
 import { FormArray, FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -15,8 +15,7 @@ import { MessageService } from 'primeng/api';
 
 @Component({
   selector: 'lfx-meeting-resources-summary',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, FormsModule, FileUploadComponent, ButtonComponent, FileSizePipe],
+  imports: [NgClass, ReactiveFormsModule, FormsModule, FileUploadComponent, ButtonComponent, FileSizePipe],
   templateUrl: './meeting-resources-summary.component.html',
 })
 export class MeetingResourcesSummaryComponent implements OnInit {

@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, ElementRef, inject, signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
@@ -28,8 +27,7 @@ import type { ChartOptions, ChartType } from 'chart.js';
 
 @Component({
   selector: 'lfx-organization-involvement',
-  standalone: true,
-  imports: [CommonModule, FilterPillsComponent, MetricCardComponent, TagComponent, DataCopilotComponent],
+  imports: [FilterPillsComponent, MetricCardComponent, TagComponent, DataCopilotComponent],
   templateUrl: './organization-involvement.component.html',
   styleUrl: './organization-involvement.component.scss',
 })

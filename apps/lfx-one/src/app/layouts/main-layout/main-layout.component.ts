@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
@@ -17,8 +16,7 @@ import { filter } from 'rxjs';
 
 @Component({
   selector: 'lfx-main-layout',
-  standalone: true,
-  imports: [CommonModule, RouterModule, SidebarComponent, DrawerModule],
+  imports: [RouterModule, SidebarComponent, DrawerModule],
   templateUrl: './main-layout.component.html',
   styleUrl: './main-layout.component.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],

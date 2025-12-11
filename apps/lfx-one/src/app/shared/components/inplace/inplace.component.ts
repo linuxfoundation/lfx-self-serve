@@ -1,14 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, input, output } from '@angular/core';
 import { InplaceModule } from 'primeng/inplace';
 
 @Component({
   selector: 'lfx-inplace',
-  standalone: true,
-  imports: [CommonModule, InplaceModule],
+  imports: [InplaceModule],
   templateUrl: './inplace.component.html',
 })
 export class InplaceComponent {

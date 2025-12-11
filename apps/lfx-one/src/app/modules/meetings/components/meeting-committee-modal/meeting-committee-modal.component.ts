@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { TitleCasePipe } from '@angular/common';
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -25,8 +25,7 @@ interface CommitteeMemberDisplay extends CommitteeMember {
 
 @Component({
   selector: 'lfx-meeting-committee-modal',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, MultiSelectComponent, TableComponent, TooltipModule],
+  imports: [TitleCasePipe, ReactiveFormsModule, ButtonComponent, MultiSelectComponent, TableComponent, TooltipModule],
   templateUrl: './meeting-committee-modal.component.html',
 })
 export class MeetingCommitteeModalComponent {

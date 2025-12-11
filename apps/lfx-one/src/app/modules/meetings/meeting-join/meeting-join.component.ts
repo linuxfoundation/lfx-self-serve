@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -18,12 +17,12 @@ import { environment } from '@environments/environment';
 import {
   buildJoinUrlWithParams,
   canJoinMeeting,
-  ComponentSeverity,
   getCurrentOrNextOccurrence,
   Meeting,
   MeetingAttachment,
   MeetingOccurrence,
   Project,
+  TagSeverity,
   User,
 } from '@lfx-one/shared';
 import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
@@ -33,7 +32,7 @@ import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
+import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, combineLatest, debounceTime, filter, map, Observable, of, startWith, switchMap, take, tap } from 'rxjs';
@@ -44,10 +43,8 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
 
 @Component({
   selector: 'lfx-meeting-join',
-  standalone: true,
   imports: [
     ClipboardModule,
-    CommonModule,
     ReactiveFormsModule,
     ButtonComponent,
     CardComponent,
@@ -88,7 +85,7 @@ export class MeetingJoinComponent {
   public currentOccurrence: Signal<MeetingOccurrence | null>;
   public meetingTypeBadge: Signal<{
     badgeClass: string;
-    severity: ComponentSeverity;
+    severity: TagSeverity;
     icon?: string;
     text: string;
   } | null>;
@@ -181,26 +178,25 @@ export class MeetingJoinComponent {
     const meeting = this.meeting();
     const user = this.user();
 
-    this.dialogService
-      .open(PublicRegistrationModalComponent, {
-        header: 'Register for Meeting',
-        width: '500px',
-        modal: true,
-        closable: true,
-        dismissableMask: true,
-        data: {
-          meetingId: meeting.uid,
-          meetingTitle: this.meetingTitle(),
-          user: user,
-        },
-      })
-      .onClose.pipe(take(1))
-      .subscribe((result: { registered: boolean } | undefined) => {
-        if (result?.registered) {
-          // Trigger refresh to update meeting data with invitation status
-          this.refreshTrigger$.next();
-        }
-      });
+    const dialogRef = this.dialogService.open(PublicRegistrationModalComponent, {
+      header: 'Register for Meeting',
+      width: '500px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: {
+        meetingId: meeting.uid,
+        meetingTitle: this.meetingTitle(),
+        user: user,
+      },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1)).subscribe((result: { registered: boolean } | undefined) => {
+      if (result?.registered) {
+        // Trigger refresh to update meeting data with invitation status
+        this.refreshTrigger$.next();
+      }
+    });
   }
 
   private initializeAutoJoin(): void {
@@ -322,7 +318,7 @@ export class MeetingJoinComponent {
 
   private initializeMeetingTypeBadge(): Signal<{
     badgeClass: string;
-    severity: ComponentSeverity;
+    severity: TagSeverity;
     icon?: string;
     text: string;
   } | null> {
@@ -340,7 +336,7 @@ export class MeetingJoinComponent {
         case 'marketing':
           return { badgeClass: 'bg-green-100 text-green-500', severity: 'success', icon: 'fa-light fa-chart-line-up', text: meetingType };
         case 'technical':
-          return { badgeClass: 'bg-purple-100 text-purple-500', severity: 'primary', icon: 'fa-light fa-code', text: meetingType };
+          return { badgeClass: 'bg-purple-100 text-purple-500', severity: 'contrast', icon: 'fa-light fa-code', text: meetingType };
         case 'legal':
           return { badgeClass: 'bg-amber-100 text-amber-500', severity: 'warn', icon: 'fa-light fa-scale-balanced', text: meetingType };
         default:

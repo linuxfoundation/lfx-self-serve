@@ -115,7 +115,7 @@ app.get(
   '**',
   express.static(browserDistFolder, {
     maxAge: '1y',
-    index: 'index.html',
+    index: false, // Let Angular SSR handle the index route
   })
 );
 
@@ -278,7 +278,6 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       providers: [
         { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
         { provide: REQUEST, useValue: req },
-        { provide: 'RESPONSE', useValue: res },
       ],
     })
     .then((response) => {

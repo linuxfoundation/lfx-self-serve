@@ -6,7 +6,6 @@ import { buildRecurrenceSummary, CustomRecurrencePattern, MeetingRecurrence } fr
 
 @Pipe({
   name: 'recurrenceSummary',
-  standalone: true,
 })
 export class RecurrenceSummaryPipe implements PipeTransform {
   public transform(recurrence: MeetingRecurrence | null | undefined, format: 'full' | 'description' | 'end' = 'full'): string {

@@ -3,7 +3,7 @@
 
 import { User } from './auth.interface';
 import { Committee } from './committee.interface';
-import { ComponentSeverity } from './components.interface';
+import { TagSeverity } from './components.interface';
 
 /**
  * Permission levels available in the system
@@ -203,6 +203,6 @@ export interface PermissionMatrixItem {
     /** Background color */
     bgColor: string;
     /** Semantic severity level for tag component */
-    severity?: ComponentSeverity;
+    severity?: TagSeverity;
   };
 }

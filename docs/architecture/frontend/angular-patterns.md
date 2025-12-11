@@ -43,7 +43,6 @@ Angular Signals are the preferred way to manage state in this application.
 ```typescript
 @Component({
   selector: 'lfx-example',
-  standalone: true,
   imports: [CommonModule, ReactiveFormsModule],
   template: `
     @if (loading()) {
@@ -124,7 +123,6 @@ All components use Angular's standalone component pattern:
 ```typescript
 @Component({
   selector: 'lfx-example',
-  standalone: true,
   imports: [CommonModule, ReactiveFormsModule, ButtonModule],
   template: `<!-- template here -->`,
 })

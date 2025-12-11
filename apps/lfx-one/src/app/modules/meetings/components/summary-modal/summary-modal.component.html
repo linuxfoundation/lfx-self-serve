@@ -33,7 +33,7 @@
       <div class="flex gap-2">
         <lfx-button label="Cancel" size="small" severity="secondary" data-testid="cancel-edit-button" (click)="cancelEdit()"></lfx-button>
       </div>
-      <lfx-button label="Save" size="small" severity="primary" [loading]="isSaving()" data-testid="save-edit-button" (click)="saveEdit()"></lfx-button>
+      <lfx-button label="Save" size="small" severity="info" [loading]="isSaving()" data-testid="save-edit-button" (click)="saveEdit()"></lfx-button>
     } @else {
       <div class="flex gap-2">
         <lfx-button label="Edit" icon="fa-light fa-pen" size="small" severity="secondary" data-testid="edit-button" (click)="enterEditMode()"></lfx-button>

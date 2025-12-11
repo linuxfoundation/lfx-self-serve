@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -9,12 +8,12 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { Committee, COMMITTEE_CATEGORY_SEVERITY, CommitteeMember, ComponentSeverity } from '@lfx-one/shared';
+import { Committee, COMMITTEE_CATEGORY_SEVERITY, CommitteeMember, TagSeverity } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap, throwError } from 'rxjs';
 
 import { CommitteeMembersComponent } from '../components/committee-members/committee-members.component';
@@ -23,7 +22,6 @@ import { UpcomingCommitteeMeetingComponent } from '../components/upcoming-commit
 @Component({
   selector: 'lfx-committee-view',
   imports: [
-    CommonModule,
     CardComponent,
     MenuComponent,
     ButtonComponent,
@@ -48,7 +46,6 @@ export class CommitteeViewComponent {
   private readonly messageService = inject(MessageService);
 
   // Class variables with types
-  private dialogRef: DynamicDialogRef | undefined;
   public committee: Signal<Committee | null>;
   public members: WritableSignal<CommitteeMember[]>;
   public membersLoading: WritableSignal<boolean>;
@@ -59,7 +56,7 @@ export class CommitteeViewComponent {
   public formattedCreatedDate: Signal<string>;
   public formattedUpdatedDate: Signal<string>;
   public refresh: BehaviorSubject<void>;
-  public categorySeverity: Signal<ComponentSeverity>;
+  public categorySeverity: Signal<TagSeverity>;
 
   public constructor() {
     // Initialize all class variables

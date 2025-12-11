@@ -1,13 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { DatePipe } from '@angular/common';
 import { Component, inject, input, output, signal, WritableSignal } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { Committee, COMMITTEE_CATEGORY_SEVERITY, ComponentSeverity } from '@lfx-one/shared';
+import { Committee, COMMITTEE_CATEGORY_SEVERITY, TagSeverity } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -19,8 +19,7 @@ import { MemberFormComponent } from '../member-form/member-form.component';
 
 @Component({
   selector: 'lfx-committee-table',
-  standalone: true,
-  imports: [CommonModule, RouterLink, CardComponent, ButtonComponent, TagComponent, TooltipModule, ConfirmDialogModule, DynamicDialogModule],
+  imports: [DatePipe, RouterLink, CardComponent, ButtonComponent, TagComponent, TooltipModule, ConfirmDialogModule, DynamicDialogModule],
   providers: [ConfirmationService, DialogService],
   templateUrl: './committee-table.component.html',
   styleUrl: './committee-table.component.scss',
@@ -31,9 +30,6 @@ export class CommitteeTableComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
-
-  // Class variables
-  private dialogRef: DynamicDialogRef | undefined;
 
   // Inputs
   public committees = input.required<Committee[]>();
@@ -47,13 +43,13 @@ export class CommitteeTableComponent {
   public readonly refresh = output<void>();
 
   // Helper method for category severity
-  public getCategorySeverity(category: string): ComponentSeverity {
+  public getCategorySeverity(category: string): TagSeverity {
     return COMMITTEE_CATEGORY_SEVERITY[category] || 'secondary';
   }
 
   // Event handlers
   public onAddMember(committee: Committee): void {
-    this.dialogRef = this.dialogService.open(MemberFormComponent, {
+    const dialogRef = this.dialogService.open(MemberFormComponent, {
       header: 'Add Member',
       width: '700px',
       modal: true,
@@ -65,9 +61,9 @@ export class CommitteeTableComponent {
           // Dialog will close itself
         },
       },
-    });
+    }) as DynamicDialogRef;
 
-    this.dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
+    dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
       if (result) {
         this.refresh.emit();
       }

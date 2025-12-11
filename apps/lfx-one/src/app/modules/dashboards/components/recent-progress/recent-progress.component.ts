@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, ElementRef, inject, signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
@@ -36,8 +35,7 @@ import type {
 
 @Component({
   selector: 'lfx-recent-progress',
-  standalone: true,
-  imports: [CommonModule, FilterPillsComponent, MetricCardComponent],
+  imports: [FilterPillsComponent, MetricCardComponent],
   templateUrl: './recent-progress.component.html',
   styleUrl: './recent-progress.component.scss',
 })

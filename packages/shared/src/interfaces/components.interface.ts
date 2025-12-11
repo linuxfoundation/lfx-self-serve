@@ -32,16 +32,28 @@ export interface CardSelectorOption<T = string> {
 }
 
 /**
- * Component severity type
- * @description Standard severity levels used across Tag and other UI components
+ * Button severity type
+ * @description Severity levels for Button component (full set of options)
  */
-export type ComponentSeverity = 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'primary';
+export type ButtonSeverity = 'success' | 'info' | 'warn' | 'danger' | 'help' | 'primary' | 'secondary' | 'contrast';
+
+/**
+ * Tag severity type
+ * @description Severity levels for Tag component
+ */
+export type TagSeverity = 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast';
 
 /**
  * Badge severity type
- * @description Severity levels for Badge component (PrimeNG Badge uses 'contrast' instead of 'primary')
+ * @description Severity levels for Badge component
  */
-export type BadgeSeverity = 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'contrast';
+export type BadgeSeverity = 'success' | 'info' | 'warn' | 'danger' | 'secondary' | 'contrast';
+
+/**
+ * Component severity type
+ * @description Generic severity type for general use (alias for TagSeverity)
+ */
+export type ComponentSeverity = TagSeverity;
 
 /**
  * Badge severity level options
@@ -84,7 +96,7 @@ export interface BadgeProps {
  */
 export interface TagSeverityOptions {
   /** Tag color scheme indicating status or category */
-  severity: ComponentSeverity;
+  severity: TagSeverity;
 }
 
 /**
@@ -110,7 +122,7 @@ export interface TagProps {
  */
 export interface ButtonSeverityOptions {
   /** Button color scheme indicating action type */
-  severity: 'success' | 'info' | 'warn' | 'danger' | 'help' | 'primary' | 'secondary' | 'primary' | null | undefined;
+  severity: ButtonSeverity | null | undefined;
 }
 
 /**
@@ -265,12 +277,18 @@ export interface TimePickerProps {
 }
 
 /**
+ * Message severity type
+ * @description Severity levels for Message component (PrimeNG uses 'error' instead of 'danger')
+ */
+export type MessageSeverity = 'success' | 'info' | 'warn' | 'error' | 'secondary' | 'contrast';
+
+/**
  * Message severity level options
  * @description Available severity levels for message components
  */
 export interface MessageSeverityOptions {
   /** Message severity level indicating urgency or type */
-  severity: 'info' | 'success' | 'warn' | 'error' | 'secondary' | 'primary';
+  severity: MessageSeverity;
 }
 
 /**
@@ -419,7 +437,7 @@ export interface PendingActionItem {
   /** Icon class for the action type */
   icon: string;
   /** Severity theme for the action */
-  severity: ComponentSeverity;
+  severity: TagSeverity;
   /** Button text */
   buttonText: string;
   /** Button link */

@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, OnInit, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -22,9 +21,7 @@ import { ProfileNavComponent } from '../components/profile-nav/profile-nav.compo
 
 @Component({
   selector: 'lfx-profile-manage',
-  standalone: true,
   imports: [
-    CommonModule,
     ReactiveFormsModule,
     CardComponent,
     InputTextComponent,

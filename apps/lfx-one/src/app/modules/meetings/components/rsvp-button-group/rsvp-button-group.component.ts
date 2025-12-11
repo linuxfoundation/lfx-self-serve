@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, InputSignal, output, OutputEmitterRef, Signal, signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
@@ -10,13 +10,12 @@ import { CreateMeetingRsvpRequest, Meeting, MeetingRsvp, RsvpResponse, RsvpScope
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
-import { DialogService } from 'primeng/dynamicdialog';
-import { catchError, combineLatest, finalize, of, switchMap, tap } from 'rxjs';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { catchError, combineLatest, finalize, of, switchMap, take, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-rsvp-button-group',
-  standalone: true,
-  imports: [CommonModule],
+  imports: [NgClass],
   providers: [DialogService],
   templateUrl: './rsvp-button-group.component.html',
 })
@@ -63,15 +62,15 @@ export class RsvpButtonGroupComponent {
   }
 
   private showScopeModal(response: RsvpResponse): void {
-    const ref = this.dialogService.open(RsvpScopeModalComponent, {
+    const dialogRef = this.dialogService.open(RsvpScopeModalComponent, {
       header: 'RSVP Scope',
       width: '500px',
       data: {
         response: this.formatResponse(response),
       },
-    });
+    }) as DynamicDialogRef;
 
-    ref.onClose.subscribe((result: { confirmed: boolean; scope?: RsvpScope }) => {
+    dialogRef.onClose.pipe(take(1)).subscribe((result: { confirmed: boolean; scope?: RsvpScope }) => {
       if (result?.confirmed && result.scope) {
         this.submitRsvp(response, result.scope);
       }

@@ -1,13 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { afterNextRender, Component, ElementRef, input, signal, ViewChild } from '@angular/core';
 
 @Component({
   selector: 'lfx-expandable-text',
-  standalone: true,
-  imports: [CommonModule],
+  imports: [],
   templateUrl: './expandable-text.component.html',
   styleUrl: './expandable-text.component.scss',
 })

@@ -9,7 +9,7 @@ import { ProjectPermissionUser } from '@lfx-one/shared';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MenuItem } from 'primeng/api';
-import { DialogService } from 'primeng/dynamicdialog';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { BehaviorSubject, catchError, merge, of, switchMap, take, tap } from 'rxjs';
 
 import { PermissionsMatrixComponent } from '../components/permissions-matrix/permissions-matrix.component';
@@ -80,15 +80,16 @@ export class SettingsDashboardComponent {
   }
 
   private onAddUser(): void {
-    this.dialogService
-      .open(UserFormComponent, {
+    (
+      this.dialogService.open(UserFormComponent, {
         header: 'Add User',
         width: '500px',
         modal: true,
         closable: true,
         dismissableMask: true,
-      })
-      .onClose.pipe(take(1))
+      }) as DynamicDialogRef
+    ).onClose
+      .pipe(take(1))
       .subscribe((user) => {
         if (user) {
           this.refreshUsers();

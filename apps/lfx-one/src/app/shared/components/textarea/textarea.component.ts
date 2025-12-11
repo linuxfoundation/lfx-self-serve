@@ -7,7 +7,6 @@ import { TextareaModule } from 'primeng/textarea';
 
 @Component({
   selector: 'lfx-textarea',
-  standalone: true,
   imports: [TextareaModule, ReactiveFormsModule],
   templateUrl: './textarea.component.html',
 })

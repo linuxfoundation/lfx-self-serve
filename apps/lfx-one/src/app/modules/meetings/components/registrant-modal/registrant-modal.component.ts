@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, inject, output, signal, WritableSignal } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -17,8 +16,7 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
 
 @Component({
   selector: 'lfx-registrant-modal',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, CheckboxComponent, RegistrantFormComponent],
+  imports: [ReactiveFormsModule, ButtonComponent, CheckboxComponent, RegistrantFormComponent],
   templateUrl: './registrant-modal.component.html',
 })
 export class RegistrantModalComponent {

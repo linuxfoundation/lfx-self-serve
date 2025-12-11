@@ -10,8 +10,6 @@
   [appendTo]="appendTo()"
   [autoZIndex]="autoZIndex()"
   [baseZIndex]="baseZIndex()"
-  [showTransitionOptions]="showTransitionOptions()"
-  [hideTransitionOptions]="hideTransitionOptions()"
   [id]="id()"
   [ariaLabel]="ariaLabel()"
   [ariaLabelledBy]="ariaLabelledBy()"
@@ -28,7 +26,9 @@
   <ng-template #item let-item let-index="index" *ngIf="itemTemplate">
     <ng-container *ngTemplateOutlet="itemTemplate || null; context: { $implicit: item, index: index }"> </ng-container>
   </ng-template>
-  <ng-template #submenuheader let-item *ngIf="submenuHeaderTemplate">
-    <ng-container *ngTemplateOutlet="submenuHeaderTemplate || null; context: { $implicit: item }"> </ng-container>
-  </ng-template>
+  @if (submenuHeaderTemplate; as item) {
+    <ng-template #submenuheader let-item>
+      <ng-container *ngTemplateOutlet="submenuHeaderTemplate || null; context: { $implicit: item }"> </ng-container>
+    </ng-template>
+  }
 </p-menu>

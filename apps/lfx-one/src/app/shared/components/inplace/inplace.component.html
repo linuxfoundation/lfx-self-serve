@@ -1,13 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<p-inplace
-  [active]="active()"
-  [disabled]="disabled()"
-  (onActivate)="handleActivate($event)"
-  (onDeactivate)="handleDeactivate($event)"
-  [styleClass]="styleClass()"
-  [class]="styleClass()">
+<p-inplace [active]="active()" [disabled]="disabled()" (onActivate)="handleActivate($event)" (onDeactivate)="handleDeactivate($event)" [class]="styleClass()">
   <!-- Display content (button) -->
   <ng-template #display>
     <ng-content select="[slot=display]"></ng-content>

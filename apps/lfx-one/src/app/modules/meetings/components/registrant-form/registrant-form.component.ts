@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, input, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -14,8 +13,7 @@ import { filter, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-registrant-form',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, InputTextComponent, CheckboxComponent, OrganizationSearchComponent, UserSearchComponent],
+  imports: [ReactiveFormsModule, InputTextComponent, CheckboxComponent, OrganizationSearchComponent, UserSearchComponent],
   templateUrl: './registrant-form.component.html',
 })
 export class RegistrantFormComponent {

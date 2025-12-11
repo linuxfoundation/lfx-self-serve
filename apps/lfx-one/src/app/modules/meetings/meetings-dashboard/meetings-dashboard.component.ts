@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -21,8 +20,7 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 
 @Component({
   selector: 'lfx-meetings-dashboard',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent, SelectButtonComponent],
+  imports: [ReactiveFormsModule, MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent, SelectButtonComponent],
   templateUrl: './meetings-dashboard.component.html',
   styleUrl: './meetings-dashboard.component.scss',
 })

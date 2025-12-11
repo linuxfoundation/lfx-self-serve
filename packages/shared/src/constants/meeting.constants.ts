@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ArtifactVisibility } from '../enums';
-import { ComponentSeverity } from '../interfaces';
+import { TagSeverity } from '../interfaces';
 import { lfxColors } from './colors.constants';
 
 /**
@@ -123,7 +123,7 @@ export interface MeetingTypeConfig {
 export interface MeetingTypeBadge {
   label: string;
   className: string;
-  severity?: ComponentSeverity;
+  severity?: TagSeverity;
   icon?: string;
 }
 

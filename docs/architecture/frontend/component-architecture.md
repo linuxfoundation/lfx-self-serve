@@ -104,7 +104,6 @@ Application Code → LFX Wrapper → PrimeNG Component → DOM
 // Component implementation with computed signals
 @Component({
   selector: 'lfx-avatar',
-  standalone: true,
   imports: [CommonModule, AvatarModule],
 })
 export class AvatarComponent {
@@ -364,7 +363,6 @@ export class ProjectLayoutComponent {
 ```typescript
 @Component({
   selector: 'lfx-[component-name]',
-  standalone: true,
   imports: [CommonModule, [PrimeNGModule]],
   templateUrl: './[component-name].component.html',
 })

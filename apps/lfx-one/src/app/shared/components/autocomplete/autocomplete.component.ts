@@ -1,14 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, ContentChild, input, output, TemplateRef } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AutoCompleteCompleteEvent, AutoCompleteModule, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 
 @Component({
   selector: 'lfx-autocomplete',
-  imports: [CommonModule, AutoCompleteModule, ReactiveFormsModule],
+  imports: [NgTemplateOutlet, AutoCompleteModule, ReactiveFormsModule],
   templateUrl: './autocomplete.component.html',
 })
 export class AutocompleteComponent {

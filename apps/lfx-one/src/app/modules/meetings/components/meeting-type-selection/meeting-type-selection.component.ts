@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardSelectorComponent } from '@components/card-selector/card-selector.component';
@@ -14,8 +13,7 @@ import { PersonaService } from '@services/persona.service';
 
 @Component({
   selector: 'lfx-meeting-type-selection',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, MessageComponent, ToggleComponent, CardSelectorComponent],
+  imports: [ReactiveFormsModule, MessageComponent, ToggleComponent, CardSelectorComponent],
   templateUrl: './meeting-type-selection.component.html',
 })
 export class MeetingTypeSelectionComponent {

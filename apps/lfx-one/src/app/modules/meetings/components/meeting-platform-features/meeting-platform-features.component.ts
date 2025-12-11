@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, DestroyRef, inject, input, OnInit } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -13,8 +12,7 @@ import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-meeting-platform-features',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, MessageComponent, SelectComponent, ToggleComponent, TooltipModule],
+  imports: [ReactiveFormsModule, MessageComponent, SelectComponent, ToggleComponent, TooltipModule],
   templateUrl: './meeting-platform-features.component.html',
 })
 export class MeetingPlatformFeaturesComponent implements OnInit {

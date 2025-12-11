@@ -33,7 +33,6 @@
   (onSelect)="handleSelect($event)"
   (onRemove)="handleRemove($event)"
   (onProgress)="handleProgress($event)"
-  (onValidationFail)="handleValidationFail($event)"
   [uploadStyleClass]="uploadStyleClass()"
   [chooseStyleClass]="chooseStyleClass()"
   [cancelStyleClass]="cancelStyleClass()"
@@ -41,7 +40,7 @@
   <!-- Header template passthrough -->
   @if (headerTemplate) {
     <ng-template
-      pTemplate="header"
+      #header
       let-files
       let-uploadedFiles="uploadedFiles"
       let-chooseCallback="chooseCallback"
@@ -63,7 +62,7 @@
 
   <!-- Toolbar template passthrough -->
   @if (toolbarTemplate) {
-    <ng-template pTemplate="toolbar">
+    <ng-template #toolbar>
       <ng-container *ngTemplateOutlet="toolbarTemplate || null"></ng-container>
     </ng-template>
   }
@@ -71,7 +70,7 @@
   <!-- Content template passthrough -->
   @if (contentTemplate) {
     <ng-template
-      pTemplate="content"
+      #content
       let-files
       let-uploadedFiles="uploadedFiles"
       let-chooseCallback="chooseCallback"
@@ -98,7 +97,7 @@
   } @else {
     <!-- Default content template with React-style UI -->
     <ng-template
-      pTemplate="content"
+      #content
       let-files
       let-uploadedFiles="uploadedFiles"
       let-chooseCallback="chooseCallback"
@@ -141,38 +140,38 @@
 
   <!-- File item template passthrough -->
   @if (fileTemplate) {
-    <ng-template pTemplate="file" let-file let-index="index">
+    <ng-template #file let-file let-index="index">
       <ng-container *ngTemplateOutlet="fileTemplate || null; context: { $implicit: file, index: index }"></ng-container>
     </ng-template>
   }
 
   <!-- File label template passthrough (basic mode) -->
   @if (fileLabelTemplate) {
-    <ng-template pTemplate="filelabel" let-files>
+    <ng-template #filelabel let-files>
       <ng-container *ngTemplateOutlet="fileLabelTemplate || null; context: { $implicit: files }"></ng-container>
     </ng-template>
   }
 
   <!-- Icon template passthroughs -->
   @if (chooseIconTemplate) {
-    <ng-template pTemplate="chooseicon">
+    <ng-template #chooseicon>
       <ng-container *ngTemplateOutlet="chooseIconTemplate || null"></ng-container>
     </ng-template>
   }
   @if (uploadIconTemplate) {
-    <ng-template pTemplate="uploadicon">
+    <ng-template #uploadicon>
       <ng-container *ngTemplateOutlet="uploadIconTemplate || null"></ng-container>
     </ng-template>
   }
   @if (cancelIconTemplate) {
-    <ng-template pTemplate="cancelicon">
+    <ng-template #cancelicon>
       <ng-container *ngTemplateOutlet="cancelIconTemplate || null"></ng-container>
     </ng-template>
   }
 
   <!-- Empty state template passthrough -->
   @if (emptyTemplate) {
-    <ng-template pTemplate="empty">
+    <ng-template #empty>
       <ng-container *ngTemplateOutlet="emptyTemplate || null"></ng-container>
     </ng-template>
   }

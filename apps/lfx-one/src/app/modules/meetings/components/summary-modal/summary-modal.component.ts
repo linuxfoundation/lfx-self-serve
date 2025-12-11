@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, Signal, signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { DomSanitizer, SafeHtml } from '@angular/platform-browser';
@@ -14,8 +13,7 @@ import { take } from 'rxjs';
 
 @Component({
   selector: 'lfx-summary-modal',
-  standalone: true,
-  imports: [CommonModule, ButtonComponent, ReactiveFormsModule, TextareaComponent],
+  imports: [ButtonComponent, ReactiveFormsModule, TextareaComponent],
   templateUrl: './summary-modal.component.html',
 })
 export class SummaryModalComponent {

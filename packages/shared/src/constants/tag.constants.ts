@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { TagProps } from '../interfaces/components.interface';
+import { TagProps, TagSeverity } from '../interfaces/components.interface';
 
 /**
  * Tag type configuration
@@ -61,7 +61,7 @@ export const TAG_TYPE_CONFIGS: Record<string, TagTypeConfig> = {
  * Committee category to severity mapping
  * @description Maps committee categories to semantic severity levels for consistent styling
  */
-export const COMMITTEE_CATEGORY_SEVERITY: Record<string, 'info' | 'success' | 'warn' | 'danger' | 'secondary' | 'primary'> = {
+export const COMMITTEE_CATEGORY_SEVERITY: Record<string, TagSeverity> = {
   // Governance & Leadership
   Board: 'danger',
   'Government Advisory Council': 'danger',

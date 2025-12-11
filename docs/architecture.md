@@ -188,7 +188,6 @@ import { CardModule } from 'primeng/card';
 
 @Component({
   selector: 'lfx-example',
-  standalone: true,
   imports: [CommonModule, ReactiveFormsModule, ButtonModule, CardModule],
   templateUrl: './example.component.html',
   styleUrl: './example.component.scss',
@@ -584,7 +583,6 @@ Application Code → LFX Wrapper → PrimeNG Component → DOM
 // Component implementation with computed signals
 @Component({
   selector: 'lfx-avatar',
-  standalone: true,
   imports: [CommonModule, AvatarModule],
 })
 export class AvatarComponent {
@@ -669,7 +667,6 @@ export class AvatarComponent {
 // Template for creating new wrapper components
 @Component({
   selector: 'lfx-[component-name]',
-  standalone: true,
   imports: [CommonModule, [PrimeNGModule]],
   template: `
     <p-[component]
@@ -835,7 +832,6 @@ export class ProjectService {
 // Good: Explicit imports, signals, proper typing
 @Component({
   selector: 'lfx-example',
-  standalone: true,
   imports: [CommonModule, ReactiveFormsModule, ButtonModule],
   template: `
     <form [formGroup]="form" (ngSubmit)="onSubmit()">
@@ -962,7 +958,6 @@ The header component demonstrates full user authentication integration:
 // HeaderComponent implementation
 @Component({
   selector: 'lfx-header',
-  standalone: true,
   imports: [AvatarComponent, MenuComponent],
   schemas: [CUSTOM_ELEMENTS_SCHEMA], // For LFX Tools
 })

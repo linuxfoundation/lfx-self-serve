@@ -7,7 +7,6 @@ import { SelectModule } from 'primeng/select';
 
 @Component({
   selector: 'lfx-select',
-  standalone: true,
   imports: [SelectModule, ReactiveFormsModule],
   templateUrl: './select.component.html',
 })
@@ -31,6 +30,8 @@ export class SelectComponent {
   public readonly readonly = input<boolean>(false);
   public readonly showClear = input<boolean>(false);
   public readonly size = input<'small' | 'large'>('small');
+  public readonly checkmark = input<boolean>(false);
+  public readonly loading = input<boolean>(false);
 
   // Filtering properties
   public readonly filter = input<boolean>(false);
@@ -47,6 +48,7 @@ export class SelectComponent {
   public readonly panelStyleClass = input<string>('');
   public readonly panelStyle = input<{ [key: string]: any } | null | undefined>(undefined);
   public readonly appendTo = input<any>(undefined);
+  public readonly variant = input<'filled' | 'outlined'>('outlined');
 
   // Behavior properties
   public readonly scrollHeight = input<string>('200px');
@@ -59,16 +61,11 @@ export class SelectComponent {
   public readonly ariaLabel = input<string | undefined>(undefined);
   public readonly ariaLabelledBy = input<string | undefined>(undefined);
   public readonly editable = input<boolean>(false);
-  public readonly maxlength = input<number | undefined>(undefined);
   public readonly group = input<boolean>(false);
-  public readonly autocomplete = input<string>('off');
   public readonly autofocus = input<boolean>(false);
   public readonly resetFilterOnHide = input<boolean>(false);
   public readonly dropdownIcon = input<string>();
   public readonly autoDisplayFirst = input<boolean>(true);
-  public readonly emptySelectionMessage = input<string>('');
-  public readonly searchLocale = input<string | undefined>(undefined);
-  public readonly lazyLoadOnInit = input<boolean>(true);
   public readonly focusOnHover = input<boolean>(false);
   public readonly filterFields = input<string[]>([]);
 

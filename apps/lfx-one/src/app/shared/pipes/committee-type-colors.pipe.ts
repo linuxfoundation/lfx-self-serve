@@ -6,7 +6,6 @@ import { getCommitteeTypeColor } from '@lfx-one/shared/constants';
 
 @Pipe({
   name: 'committeeTypeColor',
-  standalone: true,
 })
 export class CommitteeTypeColorPipe implements PipeTransform {
   public transform(category: string): string {

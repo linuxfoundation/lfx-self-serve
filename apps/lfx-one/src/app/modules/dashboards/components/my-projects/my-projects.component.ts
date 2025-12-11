@@ -1,22 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TableComponent } from '@components/table/table.component';
+import { hexToRgba, lfxColors } from '@lfx-one/shared';
 import { AnalyticsService } from '@services/analytics.service';
 import { finalize, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type { ProjectItemWithCharts } from '@lfx-one/shared/interfaces';
-import { hexToRgba, lfxColors } from '@lfx-one/shared';
-
 @Component({
   selector: 'lfx-my-projects',
-  standalone: true,
-  imports: [CommonModule, ChartComponent, TableComponent],
+  imports: [ChartComponent, TableComponent],
   templateUrl: './my-projects.component.html',
   styleUrl: './my-projects.component.scss',
 })

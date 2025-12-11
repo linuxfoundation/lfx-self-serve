@@ -1,15 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, input, output, signal } from '@angular/core';
 import { AvatarProps } from '@lfx-one/shared/interfaces';
 import { AvatarModule } from 'primeng/avatar';
 
 @Component({
   selector: 'lfx-avatar',
-  standalone: true,
-  imports: [CommonModule, AvatarModule],
+  imports: [AvatarModule],
   templateUrl: './avatar.component.html',
 })
 export class AvatarComponent {
@@ -20,8 +18,14 @@ export class AvatarComponent {
   public readonly size = input<AvatarProps['size']>('normal');
   public readonly shape = input<AvatarProps['shape']>('square');
   public readonly style = input<AvatarProps['style']>(null);
-  public readonly styleClass = input<AvatarProps['styleClass']>('');
+  public readonly customClass = input<AvatarProps['styleClass']>('');
   public readonly ariaLabel = input<AvatarProps['ariaLabel']>('');
+
+  /**
+   * @deprecated Use customClass instead. Will be removed in next major version.
+   * PrimeNG v20 migrated from styleClass to class attribute.
+   */
+  public readonly styleClass = this.customClass;
 
   // Internal state for error handling
   private readonly imageErrorSignal = signal<boolean>(false);

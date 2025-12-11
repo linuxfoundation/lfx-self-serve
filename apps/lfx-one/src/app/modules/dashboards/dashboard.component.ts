@@ -16,7 +16,6 @@ import { MaintainerDashboardComponent } from './maintainer/maintainer-dashboard.
  */
 @Component({
   selector: 'lfx-dashboard',
-  standalone: true,
   imports: [CoreDeveloperDashboardComponent, MaintainerDashboardComponent, BoardMemberDashboardComponent, HomeComponent],
   templateUrl: './dashboard.component.html',
 })

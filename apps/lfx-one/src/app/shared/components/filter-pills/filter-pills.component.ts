@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, input, output } from '@angular/core';
 
 export interface FilterOption {
@@ -11,8 +10,7 @@ export interface FilterOption {
 
 @Component({
   selector: 'lfx-filter-pills',
-  standalone: true,
-  imports: [CommonModule],
+  imports: [],
   templateUrl: './filter-pills.component.html',
 })
 export class FilterPillsComponent {

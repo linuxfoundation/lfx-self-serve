@@ -1,17 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, input } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { TagComponent } from '@components/tag/tag.component';
-import { ComponentSeverity, ProjectCardMetric } from '@lfx-one/shared';
+import { ProjectCardMetric, TagSeverity } from '@lfx-one/shared';
 import { CardModule } from 'primeng/card';
 
 @Component({
   selector: 'lfx-project-card',
-  standalone: true,
-  imports: [CommonModule, RouterModule, CardModule, TagComponent],
+  imports: [RouterModule, CardModule, TagComponent],
   templateUrl: './project-card.component.html',
   styleUrl: './project-card.component.scss',
 })
@@ -23,7 +21,7 @@ export class ProjectCardComponent {
   public readonly url = input<string | undefined>('');
 
   // Map 'warning' to 'warn' for PrimeNG tag compatibility
-  public mapSeverity(severity: string): ComponentSeverity {
-    return severity === 'warning' ? 'warn' : (severity as ComponentSeverity);
+  public mapSeverity(severity: string): TagSeverity {
+    return severity === 'warning' ? 'warn' : (severity as TagSeverity);
   }
 }

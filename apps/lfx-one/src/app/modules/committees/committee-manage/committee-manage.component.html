@@ -88,7 +88,6 @@
             label="Previous"
             icon="fa-light fa-arrow-left"
             severity="secondary"
-            [outlined]="true"
             size="small"
             [disabled]="isFirstStep()"
             (onClick)="previousStep()"
@@ -104,7 +103,6 @@
             <lfx-button
               [label]="isLastStep() ? 'Skip For Now' : 'Cancel'"
               severity="secondary"
-              [outlined]="true"
               size="small"
               (onClick)="onCancel()"
               data-testid="committee-manage-cancel-btn">

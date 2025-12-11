@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, computed, inject, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DashboardMeetingCardComponent } from '@app/modules/dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
@@ -16,8 +15,7 @@ import type { MeetingWithOccurrence } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-my-meetings',
-  standalone: true,
-  imports: [CommonModule, DashboardMeetingCardComponent, ButtonComponent, SkeletonModule],
+  imports: [DashboardMeetingCardComponent, ButtonComponent, SkeletonModule],
   templateUrl: './my-meetings.component.html',
   styleUrl: './my-meetings.component.scss',
 })

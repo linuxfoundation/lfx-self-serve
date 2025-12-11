@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommonModule } from '@angular/common';
 import { Component, inject, signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -20,8 +19,7 @@ export interface MeetingDeleteResult {
 
 @Component({
   selector: 'lfx-meeting-delete-confirmation',
-  standalone: true,
-  imports: [CommonModule, ReactiveFormsModule, ButtonComponent, MessageComponent, MeetingTimePipe],
+  imports: [ReactiveFormsModule, ButtonComponent, MessageComponent, MeetingTimePipe],
   templateUrl: './meeting-delete-confirmation.component.html',
   styleUrl: './meeting-delete-confirmation.component.scss',
 })
