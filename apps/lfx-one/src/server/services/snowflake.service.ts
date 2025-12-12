@@ -7,8 +7,8 @@ import { LockStats, SnowflakePoolStats, SnowflakeQueryOptions, SnowflakeQueryRes
 import snowflakeSdk from 'snowflake-sdk';
 
 import { MicroserviceError } from '../errors';
-import { serverLogger } from '../server';
 import { LockManager } from '../utils/lock-manager';
+import { logger } from './logger.service';
 
 import type { Bind, Connection, ConnectionOptions, LogLevel, Pool, PoolOptions, RowStatement, SnowflakeError } from 'snowflake-sdk';
 const { createPool } = snowflakeSdk;
@@ -37,8 +37,12 @@ export class SnowflakeService {
   public static getInstance(): SnowflakeService {
     if (!SnowflakeService.instance) {
       SnowflakeService.instance = new SnowflakeService();
-      // Safe logging - serverLogger may not be initialized during SSR build
-      serverLogger?.info('SnowflakeService singleton instance created');
+      // Safe logging - logger may not be initialized during SSR build
+      try {
+        logger.debug(undefined, 'snowflake_singleton', 'SnowflakeService singleton instance created', {});
+      } catch {
+        // Silently ignore logging errors during SSR build
+      }
     }
     return SnowflakeService.instance;
   }
@@ -49,7 +53,7 @@ export class SnowflakeService {
   public static resetInstance(): void {
     if (SnowflakeService.instance) {
       SnowflakeService.instance.shutdown().catch((err) => {
-        serverLogger?.error({ err }, 'Error shutting down SnowflakeService during reset');
+        logger.error(undefined, 'snowflake_reset', Date.now(), err);
       });
       SnowflakeService.instance = null;
     }
@@ -84,18 +88,15 @@ export class SnowflakeService {
     // Execute with lock to prevent duplicate queries
     return this.lockManager.executeLocked(queryHash, async () => {
       const startTime = Date.now();
+      logger.startOperation(undefined, 'snowflake_query', {
+        query_hash: queryHash,
+        sql_preview: sqlText.substring(0, 100),
+        bind_count: binds?.length || 0,
+      });
+
       const pool = await this.ensurePool();
 
       try {
-        serverLogger.info(
-          {
-            query_hash: queryHash,
-            sql_preview: sqlText.substring(0, 100),
-            bind_count: binds?.length || 0,
-          },
-          'Executing Snowflake query'
-        );
-
         // Execute query with parameterized binds
         const result: any = await new Promise((resolve, reject) => {
           pool.use(async (connection: Connection) => {
@@ -118,33 +119,21 @@ export class SnowflakeService {
           });
         });
 
-        const duration = Date.now() - startTime;
         const poolStats = this.getPoolStats();
 
-        serverLogger.info(
-          {
-            query_hash: queryHash,
-            duration_ms: duration,
-            row_count: result.rows.length,
-            pool_active: poolStats.activeConnections,
-            pool_idle: poolStats.idleConnections,
-          },
-          'Snowflake query executed successfully'
-        );
+        logger.success(undefined, 'snowflake_query', startTime, {
+          query_hash: queryHash,
+          row_count: result.rows.length,
+          pool_active: poolStats.activeConnections,
+          pool_idle: poolStats.idleConnections,
+        });
 
         return result as SnowflakeQueryResult<T>;
       } catch (error) {
-        const duration = Date.now() - startTime;
-
-        serverLogger.error(
-          {
-            query_hash: queryHash,
-            duration_ms: duration,
-            err: error,
-            sql_preview: sqlText.substring(0, 100),
-          },
-          'Snowflake query execution failed'
-        );
+        logger.error(undefined, 'snowflake_query', startTime, error instanceof Error ? error : new Error(String(error)), {
+          query_hash: queryHash,
+          sql_preview: sqlText.substring(0, 100),
+        });
 
         // Wrap Snowflake SDK errors in MicroserviceError for proper error handling
         const errorMessage = error instanceof Error ? error.message : String(error);
@@ -153,7 +142,7 @@ export class SnowflakeService {
           service: 'snowflake',
           errorBody: {
             query_hash: queryHash,
-            duration_ms: duration,
+            duration_ms: Date.now() - startTime,
           },
           originalError: error instanceof Error ? error : undefined,
         });
@@ -206,7 +195,7 @@ export class SnowflakeService {
    * Gracefully shutdown the service
    */
   public async shutdown(): Promise<void> {
-    serverLogger.info('Shutting down SnowflakeService');
+    const startTime = logger.startOperation(undefined, 'snowflake_shutdown');
 
     // Shutdown lock manager
     this.lockManager.shutdown();
@@ -221,9 +210,11 @@ export class SnowflakeService {
         });
 
         await Promise.race([drainPromise, timeoutPromise]);
-        serverLogger.info('Snowflake connection pool drained successfully');
+        logger.success(undefined, 'snowflake_shutdown', startTime, {
+          message: 'Snowflake connection pool drained successfully',
+        });
       } catch (error) {
-        serverLogger.error({ err: error }, 'Error during Snowflake pool shutdown');
+        logger.error(undefined, 'snowflake_shutdown', startTime, error instanceof Error ? error : new Error(String(error)));
       }
 
       this.pool = null;
@@ -266,7 +257,7 @@ export class SnowflakeService {
    * @private
    */
   private async createPool(): Promise<Pool<Connection>> {
-    serverLogger.info('Creating Snowflake connection pool');
+    const startTime = logger.startOperation(undefined, 'snowflake_pool_creation');
 
     // Validate all required environment variables
     const requiredEnvVars = {
@@ -284,13 +275,10 @@ export class SnowflakeService {
 
     if (missingVars.length > 0) {
       const errorMessage = `Snowflake configuration error: Missing required environment variables: ${missingVars.join(', ')}`;
-      serverLogger.error(
-        {
-          missing_variables: missingVars,
-          all_required: Object.keys(requiredEnvVars),
-        },
-        errorMessage
-      );
+      logger.error(undefined, 'snowflake_pool_creation', startTime, new Error(errorMessage), {
+        missing_variables: missingVars,
+        all_required: Object.keys(requiredEnvVars),
+      });
       throw new MicroserviceError(errorMessage, 500, 'SNOWFLAKE_CONFIG_ERROR', {
         operation: 'snowflake_pool_creation',
         service: 'snowflake',
@@ -302,7 +290,7 @@ export class SnowflakeService {
     }
 
     const privateKey = requiredEnvVars.SNOWFLAKE_API_KEY!;
-    serverLogger.info('Using SNOWFLAKE_API_KEY from environment variable');
+    logger.debug(undefined, 'snowflake_pool_creation', 'Using SNOWFLAKE_API_KEY from environment variable', {});
 
     // Pool configuration
     const minConnections = Number(process.env['SNOWFLAKE_MIN_CONNECTIONS']) || SNOWFLAKE_CONFIG.MIN_CONNECTIONS;
@@ -338,29 +326,22 @@ export class SnowflakeService {
     try {
       const pool = createPool(connectionOptions, poolOptions);
 
-      serverLogger.info(
-        {
-          min_connections: minConnections,
-          max_connections: maxConnections,
-          idle_timeout_ms: SNOWFLAKE_CONFIG.IDLE_TIMEOUT,
-          acquire_timeout_ms: SNOWFLAKE_CONFIG.CONNECTION_ACQUIRE_TIMEOUT,
-          test_on_borrow: true,
-          account: requiredEnvVars.SNOWFLAKE_ACCOUNT,
-          warehouse: requiredEnvVars.SNOWFLAKE_WAREHOUSE,
-          database: requiredEnvVars.SNOWFLAKE_DATABASE,
-        },
-        'Snowflake connection pool created successfully'
-      );
+      logger.success(undefined, 'snowflake_pool_creation', startTime, {
+        min_connections: minConnections,
+        max_connections: maxConnections,
+        idle_timeout_ms: SNOWFLAKE_CONFIG.IDLE_TIMEOUT,
+        acquire_timeout_ms: SNOWFLAKE_CONFIG.CONNECTION_ACQUIRE_TIMEOUT,
+        test_on_borrow: true,
+        account: requiredEnvVars.SNOWFLAKE_ACCOUNT,
+        warehouse: requiredEnvVars.SNOWFLAKE_WAREHOUSE,
+        database: requiredEnvVars.SNOWFLAKE_DATABASE,
+      });
 
       return pool;
     } catch (error) {
-      serverLogger.error(
-        {
-          err: error,
-          account: requiredEnvVars.SNOWFLAKE_ACCOUNT,
-        },
-        'Failed to create Snowflake connection pool'
-      );
+      logger.error(undefined, 'snowflake_pool_creation', startTime, error instanceof Error ? error : new Error(String(error)), {
+        account: requiredEnvVars.SNOWFLAKE_ACCOUNT,
+      });
       // Wrap SDK errors in MicroserviceError for proper error handling
       const errorMessage = error instanceof Error ? error.message : String(error);
       throw new MicroserviceError(`Snowflake connection pool creation failed: ${errorMessage}`, 500, 'SNOWFLAKE_CONNECTION_ERROR', {
@@ -402,25 +383,19 @@ export class SnowflakeService {
 
     for (const pattern of writePatterns) {
       if (pattern.test(normalizedSql)) {
-        serverLogger.error(
-          {
-            sql_preview: normalizedSql.substring(0, 100),
-            matched_pattern: pattern.toString(),
-          },
-          'Blocked query with write operation (including CTEs)'
-        );
+        logger.warning(undefined, 'snowflake_validation', 'Blocked query with write operation (including CTEs)', {
+          sql_preview: normalizedSql.substring(0, 100),
+          matched_pattern: pattern.toString(),
+        });
         throw new Error('Only SELECT queries are allowed. Write operations detected.');
       }
     }
 
     // Ensure query starts with SELECT or WITH (for CTEs)
     if (!/^\s*SELECT\b/i.test(normalizedSql) && !/^\s*WITH\b/i.test(normalizedSql)) {
-      serverLogger.error(
-        {
-          sql_preview: normalizedSql.substring(0, 100),
-        },
-        'Blocked non-SELECT query (not starting with SELECT or WITH)'
-      );
+      logger.warning(undefined, 'snowflake_validation', 'Blocked non-SELECT query (not starting with SELECT or WITH)', {
+        sql_preview: normalizedSql.substring(0, 100),
+      });
       throw new Error('Only SELECT queries are allowed');
     }
   }

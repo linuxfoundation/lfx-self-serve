@@ -1,14 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NextFunction, Request, Response, Router } from 'express';
+import { Router } from 'express';
 
 import { MeetingController } from '../controllers/meeting.controller';
-import { AiService } from '../services/ai.service';
 
 const router = Router();
 
-const aiService = new AiService();
 const meetingController = new MeetingController();
 
 // GET /meetings - get all meetings
@@ -64,61 +62,6 @@ router.get('/:uid/attachments/:attachmentId', (req, res, next) => meetingControl
 router.delete('/:uid/attachments/:attachmentId', (req, res, next) => meetingController.deleteMeetingAttachment(req, res, next));
 
 // AI agenda generation endpoint
-router.post('/generate-agenda', async (req: Request, res: Response, next: NextFunction) => {
-  const startTime = Date.now();
-
-  req.log.info(
-    {
-      operation: 'generate_agenda',
-      meeting_type: req.body['meetingType'],
-      has_context: !!req.body['context'],
-    },
-    'Starting AI agenda generation request'
-  );
-
-  try {
-    const { meetingType, title, projectName, context } = req.body;
-
-    // Validate required fields
-    if (!meetingType || !title || !projectName) {
-      return res.status(400).json({
-        error: 'Missing required fields: meetingType, title, and projectName are required',
-      });
-    }
-
-    const response = await aiService.generateMeetingAgenda({
-      meetingType,
-      title,
-      projectName,
-      context,
-    });
-
-    const duration = Date.now() - startTime;
-
-    req.log.info(
-      {
-        operation: 'generate_agenda',
-        duration,
-        estimated_duration: response.estimatedDuration,
-        status_code: 200,
-      },
-      'Successfully generated meeting agenda'
-    );
-
-    return res.json(response);
-  } catch (error) {
-    const duration = Date.now() - startTime;
-    req.log.error(
-      {
-        err: error,
-        operation: 'generate_agenda',
-        duration,
-        meeting_type: req.body['meetingType'],
-      },
-      'Failed to generate meeting agenda'
-    );
-    return next(error);
-  }
-});
+router.post('/generate-agenda', (req, res, next) => meetingController.generateAgenda(req, res, next));
 
 export default router;

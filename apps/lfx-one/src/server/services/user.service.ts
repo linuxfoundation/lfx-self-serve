@@ -27,9 +27,9 @@ import {
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
-import { serverLogger } from '../server';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { ApiClientService } from './api-client.service';
+import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
 import { NatsService } from './nats.service';
 import { ProjectService } from './project.service';
@@ -65,11 +65,10 @@ export class UserService {
    * @throws ResourceNotFoundError if user not found
    */
   public async getUserInfo(req: Request, userArg: string): Promise<UserMetadataUpdateResponse> {
+    const startTime = logger.startOperation(req, 'get_user_info', { user_arg_provided: !!userArg });
     const codec = this.natsService.getCodec();
 
     try {
-      req.log.info({ userArgProvided: !!userArg }, 'Fetching user metadata via NATS');
-
       const response = await this.natsService.request(NatsSubjects.USER_METADATA_READ, codec.encode(userArg), { timeout: NATS_CONFIG.REQUEST_TIMEOUT });
 
       const responseText = codec.decode(response.data);
@@ -84,13 +83,13 @@ export class UserService {
         });
       }
 
+      logger.success(req, 'get_user_info', startTime, { user_arg_provided: !!userArg });
+
       return userMetadata;
     } catch (error) {
       if (error instanceof ResourceNotFoundError) {
         throw error;
       }
-
-      req.log.error({ err: error, userArgProvided: !!userArg }, 'Failed to fetch user metadata via NATS');
 
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         throw new ResourceNotFoundError('User', undefined, {
@@ -111,6 +110,12 @@ export class UserService {
    * @returns Promise with the update response
    */
   public async updateUserMetadata(req: Request, updates: UserMetadataUpdateRequest): Promise<UserMetadataUpdateResponse> {
+    const startTime = logger.startOperation(req, 'update_user_metadata', {
+      has_username: !!updates.username,
+      has_metadata: !!updates.user_metadata,
+      metadata_fields: updates.user_metadata ? Object.keys(updates.user_metadata) : [],
+    });
+
     try {
       // Validate required fields
       if (!updates.username) {
@@ -121,48 +126,28 @@ export class UserService {
         throw new Error('Authentication token is required');
       }
 
-      // Log the update attempt
-      req.log.info(
-        {
-          has_username: !!updates.username,
-          has_metadata: !!updates.user_metadata,
-          metadata_fields: updates.user_metadata ? Object.keys(updates.user_metadata) : [],
-        },
-        'Attempting to update user metadata'
-      );
-
       // Send the request via NATS
-      const response = await this.sendUserMetadataUpdate(updates);
+      const response = await this.sendUserMetadataUpdate(req, updates);
 
       // Log the result
       if (response.success) {
-        req.log.info(
-          {
-            username: updates.username,
-            updated_fields: response.updated_fields,
-          },
-          'User metadata updated successfully'
-        );
+        logger.success(req, 'update_user_metadata', startTime, {
+          username: updates.username,
+          updated_fields: response.updated_fields,
+        });
       } else {
-        req.log.error(
-          {
-            username: updates.username,
-            error: response.error,
-            message: response.message,
-          },
-          'Failed to update user metadata'
-        );
+        logger.warning(req, 'update_user_metadata', 'Update failed from NATS service', {
+          username: updates.username,
+          error: response.error,
+          message: response.message,
+        });
       }
 
       return response;
     } catch (error) {
-      req.log.error(
-        {
-          username: updates.username,
-          err: error,
-        },
-        'Error in user metadata update service'
-      );
+      logger.error(req, 'update_user_metadata', startTime, error, {
+        username: updates.username,
+      });
 
       // Return error response
       return {
@@ -252,7 +237,7 @@ export class UserService {
    * Shutdown the service and clean up resources
    */
   public async shutdown(): Promise<void> {
-    serverLogger.info('Shutting down user service');
+    logger.debug(undefined, 'user_service_shutdown', 'Shutting down user service', {});
     await this.natsService.shutdown();
   }
 
@@ -487,66 +472,32 @@ export class UserService {
    * @returns Array of Meeting objects the user is registered for
    */
   public async getUserMeetings(req: Request, email: string, projectUid: string, query: Record<string, any>): Promise<Meeting[]> {
-    try {
-      // Step 1: Get all meetings the user has access to, filtered by project
-      // Note: Writers have API access to all meetings, but we still filter by registration
-      const meetings = await this.meetingService.getMeetings(req, query, 'meeting', false);
-      const v1Meetings = await this.meetingService.getMeetings(req, query, 'v1_meeting', false);
+    // Step 1: Get all meetings the user has access to, filtered by project
+    // Note: Writers have API access to all meetings, but we still filter by registration
+    const meetings = await this.meetingService.getMeetings(req, query, 'meeting', false);
+    const v1Meetings = await this.meetingService.getMeetings(req, query, 'v1_meeting', false);
 
-      const allMeetings = [...meetings, ...v1Meetings];
+    const allMeetings = [...meetings, ...v1Meetings];
 
-      req.log.info(
-        {
-          operation: 'get_user_meetings',
-          project_uid: projectUid,
-          total_accessible_meetings: allMeetings.length,
-        },
-        'Fetched all accessible meetings for user'
-      );
+    logger.debug(req, 'get_user_meetings', 'Retrieved meetings from API', {
+      total_meetings: allMeetings.length,
+      regular_meetings: meetings.length,
+      v1_meetings: v1Meetings.length,
+    });
 
-      if (allMeetings.length === 0) {
-        return [];
-      }
-
-      req.log.debug(
-        {
-          operation: 'get_user_meetings',
-          total_meetings: allMeetings.length,
-          regular_meetings: meetings.length,
-          v1_meetings: v1Meetings.length,
-        },
-        'Retrieved meetings from API'
-      );
-
-      const m2mToken = await generateM2MToken(req);
-      const baseUrl = process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local';
-
-      // Step 2: Filter ALL meetings by registration status
-      // For "my meetings", we only show meetings the user is actually registered for
-      // This applies to both public and private meetings, regardless of writer status
-      const filteredMeetings = await this.filterMeetingsByRegistration(req, allMeetings, email, m2mToken, baseUrl);
-
-      req.log.info(
-        {
-          operation: 'get_user_meetings',
-          total_accessible: allMeetings.length,
-          registered_meetings: filteredMeetings.length,
-        },
-        'User meetings filtered by registration'
-      );
-
-      return filteredMeetings;
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'get_user_meetings',
-          err: error,
-          project_uid: projectUid,
-        },
-        'Failed to get user meetings'
-      );
-      throw error;
+    if (allMeetings.length === 0) {
+      return [];
     }
+
+    const m2mToken = await generateM2MToken(req);
+    const baseUrl = process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local';
+
+    // Step 2: Filter ALL meetings by registration status
+    // For "my meetings", we only show meetings the user is actually registered for
+    // This applies to both public and private meetings, regardless of writer status
+    const filteredMeetings = await this.filterMeetingsByRegistration(req, allMeetings, email, m2mToken, baseUrl);
+
+    return filteredMeetings;
   }
 
   /**
@@ -581,25 +532,17 @@ export class UserService {
           // If resources array has items, user is registered
           const isRegistered = response.data.resources && response.data.resources.length > 0;
 
-          req.log.debug(
-            {
-              operation: 'filter_meetings_by_registration',
-              meeting_uid: meeting.uid,
-              is_registered: isRegistered,
-            },
-            'Checked user registration for meeting'
-          );
+          logger.debug(req, 'filter_meetings_by_registration', 'Checked user registration for meeting', {
+            meeting_uid: meeting.uid,
+            is_registered: isRegistered,
+          });
 
           return isRegistered ? meeting : null;
         } catch (error) {
-          req.log.warn(
-            {
-              operation: 'filter_meetings_by_registration',
-              meeting_uid: meeting.uid,
-              err: error,
-            },
-            'Failed to check registration for meeting, excluding from results'
-          );
+          logger.warning(req, 'filter_meetings_by_registration', 'Failed to check registration for meeting', {
+            meeting_uid: meeting.uid,
+            err: error,
+          });
           return null;
         }
       })
@@ -616,12 +559,12 @@ export class UserService {
     // Fetch surveys and user-specific meetings in parallel
     const [surveys, meetings] = await Promise.all([
       this.projectService.getPendingActionSurveys(email, projectSlug).catch((error) => {
-        req.log.warn({ err: error }, 'Failed to fetch surveys for pending actions');
+        logger.warning(req, 'get_board_member_actions', 'Failed to fetch surveys for pending actions', { err: error });
         return [];
       }),
 
       this.getUserMeetings(req, email, projectUid, { tags_all: [`project_uid:${projectUid}`, 'meeting_type:Board'] }).catch((error) => {
-        req.log.warn({ err: error }, 'Failed to fetch user meetings for pending actions');
+        logger.warning(req, 'get_board_member_actions', 'Failed to fetch user meetings for pending actions', { err: error });
         return [];
       }),
     ]);
@@ -718,11 +661,14 @@ export class UserService {
    * Send user metadata update request via NATS
    * @private
    */
-  private async sendUserMetadataUpdate(request: UserMetadataUpdateRequest): Promise<UserMetadataUpdateResponse> {
+  private async sendUserMetadataUpdate(req: Request, request: UserMetadataUpdateRequest): Promise<UserMetadataUpdateResponse> {
     const codec = this.natsService.getCodec();
+    const startTime = logger.startOperation(req, 'send_user_metadata_update', { username: request.username });
 
     try {
-      serverLogger.info({ username: request.username }, 'Sending user metadata update request via NATS');
+      logger.debug(req, 'send_user_metadata_update', 'Sending user metadata update request via NATS', {
+        username: request.username,
+      });
 
       const requestPayload = JSON.stringify(request);
       const response = await this.natsService.request(NatsSubjects.USER_METADATA_UPDATE, codec.encode(requestPayload), {
@@ -734,34 +680,24 @@ export class UserService {
 
       // Check if the response indicates success
       if (!parsedResponse.success) {
-        serverLogger.error(
-          {
-            username: request.username,
-            error: parsedResponse.error,
-            message: parsedResponse.message,
-          },
-          'User metadata update failed via NATS'
-        );
+        logger.warning(req, 'send_user_metadata_update', 'User metadata update failed via NATS', {
+          username: request.username,
+          error: parsedResponse.error,
+          message: parsedResponse.message,
+        });
         return parsedResponse;
       }
 
-      serverLogger.info(
-        {
-          username: request.username,
-          updated_fields: parsedResponse.updated_fields,
-        },
-        'Successfully updated user metadata via NATS'
-      );
+      logger.success(req, 'send_user_metadata_update', startTime, {
+        username: request.username,
+        updated_fields: parsedResponse.updated_fields,
+      });
 
       return parsedResponse;
     } catch (error) {
-      serverLogger.error(
-        {
-          err: error,
-          username: request.username,
-        },
-        'Failed to update user metadata via NATS'
-      );
+      logger.error(req, 'send_user_metadata_update', startTime, error, {
+        username: request.username,
+      });
 
       // If it's a timeout or no responder error, return appropriate response
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {

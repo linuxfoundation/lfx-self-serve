@@ -2,9 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
-import { connect, NatsConnection, Msg, StringCodec, Codec } from 'nats';
+import { Codec, connect, Msg, NatsConnection, StringCodec } from 'nats';
 
-import { serverLogger } from '../server';
+import { logger } from './logger.service';
 
 /**
  * Generic NATS service for managing connections and request-reply operations
@@ -34,16 +34,12 @@ export class NatsService {
       timeout: options?.timeout || NATS_CONFIG.REQUEST_TIMEOUT,
     };
 
+    const startTime = Date.now();
+
     try {
       return await connection.request(subject, data, requestOptions);
     } catch (error) {
-      serverLogger.error(
-        {
-          err: error,
-          subject,
-        },
-        'NATS request failed'
-      );
+      logger.error(undefined, 'nats_request', startTime, error, { subject });
       throw error;
     }
   }
@@ -60,13 +56,13 @@ export class NatsService {
    */
   public async shutdown(): Promise<void> {
     if (this.connection && !this.connection.isClosed()) {
-      serverLogger.info('Shutting down NATS connection');
+      const startTime = logger.startOperation(undefined, 'nats_shutdown', {});
 
       try {
         await this.connection.drain();
-        serverLogger.info('NATS connection closed successfully');
+        logger.success(undefined, 'nats_shutdown', startTime, {});
       } catch (error) {
-        serverLogger.error({ err: error }, 'Error during NATS shutdown');
+        logger.error(undefined, 'nats_shutdown', startTime, error, {});
       }
     }
     this.connection = null;
@@ -107,26 +103,21 @@ export class NatsService {
    */
   private async createConnection(): Promise<NatsConnection> {
     const natsUrl = process.env['NATS_URL'] || NATS_CONFIG.DEFAULT_SERVER_URL;
+    const startTime = logger.startOperation(undefined, 'nats_connect', { url: natsUrl });
 
     try {
-      serverLogger.info({ url: natsUrl }, 'Connecting to NATS server on demand');
-
       const connection = await connect({
         servers: [natsUrl],
         timeout: NATS_CONFIG.CONNECTION_TIMEOUT,
       });
 
-      serverLogger.info('Successfully connected to NATS server');
+      logger.success(undefined, 'nats_connect', startTime, {});
       return connection;
     } catch (error) {
-      serverLogger.error(
-        {
-          err: error,
-          url: natsUrl,
-          suggestion: 'If running locally, you may need to port-forward NATS: kubectl port-forward -n lfx svc/lfx-platform-nats 4222:4222',
-        },
-        'Failed to connect to NATS server'
-      );
+      logger.error(undefined, 'nats_connect', startTime, error, {
+        url: natsUrl,
+        suggestion: 'If running locally, you may need to port-forward NATS: kubectl port-forward -n lfx svc/lfx-platform-nats 4222:4222',
+      });
       throw error;
     }
   }

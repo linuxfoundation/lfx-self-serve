@@ -1,512 +1,686 @@
 # Logging & Monitoring
 
-## 📝 Pino Logging System
+## 📝 Overview
 
-The application uses Pino for high-performance structured logging with automatic request logging and security redaction.
+The application uses a structured logging system built on Pino with operation lifecycle tracking, CloudWatch optimization, and automatic duplicate prevention. All logging is handled through the singleton `LoggerService` class, which supports both request-scoped operations (with `req`) and infrastructure operations (without `req`).
 
-## 🔧 Pino Configuration
+## 🏗️ LoggerService Architecture
 
-### Dual Logger Architecture
+### Singleton Pattern with Operation Tracking
 
-The application uses a dual logger architecture for optimal performance and flexibility:
+The `LoggerService` is a singleton class that provides consistent, structured logging across the entire application:
 
-#### Server Logger (Base Logger)
+```typescript
+// Import the singleton instance
+import { logger } from '../services/logger.service';
+
+// Use in controllers and services
+const startTime = logger.startOperation(req, 'fetch_projects', { filter: 'active' });
+// ... perform operation
+logger.success(req, 'fetch_projects', startTime, { count: projects.length });
+```
+
+### Key Features
+
+- **Operation Lifecycle Tracking**: Pairs `startOperation()` → `success()`/`error()` for complete operation visibility
+- **Automatic Duration Calculation**: Computes `duration_ms` via `Date.now() - startTime`
+- **Duplicate Prevention**: Tracks logged errors to prevent duplicate logs in error middleware (request-scoped only)
+- **CloudWatch Optimization**: Structured metadata for efficient AWS CloudWatch queries
+- **Memory Safety**: WeakMap-based operation tracking prevents memory leaks
+- **Error Serialization**: Custom serializer for clean error output in dev and detailed traces in production
+- **Dual Mode Support**: Works with request context (`req`) or without (`undefined`) for infrastructure operations
+
+### Logging Architecture Layers
+
+```text
+server-logger.ts (NEW - breaks circular dependency)
+  └─ Creates and exports serverLogger (base Pino instance)
+      └─ Configuration: levels, serializers, formatters, redaction
+
+server.ts
+  ├─ Imports serverLogger from server-logger.ts
+  └─ Creates httpLogger (pinoHttp middleware)
+      └─ Uses serverLogger as base
+      └─ Attaches req.log to each request
+
+logger.service.ts
+  ├─ Imports serverLogger from server-logger.ts
+  └─ Singleton LoggerService
+      ├─ When req provided: uses req.log (request-scoped)
+      ├─ When req = undefined: uses serverLogger (infrastructure)
+      └─ Provides unified API for all logging
+```
+
+**Import Pattern:**
+
+- ✅ Controllers/Services: `import { logger } from './logger.service'`
+- ❌ Never import `serverLogger` directly (except in server.ts and logger.service.ts)
+
+## 📊 Logging Methods
+
+### Operation Lifecycle Methods
+
+#### `startOperation(req | undefined, operation, metadata, options)`
+
+Starts an operation and returns `startTime` for duration tracking.
+
+```typescript
+// Request-scoped operation
+const startTime = logger.startOperation(req, 'create_meeting', {
+  project_uid: projectId,
+  meeting_type: 'board',
+});
+
+// Infrastructure operation (no request context)
+const startTime = logger.startOperation(undefined, 'nats_connect', {
+  url: natsUrl,
+});
+```
+
+**Parameters:**
+
+- `req`: Express Request object, or `undefined` for infrastructure operations (NATS, Snowflake, shutdown)
+- `operation`: Snake_case operation name (e.g., `create_meeting`, `fetch_user_profile`, `nats_connect`)
+- `metadata`: Contextual data (avoid sensitive information)
+- `options`: Optional configuration
+  - `silent`: If true, doesn't log the start (for silent tracking)
+
+**Returns:** `number` - startTime for use with success/error calls
+
+**Log Level:** INFO (unless `silent: true`)
+
+#### `success(req | undefined, operation, startTime, metadata)`
+
+Marks an operation as successful and logs with duration.
+
+```typescript
+// Request-scoped
+logger.success(req, 'create_meeting', startTime, {
+  meeting_uid: newMeeting.uid,
+});
+
+// Infrastructure
+logger.success(undefined, 'nats_connect', startTime, {
+  pool_size: connection.pool.size,
+});
+```
+
+**Parameters:**
+
+- `req`: Express Request object, or `undefined` for infrastructure operations
+- `operation`: Same operation name from startOperation
+- `startTime`: Value returned from startOperation
+- `metadata`: Success-specific data (results, counts, IDs)
+
+**Log Level:** INFO
+
+**Output Example:**
+
+```json
+{
+  "level": "INFO",
+  "operation": "create_meeting",
+  "status": "success",
+  "duration_ms": 145,
+  "meeting_uid": "abc123",
+  "msg": "Operation completed successfully"
+}
+```
+
+#### `error(req | undefined, operation, startTime, error, metadata, options)`
+
+Marks an operation as failed and logs error details.
+
+```typescript
+try {
+  const meeting = await getMeeting(id);
+  logger.success(req, 'fetch_meeting', startTime, { meeting_uid: id });
+} catch (error) {
+  logger.error(req, 'fetch_meeting', startTime, error, {
+    meeting_uid: id,
+    attempted_action: 'fetch',
+  });
+  throw error;
+}
+```
+
+**Parameters:**
+
+- `req`: Express Request object, or `undefined` for infrastructure operations
+- `operation`: Same operation name from startOperation
+- `startTime`: Value returned from startOperation
+- `error`: Error object or unknown error
+- `metadata`: Error-specific context
+- `options`: Optional configuration
+  - `skipIfLogged`: If true, skips logging if already logged (for error middleware, request-scoped only)
+
+**Log Level:** ERROR
+
+**Output Example:**
+
+```json
+{
+  "level": "ERROR",
+  "operation": "fetch_meeting",
+  "status": "failed",
+  "duration_ms": 52,
+  "err": {
+    "type": "ResourceNotFoundError",
+    "message": "Meeting not found",
+    "stack": "Error: Meeting not found\n    at MeetingService.getMeeting..."
+  },
+  "meeting_uid": "xyz789",
+  "msg": "Operation failed"
+}
+```
+
+### Informational Logging Methods
+
+#### `debug(req | undefined, operation, message, metadata)`
+
+Logs debug-level information for development and troubleshooting.
+
+```typescript
+// Request-scoped
+logger.debug(req, 'committee_member_lookup', 'Checking committee membership', {
+  username,
+  category: 'Board',
+});
+
+// Infrastructure
+logger.debug(undefined, 'snowflake_pool', 'Pool connection acquired', {
+  active_connections: pool.size,
+});
+```
+
+**When to Use:**
+
+- Internal operation steps that don't need lifecycle tracking
+- Informational logging within loops
+- Intermediate processing steps
+- Infrastructure state logging
+- Development troubleshooting
+
+**Log Level:** DEBUG
+
+#### `warning(req | undefined, operation, message, metadata)`
+
+Logs warning-level information for concerning but non-critical issues.
+
+```typescript
+// Request-scoped
+logger.warning(req, 'token_refresh', 'Token refresh failed - user needs re-authentication', {
+  err: error,
+  path: req.path,
+});
+
+// Infrastructure
+logger.warning(undefined, 'nats_connect', 'NATS connection slow', {
+  connection_time_ms: 5000,
+});
+```
+
+**When to Use:**
+
+- Recoverable errors that don't fail the operation
+- Data quality issues
+- Fallback behavior activation
+- User not found scenarios
+- Token refresh failures
+- Infrastructure performance issues
+
+**Log Level:** WARN
+
+#### `validation(req | undefined, operation, errors, metadata)`
+
+Logs validation failures with detailed error context.
+
+```typescript
+logger.validation(req, 'create_meeting', ['Missing required field: title'], {
+  provided_fields: Object.keys(req.body),
+});
+```
+
+**When to Use:**
+
+- Request validation failures
+- Missing required fields
+- Invalid field formats
+- Business rule violations
+
+**Log Level:** WARN
+
+## 🎯 Log Level Guidelines
+
+### ERROR
+
+**When:** System failures requiring immediate attention
+**Examples:**
+
+- Database connection failures
+- External service unavailable
+- Unhandled exceptions
+- Data corruption
+
+### WARN
+
+**When:** Concerning issues that don't break functionality
+**Examples:**
+
+- Validation failures
+- Token refresh failures
+- User not found
+- Fallback behaviors
+- Data quality issues
+
+### INFO
+
+**When:** Business operation completions
+**Examples:**
+
+- Resource created/updated/deleted
+- Successful data retrieval
+- Operation start (via startOperation)
+- Operation success
+
+### DEBUG
+
+**When:** Internal operations and development info
+**Examples:**
+
+- Intermediate processing steps
+- Loop iterations
+- Intent statements ("fetching", "resolving")
+- Authentication checks
+- Route classification
+
+## 🔄 Operation Lifecycle Patterns
+
+### Standard Controller Pattern
+
+```typescript
+export class MeetingController {
+  public async createMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'create_meeting', {
+      project_uid: req.body.project_uid,
+      meeting_type: req.body.type,
+    });
+
+    try {
+      // Validate request
+      const validationErrors = validateMeetingInput(req.body);
+      if (validationErrors.length > 0) {
+        logger.validation(req, 'create_meeting', validationErrors, {
+          provided_fields: Object.keys(req.body),
+        });
+        return res.status(400).json({ errors: validationErrors });
+      }
+
+      // Perform operation
+      const meeting = await meetingService.createMeeting(req, req.body);
+
+      // Log success
+      logger.success(req, 'create_meeting', startTime, {
+        meeting_uid: meeting.uid,
+        attendee_count: meeting.attendees?.length || 0,
+      });
+
+      res.status(201).json(meeting);
+    } catch (error) {
+      // Log error (error middleware will see skipIfLogged)
+      logger.error(req, 'create_meeting', startTime, error, {
+        project_uid: req.body.project_uid,
+      });
+      next(error);
+    }
+  }
+}
+```
+
+### Service Layer Pattern
+
+```typescript
+export class MeetingService {
+  public async getMeetingById(req: Request, meetingId: string): Promise<Meeting> {
+    // Silent operation tracking for service-level operations
+    const startTime = logger.startOperation(req, 'get_meeting_by_id', { meeting_id: meetingId }, { silent: true });
+
+    try {
+      const meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingId}`, 'GET');
+
+      if (!meeting) {
+        throw new ResourceNotFoundError('Meeting', meetingId, {
+          operation: 'get_meeting_by_id',
+        });
+      }
+
+      logger.success(req, 'get_meeting_by_id', startTime, {
+        meeting_uid: meetingId,
+      });
+
+      return meeting;
+    } catch (error) {
+      logger.error(req, 'get_meeting_by_id', startTime, error, {
+        meeting_id: meetingId,
+      });
+      throw error;
+    }
+  }
+}
+```
+
+### Informational Logging (No Lifecycle)
+
+```typescript
+// Use debug() for informational logging without lifecycle tracking
+for (const [category, persona] of Object.entries(COMMITTEE_CATEGORY_TO_PERSONA)) {
+  logger.debug(req, 'check_committee_category', 'Checking category', { category });
+
+  const memberships = await committeeService.getCommitteeMembersByCategory(req, username, category);
+
+  logger.debug(req, 'committee_memberships_retrieved', 'Found memberships', {
+    category,
+    count: memberships.length,
+  });
+}
+```
+
+## 🚨 Error Handling & Duplicate Prevention
+
+### Controller-Level Error Logging
+
+Controllers log errors before passing them to middleware:
+
+```typescript
+try {
+  // ... operation
+} catch (error) {
+  logger.error(req, 'operation_name', startTime, error, metadata);
+  next(error); // Pass to error middleware
+}
+```
+
+### Error Middleware with Duplicate Prevention
+
+The error middleware uses `skipIfLogged` to prevent duplicate logs:
+
+```typescript
+export function apiErrorHandler(error: Error, req: Request, res: Response, next: NextFunction): void {
+  if (res.headersSent) {
+    next(error);
+    return;
+  }
+
+  const operation = getOperationFromPath(req.path);
+
+  if (isBaseApiError(error)) {
+    const logLevel = error.getSeverity();
+
+    if (logLevel === 'error') {
+      // Skip if already logged by controller
+      logger.error(req, operation, Date.now(), error, logContext, { skipIfLogged: true });
+    }
+    // ... send response
+  }
+}
+```
+
+### How Duplicate Prevention Works
+
+1. Controller logs error: `logger.error(req, 'create_meeting', startTime, error, metadata)`
+2. LoggerService marks operation as "logged" in WeakMap
+3. Error middleware tries to log: `logger.error(req, operation, Date.now(), error, metadata, { skipIfLogged: true })`
+4. LoggerService checks if already logged → skips if true
+5. Result: Single error log, no duplicates
+
+## ⏱️ Duration Tracking
+
+### Correct Usage
+
+```typescript
+// ✅ CORRECT: Capture startTime, use for duration calculation
+const startTime = logger.startOperation(req, 'fetch_meetings');
+// ... operation
+logger.success(req, 'fetch_meetings', startTime, { count });
+```
+
+### Incorrect Usage
+
+```typescript
+// ❌ WRONG: startTime=0 causes incorrect duration (time since epoch)
+logger.error(req, 'ssr_render', 0, error, metadata);
+// Results in duration_ms: 1702915200000 (millions of milliseconds!)
+
+// ✅ CORRECT: Use Date.now() if no operation was started
+logger.error(req, 'ssr_render', Date.now(), error, metadata);
+// Results in duration_ms: 0 (acceptable for error-only logging)
+```
+
+### SSR Error Handler Example
+
+```typescript
+app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
+  const ssrStartTime = Date.now(); // Capture at handler start
+
+  // ... SSR operations
+
+  angularApp.handle(req, { auth }).catch((error) => {
+    // Use captured startTime for accurate duration
+    logger.error(req, 'ssr_render', ssrStartTime, error, {
+      code: error.code,
+      url: req.url,
+    });
+  });
+});
+```
+
+## 🔧 Base Pino Configuration
+
+### Server Logger (Base Logger)
 
 ```typescript
 // apps/lfx-one/src/server/server.ts
-import pino from 'pino';
-
-/**
- * Base Pino logger instance for server-level operations.
- * Used for server startup/shutdown, direct logging from server code,
- * and can be imported by other modules for consistent logging.
- */
 const serverLogger = pino({
   level: process.env['LOG_LEVEL'] || 'info',
+  base: {
+    service: 'lfx-one-ssr',
+    environment: process.env['NODE_ENV'] || 'development',
+  },
+  serializers: {
+    err: customErrorSerializer, // Clean dev logs, detailed prod logs
+    error: customErrorSerializer,
+  },
   redact: {
     paths: ['access_token', 'refresh_token', 'authorization', 'cookie'],
     remove: true,
   },
   formatters: {
-    level: (label) => {
-      return { level: label.toUpperCase() };
-    },
+    level: (label) => ({ level: label.toUpperCase() }),
   },
   timestamp: pino.stdTimeFunctions.isoTime,
 });
 ```
 
-#### HTTP Logger (Request Middleware)
+### HTTP Logger Middleware
 
 ```typescript
-/**
- * HTTP request/response logging middleware using Pino.
- * Provides request-scoped logger accessible via req.log in route handlers.
- */
 const httpLogger = pinoHttp({
-  logger: serverLogger, // Uses same base logger for consistency
-  autoLogging: {
-    ignore: (req: Request) => {
-      return req.url === '/health' || req.url === '/api/health';
-    },
+  logger: serverLogger,
+  autoLogging: false, // LoggerService handles operation logging
+  serializers: {
+    err: customErrorSerializer,
+    error: customErrorSerializer,
   },
-  redact: {
-    paths: ['req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
-    remove: true,
-  },
-  level: 'info',
-  formatters: {
-    level: (label) => {
-      return { level: label.toUpperCase() };
-    },
-  },
-  timestamp: pino.stdTimeFunctions.isoTime,
+  level: process.env['LOG_LEVEL'] || 'info',
 });
 
-// Add HTTP logger middleware after health endpoint
 app.use(httpLogger);
 ```
 
-### Key Features
-
-- **Dual Logger Architecture**: Separate loggers for server operations and HTTP requests
-- **Shared Configuration**: Consistent formatting and settings across both loggers
-- **Environment-Based Levels**: Configurable log levels via LOG_LEVEL environment variable
-- **High Performance**: Pino is optimized for speed and low overhead
-- **Structured Logging**: JSON output with uppercase level formatting
-- **Security Redaction**: Automatically removes sensitive headers and tokens
-- **Health Check Filtering**: Excludes health endpoints from logs
-- **Request Correlation**: Automatic request ID generation
-- **Modular Design**: Server logger can be exported and reused in other modules
-
-## 📊 Logging Configuration
-
-### Environment Variables
-
-```bash
-# Set log level for both server and HTTP loggers
-LOG_LEVEL=info  # Options: trace, debug, info, warn, error, fatal
-
-# Other environment variables affecting logging
-NODE_ENV=production  # Affects stack trace inclusion in logs
-```
-
-### Security Redaction
-
-#### Server Logger Redaction
+### Custom Error Serializer
 
 ```typescript
-// Server-level sensitive data redaction
-redact: {
-  paths: [
-    'access_token',     // OAuth access tokens
-    'refresh_token',    // OAuth refresh tokens
-    'authorization',    // Authorization headers
-    'cookie'           // Cookie data
-  ],
-  remove: true,  // Completely removes instead of showing [Redacted]
-}
+// apps/lfx-one/src/server/helpers/error-serializer.ts
+export const customErrorSerializer = (err: Error): Record<string, unknown> => {
+  const isDev = process.env['NODE_ENV'] !== 'production';
+
+  return {
+    type: err.constructor.name,
+    message: err.message,
+    ...(err.stack && !isDev && { stack: err.stack }), // Stack in prod/debug only
+    ...(err.cause && { cause: err.cause }),
+  };
+};
 ```
 
-#### HTTP Logger Redaction
+## 📈 CloudWatch Optimization
+
+### Structured Metadata
 
 ```typescript
-// HTTP request/response sensitive data redaction
-redact: {
-  paths: [
-    'req.headers.authorization',    // Bearer tokens
-    'req.headers.cookie',          // Session cookies
-    'res.headers["set-cookie"]'    // Set-Cookie headers
-  ],
-  remove: true,  // Completely removes instead of showing [Redacted]
-}
+// ✅ Good: Structured for CloudWatch filtering
+logger.success(req, 'fetch_meetings', startTime, {
+  project_uid: 'abc123',
+  meeting_type: 'board',
+  count: 5,
+  duration_ms: 142,
+});
+
+// Enables CloudWatch queries like:
+// fields @timestamp, operation, duration_ms, project_uid
+// | filter operation = "fetch_meetings"
+// | filter duration_ms > 1000
+// | stats avg(duration_ms) by project_uid
 ```
 
-### Formatting Configuration
+### Operation Naming Convention
+
+Use snake_case for operation names to ensure CloudWatch compatibility:
 
 ```typescript
-// Consistent formatting across both loggers
-formatters: {
-  level: (label) => {
-    return { level: label.toUpperCase() };  // INFO, ERROR, WARN, etc.
-  },
-},
-timestamp: pino.stdTimeFunctions.isoTime,  // ISO 8601 timestamps
+// ✅ Good
+logger.startOperation(req, 'create_committee_member');
+logger.startOperation(req, 'fetch_user_profile');
+logger.startOperation(req, 'update_meeting_attendees');
+
+// ❌ Bad
+logger.startOperation(req, 'createCommitteeMember'); // camelCase
+logger.startOperation(req, 'fetch-user-profile'); // kebab-case
 ```
 
-### Health Check Filtering
+## 🔒 Security & Redaction
+
+### Automatic Redaction
+
+The following fields are automatically redacted:
+
+- `access_token`
+- `refresh_token`
+- `authorization`
+- `cookie`
+- Request headers: `authorization`, `cookie`
+- Response headers: `set-cookie`
+
+### Safe Metadata Practices
 
 ```typescript
-// Avoid logging noise from health checks
-autoLogging: {
-  ignore: (req: Request) => {
-    return req.url === '/health' || req.url === '/api/health';
-  },
-}
-```
+// ✅ Good: No sensitive data
+logger.success(req, 'user_login', startTime, {
+  username: user.username,
+  login_method: 'oauth',
+});
 
-## 🔍 Request Logging
-
-### Automatic HTTP Logging
-
-Pino-http automatically logs:
-
-```json
-{
-  "level": 30,
-  "time": 1640995200000,
-  "pid": 12345,
-  "hostname": "server-name",
-  "req": {
-    "id": "req-1",
-    "method": "GET",
-    "url": "/project/kubernetes",
-    "headers": {
-      "user-agent": "Mozilla/5.0...",
-      "accept": "text/html,application/xhtml+xml"
-    },
-    "remoteAddress": "127.0.0.1",
-    "remotePort": 56789
-  },
-  "res": {
-    "statusCode": 200,
-    "headers": {
-      "content-type": "text/html; charset=utf-8"
-    }
-  },
-  "responseTime": 42,
-  "msg": "request completed"
-}
-```
-
-## 🚨 Error Logging
-
-### Application Error Handling
-
-#### Angular SSR Error Logging
-
-```typescript
-// Enhanced error logging in main request handler
-.catch((error) => {
-  req.log.error(
-    {
-      error: error.message,
-      code: error.code,
-      url: req.url,
-      method: req.method,
-      user_agent: req.get('User-Agent'),
-    },
-    'Error rendering Angular application'
-  );
-
-  if (error.code === 'NOT_FOUND') {
-    res.status(404).send('Not Found');
-  } else if (error.code === 'UNAUTHORIZED') {
-    res.status(401).send('Unauthorized');
-  } else {
-    res.status(500).send('Internal Server Error');
-  }
+// ❌ Bad: Contains sensitive data
+logger.success(req, 'user_login', startTime, {
+  username: user.username,
+  password: user.password, // Never log passwords
+  access_token: token.value, // Will be redacted but shouldn't be included
 });
 ```
 
-#### API Error Handler Integration
+## 📊 Health Check Filtering
+
+Health check endpoints are excluded from automatic HTTP logging:
 
 ```typescript
-// API error handler middleware with enhanced logging
-export function apiErrorHandler(error: ApiError, req: Request, res: Response, next: NextFunction): void {
-  // Log unhandled errors using request logger
-  req.log.error(
-    {
-      error: error.message,
-      path: req.path,
-      method: req.method,
-      user_agent: req.get('User-Agent'),
-      error_name: error.name,
-      status_code: error.status || 500,
-    },
-    'Unhandled API error'
-  );
-
-  // Return structured error response
-  res.status(error.status || 500).json({
-    error: error.status ? error.message : 'Internal server error',
-    code: error.code || 'INTERNAL_ERROR',
-    path: req.path,
-  });
-}
-```
-
-### Enhanced Error Log Format
-
-#### Angular SSR Error Log
-
-```json
-{
-  "level": "ERROR",
-  "time": "2024-01-01T12:00:00.000Z",
-  "pid": 12345,
-  "hostname": "server-name",
-  "req": {
-    "id": "req-1",
-    "method": "GET",
-    "url": "/problematic-route"
-  },
-  "error": "Something went wrong",
-  "code": "INTERNAL_ERROR",
-  "stack": "Error: Something went wrong\n    at handler (/app/server.js:123:45)",
-  "url": "/problematic-route",
-  "method": "GET",
-  "user_agent": "Mozilla/5.0 (compatible; browser)",
-  "msg": "Error rendering Angular application"
-}
-```
-
-#### API Error Log
-
-```json
-{
-  "level": "ERROR",
-  "time": "2024-01-01T12:00:00.000Z",
-  "pid": 12345,
-  "hostname": "server-name",
-  "req": {
-    "id": "req-2",
-    "method": "POST",
-    "url": "/api/projects"
-  },
-  "error": "Validation failed",
-  "stack": "ValidationError: Required field missing\n    at validator (/app/api.js:45:12)",
-  "path": "/api/projects",
-  "method": "POST",
-  "user_agent": "Mozilla/5.0 (compatible; browser)",
-  "error_name": "ValidationError",
-  "status_code": 400,
-  "msg": "Unhandled API error"
-}
-```
-
-## 📈 Health Monitoring & Server Startup
-
-### Health Check Endpoint
-
-```typescript
-// Simple health check endpoint (added before logger middleware)
+// Health check endpoint (added before logger middleware)
 app.get('/health', (_req: Request, res: Response) => {
   res.send('OK');
 });
+
+// HTTP logger middleware (added after health endpoint)
+app.use(httpLogger);
 ```
 
-### Health Check Response
+URLs excluded from logging:
 
-```text
-GET /health
-Response: 200 OK
-Body: OK
-```
+- `/health`
+- `/api/health`
+- `/.well-known/*`
 
-### Server Startup Logging
+## 🎯 Best Practices
 
-```typescript
-// Enhanced server startup logging
-export function startServer() {
-  const port = process.env['PORT'] || 4000;
-  app.listen(port, () => {
-    serverLogger.info(
-      {
-        port,
-        url: `http://localhost:${port}`,
-        node_env: process.env['NODE_ENV'] || 'development',
-        pm2: process.env['PM2'] === 'true',
-      },
-      'Node Express server started'
-    );
-  });
-}
-```
+### DO ✅
 
-### Server Startup Log Format
+1. **Always pair operations**: Every `startOperation()` must have a corresponding `success()` or `error()` call
+2. **Capture startTime properly**: Store the return value from `startOperation()`
+3. **Use correct methods**: `startOperation` for lifecycle, `debug()` for informational
+4. **Include context**: Add relevant metadata for troubleshooting
+5. **Follow naming conventions**: Use snake_case for operation names
+6. **Use err field**: Always pass errors to the `error` parameter, not in metadata
 
-```json
-{
-  "level": "INFO",
-  "time": "2024-01-01T12:00:00.000Z",
-  "pid": 12345,
-  "hostname": "server-name",
-  "port": 4000,
-  "url": "http://localhost:4000",
-  "node_env": "production",
-  "pm2": true,
-  "msg": "Node Express server started"
-}
-```
+### DON'T ❌
 
-## 🔧 Production Considerations
+1. **Don't use startTime=0**: This causes incorrect duration calculations
+2. **Don't use startOperation in loops**: Use `debug()` for repeated informational logs
+3. **Don't log sensitive data**: Never log passwords, tokens, or PII
+4. **Don't nest ternaries in logs**: Keep log statements simple and readable
+5. **Don't skip error handling**: Always log errors before throwing/passing to middleware
 
-### Log Level Configuration
+### Code Review Checklist
 
-```typescript
-// Environment-based log level configuration
-const serverLogger = pino({
-  level: process.env['LOG_LEVEL'] || 'info', // Configurable via environment
-  // ... other config
-});
-```
+- [ ] All `startOperation()` calls are paired with `success()` or `error()`
+- [ ] startTime is captured and used correctly (not 0)
+- [ ] Informational logs use `debug()` instead of `startOperation()`
+- [ ] Error middleware uses `{ skipIfLogged: true }`
+- [ ] No sensitive data in log metadata
+- [ ] Operation names use snake_case
+- [ ] Errors use `err` parameter, not metadata fields
 
-### Logger Export and Reusability
-
-```typescript
-/**
- * Export server logger for use in other modules that need logging
- * outside of the HTTP request context (e.g., startup scripts, utilities).
- */
-export { serverLogger };
-
-// Usage in other modules:
-// import { serverLogger } from './server/server';
-// serverLogger.info({ data }, 'Module operation completed');
-```
-
-### Log Rotation (Recommended)
-
-For production deployments, consider log rotation:
+## 🔧 Environment Configuration
 
 ```bash
-# Example with PM2 log rotation
-pm2 install pm2-logrotate
-pm2 set pm2-logrotate:max_size 100M
-pm2 set pm2-logrotate:retain 30
-pm2 set pm2-logrotate:compress true
+# Log level (trace, debug, info, warn, error, fatal)
+LOG_LEVEL=info
+
+# Node environment (affects error stack traces)
+NODE_ENV=production
+
+# AWS X-Ray trace ID (auto-injected in AWS environments)
+_X_AMZN_TRACE_ID=Root=1-67890-abc123
 ```
 
-### Container Logging
+## 📈 Current Implementation Status
 
-When running in containers, logs go to stdout/stderr:
+### ✅ Implemented
 
-```dockerfile
-# Dockerfile - logs to stdout
-CMD ["node", "dist/lfx-one/server/server.mjs"]
-```
+- LoggerService singleton with operation tracking
+- Operation lifecycle (startOperation → success/error)
+- Duplicate log prevention
+- Duration calculation
+- CloudWatch-optimized structured logging
+- Custom error serializer
+- Security redaction
+- Health check filtering
+- Validation logging
+- WeakMap-based memory safety
 
-## 🎯 Request Correlation
+### 🔲 Not Implemented
 
-### Automatic Request IDs
-
-Pino-http automatically generates request IDs for correlation:
-
-```json
-{
-  "req": {
-    "id": "req-1", // Automatic request correlation ID
-    "method": "GET",
-    "url": "/project/kubernetes"
-  }
-}
-```
-
-### Using Request Logger vs Server Logger
-
-#### Request-Scoped Logging (req.log)
-
-```typescript
-// Use req.log for request-specific operations
-app.use('/api/projects', (req: Request, res: Response, next: NextFunction) => {
-  req.log.info({ uid: req.params.id }, 'Processing project request');
-  // ... rest of handler
-});
-```
-
-#### Server-Level Logging (serverLogger)
-
-```typescript
-// Use serverLogger for operations outside request context
-import { serverLogger } from './server/server';
-
-// Startup operations
-serverLogger.info({ config: 'loaded' }, 'Configuration initialized');
-
-// Background tasks
-serverLogger.warn({ task: 'cleanup' }, 'Background cleanup completed');
-```
-
-#### When to Use Each Logger
-
-- **req.log**: HTTP request handling, API operations, user actions
-- **serverLogger**: Server startup/shutdown, background tasks, module initialization
-
-## 📊 Log Analysis
-
-### JSON Structure Benefits
-
-- **Searchable**: Easy to search by field (method, status, url)
-- **Filterable**: Filter by log level, time range, error type
-- **Parseable**: Standard JSON format for log aggregation tools
-- **Structured**: Consistent field names across all logs
-
-### Example Log Queries
-
-```bash
-# Filter by status code
-cat logs.json | jq 'select(.res.statusCode >= 400)'
-
-# Filter by response time
-cat logs.json | jq 'select(.responseTime > 1000)'
-
-# Filter by specific routes
-cat logs.json | jq 'select(.req.url | startswith("/api/"))'
-```
-
-## 🔒 Security Features
-
-### Data Protection
-
-- **Header Redaction**: Authorization and cookie headers removed
-- **Sensitive Path Filtering**: Configurable redaction paths
-- **Complete Removal**: Sensitive data completely removed, not just masked
-
-### Audit Trail
-
-- **Request Tracking**: Every request logged with unique ID
-- **Error Tracking**: All errors logged with full context
-- **Performance Tracking**: Response times logged for monitoring
-
-## 📈 Performance Impact
-
-### Pino Performance Benefits
-
-- **Fast Serialization**: Optimized JSON serialization
-- **Asynchronous**: Non-blocking logging operations
-- **Low Memory**: Minimal memory footprint
-- **Child Logger Support**: Efficient logger inheritance
-
-### Minimal Overhead
-
-```typescript
-// Pino is designed for production use with minimal performance impact
-// Typical overhead: <1% CPU, <10MB memory for high-traffic applications
-```
-
-## 🔧 Current Implementation Status
-
-### ✅ Implemented Features
-
-- **Dual Logger Architecture**: Separate server and HTTP loggers
-- **Environment Configuration**: LOG_LEVEL environment variable support
-- **Enhanced Error Handling**: API error handler middleware integration
-- **Server Startup Logging**: Comprehensive server initialization logging
-- **Security Redaction**: Multiple layers of sensitive data protection
-- **Exportable Logger**: Server logger available for module imports
-- **Consistent Formatting**: Uppercase levels and ISO timestamps
-- **Conditional Stack Traces**: Production-safe error logging
-- **Request Correlation**: Automatic request ID generation
-- **Health Check Filtering**: Excluded from request logs
-
-### 🔲 Not Yet Implemented
-
-- Custom log levels for different components
 - Log aggregation service integration
 - Metrics collection endpoints
 - Performance monitoring dashboards
 - Alert system integration
-- Log retention policies
+- Automated log retention policies
 
-This logging system provides a solid foundation for monitoring application behavior and troubleshooting issues in both development and production environments.
+This logging system provides comprehensive operation visibility, efficient CloudWatch integration, and prevents common logging issues like duplicates and incorrect durations.

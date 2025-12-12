@@ -5,6 +5,7 @@ import { AuthConfig, AuthDecision, AuthMiddlewareResult, RouteAuthConfig, TokenE
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
+import { logger } from '../services/logger.service';
 
 // OIDC middleware already provides req.oidc with authentication context
 
@@ -64,18 +65,16 @@ function classifyRoute(path: string, config: AuthConfig): RouteAuthConfig {
  * Checks authentication status from OIDC session
  */
 function checkAuthentication(req: Request): boolean {
-  req.log.debug(
-    {
-      path: req.path,
-      hasOidc: !!req.oidc,
-      isAuthenticated: req.oidc?.isAuthenticated(),
-      cookies: Object.keys(req.cookies || {}),
-    },
-    'Authentication check debug'
-  );
+  logger.debug(req, 'auth_check', 'Authentication check debug', {
+    path: req.path,
+    hasOidc: !!req.oidc,
+    isAuthenticated: req.oidc?.isAuthenticated(),
+    cookies: Object.keys(req.cookies || {}),
+  });
 
   const authenticated = req.oidc?.isAuthenticated() ?? false;
-  req.log.debug({ path: req.path, authenticated }, authenticated ? 'Authentication check successful' : 'Authentication check failed - not authenticated');
+  const message = authenticated ? 'Authentication check successful' : 'Authentication check failed - not authenticated';
+  logger.debug(req, 'auth_check', message, { path: req.path, authenticated });
 
   return authenticated;
 }
@@ -86,26 +85,27 @@ function checkAuthentication(req: Request): boolean {
  * @param attemptRefresh - Whether to attempt token refresh if expired (default: true)
  */
 async function extractBearerToken(req: Request, attemptRefresh: boolean = true): Promise<TokenExtractionResult> {
-  try {
-    req.log.debug(
-      {
-        path: req.path,
-        hasOidc: !!req.oidc,
-        isAuthenticated: req.oidc?.isAuthenticated(),
-        hasAccessToken: !!req.oidc?.accessToken,
-        isTokenExpired: req.oidc?.accessToken?.isExpired(),
-        tokenValue: req.oidc?.accessToken?.access_token ? 'present' : 'missing',
-        attemptRefresh,
-      },
-      'Bearer token extraction debug'
-    );
+  const startTime = logger.startOperation(req, 'token_extraction', {
+    path: req.path,
+    hasOidc: !!req.oidc,
+    isAuthenticated: req.oidc?.isAuthenticated(),
+    hasAccessToken: !!req.oidc?.accessToken,
+    isTokenExpired: req.oidc?.accessToken?.isExpired(),
+    tokenValue: req.oidc?.accessToken?.access_token ? 'present' : 'missing',
+    attemptRefresh,
+  });
 
+  try {
     if (req.oidc?.isAuthenticated()) {
       // Check if token exists and is expired
       if (req.oidc.accessToken?.isExpired()) {
         // For optional routes, don't attempt refresh - just skip token extraction
         if (!attemptRefresh) {
-          req.log.debug({ path: req.path }, 'Token expired but refresh not attempted (optional route)');
+          logger.success(req, 'token_extraction', startTime, {
+            path: req.path,
+            token_extracted: false,
+            reason: 'skipped_refresh_optional_route',
+          });
           return { success: false, needsLogout: false };
         }
 
@@ -114,17 +114,14 @@ async function extractBearerToken(req: Request, attemptRefresh: boolean = true):
           const refreshedToken = await req.oidc.accessToken.refresh();
           if (refreshedToken?.access_token) {
             req.bearerToken = refreshedToken.access_token;
-            req.log.debug({ path: req.path }, 'Token refreshed successfully');
+            logger.success(req, 'token_refresh', startTime, { path: req.path });
             return { success: true, needsLogout: false };
           }
         } catch (refreshError) {
-          req.log.warn(
-            {
-              error: refreshError,
-              path: req.path,
-            },
-            'Token refresh failed - user needs to re-authenticate'
-          );
+          logger.error(req, 'token_extraction', startTime, refreshError, {
+            path: req.path,
+            failure_reason: 'token_refresh_failed',
+          });
           // Token refresh failed, user needs to re-authenticate
           return { success: false, needsLogout: true };
         }
@@ -133,22 +130,24 @@ async function extractBearerToken(req: Request, attemptRefresh: boolean = true):
         const accessToken = req.oidc.accessToken.access_token;
         if (typeof accessToken === 'string') {
           req.bearerToken = accessToken;
-          req.log.debug({ path: req.path }, 'Bearer token successfully extracted');
+          logger.success(req, 'token_extraction', startTime, { path: req.path });
           return { success: true, needsLogout: false };
         }
       }
     }
   } catch (error) {
-    req.log.warn(
-      {
-        err: error,
-        path: req.path,
-      },
-      'Failed to extract bearer token'
-    );
+    logger.error(req, 'token_extraction', startTime, error, {
+      path: req.path,
+      failure_reason: 'extraction_error',
+    });
+    return { success: false, needsLogout: false };
   }
 
-  req.log.debug({ path: req.path }, 'No bearer token extracted');
+  logger.success(req, 'token_extraction', startTime, {
+    path: req.path,
+    token_extracted: false,
+    reason: 'not_authenticated',
+  });
   return { success: false, needsLogout: false };
 }
 
@@ -160,14 +159,11 @@ function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecis
 
   // Public routes - always allow (check first to short-circuit)
   if (route.auth === 'public') {
-    req.log.debug(
-      {
-        path: req.path,
-        routeType: route.type,
-        authLevel: route.auth,
-      },
-      'Public route - allowing access'
-    );
+    logger.debug(req, 'auth_decision', 'Public route - allowing access', {
+      path: req.path,
+      routeType: route.type,
+      authLevel: route.auth,
+    });
     return { action: 'allow' };
   }
 
@@ -177,52 +173,40 @@ function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecis
   if (route.auth === 'optional') {
     // For optional routes where token is not required, don't fail on token refresh issues
     if (!route.tokenRequired && needsLogout) {
-      req.log.debug(
-        {
-          path: req.path,
-          routeType: route.type,
-          authLevel: route.auth,
-          tokenRequired: route.tokenRequired,
-        },
-        'Optional auth route with tokenRequired=false - ignoring token refresh failure'
-      );
-    }
-
-    req.log.debug(
-      {
+      logger.debug(req, 'auth_decision', 'Optional auth route with tokenRequired=false - ignoring token refresh failure', {
         path: req.path,
         routeType: route.type,
         authLevel: route.auth,
-        authenticated,
-        hasToken,
-      },
-      'Optional auth route - allowing access'
-    );
+        tokenRequired: route.tokenRequired,
+      });
+    }
+
+    logger.debug(req, 'auth_decision', 'Optional auth route - allowing access', {
+      path: req.path,
+      routeType: route.type,
+      authLevel: route.auth,
+      authenticated,
+      hasToken,
+    });
     return { action: 'allow' };
   }
 
   // If user needs logout due to failed token refresh (only for required auth routes now)
   if (needsLogout) {
-    req.log.info(
-      {
-        path: req.path,
-        routeType: route.type,
-        method: req.method,
-      },
-      'Token refresh failed - determining response based on request type'
-    );
+    logger.warning(req, 'auth_token_refresh_failure', 'Token refresh failed - user needs logout', {
+      path: req.path,
+      routeType: route.type,
+      method: req.method,
+    });
 
     // For API routes or non-GET requests, return 401 instead of logout redirect
     // This prevents breaking XHR/Fetch clients that can't handle HTML redirects
     if (route.type === 'api' || req.method !== 'GET') {
-      req.log.info(
-        {
-          path: req.path,
-          routeType: route.type,
-          method: req.method,
-        },
-        'API route or non-GET request - returning 401 instead of logout redirect'
-      );
+      logger.debug(req, 'auth_decision_401', 'Returning 401 for API route or non-GET request', {
+        path: req.path,
+        routeType: route.type,
+        method: req.method,
+      });
       return {
         action: 'error',
         errorType: 'authentication',
@@ -231,14 +215,11 @@ function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecis
     }
 
     // For SSR GET requests, proceed with logout redirect
-    req.log.info(
-      {
-        path: req.path,
-        routeType: route.type,
-        method: req.method,
-      },
-      'SSR GET request - proceeding with logout redirect'
-    );
+    logger.debug(req, 'auth_decision_logout', 'Proceeding with logout redirect for SSR GET request', {
+      path: req.path,
+      routeType: route.type,
+      method: req.method,
+    });
     return { action: 'logout' };
   }
 
@@ -247,14 +228,11 @@ function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecis
     if (!authenticated) {
       // SSR routes - redirect to login
       if (route.type === 'ssr' && req.method === 'GET') {
-        req.log.info(
-          {
-            path: req.path,
-            routeType: route.type,
-            method: req.method,
-          },
-          'SSR route requires authentication - redirecting to login'
-        );
+        logger.debug(req, 'auth_decision_redirect_login', 'Redirecting to login for unauthenticated SSR GET request', {
+          path: req.path,
+          routeType: route.type,
+          method: req.method,
+        });
         return {
           action: 'redirect',
           redirectUrl: `/login?returnTo=${encodeURIComponent(req.originalUrl)}`,
@@ -263,14 +241,11 @@ function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecis
 
       // Non-GET SSR routes - return 401 error
       if (route.type === 'ssr' && req.method !== 'GET') {
-        req.log.warn(
-          {
-            path: req.path,
-            routeType: route.type,
-            method: req.method,
-          },
-          'SSR route requires authentication for non-GET request - returning 401'
-        );
+        logger.warning(req, 'auth_check', 'SSR route requires authentication for non-GET request - returning 401', {
+          path: req.path,
+          routeType: route.type,
+          method: req.method,
+        });
         return {
           action: 'error',
           errorType: 'authentication',
@@ -280,14 +255,11 @@ function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecis
 
       // API routes - return 401 error
       if (route.type === 'api') {
-        req.log.warn(
-          {
-            path: req.path,
-            routeType: route.type,
-            method: req.method,
-          },
-          'API route requires authentication - returning 401'
-        );
+        logger.warning(req, 'auth_check', 'API route requires authentication - returning 401', {
+          path: req.path,
+          routeType: route.type,
+          method: req.method,
+        });
         return {
           action: 'error',
           errorType: 'authentication',
@@ -298,14 +270,11 @@ function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecis
 
     // Token validation for API routes
     if (route.tokenRequired && !hasToken) {
-      req.log.warn(
-        {
-          path: req.path,
-          authenticated,
-          hasToken,
-        },
-        'API route requires bearer token - returning 401'
-      );
+      logger.warning(req, 'auth_check', 'API route requires bearer token - returning 401', {
+        path: req.path,
+        authenticated,
+        hasToken,
+      });
       return {
         action: 'error',
         errorType: 'authentication',
@@ -314,16 +283,13 @@ function makeAuthDecision(result: AuthMiddlewareResult, req: Request): AuthDecis
     }
   }
 
-  req.log.debug(
-    {
-      path: req.path,
-      routeType: route.type,
-      authLevel: route.auth,
-      authenticated,
-      hasToken,
-    },
-    'Authentication check passed - allowing access'
-  );
+  logger.debug(req, 'auth_decision', 'Authentication check passed - allowing access', {
+    path: req.path,
+    routeType: route.type,
+    authLevel: route.auth,
+    authenticated,
+    hasToken,
+  });
 
   return { action: 'allow' };
 }
@@ -348,13 +314,10 @@ async function executeAuthDecision(decision: AuthDecision, req: Request, res: Re
 
     case 'logout':
       // Log user out due to token refresh failure
-      req.log.info(
-        {
-          path: req.path,
-          originalUrl: req.originalUrl,
-        },
-        'Logging user out due to token refresh failure'
-      );
+      logger.debug(req, 'auth_logout_execution', 'Executing logout due to token refresh failure', {
+        path: req.path,
+        originalUrl: req.originalUrl,
+      });
       // Redirect to home page after logout to avoid redirect loops
       res.oidc.logout({ returnTo: '/' });
       break;
@@ -380,22 +343,22 @@ async function executeAuthDecision(decision: AuthDecision, req: Request, res: Re
  */
 export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
   return async (req: Request, res: Response, next: NextFunction): Promise<void> => {
-    const startTime = Date.now();
+    const startTime = logger.startOperation(req, 'auth_middleware', {
+      path: req.path,
+      method: req.method,
+    });
 
     try {
       // 1. Route classification
       const routeConfig = classifyRoute(req.path, config);
 
-      req.log.debug(
-        {
-          path: req.path,
-          method: req.method,
-          routeType: routeConfig.type,
-          authLevel: routeConfig.auth,
-          tokenRequired: routeConfig.tokenRequired,
-        },
-        'Starting authentication check'
-      );
+      logger.debug(req, 'auth_middleware', 'Starting authentication check', {
+        path: req.path,
+        method: req.method,
+        routeType: routeConfig.type,
+        authLevel: routeConfig.auth,
+        tokenRequired: routeConfig.tokenRequired,
+      });
 
       // 2. Authentication status check
       const authenticated = checkAuthentication(req);
@@ -428,28 +391,17 @@ export function createAuthMiddleware(config: AuthConfig = DEFAULT_CONFIG) {
       // 7. Execute decision
       await executeAuthDecision(decision, req, res, next);
 
-      const duration = Date.now() - startTime;
-      req.log.debug(
-        {
-          path: req.path,
-          decision: decision.action,
-          authenticated,
-          hasToken,
-          duration,
-        },
-        'Authentication check completed'
-      );
+      logger.success(req, 'auth_middleware', startTime, {
+        path: req.path,
+        decision: decision.action,
+        authenticated,
+        hasToken,
+      });
     } catch (error) {
-      const duration = Date.now() - startTime;
-      req.log.error(
-        {
-          err: error,
-          path: req.path,
-          method: req.method,
-          duration,
-        },
-        'Error in authentication middleware'
-      );
+      logger.error(req, 'auth_middleware', startTime, error, {
+        path: req.path,
+        method: req.method,
+      });
       next(error);
     }
   };

@@ -4,8 +4,8 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
-import { Logger } from '../helpers/logger';
 import { OrganizationService } from '../services/organization.service';
+import { logger } from '../services/logger.service';
 
 /**
  * Controller for handling organization HTTP requests
@@ -18,18 +18,14 @@ export class OrganizationController {
    */
   public async searchOrganizations(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { query } = req.query;
-    const startTime = Logger.start(req, 'search_organizations', {
+    const startTime = logger.startOperation(req, 'search_organizations', {
       has_query: !!query,
     });
 
     try {
       // Check if the search query is provided and is a string
       if (!query || typeof query !== 'string') {
-        Logger.error(req, 'search_organizations', startTime, new Error('Missing or invalid search query'), {
-          query_type: typeof query,
-        });
-
-        // Create a validation error
+        // Create a validation error - error handler will log
         const validationError = ServiceValidationError.forField('query', 'Search query is required and must be a string', {
           operation: 'search_organizations',
           service: 'organization_controller',
@@ -44,15 +40,14 @@ export class OrganizationController {
       const suggestions = await this.organizationService.searchOrganizations(req, query);
 
       // Log the success
-      Logger.success(req, 'search_organizations', startTime, {
+      logger.success(req, 'search_organizations', startTime, {
         result_count: suggestions.length,
       });
 
       // Send the results to the client
       res.json({ suggestions });
     } catch (error) {
-      // Log the error
-      Logger.error(req, 'search_organizations', startTime, error);
+      // Error handler will log - just propagate
       next(error);
     }
   }

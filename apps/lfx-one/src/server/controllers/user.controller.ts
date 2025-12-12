@@ -5,7 +5,7 @@ import { PersonaType } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
-import { Logger } from '../helpers/logger';
+import { logger } from '../services/logger.service';
 import { UserService } from '../services/user.service';
 
 /**
@@ -18,7 +18,7 @@ export class UserController {
    * GET /api/user/pending-actions - Get all pending actions for the authenticated user
    */
   public async getPendingActions(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'get_pending_actions', {
+    const startTime = logger.startOperation(req, 'get_pending_actions', {
       persona: req.query['persona'],
       project_uid: req.query['projectUid'],
     });
@@ -27,8 +27,6 @@ export class UserController {
       // Extract user email from OIDC
       const userEmail = req.oidc?.user?.['email'];
       if (!userEmail) {
-        Logger.error(req, 'get_pending_actions', startTime, new Error('User email not found in OIDC context'));
-
         const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
           operation: 'get_pending_actions',
           service: 'user_controller',
@@ -42,8 +40,6 @@ export class UserController {
       // Extract and validate persona
       const persona = req.query['persona'] as PersonaType | undefined;
       if (!persona) {
-        Logger.error(req, 'get_pending_actions', startTime, new Error('Missing persona parameter'));
-
         const validationError = ServiceValidationError.forField('persona', 'persona query parameter is required', {
           operation: 'get_pending_actions',
           service: 'user_controller',
@@ -57,8 +53,6 @@ export class UserController {
       // Extract and validate projectUid
       const projectUid = req.query['projectUid'] as string | undefined;
       if (!projectUid) {
-        Logger.error(req, 'get_pending_actions', startTime, new Error('Missing projectUid parameter'));
-
         const validationError = ServiceValidationError.forField('projectUid', 'projectUid query parameter is required', {
           operation: 'get_pending_actions',
           service: 'user_controller',
@@ -72,8 +66,6 @@ export class UserController {
       // Extract and validate projectSlug (needed for Snowflake surveys query)
       const projectSlug = req.query['projectSlug'] as string | undefined;
       if (!projectSlug) {
-        Logger.error(req, 'get_pending_actions', startTime, new Error('Missing projectSlug parameter'));
-
         const validationError = ServiceValidationError.forField('projectSlug', 'projectSlug query parameter is required', {
           operation: 'get_pending_actions',
           service: 'user_controller',
@@ -87,7 +79,7 @@ export class UserController {
       // Get pending actions from service
       const pendingActions = await this.userService.getPendingActions(req, persona, projectUid, userEmail, projectSlug);
 
-      Logger.success(req, 'get_pending_actions', startTime, {
+      logger.success(req, 'get_pending_actions', startTime, {
         persona,
         project_uid: projectUid,
         project_slug: projectSlug,
@@ -96,7 +88,6 @@ export class UserController {
 
       res.json(pendingActions);
     } catch (error) {
-      Logger.error(req, 'get_pending_actions', startTime, error);
       next(error);
     }
   }
@@ -108,7 +99,7 @@ export class UserController {
    * @query projectUid - Required project UID to filter meetings
    */
   public async getUserMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'get_user_meetings', {
+    const startTime = logger.startOperation(req, 'get_user_meetings', {
       project_uid: req.query['projectUid'],
     });
 
@@ -116,8 +107,6 @@ export class UserController {
       // Extract and validate projectUid
       const projectUid = req.query['projectUid'] as string | undefined;
       if (!projectUid) {
-        Logger.error(req, 'get_user_meetings', startTime, new Error('Missing projectUid parameter'));
-
         const validationError = ServiceValidationError.forField('projectUid', 'projectUid query parameter is required', {
           operation: 'get_user_meetings',
           service: 'user_controller',
@@ -131,8 +120,6 @@ export class UserController {
       // Extract user email from OIDC
       const userEmail = req.oidc?.user?.['email'];
       if (!userEmail) {
-        Logger.error(req, 'get_user_meetings', startTime, new Error('User email not found in OIDC context'));
-
         const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
           operation: 'get_user_meetings',
           service: 'user_controller',
@@ -147,14 +134,13 @@ export class UserController {
       const query = { tags_all: `project_uid:${projectUid}` };
       const meetings = await this.userService.getUserMeetings(req, userEmail, projectUid, query);
 
-      Logger.success(req, 'get_user_meetings', startTime, {
+      logger.success(req, 'get_user_meetings', startTime, {
         project_uid: projectUid,
         meeting_count: meetings.length,
       });
 
       res.json(meetings);
     } catch (error) {
-      Logger.error(req, 'get_user_meetings', startTime, error);
       next(error);
     }
   }

@@ -5,7 +5,7 @@ import { M2MTokenResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { MicroserviceError } from '../errors';
-import { Logger } from '../helpers/logger';
+import { logger } from '../services/logger.service';
 
 /**
  * Generates a machine-to-machine (M2M) token from Auth0 (production) or Authelia (local dev)
@@ -18,15 +18,13 @@ export async function generateM2MToken(req: Request): Promise<string> {
   const issuerBaseUrl = process.env['M2M_AUTH_ISSUER_BASE_URL'];
   const isAuthelia = issuerBaseUrl?.includes('auth.k8s.orb.local');
 
-  const startTime = Logger.start(req, 'generate_m2m_token', {
+  const startTime = logger.startOperation(req, 'generate_m2m_token', {
     audience: process.env['M2M_AUTH_AUDIENCE'],
     issuer: issuerBaseUrl,
     auth_provider: isAuthelia ? 'authelia' : 'auth0',
   });
 
   try {
-    req.log.debug(req, 'generate_m2m_token', startTime, { auth_provider: isAuthelia ? 'authelia' : 'auth0' }, 'Generating M2M token...');
-
     // Select the appropriate request configuration
     const config = isAuthelia ? AUTHELIA_TOKEN_REQUEST : AUTH0_TOKEN_REQUEST;
     const tokenEndpoint = new URL(config.endpoint, issuerBaseUrl).toString();
@@ -49,7 +47,7 @@ export async function generateM2MToken(req: Request): Promise<string> {
         // If JSON parsing fails, use empty object
       }
 
-      Logger.error(req, 'generate_m2m_token', startTime, new Error(`${isAuthelia ? 'Authelia' : 'Auth0'} token request failed: ${response.status}`), {
+      logger.error(req, 'generate_m2m_token', startTime, new Error(`${isAuthelia ? 'Authelia' : 'Auth0'} token request failed: ${response.status}`), {
         status: response.status,
         statusText: response.statusText,
         error_body: errorBody,
@@ -67,7 +65,7 @@ export async function generateM2MToken(req: Request): Promise<string> {
     const tokenResponse: M2MTokenResponse = await response.json();
 
     if (!tokenResponse.access_token) {
-      Logger.error(req, 'generate_m2m_token', startTime, new Error('No access token in response'), {
+      logger.error(req, 'generate_m2m_token', startTime, new Error('No access token in response'), {
         token_response: tokenResponse,
       });
 
@@ -78,7 +76,7 @@ export async function generateM2MToken(req: Request): Promise<string> {
       });
     }
 
-    Logger.success(req, 'generate_m2m_token', startTime, {
+    logger.success(req, 'generate_m2m_token', startTime, {
       token_type: tokenResponse.token_type,
       expires_in: tokenResponse.expires_in,
       scope: tokenResponse.scope,
@@ -94,7 +92,7 @@ export async function generateM2MToken(req: Request): Promise<string> {
     }
 
     // Log and wrap unexpected errors
-    Logger.error(req, 'generate_m2m_token', startTime, error, {});
+    logger.error(req, 'generate_m2m_token', startTime, error, {});
 
     const issuerBaseUrl = process.env['M2M_AUTH_ISSUER_BASE_URL'];
     const isAuthelia = issuerBaseUrl?.includes('auth.k8s.orb.local');

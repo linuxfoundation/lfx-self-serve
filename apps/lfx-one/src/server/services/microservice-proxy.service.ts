@@ -35,8 +35,6 @@ export class MicroserviceProxyService {
       // This ensures that default params cannot be overridden by the caller
       const mergedQuery = { ...query, ...DEFAULT_QUERY_PARAMS };
 
-      req.log.debug({ path: endpoint, method, mergedQuery, data, customHeaders }, 'Proxy request');
-
       const response = await this.apiClient.request<T>(method, endpoint, token, mergedQuery, data, customHeaders);
       return response.data;
     } catch (error: any) {
@@ -119,8 +117,6 @@ export class MicroserviceProxyService {
       // Merge query parameters with defaults taking precedence
       // This ensures that default params cannot be overridden by the caller
       const mergedQuery = { ...query, ...DEFAULT_QUERY_PARAMS };
-
-      req.log.debug({ path: endpoint, method, mergedQuery, customHeaders }, 'Proxy binary request');
 
       const response = await this.apiClient.binaryRequest(method, endpoint, token, mergedQuery, customHeaders);
       return response.data;

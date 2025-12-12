@@ -98,26 +98,224 @@ lfx-v2-ui/
 - **Protected routes middleware** handles selective authentication logic
 - **Custom login handler** at `/login` with URL validation and secure redirects
 - Authentication is handled by Auth0/Authelia with express-openid-connect middleware
-- **Logging System**: Uses Pino for structured JSON logs with sensitive data redaction
-- **Logger Helper Pattern**: All controller functions must use Logger helper methods:
-  - `Logger.start(req, 'operation_name', metadata)` - Returns startTime, logs at INFO
-  - `Logger.success(req, 'operation_name', startTime, metadata)` - Logs at INFO
-  - `Logger.error(req, 'operation_name', startTime, error, metadata)` - Logs at ERROR with 'err' field
-  - `Logger.warning(req, 'operation_name', message, metadata)` - Logs at WARN
-  - `Logger.validation(req, 'operation_name', errors, metadata)` - Logs at WARN
-- **Error Logging Standard**: Always use `err` field for errors to leverage Pino's error serializer
-  - ✅ Correct: `req.log.error({ err: error, ...metadata }, 'message')`
-  - ✅ Correct: `serverLogger.error({ err: error }, 'message')`
-  - ✅ Correct: `Logger.error(req, 'operation', startTime, error, metadata)`
-  - ❌ Incorrect: `{ error: error.message }` or `{ error: error instanceof Error ? error.message : error }`
-  - Benefits: Complete stack traces (production/debug), clean single-line errors (development), proper AWS CloudWatch format
-  - Custom serializer: `/server/helpers/error-serializer.ts` - excludes verbose stacks in dev, includes in prod
-- **Log Level Guidelines** (What to log at each level):
-  - **INFO**: Business operation completions (created, updated, deleted), successful data retrieval (fetched, retrieved)
-  - **WARN**: Error conditions leading to exceptions, data quality issues, user not found, fallback behaviors
-  - **DEBUG**: Internal operations, preparation steps (sanitizing, creating payload), intent statements (resolving, fetching), NATS lookups
-  - **ERROR**: System failures, unhandled exceptions, critical errors requiring immediate attention
-- **Filtered URLs**: Health checks (/health, /api/health) and /.well-known URLs are not logged to reduce noise
+
+## Logging System
+
+### Architecture Overview
+
+- **Base Logger**: `serverLogger` created in `server.ts` - base Pino instance with all configuration
+- **HTTP Logger**: `pinoHttp` middleware uses `serverLogger` as base, creates `req.log` for each request
+- **Logger Service**: Singleton service (`logger.service.ts`) - unified interface for all application logging
+- **Format**: Structured JSON logs with Pino for AWS CloudWatch compatibility
+
+### Logger Service Pattern (Primary Interface)
+
+**Import and Usage:**
+
+```typescript
+import { logger } from './logger.service';
+
+// In controllers/routes with request context:
+const startTime = logger.startOperation(req, 'operation_name', metadata);
+logger.success(req, 'operation_name', startTime, metadata);
+
+// In services/utilities without request context:
+const startTime = logger.startOperation(undefined, 'nats_connect', metadata);
+logger.success(undefined, 'nats_connect', startTime, metadata);
+```
+
+**Available Methods:**
+
+- `logger.startOperation(req|undefined, 'operation', metadata, options?)` → Returns startTime, logs at INFO (silent option available)
+- `logger.success(req|undefined, 'operation', startTime, metadata)` → Logs at INFO with duration
+- `logger.error(req|undefined, 'operation', startTime, error, metadata, options?)` → Logs at ERROR with 'err' field
+- `logger.warning(req|undefined, 'operation', message, metadata)` → Logs at WARN
+- `logger.validation(req|undefined, 'operation', errors[], metadata)` → Logs at ERROR with validation details
+- `logger.debug(req|undefined, 'operation', message, metadata)` → Logs at DEBUG
+- `logger.etag(req|undefined, 'operation', resourceType, resourceId, etag?, metadata)` → Logs ETag operations
+
+**When to Use Each Pattern:**
+
+- **Request-scoped** (pass `req`): Controllers, route handlers, service methods called from routes
+- **Infrastructure** (pass `undefined`): NATS connections, Snowflake pool, server startup/shutdown, scheduled jobs
+
+### Error Logging Standard
+
+**Always use `err` field** for proper error serialization:
+
+```typescript
+// ✅ CORRECT
+logger.error(req, 'operation', startTime, error, metadata);
+logger.error(undefined, 'operation', startTime, error, metadata);
+
+// ❌ INCORRECT
+serverLogger.error({ error: error.message }, 'message'); // Don't use serverLogger directly
+req.log.error({ error: error }, 'message'); // Should use logger service
+{
+  error: error.message;
+} // Loses stack trace
+```
+
+**Benefits:**
+
+- Complete stack traces in production/debug
+- Clean single-line errors in development
+- Proper AWS CloudWatch format
+- Custom serializer: `/server/helpers/error-serializer.ts`
+
+### Log Level Guidelines
+
+**INFO** - Business operation completions:
+
+- Successful data operations (created, updated, deleted, fetched)
+- Important state changes
+- Operation success with duration
+
+**WARN** - Recoverable issues:
+
+- Error conditions leading to exceptions
+- Data quality issues, user not found
+- Fallback behaviors, NATS failures with graceful handling
+
+**DEBUG** - Internal operations:
+
+- Preparation steps (sanitizing, creating payload)
+- Internal lookups (NATS, database queries)
+- Intent statements (resolving, fetching)
+- Infrastructure operations (connections, pool state)
+
+**ERROR** - Critical failures:
+
+- System failures, unhandled exceptions
+- Critical errors requiring immediate attention
+- Operations that cannot continue
+
+### Features
+
+- **Deduplication**: Prevents duplicate logs for same operation (request-scoped only)
+- **Duration Tracking**: Automatic calculation from startTime to completion
+- **Request Correlation**: `request_id` field for tracing (when req provided)
+- **Sensitive Data Redaction**: Automatic redaction of tokens, auth headers, cookies
+- **AWS Trace ID**: Automatic capture from Lambda environment
+- **Filtered URLs**: Health checks (`/health`, `/api/health`) and `/.well-known` not logged
+
+### Logging Architecture
+
+```text
+server-logger.ts (breaks circular dependency)
+  └─ Creates and exports serverLogger (base Pino instance)
+      └─ Configuration: levels, serializers, formatters, redaction
+
+server.ts
+  ├─ Imports serverLogger from server-logger.ts
+  └─ Creates httpLogger (pinoHttp middleware)
+      └─ Uses serverLogger as base
+      └─ Attaches req.log to each request
+
+logger.service.ts
+  ├─ Imports serverLogger from server-logger.ts
+  └─ Singleton logger service
+      ├─ Request-scoped: uses req.log when req provided
+      ├─ Infrastructure: uses serverLogger when req = undefined
+      └─ Provides unified API for all logging
+```
+
+**Direct serverLogger Usage:**
+
+- ❌ **Never** call `serverLogger` directly from services/routes/controllers
+- ✅ **Always** use `logger` service methods
+- ℹ️ `serverLogger` only exists in `server-logger.ts` (created), `server.ts` (imported), and `logger.service.ts` (imported)
+
+### Common Logging Patterns
+
+**Controller/Route Handler Pattern:**
+
+```typescript
+export const getUser = async (req: Request, res: Response, next: NextFunction) => {
+  const startTime = logger.startOperation(req, 'get_user', { userId: req.params.id });
+
+  try {
+    const user = await userService.getUserById(req, req.params.id);
+
+    logger.success(req, 'get_user', startTime, { userId: user.id });
+    return res.json(user);
+  } catch (error) {
+    logger.error(req, 'get_user', startTime, error, { userId: req.params.id });
+    return next(error);
+  }
+};
+```
+
+**Service Method with Request Context:**
+
+```typescript
+public async updateUser(req: Request, userId: string, data: UpdateData): Promise<User> {
+  const startTime = logger.startOperation(req, 'update_user', { userId });
+
+  try {
+    // Validation
+    if (!data.email) {
+      logger.validation(req, 'update_user', ['Email required'], { userId });
+      throw new ValidationError('Email required');
+    }
+
+    const user = await this.performUpdate(userId, data);
+    logger.success(req, 'update_user', startTime, { userId, updatedFields: Object.keys(data) });
+    return user;
+  } catch (error) {
+    logger.error(req, 'update_user', startTime, error, { userId });
+    throw error;
+  }
+}
+```
+
+**Infrastructure Operation (No Request Context):**
+
+```typescript
+public async connect(): Promise<void> {
+  const startTime = logger.startOperation(undefined, 'db_connect', { host: this.config.host });
+
+  try {
+    await this.pool.connect();
+    logger.success(undefined, 'db_connect', startTime, { poolSize: this.pool.size });
+  } catch (error) {
+    logger.error(undefined, 'db_connect', startTime, error, { host: this.config.host });
+    throw error;
+  }
+}
+```
+
+**Internal Service Operation (Called from method with req):**
+
+```typescript
+// Parent method has req
+public async getProjectBySlug(req: Request, slug: string): Promise<Project> {
+  return this.fetchFromNats(req, slug); // Pass req down
+}
+
+// Internal method receives req for logging correlation
+private async fetchFromNats(req: Request, slug: string): Promise<Project> {
+  logger.debug(req, 'fetch_from_nats', 'Fetching project from NATS', { slug });
+  // ... implementation
+}
+```
+
+### Logging Checklist
+
+**Before logging:**
+
+- [ ] Using `logger` service, not `serverLogger` directly?
+- [ ] Passing `req` if available, `undefined` if infrastructure?
+- [ ] Using `err` field for errors (not `error`)?
+- [ ] Appropriate log level (INFO/WARN/DEBUG/ERROR)?
+- [ ] Operation name in snake_case?
+- [ ] Sensitive data sanitized?
+
+**For operations with duration:**
+
+- [ ] Called `logger.startOperation()` and captured `startTime`?
+- [ ] Calling `logger.success()` or `logger.error()` with `startTime`?
+- [ ] Passing relevant metadata for debugging?
 - All shared types, interfaces, and constants are centralized in @lfx-one/shared package
 - **AI Service Integration**: Claude Sonnet 4 model via LiteLLM proxy for meeting agenda generation
 - **AI Environment Variables**: AI_PROXY_URL and AI_API_KEY required for AI functionality
@@ -128,7 +326,7 @@ lfx-v2-ui/
 - **License headers are required on all source files** - run `./check-headers.sh` to verify
 - **Pre-commit hooks enforce license headers** - commits will fail without proper headers
 - Always run yarn format from the root of the project to ensure formatting is done after you have made all your changes
-- Always preprend "Generated with [Claude Code](https://claude.ai/code)" if you assisted with the code
+- Always prepend "Generated with [Claude Code](https://claude.ai/code)" if you assisted with the code
 - Do not nest ternary expressions
 - Always run yarn lint before yarn build to validate your linting
 - The JIRA project key for this is LFXV2. All tickets associated to this repo should generally be in there.

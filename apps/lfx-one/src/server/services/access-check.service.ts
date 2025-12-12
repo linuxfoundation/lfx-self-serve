@@ -4,7 +4,7 @@
 import { AccessCheckAccessType, AccessCheckApiRequest, AccessCheckApiResponse, AccessCheckRequest, AccessCheckResourceType } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { Logger } from '../helpers/logger';
+import { logger } from '../services/logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
 /**
@@ -28,6 +28,12 @@ export class AccessCheckService {
       return new Map();
     }
 
+    const startTime = logger.startOperation(req, 'check_access_permissions', {
+      request_count: resources.length,
+      resource_types: [...new Set(resources.map((r) => r.resource))],
+      access_types: [...new Set(resources.map((r) => r.access))],
+    });
+
     try {
       // Transform requests to the expected API format
       const apiRequests = resources.map((resource) => `${resource.resource}:${resource.id}#${resource.access}`);
@@ -35,13 +41,6 @@ export class AccessCheckService {
       const requestPayload: AccessCheckApiRequest = {
         requests: apiRequests,
       };
-
-      const sanitizedPayload = Logger.sanitize({
-        request_count: resources.length,
-        resource_types: [...new Set(resources.map((r) => r.resource))],
-        access_types: [...new Set(resources.map((r) => r.access))],
-      });
-      req.log.info(sanitizedPayload, 'Checking access permissions');
 
       // Make the API request
       const response = await this.microserviceProxy.proxyRequest<AccessCheckApiResponse>(
@@ -85,26 +84,17 @@ export class AccessCheckService {
         userAccessInfo.push({ resourceId: resource.id, username, hasAccess });
       }
 
-      req.log.debug(
-        Logger.sanitize({
-          operation: 'check_access',
-          request_count: resources.length,
-          granted_count: Array.from(resultMap.values()).filter(Boolean).length,
-          access_details: userAccessInfo,
-        }),
-        'Access check completed successfully'
-      );
+      logger.success(req, 'check_access_permissions', startTime, {
+        request_count: resources.length,
+        granted_count: Array.from(resultMap.values()).filter(Boolean).length,
+      });
 
       return resultMap;
     } catch (error) {
-      req.log.error(
-        {
-          operation: 'check_access',
-          request_count: resources.length,
-          err: error,
-        },
-        'Access check failed, defaulting to no access'
-      );
+      logger.error(req, 'check_access_permissions', startTime, error, {
+        request_count: resources.length,
+        fallback_behavior: 'returning no access',
+      });
 
       // Return map with all false values as fallback
       const fallbackMap = new Map<string, boolean>();

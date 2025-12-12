@@ -4,6 +4,22 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { BaseApiError, isBaseApiError } from '../errors';
+import { logger } from '../services/logger.service';
+
+/**
+ * Derives operation name from request path for logging context
+ */
+function getOperationFromPath(path: string): string {
+  // Convert /api/v1/meetings/123 to api_v1_meetings
+  return (
+    path
+      .replace(/^\//, '') // Remove leading slash
+      .replace(/\/[0-9a-f-]{36}/gi, '') // Remove UUIDs
+      .replace(/\/\d+/g, '') // Remove numeric IDs
+      .replace(/\//g, '_') // Convert slashes to underscores
+      .replace(/_+$/, '') || 'api_request'
+  ); // Remove trailing underscores
+}
 
 export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: Response, next: NextFunction): void {
   // If response already sent, delegate to default Express error handler
@@ -12,11 +28,18 @@ export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: 
     return;
   }
 
+  const operation = getOperationFromPath(req.path);
+
+  // Try to get the operation start time if it was tracked, otherwise use current time
+  const startTime = logger.getOperationStartTime(req, operation) || Date.now();
+
   // Handle our structured API errors
   if (isBaseApiError(error)) {
-    // Log the error with structured context
+    // Log the error with structured context for CloudWatch
     const logLevel = error.getSeverity();
     const logContext = {
+      error_type: error.code,
+      status_code: error.statusCode,
       ...error.getLogContext(),
       request_id: req.id,
       path: req.path,
@@ -25,11 +48,11 @@ export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: 
     };
 
     if (logLevel === 'error') {
-      req.log.error({ ...logContext, err: error }, `API error: ${error.message}`);
+      logger.error(req, operation, startTime, error, logContext, { skipIfLogged: true });
     } else if (logLevel === 'warn') {
-      req.log.warn({ ...logContext, err: error }, `API error: ${error.message}`);
+      logger.warning(req, operation, `API error: ${error.message}`, { ...logContext, err: error });
     } else {
-      req.log.info({ ...logContext, err: error }, `API error: ${error.message}`);
+      logger.debug(req, operation, `API error: ${error.message}`, { ...logContext, err: error });
     }
 
     // Send structured response
@@ -40,16 +63,19 @@ export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: 
     return;
   }
 
-  // Log unhandled errors
-  req.log.error(
+  // Log unhandled errors with CloudWatch-friendly structure
+  logger.error(
+    req,
+    operation,
+    startTime,
+    error,
     {
-      err: error,
+      error_type: 'unhandled',
       path: req.path,
       method: req.method,
       user_agent: req.get('User-Agent'),
-      request_id: req.id,
     },
-    'Unhandled API error'
+    { skipIfLogged: true }
   );
 
   // Default error response for unhandled errors

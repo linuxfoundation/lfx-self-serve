@@ -3,7 +3,7 @@
 
 import { Request, NextFunction } from 'express';
 import { ServiceValidationError } from '../errors';
-import { Logger } from './logger';
+import { logger } from '../services/logger.service';
 
 /**
  * Common validation utilities for controllers
@@ -32,7 +32,7 @@ export function validateUidParameter(uid: string | undefined, req: Request, next
     const error = new Error(`Missing ${options.operation.replace('_', ' ')} UID parameter`);
 
     if (options.logStartTime) {
-      Logger.error(req, options.operation, options.logStartTime, error);
+      logger.error(req, options.operation, options.logStartTime, error);
     }
 
     const validationError = ServiceValidationError.forField('uid', 'UID is required', {
@@ -68,7 +68,7 @@ export function validateArrayParameter<T>(
     const error = new Error(`Missing or empty ${fieldName} array parameter`);
 
     if (options.logStartTime) {
-      Logger.error(req, options.operation, options.logStartTime, error);
+      logger.error(req, options.operation, options.logStartTime, error);
     }
 
     const validationError = ServiceValidationError.forField(fieldName, `${fieldName} must be a non-empty array`, {
@@ -104,7 +104,7 @@ export function validateRequiredParameter<T>(
     const error = new Error(`Missing required parameter: ${fieldName}`);
 
     if (options.logStartTime) {
-      Logger.error(req, options.operation, options.logStartTime, error);
+      logger.error(req, options.operation, options.logStartTime, error);
     }
 
     const validationError = ServiceValidationError.forField(fieldName, `${fieldName} is required`, {
@@ -133,7 +133,7 @@ export function validateRequestBody<T>(body: T | undefined, req: Request, next: 
     const error = new Error('Missing request body');
 
     if (options.logStartTime) {
-      Logger.error(req, options.operation, options.logStartTime, error);
+      logger.error(req, options.operation, options.logStartTime, error);
     }
 
     const validationError = ServiceValidationError.forField('body', 'Request body is required', {

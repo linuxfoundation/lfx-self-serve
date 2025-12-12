@@ -8,10 +8,10 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { AuthorizationError } from '../errors/authentication.error';
-import { Logger } from '../helpers/logger';
 import { addInvitedStatusToMeeting } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
+import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { ProjectService } from '../services/project.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
@@ -38,7 +38,7 @@ export class PublicMeetingController {
       v1 = true;
     }
 
-    const startTime = Logger.start(req, 'get_public_meeting_by_id', {
+    const startTime = logger.startOperation(req, 'get_public_meeting_by_id', {
       meeting_uid: id,
       v1,
     });
@@ -56,41 +56,29 @@ export class PublicMeetingController {
       const m2mToken = await this.setupM2MToken(req);
 
       // Get the meeting by ID using M2M token
-      Logger.start(req, 'get_public_meeting_by_id_fetch_meeting', { meeting_uid: id });
       let meeting = await this.fetchMeetingWithM2M(req, id, v1 ? 'v1_meeting' : 'meeting', m2mToken);
       if (!meeting) {
-        // Log the error
-        Logger.error(req, 'get_public_meeting_by_id_fetch_meeting', startTime, new Error('Meeting not found'));
-
-        // Throw a resource not found error
+        // Throw a resource not found error (error handler will log)
         throw new ResourceNotFoundError('Meeting', id, {
           operation: 'get_public_meeting_by_id',
           service: 'public_meeting_controller',
           path: `/meetings/${id}`,
         });
       }
-      Logger.success(req, 'get_public_meeting_by_id_fetch_meeting', startTime, { meeting_uid: id });
 
       // Fetch the project
-      Logger.start(req, 'get_public_meeting_by_id_fetch_project', { meeting_uid: id, project_uid: meeting.project_uid });
       const project = await this.projectService.getProjectById(req, meeting.project_uid, false);
       if (!project) {
-        // Log the error
-        Logger.error(req, 'get_public_meeting_by_id_fetch_project', startTime, new Error('Project not found'));
-
-        // Throw a resource not found error
+        // Throw a resource not found error (error handler will log)
         throw new ResourceNotFoundError('Project', meeting.project_uid, {
           operation: 'get_public_meeting_by_id',
           service: 'public_meeting_controller',
           path: `/projects/${meeting.project_uid}`,
         });
       }
-      Logger.success(req, 'get_public_meeting_by_id_fetch_project', startTime, { meeting_uid: id, project_uid: project.uid });
 
       // Fetch the registrants
-      Logger.start(req, 'get_public_meeting_by_id_fetch_registrants', { meeting_uid: id, project_uid: meeting.project_uid });
       const registrants = v1 ? [] : await this.meetingService.getMeetingRegistrants(req, meeting.uid);
-      Logger.success(req, 'get_public_meeting_by_id_fetch_registrants', startTime, { meeting_uid: id, registrant_count: registrants.length });
       const committeeMembers = registrants.filter((r) => r.type === 'committee').length ?? 0;
       meeting.individual_registrants_count = (registrants?.length ?? 0) - (committeeMembers ?? 0);
       meeting.committee_members_count = committeeMembers ?? 0;
@@ -104,7 +92,7 @@ export class PublicMeetingController {
       }
 
       // Log the success
-      Logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_uid: id, project_uid: meeting.project_uid, title: meeting.title });
+      logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_uid: id, project_uid: meeting.project_uid, title: meeting.title });
 
       // Check if the meeting visibility is public and not restricted, if so, get join URL and return the meeting and project
       if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
@@ -131,7 +119,7 @@ export class PublicMeetingController {
 
       // Check if the user has passed in a password, if so, check if it's correct
       const { password } = req.query;
-      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'get_public_meeting_by_id', req, next, startTime)) {
+      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'get_public_meeting_by_id', req, next)) {
         return;
       }
 
@@ -142,22 +130,14 @@ export class PublicMeetingController {
           req.bearerToken = originalToken;
         }
 
-        Logger.start(req, 'get_public_meeting_by_id_check_organizer', { meeting_uid: id });
         try {
           meeting = await this.accessCheckService.addAccessToResource(req, meeting, 'meeting', 'organizer');
-          Logger.success(req, 'get_public_meeting_by_id_check_organizer', startTime, {
-            meeting_uid: id,
-            is_organizer: meeting.organizer,
-          });
         } catch (error) {
           // If organizer check fails, log but continue with organizer = false
-          req.log.warn(
-            {
-              err: error,
-              meeting_uid: id,
-            },
-            'Failed to check organizer status, continuing with organizer = false'
-          );
+          logger.warning(req, 'get_public_meeting_by_id', 'Failed to check organizer status, continuing with organizer = false', {
+            err: error,
+            meeting_uid: id,
+          });
           meeting.organizer = false;
         }
       } else {
@@ -168,12 +148,7 @@ export class PublicMeetingController {
       // Send the meeting and project data to the client
       res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url } });
     } catch (error) {
-      // Log the error
-      Logger.error(req, 'get_public_meeting_by_id', startTime, error, {
-        meeting_uid: id,
-      });
-
-      // Send the error to the next middleware
+      // Error handler will log
       next(error);
     }
   }
@@ -183,7 +158,7 @@ export class PublicMeetingController {
     const { id } = req.params;
     const { password } = req.query;
     const email: string = req.body.email ?? req.oidc.user?.['email'] ?? '';
-    const startTime = Logger.start(req, 'post_meeting_join_url', {
+    const startTime = logger.startOperation(req, 'post_meeting_join_url', {
       meeting_uid: id,
     });
     const v1 = !isUuid(id);
@@ -205,15 +180,13 @@ export class PublicMeetingController {
       }
 
       // Check if the user has passed in a password, if so, check if it's correct
-      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_join_url', req, next, startTime)) {
+      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_join_url', req, next)) {
         return;
       }
 
       // Check if the meeting is within the allowed join time window
       if (!this.isWithinJoinWindow(meeting)) {
         const earlyJoinMinutes = meeting?.early_join_time_minutes ?? 10;
-
-        Logger.error(req, 'post_meeting_join_url', startTime, new Error('Meeting join not available yet'));
 
         const validationError = ServiceValidationError.forField('timing', `You can join the meeting up to ${earlyJoinMinutes} minutes before the start time`, {
           operation: 'post_meeting_join_url',
@@ -228,7 +201,7 @@ export class PublicMeetingController {
       // Check that the user has access to the meeting by validating they were invited to the meeting
       // Restricted meetings require an email to be provided
       if (meeting.restricted) {
-        await this.restrictedMeetingCheck(req, next, email, id, startTime);
+        await this.restrictedMeetingCheck(req, next, email, id);
       }
 
       if (v1) {
@@ -240,7 +213,7 @@ export class PublicMeetingController {
       const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
 
       // Log the success
-      Logger.success(req, 'post_meeting_join_url', startTime, {
+      logger.success(req, 'post_meeting_join_url', startTime, {
         meeting_uid: id,
         project_uid: meeting.project_uid,
         title: meeting.title,
@@ -248,12 +221,7 @@ export class PublicMeetingController {
 
       res.json(joinUrlData);
     } catch (error) {
-      // Log the error
-      Logger.error(req, 'post_meeting_join_url', startTime, error, {
-        meeting_uid: id,
-      });
-
-      // Send the error to the next middleware
+      // Error handler will log
       next(error);
     }
   }
@@ -266,7 +234,7 @@ export class PublicMeetingController {
     const registrantData: CreateMeetingRegistrantRequest = req.body;
     const meetingId = registrantData.meeting_uid;
 
-    const startTime = Logger.start(req, 'register_for_public_meeting', {
+    const startTime = logger.startOperation(req, 'register_for_public_meeting', {
       meeting_uid: meetingId,
     });
 
@@ -279,7 +247,6 @@ export class PublicMeetingController {
           path: req.path,
         });
 
-        Logger.error(req, 'register_for_public_meeting', startTime, validationError);
         return next(validationError);
       }
 
@@ -299,7 +266,6 @@ export class PublicMeetingController {
           }
         );
 
-        Logger.error(req, 'register_for_public_meeting', startTime, validationError);
         return next(validationError);
       }
 
@@ -325,11 +291,6 @@ export class PublicMeetingController {
           path: req.path,
         });
 
-        Logger.error(req, 'register_for_public_meeting', startTime, authError, {
-          meeting_uid: meetingId,
-          visibility: meeting.visibility,
-        });
-
         return next(authError);
       }
 
@@ -341,28 +302,20 @@ export class PublicMeetingController {
           path: req.path,
         });
 
-        Logger.error(req, 'register_for_public_meeting', startTime, authError, {
-          meeting_uid: meetingId,
-          restricted: meeting.restricted,
-        });
-
         return next(authError);
       }
 
       // Add the registrant using M2M token
       const newRegistrant = await this.meetingService.addMeetingRegistrantWithM2M(req, registrantData, m2mToken);
 
-      Logger.success(req, 'register_for_public_meeting', startTime, {
+      logger.success(req, 'register_for_public_meeting', startTime, {
         meeting_uid: meetingId,
         registrant_uid: newRegistrant.uid,
       });
 
       res.status(201).json(newRegistrant);
     } catch (error) {
-      Logger.error(req, 'register_for_public_meeting', startTime, error, {
-        meeting_uid: meetingId,
-      });
-
+      // Error handler will log
       next(error);
     }
   }
@@ -371,21 +324,16 @@ export class PublicMeetingController {
    * Sets up M2M token for API calls
    */
   private async setupM2MToken(req: Request): Promise<string> {
-    const startTime = Logger.start(req, 'setup_m2m_token');
+    const startTime = logger.startOperation(req, 'setup_m2m_token');
 
-    try {
-      const m2mToken = await generateM2MToken(req);
-      req.bearerToken = m2mToken;
+    const m2mToken = await generateM2MToken(req);
+    req.bearerToken = m2mToken;
 
-      Logger.success(req, 'setup_m2m_token', startTime, {
-        has_token: !!m2mToken,
-      });
+    logger.success(req, 'setup_m2m_token', startTime, {
+      has_token: !!m2mToken,
+    });
 
-      return m2mToken;
-    } catch (error) {
-      Logger.error(req, 'setup_m2m_token', startTime, error);
-      throw error;
-    }
+    return m2mToken;
   }
 
   /**
@@ -402,10 +350,8 @@ export class PublicMeetingController {
   /**
    * Validates meeting password
    */
-  private validateMeetingPassword(password: string, meetingPassword: string, operation: string, req: Request, next: NextFunction, startTime: number): boolean {
+  private validateMeetingPassword(password: string, meetingPassword: string, operation: string, req: Request, next: NextFunction): boolean {
     if (!password || !validatePassword(password, meetingPassword)) {
-      Logger.error(req, operation, startTime, new Error('Invalid password parameter'));
-
       const validationError = ServiceValidationError.forField('password', 'Invalid password', {
         operation,
         service: 'public_meeting_controller',
@@ -426,38 +372,31 @@ export class PublicMeetingController {
    * @param m2mToken - Optional pre-generated M2M token (will be generated if not provided)
    */
   private async fetchMeetingWithM2M(req: Request, id: string, meetingType: QueryServiceMeetingType = 'meeting', m2mToken?: string) {
-    const startTime = Logger.start(req, 'fetch_meeting_with_m2m', {
+    const startTime = logger.startOperation(req, 'fetch_meeting_with_m2m', {
       meeting_id: id,
     });
 
-    try {
-      // Use provided token or generate a new one
-      if (m2mToken) {
-        req.bearerToken = m2mToken;
-      } else {
-        await this.setupM2MToken(req);
-      }
-      const meeting = await this.meetingService.getMeetingById(req, id, meetingType, false);
-
-      Logger.success(req, 'fetch_meeting_with_m2m', startTime, {
-        meeting_id: id,
-        meeting_uid: meeting.uid,
-      });
-
-      return meeting;
-    } catch (error) {
-      Logger.error(req, 'fetch_meeting_with_m2m', startTime, error, {
-        meeting_id: id,
-      });
-      throw error;
+    // Use provided token or generate a new one
+    if (m2mToken) {
+      req.bearerToken = m2mToken;
+    } else {
+      await this.setupM2MToken(req);
     }
+    const meeting = await this.meetingService.getMeetingById(req, id, meetingType, false);
+
+    logger.success(req, 'fetch_meeting_with_m2m', startTime, {
+      meeting_id: id,
+      meeting_uid: meeting.uid,
+    });
+
+    return meeting;
   }
 
   /**
    * Handles join URL logic for public meetings
    */
   private async handleJoinUrlForPublicMeeting(req: Request, meeting: any, id: string): Promise<void> {
-    const startTime = Logger.start(req, 'handle_join_url_for_public_meeting', {
+    const startTime = logger.startOperation(req, 'handle_join_url_for_public_meeting', {
       meeting_uid: id,
     });
 
@@ -465,12 +404,12 @@ export class PublicMeetingController {
       const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
       meeting.join_url = joinUrlData.join_url;
 
-      Logger.success(req, 'handle_join_url_for_public_meeting', startTime, {
+      logger.success(req, 'handle_join_url_for_public_meeting', startTime, {
         meeting_uid: id,
         has_join_url: !!joinUrlData.join_url,
       });
     } catch (error) {
-      Logger.warning(req, 'handle_join_url_for_public_meeting', 'Failed to fetch join URL, continuing without it', {
+      logger.warning(req, 'handle_join_url_for_public_meeting', 'Failed to fetch join URL, continuing without it', {
         meeting_uid: id,
         has_token: !!req.bearerToken,
         err: error,
@@ -494,19 +433,15 @@ export class PublicMeetingController {
     return now >= earliestJoinTime;
   }
 
-  private async restrictedMeetingCheck(req: Request, next: NextFunction, email: string, id: string, startTime: number): Promise<void> {
-    const helperStartTime = Logger.start(req, 'restricted_meeting_check', {
+  private async restrictedMeetingCheck(req: Request, next: NextFunction, email: string, id: string): Promise<void> {
+    const helperStartTime = logger.startOperation(req, 'restricted_meeting_check', {
       meeting_id: id,
       has_email: !!email,
     });
 
     // Check that the user has access to the meeting by validating they were invited to the meeting
     if (!email) {
-      // Log the error
-      Logger.error(req, 'restricted_meeting_check', helperStartTime, new Error('Missing email parameter'));
-      Logger.error(req, 'post_meeting_join_url', startTime, new Error('Missing email parameter'));
-
-      // Create a validation error
+      // Create a validation error (error handler will log)
       const validationError = ServiceValidationError.forField('email', 'Email is required', {
         operation: 'post_meeting_join_url',
         service: 'public_meeting_controller',
@@ -525,14 +460,10 @@ export class PublicMeetingController {
         service: 'public_meeting_controller',
         path: `/meetings/${id}`,
       });
-      Logger.error(req, 'restricted_meeting_check', helperStartTime, authError, {
-        email,
-        meeting_id: id,
-      });
       throw authError;
     }
 
-    Logger.success(req, 'restricted_meeting_check', helperStartTime, {
+    logger.success(req, 'restricted_meeting_check', helperStartTime, {
       meeting_id: id,
       email,
       registrant_count: registrants.resources.length,

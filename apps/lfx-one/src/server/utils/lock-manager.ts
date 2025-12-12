@@ -6,7 +6,7 @@ import { SnowflakeLockStrategy } from '@lfx-one/shared/enums';
 import { LockEntry, LockStats } from '@lfx-one/shared/interfaces';
 import crypto from 'crypto';
 
-import { serverLogger } from '../server';
+import { logger } from '../services/logger.service';
 
 import type { Bind } from 'snowflake-sdk';
 
@@ -110,7 +110,7 @@ export class LockManager {
     //   this.redisClient.quit();
     // }
 
-    serverLogger.info('LockManager shutdown complete');
+    logger.success(undefined, 'lock_manager_shutdown', Date.now());
   }
 
   /**
@@ -125,14 +125,11 @@ export class LockManager {
       existing.waiters++;
       this.totalHits++;
 
-      serverLogger.info(
-        {
-          query_hash: key,
-          waiters: existing.waiters,
-          is_dedupe_hit: true,
-        },
-        'Query deduplication hit - reusing existing execution'
-      );
+      logger.debug(undefined, 'query_deduplication_hit', 'Query deduplication hit - reusing existing execution', {
+        query_hash: key,
+        waiters: existing.waiters,
+        is_dedupe_hit: true,
+      });
 
       return existing.promise;
     }
@@ -149,13 +146,10 @@ export class LockManager {
 
     this.memoryLocks.set(key, lockEntry);
 
-    serverLogger.info(
-      {
-        query_hash: key,
-        is_dedupe_hit: false,
-      },
-      'Executing new query'
-    );
+    logger.debug(undefined, 'query_execution_new', 'Executing new query', {
+      query_hash: key,
+      is_dedupe_hit: false,
+    });
 
     try {
       const result = await promise;
@@ -229,13 +223,10 @@ export class LockManager {
       for (const [key, entry] of this.memoryLocks.entries()) {
         if (now - entry.timestamp > maxAge) {
           this.memoryLocks.delete(key);
-          serverLogger.info(
-            {
-              query_hash: key,
-              age_ms: now - entry.timestamp,
-            },
-            'Cleaned up stale lock'
-          );
+          logger.debug(undefined, 'lock_cleanup_stale', 'Cleaned up stale lock', {
+            query_hash: key,
+            age_ms: now - entry.timestamp,
+          });
         }
       }
     }, SNOWFLAKE_CONFIG.LOCK_CLEANUP_INTERVAL);

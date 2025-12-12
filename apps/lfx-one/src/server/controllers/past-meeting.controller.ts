@@ -5,7 +5,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { PastMeeting, PastMeetingRecording, PastMeetingSummary, UpdatePastMeetingSummaryRequest } from '@lfx-one/shared/interfaces';
 import { isUuid } from '@lfx-one/shared/utils';
-import { Logger } from '../helpers/logger';
+import { logger } from '../services/logger.service';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { MeetingService } from '../services/meeting.service';
 
@@ -19,8 +19,8 @@ export class PastMeetingController {
    * GET /past-meetings
    */
   public async getPastMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'get_past_meetings', {
-      query_params: Logger.sanitize(req.query as Record<string, any>),
+    const startTime = logger.startOperation(req, 'get_past_meetings', {
+      query_params: logger.sanitize(req.query as Record<string, any>),
     });
 
     try {
@@ -47,7 +47,7 @@ export class PastMeetingController {
       );
 
       // Log the success
-      Logger.success(req, 'get_past_meetings', startTime, {
+      logger.success(req, 'get_past_meetings', startTime, {
         meeting_count: meetings.length,
         regular_past_meeting_count: regularPastMeetings.length,
         v1_past_meeting_count: v1PastMeetings.length,
@@ -57,7 +57,7 @@ export class PastMeetingController {
       res.json(meetings);
     } catch (error) {
       // Log the error
-      Logger.error(req, 'get_past_meetings', startTime, error);
+      logger.error(req, 'get_past_meetings', startTime, error);
       next(error);
     }
   }
@@ -67,7 +67,7 @@ export class PastMeetingController {
    */
   public async getPastMeetingParticipants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const startTime = Logger.start(req, 'get_past_meeting_participants', {
+    const startTime = logger.startOperation(req, 'get_past_meeting_participants', {
       past_meeting_uid: uid,
     });
 
@@ -87,7 +87,7 @@ export class PastMeetingController {
       const participants = await this.meetingService.getPastMeetingParticipants(req, uid);
 
       // Log the success
-      Logger.success(req, 'get_past_meeting_participants', startTime, {
+      logger.success(req, 'get_past_meeting_participants', startTime, {
         past_meeting_uid: uid,
         participant_count: participants.length,
       });
@@ -96,7 +96,7 @@ export class PastMeetingController {
       res.json(participants);
     } catch (error) {
       // Log the error
-      Logger.error(req, 'get_past_meeting_participants', startTime, error, {
+      logger.error(req, 'get_past_meeting_participants', startTime, error, {
         past_meeting_uid: uid,
       });
 
@@ -110,7 +110,7 @@ export class PastMeetingController {
    */
   public async getPastMeetingRecording(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const startTime = Logger.start(req, 'get_past_meeting_recording', {
+    const startTime = logger.startOperation(req, 'get_past_meeting_recording', {
       past_meeting_uid: uid,
     });
 
@@ -142,7 +142,7 @@ export class PastMeetingController {
       }
 
       // Log the success
-      Logger.success(req, 'get_past_meeting_recording', startTime, {
+      logger.success(req, 'get_past_meeting_recording', startTime, {
         past_meeting_uid: uid,
         recording_uid: recording.uid,
         recording_count: recording.recording_count,
@@ -153,7 +153,7 @@ export class PastMeetingController {
       res.json(recording);
     } catch (error) {
       // Log the error
-      Logger.error(req, 'get_past_meeting_recording', startTime, error, {
+      logger.error(req, 'get_past_meeting_recording', startTime, error, {
         past_meeting_uid: uid,
       });
 
@@ -167,7 +167,7 @@ export class PastMeetingController {
    */
   public async getPastMeetingSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const startTime = Logger.start(req, 'get_past_meeting_summary', {
+    const startTime = logger.startOperation(req, 'get_past_meeting_summary', {
       past_meeting_uid: uid,
     });
 
@@ -199,7 +199,7 @@ export class PastMeetingController {
       }
 
       // Log the success
-      Logger.success(req, 'get_past_meeting_summary', startTime, {
+      logger.success(req, 'get_past_meeting_summary', startTime, {
         past_meeting_uid: uid,
         summary_uid: summary.uid,
         approved: summary.approved,
@@ -210,7 +210,7 @@ export class PastMeetingController {
       res.json(summary);
     } catch (error) {
       // Log the error
-      Logger.error(req, 'get_past_meeting_summary', startTime, error, {
+      logger.error(req, 'get_past_meeting_summary', startTime, error, {
         past_meeting_uid: uid,
       });
 
@@ -224,7 +224,7 @@ export class PastMeetingController {
    */
   public async getPastMeetingAttachments(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
-    const startTime = Logger.start(req, 'get_past_meeting_attachments', {
+    const startTime = logger.startOperation(req, 'get_past_meeting_attachments', {
       past_meeting_uid: uid,
     });
 
@@ -244,7 +244,7 @@ export class PastMeetingController {
       const attachments = await this.meetingService.getPastMeetingAttachments(req, uid);
 
       // Log the success
-      Logger.success(req, 'get_past_meeting_attachments', startTime, {
+      logger.success(req, 'get_past_meeting_attachments', startTime, {
         past_meeting_uid: uid,
         attachment_count: attachments.length,
       });
@@ -253,7 +253,7 @@ export class PastMeetingController {
       res.json(attachments);
     } catch (error) {
       // Log the error
-      Logger.error(req, 'get_past_meeting_attachments', startTime, error, {
+      logger.error(req, 'get_past_meeting_attachments', startTime, error, {
         past_meeting_uid: uid,
       });
 
@@ -267,7 +267,7 @@ export class PastMeetingController {
    */
   public async updatePastMeetingSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, summaryUid } = req.params;
-    const startTime = Logger.start(req, 'update_past_meeting_summary', {
+    const startTime = logger.startOperation(req, 'update_past_meeting_summary', {
       past_meeting_uid: uid,
       summary_uid: summaryUid,
     });
@@ -304,7 +304,7 @@ export class PastMeetingController {
       const updatedSummary = await this.meetingService.updatePastMeetingSummary(req, uid, summaryUid, body);
 
       // Log the success
-      Logger.success(req, 'update_past_meeting_summary', startTime, {
+      logger.success(req, 'update_past_meeting_summary', startTime, {
         past_meeting_uid: uid,
         summary_uid: summaryUid,
       });
@@ -313,7 +313,7 @@ export class PastMeetingController {
       res.json(updatedSummary);
     } catch (error) {
       // Log the error
-      Logger.error(req, 'update_past_meeting_summary', startTime, error, {
+      logger.error(req, 'update_past_meeting_summary', startTime, error, {
         past_meeting_uid: uid,
         summary_uid: summaryUid,
       });
@@ -333,7 +333,7 @@ export class PastMeetingController {
     req: Request,
     pastMeetingUid: string
   ): Promise<{ individual_registrants_count: number; committee_members_count: number; participant_count: number; attended_count: number }> {
-    const startTime = Logger.start(req, 'add_participant_counts', {
+    const startTime = logger.startOperation(req, 'add_participant_counts', {
       past_meeting_uid: pastMeetingUid,
     });
 
@@ -353,7 +353,7 @@ export class PastMeetingController {
         attended_count: attendedCount, // Count of people who actually attended
       };
 
-      Logger.success(req, 'add_participant_counts', startTime, {
+      logger.success(req, 'add_participant_counts', startTime, {
         past_meeting_uid: pastMeetingUid,
         invited_count: invitedCount,
         attended_count: attendedCount,
@@ -363,7 +363,7 @@ export class PastMeetingController {
       return result;
     } catch (error) {
       // Log error but don't fail - default to 0 counts
-      Logger.error(req, 'add_participant_counts', startTime, error, {
+      logger.error(req, 'add_participant_counts', startTime, error, {
         past_meeting_uid: pastMeetingUid,
       });
 

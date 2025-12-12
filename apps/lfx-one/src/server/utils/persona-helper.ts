@@ -5,6 +5,7 @@ import type { PersonaType } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { CommitteeService } from '../services/committee.service';
+import { logger } from '../services/logger.service';
 import { getUsernameFromAuth } from './auth-helper';
 
 /**
@@ -39,12 +40,7 @@ const PERSONA_PRIORITY: PersonaType[] = ['core-developer', 'maintainer', 'board-
  * along with all unique organization names from the user's committee memberships
  */
 export async function fetchUserPersonaAndOrganizations(req: Request): Promise<UserPersonaResult> {
-  req.log.info(
-    {
-      operation: 'fetch_user_persona_and_organizations',
-    },
-    'Fetching user persona and organizations'
-  );
+  const startTime = logger.startOperation(req, 'fetch_user_persona_and_organizations');
 
   const result: UserPersonaResult = {
     persona: null,
@@ -55,7 +51,9 @@ export async function fetchUserPersonaAndOrganizations(req: Request): Promise<Us
     // Get username from auth context
     const username = await getUsernameFromAuth(req);
     if (!username) {
-      req.log.warn('No username found in auth context for persona determination');
+      logger.success(req, 'fetch_user_persona_and_organizations', startTime, {
+        result: 'no_username_no_persona',
+      });
       return result;
     }
 
@@ -66,33 +64,21 @@ export async function fetchUserPersonaAndOrganizations(req: Request): Promise<Us
 
     // Check each committee category mapping
     for (const [category, persona] of Object.entries(COMMITTEE_CATEGORY_TO_PERSONA)) {
-      req.log.info(
-        {
-          operation: 'fetch_user_persona_and_organizations',
-          category,
-        },
-        'Checking committee category'
-      );
+      logger.debug(req, 'check_committee_category', 'Checking committee category', { category });
       const memberships = await committeeService.getCommitteeMembersByCategory(req, username, userEmail || '', category);
 
-      req.log.info(
-        {
-          operation: 'fetch_user_persona_and_organizations',
-          category,
-          memberships_count: memberships.length,
-        },
-        'Found committee memberships'
-      );
+      logger.debug(req, 'found_committee_memberships', 'Committee memberships retrieved', {
+        category,
+        memberships_count: memberships.length,
+      });
+
       if (memberships.length > 0) {
-        req.log.info(
-          {
-            username,
-            category,
-            persona,
-            memberships_count: memberships.length,
-          },
-          `User has ${category} committee membership - matched persona ${persona}`
-        );
+        logger.debug(req, 'matched_persona', 'Persona matched for user', {
+          username,
+          category,
+          persona,
+          memberships_count: memberships.length,
+        });
         matchedPersonas.push(persona);
 
         // Collect unique organization names from memberships
@@ -102,13 +88,7 @@ export async function fetchUserPersonaAndOrganizations(req: Request): Promise<Us
           }
         }
       } else {
-        req.log.info(
-          {
-            operation: 'fetch_user_persona_and_organizations',
-            category,
-          },
-          'No committee memberships found'
-        );
+        logger.debug(req, 'no_memberships_found', 'No memberships found for category', { category });
       }
     }
 
@@ -117,6 +97,10 @@ export async function fetchUserPersonaAndOrganizations(req: Request): Promise<Us
 
     // No committee memberships found
     if (matchedPersonas.length === 0) {
+      logger.success(req, 'fetch_user_persona_and_organizations', startTime, {
+        username,
+        result: 'no_committee_memberships',
+      });
       return result;
     }
 
@@ -127,25 +111,19 @@ export async function fetchUserPersonaAndOrganizations(req: Request): Promise<Us
       return currentPriority > highestPriority ? current : highest;
     }, matchedPersonas[0]);
 
-    req.log.info(
-      {
-        username,
-        matched_personas: matchedPersonas,
-        selected_persona: result.persona,
-        organization_count: result.organizationNames.length,
-      },
-      'Determined user persona and organizations from committee memberships'
-    );
+    logger.success(req, 'fetch_user_persona_and_organizations', startTime, {
+      username,
+      matched_personas: matchedPersonas,
+      selected_persona: result.persona,
+      organization_count: result.organizationNames.length,
+    });
 
     return result;
   } catch (error) {
     // Log error but don't fail SSR - persona determination is non-critical
-    req.log.warn(
-      {
-        err: error,
-      },
-      'Failed to determine user persona from committee membership'
-    );
+    logger.error(req, 'fetch_user_persona_and_organizations', startTime, error, {
+      failure_reason: 'committee_lookup_failed',
+    });
     return result;
   }
 }

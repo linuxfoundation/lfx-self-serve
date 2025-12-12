@@ -14,7 +14,7 @@ import {
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
-import { Logger } from '../helpers/logger';
+import { logger } from '../services/logger.service';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -110,28 +110,14 @@ export class CommitteeService {
     // Step 1: Create committee
     const newCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', '/committees', 'POST', {}, committeeData);
 
-    req.log.info(
-      {
-        operation: 'create_committee',
-        committee_id: newCommittee.uid,
-        committee_category: newCommittee.category,
-      },
-      'Committee created successfully'
-    );
-
     // Step 2: Update settings if provided
     if (business_email_required !== undefined || is_audit_enabled !== undefined) {
       try {
         await this.updateCommitteeSettings(req, newCommittee.uid, { business_email_required, is_audit_enabled });
-      } catch (error) {
-        req.log.warn(
-          {
-            operation: 'create_committee',
-            committee_id: newCommittee.uid,
-            err: error,
-          },
-          'Failed to update committee settings, but committee was created successfully'
-        );
+      } catch {
+        logger.warning(req, 'create_committee_settings', 'Failed to update committee settings, but committee was created successfully', {
+          committee_uid: newCommittee.uid,
+        });
       }
     }
 
@@ -162,27 +148,14 @@ export class CommitteeService {
       'update_committee'
     );
 
-    req.log.info(
-      {
-        operation: 'update_committee',
-        committee_id: committeeId,
-      },
-      'Committee updated successfully'
-    );
-
     // Step 3: Update settings if provided
     if (business_email_required !== undefined || is_audit_enabled !== undefined) {
       try {
         await this.updateCommitteeSettings(req, committeeId, { business_email_required, is_audit_enabled });
-      } catch (error) {
-        req.log.warn(
-          {
-            operation: 'update_committee',
-            committee_id: committeeId,
-            err: error,
-          },
-          'Failed to update committee settings, but committee was updated successfully'
-        );
+      } catch {
+        logger.warning(req, 'update_committee_settings', 'Failed to update committee settings, but committee was updated successfully', {
+          committee_uid: committeeId,
+        });
       }
     }
 
@@ -202,14 +175,6 @@ export class CommitteeService {
 
     // Step 2: Delete committee with ETag
     await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, etag, 'delete_committee');
-
-    req.log.info(
-      {
-        operation: 'delete_committee',
-        committee_id: committeeId,
-      },
-      'Committee deleted successfully'
-    );
   }
 
   /**
@@ -237,14 +202,10 @@ export class CommitteeService {
    * Fetches count of all members for a specific committee
    */
   public async getCommitteeMembersCount(req: Request, committeeId: string, query: Record<string, any> = {}): Promise<number> {
-    req.log.debug(
-      {
-        operation: 'get_committee_members_count',
-        committee_id: committeeId,
-        query: query,
-      },
-      'Fetching committee members count'
-    );
+    logger.debug(req, 'get_committee_members_count', 'Fetching committee members count', {
+      committee_uid: committeeId,
+      query,
+    });
 
     const params = {
       ...query,
@@ -292,14 +253,10 @@ export class CommitteeService {
   public async createCommitteeMember(req: Request, committeeId: string, data: CreateCommitteeMemberRequest): Promise<CommitteeMember> {
     const newMember = await this.microserviceProxy.proxyRequest<CommitteeMember>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/members`, 'POST', {}, data);
 
-    req.log.info(
-      Logger.sanitize({
-        operation: 'create_committee_member',
-        committee_id: committeeId,
-        member_id: newMember.uid,
-      }),
-      'Committee member created successfully'
-    );
+    logger.debug(req, 'create_committee_member', 'Committee member created successfully', {
+      committee_uid: committeeId,
+      member_uid: newMember.uid,
+    });
 
     return newMember;
   }
@@ -334,14 +291,10 @@ export class CommitteeService {
       'update_committee_member'
     );
 
-    req.log.info(
-      {
-        operation: 'update_committee_member',
-        committee_id: committeeId,
-        member_id: memberId,
-      },
-      'Committee member updated successfully'
-    );
+    logger.debug(req, 'update_committee_member', 'Committee member updated successfully', {
+      committee_uid: committeeId,
+      member_uid: memberId,
+    });
 
     return updatedMember;
   }
@@ -364,14 +317,10 @@ export class CommitteeService {
     // Step 2: Delete member with ETag
     await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/members/${memberId}`, etag, 'delete_committee_member');
 
-    req.log.info(
-      {
-        operation: 'delete_committee_member',
-        committee_id: committeeId,
-        member_id: memberId,
-      },
-      'Committee member deleted successfully'
-    );
+    logger.debug(req, 'delete_committee_member', 'Committee member deleted successfully', {
+      committee_uid: committeeId,
+      member_uid: memberId,
+    });
   }
 
   /**
@@ -399,15 +348,11 @@ export class CommitteeService {
 
     const userMemberships = resources.map((resource) => resource.data);
 
-    req.log.debug(
-      {
-        operation: 'get_committee_members_by_category',
-        username,
-        category,
-        memberships_count: userMemberships.length,
-      },
-      `Fetched user committee memberships for category: ${category}`
-    );
+    logger.debug(req, 'get_committee_members_by_category', 'Committee memberships retrieved', {
+      username,
+      category,
+      memberships_count: userMemberships.length,
+    });
 
     return userMemberships;
   }
@@ -427,13 +372,9 @@ export class CommitteeService {
 
     await this.microserviceProxy.proxyRequest(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/settings`, 'PUT', {}, settingsData);
 
-    req.log.info(
-      {
-        operation: 'update_committee_settings',
-        committee_id: committeeId,
-        settings_data: settingsData,
-      },
-      'Committee settings updated successfully'
-    );
+    logger.debug(req, 'update_committee_settings', 'Committee settings updated successfully', {
+      committee_uid: committeeId,
+      settings_data: settingsData,
+    });
   }
 }

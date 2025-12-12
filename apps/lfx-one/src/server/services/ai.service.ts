@@ -4,8 +4,9 @@
 import { AI_AGENDA_SYSTEM_PROMPT, AI_MODEL, AI_REQUEST_CONFIG, DURATION_ESTIMATION } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import { GenerateAgendaRequest, GenerateAgendaResponse, OpenAIChatRequest, OpenAIChatResponse } from '@lfx-one/shared/interfaces';
+import { Request } from 'express';
 
-import { serverLogger } from '../server';
+import { logger } from './logger.service';
 
 export class AiService {
   private readonly aiProxyUrl: string;
@@ -23,15 +24,15 @@ export class AiService {
     }
   }
 
-  public async generateMeetingAgenda(request: GenerateAgendaRequest): Promise<GenerateAgendaResponse> {
-    try {
-      serverLogger.info('Generating meeting agenda', {
-        meetingType: request.meetingType,
-        title: request.title,
-        hasContext: !!request.context,
-        projectName: request.projectName,
-      });
+  public async generateMeetingAgenda(req: Request, request: GenerateAgendaRequest): Promise<GenerateAgendaResponse> {
+    const startTime = logger.startOperation(req, 'generate_meeting_agenda', {
+      meetingType: request.meetingType,
+      title: request.title,
+      hasContext: !!request.context,
+      projectName: request.projectName,
+    });
 
+    try {
       const prompt = this.buildPrompt(request);
       const chatRequest: OpenAIChatRequest = {
         model: this.model,
@@ -76,15 +77,15 @@ export class AiService {
       };
 
       const response = await this.makeAiRequest(chatRequest);
-      const result = this.extractAgendaAndDuration(response);
+      const result = this.extractAgendaAndDuration(req, response);
 
-      serverLogger.info('Successfully generated meeting agenda', {
+      logger.success(req, 'generate_meeting_agenda', startTime, {
         estimatedDuration: result.estimatedDuration,
       });
 
       return result;
     } catch (error) {
-      serverLogger.error({ err: error }, 'Failed to generate meeting agenda');
+      logger.error(req, 'generate_meeting_agenda', startTime, error);
       throw new Error('Failed to generate meeting agenda');
     }
   }
@@ -145,7 +146,7 @@ export class AiService {
     return response.json();
   }
 
-  private extractAgendaAndDuration(response: OpenAIChatResponse): GenerateAgendaResponse {
+  private extractAgendaAndDuration(req: Request, response: OpenAIChatResponse): GenerateAgendaResponse {
     if (!response.choices || response.choices.length === 0) {
       throw new Error('No agenda generated');
     }
@@ -176,9 +177,9 @@ export class AiService {
         estimatedDuration: cappedDuration,
       };
     } catch (parseError) {
-      serverLogger.warn('Failed to parse JSON response, falling back to text extraction', {
+      logger.warning(req, 'generate_meeting_agenda', 'Failed to parse JSON response, falling back to text extraction', {
         content: content.substring(0, 100),
-        error: parseError,
+        err: parseError,
       });
 
       // Fallback to treating the entire content as agenda with heuristic duration

@@ -23,12 +23,12 @@ import { isUuid, transformV1MeetingToV2, transformV1SummaryToV2 } from '@lfx-one
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
-import { Logger } from '../helpers/logger';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
 import { ETagService } from './etag.service';
+import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
 
@@ -176,23 +176,12 @@ export class MeetingService {
       ...(username && { organizers: [username] }),
     };
 
-    const sanitizedPayload = Logger.sanitize({ createPayload });
-    req.log.debug(sanitizedPayload, 'Creating meeting payload');
+    const sanitizedPayload = logger.sanitize({ createPayload });
+    logger.debug(req, 'create_meeting', 'Creating meeting payload', sanitizedPayload);
 
     const newMeeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', '/meetings', 'POST', undefined, createPayload, {
       ['X-Sync']: 'true',
     });
-
-    req.log.info(
-      {
-        operation: 'create_meeting',
-        meeting_id: newMeeting.uid,
-        project_uid: newMeeting.project_uid,
-        title: newMeeting.title,
-        organizer: username || 'none',
-      },
-      'Meeting created successfully'
-    );
 
     return newMeeting;
   }
@@ -222,8 +211,8 @@ export class MeetingService {
       organizers: Array.from(organizersSet),
     };
 
-    const sanitizedPayload = Logger.sanitize({ updatePayload, editType });
-    req.log.debug(sanitizedPayload, 'Updating meeting payload');
+    const sanitizedPayload = logger.sanitize({ updatePayload, editType });
+    logger.debug(req, 'update_meeting', 'Updating meeting payload', sanitizedPayload);
 
     // Step 2: Update meeting with ETag, including editType query parameter if provided
     let path = `/meetings/${meetingUid}`;
@@ -232,18 +221,6 @@ export class MeetingService {
     }
 
     const updatedMeeting = await this.etagService.updateWithETag<Meeting>(req, 'LFX_V2_SERVICE', path, etag, updatePayload, 'update_meeting');
-
-    req.log.info(
-      {
-        operation: 'update_meeting',
-        meeting_uid: meetingUid,
-        project_uid: updatedMeeting.project_uid,
-        title: updatedMeeting.title,
-        edit_type: editType || 'single',
-        organizer: username || 'none',
-      },
-      'Meeting updated successfully'
-    );
 
     return updatedMeeting;
   }
@@ -257,14 +234,6 @@ export class MeetingService {
 
     // Step 2: Delete meeting with ETag
     await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}`, etag, 'delete_meeting');
-
-    req.log.info(
-      {
-        operation: 'delete_meeting',
-        meeting_uid: meetingUid,
-      },
-      'Meeting deleted successfully'
-    );
   }
 
   /**
@@ -276,15 +245,6 @@ export class MeetingService {
 
     // Step 2: Cancel occurrence with ETag
     await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/occurrences/${occurrenceId}`, etag, 'cancel_occurrence');
-
-    req.log.info(
-      {
-        operation: 'cancel_occurrence',
-        meeting_uid: meetingUid,
-        occurrence_id: occurrenceId,
-      },
-      'Meeting occurrence canceled successfully'
-    );
   }
 
   /**
@@ -292,77 +252,35 @@ export class MeetingService {
    * @param includeRsvp - If true, includes RSVP status for each registrant
    */
   public async getMeetingRegistrants(req: Request, meetingUid: string, includeRsvp: boolean = false): Promise<MeetingRegistrant[]> {
-    try {
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
-        req,
-        'LFX_V2_SERVICE',
-        `/query/resources`,
-        'GET',
-        {
-          type: 'meeting_registrant',
-          tags: `meeting_uid:${meetingUid}`,
-        }
-      );
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', `/query/resources`, 'GET', {
+      type: 'meeting_registrant',
+      tags: `meeting_uid:${meetingUid}`,
+    });
 
-      let registrants = resources.map((resource) => resource.data);
+    let registrants = resources.map((resource) => resource.data);
 
-      // If include_rsvp is true, fetch RSVP data and attach to registrants
-      if (includeRsvp) {
-        try {
-          const rsvps = await this.getMeetingRsvps(req, meetingUid);
+    // If include_rsvp is true, fetch RSVP data and attach to registrants
+    if (includeRsvp) {
+      try {
+        const rsvps = await this.getMeetingRsvps(req, meetingUid);
 
-          // Create a map of username to RSVP for quick lookup
-          const rsvpMap = new Map(rsvps.map((rsvp) => [rsvp.username, rsvp]));
+        // Create a map of username to RSVP for quick lookup
+        const rsvpMap = new Map(rsvps.map((rsvp) => [rsvp.username, rsvp]));
 
-          // Attach RSVP data to each registrant
-          registrants = registrants.map((registrant) => ({
-            ...registrant,
-            rsvp: registrant.username ? rsvpMap.get(registrant.username) || null : null,
-          }));
-
-          req.log.info(
-            {
-              operation: 'get_meeting_registrants',
-              meeting_uid: meetingUid,
-              registrant_count: registrants.length,
-              rsvp_count: rsvps.length,
-              include_rsvp: true,
-            },
-            'Meeting registrants with RSVPs fetched successfully'
-          );
-        } catch (error) {
-          req.log.warn(
-            {
-              operation: 'get_meeting_registrants',
-              meeting_uid: meetingUid,
-              err: error,
-            },
-            'Failed to fetch RSVPs for registrants, returning registrants without RSVP data'
-          );
-        }
-      } else {
-        req.log.info(
-          {
-            operation: 'get_meeting_registrants',
-            meeting_uid: meetingUid,
-            registrant_count: registrants.length,
-          },
-          'Meeting registrants fetched successfully'
-        );
-      }
-
-      return registrants;
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'get_meeting_registrants',
+        // Attach RSVP data to each registrant
+        registrants = registrants.map((registrant) => ({
+          ...registrant,
+          rsvp: registrant.username ? rsvpMap.get(registrant.username) || null : null,
+        }));
+      } catch (error) {
+        logger.warning(req, 'get_meeting_registrants', 'Failed to fetch RSVPs for registrants, returning registrants without RSVP data', {
           meeting_uid: meetingUid,
           err: error,
-        },
-        'Failed to fetch meeting registrants'
-      );
-      throw error;
+        });
+      }
     }
+
+    return registrants;
   }
 
   /**
@@ -374,15 +292,6 @@ export class MeetingService {
     email: string,
     m2mToken?: string
   ): Promise<QueryServiceResponse<MeetingRegistrant[]>> {
-    req.log.info(
-      {
-        operation: 'get_meeting_registrants_by_email',
-        meeting_uid: meetingUid,
-        email: email,
-      },
-      'Fetching meeting registrants by email'
-    );
-
     // TODO(v1-migration): Remove V1 registrant type detection once all meetings are migrated to V2
     const v1 = !isUuid(meetingUid);
 
@@ -398,15 +307,7 @@ export class MeetingService {
       params.parent = '';
     }
 
-    req.log.info(
-      {
-        operation: 'get_meeting_registrants_by_email',
-        meeting_uid: meetingUid,
-        email: email,
-        v1,
-      },
-      'Fetching meeting registrants by email params'
-    );
+    logger.debug(req, 'get_meeting_registrants_by_email', 'Fetching meeting registrants by email params', { meeting_uid: meetingUid, email, v1, params });
 
     const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
 
@@ -427,41 +328,19 @@ export class MeetingService {
    * Creates a new meeting registrant
    */
   public async addMeetingRegistrant(req: Request, registrantData: CreateMeetingRegistrantRequest): Promise<MeetingRegistrant> {
-    try {
-      const sanitizedPayload = Logger.sanitize({ registrantData });
-      req.log.debug(sanitizedPayload, 'Creating meeting registrant');
+    const sanitizedPayload = logger.sanitize({ registrantData });
+    logger.debug(req, 'add_meeting_registrant', 'Creating meeting registrant', sanitizedPayload);
 
-      const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
-        req,
-        'LFX_V2_SERVICE',
-        `/meetings/${registrantData.meeting_uid}/registrants`,
-        'POST',
-        undefined,
-        registrantData
-      );
+    const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
+      req,
+      'LFX_V2_SERVICE',
+      `/meetings/${registrantData.meeting_uid}/registrants`,
+      'POST',
+      undefined,
+      registrantData
+    );
 
-      req.log.info(
-        {
-          operation: 'add_meeting_registrant',
-          meeting_uid: registrantData.meeting_uid,
-          registrant_uid: newRegistrant.uid,
-          host: registrantData.host || false,
-        },
-        'Meeting registrant created successfully'
-      );
-
-      return newRegistrant;
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'add_meeting_registrant',
-          meeting_uid: registrantData.meeting_uid,
-          err: error,
-        },
-        'Failed to create meeting registrant'
-      );
-      throw error;
-    }
+    return newRegistrant;
   }
 
   /**
@@ -473,118 +352,59 @@ export class MeetingService {
     registrantUid: string,
     updateData: UpdateMeetingRegistrantRequest
   ): Promise<MeetingRegistrant> {
-    try {
-      // Step 1: Fetch registrant with ETag
-      const { etag } = await this.etagService.fetchWithETag<MeetingRegistrant>(
-        req,
-        'LFX_V2_SERVICE',
-        `/meetings/${meetingUid}/registrants/${registrantUid}`,
-        'update_meeting_registrant'
-      );
+    // Step 1: Fetch registrant with ETag
+    const { etag } = await this.etagService.fetchWithETag<MeetingRegistrant>(
+      req,
+      'LFX_V2_SERVICE',
+      `/meetings/${meetingUid}/registrants/${registrantUid}`,
+      'update_meeting_registrant'
+    );
 
-      const sanitizedPayload = Logger.sanitize({ updateData });
-      req.log.debug(sanitizedPayload, 'Updating meeting registrant payload');
+    const sanitizedPayload = logger.sanitize({ updateData });
+    logger.debug(req, 'update_meeting_registrant', 'Updating meeting registrant payload', sanitizedPayload);
 
-      // Step 2: Update registrant with ETag
-      const updatedRegistrant = await this.etagService.updateWithETag<MeetingRegistrant>(
-        req,
-        'LFX_V2_SERVICE',
-        `/meetings/${meetingUid}/registrants/${registrantUid}`,
-        etag,
-        updateData,
-        'update_meeting_registrant'
-      );
+    // Step 2: Update registrant with ETag
+    const updatedRegistrant = await this.etagService.updateWithETag<MeetingRegistrant>(
+      req,
+      'LFX_V2_SERVICE',
+      `/meetings/${meetingUid}/registrants/${registrantUid}`,
+      etag,
+      updateData,
+      'update_meeting_registrant'
+    );
 
-      req.log.info(
-        {
-          operation: 'update_meeting_registrant',
-          meeting_uid: meetingUid,
-          registrant_uid: registrantUid,
-        },
-        'Meeting registrant updated successfully'
-      );
-
-      return updatedRegistrant;
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'update_meeting_registrant',
-          meeting_uid: meetingUid,
-          registrant_uid: registrantUid,
-          err: error,
-        },
-        'Failed to update meeting registrant'
-      );
-      throw error;
-    }
+    return updatedRegistrant;
   }
 
   /**
    * Deletes a meeting registrant using ETag for concurrency control
    */
   public async deleteMeetingRegistrant(req: Request, meetingUid: string, registrantUid: string): Promise<void> {
-    try {
-      // Step 1: Fetch registrant with ETag
-      const { etag } = await this.etagService.fetchWithETag<MeetingRegistrant>(
-        req,
-        'LFX_V2_SERVICE',
-        `/meetings/${meetingUid}/registrants/${registrantUid}`,
-        'delete_meeting_registrant'
-      );
+    // Step 1: Fetch registrant with ETag
+    const { etag } = await this.etagService.fetchWithETag<MeetingRegistrant>(
+      req,
+      'LFX_V2_SERVICE',
+      `/meetings/${meetingUid}/registrants/${registrantUid}`,
+      'delete_meeting_registrant'
+    );
 
-      // Step 2: Delete registrant with ETag
-      await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/registrants/${registrantUid}`, etag, 'delete_meeting_registrant');
-
-      req.log.info(
-        {
-          operation: 'delete_meeting_registrant',
-          meeting_uid: meetingUid,
-          registrant_uid: registrantUid,
-        },
-        'Meeting registrant deleted successfully'
-      );
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'delete_meeting_registrant',
-          meeting_uid: meetingUid,
-          registrant_uid: registrantUid,
-          err: error,
-        },
-        'Failed to delete meeting registrant'
-      );
-      throw error;
-    }
+    // Step 2: Delete registrant with ETag
+    await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/registrants/${registrantUid}`, etag, 'delete_meeting_registrant');
   }
 
   /**
    * Resend a meeting invitation to a specific registrant
    */
   public async resendMeetingInvitation(req: Request, meetingUid: string, registrantId: string): Promise<void> {
-    try {
-      // Call the LFX API endpoint for resending invitation
-      await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/registrants/${registrantId}/resend`, 'POST');
+    const startTime = logger.startOperation(req, 'resend_meeting_invitation', { meeting_uid: meetingUid, registrant_id: registrantId });
 
-      req.log.info(
-        {
-          operation: 'resend_meeting_invitation',
-          meeting_uid: meetingUid,
-          registrant_id: registrantId,
-        },
-        'Meeting invitation resent successfully'
-      );
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'resend_meeting_invitation',
-          meeting_uid: meetingUid,
-          registrant_id: registrantId,
-          err: error,
-        },
-        'Failed to resend meeting invitation'
-      );
-      throw error;
-    }
+    // Call the LFX API endpoint for resending invitation
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/registrants/${registrantId}/resend`, 'POST');
+
+    logger.success(req, 'resend_meeting_invitation', startTime, {
+      meeting_uid: meetingUid,
+      registrant_id: registrantId,
+    });
   }
 
   /**
@@ -598,6 +418,8 @@ export class MeetingService {
    * Fetches past meeting participants by past meeting UID
    */
   public async getPastMeetingParticipants(req: Request, pastMeetingUid: string): Promise<PastMeetingParticipant[]> {
+    const startTime = logger.startOperation(req, 'get_past_meeting_participants', { past_meeting_uid: pastMeetingUid });
+
     const params = {
       type: 'past_meeting_participant',
       tags: `past_meeting_uid:${pastMeetingUid}`,
@@ -613,14 +435,10 @@ export class MeetingService {
 
     const participants = resources.map((resource) => resource.data);
 
-    req.log.info(
-      {
-        operation: 'get_past_meeting_participants',
-        past_meeting_uid: pastMeetingUid,
-        participant_count: participants.length,
-      },
-      'Past meeting participants retrieved successfully'
-    );
+    logger.success(req, 'get_past_meeting_participants', startTime, {
+      past_meeting_uid: pastMeetingUid,
+      participant_count: participants.length,
+    });
 
     return participants;
   }
@@ -630,6 +448,8 @@ export class MeetingService {
    * @param v1 - If true, use v1_past_meeting_recording type and id tag format for legacy meetings
    */
   public async getPastMeetingRecording(req: Request, pastMeetingUid: string, v1: boolean = false): Promise<PastMeetingRecording | null> {
+    const startTime = logger.startOperation(req, 'get_past_meeting_recording', { past_meeting_uid: pastMeetingUid, v1 });
+
     try {
       // V1 legacy meetings use different type and tag format
       const params = {
@@ -646,43 +466,30 @@ export class MeetingService {
       );
 
       if (!resources || resources.length === 0) {
-        req.log.info(
-          {
-            operation: 'get_past_meeting_recording',
-            past_meeting_uid: pastMeetingUid,
-            v1,
-            type: params.type,
-          },
-          'No recording found for past meeting'
-        );
+        logger.warning(req, 'get_past_meeting_recording', 'No recording found for past meeting', {
+          past_meeting_uid: pastMeetingUid,
+          v1,
+          type: params.type,
+        });
         return null;
       }
 
       const recording = resources[0].data;
 
-      req.log.info(
-        {
-          operation: 'get_past_meeting_recording',
-          past_meeting_uid: pastMeetingUid,
-          v1,
-          recording_uid: recording.uid,
-          recording_count: recording.recording_count,
-          session_count: recording.sessions?.length || 0,
-        },
-        'Past meeting recording retrieved successfully'
-      );
+      logger.success(req, 'get_past_meeting_recording', startTime, {
+        past_meeting_uid: pastMeetingUid,
+        v1,
+        recording_uid: recording.uid,
+        recording_count: recording.recording_count,
+        session_count: recording.sessions?.length || 0,
+      });
 
       return recording;
     } catch (error) {
-      req.log.error(
-        {
-          operation: 'get_past_meeting_recording',
-          past_meeting_uid: pastMeetingUid,
-          v1,
-          err: error,
-        },
-        'Failed to retrieve past meeting recording'
-      );
+      logger.error(req, 'get_past_meeting_recording', startTime, error, {
+        past_meeting_uid: pastMeetingUid,
+        v1,
+      });
       return null;
     }
   }
@@ -692,6 +499,8 @@ export class MeetingService {
    * @param v1 - If true, use v1_past_meeting_summary type for legacy meetings
    */
   public async getPastMeetingSummary(req: Request, pastMeetingUid: string, v1: boolean = false): Promise<PastMeetingSummary | null> {
+    const startTime = logger.startOperation(req, 'get_past_meeting_summary', { past_meeting_uid: pastMeetingUid, v1 });
+
     try {
       // V1 legacy meetings use different type and tag format
       const params = {
@@ -708,15 +517,11 @@ export class MeetingService {
       );
 
       if (!resources || resources.length === 0) {
-        req.log.info(
-          {
-            operation: 'get_past_meeting_summary',
-            past_meeting_uid: pastMeetingUid,
-            v1,
-            type: params.type,
-          },
-          'No summary found for past meeting'
-        );
+        logger.warning(req, 'get_past_meeting_summary', 'No summary found for past meeting', {
+          past_meeting_uid: pastMeetingUid,
+          v1,
+          type: params.type,
+        });
         return null;
       }
 
@@ -727,29 +532,20 @@ export class MeetingService {
         summary = transformV1SummaryToV2(summary);
       }
 
-      req.log.info(
-        {
-          operation: 'get_past_meeting_summary',
-          past_meeting_uid: pastMeetingUid,
-          v1,
-          summary_uid: summary.uid,
-          approved: summary.approved,
-          requires_approval: summary.requires_approval,
-        },
-        'Past meeting summary retrieved successfully'
-      );
+      logger.success(req, 'get_past_meeting_summary', startTime, {
+        past_meeting_uid: pastMeetingUid,
+        v1,
+        summary_uid: summary.uid,
+        approved: summary.approved,
+        requires_approval: summary.requires_approval,
+      });
 
       return summary;
     } catch (error) {
-      req.log.error(
-        {
-          operation: 'get_past_meeting_summary',
-          past_meeting_uid: pastMeetingUid,
-          v1,
-          err: error,
-        },
-        'Failed to retrieve past meeting summary'
-      );
+      logger.error(req, 'get_past_meeting_summary', startTime, error, {
+        past_meeting_uid: pastMeetingUid,
+        v1,
+      });
       return null;
     }
   }
@@ -763,58 +559,49 @@ export class MeetingService {
     summaryUid: string,
     updateData: UpdatePastMeetingSummaryRequest
   ): Promise<PastMeetingSummary> {
-    try {
-      // Step 1: Fetch summary with ETag
-      const { etag } = await this.etagService.fetchWithETag<PastMeetingSummary>(
-        req,
-        'LFX_V2_SERVICE',
-        `/past_meetings/${pastMeetingUid}/summaries/${summaryUid}`,
-        'update_past_meeting_summary'
-      );
+    const startTime = logger.startOperation(req, 'update_past_meeting_summary', { past_meeting_uid: pastMeetingUid, summary_uid: summaryUid });
 
-      const sanitizedPayload = Logger.sanitize({ updateData });
-      req.log.debug(sanitizedPayload, 'Updating past meeting summary payload');
+    // Step 1: Fetch summary with ETag
+    const { etag } = await this.etagService.fetchWithETag<PastMeetingSummary>(
+      req,
+      'LFX_V2_SERVICE',
+      `/past_meetings/${pastMeetingUid}/summaries/${summaryUid}`,
+      'update_past_meeting_summary'
+    );
 
-      // Step 2: Update summary with ETag
-      const updatedSummary = await this.etagService.updateWithETag<PastMeetingSummary>(
-        req,
-        'LFX_V2_SERVICE',
-        `/past_meetings/${pastMeetingUid}/summaries/${summaryUid}`,
-        etag,
-        updateData,
-        'update_past_meeting_summary'
-      );
+    const sanitizedPayload = logger.sanitize({ updateData });
+    logger.debug(req, 'update_past_meeting_summary', 'Updating past meeting summary payload', sanitizedPayload);
 
-      req.log.info(
-        {
-          operation: 'update_past_meeting_summary',
-          past_meeting_uid: pastMeetingUid,
-          summary_uid: summaryUid,
-          has_edited_content: !!updateData.edited_content,
-          has_approved: updateData.approved !== undefined,
-        },
-        'Past meeting summary updated successfully'
-      );
+    // Step 2: Update summary with ETag
+    const updatedSummary = await this.etagService.updateWithETag<PastMeetingSummary>(
+      req,
+      'LFX_V2_SERVICE',
+      `/past_meetings/${pastMeetingUid}/summaries/${summaryUid}`,
+      etag,
+      updateData,
+      'update_past_meeting_summary'
+    );
 
-      return updatedSummary;
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'update_past_meeting_summary',
-          past_meeting_uid: pastMeetingUid,
-          summary_uid: summaryUid,
-          err: error,
-        },
-        'Failed to update past meeting summary'
-      );
-      throw error;
-    }
+    logger.success(req, 'update_past_meeting_summary', startTime, {
+      past_meeting_uid: pastMeetingUid,
+      summary_uid: summaryUid,
+      has_edited_content: !!updateData.edited_content,
+      has_approved: updateData.approved !== undefined,
+    });
+
+    return updatedSummary;
   }
 
   /**
    * Create or update a meeting RSVP
    */
   public async createMeetingRsvp(req: Request, meetingUid: string, rsvpData: CreateMeetingRsvpRequest): Promise<MeetingRsvp> {
+    const startTime = logger.startOperation(req, 'create_meeting_rsvp', {
+      meeting_uid: meetingUid,
+      response: rsvpData.response,
+      scope: rsvpData.scope,
+    });
+
     // Backend derives user from bearer token, so we don't need to pass username/email/registrant_id
     const requestData: CreateMeetingRsvpRequest = {
       response: rsvpData.response,
@@ -826,17 +613,13 @@ export class MeetingService {
 
     const rsvp = await this.microserviceProxy.proxyRequest<MeetingRsvp>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/rsvp`, 'POST', {}, requestData);
 
-    req.log.info(
-      {
-        operation: 'create_meeting_rsvp',
-        meeting_uid: meetingUid,
-        rsvp_id: rsvp.id,
-        response: rsvpData.response,
-        scope: rsvpData.scope,
-        occurrence_id: rsvpData.occurrence_id || undefined,
-      },
-      'Meeting RSVP created successfully'
-    );
+    logger.success(req, 'create_meeting_rsvp', startTime, {
+      meeting_uid: meetingUid,
+      rsvp_id: rsvp.id,
+      response: rsvpData.response,
+      scope: rsvpData.scope,
+      occurrence_id: rsvpData.occurrence_id || undefined,
+    });
 
     return rsvp;
   }
@@ -849,19 +632,16 @@ export class MeetingService {
    * @returns Promise resolving to user's RSVP or null
    */
   public async getMeetingRsvpByUsername(req: Request, meetingUid: string, occurrenceId?: string): Promise<MeetingRsvp | null> {
+    const startTime = logger.startOperation(req, 'get_meeting_rsvp_by_username', { meeting_uid: meetingUid, occurrence_id: occurrenceId });
+
     try {
       // Get username from authenticated user
       const username = await getUsernameFromAuth(req);
 
       if (!username) {
-        req.log.error(
-          {
-            operation: 'get_meeting_rsvp_by_username',
-            meeting_uid: meetingUid,
-            error: 'No username found in auth context',
-          },
-          'Failed to get meeting RSVP by username'
-        );
+        logger.error(req, 'get_meeting_rsvp_by_username', startTime, new Error('No username found in auth context'), {
+          meeting_uid: meetingUid,
+        });
         return null;
       }
 
@@ -887,29 +667,20 @@ export class MeetingService {
       // Filter for current user's RSVP (optionally by occurrence)
       const userRsvp = allRsvps.find((rsvp) => rsvp.username === username && (!occurrenceId || rsvp.occurrence_id === occurrenceId));
 
-      req.log.info(
-        {
-          operation: 'get_meeting_rsvp_by_username',
-          meeting_uid: meetingUid,
-          occurrence_id: occurrenceId,
-          found: !!userRsvp,
-          total_rsvps: allRsvps.length,
-          rsvp_id: userRsvp?.id,
-        },
-        'User meeting RSVP retrieved via M2M token'
-      );
+      logger.success(req, 'get_meeting_rsvp_by_username', startTime, {
+        meeting_uid: meetingUid,
+        occurrence_id: occurrenceId,
+        found: !!userRsvp,
+        total_rsvps: allRsvps.length,
+        rsvp_id: userRsvp?.id,
+      });
 
       return userRsvp || null;
     } catch (error) {
-      req.log.error(
-        {
-          operation: 'get_meeting_rsvp_by_username',
-          meeting_uid: meetingUid,
-          occurrence_id: occurrenceId,
-          err: error,
-        },
-        'Failed to get meeting RSVP by username'
-      );
+      logger.error(req, 'get_meeting_rsvp_by_username', startTime, error, {
+        meeting_uid: meetingUid,
+        occurrence_id: occurrenceId,
+      });
       return null;
     }
   }
@@ -918,6 +689,8 @@ export class MeetingService {
    * Get all RSVPs for a meeting
    */
   public async getMeetingRsvps(req: Request, meetingUid: string): Promise<MeetingRsvp[]> {
+    const startTime = logger.startOperation(req, 'get_meeting_rsvps', { meeting_uid: meetingUid });
+
     try {
       const params = {
         tags: `meeting_uid:${meetingUid}`,
@@ -932,25 +705,16 @@ export class MeetingService {
         params
       );
 
-      req.log.info(
-        {
-          operation: 'get_meeting_rsvps',
-          meeting_uid: meetingUid,
-          count: resources.length,
-        },
-        'Meeting RSVPs retrieved successfully'
-      );
+      logger.success(req, 'get_meeting_rsvps', startTime, {
+        meeting_uid: meetingUid,
+        count: resources.length,
+      });
 
       return resources.map((resource) => resource.data);
     } catch (error) {
-      req.log.error(
-        {
-          operation: 'get_meeting_rsvps',
-          meeting_uid: meetingUid,
-          err: error,
-        },
-        'Failed to get meeting RSVPs'
-      );
+      logger.error(req, 'get_meeting_rsvps', startTime, error, {
+        meeting_uid: meetingUid,
+      });
       return [];
     }
   }
@@ -963,48 +727,21 @@ export class MeetingService {
    * @returns The created meeting attachment
    */
   public async createMeetingAttachment(req: Request, meetingUid: string, attachmentData: any): Promise<any> {
-    req.log.debug(
-      {
-        operation: 'create_meeting_attachment',
-        meeting_uid: meetingUid,
-      },
-      'Creating meeting attachment'
+    logger.debug(req, 'create_meeting_attachment', 'Creating meeting attachment', { meeting_uid: meetingUid });
+
+    // Call the LFX V2 API endpoint with multipart/form-data
+    // The attachmentData should be a FormData object from the controller
+    // The API client will automatically handle FormData and set the correct Content-Type with boundary
+    const attachment = await this.microserviceProxy.proxyRequest<any>(
+      req,
+      'LFX_V2_SERVICE',
+      `/meetings/${meetingUid}/attachments`,
+      'POST',
+      undefined,
+      attachmentData
     );
 
-    try {
-      // Call the LFX V2 API endpoint with multipart/form-data
-      // The attachmentData should be a FormData object from the controller
-      // The API client will automatically handle FormData and set the correct Content-Type with boundary
-      const attachment = await this.microserviceProxy.proxyRequest<any>(
-        req,
-        'LFX_V2_SERVICE',
-        `/meetings/${meetingUid}/attachments`,
-        'POST',
-        undefined,
-        attachmentData
-      );
-
-      req.log.info(
-        {
-          operation: 'create_meeting_attachment',
-          attachment_uid: attachment.uid,
-          meeting_uid: meetingUid,
-        },
-        'Meeting attachment created successfully'
-      );
-
-      return attachment;
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'create_meeting_attachment',
-          meeting_uid: meetingUid,
-          err: error,
-        },
-        'Failed to create meeting attachment'
-      );
-      throw error;
-    }
+    return attachment;
   }
 
   /**
@@ -1015,42 +752,12 @@ export class MeetingService {
    * @returns The attachment file data
    */
   public async getMeetingAttachment(req: Request, meetingUid: string, attachmentUid: string): Promise<Buffer> {
-    req.log.debug(
-      {
-        operation: 'get_meeting_attachment',
-        meeting_uid: meetingUid,
-        attachment_uid: attachmentUid,
-      },
-      'Fetching meeting attachment'
-    );
+    logger.debug(req, 'get_meeting_attachment', 'Fetching meeting attachment', { meeting_uid: meetingUid, attachment_uid: attachmentUid });
 
-    try {
-      // Use the microservice proxy to download the binary file
-      const buffer = await this.microserviceProxy.proxyBinaryRequest(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/attachments/${attachmentUid}`, 'GET');
+    // Use the microservice proxy to download the binary file
+    const buffer = await this.microserviceProxy.proxyBinaryRequest(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/attachments/${attachmentUid}`, 'GET');
 
-      req.log.info(
-        {
-          operation: 'get_meeting_attachment',
-          meeting_uid: meetingUid,
-          attachment_uid: attachmentUid,
-          file_size: buffer.length,
-        },
-        'Meeting attachment fetched successfully'
-      );
-
-      return buffer;
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'get_meeting_attachment',
-          meeting_uid: meetingUid,
-          attachment_uid: attachmentUid,
-          err: error,
-        },
-        'Failed to fetch meeting attachment'
-      );
-      throw error;
-    }
+    return buffer;
   }
 
   /**
@@ -1060,81 +767,23 @@ export class MeetingService {
    * @param attachmentUid - Attachment UID to delete
    */
   public async deleteMeetingAttachment(req: Request, meetingUid: string, attachmentUid: string): Promise<void> {
-    req.log.debug(
-      {
-        operation: 'delete_meeting_attachment',
-        meeting_uid: meetingUid,
-        attachment_uid: attachmentUid,
-      },
-      'Deleting meeting attachment'
-    );
+    logger.debug(req, 'delete_meeting_attachment', 'Deleting meeting attachment', { meeting_uid: meetingUid, attachment_uid: attachmentUid });
 
-    try {
-      // Call the LFX V2 API endpoint to delete the attachment
-      await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/attachments/${attachmentUid}`, 'DELETE');
-
-      req.log.info(
-        {
-          operation: 'delete_meeting_attachment',
-          meeting_uid: meetingUid,
-          attachment_uid: attachmentUid,
-        },
-        'Meeting attachment deleted successfully'
-      );
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'delete_meeting_attachment',
-          meeting_uid: meetingUid,
-          attachment_uid: attachmentUid,
-          err: error,
-        },
-        'Failed to delete meeting attachment'
-      );
-      throw error;
-    }
+    // Call the LFX V2 API endpoint to delete the attachment
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/attachments/${attachmentUid}`, 'DELETE');
   }
 
   public async getMeetingAttachmentMetadata(req: Request, meetingUid: string, attachmentUid: string): Promise<any> {
-    req.log.debug(
-      {
-        operation: 'get_meeting_attachment_metadata',
-        meeting_uid: meetingUid,
-        attachment_uid: attachmentUid,
-      },
-      'Fetching meeting attachment metadata'
+    logger.debug(req, 'get_meeting_attachment_metadata', 'Fetching meeting attachment metadata', { meeting_uid: meetingUid, attachment_uid: attachmentUid });
+
+    const metadata = await this.microserviceProxy.proxyRequest<any>(
+      req,
+      'LFX_V2_SERVICE',
+      `/meetings/${meetingUid}/attachments/${attachmentUid}/metadata`,
+      'GET'
     );
 
-    try {
-      const metadata = await this.microserviceProxy.proxyRequest<any>(
-        req,
-        'LFX_V2_SERVICE',
-        `/meetings/${meetingUid}/attachments/${attachmentUid}/metadata`,
-        'GET'
-      );
-
-      req.log.info(
-        {
-          operation: 'get_meeting_attachment_metadata',
-          meeting_uid: meetingUid,
-          attachment_uid: attachmentUid,
-        },
-        'Meeting attachment metadata fetched successfully'
-      );
-
-      return metadata;
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'get_meeting_attachment_metadata',
-          meeting_uid: meetingUid,
-          attachment_uid: attachmentUid,
-          err: error,
-        },
-        'Failed to fetch meeting attachment metadata'
-      );
-      throw error;
-    }
+    return metadata;
   }
 
   /**
@@ -1144,53 +793,18 @@ export class MeetingService {
    * @returns Array of meeting attachments
    */
   public async getMeetingAttachments(req: Request, meetingUid: string): Promise<any[]> {
-    req.log.debug(
-      {
-        operation: 'get_meeting_attachments',
-        meeting_uid: meetingUid,
-      },
-      'Fetching meeting attachments'
-    );
+    const params = {
+      type: 'meeting_attachment',
+      tags: `meeting_uid:${meetingUid}`,
+    };
 
-    try {
-      const params = {
-        type: 'meeting_attachment',
-        tags: `meeting_uid:${meetingUid}`,
-      };
+    logger.debug(req, 'get_meeting_attachments', 'Fetching meeting attachments', { meeting_uid: meetingUid, query_params: params });
 
-      req.log.debug(
-        {
-          meeting_uid: meetingUid,
-          query_params: params,
-        },
-        'Fetching attachments with query params'
-      );
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<any>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<any>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
+    const attachments = resources.map((resource) => resource.data);
 
-      const attachments = resources.map((resource) => resource.data);
-
-      req.log.info(
-        {
-          operation: 'get_meeting_attachments',
-          meeting_uid: meetingUid,
-          attachment_count: attachments.length,
-        },
-        'Meeting attachments retrieved successfully'
-      );
-
-      return attachments;
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'get_meeting_attachments',
-          meeting_uid: meetingUid,
-          err: error,
-        },
-        'Failed to get meeting attachments'
-      );
-      throw error;
-    }
+    return attachments;
   }
 
   /**
@@ -1200,53 +814,18 @@ export class MeetingService {
    * @returns Array of past meeting attachments
    */
   public async getPastMeetingAttachments(req: Request, pastMeetingUid: string): Promise<any[]> {
-    req.log.debug(
-      {
-        operation: 'get_past_meeting_attachments',
-        past_meeting_uid: pastMeetingUid,
-      },
-      'Fetching past meeting attachments'
-    );
+    const params = {
+      type: 'past_meeting_attachment',
+      tags: `past_meeting_uid:${pastMeetingUid}`,
+    };
 
-    try {
-      const params = {
-        type: 'past_meeting_attachment',
-        tags: `past_meeting_uid:${pastMeetingUid}`,
-      };
+    logger.debug(req, 'get_past_meeting_attachments', 'Fetching past meeting attachments', { past_meeting_uid: pastMeetingUid, query_params: params });
 
-      req.log.debug(
-        {
-          past_meeting_uid: pastMeetingUid,
-          query_params: params,
-        },
-        'Fetching past meeting attachments with query params'
-      );
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<any>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<any>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
+    const attachments = resources.map((resource) => resource.data);
 
-      const attachments = resources.map((resource) => resource.data);
-
-      req.log.info(
-        {
-          operation: 'get_past_meeting_attachments',
-          past_meeting_uid: pastMeetingUid,
-          attachment_count: attachments.length,
-        },
-        'Past meeting attachments retrieved successfully'
-      );
-
-      return attachments;
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'get_past_meeting_attachments',
-          past_meeting_uid: pastMeetingUid,
-          err: error,
-        },
-        'Failed to get past meeting attachments'
-      );
-      throw error;
-    }
+    return attachments;
   }
 
   /**
@@ -1257,42 +836,28 @@ export class MeetingService {
    * @returns The created meeting registrant
    */
   public async addMeetingRegistrantWithM2M(req: Request, registrantData: CreateMeetingRegistrantRequest, m2mToken: string): Promise<MeetingRegistrant> {
-    try {
-      const sanitizedPayload = Logger.sanitize({ registrantData });
-      req.log.debug(sanitizedPayload, 'Creating meeting registrant with M2M token');
+    const startTime = logger.startOperation(req, 'add_meeting_registrant_with_m2m', { meeting_uid: registrantData.meeting_uid });
 
-      const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
-        req,
-        'LFX_V2_SERVICE',
-        `/meetings/${registrantData.meeting_uid}/registrants`,
-        'POST',
-        undefined,
-        registrantData,
-        { Authorization: `Bearer ${m2mToken}`, ['X-Sync']: 'true' }
-      );
+    const sanitizedPayload = logger.sanitize({ registrantData });
+    logger.debug(req, 'add_meeting_registrant_with_m2m', 'Creating meeting registrant with M2M token', sanitizedPayload);
 
-      req.log.info(
-        {
-          operation: 'add_meeting_registrant_with_m2m',
-          meeting_uid: registrantData.meeting_uid,
-          registrant_uid: newRegistrant.uid,
-          host: registrantData.host || false,
-        },
-        'Meeting registrant created successfully with M2M token'
-      );
+    const newRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
+      req,
+      'LFX_V2_SERVICE',
+      `/meetings/${registrantData.meeting_uid}/registrants`,
+      'POST',
+      undefined,
+      registrantData,
+      { Authorization: `Bearer ${m2mToken}`, ['X-Sync']: 'true' }
+    );
 
-      return newRegistrant;
-    } catch (error) {
-      req.log.error(
-        {
-          operation: 'add_meeting_registrant_with_m2m',
-          meeting_uid: registrantData.meeting_uid,
-          err: error,
-        },
-        'Failed to create meeting registrant with M2M token'
-      );
-      throw error;
-    }
+    logger.success(req, 'add_meeting_registrant_with_m2m', startTime, {
+      meeting_uid: registrantData.meeting_uid,
+      registrant_uid: newRegistrant.uid,
+      host: registrantData.host || false,
+    });
+
+    return newRegistrant;
   }
 
   private async getMeetingCommittees(req: Request, meetings: Meeting[]): Promise<Meeting[]> {
@@ -1314,7 +879,7 @@ export class MeetingService {
           const committee = await this.committeeService.getCommitteeById(req, uid);
           return { uid: committee.uid, name: committee.name };
         } catch (error) {
-          req.log.warn({ operation: 'get_meeting_committees', committee_uid: uid, err: error }, 'Committee enrichment failed; continuing without name');
+          logger.warning(req, 'get_meeting_committees', 'Committee enrichment failed; continuing without name', { committee_uid: uid, err: error });
           return { uid, name: undefined };
         }
       })

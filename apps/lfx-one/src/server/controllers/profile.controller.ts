@@ -13,7 +13,7 @@ import {
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError, AuthorizationError, MicroserviceError, ResourceNotFoundError, ServiceValidationError } from '../errors';
-import { Logger } from '../helpers/logger';
+import { logger } from '../services/logger.service';
 import { SupabaseService } from '../services/supabase.service';
 import { UserService } from '../services/user.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
@@ -30,15 +30,13 @@ export class ProfileController {
    * Uses NATS as the sole authoritative source for user metadata
    */
   public async getCurrentUserProfile(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'get_current_user_profile');
+    const startTime = logger.startOperation(req, 'get_current_user_profile');
 
     try {
       // Get username from auth context
       const username = await getUsernameFromAuth(req);
 
       if (!username) {
-        Logger.error(req, 'get_current_user_profile', startTime, new Error('User not authenticated or username not found'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
           operation: 'get_current_user_profile',
           service: 'profile_controller',
@@ -52,8 +50,6 @@ export class ProfileController {
       const oidcUser = req.oidc?.user;
 
       if (!oidcUser) {
-        Logger.error(req, 'get_current_user_profile', startTime, new Error('OIDC user data not available'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User authentication data not available', {
           operation: 'get_current_user_profile',
           service: 'profile_controller',
@@ -67,27 +63,20 @@ export class ProfileController {
       let natsUserData: UserMetadata | null = null;
       try {
         const natsResponse = await this.userService.getUserInfo(req, username);
-        req.log.info({ username, natsSuccess: natsResponse.success }, 'Fetched user metadata from NATS');
 
         if (natsResponse.success && natsResponse.data) {
           natsUserData = natsResponse.data;
         } else {
-          req.log.warn(
-            {
-              username,
-              error: natsResponse.error,
-            },
-            'Failed to fetch user metadata from NATS'
-          );
+          logger.warning(req, 'get_current_user_profile', 'Failed to fetch user metadata from NATS', {
+            username,
+            error: natsResponse.error,
+          });
         }
       } catch (error) {
-        req.log.warn(
-          {
-            username,
-            err: error,
-          },
-          'Exception while fetching user metadata from NATS'
-        );
+        logger.warning(req, 'get_current_user_profile', 'Exception while fetching user metadata from NATS', {
+          username,
+          err: error,
+        });
       }
 
       // Construct UserProfile from OIDC token data
@@ -107,7 +96,7 @@ export class ProfileController {
         profile: natsUserData,
       };
 
-      Logger.success(req, 'get_current_user_profile', startTime, {
+      logger.success(req, 'get_current_user_profile', startTime, {
         user_id: userProfile.id,
         username,
         has_metadata: !!natsUserData,
@@ -115,7 +104,6 @@ export class ProfileController {
 
       res.json(combinedProfile);
     } catch (error) {
-      Logger.error(req, 'get_current_user_profile', startTime, error);
       next(error);
     }
   }
@@ -125,7 +113,7 @@ export class ProfileController {
    * Handles all user profile fields including personal info and profile details
    */
   public async updateUserMetadata(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'update_user_metadata_nats', {
+    const startTime = logger.startOperation(req, 'update_user_metadata_nats', {
       request_body_keys: Object.keys(req.body),
     });
 
@@ -133,8 +121,6 @@ export class ProfileController {
       // Get the bearer token from the request (set by auth middleware) or OIDC access token
       const token = req.bearerToken || req.oidc?.accessToken?.access_token;
       if (!token) {
-        Logger.error(req, 'update_user_metadata_nats', startTime, new Error('No authentication token found'));
-
         const validationError = ServiceValidationError.forField('token', 'Authentication token required', {
           operation: 'update_user_metadata_nats',
           service: 'profile_controller',
@@ -147,8 +133,6 @@ export class ProfileController {
       // Get username from auth context for user_id
       const username = await getUsernameFromAuth(req);
       if (!username) {
-        Logger.error(req, 'update_user_metadata_nats', startTime, new Error('User not authenticated'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
           operation: 'update_user_metadata_nats',
           service: 'profile_controller',
@@ -163,8 +147,6 @@ export class ProfileController {
 
       // Validate at least one field to update is provided
       if (!user_metadata) {
-        Logger.error(req, 'update_user_metadata_nats', startTime, new Error('No update data provided'));
-
         const validationError = ServiceValidationError.forField('body', 'At least one field to update must be provided', {
           operation: 'update_user_metadata_nats',
           service: 'profile_controller',
@@ -179,8 +161,6 @@ export class ProfileController {
         try {
           this.userService.validateUserMetadata(user_metadata);
         } catch (validationError) {
-          Logger.error(req, 'update_user_metadata_nats', startTime, validationError);
-
           const error = ServiceValidationError.forField('user_metadata', validationError instanceof Error ? validationError.message : 'Invalid user metadata', {
             operation: 'update_user_metadata_nats',
             service: 'profile_controller',
@@ -203,7 +183,7 @@ export class ProfileController {
 
       // Handle response
       if (response.success) {
-        Logger.success(req, 'update_user_metadata_nats', startTime, {
+        logger.success(req, 'update_user_metadata_nats', startTime, {
           user_id: username,
           updated_fields: response.updated_fields,
         });
@@ -214,8 +194,6 @@ export class ProfileController {
           updated_fields: response.updated_fields,
         });
       } else {
-        Logger.error(req, 'update_user_metadata_nats', startTime, new Error(response.error || 'Update failed'));
-
         // Create appropriate error based on error type
         let error: any;
 
@@ -269,7 +247,6 @@ export class ProfileController {
         return next(error);
       }
     } catch (error) {
-      Logger.error(req, 'update_user_metadata_nats', startTime, error);
       next(error);
     }
   }
@@ -278,14 +255,12 @@ export class ProfileController {
    * GET /api/profile/emails - Get current user's email management data
    */
   public async getUserEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'get_user_emails');
+    const startTime = logger.startOperation(req, 'get_user_emails');
 
     try {
       const username = await getUsernameFromAuth(req);
 
       if (!username) {
-        Logger.error(req, 'get_user_emails', startTime, new Error('User not authenticated or user ID not found'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
           operation: 'get_user_emails',
           service: 'profile_controller',
@@ -298,8 +273,6 @@ export class ProfileController {
       const userId = await this.supabaseService.getUser(username);
 
       if (!userId) {
-        Logger.error(req, 'get_user_emails', startTime, new Error('User not found'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User not found', {
           operation: 'get_user_emails',
           service: 'profile_controller',
@@ -311,7 +284,7 @@ export class ProfileController {
 
       const emailData = await this.supabaseService.getEmailManagementData(userId.id);
 
-      Logger.success(req, 'get_user_emails', startTime, {
+      logger.success(req, 'get_user_emails', startTime, {
         user_id: userId.id,
         email_count: emailData.emails.length,
         has_preferences: !!emailData.preferences,
@@ -319,7 +292,6 @@ export class ProfileController {
 
       res.json(emailData);
     } catch (error) {
-      Logger.error(req, 'get_user_emails', startTime, error);
       next(error);
     }
   }
@@ -328,7 +300,7 @@ export class ProfileController {
    * POST /api/profile/emails - Add new email for current user
    */
   public async addUserEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'add_user_email', {
+    const startTime = logger.startOperation(req, 'add_user_email', {
       request_body_keys: Object.keys(req.body),
     });
 
@@ -336,8 +308,6 @@ export class ProfileController {
       const username = await getUsernameFromAuth(req);
 
       if (!username) {
-        Logger.error(req, 'add_user_email', startTime, new Error('User not authenticated or user ID not found'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
           operation: 'add_user_email',
           service: 'profile_controller',
@@ -350,8 +320,6 @@ export class ProfileController {
       const user = await this.supabaseService.getUser(username);
 
       if (!user) {
-        Logger.error(req, 'add_user_email', startTime, new Error('User not found'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User not found', {
           operation: 'add_user_email',
           service: 'profile_controller',
@@ -364,8 +332,6 @@ export class ProfileController {
       const { email }: AddEmailRequest = req.body;
 
       if (!email || typeof email !== 'string') {
-        Logger.error(req, 'add_user_email', startTime, new Error('Invalid email address'));
-
         const validationError = ServiceValidationError.forField('email', 'Valid email address is required', {
           operation: 'add_user_email',
           service: 'profile_controller',
@@ -378,8 +344,6 @@ export class ProfileController {
       // Basic email validation
       const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
-        Logger.error(req, 'add_user_email', startTime, new Error('Invalid email format'));
-
         const validationError = ServiceValidationError.forField('email', 'Invalid email format', {
           operation: 'add_user_email',
           service: 'profile_controller',
@@ -391,7 +355,7 @@ export class ProfileController {
 
       const newEmail = await this.supabaseService.addUserEmail(user.id, email);
 
-      Logger.success(req, 'add_user_email', startTime, {
+      logger.success(req, 'add_user_email', startTime, {
         user_id: user.id,
         email_id: newEmail.id,
         email: newEmail.email,
@@ -399,7 +363,6 @@ export class ProfileController {
 
       res.status(201).json(newEmail);
     } catch (error) {
-      Logger.error(req, 'add_user_email', startTime, error);
       if (error instanceof Error && error.message.includes('already in use')) {
         const validationError = ServiceValidationError.forField('email', error.message, {
           operation: 'add_user_email',
@@ -416,7 +379,7 @@ export class ProfileController {
    * DELETE /api/profile/emails/:emailId - Delete user email
    */
   public async deleteUserEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'delete_user_email', {
+    const startTime = logger.startOperation(req, 'delete_user_email', {
       email_id: req.params['emailId'],
     });
 
@@ -425,8 +388,6 @@ export class ProfileController {
       const emailId = req.params['emailId'];
 
       if (!username) {
-        Logger.error(req, 'delete_user_email', startTime, new Error('User not authenticated or user ID not found'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
           operation: 'delete_user_email',
           service: 'profile_controller',
@@ -437,8 +398,6 @@ export class ProfileController {
       }
 
       if (!emailId) {
-        Logger.error(req, 'delete_user_email', startTime, new Error('Email ID is required'));
-
         const validationError = ServiceValidationError.forField('email_id', 'Email ID is required', {
           operation: 'delete_user_email',
           service: 'profile_controller',
@@ -451,8 +410,6 @@ export class ProfileController {
       const user = await this.supabaseService.getUser(username);
 
       if (!user) {
-        Logger.error(req, 'delete_user_email', startTime, new Error('User not found'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User not found', {
           operation: 'delete_user_email',
           service: 'profile_controller',
@@ -464,14 +421,13 @@ export class ProfileController {
 
       await this.supabaseService.deleteUserEmail(emailId, user.id);
 
-      Logger.success(req, 'delete_user_email', startTime, {
+      logger.success(req, 'delete_user_email', startTime, {
         user_id: user.id,
         email_id: emailId,
       });
 
       res.status(204).send();
     } catch (error) {
-      Logger.error(req, 'delete_user_email', startTime, error);
       if (error instanceof Error && (error.message.includes('Cannot delete') || error.message.includes('last email'))) {
         const validationError = ServiceValidationError.forField('email_id', error.message, {
           operation: 'delete_user_email',
@@ -488,7 +444,7 @@ export class ProfileController {
    * PUT /api/profile/emails/:emailId/primary - Set email as primary
    */
   public async setPrimaryEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'set_primary_email', {
+    const startTime = logger.startOperation(req, 'set_primary_email', {
       email_id: req.params['emailId'],
     });
 
@@ -497,8 +453,6 @@ export class ProfileController {
       const emailId = req.params['emailId'];
 
       if (!username) {
-        Logger.error(req, 'set_primary_email', startTime, new Error('User not authenticated or user ID not found'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
           operation: 'set_primary_email',
           service: 'profile_controller',
@@ -509,8 +463,6 @@ export class ProfileController {
       }
 
       if (!emailId) {
-        Logger.error(req, 'set_primary_email', startTime, new Error('Email ID is required'));
-
         const validationError = ServiceValidationError.forField('email_id', 'Email ID is required', {
           operation: 'set_primary_email',
           service: 'profile_controller',
@@ -523,8 +475,6 @@ export class ProfileController {
       const user = await this.supabaseService.getUser(username);
 
       if (!user) {
-        Logger.error(req, 'set_primary_email', startTime, new Error('User not found'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User not found', {
           operation: 'set_primary_email',
           service: 'profile_controller',
@@ -536,14 +486,13 @@ export class ProfileController {
 
       await this.supabaseService.setPrimaryEmail(user.id, emailId);
 
-      Logger.success(req, 'set_primary_email', startTime, {
+      logger.success(req, 'set_primary_email', startTime, {
         user_id: user.id,
         email_id: emailId,
       });
 
       res.status(200).json({ message: 'Primary email updated successfully' });
     } catch (error) {
-      Logger.error(req, 'set_primary_email', startTime, error);
       next(error);
     }
   }
@@ -552,13 +501,12 @@ export class ProfileController {
    * GET /api/profile/email-preferences - Get user email preferences
    */
   public async getEmailPreferences(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'get_email_preferences');
+    const startTime = logger.startOperation(req, 'get_email_preferences');
 
     try {
       const username = await getUsernameFromAuth(req);
 
       if (!username) {
-        Logger.error(req, 'get_email_preferences', startTime, new Error('User not authenticated or user ID not found'));
         const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
           operation: 'get_email_preferences',
           service: 'profile_controller',
@@ -571,8 +519,6 @@ export class ProfileController {
       const user = await this.supabaseService.getUser(username);
 
       if (!user) {
-        Logger.error(req, 'get_email_preferences', startTime, new Error('User not found'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
           operation: 'get_email_preferences',
           service: 'profile_controller',
@@ -584,14 +530,13 @@ export class ProfileController {
 
       const preferences = await this.supabaseService.getEmailPreferences(user.id);
 
-      Logger.success(req, 'get_email_preferences', startTime, {
+      logger.success(req, 'get_email_preferences', startTime, {
         user_id: user.id,
         has_preferences: !!preferences,
       });
 
       res.json(preferences);
     } catch (error) {
-      Logger.error(req, 'get_email_preferences', startTime, error);
       next(error);
     }
   }
@@ -600,7 +545,7 @@ export class ProfileController {
    * PUT /api/profile/email-preferences - Update user email preferences
    */
   public async updateEmailPreferences(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'update_email_preferences', {
+    const startTime = logger.startOperation(req, 'update_email_preferences', {
       request_body_keys: Object.keys(req.body),
     });
 
@@ -608,8 +553,6 @@ export class ProfileController {
       const username = await getUsernameFromAuth(req);
 
       if (!username) {
-        Logger.error(req, 'update_email_preferences', startTime, new Error('User not authenticated or user ID not found'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
           operation: 'update_email_preferences',
           service: 'profile_controller',
@@ -622,8 +565,6 @@ export class ProfileController {
       const user = await this.supabaseService.getUser(username);
 
       if (!user) {
-        Logger.error(req, 'update_email_preferences', startTime, new Error('User not found'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User not found', {
           operation: 'update_email_preferences',
           service: 'profile_controller',
@@ -644,8 +585,6 @@ export class ProfileController {
       }
 
       if (Object.keys(updateData).length === 0) {
-        Logger.error(req, 'update_email_preferences', startTime, new Error('No valid fields provided for update'));
-
         const validationError = ServiceValidationError.forField('request_body', 'No valid fields provided for update', {
           operation: 'update_email_preferences',
           service: 'profile_controller',
@@ -657,14 +596,13 @@ export class ProfileController {
 
       const updatedPreferences = await this.supabaseService.updateEmailPreferences(user.id, updateData);
 
-      Logger.success(req, 'update_email_preferences', startTime, {
+      logger.success(req, 'update_email_preferences', startTime, {
         user_id: user.id,
         updated_fields: Object.keys(updateData),
       });
 
       res.json(updatedPreferences);
     } catch (error) {
-      Logger.error(req, 'update_email_preferences', startTime, error);
       next(error);
     }
   }
@@ -673,15 +611,13 @@ export class ProfileController {
    * GET /api/profile/developer - Get current user's developer token information
    */
   public async getDeveloperTokenInfo(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'get_developer_token_info');
+    const startTime = logger.startOperation(req, 'get_developer_token_info');
 
     try {
       // Get user ID from auth context
       const userId = await getUsernameFromAuth(req);
 
       if (!userId) {
-        Logger.error(req, 'get_developer_token_info', startTime, new Error('User not authenticated or user ID not found'));
-
         const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
           operation: 'get_developer_token_info',
           service: 'profile_controller',
@@ -695,8 +631,6 @@ export class ProfileController {
       const bearerToken = req.bearerToken;
 
       if (!bearerToken) {
-        Logger.error(req, 'get_developer_token_info', startTime, new Error('No bearer token available'));
-
         const validationError = ServiceValidationError.forField('token', 'No API token available for user', {
           operation: 'get_developer_token_info',
           service: 'profile_controller',
@@ -712,7 +646,7 @@ export class ProfileController {
         type: 'Bearer',
       };
 
-      Logger.success(req, 'get_developer_token_info', startTime, {
+      logger.success(req, 'get_developer_token_info', startTime, {
         user_id: userId,
         token_length: bearerToken.length,
       });
@@ -726,7 +660,6 @@ export class ProfileController {
 
       res.json(tokenInfo);
     } catch (error) {
-      Logger.error(req, 'get_developer_token_info', startTime, error);
       next(error);
     }
   }

@@ -5,7 +5,7 @@ import { CommitteeCreateData, CommitteeUpdateData, CreateCommitteeMemberRequest 
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
-import { Logger } from '../helpers/logger';
+import { logger } from '../services/logger.service';
 import { CommitteeService } from '../services/committee.service';
 
 /**
@@ -18,20 +18,19 @@ export class CommitteeController {
    * GET /committees
    */
   public async getCommittees(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'get_committees', {
-      query_params: Logger.sanitize(req.query as Record<string, any>),
+    const startTime = logger.startOperation(req, 'get_committees', {
+      query_params: logger.sanitize(req.query as Record<string, any>),
     });
 
     try {
       const committees = await this.committeeService.getCommittees(req, req.query);
 
-      Logger.success(req, 'get_committees', startTime, {
+      logger.success(req, 'get_committees', startTime, {
         committee_count: committees.length,
       });
 
       res.json(committees);
     } catch (error) {
-      Logger.error(req, 'get_committees', startTime, error);
       next(error);
     }
   }
@@ -40,20 +39,19 @@ export class CommitteeController {
    * GET /committees/count
    */
   public async getCommitteesCount(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'get_committees_count', {
-      query_params: Logger.sanitize(req.query as Record<string, any>),
+    const startTime = logger.startOperation(req, 'get_committees_count', {
+      query_params: logger.sanitize(req.query as Record<string, any>),
     });
 
     try {
       const count = await this.committeeService.getCommitteesCount(req, req.query);
 
-      Logger.success(req, 'get_committees_count', startTime, {
+      logger.success(req, 'get_committees_count', startTime, {
         count,
       });
 
       res.json({ count });
     } catch (error) {
-      Logger.error(req, 'get_committees_count', startTime, error);
       next(error);
     }
   }
@@ -63,16 +61,13 @@ export class CommitteeController {
    */
   public async getCommitteeById(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
-    const startTime = Logger.start(req, 'get_committee_by_id', {
+    const startTime = logger.startOperation(req, 'get_committee_by_id', {
       committee_id: id,
     });
 
     try {
       // Check if the committee ID is provided
       if (!id) {
-        // Log the error
-        Logger.error(req, 'get_committee_by_id', startTime, new Error('Missing committee ID parameter'));
-
         // Create a validation error
         const validationError = ServiceValidationError.forField('id', 'Committee ID is required', {
           operation: 'get_committee_by_id',
@@ -88,7 +83,7 @@ export class CommitteeController {
       const committee = await this.committeeService.getCommitteeById(req, id);
 
       // Log the success
-      Logger.success(req, 'get_committee_by_id', startTime, {
+      logger.success(req, 'get_committee_by_id', startTime, {
         committee_id: id,
         committee_category: committee.category,
       });
@@ -96,11 +91,6 @@ export class CommitteeController {
       // Send the committee data to the client
       res.json(committee);
     } catch (error) {
-      // Log the error
-      Logger.error(req, 'get_committee_by_id', startTime, error, {
-        committee_id: id,
-      });
-
       // Send the error to the next middleware
       next(error);
     }
@@ -110,8 +100,8 @@ export class CommitteeController {
    * POST /committees
    */
   public async createCommittee(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = Logger.start(req, 'create_committee', {
-      committee_data: Logger.sanitize(req.body),
+    const startTime = logger.startOperation(req, 'create_committee', {
+      committee_data: logger.sanitize(req.body),
     });
 
     try {
@@ -120,7 +110,7 @@ export class CommitteeController {
       const newCommittee = await this.committeeService.createCommittee(req, committeeData);
 
       // Log the success
-      Logger.success(req, 'create_committee', startTime, {
+      logger.success(req, 'create_committee', startTime, {
         committee_id: newCommittee.uid,
         committee_category: newCommittee.category,
       });
@@ -128,9 +118,6 @@ export class CommitteeController {
       // Send the new committee data to the client
       res.status(201).json(newCommittee);
     } catch (error) {
-      // Log the error
-      Logger.error(req, 'create_committee', startTime, error);
-
       // Send the error to the next middleware
       next(error);
     }
@@ -141,16 +128,14 @@ export class CommitteeController {
    */
   public async updateCommittee(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
-    const startTime = Logger.start(req, 'update_committee', {
+    const startTime = logger.startOperation(req, 'update_committee', {
       committee_id: id,
-      update_data: Logger.sanitize(req.body),
+      update_data: logger.sanitize(req.body),
     });
 
     try {
       // Check if the committee ID is provided
       if (!id) {
-        Logger.error(req, 'update_committee', startTime, new Error('Missing committee ID parameter'));
-
         // Create a validation error
         const validationError = ServiceValidationError.forField('id', 'Committee ID is required', {
           operation: 'update_committee',
@@ -170,16 +155,13 @@ export class CommitteeController {
       const updatedCommittee = await this.committeeService.updateCommittee(req, id, updateData);
 
       // Log the success
-      Logger.success(req, 'update_committee', startTime, {
+      logger.success(req, 'update_committee', startTime, {
         committee_id: id,
       });
 
       // Send the updated committee data to the client
       res.json(updatedCommittee);
     } catch (error) {
-      Logger.error(req, 'update_committee', startTime, error, {
-        committee_id: id,
-      });
       next(error);
     }
   }
@@ -189,15 +171,13 @@ export class CommitteeController {
    */
   public async deleteCommittee(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
-    const startTime = Logger.start(req, 'delete_committee', {
+    const startTime = logger.startOperation(req, 'delete_committee', {
       committee_id: id,
     });
 
     try {
       // Check if the committee ID is provided
       if (!id) {
-        Logger.error(req, 'delete_committee', startTime, new Error('Missing committee ID parameter'));
-
         // Create a validation error
         const validationError = ServiceValidationError.forField('id', 'Committee ID is required', {
           operation: 'delete_committee',
@@ -214,18 +194,13 @@ export class CommitteeController {
       await this.committeeService.deleteCommittee(req, id);
 
       // Log the success
-      Logger.success(req, 'delete_committee', startTime, {
+      logger.success(req, 'delete_committee', startTime, {
         committee_id: id,
       });
 
       // Send the response to the client
       res.status(204).send();
     } catch (error) {
-      // Log the error
-      Logger.error(req, 'delete_committee', startTime, error, {
-        committee_id: id,
-      });
-
       // Send the error to the next middleware
       next(error);
     }
@@ -236,16 +211,14 @@ export class CommitteeController {
    */
   public async getCommitteeMembers(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
-    const startTime = Logger.start(req, 'get_committee_members', {
+    const startTime = logger.startOperation(req, 'get_committee_members', {
       committee_id: id,
-      query_params: Logger.sanitize(req.query as Record<string, any>),
+      query_params: logger.sanitize(req.query as Record<string, any>),
     });
 
     try {
       // Check if the committee ID is provided
       if (!id) {
-        Logger.error(req, 'get_committee_members', startTime, new Error('Missing committee ID parameter'));
-
         // Create a validation error
         const validationError = ServiceValidationError.forField('id', 'Committee ID is required', {
           operation: 'get_committee_members',
@@ -262,7 +235,7 @@ export class CommitteeController {
       const members = await this.committeeService.getCommitteeMembers(req, id, req.query);
 
       // Log the success
-      Logger.success(req, 'get_committee_members', startTime, {
+      logger.success(req, 'get_committee_members', startTime, {
         committee_id: id,
         member_count: members.length,
       });
@@ -270,11 +243,6 @@ export class CommitteeController {
       // Send the members data to the client
       res.json(members);
     } catch (error) {
-      // Log the error
-      Logger.error(req, 'get_committee_members', startTime, error, {
-        committee_id: id,
-      });
-
       // Send the error to the next middleware
       next(error);
     }
@@ -285,7 +253,7 @@ export class CommitteeController {
    */
   public async getCommitteeMemberById(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id, memberId } = req.params;
-    const startTime = Logger.start(req, 'get_committee_member_by_id', {
+    const startTime = logger.startOperation(req, 'get_committee_member_by_id', {
       committee_id: id,
       member_id: memberId,
     });
@@ -293,8 +261,6 @@ export class CommitteeController {
     try {
       // Check if the committee ID is provided
       if (!id) {
-        Logger.error(req, 'get_committee_member_by_id', startTime, new Error('Missing committee ID parameter'));
-
         // Create a validation error
         const validationError = ServiceValidationError.forField('id', 'Committee ID is required', {
           operation: 'get_committee_member_by_id',
@@ -309,8 +275,6 @@ export class CommitteeController {
 
       // Check if the member ID is provided
       if (!memberId) {
-        Logger.error(req, 'get_committee_member_by_id', startTime, new Error('Missing member ID parameter'));
-
         // Create a validation error
         const validationError = ServiceValidationError.forField('memberId', 'Member ID is required', {
           operation: 'get_committee_member_by_id',
@@ -327,7 +291,7 @@ export class CommitteeController {
       const member = await this.committeeService.getCommitteeMemberById(req, id, memberId);
 
       // Log the success
-      Logger.success(req, 'get_committee_member_by_id', startTime, {
+      logger.success(req, 'get_committee_member_by_id', startTime, {
         committee_id: id,
         member_id: memberId,
       });
@@ -335,12 +299,6 @@ export class CommitteeController {
       // Send the member data to the client
       res.json(member);
     } catch (error) {
-      // Log the error
-      Logger.error(req, 'get_committee_member_by_id', startTime, error, {
-        committee_id: id,
-        member_id: memberId,
-      });
-
       // Send the error to the next middleware
       next(error);
     }
@@ -351,16 +309,14 @@ export class CommitteeController {
    */
   public async createCommitteeMember(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
-    const startTime = Logger.start(req, 'create_committee_member', {
+    const startTime = logger.startOperation(req, 'create_committee_member', {
       committee_id: id,
-      member_data: Logger.sanitize(req.body),
+      member_data: logger.sanitize(req.body),
     });
 
     try {
       // Check if the committee ID is provided
       if (!id) {
-        Logger.error(req, 'create_committee_member', startTime, new Error('Missing committee ID parameter'));
-
         // Create a validation error
         const validationError = ServiceValidationError.forField('id', 'Committee ID is required', {
           operation: 'create_committee_member',
@@ -380,7 +336,7 @@ export class CommitteeController {
       const newMember = await this.committeeService.createCommitteeMember(req, id, memberData);
 
       // Log the success
-      Logger.success(req, 'create_committee_member', startTime, {
+      logger.success(req, 'create_committee_member', startTime, {
         committee_id: id,
         member_id: newMember.uid,
       });
@@ -388,11 +344,6 @@ export class CommitteeController {
       // Send the new member data to the client
       res.status(201).json(newMember);
     } catch (error) {
-      // Log the error
-      Logger.error(req, 'create_committee_member', startTime, error, {
-        committee_id: id,
-      });
-
       // Send the error to the next middleware
       next(error);
     }
@@ -403,17 +354,15 @@ export class CommitteeController {
    */
   public async updateCommitteeMember(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id, memberId } = req.params;
-    const startTime = Logger.start(req, 'update_committee_member', {
+    const startTime = logger.startOperation(req, 'update_committee_member', {
       committee_id: id,
       member_id: memberId,
-      update_data: Logger.sanitize(req.body),
+      update_data: logger.sanitize(req.body),
     });
 
     try {
       // Check if the committee ID is provided
       if (!id) {
-        Logger.error(req, 'update_committee_member', startTime, new Error('Missing committee ID parameter'));
-
         // Create a validation error
         const validationError = ServiceValidationError.forField('id', 'Committee ID is required', {
           operation: 'update_committee_member',
@@ -428,8 +377,6 @@ export class CommitteeController {
 
       // Check if the member ID is provided
       if (!memberId) {
-        Logger.error(req, 'update_committee_member', startTime, new Error('Missing member ID parameter'));
-
         // Create a validation error
         const validationError = ServiceValidationError.forField('memberId', 'Member ID is required', {
           operation: 'update_committee_member',
@@ -449,7 +396,7 @@ export class CommitteeController {
       const updatedMember = await this.committeeService.updateCommitteeMember(req, id, memberId, updateData);
 
       // Log the success
-      Logger.success(req, 'update_committee_member', startTime, {
+      logger.success(req, 'update_committee_member', startTime, {
         committee_id: id,
         member_id: memberId,
       });
@@ -457,11 +404,6 @@ export class CommitteeController {
       // Send the updated member data to the client
       res.json(updatedMember);
     } catch (error) {
-      // Log the error
-      Logger.error(req, 'update_committee_member', startTime, error, {
-        committee_id: id,
-        member_id: memberId,
-      });
       next(error);
     }
   }
@@ -471,7 +413,7 @@ export class CommitteeController {
    */
   public async deleteCommitteeMember(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id, memberId } = req.params;
-    const startTime = Logger.start(req, 'delete_committee_member', {
+    const startTime = logger.startOperation(req, 'delete_committee_member', {
       committee_id: id,
       member_id: memberId,
     });
@@ -479,8 +421,6 @@ export class CommitteeController {
     try {
       // Check if the committee ID is provided
       if (!id) {
-        Logger.error(req, 'delete_committee_member', startTime, new Error('Missing committee ID parameter'));
-
         // Create a validation error
         const validationError = ServiceValidationError.forField('id', 'Committee ID is required', {
           operation: 'delete_committee_member',
@@ -495,8 +435,6 @@ export class CommitteeController {
 
       // Check if the member ID is provided
       if (!memberId) {
-        Logger.error(req, 'delete_committee_member', startTime, new Error('Missing member ID parameter'));
-
         // Create a validation error
         const validationError = ServiceValidationError.forField('memberId', 'Member ID is required', {
           operation: 'delete_committee_member',
@@ -513,7 +451,7 @@ export class CommitteeController {
       await this.committeeService.deleteCommitteeMember(req, id, memberId);
 
       // Log the success
-      Logger.success(req, 'delete_committee_member', startTime, {
+      logger.success(req, 'delete_committee_member', startTime, {
         committee_id: id,
         member_id: memberId,
       });
@@ -521,12 +459,6 @@ export class CommitteeController {
       // Send the response to the client
       res.status(204).send();
     } catch (error) {
-      // Log the error
-      Logger.error(req, 'delete_committee_member', startTime, error, {
-        committee_id: id,
-        member_id: memberId,
-      });
-
       // Send the error to the next middleware
       next(error);
     }

@@ -473,7 +473,7 @@ export class MeetingCardComponent implements OnInit {
 
   private initAttachments(): Signal<MeetingAttachment[]> {
     return runInInjectionContext(this.injector, () => {
-      return toSignal(this.meetingService.getMeetingAttachments(this.meeting().uid).pipe(catchError(() => of([]))), {
+      return toSignal(this.meetingService.getMeetingAttachments(this.meetingInput().uid).pipe(catchError(() => of([]))), {
         initialValue: [],
       });
     });
@@ -482,7 +482,7 @@ export class MeetingCardComponent implements OnInit {
   private initRecording(): void {
     runInInjectionContext(this.injector, () => {
       toSignal(
-        this.meetingService.getPastMeetingRecording(this.meeting().uid).pipe(
+        this.meetingService.getPastMeetingRecording(this.meetingInput().uid).pipe(
           catchError(() => of(null)),
           tap((recording) => this.recording.set(recording))
         ),
@@ -494,7 +494,7 @@ export class MeetingCardComponent implements OnInit {
   private initSummary(): void {
     runInInjectionContext(this.injector, () => {
       toSignal(
-        this.meetingService.getPastMeetingSummary(this.meeting().uid).pipe(
+        this.meetingService.getPastMeetingSummary(this.meetingInput().uid).pipe(
           catchError(() => of(null)),
           tap((summary) => this.summary.set(summary))
         ),
