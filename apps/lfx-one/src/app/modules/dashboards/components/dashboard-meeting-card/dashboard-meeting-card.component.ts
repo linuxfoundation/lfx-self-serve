@@ -103,7 +103,7 @@ export class DashboardMeetingCardComponent {
       if (config.textColor.includes('red')) severity = 'danger';
       else if (config.textColor.includes('blue')) severity = 'info';
       else if (config.textColor.includes('green')) severity = 'success';
-      else if (config.textColor.includes('purple')) severity = 'contrast';
+      else if (config.textColor.includes('purple')) severity = 'secondary';
       else if (config.textColor.includes('amber')) severity = 'warn';
 
       return {

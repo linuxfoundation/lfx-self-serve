@@ -99,7 +99,10 @@
     <div class="flex gap-2">
       <!-- See Meeting button - full width when alone, flex-1 when both buttons present -->
       <lfx-button
-        class="w-full border border-gray-300 text-gray-900 hover:bg-gray-50 h-8 text-sm font-medium"
+        class="w-full"
+        severity="secondary"
+        size="small"
+        styleClass="w-full"
         label="See Meeting Details"
         [href]="meetingDetailUrl()"
         target="_blank"
@@ -122,7 +125,8 @@
             type="button"
             rel="noopener noreferrer"
             icon="fa-light fa-video"
-            styleClass="w-full bg-emerald-500 hover:bg-emerald-600 text-white h-8 text-sm font-semibold"
+            severity="success"
+            styleClass="w-full h-8"
             data-testid="dashboard-meeting-card-join-button" />
         }
       }

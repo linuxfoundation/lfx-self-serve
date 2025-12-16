@@ -48,7 +48,7 @@ export class MemberCardComponent {
     const role = this.member().role?.name?.toLowerCase();
     if (role === 'chair' || role === 'chairperson') return 'info';
     if (role === 'vice chair' || role === 'vice-chair') return 'success';
-    if (role === 'secretary') return 'contrast';
+    if (role === 'secretary') return 'secondary';
     return 'secondary';
   });
 

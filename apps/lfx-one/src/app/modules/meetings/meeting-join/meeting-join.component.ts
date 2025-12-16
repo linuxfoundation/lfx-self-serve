@@ -336,7 +336,7 @@ export class MeetingJoinComponent {
         case 'marketing':
           return { badgeClass: 'bg-green-100 text-green-500', severity: 'success', icon: 'fa-light fa-chart-line-up', text: meetingType };
         case 'technical':
-          return { badgeClass: 'bg-purple-100 text-purple-500', severity: 'contrast', icon: 'fa-light fa-code', text: meetingType };
+          return { badgeClass: 'bg-purple-100 text-purple-500', severity: 'secondary', icon: 'fa-light fa-code', text: meetingType };
         case 'legal':
           return { badgeClass: 'bg-amber-100 text-amber-500', severity: 'warn', icon: 'fa-light fa-scale-balanced', text: meetingType };
         default:
