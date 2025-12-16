@@ -19,6 +19,34 @@
     </ng-template>
   </lfx-message>
 
+  <!-- Member Visibility Setting -->
+  <div class="space-y-2">
+    <h3 class="text-base font-medium text-slate-900">Member Visibility</h3>
+    <div class="bg-white border border-slate-200 p-4 rounded-lg">
+      <div class="flex flex-col gap-3">
+        <div class="flex items-center gap-3">
+          <div class="p-2 rounded-lg bg-blue-50 text-blue-500">
+            <i class="fa-light fa-user-lock text-sm"></i>
+          </div>
+          <div class="flex-1">
+            <label for="member-visibility" class="text-sm font-semibold text-slate-900">Member Profile Visibility</label>
+            <p class="text-xs text-slate-600">Control what member information is visible within the {{ committeeLabel.toLowerCase() }}</p>
+          </div>
+        </div>
+        <lfx-select
+          [form]="form()"
+          control="member_visibility"
+          [options]="memberVisibilityOptions"
+          placeholder="Select visibility level"
+          styleClass="w-full"
+          size="small"
+          id="member-visibility"
+          data-testid="member-visibility-select">
+        </lfx-select>
+      </div>
+    </div>
+  </div>
+
   <!-- Committee Settings Features -->
   <div class="space-y-4">
     <h3 class="text-base font-medium text-slate-900">{{ committeeLabel }} Features</h3>

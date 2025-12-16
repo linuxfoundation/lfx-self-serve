@@ -24,6 +24,8 @@ export interface CommitteeMember {
   last_name: string;
   /** Member's job title */
   job_title?: string;
+  /** Member's LinkedIn profile URL */
+  linkedin_profile?: string;
   /** Who appointed this member to their role */
   appointed_by?: CommitteeMemberAppointedBy;
   /** Member status */
@@ -78,6 +80,8 @@ export interface CreateCommitteeMemberRequest {
   last_name?: string | null;
   /** Member's job title */
   job_title?: string | null;
+  /** Member's LinkedIn profile URL */
+  linkedin_profile?: string | null;
   /** Member's role within the committee */
   role?: {
     /** Role name */

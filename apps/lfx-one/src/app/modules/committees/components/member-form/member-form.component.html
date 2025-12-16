@@ -45,6 +45,19 @@
       <lfx-input-text size="small" [form]="form()" control="job_title" id="job-title" placeholder="Enter job title" styleClass="w-full"></lfx-input-text>
     </div>
 
+    <!-- LinkedIn Profile -->
+    <div>
+      <label for="linkedin-profile" class="block text-sm font-medium text-gray-700 mb-1"> LinkedIn Profile </label>
+      <lfx-input-text
+        size="small"
+        [form]="form()"
+        control="linkedin_profile"
+        id="linkedin-profile"
+        placeholder="Enter LinkedIn profile URL"
+        styleClass="w-full"
+        data-testid="member-form-linkedin-profile"></lfx-input-text>
+    </div>
+
     <!-- Organization Search -->
     <div>
       <label for="organization-search" class="block text-sm font-medium text-gray-700 mb-1"> Organization </label>

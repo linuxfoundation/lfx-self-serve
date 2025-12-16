@@ -74,6 +74,7 @@ export class MemberFormComponent {
         last_name: formValue.last_name || null,
         email: formValue.email,
         job_title: formValue.job_title || null,
+        linkedin_profile: formValue.linkedin_profile || null,
         appointed_by: formValue.appointed_by || null,
         role: formValue.role
           ? {
@@ -166,6 +167,7 @@ export class MemberFormComponent {
         last_name: member.last_name,
         email: member.email,
         job_title: member.job_title,
+        linkedin_profile: member.linkedin_profile,
         organization: member.organization?.name,
         organization_url: member.organization?.website,
         role: member.role?.name,
@@ -185,6 +187,7 @@ export class MemberFormComponent {
       last_name: new FormControl('', [Validators.required]),
       email: new FormControl('', [Validators.required, Validators.email]),
       job_title: new FormControl(''),
+      linkedin_profile: new FormControl('', [Validators.pattern(/^https?:\/\/.+\..+/)]),
       organization: new FormControl(''),
       organization_url: new FormControl(''),
       role: new FormControl(''),

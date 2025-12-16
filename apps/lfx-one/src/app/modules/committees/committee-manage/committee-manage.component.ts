@@ -379,6 +379,8 @@ export class CommitteeManageComponent {
       sso_group_name: committee.sso_group_name,
       website: committee.website,
       joinable: false,
+      member_visibility: committee.member_visibility || 'hidden',
+      show_meeting_attendees: committee.show_meeting_attendees || false,
     });
   }
 
@@ -402,6 +404,8 @@ export class CommitteeManageComponent {
       sso_group_enabled: new FormControl(false),
       sso_group_name: new FormControl(''),
       joinable: new FormControl(false),
+      member_visibility: new FormControl('hidden'),
+      show_meeting_attendees: new FormControl(false),
     });
   }
 

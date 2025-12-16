@@ -421,4 +421,20 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     description: 'Sync membership with Single Sign-On provider',
     color: lfxColors.red[500],
   },
+  {
+    key: 'show_meeting_attendees',
+    icon: 'fa-light fa-users-rectangle',
+    title: 'Show Meeting Attendees',
+    description: 'Display who attended or is attending committee meetings',
+    color: lfxColors.blue[500],
+  },
+];
+
+/**
+ * Member visibility options for committee settings
+ * @description Controls the visibility level of member profiles within a committee
+ */
+export const MEMBER_VISIBILITY_OPTIONS = [
+  { label: 'Hidden', value: 'hidden' },
+  { label: 'Basic Profile', value: 'basic_profile' },
 ];

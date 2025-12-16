@@ -38,6 +38,15 @@
       </div>
     }
 
+    @if (member().linkedin_profile) {
+      <div class="flex items-center gap-2">
+        <i class="fa-brands fa-linkedin text-gray-400 w-4"></i>
+        <a [href]="member().linkedin_profile" rel="noopener noreferrer" target="_blank" class="text-sm text-primary hover:text-primary-600 hover:underline">
+          LinkedIn Profile
+        </a>
+      </div>
+    }
+
     @if (member().organization) {
       <div class="flex items-center gap-2">
         <i class="fa-light fa-building text-gray-400 w-4"></i>
