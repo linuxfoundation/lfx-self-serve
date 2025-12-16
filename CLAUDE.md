@@ -129,6 +129,7 @@ logger.success(undefined, 'nats_connect', startTime, metadata);
 - `logger.startOperation(req|undefined, 'operation', metadata, options?)` → Returns startTime, logs at INFO (silent option available)
 - `logger.success(req|undefined, 'operation', startTime, metadata)` → Logs at INFO with duration
 - `logger.error(req|undefined, 'operation', startTime, error, metadata, options?)` → Logs at ERROR with 'err' field
+- `logger.info(req|undefined, 'operation', message, metadata)` → Logs at INFO for significant operations
 - `logger.warning(req|undefined, 'operation', message, metadata)` → Logs at WARN
 - `logger.validation(req|undefined, 'operation', errors[], metadata)` → Logs at ERROR with validation details
 - `logger.debug(req|undefined, 'operation', message, metadata)` → Logs at DEBUG
@@ -138,6 +139,34 @@ logger.success(undefined, 'nats_connect', startTime, metadata);
 
 - **Request-scoped** (pass `req`): Controllers, route handlers, service methods called from routes
 - **Infrastructure** (pass `undefined`): NATS connections, Snowflake pool, server startup/shutdown, scheduled jobs
+
+### Logging Layer Responsibility
+
+**Controllers (HTTP Boundary):**
+
+- ✅ **Always** use `logger.startOperation()` / `logger.success()` / `logger.error()` for HTTP operations
+- Operation names should match HTTP semantics (e.g., `get_meeting_rsvps`, `create_meeting`)
+- Duration represents full HTTP request → response cycle
+- One startOperation per HTTP endpoint
+
+**Services (Business Logic):**
+
+- ✅ **Always** use `logger.debug()` for step-by-step tracing
+- ✅ Use `logger.info()` for significant business operations visible in production:
+  - Data transformations (V1→V2 conversions)
+  - Data enrichment (adding project names, committee data)
+  - Complex multi-step orchestrations
+  - Operations with notable business impact
+- ✅ Use `logger.warning()` for recoverable errors when returning null/empty arrays
+- ❌ **Never** use `logger.startOperation()` with the same operation name as the calling controller
+- ❌ **Never** call `serverLogger` directly
+
+**Why This Pattern:**
+
+- Prevents duplicate logging (no double startOperation calls)
+- Clear separation: Controllers log HTTP, Services log business logic
+- Production visibility: INFO logs for significant operations, DEBUG for detailed tracing
+- Consistent duration semantics: HTTP duration in controllers, not inflated by double-counting
 
 ### Error Logging Standard
 
@@ -165,27 +194,34 @@ req.log.error({ error: error }, 'message'); // Should use logger service
 
 ### Log Level Guidelines
 
-**INFO** - Business operation completions:
+**INFO** - Business operation completions and significant operations:
 
-- Successful data operations (created, updated, deleted, fetched)
-- Important state changes
-- Operation success with duration
+- **In Controllers**: HTTP operation success with duration (via `startOperation` / `success`)
+- **In Services**: Significant business operations visible in production (via `logger.info()`):
+  - Data transformations (V1→V2 conversions)
+  - Data enrichment (project names, committee data)
+  - Complex orchestrations
+  - Operations with notable business impact
 
 **WARN** - Recoverable issues:
 
-- Error conditions leading to exceptions
+- Error conditions with graceful degradation (returning null/empty arrays)
 - Data quality issues, user not found
 - Fallback behaviors, NATS failures with graceful handling
+- Service errors that don't propagate to controller
 
-**DEBUG** - Internal operations:
+**DEBUG** - Internal operations and tracing:
 
+- **In Services**: Step-by-step operation tracing
+- Method entry/exit with key parameters
 - Preparation steps (sanitizing, creating payload)
 - Internal lookups (NATS, database queries)
-- Intent statements (resolving, fetching)
+- Simple data fetches
 - Infrastructure operations (connections, pool state)
 
 **ERROR** - Critical failures:
 
+- **In Controllers**: HTTP operation failures (via `logger.error()` with startTime)
 - System failures, unhandled exceptions
 - Critical errors requiring immediate attention
 - Operations that cannot continue
@@ -246,25 +282,77 @@ export const getUser = async (req: Request, res: Response, next: NextFunction) =
 };
 ```
 
-**Service Method with Request Context:**
+**Service Method - Simple (DEBUG only):**
 
 ```typescript
-public async updateUser(req: Request, userId: string, data: UpdateData): Promise<User> {
-  const startTime = logger.startOperation(req, 'update_user', { userId });
+public async getUserById(req: Request, userId: string): Promise<User> {
+  logger.debug(req, 'get_user_by_id', 'Fetching user from database', { userId });
+
+  const user = await this.database.findUser(userId);
+
+  return user;
+}
+```
+
+**Service Method - Complex (INFO + DEBUG):**
+
+```typescript
+public async getMeetings(req: Request, query: QueryParams): Promise<Meeting[]> {
+  logger.debug(req, 'get_meetings', 'Starting meeting fetch', { query });
+
+  const { resources } = await this.microserviceProxy.proxyRequest(...);
+
+  logger.debug(req, 'get_meetings', 'Fetched resources', { count: resources.length });
+
+  // Significant transformation - use INFO level for production visibility
+  if (isV1) {
+    logger.info(req, 'transform_v1_meetings', 'Transforming V1 meetings to V2 format', {
+      count: resources.length,
+    });
+    meetings = meetings.map(transformV1MeetingToV2);
+  }
+
+  // Enrichment step - DEBUG for tracing
+  logger.debug(req, 'get_meetings', 'Enriching with project names', { count: meetings.length });
+  meetings = await this.enrichWithProjects(req, meetings);
+
+  // Significant enrichment - use INFO level
+  if (meetings.some((m) => m.committees?.length > 0)) {
+    logger.info(req, 'enrich_committees', 'Enriching meetings with committee data', {
+      total_meetings: meetings.length,
+    });
+    meetings = await this.getMeetingCommittees(req, meetings);
+  }
+
+  logger.debug(req, 'get_meetings', 'Completed meeting fetch', { final_count: meetings.length });
+
+  return meetings;
+}
+```
+
+**Service Method - Graceful Error Handling:**
+
+```typescript
+public async getPastMeetingRecording(req: Request, meetingUid: string): Promise<Recording | null> {
+  logger.debug(req, 'get_past_meeting_recording', 'Fetching recording', { meeting_uid: meetingUid });
 
   try {
-    // Validation
-    if (!data.email) {
-      logger.validation(req, 'update_user', ['Email required'], { userId });
-      throw new ValidationError('Email required');
+    const { resources } = await this.microserviceProxy.proxyRequest(...);
+
+    if (!resources || resources.length === 0) {
+      logger.warning(req, 'get_past_meeting_recording', 'No recording found', {
+        meeting_uid: meetingUid,
+      });
+      return null;
     }
 
-    const user = await this.performUpdate(userId, data);
-    logger.success(req, 'update_user', startTime, { userId, updatedFields: Object.keys(data) });
-    return user;
+    return resources[0].data;
   } catch (error) {
-    logger.error(req, 'update_user', startTime, error, { userId });
-    throw error;
+    logger.warning(req, 'get_past_meeting_recording', 'Failed to fetch recording, returning null', {
+      meeting_uid: meetingUid,
+      error: error instanceof Error ? error.message : 'Unknown error',
+    });
+    return null;
   }
 }
 ```
@@ -311,10 +399,18 @@ private async fetchFromNats(req: Request, slug: string): Promise<Project> {
 - [ ] Operation name in snake_case?
 - [ ] Sensitive data sanitized?
 
-**For operations with duration:**
+**For Controllers:**
 
-- [ ] Called `logger.startOperation()` and captured `startTime`?
+- [ ] Using `logger.startOperation()` for HTTP operations?
 - [ ] Calling `logger.success()` or `logger.error()` with `startTime`?
+- [ ] Not duplicating service-level logging?
+
+**For Services:**
+
+- [ ] Using `logger.debug()` for step-by-step tracing?
+- [ ] Using `logger.info()` for significant operations (transformations, enrichments)?
+- [ ] Using `logger.warning()` for graceful error handling (returning null/empty)?
+- [ ] NOT using `logger.startOperation()` if controller already logs the same operation?
 - [ ] Passing relevant metadata for debugging?
 - All shared types, interfaces, and constants are centralized in @lfx-one/shared package
 - **AI Service Integration**: Claude Sonnet 4 model via LiteLLM proxy for meeting agenda generation

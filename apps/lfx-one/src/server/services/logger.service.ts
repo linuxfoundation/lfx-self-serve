@@ -361,6 +361,42 @@ export class LoggerService {
   }
 
   /**
+   * Logs info messages with operation context
+   * Use for significant business operations that should be visible in production
+   * @param req - Request object (optional - use undefined for infrastructure operations)
+   */
+  public info(req: Request | undefined, operation: string, message: string, metadata: Record<string, unknown> = {}): void {
+    // Extract err from metadata to place at top level for proper error serialization
+    const { err, ...rest } = metadata;
+
+    // Infrastructure logging (no request context)
+    if (!req) {
+      serverLogger.info(
+        {
+          operation,
+          status: 'info',
+          ...(err ? { err } : {}), // err at top level for Pino error serializer
+          ...(Object.keys(rest).length > 0 && { data: rest }),
+        },
+        `${this.formatOperation(operation)}: ${message}`
+      );
+      return;
+    }
+
+    // Request-scoped logging
+    req.log.info(
+      {
+        operation,
+        status: 'info',
+        request_id: req.id,
+        ...(err ? { err } : {}), // err at top level for Pino error serializer
+        ...(Object.keys(rest).length > 0 && { data: rest }),
+      },
+      `${this.formatOperation(operation)}: ${message}`
+    );
+  }
+
+  /**
    * Logs debug messages with operation context
    * Use for detailed internal state, preparation steps, or verbose information
    * @param req - Request object (optional - use undefined for infrastructure operations)

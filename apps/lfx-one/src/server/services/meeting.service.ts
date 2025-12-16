@@ -59,12 +59,22 @@ export class MeetingService {
     meetingType: QueryServiceMeetingType = 'meeting',
     access: boolean = true
   ): Promise<Meeting[]> {
+    logger.debug(req, 'get_meetings', 'Starting meeting fetch', {
+      type: meetingType,
+      query_params: Object.keys(query),
+    });
+
     const params = {
       ...query,
       type: meetingType,
     };
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
+
+    logger.debug(req, 'get_meetings', 'Fetched resources from query service', {
+      count: resources.length,
+      type: meetingType,
+    });
 
     // TODO(v1-migration): Remove V1 version determination once all meetings are migrated to V2
     // Determine meeting version based on type
@@ -78,21 +88,40 @@ export class MeetingService {
 
     // Transform V1 meetings to V2 format on the server side
     if (isV1) {
+      logger.info(req, 'transform_v1_meetings', 'Transforming V1 meetings to V2 format', {
+        count: meetings.length,
+        type: meetingType,
+      });
       meetings = meetings.map(transformV1MeetingToV2);
     }
 
     // Get project name for each meeting
+    logger.debug(req, 'get_meetings', 'Enriching meetings with project names', {
+      count: meetings.length,
+    });
     meetings = await this.getMeetingProjectName(req, meetings);
 
     // Get committee data for each committee associated with the meeting
     if (meetings.some((m) => m.committees && m.committees.length > 0)) {
+      const meetingsWithCommittees = meetings.filter((m) => m.committees && m.committees.length > 0).length;
+      logger.info(req, 'enrich_committees', 'Enriching meetings with committee data', {
+        total_meetings: meetings.length,
+        meetings_with_committees: meetingsWithCommittees,
+      });
       meetings = await this.getMeetingCommittees(req, meetings);
     }
 
     if (access) {
+      logger.debug(req, 'get_meetings', 'Adding access control information', {
+        count: meetings.length,
+      });
       // Add writer access field to all meetings
       return await this.accessCheckService.addAccessToResources(req, meetings, meetingType, 'organizer');
     }
+
+    logger.debug(req, 'get_meetings', 'Completed meeting fetch', {
+      final_count: meetings.length,
+    });
 
     return meetings;
   }
@@ -101,6 +130,11 @@ export class MeetingService {
    * Fetches the count of meetings based on query parameters
    */
   public async getMeetingsCount(req: Request, query: Record<string, any> = {}, meetingType: string = 'meeting'): Promise<number> {
+    logger.debug(req, 'get_meetings_count', 'Fetching meeting count', {
+      type: meetingType,
+      query_params: Object.keys(query),
+    });
+
     const params = {
       ...query,
       type: meetingType,
@@ -115,6 +149,11 @@ export class MeetingService {
    * Fetches a single meeting by UID
    */
   public async getMeetingById(req: Request, meetingUid: string, meetingType: QueryServiceMeetingType = 'meeting', access: boolean = true): Promise<Meeting> {
+    logger.debug(req, 'get_meeting_by_id', 'Fetching meeting by ID', {
+      meeting_uid: meetingUid,
+      type: meetingType,
+    });
+
     // TODO(v1-migration): Remove V1 meeting handling branch once all meetings are migrated to V2
     let meeting;
     if (meetingType === 'v1_meeting') {
@@ -137,6 +176,9 @@ export class MeetingService {
       meeting.version = 'v1';
 
       // Transform V1 meeting to V2 format
+      logger.info(req, 'transform_v1_meeting', 'Transforming V1 meeting to V2 format', {
+        meeting_uid: meetingUid,
+      });
       meeting = transformV1MeetingToV2(meeting);
     } else {
       meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}`, 'GET');
@@ -151,14 +193,25 @@ export class MeetingService {
     }
 
     if (meeting.committees && meeting.committees.length > 0) {
+      logger.debug(req, 'get_meeting_by_id', 'Enriching meeting with committee data', {
+        meeting_uid: meetingUid,
+        committee_count: meeting.committees.length,
+      });
       const meetingWithCommittees = await this.getMeetingCommittees(req, [meeting]);
       meeting = meetingWithCommittees[0];
     }
 
     if (access) {
+      logger.debug(req, 'get_meeting_by_id', 'Adding access control information', {
+        meeting_uid: meetingUid,
+      });
       // Add writer access field to the meeting
       return await this.accessCheckService.addAccessToResource(req, meeting, 'meeting', 'organizer');
     }
+
+    logger.debug(req, 'get_meeting_by_id', 'Completed meeting fetch', {
+      meeting_uid: meetingUid,
+    });
 
     return meeting;
   }
@@ -229,8 +282,16 @@ export class MeetingService {
    * Deletes a meeting using ETag for concurrency control
    */
   public async deleteMeeting(req: Request, meetingUid: string): Promise<void> {
+    logger.debug(req, 'delete_meeting', 'Deleting meeting with ETag', {
+      meeting_uid: meetingUid,
+    });
+
     // Step 1: Fetch meeting with ETag
     const { etag } = await this.etagService.fetchWithETag<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}`, 'delete_meeting');
+
+    logger.debug(req, 'delete_meeting', 'Fetched ETag for deletion', {
+      meeting_uid: meetingUid,
+    });
 
     // Step 2: Delete meeting with ETag
     await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}`, etag, 'delete_meeting');
@@ -240,6 +301,11 @@ export class MeetingService {
    * Cancels a meeting occurrence using ETag for concurrency control
    */
   public async cancelOccurrence(req: Request, meetingUid: string, occurrenceId: string): Promise<void> {
+    logger.debug(req, 'cancel_occurrence', 'Canceling meeting occurrence', {
+      meeting_uid: meetingUid,
+      occurrence_id: occurrenceId,
+    });
+
     // Step 1: Fetch meeting with ETag
     const { etag } = await this.etagService.fetchWithETag<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}`, 'cancel_occurrence');
 
@@ -380,6 +446,11 @@ export class MeetingService {
    * Deletes a meeting registrant using ETag for concurrency control
    */
   public async deleteMeetingRegistrant(req: Request, meetingUid: string, registrantUid: string): Promise<void> {
+    logger.debug(req, 'delete_meeting_registrant', 'Deleting registrant with ETag', {
+      meeting_uid: meetingUid,
+      registrant_uid: registrantUid,
+    });
+
     // Step 1: Fetch registrant with ETag
     const { etag } = await this.etagService.fetchWithETag<MeetingRegistrant>(
       req,
@@ -387,6 +458,11 @@ export class MeetingService {
       `/meetings/${meetingUid}/registrants/${registrantUid}`,
       'delete_meeting_registrant'
     );
+
+    logger.debug(req, 'delete_meeting_registrant', 'Fetched ETag for deletion', {
+      meeting_uid: meetingUid,
+      registrant_uid: registrantUid,
+    });
 
     // Step 2: Delete registrant with ETag
     await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/registrants/${registrantUid}`, etag, 'delete_meeting_registrant');
@@ -396,21 +472,23 @@ export class MeetingService {
    * Resend a meeting invitation to a specific registrant
    */
   public async resendMeetingInvitation(req: Request, meetingUid: string, registrantId: string): Promise<void> {
-    const startTime = logger.startOperation(req, 'resend_meeting_invitation', { meeting_uid: meetingUid, registrant_id: registrantId });
-
-    // Call the LFX API endpoint for resending invitation
-    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/registrants/${registrantId}/resend`, 'POST');
-
-    logger.success(req, 'resend_meeting_invitation', startTime, {
+    logger.debug(req, 'resend_meeting_invitation', 'Resending meeting invitation to registrant', {
       meeting_uid: meetingUid,
       registrant_id: registrantId,
     });
+
+    // Call the LFX API endpoint for resending invitation
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/registrants/${registrantId}/resend`, 'POST');
   }
 
   /**
    * Fetches meeting join URL by meeting UID
    */
   public async getMeetingJoinUrl(req: Request, meetingUid: string): Promise<MeetingJoinURL> {
+    logger.debug(req, 'get_meeting_join_url', 'Fetching meeting join URL', {
+      meeting_uid: meetingUid,
+    });
+
     return await this.microserviceProxy.proxyRequest<MeetingJoinURL>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/join_url`, 'GET');
   }
 
@@ -418,7 +496,9 @@ export class MeetingService {
    * Fetches past meeting participants by past meeting UID
    */
   public async getPastMeetingParticipants(req: Request, pastMeetingUid: string): Promise<PastMeetingParticipant[]> {
-    const startTime = logger.startOperation(req, 'get_past_meeting_participants', { past_meeting_uid: pastMeetingUid });
+    logger.debug(req, 'get_past_meeting_participants', 'Fetching past meeting participants', {
+      past_meeting_uid: pastMeetingUid,
+    });
 
     const params = {
       type: 'past_meeting_participant',
@@ -433,14 +513,7 @@ export class MeetingService {
       params
     );
 
-    const participants = resources.map((resource) => resource.data);
-
-    logger.success(req, 'get_past_meeting_participants', startTime, {
-      past_meeting_uid: pastMeetingUid,
-      participant_count: participants.length,
-    });
-
-    return participants;
+    return resources.map((resource) => resource.data);
   }
 
   /**
@@ -448,7 +521,10 @@ export class MeetingService {
    * @param v1 - If true, use v1_past_meeting_recording type and id tag format for legacy meetings
    */
   public async getPastMeetingRecording(req: Request, pastMeetingUid: string, v1: boolean = false): Promise<PastMeetingRecording | null> {
-    const startTime = logger.startOperation(req, 'get_past_meeting_recording', { past_meeting_uid: pastMeetingUid, v1 });
+    logger.debug(req, 'get_past_meeting_recording', 'Fetching past meeting recording', {
+      past_meeting_uid: pastMeetingUid,
+      v1,
+    });
 
     try {
       // V1 legacy meetings use different type and tag format
@@ -474,21 +550,12 @@ export class MeetingService {
         return null;
       }
 
-      const recording = resources[0].data;
-
-      logger.success(req, 'get_past_meeting_recording', startTime, {
-        past_meeting_uid: pastMeetingUid,
-        v1,
-        recording_uid: recording.uid,
-        recording_count: recording.recording_count,
-        session_count: recording.sessions?.length || 0,
-      });
-
-      return recording;
+      return resources[0].data;
     } catch (error) {
-      logger.error(req, 'get_past_meeting_recording', startTime, error, {
+      logger.warning(req, 'get_past_meeting_recording', 'Failed to fetch past meeting recording, returning null', {
         past_meeting_uid: pastMeetingUid,
         v1,
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       return null;
     }
@@ -499,7 +566,10 @@ export class MeetingService {
    * @param v1 - If true, use v1_past_meeting_summary type for legacy meetings
    */
   public async getPastMeetingSummary(req: Request, pastMeetingUid: string, v1: boolean = false): Promise<PastMeetingSummary | null> {
-    const startTime = logger.startOperation(req, 'get_past_meeting_summary', { past_meeting_uid: pastMeetingUid, v1 });
+    logger.debug(req, 'get_past_meeting_summary', 'Fetching past meeting summary', {
+      past_meeting_uid: pastMeetingUid,
+      v1,
+    });
 
     try {
       // V1 legacy meetings use different type and tag format
@@ -532,19 +602,12 @@ export class MeetingService {
         summary = transformV1SummaryToV2(summary);
       }
 
-      logger.success(req, 'get_past_meeting_summary', startTime, {
-        past_meeting_uid: pastMeetingUid,
-        v1,
-        summary_uid: summary.uid,
-        approved: summary.approved,
-        requires_approval: summary.requires_approval,
-      });
-
       return summary;
     } catch (error) {
-      logger.error(req, 'get_past_meeting_summary', startTime, error, {
+      logger.warning(req, 'get_past_meeting_summary', 'Failed to fetch past meeting summary, returning null', {
         past_meeting_uid: pastMeetingUid,
         v1,
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       return null;
     }
@@ -559,7 +622,10 @@ export class MeetingService {
     summaryUid: string,
     updateData: UpdatePastMeetingSummaryRequest
   ): Promise<PastMeetingSummary> {
-    const startTime = logger.startOperation(req, 'update_past_meeting_summary', { past_meeting_uid: pastMeetingUid, summary_uid: summaryUid });
+    logger.debug(req, 'update_past_meeting_summary', 'Updating past meeting summary', {
+      past_meeting_uid: pastMeetingUid,
+      summary_uid: summaryUid,
+    });
 
     // Step 1: Fetch summary with ETag
     const { etag } = await this.etagService.fetchWithETag<PastMeetingSummary>(
@@ -582,13 +648,6 @@ export class MeetingService {
       'update_past_meeting_summary'
     );
 
-    logger.success(req, 'update_past_meeting_summary', startTime, {
-      past_meeting_uid: pastMeetingUid,
-      summary_uid: summaryUid,
-      has_edited_content: !!updateData.edited_content,
-      has_approved: updateData.approved !== undefined,
-    });
-
     return updatedSummary;
   }
 
@@ -596,7 +655,7 @@ export class MeetingService {
    * Create or update a meeting RSVP
    */
   public async createMeetingRsvp(req: Request, meetingUid: string, rsvpData: CreateMeetingRsvpRequest): Promise<MeetingRsvp> {
-    const startTime = logger.startOperation(req, 'create_meeting_rsvp', {
+    logger.debug(req, 'create_meeting_rsvp', 'Creating meeting RSVP', {
       meeting_uid: meetingUid,
       response: rsvpData.response,
       scope: rsvpData.scope,
@@ -613,14 +672,6 @@ export class MeetingService {
 
     const rsvp = await this.microserviceProxy.proxyRequest<MeetingRsvp>(req, 'LFX_V2_SERVICE', `/meetings/${meetingUid}/rsvp`, 'POST', {}, requestData);
 
-    logger.success(req, 'create_meeting_rsvp', startTime, {
-      meeting_uid: meetingUid,
-      rsvp_id: rsvp.id,
-      response: rsvpData.response,
-      scope: rsvpData.scope,
-      occurrence_id: rsvpData.occurrence_id || undefined,
-    });
-
     return rsvp;
   }
 
@@ -632,14 +683,17 @@ export class MeetingService {
    * @returns Promise resolving to user's RSVP or null
    */
   public async getMeetingRsvpByUsername(req: Request, meetingUid: string, occurrenceId?: string): Promise<MeetingRsvp | null> {
-    const startTime = logger.startOperation(req, 'get_meeting_rsvp_by_username', { meeting_uid: meetingUid, occurrence_id: occurrenceId });
+    logger.debug(req, 'get_meeting_rsvp_by_username', 'Fetching user RSVP', {
+      meeting_uid: meetingUid,
+      occurrence_id: occurrenceId,
+    });
 
     try {
       // Get username from authenticated user
       const username = await getUsernameFromAuth(req);
 
       if (!username) {
-        logger.error(req, 'get_meeting_rsvp_by_username', startTime, new Error('No username found in auth context'), {
+        logger.warning(req, 'get_meeting_rsvp_by_username', 'No username found in auth context, returning null', {
           meeting_uid: meetingUid,
         });
         return null;
@@ -667,19 +721,12 @@ export class MeetingService {
       // Filter for current user's RSVP (optionally by occurrence)
       const userRsvp = allRsvps.find((rsvp) => rsvp.username === username && (!occurrenceId || rsvp.occurrence_id === occurrenceId));
 
-      logger.success(req, 'get_meeting_rsvp_by_username', startTime, {
-        meeting_uid: meetingUid,
-        occurrence_id: occurrenceId,
-        found: !!userRsvp,
-        total_rsvps: allRsvps.length,
-        rsvp_id: userRsvp?.id,
-      });
-
       return userRsvp || null;
     } catch (error) {
-      logger.error(req, 'get_meeting_rsvp_by_username', startTime, error, {
+      logger.warning(req, 'get_meeting_rsvp_by_username', 'Failed to fetch user RSVP, returning null', {
         meeting_uid: meetingUid,
         occurrence_id: occurrenceId,
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       return null;
     }
@@ -689,7 +736,7 @@ export class MeetingService {
    * Get all RSVPs for a meeting
    */
   public async getMeetingRsvps(req: Request, meetingUid: string): Promise<MeetingRsvp[]> {
-    const startTime = logger.startOperation(req, 'get_meeting_rsvps', { meeting_uid: meetingUid });
+    logger.debug(req, 'get_meeting_rsvps', 'Fetching meeting RSVPs', { meeting_uid: meetingUid });
 
     try {
       const params = {
@@ -705,15 +752,11 @@ export class MeetingService {
         params
       );
 
-      logger.success(req, 'get_meeting_rsvps', startTime, {
-        meeting_uid: meetingUid,
-        count: resources.length,
-      });
-
       return resources.map((resource) => resource.data);
     } catch (error) {
-      logger.error(req, 'get_meeting_rsvps', startTime, error, {
+      logger.warning(req, 'get_meeting_rsvps', 'Failed to fetch meeting RSVPs, returning empty array', {
         meeting_uid: meetingUid,
+        error: error instanceof Error ? error.message : 'Unknown error',
       });
       return [];
     }

@@ -426,14 +426,8 @@ export class MeetingController {
 
       // Process registrants with fail-fast for 403 errors
       // This will stop the processing if a 403 error is encountered
-      const { results, shouldReturn } = await this.processRegistrantOperations(
-        req,
-        next,
-        startTime,
-        'add_meeting_registrants',
-        uid,
-        registrantData,
-        (registrant) => this.meetingService.addMeetingRegistrant(req, registrant)
+      const { results, shouldReturn } = await this.processRegistrantOperations(req, next, 'add_meeting_registrants', uid, registrantData, (registrant) =>
+        this.meetingService.addMeetingRegistrant(req, registrant)
       );
 
       // If the processing should return, return
@@ -527,7 +521,7 @@ export class MeetingController {
       }
 
       // Process updates with fail-fast for 403 errors
-      const { results, shouldReturn } = await this.processRegistrantOperations(req, next, startTime, 'update_meeting_registrants', uid, updateData, (update) =>
+      const { results, shouldReturn } = await this.processRegistrantOperations(req, next, 'update_meeting_registrants', uid, updateData, (update) =>
         this.meetingService.updateMeetingRegistrant(req, uid, update.uid, update.changes)
       );
 
@@ -616,14 +610,8 @@ export class MeetingController {
 
       // Process deletions with fail-fast for 403 errors
       // This will stop the processing if a 403 error is encountered
-      const { results, shouldReturn } = await this.processRegistrantOperations(
-        req,
-        next,
-        startTime,
-        'delete_meeting_registrants',
-        uid,
-        registrantsUid,
-        (registrantUid) => this.meetingService.deleteMeetingRegistrant(req, uid, registrantUid).then(() => registrantUid)
+      const { results, shouldReturn } = await this.processRegistrantOperations(req, next, 'delete_meeting_registrants', uid, registrantsUid, (registrantUid) =>
+        this.meetingService.deleteMeetingRegistrant(req, uid, registrantUid).then(() => registrantUid)
       );
 
       // If the processing should return, return
@@ -1232,7 +1220,6 @@ export class MeetingController {
   private async processRegistrantOperations<T, R>(
     req: Request,
     next: NextFunction,
-    _startTime: number,
     operationName: string,
     meetingUid: string,
     inputData: T[],
@@ -1268,12 +1255,24 @@ export class MeetingController {
       // Check if it's a 403 error - if so, fail fast
       // This will stop the processing if a 403 error is encountered
       if (error?.status === 403 || error?.statusCode === 403) {
+        logger.error(req, `${operationName}_batch_processing`, helperStartTime, error, {
+          meeting_uid: meetingUid,
+          batch_size: inputData.length,
+          error_type: '403_forbidden',
+        });
         // Send the error to the next middleware
         next(error);
         return { results: [], shouldReturn: true };
       }
 
-      // For other errors, continue processing the remaining items
+      // For other errors, log and continue processing the remaining items
+      logger.error(req, `${operationName}_batch_processing`, helperStartTime, error, {
+        meeting_uid: meetingUid,
+        batch_size: inputData.length,
+        error_type: 'partial_failure',
+        continuing: true,
+      });
+
       let results: PromiseSettledResult<R>[] = [{ status: 'rejected', reason: error }];
 
       if (inputData.length > 1) {

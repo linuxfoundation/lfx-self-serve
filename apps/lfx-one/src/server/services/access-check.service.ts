@@ -165,6 +165,12 @@ export class AccessCheckService {
     resourceType: AccessCheckResourceType,
     accessType: AccessCheckAccessType = 'writer'
   ): Promise<T & { writer?: boolean }> {
+    logger.debug(req, 'add_access_to_resource', 'Adding access to resource', {
+      resource_type: resourceType,
+      resource_id: resource.uid,
+      access_type: accessType,
+    });
+
     const hasAccess = await this.checkSingleAccess(req, {
       resource: resourceType,
       id: resource.uid,
