@@ -18,14 +18,8 @@ export class AvatarComponent {
   public readonly size = input<AvatarProps['size']>('normal');
   public readonly shape = input<AvatarProps['shape']>('square');
   public readonly style = input<AvatarProps['style']>(null);
-  public readonly customClass = input<AvatarProps['styleClass']>('');
+  public readonly styleClass = input<AvatarProps['styleClass']>('');
   public readonly ariaLabel = input<AvatarProps['ariaLabel']>('');
-
-  /**
-   * @deprecated Use customClass instead. Will be removed in next major version.
-   * PrimeNG v20 migrated from styleClass to class attribute.
-   */
-  public readonly styleClass = this.customClass;
 
   // Internal state for error handling
   private readonly imageErrorSignal = signal<boolean>(false);

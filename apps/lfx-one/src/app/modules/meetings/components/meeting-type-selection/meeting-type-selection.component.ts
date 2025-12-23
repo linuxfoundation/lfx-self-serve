@@ -4,16 +4,16 @@
 import { Component, computed, inject, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardSelectorComponent } from '@components/card-selector/card-selector.component';
+import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { MessageComponent } from '@components/message/message.component';
-import { ToggleComponent } from '@components/toggle/toggle.component';
-import { lfxColors } from '@lfx-one/shared/constants';
+import { lfxColors, RESTRICTED_MEETING_FEATURE } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import { CardSelectorOption, CardSelectorOptionInfo } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
 
 @Component({
   selector: 'lfx-meeting-type-selection',
-  imports: [ReactiveFormsModule, MessageComponent, ToggleComponent, CardSelectorComponent],
+  imports: [ReactiveFormsModule, FeatureToggleComponent, MessageComponent, CardSelectorComponent],
   templateUrl: './meeting-type-selection.component.html',
 })
 export class MeetingTypeSelectionComponent {
@@ -21,6 +21,9 @@ export class MeetingTypeSelectionComponent {
 
   // Form group input from parent
   public readonly form = input.required<FormGroup>();
+
+  // Restricted meeting feature from shared constants
+  public readonly restrictedFeature = RESTRICTED_MEETING_FEATURE;
 
   // Meeting type options with their info - computed for template efficiency
   // Filtered based on user role (currently showing only maintainers, technical, and other)

@@ -4,6 +4,29 @@
 import { ChartData, ChartOptions, ChartType } from 'chart.js';
 
 /**
+ * Feature toggle configuration
+ * @description Configuration for feature toggle component
+ */
+export interface FeatureConfig {
+  /** Form control key */
+  key: string;
+  /** Icon class (e.g., 'fa-light fa-repeat') */
+  icon: string;
+  /** Feature title */
+  title: string;
+  /** Feature description */
+  description: string;
+  /** Whether to show recommended badge */
+  recommended?: boolean;
+  /** Icon background color */
+  color: string;
+  /** Optional true value (default: true) */
+  trueValue?: any;
+  /** Optional false value (default: false) */
+  falseValue?: any;
+}
+
+/**
  * Card selector option info
  * @description Information displayed for each card option in card selector
  */

@@ -46,6 +46,7 @@ export class DashboardMeetingCardComponent {
   public readonly isTodayMeeting: Signal<boolean> = this.initIsTodayMeeting();
   public readonly isPrivate: Signal<boolean> = this.initIsPrivate();
   public readonly hasYoutubeUploads: Signal<boolean> = this.initHasYoutubeUploads();
+  public readonly hasShowAttendees: Signal<boolean> = this.initHasShowAttendees();
   public readonly hasRecording: Signal<boolean> = this.initHasRecording();
   public readonly hasTranscripts: Signal<boolean> = this.initHasTranscripts();
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
@@ -205,6 +206,12 @@ export class DashboardMeetingCardComponent {
   private initHasTranscripts(): Signal<boolean> {
     return computed(() => {
       return this.meeting().transcript_enabled === true;
+    });
+  }
+
+  private initHasShowAttendees(): Signal<boolean> {
+    return computed(() => {
+      return this.meeting().show_meeting_attendees === true;
     });
   }
 

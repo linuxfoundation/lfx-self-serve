@@ -4,6 +4,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
+import { LINKEDIN_PROFILE_PATTERN } from '@lfx-one/shared/constants';
 import {
   BatchRegistrantOperationResponse,
   CreateMeetingRegistrantRequest,
@@ -312,6 +313,16 @@ export class MeetingService {
     );
   }
 
+  public getMyMeetingRegistrants(meetingUid: string, includeRsvp: boolean = false): Observable<MeetingRegistrant[]> {
+    const params = new HttpParams().set('include_rsvp', includeRsvp.toString());
+    return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/my-meeting-registrants`, { params }).pipe(
+      catchError((error) => {
+        console.error(`Failed to load my registrants for meeting ${meetingUid}:`, error);
+        return of([]);
+      })
+    );
+  }
+
   public getPastMeetingParticipants(pastMeetingUid: string): Observable<PastMeetingParticipant[]> {
     return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${pastMeetingUid}/participants`).pipe(
       catchError((error) => {
@@ -407,6 +418,7 @@ export class MeetingService {
       occurrence_id: registrant.occurrence_id || null,
       avatar_url: registrant.avatar_url || null,
       username: registrant.username || null,
+      linkedin_profile: registrant.linkedin_profile || null,
     };
   }
 
@@ -421,6 +433,7 @@ export class MeetingService {
       job_title: new FormControl(''),
       org_name: new FormControl(''),
       host: new FormControl(false),
+      linkedin_profile: new FormControl('', [Validators.pattern(LINKEDIN_PROFILE_PATTERN)]),
     };
 
     // Add the add_more_registrants control only if requested (for modal)

@@ -318,10 +318,23 @@ export class MeetingService {
    * @param includeRsvp - If true, includes RSVP status for each registrant
    */
   public async getMeetingRegistrants(req: Request, meetingUid: string, includeRsvp: boolean = false): Promise<MeetingRegistrant[]> {
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', `/query/resources`, 'GET', {
-      type: 'meeting_registrant',
+    // TODO(v1-migration): Remove V1 registrant type detection once all meetings are migrated to V2
+    const v1 = !isUuid(meetingUid);
+
+    const params: Record<string, string> = {
+      type: v1 ? 'v1_meeting_registrant' : 'meeting_registrant',
       tags: `meeting_uid:${meetingUid}`,
-    });
+    };
+
+    logger.debug(req, 'get_meeting_registrants', 'Fetching meeting registrants', { meeting_uid: meetingUid, v1, params });
+
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
+      req,
+      'LFX_V2_SERVICE',
+      `/query/resources`,
+      'GET',
+      params
+    );
 
     let registrants = resources.map((resource) => resource.data);
 

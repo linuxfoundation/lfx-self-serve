@@ -219,6 +219,7 @@ export class MeetingResourcesSummaryComponent implements OnInit {
     if (form.get('recording_enabled')?.value) features.push('Recording');
     if (form.get('transcript_enabled')?.value) features.push('Transcripts');
     if (form.get('youtube_upload_enabled')?.value) features.push('YouTube Upload');
+    if (form.get('show_meeting_attendees')?.value) features.push('Show Attendees');
     if (form.get('zoom_ai_enabled')?.value) features.push('AI Summary');
 
     return features;

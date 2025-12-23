@@ -3,7 +3,10 @@
 
 <div data-testid="dashboard-my-projects-section">
   <div class="flex items-center justify-between mb-4">
-    <h2 class="font-display font-semibold text-[16px]">My Projects</h2>
+    <h2>
+      <i class="fa-light fa-laptop-code text-lg"></i>
+      My Projects
+    </h2>
   </div>
 
   <div class="rounded-lg border border-gray-200 overflow-hidden relative">
@@ -19,15 +22,15 @@
       <lfx-table [value]="projects()" data-testid="dashboard-my-projects-table">
         <ng-template #header>
           <tr class="border-b border-border">
-            <th class="text-left py-2 px-6 text-xs font-medium text-gray-500 w-1/4">Project</th>
-            <th class="text-left py-2 px-3 text-xs font-medium text-gray-500 w-1/4">Affiliation(s)</th>
-            <th class="text-left py-2 px-3 text-xs font-medium text-gray-500 w-1/4">
+            <th class="text-left py-4 px-4 text-xs font-medium text-gray-500 w-1/4">Project</th>
+            <th class="text-left py-4 px-4 text-xs font-medium text-gray-500 w-1/4">Affiliation(s)</th>
+            <th class="text-left py-4 px-4 text-xs font-medium text-gray-500 w-1/4">
               <div class="flex items-center gap-1">
                 Code Activities
                 <i class="fa-light fa-circle-question text-[12px]"></i>
               </div>
             </th>
-            <th class="text-left py-2 px-3 text-xs font-medium text-gray-500 w-1/4">
+            <th class="text-left py-2 px-4 text-xs font-medium text-gray-500 w-1/4">
               <div class="flex items-center gap-1">
                 Non-Code Activities
                 <i class="fa-light fa-circle-question text-[12px]"></i>
@@ -39,7 +42,7 @@
         <ng-template #body let-project let-rowIndex="rowIndex">
           <tr [attr.data-testid]="'dashboard-my-projects-row-' + rowIndex">
             <!-- Project Name and Logo -->
-            <td class="py-2 px-6 border-t border-gray-200">
+            <td class="py-2 px-4 border-t border-gray-200">
               <div class="flex items-center gap-3">
                 <div class="w-8 h-8 rounded-full overflow-hidden flex-shrink-0">
                   @if (project.logo) {
@@ -58,19 +61,19 @@
             </td>
 
             <!-- Affiliations -->
-            <td class="py-2 px-3 border-t border-gray-200">
+            <td class="py-2 px-4 border-t border-gray-200">
               <div class="text-sm">{{ project.affiliations.join(', ') }}</div>
             </td>
 
             <!-- Code Activities Chart -->
-            <td class="py-2 px-3 border-t border-gray-200">
+            <td class="py-2 px-4 border-t border-gray-200">
               <div class="h-12 w-[12.5rem]">
                 <lfx-chart type="line" [data]="project.codeActivitiesChartData" [options]="chartOptions" height="100%"></lfx-chart>
               </div>
             </td>
 
             <!-- Non-Code Activities Chart -->
-            <td class="py-2 px-3 border-t border-gray-200">
+            <td class="py-2 px-4 border-t border-gray-200">
               <div class="h-12 w-[12.5rem]">
                 <lfx-chart type="line" [data]="project.nonCodeActivitiesChartData" [options]="chartOptions" height="100%"></lfx-chart>
               </div>

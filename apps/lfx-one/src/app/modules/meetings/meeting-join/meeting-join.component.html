@@ -18,7 +18,7 @@
         <lfx-card class="rounded-[12.75px] mb-6" [attr.data-testid]="'meeting-info-card'">
           <!-- Header Section: Badges + Copy Link -->
           <div class="flex justify-between items-start mb-4">
-            <!-- Left: Badges -->
+            <!-- Left: Badges + View Guests Button -->
             <div class="flex items-center gap-2 flex-wrap">
               <!-- Private Badge -->
               @if (meeting().visibility === 'private') {
@@ -28,6 +28,19 @@
               <!-- Meeting Type Badge -->
               @if (meetingTypeBadge(); as badge) {
                 <lfx-tag [value]="badge.text" [severity]="badge.severity" [icon]="badge.icon" [attr.data-testid]="'meeting-badge-type'"></lfx-tag>
+              }
+
+              <!-- View Guests Button (for invited users) -->
+              @if (authenticated() && meeting().invited && meeting().show_meeting_attendees && !isLegacyMeeting()) {
+                <lfx-button
+                  label="Show Members"
+                  icon="fa-light fa-users"
+                  [outlined]="true"
+                  severity="primary"
+                  (onClick)="onRegistrantsToggle()"
+                  styleClass="py-[0.15rem] text-xs"
+                  data-testid="view-members-button">
+                </lfx-button>
               }
 
               <!-- Recurring Badge -->
@@ -94,6 +107,11 @@
                   @if (hasAiCompanion()) {
                     <lfx-tag value="AI Summary" severity="success" icon="fa-light fa-sparkles" [attr.data-testid]="'meeting-badge-live-chat'"></lfx-tag>
                   }
+
+                  <!-- Show Attendees Badge -->
+                  @if (meeting().show_meeting_attendees) {
+                    <lfx-tag value="Show Attendees" severity="secondary" icon="fa-light fa-users" [attr.data-testid]="'meeting-badge-attendees'"></lfx-tag>
+                  }
                 </div>
               </div>
               <!-- Alert Banner -->
@@ -149,7 +167,7 @@
               }
             } @else if (authenticated() && meeting().organizer && !isLegacyMeeting()) {
               <!-- RSVP Details - Future Meeting (Authenticated Organizers) -->
-              <div class="w-full md:w-[296px] flex flex-col gap-3">
+              <div class="w-full md:w-[296px]">
                 <lfx-meeting-rsvp-details
                   [meeting]="meeting()"
                   [project]="project()"
@@ -160,19 +178,6 @@
                   backgroundColor="bg-slate-50"
                   borderColor="border-slate-200">
                 </lfx-meeting-rsvp-details>
-
-                <!-- View Guests Button -->
-                <lfx-button
-                  class="w-full"
-                  styleClass="w-full"
-                  label="View Guests"
-                  icon="fa-light fa-users"
-                  [outlined]="true"
-                  severity="secondary"
-                  size="small"
-                  (onClick)="onRegistrantsToggle()"
-                  data-testid="view-guests-button">
-                </lfx-button>
               </div>
             } @else if (authenticated() && !isLegacyMeeting()) {
               <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) -->
@@ -197,9 +202,42 @@
             }
           </div>
 
-          <!-- Meeting Registrants -->
-          <lfx-meeting-registrants-display [meeting]="meeting()" [pastMeeting]="false" [showAddRegistrant]="false" [visible]="showRegistrants()">
-          </lfx-meeting-registrants-display>
+          <!-- Meeting Registrants Drawer (only shown if user is invited) -->
+
+          <p-drawer
+            [visible]="showRegistrants()"
+            position="right"
+            styleClass="lg:w-1/3 w-full"
+            (onHide)="onDrawerHide()"
+            data-testid="meeting-registrants-drawer">
+            <ng-template #header>
+              <div class="flex items-center gap-3">
+                <div class="bg-blue-600 text-white rounded-full w-12 h-12 flex items-center justify-center">
+                  <i class="fa-light fa-user-group text-white text-2xl"></i>
+                </div>
+                @if (meeting().committees && meeting().committees.length > 0) {
+                  <div class="flex flex-col">
+                    <h1>Meeting Members</h1>
+                    <span class="text-base text-gray-500">{{ meeting().committee_members_count }} members</span>
+                  </div>
+                } @else {
+                  <div class="flex flex-col">
+                    <h1>Meeting Guests</h1>
+                    <span class="text-base text-gray-500"
+                      >{{ (meeting().individual_registrants_count || 0) + (meeting().committee_members_count || 0) }} guests</span
+                    >
+                  </div>
+                }
+              </div>
+            </ng-template>
+            <lfx-meeting-registrants-display
+              [meeting]="meeting()"
+              [pastMeeting]="false"
+              [showAddRegistrant]="false"
+              [myMeetingRegistrants]="true"
+              [visible]="showRegistrants()">
+            </lfx-meeting-registrants-display>
+          </p-drawer>
 
           <!-- Divider -->
           <hr class="border-gray-200 my-4" />

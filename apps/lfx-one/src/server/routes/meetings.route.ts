@@ -33,6 +33,9 @@ router.delete('/:uid/occurrences/:occurrenceId', (req, res, next) => meetingCont
 // Registrant routes
 router.get('/:uid/registrants', (req, res, next) => meetingController.getMeetingRegistrants(req, res, next));
 
+// GET /meetings/:uid/my-meeting-registrants - get registrants if user is a registrant (access-controlled)
+router.get('/:uid/my-meeting-registrants', (req, res, next) => meetingController.getMyMeetingRegistrants(req, res, next));
+
 // POST /meetings/:uid/registrants - add registrants (handles single or multiple)
 router.post('/:uid/registrants', (req, res, next) => meetingController.addMeetingRegistrants(req, res, next));
 

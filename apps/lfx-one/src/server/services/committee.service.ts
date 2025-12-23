@@ -46,12 +46,13 @@ export class CommitteeService {
 
     let committees = resources.map((resource) => resource.data);
 
-    // Get member count for each committee
+    // Get member count and settings for each committee in parallel
     committees = await Promise.all(
       committees.map(async (committee) => {
-        const memberCount = await this.getCommitteeMembersCount(req, committee.uid);
+        const [memberCount, settings] = await Promise.all([this.getCommitteeMembersCount(req, committee.uid), this.getCommitteeSettings(req, committee.uid)]);
         return {
           ...committee,
+          ...settings,
           total_members: memberCount,
         };
       })
@@ -96,8 +97,15 @@ export class CommitteeService {
 
     const committee = resources[0].data;
 
+    // Fetch committee settings and merge
+    const settings = await this.getCommitteeSettings(req, committeeId);
+    const committeeWithSettings = {
+      ...committee,
+      ...settings,
+    };
+
     // Add writer access field to the committee
-    return await this.accessCheckService.addAccessToResource(req, committee, 'committee');
+    return await this.accessCheckService.addAccessToResource(req, committeeWithSettings, 'committee');
   }
 
   /**
@@ -105,15 +113,15 @@ export class CommitteeService {
    */
   public async createCommittee(req: Request, data: CommitteeCreateData): Promise<Committee> {
     // Extract settings fields
-    const { business_email_required, is_audit_enabled, ...committeeData } = data;
+    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, ...committeeData } = data;
 
     // Step 1: Create committee
     const newCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', '/committees', 'POST', {}, committeeData);
 
     // Step 2: Update settings if provided
-    if (business_email_required !== undefined || is_audit_enabled !== undefined) {
+    if (business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined) {
       try {
-        await this.updateCommitteeSettings(req, newCommittee.uid, { business_email_required, is_audit_enabled });
+        await this.updateCommitteeSettings(req, newCommittee.uid, { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility });
       } catch {
         logger.warning(req, 'create_committee_settings', 'Failed to update committee settings, but committee was created successfully', {
           committee_uid: newCommittee.uid,
@@ -125,6 +133,8 @@ export class CommitteeService {
       ...newCommittee,
       ...(business_email_required !== undefined && { business_email_required }),
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
+      ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
+      ...(member_visibility !== undefined && { member_visibility }),
     };
   }
 
@@ -133,7 +143,7 @@ export class CommitteeService {
    */
   public async updateCommittee(req: Request, committeeId: string, data: CommitteeUpdateData): Promise<Committee> {
     // Extract settings fields
-    const { business_email_required, is_audit_enabled, ...committeeData } = data;
+    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, ...committeeData } = data;
 
     // Step 1: Fetch committee with ETag
     const { etag } = await this.etagService.fetchWithETag<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'update_committee');
@@ -149,9 +159,14 @@ export class CommitteeService {
     );
 
     // Step 3: Update settings if provided
-    if (business_email_required !== undefined || is_audit_enabled !== undefined) {
+    if (business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined) {
       try {
-        await this.updateCommitteeSettings(req, committeeId, { business_email_required, is_audit_enabled });
+        await this.updateCommitteeSettings(req, committeeId, {
+          business_email_required,
+          is_audit_enabled,
+          show_meeting_attendees,
+          member_visibility,
+        });
       } catch {
         logger.warning(req, 'update_committee_settings', 'Failed to update committee settings, but committee was updated successfully', {
           committee_uid: committeeId,
@@ -163,6 +178,8 @@ export class CommitteeService {
       ...updatedCommittee,
       ...(business_email_required !== undefined && { business_email_required }),
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
+      ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
+      ...(member_visibility !== undefined && { member_visibility }),
     };
   }
 
@@ -358,7 +375,24 @@ export class CommitteeService {
   }
 
   /**
-   * Updates committee settings (business_email_required, is_audit_enabled)
+   * Fetches committee settings by ID
+   * @returns Committee settings or empty object if not found/error
+   */
+  private async getCommitteeSettings(req: Request, committeeId: string): Promise<CommitteeSettingsData> {
+    try {
+      const settings = await this.microserviceProxy.proxyRequest<CommitteeSettingsData>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/settings`, 'GET');
+
+      return settings || {};
+    } catch {
+      logger.debug(req, 'get_committee_settings', 'Failed to fetch committee settings, returning empty', {
+        committee_uid: committeeId,
+      });
+      return {};
+    }
+  }
+
+  /**
+   * Updates committee settings using ETag for concurrency control
    */
   private async updateCommitteeSettings(req: Request, committeeId: string, settings: CommitteeSettingsData): Promise<void> {
     const settingsData = {
@@ -368,9 +402,24 @@ export class CommitteeService {
       ...(settings.is_audit_enabled !== undefined && {
         is_audit_enabled: settings.is_audit_enabled,
       }),
+      ...(settings.show_meeting_attendees !== undefined && {
+        show_meeting_attendees: settings.show_meeting_attendees,
+      }),
+      ...(settings.member_visibility !== undefined && {
+        member_visibility: settings.member_visibility,
+      }),
     };
 
-    await this.microserviceProxy.proxyRequest(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/settings`, 'PUT', {}, settingsData);
+    // Fetch settings with ETag
+    const { etag } = await this.etagService.fetchWithETag<CommitteeSettingsData>(
+      req,
+      'LFX_V2_SERVICE',
+      `/committees/${committeeId}/settings`,
+      'update_committee_settings'
+    );
+
+    // Update settings with ETag
+    await this.etagService.updateWithETag(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/settings`, etag, settingsData, 'update_committee_settings');
 
     logger.debug(req, 'update_committee_settings', 'Committee settings updated successfully', {
       committee_uid: committeeId,

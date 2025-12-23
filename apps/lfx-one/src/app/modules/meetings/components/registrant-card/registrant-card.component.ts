@@ -1,8 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, OnInit, output, signal } from '@angular/core';
-import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
+import { Component, inject, input, OnInit, output, signal } from '@angular/core';
+import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { MeetingService } from '@app/shared/services/meeting.service';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -16,6 +17,7 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
   templateUrl: './registrant-card.component.html',
 })
 export class RegistrantCardComponent implements OnInit {
+  private readonly meetingService = inject(MeetingService);
   // Inputs
   public registrant = input.required<MeetingRegistrantWithState>();
 
@@ -73,13 +75,16 @@ export class RegistrantCardComponent implements OnInit {
   private buildForm(): void {
     const registrant = this.registrant();
 
-    this.form = new FormGroup({
-      first_name: new FormControl(registrant.first_name, [Validators.required, Validators.minLength(2)]),
-      last_name: new FormControl(registrant.last_name, [Validators.required, Validators.minLength(2)]),
-      email: new FormControl(registrant.email, [Validators.required, Validators.email]),
-      job_title: new FormControl(registrant.job_title),
-      org_name: new FormControl(registrant.org_name),
-      host: new FormControl(registrant.host || false),
+    this.form = this.meetingService.createRegistrantFormGroup();
+
+    this.form.patchValue({
+      first_name: registrant.first_name,
+      last_name: registrant.last_name,
+      email: registrant.email,
+      job_title: registrant.job_title,
+      org_name: registrant.org_name,
+      host: registrant.host,
+      linkedin_profile: registrant.linkedin_profile,
     });
   }
 }

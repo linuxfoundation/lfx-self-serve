@@ -453,6 +453,7 @@ export function transformV1MeetingToV2(meeting: Meeting): Meeting {
     recording_enabled: meeting.recording_enabled,
     transcript_enabled: meeting.transcript_enabled,
     youtube_upload_enabled: meeting.youtube_upload_enabled,
+    show_meeting_attendees: meeting.show_meeting_attendees,
     artifact_visibility: meeting.artifact_visibility,
     organizers: meeting.organizers || [],
     password: meeting.password || v1Meeting.password || null,

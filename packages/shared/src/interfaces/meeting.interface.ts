@@ -351,6 +351,8 @@ export interface Meeting {
   transcript_enabled: boolean | null;
   /** YouTube upload integration */
   youtube_upload_enabled: boolean | null;
+  /** Show meeting attendees on meeting details page */
+  show_meeting_attendees: boolean | null;
   /** Who can access meeting artifacts (recordings, transcripts, AI summaries) */
   artifact_visibility: ArtifactVisibility | null;
   /** Minutes before meeting registrants can join */
@@ -442,6 +444,7 @@ export interface CreateMeetingRequest {
   recording_enabled?: boolean; // Enable meeting recording
   transcript_enabled?: boolean; // Enable transcription
   youtube_upload_enabled?: boolean; // YouTube upload integration
+  show_meeting_attendees?: boolean; // Show meeting attendees on meeting details page
   artifact_visibility?: ArtifactVisibility; // Who can access meeting artifacts
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
@@ -467,6 +470,7 @@ export interface UpdateMeetingRequest {
   recording_enabled?: boolean | null; // Enable meeting recording
   transcript_enabled?: boolean | null; // Enable transcription
   youtube_upload_enabled?: boolean | null; // YouTube upload integration
+  show_meeting_attendees?: boolean | null; // Show meeting attendees on meeting details page
   artifact_visibility?: ArtifactVisibility | null; // Who can access meeting artifacts
   early_join_time_minutes?: number; // Minutes before meeting registrants can join
   organizers?: string[]; // Array of organizer email addresses
@@ -543,6 +547,8 @@ export interface MeetingRegistrant {
   avatar_url: string | null;
   /** Registrant's LFID username */
   username: string | null;
+  /** Registrant's LinkedIn profile URL */
+  linkedin_profile: string | null;
   /** Creation timestamp */
   created_at: string;
   /** Last update timestamp */
@@ -553,6 +559,16 @@ export interface MeetingRegistrant {
   type: 'direct' | 'committee';
   /** Registrant Committee UID (if type is committee) */
   committee_uid?: string | null;
+  /** Committee name (resolved from committee_uid) - response only */
+  committee_name?: string | null;
+  /** Committee role (e.g., "Member", "Chair", "Co-chair") - response only */
+  committee_role?: string | null;
+  /** Committee category (e.g., "Technical", "Board", "Marketing") - response only */
+  committee_category?: string | null;
+  /** Committee member voting status - response only */
+  committee_voting_status?: string | null;
+  /** Committee member appointed by - response only */
+  committee_appointed_by?: string | null;
   /** Registrant's invite accepted status */
   invite_accepted: boolean | null;
   /** Registrant's attended status */
@@ -613,6 +629,8 @@ export interface UpdateMeetingRegistrantRequest {
   avatar_url?: string | null;
   /** User's LFID */
   username?: string | null;
+  /** User's LinkedIn profile URL */
+  linkedin_profile?: string | null;
 }
 
 /**

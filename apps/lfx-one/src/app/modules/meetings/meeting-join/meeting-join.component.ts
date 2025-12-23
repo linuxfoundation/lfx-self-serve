@@ -32,6 +32,7 @@ import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
+import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
@@ -55,6 +56,7 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     GuestFormComponent,
     ToastModule,
     TooltipModule,
+    DrawerModule,
     MeetingTimePipe,
     RecurrenceSummaryPipe,
     LinkifyPipe,
@@ -167,6 +169,10 @@ export class MeetingJoinComponent {
 
   public onRegistrantsToggle(): void {
     this.showRegistrants.set(!this.showRegistrants());
+  }
+
+  public onDrawerHide(): void {
+    this.showRegistrants.set(false);
   }
 
   public onEmailErrorClick(): void {

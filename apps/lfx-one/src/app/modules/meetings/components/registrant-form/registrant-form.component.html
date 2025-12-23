@@ -124,6 +124,19 @@
           </lfx-organization-search>
         </div>
 
+        <!-- LinkedIn Profile -->
+        <div data-testid="registrant-form-linkedin-profile-field" class="flex flex-col gap-1">
+          <label for="linkedin_profile" class="text-sm font-medium text-gray-700">LinkedIn Profile</label>
+          <lfx-input-text
+            size="small"
+            [form]="form()"
+            control="linkedin_profile"
+            label="LinkedIn Profile"
+            placeholder="Enter LinkedIn profile URL"
+            data-testid="registrant-form-linkedin-profile-input">
+          </lfx-input-text>
+        </div>
+
         <!-- Host Toggle -->
         <div class="md:col-span-2 flex flex-col gap-1" data-testid="registrant-form-host-field">
           <lfx-checkbox [form]="form()" control="host" label="Meeting Host" [binary]="true" data-testid="registrant-form-host-checkbox"> </lfx-checkbox>

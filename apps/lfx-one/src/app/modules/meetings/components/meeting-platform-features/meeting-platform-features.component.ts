@@ -4,6 +4,7 @@
 import { Component, DestroyRef, inject, input, OnInit } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
@@ -12,7 +13,7 @@ import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-meeting-platform-features',
-  imports: [ReactiveFormsModule, MessageComponent, SelectComponent, ToggleComponent, TooltipModule],
+  imports: [ReactiveFormsModule, FeatureToggleComponent, MessageComponent, SelectComponent, ToggleComponent, TooltipModule],
   templateUrl: './meeting-platform-features.component.html',
 })
 export class MeetingPlatformFeaturesComponent implements OnInit {

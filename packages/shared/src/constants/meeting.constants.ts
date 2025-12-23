@@ -429,6 +429,66 @@ export const RECURRENCE_WEEKLY_ORDINALS = [
 ];
 
 // ============================================================================
+// Feature Toggle Configurations
+// ============================================================================
+
+/**
+ * Recurring meeting feature configuration
+ * @description Feature toggle config for recurring meeting option
+ */
+export const RECURRING_MEETING_FEATURE = {
+  key: 'isRecurring',
+  icon: 'fa-light fa-repeat',
+  title: 'Recurring Meeting',
+  description: 'This meeting repeats on a schedule',
+  recommended: false,
+  color: lfxColors.blue[500],
+};
+
+/**
+ * Restricted meeting feature configuration
+ * @description Feature toggle config for restricted meeting access
+ */
+export const RESTRICTED_MEETING_FEATURE = {
+  key: 'restricted',
+  icon: 'fa-light fa-shield',
+  title: 'Restricted Meeting',
+  description: 'Restrict access to invited guests only',
+  recommended: false,
+  color: lfxColors.red[500],
+};
+
+/**
+ * Show meeting attendees feature configuration
+ * @description Feature toggle config for showing meeting attendees
+ */
+export const SHOW_MEETING_ATTENDEES_FEATURE = {
+  key: 'show_meeting_attendees',
+  icon: 'fa-light fa-users',
+  title: 'Show Members on Meeting Details Page',
+  description: 'Allow members to see who were invited to this meeting and who will be attending',
+  recommended: false,
+  color: lfxColors.blue[500],
+};
+
+// ============================================================================
+// Meeting Duration Options
+// ============================================================================
+
+/**
+ * Meeting duration options for dropdown
+ * @description Standard duration options with custom option
+ */
+export const MEETING_DURATION_OPTIONS = [
+  { label: '15 minutes', value: 15 },
+  { label: '30 minutes', value: 30 },
+  { label: '60 minutes', value: 60 },
+  { label: '90 minutes', value: 90 },
+  { label: '120 minutes', value: 120 },
+  { label: 'Custom...', value: 'custom' },
+];
+
+// ============================================================================
 // Template Re-exports
 // ============================================================================
 

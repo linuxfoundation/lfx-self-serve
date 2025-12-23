@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, ElementRef, inject, Signal, signal, viewChild, WritableSignal } from '@angular/core';
-import { toSignal } from '@angular/core/rxjs-interop';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router, RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
@@ -147,9 +147,18 @@ export class HeaderComponent {
 
   private initializeUserProfile(): Signal<CombinedProfile | null> {
     return toSignal(
-      this.userService.getCurrentUserProfile().pipe(
-        catchError(() => {
-          return of(null);
+      toObservable(this.userService.authenticated).pipe(
+        switchMap((authenticated) => {
+          // Only fetch profile if user is authenticated
+          if (!authenticated) {
+            return of(null);
+          }
+
+          return this.userService.getCurrentUserProfile().pipe(
+            catchError(() => {
+              return of(null);
+            })
+          );
         })
       ),
       { initialValue: null }

@@ -461,6 +461,7 @@ export class MeetingManageComponent {
       recording_enabled: formValue.recording_enabled || false,
       transcript_enabled: formValue.transcript_enabled || false,
       youtube_upload_enabled: formValue.youtube_upload_enabled || false,
+      show_meeting_attendees: formValue.show_meeting_attendees || false,
       zoom_config: {
         ai_companion_enabled: formValue.zoom_ai_enabled || false,
         ai_summary_require_approval: formValue.require_ai_summary_approval || false,
@@ -522,12 +523,15 @@ export class MeetingManageComponent {
     if (this.isEditMode()) {
       // In edit mode, navigate to step 5 to manage guests
       this.router.navigate([], { queryParams: { step: '5' } });
-    } else if (this.currentStep() < this.totalSteps) {
-      // In create mode and not on the last step, continue to next step
-      this.nextStep();
     } else {
-      // In create mode on the last step, navigate to meetings list
-      this.router.navigate(['/meetings']);
+      // After creating a meeting, navigate to edit mode on step 5 to manage guests
+      const meetingId = this.meetingId();
+      if (meetingId) {
+        this.router.navigate(['/meetings', meetingId, 'edit'], { queryParams: { step: '5' } });
+      } else {
+        // Fallback to meetings list if no meeting ID
+        this.router.navigate(['/meetings']);
+      }
     }
   }
 
@@ -712,6 +716,7 @@ export class MeetingManageComponent {
       recording_enabled: meeting.recording_enabled || false,
       transcript_enabled: meeting.transcript_enabled || false,
       youtube_upload_enabled: meeting.youtube_upload_enabled || false,
+      show_meeting_attendees: meeting.show_meeting_attendees || false,
       zoom_ai_enabled: meeting.zoom_config?.ai_companion_enabled || false,
       require_ai_summary_approval: meeting.zoom_config?.ai_summary_require_approval ?? false,
       artifact_visibility: meeting.artifact_visibility ?? DEFAULT_ARTIFACT_VISIBILITY,
@@ -886,6 +891,7 @@ export class MeetingManageComponent {
         recording_enabled: new FormControl(false),
         transcript_enabled: new FormControl({ value: false, disabled: true }),
         youtube_upload_enabled: new FormControl({ value: false, disabled: true }),
+        show_meeting_attendees: new FormControl(false),
         zoom_ai_enabled: new FormControl({ value: false, disabled: true }),
         require_ai_summary_approval: new FormControl(false),
         artifact_visibility: new FormControl(DEFAULT_ARTIFACT_VISIBILITY),

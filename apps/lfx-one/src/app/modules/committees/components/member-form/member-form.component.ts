@@ -8,7 +8,7 @@ import { CalendarComponent } from '@components/calendar/calendar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectComponent } from '@components/select/select.component';
-import { MEMBER_ROLES, VOTING_STATUSES } from '@lfx-one/shared/constants';
+import { LINKEDIN_PROFILE_PATTERN, MEMBER_ROLES, VOTING_STATUSES } from '@lfx-one/shared/constants';
 import { Committee, CommitteeMember, CreateCommitteeMemberRequest } from '@lfx-one/shared/interfaces';
 import { formatDateToISOString, parseISODateString } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
@@ -187,7 +187,7 @@ export class MemberFormComponent {
       last_name: new FormControl('', [Validators.required]),
       email: new FormControl('', [Validators.required, Validators.email]),
       job_title: new FormControl(''),
-      linkedin_profile: new FormControl('', [Validators.pattern(/^https?:\/\/.+\..+/)]),
+      linkedin_profile: new FormControl('', [Validators.pattern(LINKEDIN_PROFILE_PATTERN)]),
       organization: new FormControl(''),
       organization_url: new FormControl(''),
       role: new FormControl(''),

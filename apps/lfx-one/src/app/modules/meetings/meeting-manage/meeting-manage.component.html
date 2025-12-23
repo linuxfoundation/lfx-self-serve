@@ -77,7 +77,11 @@
           <p-step-panel [value]="5" data-testid="meeting-manage-panel-4">
             <ng-template #content let-activateCallback="activateCallback">
               @if (meetingId()) {
-                <lfx-meeting-registrants-manager [meetingUid]="meetingId()!" [(registrantUpdates)]="registrantUpdates" [refresh]="registrantUpdatesRefresh$">
+                <lfx-meeting-registrants-manager
+                  [meetingUid]="meetingId()!"
+                  [form]="form()"
+                  [(registrantUpdates)]="registrantUpdates"
+                  [refresh]="registrantUpdatesRefresh$">
                 </lfx-meeting-registrants-manager>
               } @else {
                 <div class="text-center py-8 text-gray-500">

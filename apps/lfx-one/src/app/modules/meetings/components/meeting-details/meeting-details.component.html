@@ -243,33 +243,37 @@
       }
     </div>
 
-    <!-- Recurring Meeting Toggle -->
-    <lfx-message severity="secondary" icon="fa-light fa-repeat">
-      <ng-template #content>
-        <div class="flex items-center justify-between w-full">
-          <div>
-            <label for="recurring-toggle" class="text-sm font-medium text-gray-900">Recurring Meeting</label>
-            <p class="text-xs text-gray-500">This meeting repeats on a schedule</p>
-          </div>
-          <lfx-toggle [form]="form()" control="isRecurring" id="recurring-toggle" data-testid="meeting-details-recurring-toggle"></lfx-toggle>
-        </div>
-      </ng-template>
-    </lfx-message>
-
-    @if (form().get('isRecurring')?.value) {
-      <div class="bg-blue-50 border border-blue-200 p-4 rounded-lg">
-        <div class="flex items-start gap-3">
-          <div class="bg-primary flex items-center justify-center px-1 py-1 rounded-full">
-            <i class="fa-light fa-info-circle text-white text-sm"></i>
-          </div>
-          <div>
-            <p class="text-sm text-gray-700">
-              Recurring meetings are great for regular touchpoints like weekly standups, monthly reviews, or quarterly planning sessions.
-            </p>
-          </div>
-        </div>
+    <!-- Early Join Time -->
+    <div>
+      <div class="flex items-center gap-2 mb-1">
+        <label for="early-join-time" class="block text-sm font-medium text-gray-700"> Early Join Time (minutes before start) </label>
+        <i
+          class="fa-light fa-info-circle text-gray-400 cursor-help"
+          pTooltip="Allow guests to join the meeting early. Useful for informal networking before the official start time"
+          tooltipPosition="right"
+          tooltipStyleClass="text-xs max-w-xs"></i>
       </div>
-    }
+      <lfx-input-text
+        size="small"
+        [form]="form()"
+        control="early_join_time_minutes"
+        id="early-join-time"
+        placeholder="10-60 minutes"
+        type="number"
+        styleClass="w-full"
+        data-testid="meeting-details-early-join"></lfx-input-text>
+      @if (form().get('early_join_time_minutes')?.errors?.['min'] && form().get('early_join_time_minutes')?.touched) {
+        <p class="mt-1 text-sm text-red-600">Early join time must be at least 10 minutes</p>
+      }
+      @if (form().get('early_join_time_minutes')?.errors?.['max'] && form().get('early_join_time_minutes')?.touched) {
+        <p class="mt-1 text-sm text-red-600">Early join time cannot exceed 60 minutes</p>
+      }
+    </div>
+
+    <!-- Recurring Meeting Toggle -->
+    <div class="mt-2">
+      <lfx-feature-toggle [feature]="recurringFeature" [form]="form()"></lfx-feature-toggle>
+    </div>
 
     <!-- Recurrence Options (only show when isRecurring is true) -->
     @if (form().get('isRecurring')?.value) {
@@ -300,32 +304,5 @@
         <lfx-meeting-recurrence-pattern [form]="form()" data-testid="meeting-details-custom-recurrence"> </lfx-meeting-recurrence-pattern>
       </div>
     }
-
-    <!-- Early Join Time -->
-    <div>
-      <div class="flex items-center gap-2 mb-1">
-        <label for="early-join-time" class="block text-sm font-medium text-gray-700"> Early Join Time (minutes before start) </label>
-        <i
-          class="fa-light fa-info-circle text-gray-400 cursor-help"
-          pTooltip="Allow guests to join the meeting early. Useful for informal networking before the official start time"
-          tooltipPosition="right"
-          tooltipStyleClass="text-xs max-w-xs"></i>
-      </div>
-      <lfx-input-text
-        size="small"
-        [form]="form()"
-        control="early_join_time_minutes"
-        id="early-join-time"
-        placeholder="10-60 minutes"
-        type="number"
-        styleClass="w-full"
-        data-testid="meeting-details-early-join"></lfx-input-text>
-      @if (form().get('early_join_time_minutes')?.errors?.['min'] && form().get('early_join_time_minutes')?.touched) {
-        <p class="mt-1 text-sm text-red-600">Early join time must be at least 10 minutes</p>
-      }
-      @if (form().get('early_join_time_minutes')?.errors?.['max'] && form().get('early_join_time_minutes')?.touched) {
-        <p class="mt-1 text-sm text-red-600">Early join time cannot exceed 60 minutes</p>
-      }
-    </div>
   </div>
 </div>

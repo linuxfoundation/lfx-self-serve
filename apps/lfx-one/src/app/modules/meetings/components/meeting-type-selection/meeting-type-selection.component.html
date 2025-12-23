@@ -31,23 +31,12 @@
       testIdPrefix="meeting-type" />
   </div>
 
-  <div class="space-y-4">
-    <div>
-      <h3 class="text-lg font-semibold text-slate-900">Meeting Access</h3>
-      <p class="text-sm text-slate-600 mt-1">Control who can view and join this meeting</p>
-    </div>
+  <div class="flex flex-col gap-2">
+    <h3 class="text-lg font-semibold text-slate-900">Meeting Access</h3>
+    <p class="text-sm text-slate-600 mt-1 mb-0">Control who can view and join this meeting</p>
 
-    <div class="bg-slate-50 border border-slate-200 p-4 rounded-lg">
-      <div class="flex items-center justify-between">
-        <div class="flex items-center gap-3">
-          <i class="fa-light fa-shield text-slate-500 text-lg"></i>
-          <div>
-            <label for="private-toggle" class="text-sm font-semibold text-slate-900">Restricted Meeting</label>
-            <p class="text-xs text-slate-500">Restrict access to invited guests only</p>
-          </div>
-        </div>
-        <lfx-toggle id="private-toggle" [form]="form()" control="restricted" size="small" data-testid="private-meeting-toggle"> </lfx-toggle>
-      </div>
+    <div class="">
+      <lfx-feature-toggle [feature]="restrictedFeature" [form]="form()"></lfx-feature-toggle>
     </div>
   </div>
 </div>

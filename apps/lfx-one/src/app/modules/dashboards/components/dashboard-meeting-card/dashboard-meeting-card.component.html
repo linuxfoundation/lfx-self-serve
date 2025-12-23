@@ -64,6 +64,15 @@
                 <i class="fa-light fa-sparkles text-xs text-gray-700"></i>
               </div>
             }
+            @if (hasShowAttendees()) {
+              <div
+                class="flex p-1 hover:bg-gray-100 rounded transition-colors"
+                pTooltip="Show Attendees Enabled"
+                tooltipPosition="top"
+                data-testid="dashboard-meeting-card-show-attendees-icon">
+                <i class="fa-light fa-users text-xs text-gray-700"></i>
+              </div>
+            }
             @if (!isPrivate()) {
               <div
                 class="flex p-1 hover:bg-gray-100 rounded transition-colors"

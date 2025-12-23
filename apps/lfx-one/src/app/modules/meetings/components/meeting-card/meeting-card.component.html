@@ -117,6 +117,9 @@
       @if (hasAiCompanion()) {
         <lfx-tag value="AI Summary" severity="success" icon="fa-light fa-sparkles"></lfx-tag>
       }
+      @if (meeting().show_meeting_attendees) {
+        <lfx-tag value="Show Attendees" severity="secondary" icon="fa-light fa-users"></lfx-tag>
+      }
     </div>
 
     <!-- Description Section -->
@@ -358,8 +361,8 @@
       </div>
     </div>
 
-    <!-- Meeting Registrants (v2 meetings only) -->
-    @if (!isLegacyMeeting()) {
+    <!-- Meeting Registrants (v2 meetings only, shown if feature enabled OR user is organizer) -->
+    @if (!isLegacyMeeting() && (meeting().show_meeting_attendees || meeting().organizer)) {
       <lfx-meeting-registrants-display
         [meeting]="meeting()"
         [pastMeeting]="pastMeeting()"

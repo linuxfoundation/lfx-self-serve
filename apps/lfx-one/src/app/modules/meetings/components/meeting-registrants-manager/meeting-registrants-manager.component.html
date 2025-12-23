@@ -12,6 +12,11 @@
     <p class="text-gray-500 text-base">Include key stakeholders and contributors who should participate in this discussion</p>
   </div>
 
+  <!-- Committee Management -->
+  <div class="mb-6">
+    <lfx-meeting-committee-manager [selectedCommittees]="form().get('committees')?.value || []" [form]="form()"> </lfx-meeting-committee-manager>
+  </div>
+
   <div class="flex items-center mb-4">
     <div class="flex items-center gap-3">
       <!-- <lfx-button size="small" label="Bulk Add" icon="fa-light fa-upload" severity="secondary" data-testid="bulk-add-button" (click)="onBulkAdd()">
@@ -31,46 +36,23 @@
 
   <!-- Add Registrant Modal Placeholder -->
   @if (showAddForm()) {
-    <div class="mb-6">
+    <div class="mb-6 border border-gray-200 rounded-lg p-4 shadow-md">
       <!-- Placeholder for Add Registrant Modal Component -->
-      <lfx-card>
-        <ng-template #header>
-          <div class="px-8 pt-4 flex items-center justify-between">
-            <h4 class="font-semibold text-slate-900">Add New Guest</h4>
-            <lfx-button
-              size="small"
-              icon="fa-light fa-times"
-              [text]="true"
-              styleClass="text-gray-400 hover:text-gray-600"
-              severity="secondary"
-              (click)="onCloseAddForm()">
-            </lfx-button>
-          </div>
-        </ng-template>
 
-        <!-- Use the shared registrant-form component -->
-        <lfx-registrant-form [form]="addRegistrantForm" [registrant]="null"> </lfx-registrant-form>
+      <!-- Use the shared registrant-form component -->
+      <lfx-registrant-form [form]="addRegistrantForm" [registrant]="null"> </lfx-registrant-form>
 
-        <ng-template #footer>
-          <div class="flex items-center justify-end gap-3">
-            <lfx-button
-              size="small"
-              label="Add Guest"
-              severity="info"
-              [disabled]="!addRegistrantForm.valid || !addRegistrantForm.dirty"
-              (click)="onAddRegistrant()">
-            </lfx-button>
-            <lfx-button
-              size="small"
-              label="Cancel"
-              [text]="true"
-              styleClass="text-gray-400 hover:text-gray-600"
-              severity="secondary"
-              (click)="onCloseAddForm()">
-            </lfx-button>
-          </div>
-        </ng-template>
-      </lfx-card>
+      <div class="flex items-center justify-end gap-3">
+        <lfx-button
+          size="small"
+          label="Add Guest"
+          severity="info"
+          [disabled]="!addRegistrantForm.valid || !addRegistrantForm.dirty"
+          (click)="onAddRegistrant()">
+        </lfx-button>
+        <lfx-button size="small" label="Cancel" [text]="true" styleClass="text-gray-400 hover:text-gray-600" severity="secondary" (click)="onCloseAddForm()">
+        </lfx-button>
+      </div>
     </div>
   }
 
@@ -135,8 +117,14 @@
   <div class="space-y-4">
     <!-- Stats and filters section (simplified) -->
     <div class="flex items-center justify-between">
-      <h3 class="text-lg font-semibold text-gray-900">Guests ({{ registrantCount() }})</h3>
-      <span class="text-sm text-gray-500" data-testid="stats"> {{ hostCount() }} accepted • {{ memberCount() }} pending </span>
+      @if (form().get('committees')?.value?.length > 0) {
+        <h6 class="font-semibold">
+          Additional Guests
+          <span class="text-sm text-gray-500" data-testid="stats"> ({{ registrantCount() }}) </span>
+        </h6>
+      } @else {
+        <h6 class="font-semibold">Invited Guests ({{ registrantCount() }})</h6>
+      }
     </div>
 
     <!-- Search and filters (simplified for now) -->
@@ -190,5 +178,10 @@
         </div>
       }
     }
+
+    <!-- Show Meeting Attendees Toggle -->
+    <div class="mt-6">
+      <lfx-feature-toggle [feature]="showMeetingAttendeesFeature" [form]="form()"></lfx-feature-toggle>
+    </div>
   </div>
 </div>

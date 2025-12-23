@@ -2,15 +2,74 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 @if (visible()) {
-  <div class="border-t border-gray-200 pt-4 mt-4" data-testid="registrants-section">
+  <div data-testid="registrants-section">
+    <!-- Search and Filter Section -->
+    <div class="pt-5 pb-3 flex-shrink-0">
+      <!-- Search Input -->
+      <div class="relative mb-3">
+        <i class="fa-light fa-search absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-gray-400"></i>
+        <input
+          type="text"
+          [formControl]="searchControl"
+          placeholder="Search guests..."
+          class="w-full pl-7 pr-3 py-1.5 text-xs border border-gray-300 rounded-md focus:outline-none focus:ring-1 focus:ring-blue-500 focus:border-transparent"
+          data-testid="search-input" />
+      </div>
+
+      <!-- Filter Dropdowns -->
+      @if (!pastMeeting()) {
+        <div class="flex flex-wrap items-start gap-2">
+          <!-- RSVP Filter -->
+          <lfx-select
+            [form]="filterForm"
+            control="rsvpFilter"
+            [options]="rsvpFilterOptions"
+            optionLabel="label"
+            optionValue="value"
+            [styleClass]="'text-[10px]'"
+            placeholder="RSVP"
+            data-testid="rsvp-filter-select">
+          </lfx-select>
+
+          <!-- Role Filter (only show if meeting has committees) -->
+          @if (hasCommittees()) {
+            <lfx-select
+              [form]="filterForm"
+              control="roleFilter"
+              [options]="roleFilterOptions()"
+              optionLabel="label"
+              optionValue="value"
+              [styleClass]="'text-[10px]'"
+              placeholder="Role"
+              data-testid="role-filter-select">
+            </lfx-select>
+
+            <!-- Group Filter -->
+            <lfx-select
+              [form]="filterForm"
+              control="groupFilter"
+              [options]="groupFilterOptions()"
+              optionLabel="label"
+              optionValue="value"
+              [styleClass]="'text-[10px]'"
+              placeholder="Group"
+              data-testid="group-filter-select">
+            </lfx-select>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Loading State -->
     @if (registrantsLoading()) {
       <div class="flex items-center justify-center py-8">
         <i class="fa-light fa-circle-notch fa-spin text-2xl text-blue-600"></i>
       </div>
     }
 
+    <!-- Registrants Grid -->
     @if (!registrantsLoading()) {
-      <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+      <div class="flex flex-col gap-2">
         @if (!pastMeeting() && showAddRegistrant()) {
           <!-- Add Registrant Option -->
           <div
@@ -28,13 +87,13 @@
         }
 
         @if (pastMeeting()) {
-          @if (pastMeetingParticipants().length === 0) {
-            <div class="flex w-full items-center justify-center gap-4 py-8 col-span-3">
+          @if (filteredPastParticipants().length === 0) {
+            <div class="flex w-full items-center justify-center gap-4 py-8 col-span-2">
               <i class="fa-light fa-users text-2xl text-gray-500"></i>
               <span class="text-sm text-gray-500">No guests found</span>
             </div>
           }
-          @for (participant of pastMeetingParticipants(); track participant.uid) {
+          @for (participant of filteredPastParticipants(); track participant.uid) {
             <div class="flex items-center gap-2 p-2 rounded-md" [attr.data-testid]="'participant-' + participant.uid">
               @if (participant.is_attended) {
                 <i class="fa-light fa-check-circle text-green-500" pTooltip="Attended"></i>
@@ -51,34 +110,93 @@
             </div>
           }
         } @else {
-          @for (registrant of registrants(); track registrant.uid) {
+          @if (filteredRegistrants().length === 0 && !showAddRegistrant()) {
+            <div class="flex w-full items-center justify-center gap-4 py-8 col-span-2">
+              <i class="fa-light fa-users text-2xl text-gray-500"></i>
+              <span class="text-sm text-gray-500">No guests found</span>
+            </div>
+          }
+          @for (registrant of filteredRegistrants(); track registrant.uid) {
             <div
-              class="flex items-center gap-2 cursor-pointer hover:bg-gray-50 p-2 rounded-md transition-colors"
-              (click)="onRegistrantEdit(registrant)"
+              class="bg-white border border-gray-200 rounded-lg p-4 space-y-3 shadow-md relative overflow-visible hover:border-blue-500 transition-colors"
+              [ngClass]="{ 'cursor-pointer': meeting().organizer && registrant.type === 'committee' }"
               [attr.data-testid]="'registrant-' + registrant.uid">
-              <div class="relative">
-                <lfx-avatar [label]="registrant.first_name" styleClass="bg-blue-50 border border-gray-200 w-8 h-8" shape="circle"></lfx-avatar>
-                <div class="absolute -top-1 -right-1">
-                  @if (registrant.invite_accepted === false) {
-                    <i class="fa-solid text-xs fa-times-circle text-red-500" pTooltip="Declined Invite"></i>
-                  } @else if (!registrant.invite_accepted) {
-                    <i class="fa-solid text-xs fa-circle-question text-amber-400" pTooltip="Pending Response"></i>
-                  } @else {
-                    <i class="fa-solid text-xs fa-check-circle text-green-500" pTooltip="Invite Accepted"></i>
+              <!-- Top Section: Avatar + Name + LinkedIn -->
+              <div class="flex items-start gap-3">
+                <!-- Avatar with RSVP Badge -->
+                <div class="relative">
+                  <lfx-avatar
+                    [label]="registrant.first_name"
+                    [image]="registrant.avatar_url!"
+                    styleClass="bg-blue-50 border border-gray-200 w-12 h-12"
+                    shape="circle"></lfx-avatar>
+
+                  <!-- RSVP Status Badge Overlay -->
+                  <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center">
+                    @if (registrant.rsvp?.response === 'accepted' || registrant.invite_accepted === true) {
+                      <i class="fa-light fa-check-circle text-emerald-500 text-base" pTooltip="Accepted"></i>
+                    } @else if (registrant.rsvp?.response === 'maybe') {
+                      <i class="fa-light fa-circle-question text-amber-500 text-base" pTooltip="Maybe"></i>
+                    } @else if (registrant.rsvp?.response === 'declined' || registrant.invite_accepted === false) {
+                      <i class="fa-light fa-times-circle text-red-500 text-base" pTooltip="Declined"></i>
+                    } @else {
+                      <i class="fa-light fa-clock text-gray-500 text-sm" pTooltip="Pending"></i>
+                    }
+                  </div>
+                </div>
+
+                <!-- Name + LinkedIn -->
+                <div class="flex flex-col">
+                  <div class="flex items-center gap-2">
+                    <h3>{{ registrant.first_name }} {{ registrant.last_name }}</h3>
+                    @if (registrant.linkedin_profile) {
+                      <a
+                        [href]="registrant.linkedin_profile"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="flex-shrink-0 hover:opacity-70 transition-opacity"
+                        (click)="$event.stopPropagation()"
+                        pTooltip="View LinkedIn Profile"
+                        tooltipPosition="top">
+                        <i class="fa-brands fa-linkedin text-blue-500 text-base"></i>
+                      </a>
+                    }
+                  </div>
+                  @if (registrant.job_title || registrant.org_name) {
+                    <p class="text-gray-500 text-sm leading-relaxed tracking-tight truncate">
+                      @if (registrant.job_title && registrant.org_name) {
+                        {{ registrant.job_title }} at {{ registrant.org_name }}
+                      } @else if (registrant.job_title) {
+                        {{ registrant.job_title }}
+                      } @else {
+                        {{ registrant.org_name }}
+                      }
+                    </p>
                   }
                 </div>
               </div>
-              <div class="flex flex-col min-w-0 flex-1">
-                <div class="flex items-center gap-1 text-xs">
-                  @if (registrant.type === 'committee') {
-                    <i class="fa-light fa-people-group text-green-500" pTooltip="Committee"></i>
-                  } @else {
-                    <i class="fa-light fa-user text-blue-500" pTooltip="Individual"></i>
+
+              <!-- Bottom Section: Committee Information (only shown for committee members) -->
+              @if (registrant.committee_name) {
+                <div class="flex flex-col">
+                  <div class="flex items-center gap-4">
+                    <i class="fa-light fa-briefcase w-4 h-4 text-gray-600 flex-shrink-0"></i>
+                    <span class="text-gray-500 text-sm leading-relaxed tracking-tight truncate">
+                      @if (registrant.committee_role) {
+                        {{ registrant.committee_role }} of {{ registrant.committee_name }}
+                      } @else {
+                        {{ registrant.committee_name }}
+                      }
+                    </span>
+                  </div>
+                  @if (registrant.committee_category) {
+                    <div class="flex items-center gap-4">
+                      <i class="fa-light fa-users w-4 h-4 text-gray-600 flex-shrink-0"></i>
+                      <span class="text-gray-500 text-sm leading-relaxed tracking-tight truncate">{{ registrant.committee_category }}</span>
+                    </div>
                   }
-                  <span class="text-sm text-gray-900 truncate">{{ registrant.first_name }} {{ registrant.last_name }}</span>
                 </div>
-                <span class="text-xs text-gray-500 truncate">{{ registrant.email }}</span>
-              </div>
+              }
             </div>
           }
         }

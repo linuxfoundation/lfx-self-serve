@@ -6,10 +6,11 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
-import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import { MeetingRegistrant, MeetingRegistrantWithState, RegistrantPendingChanges, RegistrantState } from '@lfx-one/shared/interfaces';
 import { generateTempId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
@@ -17,6 +18,7 @@ import { ConfirmationService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { BehaviorSubject, catchError, finalize, of, take, tap } from 'rxjs';
 
+import { MeetingCommitteeManagerComponent } from '../meeting-committee-manager/meeting-committee-manager.component';
 import { RegistrantCardComponent } from '../registrant-card/registrant-card.component';
 import { RegistrantFormComponent } from '../registrant-form/registrant-form.component';
 
@@ -26,7 +28,9 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
     ReactiveFormsModule,
     ButtonComponent,
     CardComponent,
+    FeatureToggleComponent,
     InputTextComponent,
+    MeetingCommitteeManagerComponent,
     MessageComponent,
     SelectComponent,
     ConfirmDialogModule,
@@ -44,8 +48,12 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
 
   // Input signals
   public meetingUid = input.required<string>();
+  public form = input.required<FormGroup>();
   public registrantUpdates = input.required<RegistrantPendingChanges>();
   public refresh = input.required<BehaviorSubject<void>>();
+
+  // Show meeting attendees feature from shared constants
+  public readonly showMeetingAttendeesFeature = SHOW_MEETING_ATTENDEES_FEATURE;
 
   // Output events for two-way binding
   public readonly registrantUpdatesChange = output<RegistrantPendingChanges>();
@@ -53,14 +61,14 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   // Writable signals for state management
   public registrantsWithState: WritableSignal<MeetingRegistrantWithState[]> = signal([]);
   public loading: WritableSignal<boolean> = signal(true);
-  public showAddForm = signal<boolean>(true);
+  public showAddForm = signal<boolean>(false);
   public showImport = signal<boolean>(false);
   public editingRegistrantId = signal<string | null>(null);
   public searchTerm = signal<string>('');
   public statusFilter = signal<string | null>(null);
 
   // Simple computed signals
-  public readonly visibleRegistrants = computed(() => this.registrantsWithState().filter((r) => r.state !== 'deleted'));
+  public readonly visibleRegistrants = computed(() => this.registrantsWithState().filter((r) => r.state !== 'deleted' && r.type !== 'committee'));
   public readonly registrantCount = computed(() => this.visibleRegistrants().length);
   public readonly hostCount = computed(() => this.visibleRegistrants().filter((r) => r.host).length);
   public readonly memberCount = computed(() => this.visibleRegistrants().filter((r) => r.org_is_member).length);
@@ -162,6 +170,7 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
         type: 'direct',
         invite_accepted: null,
         attended: null,
+        linkedin_profile: formValue.linkedin_profile || null,
       };
 
       // Create new registrant with temporary ID for immediate UI updates

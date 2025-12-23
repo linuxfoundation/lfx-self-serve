@@ -7,7 +7,7 @@ import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResp
 import { AuthContext, User } from '@lfx-one/shared/interfaces';
 import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
-import { auth, ConfigParams } from 'express-openid-connect';
+import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pino from 'pino';
@@ -17,8 +17,6 @@ import { customErrorSerializer } from './helpers/error-serializer';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { authMiddleware } from './middleware/auth.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
-import { serverLogger } from './server-logger';
-import { logger } from './services/logger.service';
 import analyticsRouter from './routes/analytics.route';
 import committeesRouter from './routes/committees.route';
 import meetingsRouter from './routes/meetings.route';
@@ -29,6 +27,8 @@ import projectsRouter from './routes/projects.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
 import searchRouter from './routes/search.route';
 import userRouter from './routes/user.route';
+import { serverLogger } from './server-logger';
+import { logger } from './services/logger.service';
 import { matchOrganizationNamesToAccounts } from './utils/organization-matcher';
 import { fetchUserPersonaAndOrganizations } from './utils/persona-helper';
 
@@ -143,6 +143,11 @@ const authConfig: ConfigParams = {
 };
 
 app.use(auth(authConfig));
+
+// Silent login attempt for meeting join pages only
+// If user has SSO session elsewhere, they'll be authenticated automatically
+// If not, they proceed as unauthenticated (route is optional auth)
+app.use('/meetings/', attemptSilentLogin());
 
 app.use('/login', (req: Request, res: Response) => {
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {

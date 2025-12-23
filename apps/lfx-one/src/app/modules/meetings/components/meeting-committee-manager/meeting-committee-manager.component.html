@@ -1,0 +1,177 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4">
+  @if (committeesLoading()) {
+    <div class="flex items-center gap-2 p-4 bg-gray-50 rounded-lg">
+      <i class="fa-light fa-circle-notch fa-spin text-blue-600"></i>
+      <span class="text-sm text-gray-500">Loading {{ committeeLabel.plural.toLowerCase() }}...</span>
+    </div>
+  } @else {
+    <!-- Committee Selection -->
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">Select {{ committeeLabel.plural }}</label>
+      <lfx-multi-select
+        [form]="committeeForm"
+        control="committees"
+        [options]="committeeOptions()"
+        optionLabel="name"
+        optionValue="uid"
+        [placeholder]="'Select one or more ' + committeeLabel.plural.toLowerCase()"
+        [filter]="true"
+        [filterPlaceHolder]="'Search ' + committeeLabel.plural.toLowerCase()"
+        [showToggleAll]="true"
+        class="w-full"
+        data-testid="meeting-committee-multi-select"></lfx-multi-select>
+    </div>
+    @if (selectedCommitteeIds().length === 0) {
+      <p class="text-xs text-gray-500">
+        Select {{ committeeLabel.plural.toLowerCase() }} to associate with this meeting. {{ committeeLabel.singular }} members will automatically be added as
+        guests.
+      </p>
+    }
+
+    <!-- Voting Status Selection -->
+    @if (hasVotingEnabledCommittee()) {
+      <div class="flex flex-col gap-1">
+        <div class="flex items-center gap-1">
+          <label class="text-sm font-medium text-gray-700">Voting Status Selection</label>
+          <i
+            class="fa-light fa-info-circle text-xs text-gray-500"
+            pTooltip="Select which voting statuses committee members must have to participate in this meeting. Only members with the selected voting status(es) will be invited to the meeting."></i>
+        </div>
+        <lfx-multi-select
+          [form]="committeeForm"
+          control="votingStatuses"
+          [options]="votingStatusOptions"
+          optionLabel="label"
+          optionValue="value"
+          placeholder="Select voting statuses to allow"
+          [filter]="true"
+          filterPlaceHolder="Search voting statuses"
+          [showToggleAll]="true"
+          class="w-full"
+          data-testid="meeting-voting-status-multi-select"></lfx-multi-select>
+      </div>
+    }
+
+    <p class="text-xs text-gray-500">
+      @if (selectedCommitteeIds().length > 0) {
+        <strong>{{ selectedCommitteeIds().length }}</strong> {{ committeeLabel.plural.toLowerCase() }} selected.
+        @if (filteredCommitteeMembers().length > 0) {
+          <strong>{{ filteredCommitteeMembers().length }}</strong> unique member(s) will be added to the meeting.
+        }
+      }
+    </p>
+
+    <!-- Committee Members Preview -->
+    @if (selectedCommitteeIds().length > 0) {
+      <div class="flex flex-col gap-2 mt-4">
+        <div class="flex items-center justify-between">
+          <h3 class="text-sm font-medium text-gray-700 flex items-center gap-1">
+            <span>{{ committeeLabel.singular }} Members</span>
+            <i class="fa-light fa-info-circle text-xs text-gray-500" pTooltip="To manage group members, please visit the committee page."></i>
+          </h3>
+        </div>
+
+        @if (filteredCommitteeMembers().length > 0) {
+          <div class="border border-gray-200 rounded-lg overflow-hidden">
+            <lfx-table
+              [value]="filteredCommitteeMembers()"
+              [paginator]="filteredCommitteeMembers().length > 5"
+              [rows]="5"
+              [rowsPerPageOptions]="[5, 10, 25]"
+              styleClass="p-datatable-sm p-datatable-striped"
+              sortField="first_name"
+              [sortOrder]="1">
+              <ng-template #header>
+                <tr>
+                  <th>
+                    <span class="text-xs font-sans text-gray-500">Name</span>
+                  </th>
+                  <th>
+                    <span class="text-xs font-sans text-gray-500">Organization</span>
+                  </th>
+                  @if (committeeForm.value.committees.length > 1) {
+                    <th>
+                      <span class="text-xs font-sans text-gray-500">{{ committeeLabel.singular }}</span>
+                    </th>
+                  }
+                  @if (hasVotingEnabledCommittee()) {
+                    <th>
+                      <span class="text-xs font-sans text-gray-500">Role</span>
+                    </th>
+                    <th>
+                      <span class="text-xs font-sans text-gray-500">Voting Status</span>
+                    </th>
+                  }
+                </tr>
+              </ng-template>
+              <ng-template #body let-member>
+                <tr>
+                  <td>
+                    <div class="flex flex-col">
+                      <span class="text-sm text-gray-900"> {{ member.first_name }} {{ member.last_name }} </span>
+                      <a class="text-xs text-gray-600" [href]="'mailto:' + member.email">{{ member.email }}</a>
+                    </div>
+                  </td>
+                  <td>
+                    <span class="text-sm text-gray-600">{{ member.organization?.name || '-' }}</span>
+                  </td>
+                  @if (committeeForm.value.committees.length > 1) {
+                    <td>
+                      <span class="text-xs text-gray-500">{{ member.committees?.join(', ') }}</span>
+                    </td>
+                  }
+                  @if (hasVotingEnabledCommittee()) {
+                    <td>
+                      <span class="text-sm text-gray-600">{{ member.role?.name || '-' }}</span>
+                    </td>
+                    <td>
+                      @if (member.voting?.status) {
+                        <span class="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border">
+                          {{ member.voting?.status | titlecase }}
+                        </span>
+                      } @else {
+                        <span class="text-sm text-gray-400">-</span>
+                      }
+                    </td>
+                  }
+                </tr>
+              </ng-template>
+              <ng-template #emptymessage>
+                <tr>
+                  <td [attr.colspan]="tableColspan()" class="text-center py-4">
+                    <span class="text-sm text-gray-500">No members found in selected {{ committeeLabel.plural.toLowerCase() }}</span>
+                  </td>
+                </tr>
+              </ng-template>
+            </lfx-table>
+          </div>
+        }
+
+        @if (filteredCommitteeMembers().length === 0) {
+          <div class="bg-gray-50 rounded-lg p-4 text-center">
+            <i class="fa-light fa-users text-2xl text-gray-400 mb-2"></i>
+            <p class="text-sm text-gray-500">
+              @if (hasVotingEnabledCommittee() && selectedVotingStatuses().length > 0) {
+                No members found with the selected voting statuses
+              } @else {
+                No members found in the selected {{ committeeLabel.plural.toLowerCase() }}
+              }
+            </p>
+          </div>
+        }
+
+        <p class="text-xs text-gray-500">
+          <i class="fa-light fa-info-circle mr-1"></i>
+          @if (hasVotingEnabledCommittee() && selectedVotingStatuses().length > 0) {
+            Filtered members: {{ filteredCommitteeMembers().length }} / {{ committeeMembers().length }}
+          } @else {
+            Total members: {{ filteredCommitteeMembers().length }}
+          }
+        </p>
+      </div>
+    }
+  }
+</div>

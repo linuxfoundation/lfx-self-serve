@@ -545,6 +545,7 @@ export class MeetingCardComponent implements OnInit {
         (meeting.recording_enabled ? 1 : 0) +
         (meeting.transcript_enabled ? 1 : 0) +
         (meeting.youtube_upload_enabled ? 1 : 0) +
+        (meeting.show_meeting_attendees ? 1 : 0) +
         (meeting.zoom_config?.ai_companion_enabled ? 1 : 0) +
         (meeting.visibility === 'public' ? 1 : 0)
       );

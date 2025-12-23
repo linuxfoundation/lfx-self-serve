@@ -1,12 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { isUuid } from '@lfx-one/shared';
 import {
   BatchRegistrantOperationResponse,
+  Committee,
+  CommitteeMember,
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
   CreateMeetingRsvpRequest,
   GenerateAgendaResponse,
+  MeetingRegistrant,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
@@ -14,10 +18,12 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
 import { addInvitedStatusToMeeting, addInvitedStatusToMeetings } from '../helpers/meeting.helper';
-import { logger } from '../services/logger.service';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
+import { CommitteeService } from '../services/committee.service';
+import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
+import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
  * Controller for handling meeting HTTP requests
@@ -25,6 +31,7 @@ import { MeetingService } from '../services/meeting.service';
 export class MeetingController {
   private meetingService: MeetingService = new MeetingService();
   private aiService: AiService = new AiService();
+  private committeeService: CommitteeService = new CommitteeService();
 
   /**
    * GET /meetings
@@ -373,6 +380,168 @@ export class MeetingController {
 
       // Send the registrants data to the client
       res.json(registrants);
+    } catch (error) {
+      // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  /**
+   * GET /meetings/:uid/my-meeting-registrants
+   * Retrieves registrants for a meeting with access control based on show_meeting_attendees setting
+   * Only returns registrants if the authenticated user is a registrant of the meeting
+   * Not supported for v1 legacy meetings
+   */
+  public async getMyMeetingRegistrants(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const { include_rsvp } = req.query;
+    const includeRsvp = include_rsvp === 'true';
+
+    // Check if this is a v1 meeting - not supported
+    const v1 = !isUuid(uid);
+
+    const startTime = logger.startOperation(req, 'get_my_meeting_registrants', {
+      meeting_uid: uid,
+      include_rsvp: includeRsvp,
+      v1,
+    });
+
+    try {
+      // Check if the meeting UID is provided
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_my_meeting_registrants',
+          service: 'meeting_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      // Step 1: Get the meeting to check show_meeting_attendees setting
+      // V1 meetings are treated as if show_meeting_attendees is true
+      logger.debug(req, 'get_my_meeting_registrants', 'Fetching meeting details', { meeting_uid: uid, v1 });
+      const meetingType = v1 ? 'v1_meeting' : 'meeting';
+      const meeting = await this.meetingService.getMeetingById(req, uid, meetingType, false);
+      if (!meeting) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_uid: uid,
+          meeting_not_found: true,
+          registrant_count: 0,
+        });
+        res.json([]);
+        return;
+      }
+
+      // V1 meetings are treated as having show_meeting_attendees enabled
+      const showMeetingAttendees = v1 ? true : meeting.show_meeting_attendees;
+
+      logger.debug(req, 'get_my_meeting_registrants', 'Meeting found, checking show_meeting_attendees', {
+        ...meeting,
+        meeting_uid: uid,
+        show_meeting_attendees: showMeetingAttendees,
+        v1,
+      });
+
+      // Step 2-4: Check if show_meeting_attendees is enabled (V1 meetings always pass this check)
+      if (!showMeetingAttendees) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_uid: uid,
+          show_meeting_attendees: false,
+          registrant_count: 0,
+        });
+        res.json([]);
+        return;
+      }
+
+      // Step 5: Check if current user is a registrant (access control)
+      const userEmail = req.oidc?.user?.['email'] as string | undefined;
+
+      logger.debug(req, 'get_my_meeting_registrants', 'Checking user authentication', {
+        meeting_uid: uid,
+        has_email: !!userEmail,
+        user_email: userEmail,
+      });
+
+      if (!userEmail) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_uid: uid,
+          no_email: true,
+          registrant_count: 0,
+        });
+        res.json([]);
+        return;
+      }
+
+      // Save original token and setup M2M token for privileged access
+      const originalToken = req.bearerToken;
+      const m2mToken = await generateM2MToken(req);
+      req.bearerToken = m2mToken;
+
+      // Use tags_all to filter by both meeting_uid and email
+      logger.debug(req, 'get_my_meeting_registrants', 'Checking if user is a registrant', {
+        meeting_uid: uid,
+        user_email: userEmail,
+      });
+      const userRegistrantCheck = await this.meetingService.getMeetingRegistrantsByEmail(req, uid, userEmail);
+
+      logger.debug(req, 'get_my_meeting_registrants', 'User registrant check complete', {
+        meeting_uid: uid,
+        user_email: userEmail,
+        registrant_count: userRegistrantCheck.resources?.length || 0,
+      });
+
+      // Step 6: If user is not a registrant, return empty array
+      if (!userRegistrantCheck.resources || userRegistrantCheck.resources.length === 0) {
+        logger.success(req, 'get_my_meeting_registrants', startTime, {
+          meeting_uid: uid,
+          user_email: userEmail,
+          is_registrant: false,
+          registrant_count: 0,
+        });
+        res.json([]);
+        return;
+      }
+
+      // Step 7: User is a registrant, fetch all registrants using M2M token
+      logger.debug(req, 'get_my_meeting_registrants', 'User is a registrant, setting up M2M token', {
+        meeting_uid: uid,
+        user_email: userEmail,
+        include_rsvp: includeRsvp,
+      });
+
+      logger.debug(req, 'get_my_meeting_registrants', 'M2M token generated, fetching all registrants', {
+        meeting_uid: uid,
+        has_m2m_token: !!m2mToken,
+      });
+
+      const registrants = await this.meetingService.getMeetingRegistrants(req, uid, includeRsvp);
+
+      logger.debug(req, 'get_my_meeting_registrants', 'Fetched all registrants, enriching committee data', {
+        meeting_uid: uid,
+        registrant_count: registrants.length,
+      });
+
+      // Enrich committee registrant data with committee details and member info
+      const enrichedRegistrants = await this.enrichCommitteeRegistrants(req, registrants);
+
+      // Restore original token (delete if it was undefined to avoid leaving M2M token)
+      if (originalToken !== undefined) {
+        req.bearerToken = originalToken;
+      } else {
+        delete req.bearerToken;
+      }
+
+      logger.success(req, 'get_my_meeting_registrants', startTime, {
+        meeting_uid: uid,
+        user_email: userEmail,
+        is_registrant: true,
+        registrant_count: enrichedRegistrants.length,
+        include_rsvp: includeRsvp,
+      });
+
+      // Send the registrants data to the client
+      res.json(enrichedRegistrants);
     } catch (error) {
       // Send the error to the next middleware
       next(error);
@@ -1346,5 +1515,94 @@ export class MeetingController {
         failed: failures.length,
       },
     };
+  }
+
+  /**
+   * Enriches committee registrants with committee details and member information
+   * For each committee registrant, fetches committee name/category and member voting/role/appointed_by
+   */
+  private async enrichCommitteeRegistrants(req: Request, registrants: MeetingRegistrant[]): Promise<MeetingRegistrant[]> {
+    // Filter for committee type registrants
+    const committeeRegistrants = registrants.filter((r) => r.type === 'committee' && r.committee_uid);
+
+    if (committeeRegistrants.length === 0) {
+      return registrants;
+    }
+
+    // Get unique committee UIDs
+    const uniqueCommitteeUids = [
+      ...new Set(committeeRegistrants.map((r) => r.committee_uid).filter((uid): uid is string => uid !== null && uid !== undefined)),
+    ];
+
+    logger.debug(req, 'enrich_committee_registrants', 'Enriching committee data', {
+      total_registrants: registrants.length,
+      committee_registrants: committeeRegistrants.length,
+      unique_committees: uniqueCommitteeUids.length,
+    });
+
+    // Fetch committee details and members in parallel
+    const [committees, membersByCommittee] = await Promise.all([
+      // Fetch all committees
+      Promise.all(
+        uniqueCommitteeUids.map(async (uid) => {
+          try {
+            const committee = await this.committeeService.getCommitteeById(req, uid);
+            return { uid, committee };
+          } catch (error) {
+            logger.warning(req, 'enrich_committee_registrants', 'Failed to fetch committee', {
+              committee_uid: uid,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
+            return { uid, committee: null };
+          }
+        })
+      ),
+      // Fetch all committee members
+      Promise.all(
+        uniqueCommitteeUids.map(async (uid) => {
+          try {
+            const members = await this.committeeService.getCommitteeMembers(req, uid);
+            return { uid, members };
+          } catch (error) {
+            logger.warning(req, 'enrich_committee_registrants', 'Failed to fetch committee members', {
+              committee_uid: uid,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
+            return { uid, members: [] };
+          }
+        })
+      ),
+    ]);
+
+    // Build lookup maps
+    const committeeMap = new Map<string, Committee | null>();
+    committees.forEach(({ uid, committee }) => committeeMap.set(uid, committee));
+
+    const memberMap = new Map<string, CommitteeMember[]>();
+    membersByCommittee.forEach(({ uid, members }) => memberMap.set(uid, members));
+
+    // Enrich registrants
+    return registrants.map((registrant) => {
+      if (registrant.type !== 'committee' || !registrant.committee_uid) {
+        return registrant;
+      }
+
+      const committee = committeeMap.get(registrant.committee_uid);
+      const members = memberMap.get(registrant.committee_uid) || [];
+
+      // Find the member by email
+      const member = members.find((m) => m.email.toLowerCase() === registrant.email.toLowerCase());
+
+      return {
+        ...registrant,
+        // Committee details
+        committee_name: committee?.name || registrant.committee_name || null,
+        committee_category: committee?.category || null,
+        // Member details
+        committee_role: member?.role?.name || registrant.committee_role || null,
+        committee_voting_status: member?.voting?.status || null,
+        committee_appointed_by: member?.appointed_by || null,
+      };
+    });
   }
 }

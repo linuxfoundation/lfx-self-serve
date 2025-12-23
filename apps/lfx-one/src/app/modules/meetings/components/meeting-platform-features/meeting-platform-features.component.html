@@ -40,36 +40,11 @@
   </lfx-message>
 
   <!-- Meeting Features -->
-  <div class="space-y-4">
+  <div class="flex flex-col gap-2">
     <h3 class="text-base font-medium text-slate-900">Meeting Features</h3>
 
     @for (feature of features; track feature.key) {
-      <div class="bg-white border border-slate-200 p-4 rounded-lg hover:border-primary transition-colors" [attr.data-testid]="'feature-' + feature.key">
-        <div class="flex items-center justify-between">
-          <div class="flex items-center gap-3">
-            <div class="p-2 rounded-lg" [style.background-color]="feature.color + '15'" [style.color]="feature.color">
-              <i [class]="feature.icon + ' text-sm'"></i>
-            </div>
-            <div>
-              <div class="flex items-center gap-2">
-                <label [for]="feature.key" class="text-sm font-semibold text-slate-900 cursor-pointer">{{ feature.title }}</label>
-                @if (feature.recommended) {
-                  <span class="bg-blue-100 text-primary text-xs px-2 py-1 rounded-full font-medium">Recommended</span>
-                }
-              </div>
-              <p class="text-xs text-slate-600">{{ feature.description }}</p>
-            </div>
-          </div>
-          <lfx-toggle
-            [form]="form()"
-            [control]="feature.key"
-            [id]="feature.key"
-            [trueValue]="feature.trueValue || true"
-            [falseValue]="feature.falseValue || false"
-            [attr.data-testid]="'toggle-' + feature.key">
-          </lfx-toggle>
-        </div>
-      </div>
+      <lfx-feature-toggle [feature]="feature" [form]="form()"></lfx-feature-toggle>
     }
   </div>
 
