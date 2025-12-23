@@ -88,7 +88,17 @@ externalSecrets:
   #           service: "lfx-v2-ui"
   #       rewrite:
   #         - merge: {}
-  dataFrom: []
+  dataFrom:
+    - find:
+        tags:
+          service: pcc
+      rewrite:
+        - merge: {}
+    - find:
+        tags:
+          service-pcc: enabled
+      rewrite:
+        - merge: {}
 
 # Global annotations to add to all resources
 annotations: {}
