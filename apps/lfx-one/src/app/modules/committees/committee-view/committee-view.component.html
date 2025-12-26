@@ -29,185 +29,70 @@
     <div class="flex flex-col gap-6">
       <!-- Header Section -->
       <div class="flex justify-between items-start">
-        <div>
-          <div class="flex items-center gap-3 mb-2">
-            <button (click)="goBack()" class="inline-flex items-center text-gray-500 hover:text-gray-700 transition-colors">
-              <i class="fa-light fa-arrow-left mr-2"></i>
-              Back to Groups
-            </button>
+        <div class="flex flex-col gap-4" data-testid="committee-view-header">
+          <lfx-breadcrumb [model]="breadcrumbItems()" data-testid="committee-view-breadcrumb"></lfx-breadcrumb>
+          <div class="flex flex-col gap-1">
+            <h1 data-testid="committee-view-name">{{ committee()?.name }}</h1>
+            <p class="text-gray-500" data-testid="committee-view-description">{{ committee()?.description }}</p>
           </div>
-          <h1 class="mb-2">{{ committee()?.name }}</h1>
           <div class="flex items-center gap-4 text-sm text-gray-500">
             @if (committee()?.category) {
               <lfx-tag [value]="committee()!.category" [severity]="categorySeverity()"></lfx-tag>
             }
-            <span>Created {{ formattedCreatedDate() }}</span>
+            <span class="text-gray-600">Created {{ formattedCreatedDate() }}</span>
             @if (committee()?.updated_at) {
-              <span>Last updated {{ formattedUpdatedDate() }}</span>
+              <span class="text-gray-600">Last updated {{ formattedUpdatedDate() }}</span>
             }
           </div>
         </div>
 
         <!-- Action Menu -->
         <div class="flex items-center gap-3">
-          <lfx-menu #actionMenu [model]="actionMenuItems" [popup]="true"> </lfx-menu>
-          <lfx-button icon="fa-light fa-ellipsis-vertical" styleClass="p-button-outlined p-button-sm" (onClick)="toggleActionMenu($event, actionMenu)">
-          </lfx-button>
+          <lfx-button icon="fa-light fa-file-lines" label="Edit Group" size="small" [routerLink]="['/groups', committee()?.uid || '', 'edit']"> </lfx-button>
         </div>
       </div>
 
-      <!-- Main Content Grid -->
-      <div class="grid grid-cols-1 lg:grid-cols-4 gap-6">
-        <!-- Left Column - Committee Details -->
-        <div class="lg:col-span-3 flex flex-col gap-6">
-          <!-- Members Section -->
-          @if (committee()?.uid) {
-            <lfx-committee-members
-              [committee]="committee()"
-              [members]="members()"
-              [membersLoading]="membersLoading()"
-              (refresh)="refreshMembers()"></lfx-committee-members>
-          }
+      <!-- Configurations Section -->
+      <lfx-card data-testid="committee-view-configurations">
+        <h3 class="text-sm font-medium mb-4" data-testid="committee-view-configurations-title">Configurations</h3>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-3">
+          <div class="flex items-center justify-between" data-testid="committee-view-config-public">
+            <span class="text-sm">Public</span>
+            <lfx-tag [value]="committee()?.public ? 'Enabled' : 'Disabled'" [severity]="committee()?.public ? 'success' : 'danger'"></lfx-tag>
+          </div>
+          <div class="flex items-center justify-between" data-testid="committee-view-config-voting">
+            <span class="text-sm">Voting</span>
+            <lfx-tag [value]="committee()?.enable_voting ? 'Enabled' : 'Disabled'" [severity]="committee()?.enable_voting ? 'success' : 'danger'"></lfx-tag>
+          </div>
+          <div class="flex items-center justify-between" data-testid="committee-view-config-business-email">
+            <span class="text-sm">Business Email Required</span>
+            <lfx-tag
+              [value]="committee()?.business_email_required ? 'Enabled' : 'Disabled'"
+              [severity]="committee()?.business_email_required ? 'success' : 'danger'"></lfx-tag>
+          </div>
+          <div class="flex items-center justify-between" data-testid="committee-view-config-sso-group">
+            <span class="text-sm">SSO Group</span>
+            <lfx-tag
+              [value]="committee()?.sso_group_enabled ? 'Enabled' : 'Disabled'"
+              [severity]="committee()?.sso_group_enabled ? 'success' : 'danger'"></lfx-tag>
+          </div>
+          <div class="flex items-center justify-between" data-testid="committee-view-config-audit">
+            <span class="text-sm">Audit</span>
+            <lfx-tag
+              [value]="committee()?.is_audit_enabled ? 'Enabled' : 'Disabled'"
+              [severity]="committee()?.is_audit_enabled ? 'success' : 'danger'"></lfx-tag>
+          </div>
         </div>
+      </lfx-card>
 
-        <!-- Right Column - Settings & Stats -->
-        <div class="flex flex-col gap-6">
-          <!-- Upcoming Meeting -->
-          <lfx-card title="Next Meeting">
-            @if (committee()?.uid) {
-              <lfx-upcoming-committee-meeting [committeeId]="committee()!.uid"></lfx-upcoming-committee-meeting>
-            }
-          </lfx-card>
-
-          <!-- Committee Information & Statistics -->
-          <lfx-card title="Committee Details">
-            <div class="">
-              @if (committee()?.description) {
-                <div class="pb-4 border-b border-gray-100">
-                  <h4 class="font-medium text-gray-700 mb-2">Description</h4>
-                  <p class="text-gray-500 text-sm">{{ committee()?.description }}</p>
-                </div>
-              }
-
-              <div class="flex justify-between items-center py-2 border-t border-gray-100">
-                <span class="text-gray-600">Total Members</span>
-                <span class="font-semibold text-gray-900">{{ committee()?.total_members || 0 }}</span>
-              </div>
-
-              <div class="flex justify-between items-center py-2 border-t border-gray-100">
-                <span class="text-gray-600">Voting Representatives</span>
-                <span class="font-semibold text-gray-900">{{ committee()?.total_voting_reps || 0 }}</span>
-              </div>
-
-              @if (committee()?.website) {
-                <div class="flex justify-between items-center py-2 border-t border-gray-100">
-                  <span class="text-gray-600">Website</span>
-                  <a [href]="committee()?.website" target="_blank" class="text-blue-600 hover:text-blue-800 underline text-sm" rel="noopener noreferrer">
-                    Visit
-                  </a>
-                </div>
-              }
-
-              @if (committee()?.display_name) {
-                <div class="flex justify-between items-center py-2 border-t border-gray-100">
-                  <span class="text-gray-600">Public Name</span>
-                  <span class="text-gray-900">{{ committee()?.display_name }}</span>
-                </div>
-              }
-
-              @if (committee()?.sso_group_name) {
-                <div class="flex justify-between items-center py-2 border-t border-gray-100">
-                  <span class="text-gray-600">SSO Group</span>
-                  <span class="text-gray-900">{{ committee()?.sso_group_name }}</span>
-                </div>
-              }
-            </div>
-          </lfx-card>
-
-          <!-- Committee Settings -->
-          <lfx-card title="Settings">
-            <div class="space-y-3">
-              <div class="flex justify-between items-center">
-                <span class="text-gray-600 text-sm">Public Enabled</span>
-                <span class="inline-flex items-center">
-                  <i
-                    class="fa-light text-sm mr-1"
-                    [class.fa-check-circle]="committee()?.public"
-                    [class.text-green-500]="committee()?.public"
-                    [class.fa-times-circle]="!committee()?.public"
-                    [class.text-red-500]="!committee()?.public"></i>
-                  <span class="text-sm" [class.text-green-600]="committee()?.public" [class.text-red-600]="!committee()?.public">
-                    {{ committee()?.public ? 'Enabled' : 'Disabled' }}
-                  </span>
-                </span>
-              </div>
-
-              <div class="flex justify-between items-center">
-                <span class="text-gray-600 text-sm">Voting Enabled</span>
-                <span class="inline-flex items-center">
-                  <i
-                    class="fa-light text-sm mr-1"
-                    [class.fa-check-circle]="committee()?.enable_voting"
-                    [class.text-green-500]="committee()?.enable_voting"
-                    [class.fa-times-circle]="!committee()?.enable_voting"
-                    [class.text-red-500]="!committee()?.enable_voting"></i>
-                  <span class="text-sm" [class.text-green-600]="committee()?.enable_voting" [class.text-red-600]="!committee()?.enable_voting">
-                    {{ committee()?.enable_voting ? 'Enabled' : 'Disabled' }}
-                  </span>
-                </span>
-              </div>
-
-              <div class="flex justify-between items-center">
-                <span class="text-gray-600 text-sm">Business Email Required</span>
-                <span class="inline-flex items-center">
-                  <i
-                    class="fa-light text-sm mr-1"
-                    [class.fa-check-circle]="committee()?.business_email_required"
-                    [class.text-green-500]="committee()?.business_email_required"
-                    [class.fa-times-circle]="!committee()?.business_email_required"
-                    [class.text-red-500]="!committee()?.business_email_required"></i>
-                  <span
-                    class="text-sm"
-                    [class.text-green-600]="committee()?.business_email_required"
-                    [class.text-red-600]="!committee()?.business_email_required">
-                    {{ committee()?.business_email_required ? 'Enabled' : 'Disabled' }}
-                  </span>
-                </span>
-              </div>
-
-              <div class="flex justify-between items-center">
-                <span class="text-gray-600 text-sm">SSO Group Enabled</span>
-                <span class="inline-flex items-center">
-                  <i
-                    class="fa-light text-sm mr-1"
-                    [class.fa-check-circle]="committee()?.sso_group_enabled"
-                    [class.text-green-500]="committee()?.sso_group_enabled"
-                    [class.fa-times-circle]="!committee()?.sso_group_enabled"
-                    [class.text-red-500]="!committee()?.sso_group_enabled"></i>
-                  <span class="text-sm" [class.text-green-600]="committee()?.sso_group_enabled" [class.text-red-600]="!committee()?.sso_group_enabled">
-                    {{ committee()?.sso_group_enabled ? 'Enabled' : 'Disabled' }}
-                  </span>
-                </span>
-              </div>
-
-              <div class="flex justify-between items-center">
-                <span class="text-gray-600 text-sm">Audit Enabled</span>
-                <span class="inline-flex items-center">
-                  <i
-                    class="fa-light text-sm mr-1"
-                    [class.fa-check-circle]="committee()?.is_audit_enabled"
-                    [class.text-green-500]="committee()?.is_audit_enabled"
-                    [class.fa-times-circle]="!committee()?.is_audit_enabled"
-                    [class.text-red-500]="!committee()?.is_audit_enabled"></i>
-                  <span class="text-sm" [class.text-green-600]="committee()?.is_audit_enabled" [class.text-red-600]="!committee()?.is_audit_enabled">
-                    {{ committee()?.is_audit_enabled ? 'Enabled' : 'Disabled' }}
-                  </span>
-                </span>
-              </div>
-            </div>
-          </lfx-card>
-        </div>
-      </div>
+      <!-- Members Section -->
+      @if (committee()?.uid) {
+        <lfx-committee-members
+          [committee]="committee()"
+          [members]="members()"
+          [membersLoading]="membersLoading()"
+          (refresh)="refreshMembers()"></lfx-committee-members>
+      }
     </div>
   }
 

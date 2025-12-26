@@ -58,151 +58,120 @@
           styleClass="w-full">
         </lfx-select>
       </div>
-
-      <!-- View Switcher -->
-      <lfx-select-button
-        size="small"
-        [form]="viewForm"
-        control="view"
-        [options]="viewOptions"
-        [unselectable]="false"
-        [required]="true"
-        (onChange)="onViewChange($event.value)">
-      </lfx-select-button>
     </div>
+
     <!-- Table View -->
-    @if (currentView() === 'table') {
-      <lfx-table
-        [value]="filteredMembers()"
-        [paginator]="true"
-        [rows]="10"
-        [rowsPerPageOptions]="[10, 25, 50]"
-        [showCurrentPageReport]="true"
-        currentPageReportTemplate="Showing {first} to {last} of {totalRecords} members"
-        styleClass="p-datatable-sm"
-        sortField="first_name"
-        [sortOrder]="1">
-        <ng-template #header>
-          <tr>
+    <lfx-table
+      [value]="filteredMembers()"
+      [paginator]="true"
+      [rows]="10"
+      [rowsPerPageOptions]="[10, 25, 50]"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords} members"
+      styleClass="p-datatable-sm"
+      sortField="first_name"
+      [sortOrder]="1">
+      <ng-template #header>
+        <tr>
+          <th>
+            <span class="text-sm font-sans text-gray-500">Name</span>
+          </th>
+          <th>
+            <span class="text-sm font-sans text-gray-500">Email</span>
+          </th>
+          <th>
+            <span class="text-sm font-sans text-gray-500">Organization</span>
+          </th>
+          @if (committee()?.enable_voting) {
             <th>
-              <span class="text-sm font-sans text-gray-500">Name</span>
+              <span class="text-sm font-sans text-gray-500">Role</span>
             </th>
             <th>
-              <span class="text-sm font-sans text-gray-500">Email</span>
+              <span class="text-sm font-sans text-gray-500">Voting Status</span>
             </th>
-            <th>
-              <span class="text-sm font-sans text-gray-500">Organization</span>
-            </th>
-            @if (committee()?.enable_voting) {
-              <th>
-                <span class="text-sm font-sans text-gray-500">Role</span>
-              </th>
-              <th>
-                <span class="text-sm font-sans text-gray-500">Voting Status</span>
-              </th>
-            }
-            <th style="width: 80px">
-              <div class="flex justify-center">
-                <span class="text-sm font-sans text-gray-500">Actions</span>
-              </div>
-            </th>
-          </tr>
-        </ng-template>
-
-        <ng-template #body let-member>
-          <tr>
-            <td>
-              <span class="text-sm font-sans text-gray-900 font-medium">
-                {{ (member.first_name || '') + ' ' + (member.last_name || '') | titlecase }}
-              </span>
-            </td>
-            <td>
-              <span class="text-sm font-sans text-gray-500">{{ member.email || '-' }}</span>
-            </td>
-            <td>
-              @if (member.organization?.website) {
-                <a [href]="member.organization.website" target="_blank" class="text-primary hover:text-primary-600 text-sm font-sans">
-                  {{ member.organization.name }}
-                </a>
-              } @else {
-                <span class="text-sm font-sans text-gray-500">{{ member.organization?.name || '-' }}</span>
-              }
-            </td>
-            @if (committee()?.enable_voting) {
-              <td>
-                <span class="text-sm font-sans text-gray-500">{{ member.role?.name || 'None' }}</span>
-              </td>
-              <td>
-                <span class="text-sm font-sans text-gray-500">{{ member.voting?.status || 'None' }}</span>
-              </td>
-            }
-            <td class="text-center relative">
-              <lfx-menu #memberActionMenu [model]="memberActionMenuItems" [popup]="true" appendTo="body"> </lfx-menu>
-              @if (committee()?.writer) {
-                <lfx-button
-                  icon="fa-light fa-ellipsis-vertical"
-                  [text]="true"
-                  [rounded]="true"
-                  size="small"
-                  severity="secondary"
-                  (onClick)="toggleMemberActionMenu($event, member, memberActionMenu)">
-                </lfx-button>
-              } @else {
-                <lfx-button
-                  icon="fa-light fa-envelope"
-                  [text]="true"
-                  [rounded]="true"
-                  size="small"
-                  severity="secondary"
-                  [href]="`mailto:${member.email}`"
-                  target="_blank"
-                  pTooltip="Send Message">
-                </lfx-button>
-              }
-            </td>
-          </tr>
-        </ng-template>
-
-        <!-- Empty Message Template -->
-        <ng-template #emptymessage>
-          @if (membersLoading()) {
-            <tr>
-              <td colspan="6" class="text-center py-8">
-                <i class="fa-light fa-circle-notch fa-spin text-4xl text-gray-400"></i>
-              </td>
-            </tr>
-          } @else {
-            <tr>
-              <td colspan="6" class="text-center py-8">
-                <div class="text-center">
-                  <i class="fa-light fa-users text-4xl text-gray-400 mb-4"></i>
-                  <h3 class="text-lg font-medium text-gray-900 mb-2">No Members Yet</h3>
-                  <p class="text-gray-600">This {{ committeeLabel.singular }} doesn't have any members yet.</p>
-                </div>
-              </td>
-            </tr>
           }
-        </ng-template>
-      </lfx-table>
-    }
-  </lfx-card>
+          <th style="width: 80px">
+            <div class="flex justify-center">
+              <span class="text-sm font-sans text-gray-500">Actions</span>
+            </div>
+          </th>
+        </tr>
+      </ng-template>
 
-  @if (filteredMembers().length > 0) {
-    <!-- Card View -->
-    @if (currentView() === 'cards') {
-      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-        @for (member of filteredMembers(); track member.uid) {
-          <lfx-member-card
-            [member]="member"
-            [actionMenuItems]="memberActionMenuItems"
-            (onMenuToggle)="onMemberMenuToggle($event)"
-            [committee]="committee()"
-            class="animate-delay-2000"
-            enterClass="animate-enter fade-in-10 slide-in-from-b-8 animate-duration-1000"
-            leaveClass="animate-leave fade-out-0">
-          </lfx-member-card>
+      <ng-template #body let-member>
+        <tr>
+          <td>
+            <span class="text-sm font-sans text-gray-900 font-medium">
+              {{ (member.first_name || '') + ' ' + (member.last_name || '') | titlecase }}
+            </span>
+          </td>
+          <td>
+            <span class="text-sm font-sans text-gray-500">{{ member.email || '-' }}</span>
+          </td>
+          <td>
+            @if (member.organization?.website) {
+              <a [href]="member.organization.website" target="_blank" class="text-primary hover:text-primary-600 text-sm font-sans">
+                {{ member.organization.name }}
+              </a>
+            } @else {
+              <span class="text-sm font-sans text-gray-500">{{ member.organization?.name || '-' }}</span>
+            }
+          </td>
+          @if (committee()?.enable_voting) {
+            <td>
+              <span class="text-sm font-sans text-gray-500">{{ member.role?.name || 'None' }}</span>
+            </td>
+            <td>
+              <span class="text-sm font-sans text-gray-500">{{ member.voting?.status || 'None' }}</span>
+            </td>
+          }
+          <td class="text-center relative">
+            <lfx-menu #memberActionMenu [model]="memberActionMenuItems" [popup]="true" appendTo="body"> </lfx-menu>
+            @if (committee()?.writer) {
+              <lfx-button
+                icon="fa-light fa-ellipsis-vertical"
+                [text]="true"
+                [rounded]="true"
+                size="small"
+                severity="secondary"
+                (onClick)="toggleMemberActionMenu($event, member, memberActionMenu)">
+              </lfx-button>
+            } @else {
+              <lfx-button
+                icon="fa-light fa-envelope"
+                [text]="true"
+                [rounded]="true"
+                size="small"
+                severity="secondary"
+                [href]="`mailto:${member.email}`"
+                target="_blank"
+                pTooltip="Send Message">
+              </lfx-button>
+            }
+          </td>
+        </tr>
+      </ng-template>
+
+      <!-- Empty Message Template -->
+      <ng-template #emptymessage>
+        @if (membersLoading()) {
+          <tr>
+            <td [attr.colspan]="committee()?.enable_voting ? 6 : 4" class="text-center py-8">
+              <i class="fa-light fa-circle-notch fa-spin text-4xl text-gray-400"></i>
+            </td>
+          </tr>
+        } @else {
+          <tr>
+            <td [attr.colspan]="committee()?.enable_voting ? 6 : 4" class="text-center py-8">
+              <div class="text-center">
+                <i class="fa-light fa-users text-4xl text-gray-400 mb-4"></i>
+                <h3 class="text-lg font-medium text-gray-900 mb-2">No Members Yet</h3>
+                <p class="text-gray-600">This {{ committeeLabel.singular }} doesn't have any members yet.</p>
+              </div>
+            </td>
+          </tr>
         }
-      </div>
-    }
-  }
+      </ng-template>
+    </lfx-table>
+  </lfx-card>
 </div>

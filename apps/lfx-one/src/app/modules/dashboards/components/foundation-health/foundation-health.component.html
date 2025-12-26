@@ -111,13 +111,13 @@
                     <div class="flex-1 flex flex-col justify-end pb-2">
                       <div class="flex gap-0">
                         <div [style.width.%]="card.busFactor.topCompaniesPercentage" class="flex flex-col gap-1">
-                          <div class="text-xs font-medium text-slate-700">
+                          <div class="text-xs font-medium text-gray-700">
                             {{ card.busFactor.topCompaniesCount }} Companies ({{ card.busFactor.topCompaniesPercentage }}%)
                           </div>
                           <div class="h-4 rounded-l-sm bg-blue-500"></div>
                         </div>
                         <div [style.width.%]="card.busFactor.otherCompaniesPercentage" class="flex flex-col gap-1">
-                          <div class="text-xs text-slate-600 text-right">{{ card.busFactor.otherCompaniesCount }} Other Companies</div>
+                          <div class="text-xs text-gray-600 text-right">{{ card.busFactor.otherCompaniesCount }} Other Companies</div>
                           <div class="h-4 bg-blue-200 rounded-r-sm"></div>
                         </div>
                       </div>

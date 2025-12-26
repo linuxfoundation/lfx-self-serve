@@ -108,7 +108,7 @@
       let-messages="messages">
       <!-- Drop zone area -->
       <div
-        class="border-2 border-dashed border-slate-200 rounded-lg p-8 text-center bg-slate-50 hover:bg-slate-100 transition-colors cursor-pointer"
+        class="border-2 border-dashed border-gray-200 rounded-lg p-8 text-center bg-gray-50 hover:bg-gray-100 transition-colors cursor-pointer"
         role="button"
         tabindex="0"
         data-testid="file-upload-dropzone"
@@ -121,10 +121,10 @@
             <i class="fa-light fa-cloud-arrow-up text-blue-600 text-2xl"></i>
           </div>
           <div>
-            <p class="text-sm font-medium text-slate-900">
+            <p class="text-sm font-medium text-gray-900">
               {{ chooseLabel() || 'Click to upload files or drag and drop' }}
             </p>
-            <p class="text-xs text-slate-500 mt-1">
+            <p class="text-xs text-gray-500 mt-1">
               @if (accept()) {
                 {{ getFileTypeHint() }}
               }

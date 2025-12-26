@@ -66,7 +66,7 @@ export class ProjectLayoutComponent {
     },
     {
       label: 'Committees',
-      icon: 'fa-light fa-people-group text-green-500',
+      icon: 'fa-light fa-people-group text-emerald-500',
       routerLink: `/project/${this.projectSlug()}/committees`,
       routerLinkActiveOptions: { exact: false },
     },
@@ -74,7 +74,7 @@ export class ProjectLayoutComponent {
 
   public readonly metrics = computed(() => [
     { icon: 'fa-light fa-calendar-days text-blue-500', label: 'Meetings', value: this.project()?.meetings_count || 0 },
-    { icon: 'fa-light fa-people-group text-green-500', label: 'Committees', value: this.project()?.committees_count || 0 },
+    { icon: 'fa-light fa-people-group text-emerald-500', label: 'Committees', value: this.project()?.committees_count || 0 },
     { icon: 'fa-light fa-envelope text-amber-500', label: 'Mailing Lists', value: this.project()?.mailing_list_count || 0 },
   ]);
 

@@ -12,11 +12,29 @@
     @apply flex;
   }
 
-  .p-table {
+  .p-datatable {
+    .p-datatable-thead {
+      tr {
+        th {
+          @apply text-xs text-gray-500 font-medium;
+        }
+      }
+    }
+
     .p-datatable-tbody {
       tr {
         td {
-          @apply text-sm;
+          @apply text-xs leading-4 text-black;
+
+          a,
+          button,
+          i {
+            @apply text-sm;
+          }
+
+          a {
+            @apply text-blue-500 hover:text-blue-600 hover:underline cursor-pointer text-sm font-medium;
+          }
         }
       }
     }
@@ -116,6 +134,26 @@
 
     .p-message-text {
       @apply w-full;
+    }
+  }
+
+  .p-breadcrumb {
+    .p-breadcrumb-list {
+      .p-breadcrumb-item:not(:last-child) {
+        @apply text-sm;
+
+        a {
+          @apply text-blue-500 hover:text-blue-600 hover:underline cursor-pointer text-sm font-medium;
+        }
+      }
+
+      .p-breadcrumb-item:last-child {
+        @apply text-sm;
+
+        span {
+          @apply text-black;
+        }
+      }
     }
   }
 }

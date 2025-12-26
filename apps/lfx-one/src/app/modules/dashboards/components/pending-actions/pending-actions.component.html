@@ -18,10 +18,10 @@
           <div
             class="p-4 space-y-3 border rounded-xl shadow-md transition-all"
             [ngClass]="{
-              'bg-yellow-50 hover:border-yellow-300': item.severity === 'warn',
+              'bg-amber-50 hover:border-amber-300': item.severity === 'warn',
               'bg-blue-200 hover:border-blue-300': item.severity === 'info',
-              'bg-green-200 hover:border-green-300': item.severity === 'success',
-              'bg-purple-200 hover:border-purple-300': item.severity === 'secondary',
+              'bg-emerald-200 hover:border-emerald-300': item.severity === 'success',
+              'bg-violet-200 hover:border-violet-300': item.severity === 'secondary',
             }"
             [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
             <!-- Header with Type -->

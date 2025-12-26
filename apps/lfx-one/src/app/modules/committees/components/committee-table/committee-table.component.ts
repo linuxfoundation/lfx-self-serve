@@ -8,7 +8,8 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { Committee, COMMITTEE_CATEGORY_SEVERITY, COMMITTEE_LABEL, TagSeverity } from '@lfx-one/shared';
+import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
+import { CommitteeCategorySeverityPipe } from '@pipes/committee-category-severity.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -20,7 +21,18 @@ import { MemberFormComponent } from '../member-form/member-form.component';
 
 @Component({
   selector: 'lfx-committee-table',
-  imports: [DatePipe, RouterLink, CardComponent, ButtonComponent, TableComponent, TagComponent, TooltipModule, ConfirmDialogModule, DynamicDialogModule],
+  imports: [
+    DatePipe,
+    RouterLink,
+    CardComponent,
+    ButtonComponent,
+    TableComponent,
+    TagComponent,
+    TooltipModule,
+    ConfirmDialogModule,
+    DynamicDialogModule,
+    CommitteeCategorySeverityPipe,
+  ],
   providers: [ConfirmationService, DialogService],
   templateUrl: './committee-table.component.html',
   styleUrl: './committee-table.component.scss',
@@ -42,11 +54,6 @@ export class CommitteeTableComponent {
 
   // Outputs
   public readonly refresh = output<void>();
-
-  // Helper method for category severity
-  public getCategorySeverity(category: string): TagSeverity {
-    return COMMITTEE_CATEGORY_SEVERITY[category] || 'secondary';
-  }
 
   // Event handlers
   public onAddMember(committee: Committee): void {

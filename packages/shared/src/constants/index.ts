@@ -24,3 +24,4 @@ export * from './accounts.constants';
 export * from './analytics.constants';
 export * from './chart-options.constants';
 export * from './cookie.constants';
+export * from './primeng-theme.constants';

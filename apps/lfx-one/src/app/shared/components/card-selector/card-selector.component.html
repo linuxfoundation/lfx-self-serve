@@ -3,7 +3,7 @@
 
 <div>
   @if (label()) {
-    <label class="text-sm font-semibold text-slate-900 mb-4 block">
+    <label class="text-sm font-semibold text-gray-900 mb-4 block">
       {{ label() }}
       @if (required()) {
         <span class="text-red-500">*</span>
@@ -22,7 +22,7 @@
         class="p-4 border rounded-lg cursor-pointer transition-all hover:border-blue-600 hover:bg-blue-50"
         [ngClass]="{
           'border-blue-600 bg-blue-50': form().get(control())?.value === option.value,
-          'border-slate-200 bg-white': form().get(control())?.value !== option.value,
+          'border-gray-200 bg-white': form().get(control())?.value !== option.value,
         }"
         (click)="onSelect(option.value)"
         [attr.data-testid]="testIdPrefix() + '-option-' + option.value">
@@ -31,9 +31,9 @@
             <i [class]="option.info.icon + ' text-base'"></i>
           </div>
           <div>
-            <h4 class="text-sm font-semibold text-slate-900">{{ option.label }}</h4>
-            <p class="text-xs text-slate-600 mt-1">{{ option.info.description }}</p>
-            <p class="text-xs text-slate-500 mt-1 italic">Examples: {{ option.info.examples }}</p>
+            <h4 class="text-sm font-semibold text-gray-900">{{ option.label }}</h4>
+            <p class="text-xs text-gray-600 mt-1">{{ option.info.description }}</p>
+            <p class="text-xs text-gray-500 mt-1 italic">Examples: {{ option.info.examples }}</p>
           </div>
         </div>
       </div>

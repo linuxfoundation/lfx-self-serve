@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
 import { Component, ContentChild, input, output, TemplateRef } from '@angular/core';
 import { RouterModule } from '@angular/router';
 import { MenuItem } from 'primeng/api';
@@ -9,7 +8,7 @@ import { BreadcrumbItemClickEvent, BreadcrumbModule } from 'primeng/breadcrumb';
 
 @Component({
   selector: 'lfx-breadcrumb',
-  imports: [NgTemplateOutlet, RouterModule, BreadcrumbModule],
+  imports: [RouterModule, BreadcrumbModule],
   templateUrl: './breadcrumb.component.html',
 })
 export class BreadcrumbComponent {

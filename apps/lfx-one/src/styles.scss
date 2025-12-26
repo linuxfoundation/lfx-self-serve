@@ -77,15 +77,9 @@
 
   /* Keep Roboto Slab as serif option too */
   --font-serif: 'Roboto Slab', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
-
-  --p-datatable-body-cell-padding: 0;
-  --p-inplace-padding: 0;
 }
 
 :root {
-  --p-datatable-body-cell-padding: 0.25rem 0;
-  --p-datatable-header-cell-padding: 0;
-
   --p-form-field-sm-font-size: 0.875rem;
   --p-inputtext-sm-font-size: 0.875rem;
   --p-inputtext-color: #333;
@@ -120,6 +114,10 @@
   --p-tag-font-size: 10.5px;
   --p-tag-font-weight: 400;
 
+  /* Breadcrumb component styling */
+  --p-breadcrumb-background: transparent;
+  --p-breadcrumb-padding: 0;
+
   .p-button-icon-only::after {
     display: none;
   }
@@ -128,10 +126,6 @@
 html {
   font-size: 14px;
   background-color: #f9fafb;
-}
-
-a:not([pButton]) {
-  @apply font-sans text-primary-700 hover:text-primary-900;
 }
 
 /* Button Styling - Secondary variant for card actions */

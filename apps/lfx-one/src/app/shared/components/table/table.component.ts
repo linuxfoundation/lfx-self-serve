@@ -129,6 +129,7 @@ export class TableComponent {
   public readonly stripedRows = input<boolean>(false);
   public readonly customSort = input<boolean>(false);
   public readonly size = input<'small' | 'large' | undefined>(undefined);
+  public readonly rowHover = input<boolean>(true);
 
   // Events
   public readonly onLazyLoad = output<any>();

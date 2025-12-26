@@ -7,6 +7,7 @@ import { provideClientHydration, withEventReplay, withHttpTransferCacheOptions, 
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideRouter, withInMemoryScrolling, withPreloading } from '@angular/router';
 import { lfxPreset } from '@linuxfoundation/lfx-ui-core';
+import { lfxCardTheme, lfxDataTableTheme } from '@lfx-one/shared';
 import { definePreset } from '@primeuix/themes';
 import Aura from '@primeuix/themes/aura';
 import { authenticationInterceptor } from '@shared/interceptors/authentication.interceptor';
@@ -23,6 +24,8 @@ const customPreset = definePreset(Aura, {
   semantic: lfxPreset.semantic,
   components: {
     ...lfxPreset.component,
+    card: lfxCardTheme,
+    datatable: lfxDataTableTheme,
   } as any,
 });
 
