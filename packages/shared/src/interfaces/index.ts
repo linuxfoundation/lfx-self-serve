@@ -64,3 +64,6 @@ export * from './snowflake.interface';
 
 // Account interfaces
 export * from './account.interface';
+
+// Mailing list interfaces
+export * from './mailing-list.interface';
