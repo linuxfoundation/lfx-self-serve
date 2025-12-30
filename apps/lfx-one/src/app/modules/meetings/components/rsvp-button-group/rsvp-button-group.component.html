@@ -7,7 +7,7 @@
     'bg-blue-50 border border-blue-300': selectedResponse() === null && !disabled(),
     'bg-gray-200/50': selectedResponse() !== null || disabled(),
   }"
-  class="rounded-[6px] p-[12px] space-y-2 flex-1"
+  class="rounded-[6px] p-[12px] flex flex-col gap-2 flex-1"
   [attr.data-testid]="'meeting-rsvp-container'">
   <!-- Header -->
   <div

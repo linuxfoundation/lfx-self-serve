@@ -9,16 +9,8 @@
     </h2>
   </div>
 
-  <div class="rounded-lg border border-gray-200 overflow-hidden relative">
-    @if (loading()) {
-      <div class="absolute inset-0 bg-white/60 flex items-center justify-center z-10" data-testid="dashboard-my-projects-loading">
-        <div class="flex flex-col items-center gap-2">
-          <i class="fa-solid fa-spinner fa-spin text-blue-500 text-2xl"></i>
-          <span class="text-sm text-gray-600">Loading...</span>
-        </div>
-      </div>
-    }
-    <div class="overflow-x-auto">
+  <div>
+    <lfx-card>
       <lfx-table [value]="projects()" data-testid="dashboard-my-projects-table">
         <ng-template #header>
           <tr class="border-b border-border">
@@ -84,14 +76,14 @@
         <ng-template #emptymessage>
           <tr>
             <td colspan="4" class="text-center py-8" data-testid="dashboard-my-projects-empty">
-              <div class="flex flex-col items-center gap-2">
-                <i class="fa-light fa-folder-open text-gray-400 text-3xl"></i>
-                <span class="text-sm text-gray-500">No projects found</span>
+              <div class="flex flex-col items-center gap-2 p-8">
+                <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2"></i>
+                <p class="text-sm text-gray-500">No projects found</p>
               </div>
             </td>
           </tr>
         </ng-template>
       </lfx-table>
-    </div>
+    </lfx-card>
   </div>
 </div>

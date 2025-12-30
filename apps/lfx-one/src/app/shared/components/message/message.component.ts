@@ -10,6 +10,7 @@ import { MessageModule } from 'primeng/message';
   selector: 'lfx-message',
   imports: [NgTemplateOutlet, MessageModule],
   templateUrl: './message.component.html',
+  styleUrl: './message.component.scss',
 })
 export class MessageComponent {
   // Content projection for custom templates

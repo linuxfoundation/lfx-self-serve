@@ -9,9 +9,7 @@ import { TableModule } from 'primeng/table';
   selector: 'lfx-table',
   imports: [NgIf, NgTemplateOutlet, TableModule],
   templateUrl: './table.component.html',
-  host: {
-    ngSkipHydration: 'true',
-  },
+  styleUrls: ['./table.component.scss'],
 })
 export class TableComponent {
   // Template references for content projection

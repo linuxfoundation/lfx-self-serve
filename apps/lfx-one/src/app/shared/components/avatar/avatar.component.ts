@@ -9,6 +9,7 @@ import { AvatarModule } from 'primeng/avatar';
   selector: 'lfx-avatar',
   imports: [AvatarModule],
   templateUrl: './avatar.component.html',
+  styleUrl: './avatar.component.scss',
 })
 export class AvatarComponent {
   // Input signals

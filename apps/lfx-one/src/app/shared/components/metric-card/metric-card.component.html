@@ -38,7 +38,7 @@
 
       <!-- Footer: Value + Subtitle -->
       @if (value() || subtitle()) {
-        <div class="space-y-1">
+        <div class="flex flex-col gap-1">
           @if (value()) {
             @if (valueTooltip()) {
               <div class="text-xl font-medium cursor-help" [pTooltip]="valueTooltip()!" [escape]="false" tooltipPosition="top">

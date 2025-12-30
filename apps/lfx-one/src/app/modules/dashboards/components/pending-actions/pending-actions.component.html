@@ -16,7 +16,7 @@
       <div class="flex flex-col gap-3" data-testid="dashboard-pending-actions-list">
         @for (item of pendingActions(); track $index) {
           <div
-            class="p-4 space-y-3 border rounded-xl shadow-md transition-all"
+            class="p-4 flex flex-col gap-3 border rounded-xl shadow-md transition-all"
             [ngClass]="{
               'bg-amber-50 hover:border-amber-300': item.severity === 'warn',
               'bg-blue-200 hover:border-blue-300': item.severity === 'info',
@@ -77,8 +77,9 @@
       </div>
     } @else {
       <!-- Empty state - shows when no pending actions -->
-      <div class="text-xs text-gray-500 py-8 text-center border-2 border-dashed border-gray-300 rounded-lg" data-testid="dashboard-pending-actions-empty">
-        No pending actions
+      <div class="text-center py-8" data-testid="dashboard-pending-actions-empty">
+        <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+        <p class="text-sm text-gray-500">No pending actions</p>
       </div>
     }
   </div>

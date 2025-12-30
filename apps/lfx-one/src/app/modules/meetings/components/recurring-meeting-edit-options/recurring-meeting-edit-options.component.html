@@ -6,7 +6,7 @@
     <p class="text-gray-700">This is a recurring meeting. What would you like to edit?</p>
   </div>
 
-  <form [formGroup]="editForm" class="space-y-4">
+  <form [formGroup]="editForm" class="flex flex-col gap-4">
     <div class="flex items-start gap-3">
       <lfx-radio-button [form]="editForm" control="editType" name="editType" value="single" inputId="edit-single"> </lfx-radio-button>
       <div class="flex-1">

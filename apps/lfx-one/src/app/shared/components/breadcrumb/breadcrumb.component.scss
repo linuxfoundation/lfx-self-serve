@@ -1,0 +1,24 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+::ng-deep {
+  .p-breadcrumb {
+    .p-breadcrumb-list {
+      .p-breadcrumb-item:not(:last-child) {
+        @apply text-sm;
+
+        a {
+          @apply text-blue-500 hover:text-blue-600 hover:underline cursor-pointer text-sm font-medium;
+        }
+      }
+
+      .p-breadcrumb-item:last-child {
+        @apply text-sm;
+
+        span {
+          @apply text-black;
+        }
+      }
+    }
+  }
+}

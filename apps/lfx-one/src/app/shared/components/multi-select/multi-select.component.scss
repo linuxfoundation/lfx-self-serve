@@ -1,0 +1,12 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+::ng-deep {
+  .p-multiselect-overlay {
+    .p-multiselect-list-container {
+      .p-multiselect-option {
+        @apply text-sm;
+      }
+    }
+  }
+}

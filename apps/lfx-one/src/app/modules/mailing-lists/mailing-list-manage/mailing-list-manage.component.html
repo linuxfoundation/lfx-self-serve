@@ -1,0 +1,140 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container px-8" data-testid="mailing-list-manage">
+  <!-- Back Navigation -->
+  <div class="mb-4">
+    <a routerLink="/mailing-lists" class="inline-flex items-center text-gray-500 hover:text-gray-700 transition-colors">
+      <i class="fa-light fa-arrow-left mr-2"></i>
+      Back to Mailing Lists
+    </a>
+  </div>
+
+  <!-- Page Title -->
+  <h1 class="mb-6" data-testid="mailing-list-manage-title">
+    {{ isEditMode() ? 'Edit Mailing List' : 'Create Mailing List' }}
+  </h1>
+
+  <!-- Stepper -->
+  <p-stepper
+    [value]="currentStep()"
+    (valueChange)="goToStep($event)"
+    [linear]="!isEditMode()"
+    styleClass="mailing-list-manage-stepper mb-6"
+    data-testid="mailing-list-manage-stepper">
+    <p-step-list>
+      <p-step [value]="1" data-testid="mailing-list-manage-step-1"></p-step>
+      <p-step [value]="2" data-testid="mailing-list-manage-step-2"></p-step>
+      <p-step [value]="3" data-testid="mailing-list-manage-step-3"></p-step>
+    </p-step-list>
+
+    <p-step-panels>
+      <!-- Form Card -->
+      <div class="bg-white rounded-lg border border-gray-200 shadow-sm px-7">
+        <!-- Navigation Controls (Above Content) -->
+        @if (!hasNoServices()) {
+          <div class="flex items-center justify-between p-6 border-b border-gray-200">
+            <!-- Previous Button -->
+            <div>
+              @if (canGoPrevious()) {
+                <lfx-button
+                  label="Previous"
+                  icon="fa-light fa-chevron-left"
+                  [text]="true"
+                  (onClick)="previousStep()"
+                  data-testid="mailing-list-manage-previous-btn">
+                </lfx-button>
+              }
+            </div>
+
+            <!-- Right Side Buttons -->
+            <div class="flex gap-3">
+              @if (isLastStep()) {
+                <!-- Skip for Now (only on step 3 in create mode) -->
+                @if (!isEditMode()) {
+                  <lfx-button label="Skip for Now" [text]="true" (onClick)="onSkip()" data-testid="mailing-list-manage-skip-btn"> </lfx-button>
+                }
+
+                <!-- Create/Update Button -->
+                <lfx-button
+                  [label]="isEditMode() ? 'Save Changes' : 'Create Mailing List'"
+                  [loading]="submitting()"
+                  severity="info"
+                  (onClick)="onSubmit()"
+                  data-testid="mailing-list-manage-submit-btn">
+                </lfx-button>
+              } @else {
+                <!-- Cancel Button -->
+                <lfx-button label="Cancel" [text]="true" (onClick)="onCancel()" data-testid="mailing-list-manage-cancel-btn"> </lfx-button>
+
+                <!-- Next Button -->
+                <lfx-button
+                  label="Next"
+                  icon="fa-light fa-chevron-right"
+                  iconPos="right"
+                  [disabled]="!canGoNext()"
+                  severity="info"
+                  (onClick)="nextStep()"
+                  data-testid="mailing-list-manage-next-btn">
+                </lfx-button>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Step Content -->
+        <div class="p-6 md:p-8">
+          <p-step-panel [value]="1" data-testid="mailing-list-manage-panel-1">
+            <ng-template #content let-activateCallback="activateCallback">
+              @if (hasNoServices()) {
+                <!-- No Services Warning -->
+                <lfx-message styleClass="my-0.5" severity="warn" data-testid="mailing-list-no-services-warning">
+                  <ng-template #content>
+                    <div class="flex flex-col gap-2">
+                      <span class="font-semibold">Mailing List Service Not Configured</span>
+                      <span>
+                        To create a mailing list, a Groups.io service must be set up for this project or its parent project. Please
+                        <a
+                          href="https://jira.linuxfoundation.org/plugins/servlet/desk/portal/2"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="text-blue-600 hover:text-blue-800 underline">
+                          open a support ticket
+                        </a>
+                        to request the service configuration.
+                      </span>
+                    </div>
+                  </ng-template>
+                </lfx-message>
+              } @else {
+                <lfx-mailing-list-basic-info
+                  [form]="form()"
+                  [formValue]="formValue"
+                  [service]="selectedService()"
+                  [prefix]="servicePrefix()"
+                  [maxGroupNameLength]="maxGroupNameLength()">
+                </lfx-mailing-list-basic-info>
+              }
+            </ng-template>
+          </p-step-panel>
+
+          <p-step-panel [value]="2" data-testid="mailing-list-manage-panel-2">
+            <ng-template #content let-activateCallback="activateCallback">
+              <lfx-mailing-list-settings [form]="form()"></lfx-mailing-list-settings>
+            </ng-template>
+          </p-step-panel>
+
+          <p-step-panel [value]="3" data-testid="mailing-list-manage-panel-3">
+            <ng-template #content let-activateCallback="activateCallback">
+              <!-- Step 3: People & Groups - Placeholder -->
+              <div class="text-center text-gray-500 py-8">
+                <p>Step 3: People & Groups Component</p>
+                <p class="text-sm mt-2">Coming next</p>
+              </div>
+            </ng-template>
+          </p-step-panel>
+        </div>
+      </div>
+    </p-step-panels>
+  </p-stepper>
+</div>

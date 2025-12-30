@@ -1,9 +1,9 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="p-8 space-y-6" data-testid="route-loading">
+<div class="p-8 flex flex-col gap-6" data-testid="route-loading">
   <!-- Header skeleton -->
-  <div class="space-y-3">
+  <div class="flex flex-col gap-3">
     <p-skeleton height="2rem" class="mb-2"></p-skeleton>
     <p-skeleton height="1rem" width="70%"></p-skeleton>
   </div>
@@ -11,7 +11,7 @@
   <!-- Content skeleton -->
   <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
     @for (item of skeletonItems; track item) {
-      <div class="space-y-3">
+      <div class="flex flex-col gap-3">
         <p-skeleton height="8rem"></p-skeleton>
         <p-skeleton height="1rem"></p-skeleton>
         <p-skeleton height="0.75rem" width="60%"></p-skeleton>

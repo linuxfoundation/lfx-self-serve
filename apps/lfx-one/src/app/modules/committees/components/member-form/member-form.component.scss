@@ -10,7 +10,7 @@
 
 // Form section styling
 .form-section {
-  @apply space-y-4;
+  @apply flex flex-col gap-4;
 
   h3 {
     @apply text-lg font-medium text-gray-900 border-b border-gray-200 pb-2;

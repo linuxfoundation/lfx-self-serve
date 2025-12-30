@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { GroupsIOServiceStatus, GroupsIOServiceType, MailingListType } from '../enums/mailing-list.enum';
+import { GroupsIOServiceStatus, GroupsIOServiceType, MailingListAudienceAccess, MailingListType } from '../enums/mailing-list.enum';
 
 /**
  * Linked group reference for mailing lists
@@ -19,15 +19,15 @@ export interface LinkedGroup {
 
 /**
  * Committee reference for mailing lists
- * @description Represents a committee linked to a mailing list with membership filters
+ * @description Represents a committee linked to a mailing list with allowed voting statuses
  */
 export interface MailingListCommittee {
   /** Committee UID */
   uid: string;
   /** Committee display name */
   name?: string;
-  /** Committee member filters: Voting Rep, Alternate Voting Rep, Observer, Emeritus, None */
-  filters?: CommitteeMemberVotingStatus[];
+  /** Allowed voting statuses: Voting Rep, Alternate Voting Rep, Observer, Emeritus, None */
+  allowed_voting_statuses?: CommitteeMemberVotingStatus[];
 }
 
 /**
@@ -82,6 +82,8 @@ export interface GroupsIOMailingList {
   source: string;
   /** Mailing list type (announcement, discussion_moderated, discussion_open) */
   type: MailingListType;
+  /** Controls who can discover and join this mailing list (public, approval_required, invite_only) */
+  audience_access: MailingListAudienceAccess;
   /** Description of the mailing list purpose (11-500 chars) */
   description: string;
   /** Display title for the mailing list (5-100 chars) */
@@ -108,7 +110,7 @@ export interface GroupsIOMailingList {
   created_at: string;
   /** Last update timestamp */
   updated_at: string;
-  /** Linked committees with names and membership filters */
+  /** Linked committees with names and allowed voting statuses */
   committees?: MailingListCommittee[];
   /** Parent service details (enriched from service lookup) */
   service?: GroupsIOService;
@@ -125,20 +127,18 @@ export interface CreateMailingListRequest {
   public: boolean;
   /** Mailing list type */
   type: MailingListType;
+  /** Controls who can discover and join this mailing list */
+  audience_access: MailingListAudienceAccess;
   /** Description of the mailing list (11-500 chars) */
   description: string;
   /** Display title for the mailing list (5-100 chars) */
-  title: string;
+  title?: string;
   /** Parent service UID (required) */
   service_uid: string;
-  /** Linked committees with membership filters */
+  /** Linked committees with allowed voting statuses */
   committees?: MailingListCommittee[];
   /** Email subject prefix (optional) */
   subject_tag?: string;
-  /** Users who can edit */
-  writers?: string[];
-  /** Users who can audit */
-  auditors?: string[];
 }
 
 /**

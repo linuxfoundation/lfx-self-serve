@@ -9,6 +9,7 @@ import { SelectModule } from 'primeng/select';
   selector: 'lfx-select',
   imports: [SelectModule, ReactiveFormsModule],
   templateUrl: './select.component.html',
+  styleUrl: './select.component.scss',
 })
 export class SelectComponent {
   public form = input.required<FormGroup>();

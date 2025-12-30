@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<lfx-card styleClass="border-0 shadow-md">
+<lfx-card>
   <lfx-table
     [value]="committees()"
     [paginator]="committees().length > 10"
@@ -55,7 +55,7 @@
         <td>{{ committee.updated_at | date: 'MMM d, y' }}</td>
         @if (canManageCommittee()) {
           <td>
-            <div class="flex items-center gap-1">
+            <div class="flex items-center justify-end gap-1">
               <lfx-button
                 icon="fa-light fa-user-plus"
                 severity="secondary"

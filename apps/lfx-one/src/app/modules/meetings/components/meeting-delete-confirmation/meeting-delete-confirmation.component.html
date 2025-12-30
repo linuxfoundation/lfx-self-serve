@@ -7,7 +7,7 @@
     <div class="bg-gray-50 rounded-lg p-4 border border-gray-200">
       <h3 class="text-lg font-semibold text-gray-900 mb-3">Meeting Details</h3>
 
-      <div class="space-y-2">
+      <div class="flex flex-col gap-2">
         <div class="flex items-start">
           <span class="font-medium text-gray-700 w-20 flex-shrink-0">Title:</span>
           <span class="text-gray-900">{{ meeting.title || 'Untitled Meeting' }}</span>
@@ -46,7 +46,7 @@
   <!-- @if (isRecurring && !isPastMeeting) {
     <div class="mb-6">
       <h4 class="text-md font-semibold text-gray-900 mb-3">Delete Options</h4>
-      <div class="space-y-4">
+      <div class="flex flex-col gap-4">
         <div class="flex items-start gap-3">
           <lfx-radio-button [form]="deleteForm" control="deleteType" name="deleteType" value="single" inputId="delete-single"> </lfx-radio-button>
           <div class="flex-1">

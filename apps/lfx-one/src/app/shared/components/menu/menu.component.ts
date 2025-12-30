@@ -10,6 +10,7 @@ import { Menu, MenuModule } from 'primeng/menu';
   selector: 'lfx-menu',
   imports: [NgIf, NgTemplateOutlet, MenuModule],
   templateUrl: './menu.component.html',
+  styleUrl: './menu.component.scss',
 })
 export class MenuComponent {
   @ContentChild('start', { static: false, descendants: false }) public startTemplate?: TemplateRef<any>;

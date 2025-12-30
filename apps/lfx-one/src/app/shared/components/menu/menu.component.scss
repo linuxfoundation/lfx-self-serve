@@ -1,0 +1,12 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+::ng-deep {
+  .p-menu {
+    .p-menu-item-link {
+      .p-menu-item-icon {
+        @apply w-5;
+      }
+    }
+  }
+}

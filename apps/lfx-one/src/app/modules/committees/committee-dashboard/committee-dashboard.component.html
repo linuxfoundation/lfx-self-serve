@@ -79,25 +79,29 @@
     <div class="min-h-[400px]">
       @if (committees().length === 0 && project()?.uid) {
         <!-- Empty state: No committees exist -->
-        <div class="flex items-center justify-center p-16 bg-white border border-dashed border-gray-300 rounded-lg">
-          <div class="text-center max-w-md">
-            <div class="text-gray-400 mb-4">
-              <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
-              <h3 class="text-gray-600 mt-2">Your project has no {{ committeeLabelPlural.toLowerCase() }}, yet.</h3>
+        <lfx-card>
+          <div class="flex items-center justify-center p-16">
+            <div class="text-center max-w-md">
+              <div class="text-gray-400 mb-4">
+                <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
+                <h3 class="text-gray-600 mt-2">Your project has no {{ committeeLabelPlural.toLowerCase() }}, yet.</h3>
+              </div>
             </div>
           </div>
-        </div>
+        </lfx-card>
       } @else if (filteredCommittees().length === 0) {
         <!-- Empty state: Committees exist but filters returned no results -->
-        <div class="flex items-center justify-center p-16 bg-white border border-dashed border-gray-300 rounded-lg">
-          <div class="text-center max-w-md">
-            <div class="text-gray-400 mb-4">
-              <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
+        <lfx-card>
+          <div class="flex items-center justify-center p-16">
+            <div class="text-center max-w-md">
+              <div class="text-gray-400 mb-4">
+                <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
+              </div>
+              <h3 class="text-xl font-semibold text-gray-900 mt-4">No {{ committeeLabelPlural.toLowerCase() }} Found</h3>
+              <p class="text-gray-600 mt-2">Try adjusting your search or filter criteria</p>
             </div>
-            <h3 class="text-xl font-semibold text-gray-900 mt-4">No {{ committeeLabelPlural.toLowerCase() }} Found</h3>
-            <p class="text-gray-600 mt-2">Try adjusting your search or filter criteria</p>
           </div>
-        </div>
+        </lfx-card>
       } @else {
         <lfx-committee-table
           [committees]="filteredCommittees()"

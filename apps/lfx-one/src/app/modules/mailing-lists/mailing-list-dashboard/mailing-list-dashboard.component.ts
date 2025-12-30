@@ -6,6 +6,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { MAILING_LIST_LABEL } from '@lfx-one/shared/constants';
@@ -21,7 +22,7 @@ import { MailingListTableComponent } from '../components/mailing-list-table/mail
 
 @Component({
   selector: 'lfx-mailing-list-dashboard',
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, ButtonComponent, MailingListTableComponent],
+  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, ButtonComponent, CardComponent, MailingListTableComponent],
   templateUrl: './mailing-list-dashboard.component.html',
   styleUrl: './mailing-list-dashboard.component.scss',
 })

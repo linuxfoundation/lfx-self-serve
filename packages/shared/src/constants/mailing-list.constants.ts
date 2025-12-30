@@ -34,3 +34,14 @@ export const MAILING_LIST_TYPE_LABELS = {
   [MailingListType.DISCUSSION_MODERATED]: 'Moderated',
   [MailingListType.DISCUSSION_OPEN]: 'Open',
 } as const;
+
+/**
+ * Step titles for the mailing list manage wizard
+ * @description Defines the step labels displayed in the progress indicator
+ */
+export const MAILING_LIST_STEP_TITLES = ['Basic Information', 'Settings', 'People & Groups'] as const;
+
+/**
+ * Total number of steps in the mailing list wizard
+ */
+export const MAILING_LIST_TOTAL_STEPS = MAILING_LIST_STEP_TITLES.length;

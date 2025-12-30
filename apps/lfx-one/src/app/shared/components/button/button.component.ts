@@ -12,6 +12,7 @@ import { TooltipModule } from 'primeng/tooltip';
   selector: 'lfx-button',
   imports: [NgClass, ButtonModule, RouterModule, TooltipModule],
   templateUrl: './button.component.html',
+  styleUrl: './button.component.scss',
 })
 export class ButtonComponent {
   // Text and Icon properties

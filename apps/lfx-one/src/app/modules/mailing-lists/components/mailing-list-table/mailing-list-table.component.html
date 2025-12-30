@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<lfx-card styleClass="border-0 shadow-md">
+<lfx-card>
   <lfx-table
     [value]="mailingLists()"
     [paginator]="mailingLists().length > 10"
@@ -146,7 +146,7 @@
 
           <!-- Actions Column -->
           <td>
-            <div class="flex items-center justify-center">
+            <div class="flex items-center justify-end">
               <lfx-button
                 icon="fa-light fa-ellipsis-vertical"
                 severity="secondary"
@@ -165,7 +165,7 @@
     <ng-template #emptymessage>
       <tr>
         <td [attr.colspan]="isMaintainer() ? 7 : 6" class="text-center py-8">
-          <i class="fa-light fa-envelope text-3xl text-gray-400 mb-2"></i>
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2"></i>
           <p class="text-sm text-gray-500">No mailing lists found</p>
         </td>
       </tr>

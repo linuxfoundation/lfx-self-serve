@@ -10,6 +10,7 @@ import { TooltipModule } from 'primeng/tooltip';
   selector: 'lfx-toggle',
   imports: [ToggleSwitchModule, ReactiveFormsModule, TooltipModule],
   templateUrl: './toggle.component.html',
+  styleUrl: './toggle.component.scss',
 })
 export class ToggleComponent {
   public form = input.required<FormGroup>();

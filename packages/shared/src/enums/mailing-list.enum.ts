@@ -12,6 +12,16 @@ export enum MailingListType {
 }
 
 /**
+ * Audience access options for mailing lists
+ * @description Controls who can discover and join this mailing list
+ */
+export enum MailingListAudienceAccess {
+  PUBLIC = 'public',
+  APPROVAL_REQUIRED = 'approval_required',
+  INVITE_ONLY = 'invite_only',
+}
+
+/**
  * Groups.io service type
  * @description Type of the Groups.io service
  */

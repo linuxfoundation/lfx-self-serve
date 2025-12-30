@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="space-y-6">
+<div class="flex flex-col gap-6">
   <!-- Header -->
   <div class="text-center mb-8">
     <h2 class="mb-2">{{ committeeLabel }} Settings</h2>
@@ -20,7 +20,7 @@
   </lfx-message>
 
   <!-- Member Visibility Setting -->
-  <div class="space-y-2">
+  <div class="flex flex-col gap-2">
     <h3 class="text-base font-medium text-gray-900">Member Visibility</h3>
     <div class="bg-white border border-gray-200 p-4 rounded-lg">
       <div class="flex flex-col gap-3">
@@ -48,7 +48,7 @@
   </div>
 
   <!-- Committee Settings Features -->
-  <div class="space-y-4">
+  <div class="flex flex-col gap-4">
     <h3 class="text-base font-medium text-gray-900">{{ committeeLabel }} Features</h3>
 
     @for (feature of features; track feature.key) {

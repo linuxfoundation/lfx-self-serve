@@ -3,7 +3,13 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { GroupsIOMailingList, QueryServiceCountResponse } from '@lfx-one/shared/interfaces';
+import {
+  CreateGroupsIOServiceRequest,
+  CreateMailingListRequest,
+  GroupsIOMailingList,
+  GroupsIOService,
+  QueryServiceCountResponse,
+} from '@lfx-one/shared/interfaces';
 import { map, Observable } from 'rxjs';
 
 /**
@@ -44,11 +50,6 @@ export class MailingListService {
     return this.http.get<GroupsIOMailingList>(`${this.baseUrl}/${uid}`);
   }
 
-  /**
-   * Get the count of mailing lists
-   * @param query - Optional query parameters
-   * @returns Observable of count
-   */
   public getMailingListsCount(query?: Record<string, string>): Observable<number> {
     let params = new HttpParams();
     if (query) {
@@ -57,5 +58,28 @@ export class MailingListService {
       });
     }
     return this.http.get<QueryServiceCountResponse>(`${this.baseUrl}/count`, { params }).pipe(map((response) => response.count));
+  }
+
+  public createMailingList(data: CreateMailingListRequest): Observable<GroupsIOMailingList> {
+    return this.http.post<GroupsIOMailingList>(this.baseUrl, data);
+  }
+
+  public updateMailingList(uid: string, data: Partial<CreateMailingListRequest>): Observable<GroupsIOMailingList> {
+    return this.http.put<GroupsIOMailingList>(`${this.baseUrl}/${uid}`, data);
+  }
+
+  public getServicesByProject(projectUid: string): Observable<GroupsIOService[]> {
+    const params = new HttpParams().set('tags', `project_uid:${projectUid}`);
+
+    return this.http.get<GroupsIOService[]>(`${this.baseUrl}/services`, { params });
+  }
+
+  /**
+   * Create a new Groups.io service
+   * @param data - The service creation request data
+   * @returns Observable of the created service
+   */
+  public createService(data: CreateGroupsIOServiceRequest): Observable<GroupsIOService> {
+    return this.http.post<GroupsIOService>(`${this.baseUrl}/services`, data);
   }
 }

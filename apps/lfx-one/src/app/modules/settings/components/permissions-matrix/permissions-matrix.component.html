@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 <lfx-card header="Permission Guide">
-  <div class="space-y-4">
+  <div class="flex flex-col gap-4">
     <!-- Key Points -->
     <div class="bg-blue-50 border border-blue-200 rounded p-3">
       <p class="text-xs text-blue-800"><strong>Key:</strong> All permissions apply to the entire project including committees, meetings, and mailing lists.</p>
@@ -15,7 +15,7 @@
             <lfx-tag [value]="item.scope + ' ' + item.level" [severity]="item.badge.severity"></lfx-tag>
           </div>
           <p class="text-xs text-gray-600 mb-2">{{ item.description }}</p>
-          <ul class="text-xs text-gray-500 space-y-1">
+          <ul class="text-xs text-gray-500 flex flex-col gap-1">
             @for (capability of item.capabilities; track capability) {
               <li class="flex items-start">
                 <i class="fa-light fa-check text-emerald-500 mr-1 mt-0.5" style="font-size: 10px"></i>

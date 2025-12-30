@@ -9,6 +9,7 @@ import { TextareaModule } from 'primeng/textarea';
   selector: 'lfx-textarea',
   imports: [TextareaModule, ReactiveFormsModule],
   templateUrl: './textarea.component.html',
+  styleUrl: './textarea.component.scss',
 })
 export class TextareaComponent {
   public form = input.required<FormGroup>();

@@ -87,11 +87,11 @@
         </div>
 
         <!-- Tab Content Placeholder -->
-        <div class="space-y-4 mb-4">
+        <div class="flex flex-col gap-4 mb-4">
           <lfx-message severity="info" icon="fa-light fa-info-circle">
             <ng-template #content>
               <h5 class="text-sm font-semibold mb-2">Combined Import Component</h5>
-              <ul class="text-sm space-y-1">
+              <ul class="text-sm flex flex-col gap-1">
                 <li>• This will be a tabbed component with Bulk Email Add and CSV Upload tabs</li>
                 <li>• Follows the exact React pattern from the reference code</li>
                 <li>• Will include all functionality for both import methods</li>
@@ -114,7 +114,7 @@
   }
 
   <!-- Main registrants content -->
-  <div class="space-y-4">
+  <div class="flex flex-col gap-4">
     <!-- Stats and filters section (simplified) -->
     <div class="flex items-center justify-between">
       @if (form().get('committees')?.value?.length > 0) {
@@ -155,17 +155,23 @@
     @if (registrants()) {
       <!-- Empty state -->
       @if (!loading() && filteredRegistrants().length === 0) {
-        <div class="text-center py-8" data-testid="empty-state">
-          <i class="fa-light fa-users text-4xl text-gray-300 mb-4"></i>
-          <h3 class="text-lg font-medium text-gray-600 mb-2">No guests found</h3>
-          <p class="text-gray-500 mb-4">
-            @if (registrantCount() === 0) {
-              Get started by adding your first guest
-            } @else {
-              Try adjusting your search terms or filters
-            }
-          </p>
-        </div>
+        <lfx-card styleClass="my-4">
+          <div class="flex items-center justify-center">
+            <div class="text-center max-w-md">
+              <div class="text-gray-400 mb-4">
+                <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
+                <h3 class="text-gray-600 mt-2">No guests found</h3>
+              </div>
+              <p class="text-gray-500">
+                @if (registrantCount() === 0) {
+                  Get started by adding your first guest
+                } @else {
+                  Try adjusting your search terms or filters
+                }
+              </p>
+            </div>
+          </div>
+        </lfx-card>
       }
 
       <!-- Registrants list -->

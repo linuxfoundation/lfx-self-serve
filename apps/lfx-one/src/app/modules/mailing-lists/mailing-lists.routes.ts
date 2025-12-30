@@ -11,4 +11,14 @@ export const MAILING_LIST_ROUTES: Routes = [
     canActivate: [authGuard],
     data: { preload: true, preloadDelay: 1500 },
   },
+  {
+    path: 'create',
+    loadComponent: () => import('./mailing-list-manage/mailing-list-manage.component').then((m) => m.MailingListManageComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: ':id/edit',
+    loadComponent: () => import('./mailing-list-manage/mailing-list-manage.component').then((m) => m.MailingListManageComponent),
+    canActivate: [authGuard],
+  },
 ];

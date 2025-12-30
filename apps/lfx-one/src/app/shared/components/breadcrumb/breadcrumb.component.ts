@@ -10,6 +10,7 @@ import { BreadcrumbItemClickEvent, BreadcrumbModule } from 'primeng/breadcrumb';
   selector: 'lfx-breadcrumb',
   imports: [RouterModule, BreadcrumbModule],
   templateUrl: './breadcrumb.component.html',
+  styleUrl: './breadcrumb.component.scss',
 })
 export class BreadcrumbComponent {
   @ContentChild('item', { static: false, descendants: false }) public itemTemplate?: TemplateRef<any>;

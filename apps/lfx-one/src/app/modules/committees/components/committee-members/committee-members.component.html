@@ -125,7 +125,7 @@
               <span class="text-sm font-sans text-gray-500">{{ member.voting?.status || 'None' }}</span>
             </td>
           }
-          <td class="text-center relative">
+          <td class="text-right relative">
             <lfx-menu #memberActionMenu [model]="memberActionMenuItems" [popup]="true" appendTo="body"> </lfx-menu>
             @if (committee()?.writer) {
               <lfx-button
@@ -164,9 +164,8 @@
           <tr>
             <td [attr.colspan]="committee()?.enable_voting ? 6 : 4" class="text-center py-8">
               <div class="text-center">
-                <i class="fa-light fa-users text-4xl text-gray-400 mb-4"></i>
-                <h3 class="text-lg font-medium text-gray-900 mb-2">No Members Yet</h3>
-                <p class="text-gray-600">This {{ committeeLabel.singular }} doesn't have any members yet.</p>
+                <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2"></i>
+                <p class="text-sm text-gray-500">No members found</p>
               </div>
             </td>
           </tr>

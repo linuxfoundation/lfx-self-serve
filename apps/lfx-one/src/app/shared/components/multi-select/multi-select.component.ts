@@ -9,6 +9,7 @@ import { MultiSelectModule } from 'primeng/multiselect';
   selector: 'lfx-multi-select',
   imports: [MultiSelectModule, ReactiveFormsModule],
   templateUrl: './multi-select.component.html',
+  styleUrl: './multi-select.component.scss',
 })
 export class MultiSelectComponent {
   public readonly form = input.required<FormGroup>();

@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="space-y-6">
+<div class="flex flex-col gap-6">
   <!-- Header -->
   <div class="text-center mb-8">
     <h2 class="mb-2">Meeting Platform & Features</h2>
@@ -50,7 +50,7 @@
 
   <!-- Additional Options (if recording is enabled) -->
   @if (form().get('recording_enabled')?.value) {
-    <div class="bg-gray-50 border border-gray-200 p-4 rounded-lg space-y-4" data-testid="artifact-options">
+    <div class="bg-gray-50 border border-gray-200 p-4 rounded-lg flex flex-col gap-4" data-testid="artifact-options">
       <!-- Artifact Visibility -->
       <div>
         <label for="artifact-visibility" class="block text-sm font-medium text-gray-700 mb-1">Recording & Summary Access</label>

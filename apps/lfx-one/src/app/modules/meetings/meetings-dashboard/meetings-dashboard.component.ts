@@ -6,6 +6,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
 import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { Meeting, PastMeeting, ProjectContext } from '@lfx-one/shared/interfaces';
@@ -20,7 +21,7 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 
 @Component({
   selector: 'lfx-meetings-dashboard',
-  imports: [ReactiveFormsModule, MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent, SelectButtonComponent],
+  imports: [ReactiveFormsModule, MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent, CardComponent, SelectButtonComponent],
   templateUrl: './meetings-dashboard.component.html',
   styleUrl: './meetings-dashboard.component.scss',
 })

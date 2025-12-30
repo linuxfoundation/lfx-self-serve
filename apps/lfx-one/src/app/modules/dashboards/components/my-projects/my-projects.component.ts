@@ -3,6 +3,7 @@
 
 import { Component, computed, inject, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
+import { CardComponent } from '@app/shared/components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TableComponent } from '@components/table/table.component';
 import { hexToRgba, lfxColors } from '@lfx-one/shared';
@@ -13,7 +14,7 @@ import type { ChartData, ChartOptions } from 'chart.js';
 import type { ProjectItemWithCharts } from '@lfx-one/shared/interfaces';
 @Component({
   selector: 'lfx-my-projects',
-  imports: [ChartComponent, TableComponent],
+  imports: [ChartComponent, TableComponent, CardComponent],
   templateUrl: './my-projects.component.html',
   styleUrl: './my-projects.component.scss',
 })

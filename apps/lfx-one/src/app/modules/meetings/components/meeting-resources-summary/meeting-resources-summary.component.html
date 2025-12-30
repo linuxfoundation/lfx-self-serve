@@ -1,13 +1,13 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="space-y-6">
+<div class="flex flex-col gap-6">
   <div class="text-center mb-8">
     <h2 class="mb-2">Resources & Links</h2>
     <p class="text-gray-500 text-base">Share documents, agendas, and reference materials so participants come prepared</p>
   </div>
 
-  <div class="space-y-6">
+  <div class="flex flex-col gap-6">
     <!-- Upload Files Section -->
     <div>
       <label class="text-sm font-semibold text-gray-900 mb-2 block">Upload Files</label>
@@ -30,7 +30,7 @@
     @if (pendingAttachments().length > 0) {
       <div>
         <label class="text-sm font-semibold text-gray-900 mb-3 block"> Uploaded Files ({{ pendingAttachments().length }}) </label>
-        <div class="space-y-2">
+        <div class="flex flex-col gap-2">
           @for (attachment of pendingAttachments(); track attachment.id; let i = $index) {
             <div class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg" [attr.data-testid]="'meeting-attachment-item-' + i">
               <div class="flex items-center gap-3">
@@ -62,7 +62,7 @@
     @if (isEditMode() && existingAttachments().length > 0) {
       <div>
         <label class="text-sm font-semibold text-gray-900 mb-3 block"> Existing Files ({{ existingAttachments().length }}) </label>
-        <div class="space-y-2">
+        <div class="flex flex-col gap-2">
           @for (attachment of existingAttachments(); track attachment.uid; let i = $index) {
             <div
               [ngClass]="{
@@ -158,7 +158,7 @@
     <div>
       <label class="text-sm font-semibold text-gray-900 mb-2 block">Add Important Links</label>
       <p class="text-xs text-gray-500 mb-4">Links to documents, repositories, or other resources relevant to this meeting</p>
-      <div class="space-y-3">
+      <div class="flex flex-col gap-3">
         <input
           [(ngModel)]="newLink.title"
           placeholder="Link title (e.g., Project Repository)"
@@ -178,7 +178,7 @@
     @if (importantLinksFormArray.length > 0) {
       <div>
         <label class="text-sm font-semibold text-gray-900 mb-3 block"> Added Links ({{ importantLinksFormArray.length }}) </label>
-        <div class="space-y-2">
+        <div class="flex flex-col gap-2">
           @for (linkControl of importantLinksFormArray.controls; track $index; let i = $index) {
             <div class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg" [attr.data-testid]="'meeting-link-item-' + i">
               <div>
@@ -203,7 +203,7 @@
         <i class="fa-light fa-circle-check w-5 h-5 text-emerald-600 mt-0.5"></i>
         <div>
           <h5 class="text-sm font-semibold text-emerald-800 mb-2">Useful resources to include</h5>
-          <ul class="text-sm text-emerald-700 space-y-1">
+          <ul class="text-sm text-emerald-700 flex flex-col gap-1">
             <li>• Project repository or documentation links</li>
             <li>• Previous meeting minutes or recordings</li>
             <li>• Relevant GitHub issues or pull requests</li>
