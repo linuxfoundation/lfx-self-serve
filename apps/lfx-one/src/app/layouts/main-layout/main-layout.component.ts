@@ -6,7 +6,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { SidebarComponent } from '@components/sidebar/sidebar.component';
 import { environment } from '@environments/environment';
-import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, MAILING_LIST_LABEL } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AppService } from '@services/app.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -50,6 +50,11 @@ export class MainLayoutComponent {
       label: COMMITTEE_LABEL.plural,
       icon: 'fa-light fa-users',
       routerLink: '/groups',
+    },
+    {
+      label: MAILING_LIST_LABEL.plural,
+      icon: 'fa-light fa-envelope',
+      routerLink: '/mailing-lists',
     },
     {
       label: 'Projects',

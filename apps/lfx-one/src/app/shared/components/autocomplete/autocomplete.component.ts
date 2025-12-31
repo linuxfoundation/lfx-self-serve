@@ -10,6 +10,7 @@ import { AutoCompleteCompleteEvent, AutoCompleteModule, AutoCompleteSelectEvent 
   selector: 'lfx-autocomplete',
   imports: [NgTemplateOutlet, AutoCompleteModule, ReactiveFormsModule],
   templateUrl: './autocomplete.component.html',
+  styleUrl: './autocomplete.component.scss',
 })
 export class AutocompleteComponent {
   // Template reference for content projection

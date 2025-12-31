@@ -25,7 +25,7 @@
   </div>
 
   <!-- Main members content -->
-  <div class="space-y-4">
+  <div class="flex flex-col gap-4">
     <!-- Stats and filters section -->
     <div class="flex items-center justify-between">
       <h3 class="text-lg font-semibold text-gray-900">Members ({{ memberCount() }})</h3>
@@ -59,17 +59,23 @@
 
     <!-- Empty state -->
     @if (!loading() && filteredMembers().length === 0) {
-      <div class="text-center py-8" data-testid="empty-state">
-        <i class="fa-light fa-users text-4xl text-gray-300 mb-4"></i>
-        <h3 class="text-lg font-medium text-gray-600 mb-2">No members found</h3>
-        <p class="text-gray-500 mb-4">
-          @if (memberCount() === 0) {
-            Get started by adding your first member
-          } @else {
-            Try adjusting your search terms or filters
-          }
-        </p>
-      </div>
+      <lfx-card styleClass="my-4">
+        <div class="flex items-center justify-center">
+          <div class="text-center max-w-md">
+            <div class="text-gray-400 mb-4">
+              <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
+              <h3 class="text-gray-600 mt-2">No members found</h3>
+            </div>
+            <p class="text-gray-500">
+              @if (memberCount() === 0) {
+                Get started by adding your first member
+              } @else {
+                Try adjusting your search terms or filters
+              }
+            </p>
+          </div>
+        </div>
+      </lfx-card>
     }
 
     <!-- Members list -->
@@ -104,7 +110,7 @@
             <div class="flex items-center gap-3">
               <!-- New member indicator -->
               @if (member.state === 'new') {
-                <span class="px-2 py-1 text-xs font-medium bg-green-100 text-green-800 rounded">New</span>
+                <span class="px-2 py-1 text-xs font-medium bg-emerald-100 text-emerald-800 rounded">New</span>
               }
               <!-- Modified indicator -->
               @if (member.state === 'modified') {

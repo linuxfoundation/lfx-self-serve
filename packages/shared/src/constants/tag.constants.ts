@@ -97,3 +97,12 @@ export const COMMITTEE_CATEGORY_SEVERITY: Record<string, TagSeverity> = {
   // Default
   Other: 'secondary',
 };
+
+/**
+ * Get committee category severity
+ * @param category - The committee category
+ * @returns The severity level for the category
+ */
+export function getCommitteeCategorySeverity(category: string): TagSeverity {
+  return COMMITTEE_CATEGORY_SEVERITY[category] || 'secondary';
+}

@@ -6,6 +6,7 @@ import { Component, computed, DestroyRef, inject, input, OnInit, output, signal,
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
@@ -30,7 +31,17 @@ import { MemberFormComponent } from '../member-form/member-form.component';
 
 @Component({
   selector: 'lfx-committee-members-manager',
-  imports: [NgClass, ReactiveFormsModule, ButtonComponent, InputTextComponent, SelectComponent, ConfirmDialogModule, DynamicDialogModule, TooltipModule],
+  imports: [
+    NgClass,
+    ReactiveFormsModule,
+    ButtonComponent,
+    CardComponent,
+    InputTextComponent,
+    SelectComponent,
+    ConfirmDialogModule,
+    DynamicDialogModule,
+    TooltipModule,
+  ],
   providers: [ConfirmationService, DialogService],
   templateUrl: './committee-members-manager.component.html',
 })

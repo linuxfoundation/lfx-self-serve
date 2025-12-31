@@ -32,5 +32,13 @@ export interface AccessCheckApiResponse {
 /**
  * Resource types
  */
-export type AccessCheckResourceType = 'project' | 'meeting' | 'committee' | 'past_meeting' | 'v1_meeting' | 'v1_past_meeting';
+export type AccessCheckResourceType =
+  | 'project'
+  | 'meeting'
+  | 'committee'
+  | 'past_meeting'
+  | 'v1_meeting'
+  | 'v1_past_meeting'
+  | 'groupsio_service'
+  | 'groupsio_mailing_list';
 export type AccessCheckAccessType = 'writer' | 'viewer' | 'organizer';

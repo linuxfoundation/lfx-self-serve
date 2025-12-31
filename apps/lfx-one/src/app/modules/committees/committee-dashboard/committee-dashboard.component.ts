@@ -6,6 +6,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
@@ -21,7 +22,7 @@ import { CommitteeTableComponent } from '../components/committee-table/committee
 
 @Component({
   selector: 'lfx-committee-dashboard',
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, ButtonComponent, CommitteeTableComponent],
+  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, ButtonComponent, CardComponent, CommitteeTableComponent],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
 })

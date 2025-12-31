@@ -19,6 +19,7 @@ import { authMiddleware } from './middleware/auth.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
 import analyticsRouter from './routes/analytics.route';
 import committeesRouter from './routes/committees.route';
+import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
 import organizationsRouter from './routes/organizations.route';
 import pastMeetingsRouter from './routes/past-meetings.route';
@@ -179,6 +180,7 @@ app.use('/public/api/meetings', publicMeetingsRouter);
 // Protected API routes
 app.use('/api/projects', projectsRouter);
 app.use('/api/committees', committeesRouter);
+app.use('/api/mailing-lists', mailingListsRouter);
 app.use('/api/meetings', meetingsRouter);
 app.use('/api/organizations', organizationsRouter);
 app.use('/api/past-meetings', pastMeetingsRouter);

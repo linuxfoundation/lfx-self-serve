@@ -175,8 +175,8 @@
                   [pastMeeting]="false"
                   [showAddButton]="true"
                   [additionalRegistrantsCount]="0"
-                  backgroundColor="bg-slate-50"
-                  borderColor="border-slate-200">
+                  backgroundColor="bg-gray-50"
+                  borderColor="border-gray-200">
                 </lfx-meeting-rsvp-details>
               </div>
             } @else if (authenticated() && !isLegacyMeeting()) {
@@ -264,7 +264,7 @@
 
             <!-- Right: Resources Card (fixed width) -->
             <div class="w-full md:w-[296px]">
-              <div class="bg-slate-50 border border-slate-200 rounded-md p-3" [attr.data-testid]="'resources-card'">
+              <div class="bg-gray-50 border border-gray-200 rounded-md p-3" [attr.data-testid]="'resources-card'">
                 <!-- Resources Header -->
                 <div class="flex items-center gap-2 mb-2">
                   <i class="fa-light fa-paperclip text-gray-500 text-xs"></i>

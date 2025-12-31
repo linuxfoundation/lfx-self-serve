@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="space-y-6">
+<div class="flex flex-col gap-6">
   <div class="text-center mb-4">
     <h2 class="mb-2">Meeting Details</h2>
     <p class="text-gray-500 text-base">Set the date, time, and schedule to help participants plan and prepare effectively</p>
@@ -55,9 +55,9 @@
       </div>
 
       @if (showAiHelper()) {
-        <div class="mb-4 p-4 bg-gradient-to-r from-blue-50 to-purple-50 border border-blue-200 rounded-lg">
+        <div class="mb-4 p-4 bg-gradient-to-r from-blue-50 to-violet-50 border border-blue-200 rounded-lg">
           <div class="flex items-start gap-3 mb-3">
-            <div class="bg-gradient-to-r flex items-center justify-center from-blue-500 to-purple-600 p-1.5 rounded-full">
+            <div class="bg-gradient-to-r flex items-center justify-center from-blue-500 to-violet-600 p-1.5 rounded-full">
               <i class="fa-light fa-sparkles text-white text-sm"></i>
             </div>
             <div>
@@ -66,7 +66,7 @@
             </div>
           </div>
 
-          <div class="space-y-3">
+          <div class="flex flex-col gap-3">
             <lfx-textarea
               [form]="form()"
               control="aiPrompt"
@@ -83,7 +83,7 @@
                 icon="fa-light fa-sparkles"
                 label="Generate Agenda"
                 size="small"
-                styleClass="bg-gradient-to-r from-blue-500 to-purple-600 hover:from-blue-600 hover:to-purple-700 text-white text-sm h-8"
+                styleClass="bg-gradient-to-r from-blue-500 to-violet-600 hover:from-blue-600 hover:to-violet-700 text-white text-sm h-8"
                 data-testid="meeting-details-generate-agenda"></lfx-button>
 
               <lfx-button

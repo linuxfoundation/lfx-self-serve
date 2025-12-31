@@ -2,120 +2,15 @@
 /* SPDX-License-Identifier: MIT */
 
 ::ng-deep {
-  .p-card {
-    .p-card-title {
-      @apply font-display;
-    }
-  }
-
-  .p-avatar {
-    @apply flex;
-  }
-
-  .p-table {
-    .p-datatable-tbody {
-      tr {
-        td {
-          @apply text-sm;
-        }
-      }
-    }
-  }
-
   .p-tabs {
     .p-tablist-content {
       @apply px-3;
     }
   }
 
-  .p-toggleswitch {
-    @apply flex;
-
-    .p-toggleswitch-handle {
-      @apply rounded-full;
-    }
-  }
-
-  .p-select-overlay,
-  .p-multiselect-overlay {
-    .p-select-list-container,
-    .p-multiselect-list-container {
-      .p-select-option,
-      .p-multiselect-option {
-        @apply text-sm;
-      }
-    }
-  }
-
   .p-tooltip {
     .p-tooltip-text {
       @apply text-sm;
-    }
-  }
-
-  .p-inplace-display {
-    @apply w-full;
-
-    &:hover {
-      @apply bg-transparent;
-    }
-  }
-
-  .p-textarea {
-    field-sizing: content;
-  }
-
-  .pill {
-    @apply inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-full transition-colors text-gray-600 border border-gray-200 hover:bg-gray-50;
-  }
-
-  .p-fileupload {
-    .p-fileupload-header {
-      @apply hidden;
-    }
-
-    .p-fileupload-content {
-      .p-message-error {
-        .p-message-text {
-          @apply text-xs;
-        }
-      }
-    }
-
-    .p-fileupload-content {
-      .p-fileupload-file-list {
-        @apply hidden;
-      }
-
-      p-progressbar {
-        @apply hidden;
-      }
-    }
-  }
-
-  .p-autocomplete-list-container {
-    .p-autocomplete-list {
-      .p-autocomplete-option {
-        span {
-          @apply text-ellipsis whitespace-nowrap overflow-hidden;
-        }
-      }
-    }
-  }
-
-  .p-menu {
-    .p-menu-item-link {
-      .p-menu-item-icon {
-        @apply w-5;
-      }
-    }
-  }
-
-  .p-message-content {
-    @apply w-full;
-
-    .p-message-text {
-      @apply w-full;
     }
   }
 }

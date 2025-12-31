@@ -20,7 +20,7 @@
     </lfx-message>
   </div>
 
-  <div class="space-y-6">
+  <div class="flex flex-col gap-6">
     <lfx-card-selector
       [options]="meetingTypeOptions()"
       [form]="form()"
@@ -32,8 +32,8 @@
   </div>
 
   <div class="flex flex-col gap-2">
-    <h3 class="text-lg font-semibold text-slate-900">Meeting Access</h3>
-    <p class="text-sm text-slate-600 mt-1 mb-0">Control who can view and join this meeting</p>
+    <h3 class="text-lg font-semibold text-gray-900">Meeting Access</h3>
+    <p class="text-sm text-gray-600 mt-1 mb-0">Control who can view and join this meeting</p>
 
     <div class="">
       <lfx-feature-toggle [feature]="restrictedFeature" [form]="form()"></lfx-feature-toggle>

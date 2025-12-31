@@ -26,11 +26,11 @@
             </lfx-button>
           }
         </div>
-        <p class="mt-2 text-gray-500">A group is a team of people like committees, boards, or working groups organized to collaborate across your project</p>
+        <p class="mt-2 text-gray-500" data-testid="dashboard-hero-description">Organize people and governance for your project.</p>
       </div>
 
       <!-- Sticky Top Bar with Search and Filters -->
-      <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-slate-200 p-4 -mx-0 mb-8">
+      <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-gray-200 p-4 -mx-0 mb-8">
         <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
           <!-- Search Input -->
           <div class="flex-1">
@@ -79,25 +79,29 @@
     <div class="min-h-[400px]">
       @if (committees().length === 0 && project()?.uid) {
         <!-- Empty state: No committees exist -->
-        <div class="flex items-center justify-center p-16 bg-white border border-dashed border-slate-300 rounded-lg">
-          <div class="text-center max-w-md">
-            <div class="text-slate-400 mb-4">
-              <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
-              <h3 class="text-slate-600 mt-2">Your project has no {{ committeeLabelPlural.toLowerCase() }}, yet.</h3>
+        <lfx-card>
+          <div class="flex items-center justify-center p-16">
+            <div class="text-center max-w-md">
+              <div class="text-gray-400 mb-4">
+                <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
+                <h3 class="text-gray-600 mt-2">Your project has no {{ committeeLabelPlural.toLowerCase() }}, yet.</h3>
+              </div>
             </div>
           </div>
-        </div>
+        </lfx-card>
       } @else if (filteredCommittees().length === 0) {
         <!-- Empty state: Committees exist but filters returned no results -->
-        <div class="flex items-center justify-center p-16 bg-white border border-dashed border-slate-300 rounded-lg">
-          <div class="text-center max-w-md">
-            <div class="text-slate-400 mb-4">
-              <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
+        <lfx-card>
+          <div class="flex items-center justify-center p-16">
+            <div class="text-center max-w-md">
+              <div class="text-gray-400 mb-4">
+                <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
+              </div>
+              <h3 class="text-xl font-semibold text-gray-900 mt-4">No {{ committeeLabelPlural.toLowerCase() }} Found</h3>
+              <p class="text-gray-600 mt-2">Try adjusting your search or filter criteria</p>
             </div>
-            <h3 class="text-xl font-semibold text-slate-900 mt-4">No {{ committeeLabelPlural.toLowerCase() }} Found</h3>
-            <p class="text-slate-600 mt-2">Try adjusting your search or filter criteria</p>
           </div>
-        </div>
+        </lfx-card>
       } @else {
         <lfx-committee-table
           [committees]="filteredCommittees()"

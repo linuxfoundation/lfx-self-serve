@@ -8,6 +8,7 @@ import { InplaceModule } from 'primeng/inplace';
   selector: 'lfx-inplace',
   imports: [InplaceModule],
   templateUrl: './inplace.component.html',
+  styleUrl: './inplace.component.scss',
 })
 export class InplaceComponent {
   // Basic properties we need for form toggle

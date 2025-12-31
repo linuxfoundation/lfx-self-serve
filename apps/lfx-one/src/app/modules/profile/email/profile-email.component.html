@@ -32,7 +32,7 @@
     </lfx-message>
 
     <lfx-card>
-      <div class="space-y-6">
+      <div class="flex flex-col gap-6">
         <!-- Email Addresses Section -->
         <div class="flex flex-col gap-4">
           <div>
@@ -41,7 +41,7 @@
           </div>
 
           @if (emailsWithMetadata().length > 0) {
-            <div class="space-y-3">
+            <div class="flex flex-col gap-3">
               @for (email of emailsWithMetadata(); track email.id) {
                 <div class="flex items-center justify-between p-4 border border-gray-200 rounded-lg" [attr.data-testid]="'email-item-' + email.id">
                   <!-- Email Info and Primary Icon -->
@@ -162,7 +162,7 @@
               </lfx-message>
             </div>
 
-            <form [formGroup]="preferencesForm" (ngSubmit)="updatePreferences()" class="space-y-4">
+            <form [formGroup]="preferencesForm" (ngSubmit)="updatePreferences()" class="flex flex-col gap-4">
               <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
                 <!-- Notification Email Preference -->
                 <div>

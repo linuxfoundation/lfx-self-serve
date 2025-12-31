@@ -9,19 +9,16 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MenuComponent } from '@components/menu/menu.component';
-import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { Committee, CommitteeMember } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
-import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { debounceTime, distinctUntilChanged, startWith, take } from 'rxjs';
 
-import { MemberCardComponent } from '../member-card/member-card.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
 
 @Component({
@@ -30,16 +27,13 @@ import { MemberFormComponent } from '../member-form/member-form.component';
     TitleCasePipe,
     ReactiveFormsModule,
     CardComponent,
-    MemberCardComponent,
     MenuComponent,
     ButtonComponent,
     InputTextComponent,
     SelectComponent,
-    SelectButtonComponent,
     TableComponent,
     ConfirmDialogModule,
     DynamicDialogModule,
-    AnimateOnScrollModule,
   ],
   providers: [DialogService],
   templateUrl: './committee-members.component.html',
@@ -76,11 +70,6 @@ export class CommitteeMembersComponent implements OnInit {
   public votingStatusOptions: Signal<{ label: string; value: string | null }[]>;
   public organizationOptions: Signal<{ label: string; value: string | null }[]>;
 
-  // View toggle variables
-  public viewForm: FormGroup;
-  public currentView: WritableSignal<'cards' | 'table'>;
-  public viewOptions: { label: string; value: 'cards' | 'table' }[];
-
   public constructor() {
     // Initialize all class variables
     this.selectedMember = signal<CommitteeMember | null>(null);
@@ -95,31 +84,16 @@ export class CommitteeMembersComponent implements OnInit {
     this.votingStatusOptions = this.initializeVotingStatusOptions();
     this.organizationOptions = this.initializeOrganizationOptions();
     this.filteredMembers = this.initializeFilteredMembers();
-
-    // Initialize view toggle
-    this.currentView = signal<'cards' | 'table'>('table');
-    this.viewForm = this.initializeViewForm();
-    this.viewOptions = this.initializeViewOptions();
   }
 
   public ngOnInit(): void {
     this.memberActionMenuItems = this.initializeMemberActionMenuItems();
   }
 
-  public onMemberMenuToggle(data: { event: Event; member: CommitteeMember; menu: MenuComponent }): void {
-    data.event.stopPropagation();
-    this.selectedMember.set(data.member);
-    data.menu.toggle(data.event);
-  }
-
   public toggleMemberActionMenu(event: Event, member: CommitteeMember, menuComponent: MenuComponent): void {
     event.stopPropagation();
     this.selectedMember.set(member);
     menuComponent.toggle(event);
-  }
-
-  public onViewChange(view: 'cards' | 'table'): void {
-    this.currentView.set(view);
   }
 
   public openAddMemberDialog(): void {
@@ -142,14 +116,6 @@ export class CommitteeMembersComponent implements OnInit {
         this.refreshMembers();
       }
     });
-  }
-
-  // Member action handlers
-  private viewMember(): void {
-    const member = this.selectedMember();
-    if (member) {
-      // TODO: Implement member view functionality
-    }
   }
 
   private editMember(): void {
@@ -396,18 +362,5 @@ export class CommitteeMembersComponent implements OnInit {
 
       return filtered;
     });
-  }
-
-  private initializeViewForm(): FormGroup {
-    return new FormGroup({
-      view: new FormControl('table'),
-    });
-  }
-
-  private initializeViewOptions(): { label: string; value: 'cards' | 'table' }[] {
-    return [
-      { label: 'Table', value: 'table' },
-      { label: 'Cards', value: 'cards' },
-    ];
   }
 }

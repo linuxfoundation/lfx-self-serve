@@ -1,0 +1,14 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+::ng-deep {
+  .p-autocomplete-list-container {
+    .p-autocomplete-list {
+      .p-autocomplete-option {
+        span {
+          @apply text-ellipsis whitespace-nowrap overflow-hidden;
+        }
+      }
+    }
+  }
+}

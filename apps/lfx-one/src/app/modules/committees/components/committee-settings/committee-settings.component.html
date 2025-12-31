@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="space-y-6">
+<div class="flex flex-col gap-6">
   <!-- Header -->
   <div class="text-center mb-8">
     <h2 class="mb-2">{{ committeeLabel }} Settings</h2>
@@ -20,17 +20,17 @@
   </lfx-message>
 
   <!-- Member Visibility Setting -->
-  <div class="space-y-2">
-    <h3 class="text-base font-medium text-slate-900">Member Visibility</h3>
-    <div class="bg-white border border-slate-200 p-4 rounded-lg">
+  <div class="flex flex-col gap-2">
+    <h3 class="text-base font-medium text-gray-900">Member Visibility</h3>
+    <div class="bg-white border border-gray-200 p-4 rounded-lg">
       <div class="flex flex-col gap-3">
         <div class="flex items-center gap-3">
           <div class="p-2 rounded-lg bg-blue-50 text-blue-500">
             <i class="fa-light fa-user-lock text-sm"></i>
           </div>
           <div class="flex-1">
-            <label for="member-visibility" class="text-sm font-semibold text-slate-900">Member Profile Visibility</label>
-            <p class="text-xs text-slate-600">Control what member information is visible within the {{ committeeLabel.toLowerCase() }}</p>
+            <label for="member-visibility" class="text-sm font-semibold text-gray-900">Member Profile Visibility</label>
+            <p class="text-xs text-gray-600">Control what member information is visible within the {{ committeeLabel.toLowerCase() }}</p>
           </div>
         </div>
         <lfx-select
@@ -48,11 +48,11 @@
   </div>
 
   <!-- Committee Settings Features -->
-  <div class="space-y-4">
-    <h3 class="text-base font-medium text-slate-900">{{ committeeLabel }} Features</h3>
+  <div class="flex flex-col gap-4">
+    <h3 class="text-base font-medium text-gray-900">{{ committeeLabel }} Features</h3>
 
     @for (feature of features; track feature.key) {
-      <div class="bg-white border border-slate-200 p-4 rounded-lg hover:border-primary transition-colors" [attr.data-testid]="'feature-' + feature.key">
+      <div class="bg-white border border-gray-200 p-4 rounded-lg hover:border-primary transition-colors" [attr.data-testid]="'feature-' + feature.key">
         <div class="flex items-center justify-between">
           <div class="flex items-center gap-3">
             <div class="p-2 rounded-lg" [style.background-color]="feature.color + '15'" [style.color]="feature.color">
@@ -60,12 +60,12 @@
             </div>
             <div>
               <div class="flex items-center gap-2">
-                <label [for]="feature.key" class="text-sm font-semibold text-slate-900 cursor-pointer">{{ feature.title }}</label>
+                <label [for]="feature.key" class="text-sm font-semibold text-gray-900 cursor-pointer">{{ feature.title }}</label>
                 @if (feature.recommended) {
                   <span class="bg-blue-100 text-primary text-xs px-2 py-1 rounded-full font-medium">Recommended</span>
                 }
               </div>
-              <p class="text-xs text-slate-600">{{ feature.description }}</p>
+              <p class="text-xs text-gray-600">{{ feature.description }}</p>
             </div>
           </div>
           <lfx-toggle [form]="form()" [control]="feature.key" [id]="feature.key" [attr.data-testid]="'toggle-' + feature.key"> </lfx-toggle>

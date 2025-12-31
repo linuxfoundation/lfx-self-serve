@@ -1,0 +1,22 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="border border-gray-200 rounded-lg p-4 bg-white" [attr.data-testid]="testId()">
+  <div class="flex items-start gap-3">
+    <!-- Icon -->
+    <div class="flex-shrink-0">
+      <div class="w-10 h-10 rounded-lg flex items-center justify-center" [ngClass]="iconBgClass()">
+        <i [ngClass]="[icon(), iconColorClass()]"></i>
+      </div>
+    </div>
+
+    <!-- Content -->
+    <div class="flex-1">
+      <h3 class="text-neutral-950 mb-1">{{ title() }}</h3>
+      <p class="text-sm text-gray-600 mb-4">{{ description() }}</p>
+
+      <!-- Projected Content -->
+      <ng-content></ng-content>
+    </div>
+  </div>
+</div>

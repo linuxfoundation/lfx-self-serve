@@ -528,7 +528,7 @@ export class MeetingCardComponent implements OnInit {
       if (percentage < 70) {
         return 'bg-blue-500';
       }
-      return 'bg-green-500';
+      return 'bg-emerald-500';
     });
   }
 
@@ -570,9 +570,9 @@ export class MeetingCardComponent implements OnInit {
         case 'maintainers':
           return { badgeClass: 'bg-blue-100 text-blue-500', severity: 'info', icon: 'fa-light fa-gear', text: meetingType };
         case 'marketing':
-          return { badgeClass: 'bg-green-100 text-green-500', severity: 'success', icon: 'fa-light fa-chart-line-up', text: meetingType };
+          return { badgeClass: 'bg-emerald-100 text-emerald-500', severity: 'success', icon: 'fa-light fa-chart-line-up', text: meetingType };
         case 'technical':
-          return { badgeClass: 'bg-purple-100 text-purple-500', severity: 'secondary', icon: 'fa-light fa-code', text: meetingType };
+          return { badgeClass: 'bg-violet-100 text-violet-500', severity: 'secondary', icon: 'fa-light fa-code', text: meetingType };
         case 'legal':
           return { badgeClass: 'bg-amber-100 text-amber-500', severity: 'warn', icon: 'fa-light fa-scale-balanced', text: meetingType };
         default:

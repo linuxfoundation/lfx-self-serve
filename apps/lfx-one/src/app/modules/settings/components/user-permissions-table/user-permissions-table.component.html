@@ -68,13 +68,13 @@
 
             <!-- Role Column -->
             <td>
-              <span class="text-sm font-sans {{ user.role === 'manage' ? 'text-green-700 font-medium' : 'text-blue-600' }}">
+              <span class="text-sm font-sans {{ user.role === 'manage' ? 'text-emerald-700 font-medium' : 'text-blue-600' }}">
                 {{ user.role === 'manage' ? 'Manage' : 'View' }}
               </span>
             </td>
 
             <!-- Actions Column -->
-            <td class="text-center relative">
+            <td class="text-right relative">
               <lfx-menu #userActionMenu [model]="userActionMenuItems" [popup]="true" appendTo="body"></lfx-menu>
               <lfx-button
                 [icon]="isRemoving() === user.username ? 'fa-light fa-circle-notch fa-spin' : 'fa-light fa-ellipsis-vertical'"

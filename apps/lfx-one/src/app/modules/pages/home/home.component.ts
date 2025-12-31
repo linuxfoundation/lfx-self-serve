@@ -51,7 +51,7 @@ export class HomeComponent {
       {
         label: 'Committees',
         value: project.committees_count,
-        icon: 'fa-light fa-people-group text-green-500',
+        icon: 'fa-light fa-people-group text-emerald-500',
       },
     ];
 

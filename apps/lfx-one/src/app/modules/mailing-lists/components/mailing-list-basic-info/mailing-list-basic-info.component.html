@@ -1,0 +1,74 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="mailing-list-basic-info">
+  <!-- Header -->
+  <div class="mb-6">
+    <h2 class="text-lg font-normal">Basic Information</h2>
+    <p class="text-sm text-gray-500 mt-1">Name your list and explain its purpose</p>
+  </div>
+
+  <!-- Project Ownership - Read-only context -->
+  <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+    <p class="text-sm text-neutral-950">
+      This mailing list belongs to: <span class="font-medium">{{ projectName() }}</span>
+    </p>
+  </div>
+
+  <!-- Two Column Layout -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <!-- Left Column - Mailing List Name -->
+    <div class="flex flex-col gap-2">
+      <label for="mailing-list-name" class="block text-sm text-neutral-950"> Mailing List Name <span class="text-red-500">*</span> </label>
+      <lfx-input-text
+        size="small"
+        [form]="form()"
+        control="group_name"
+        id="mailing-list-name"
+        placeholder="e.g., dev, announce, community"
+        styleClass="w-full"
+        data-testid="mailing-list-basic-info-name-input">
+      </lfx-input-text>
+      <p class="text-xs text-gray-500">Use a simple, purpose-based name (e.g., dev, announce).</p>
+      <p class="text-xs text-gray-500 mt-2">
+        Email address: <span class="font-medium">{{ emailPreview() }}</span>
+      </p>
+      @if (form().get('group_name')?.errors?.['required'] && form().get('group_name')?.touched) {
+        <p class="mt-1 text-sm text-red-600">Mailing list name is required</p>
+      }
+      @if (form().get('group_name')?.errors?.['minlength'] && form().get('group_name')?.touched) {
+        <p class="mt-1 text-sm text-red-600">Name must be at least 3 characters</p>
+      }
+      @if (groupNameTooLong() && form().get('group_name')?.touched) {
+        <p class="mt-1 text-sm text-red-600">{{ groupNameLengthError() }}</p>
+      }
+      @if (form().get('group_name')?.errors?.['pattern'] && form().get('group_name')?.touched) {
+        <p class="mt-1 text-sm text-red-600">Name can only contain letters, numbers, hyphens, and underscores</p>
+      }
+    </div>
+
+    <!-- Right Column - Description -->
+    <div class="flex flex-col gap-2">
+      <label for="mailing-list-description" class="block text-sm text-neutral-950"> What is this list used for? <span class="text-red-500">*</span> </label>
+      <lfx-textarea
+        [form]="form()"
+        control="description"
+        id="mailing-list-description"
+        placeholder="e.g., General development discussion and code reviews"
+        [rows]="4"
+        styleClass="w-full min-h-24"
+        data-testid="mailing-list-basic-info-description-input">
+      </lfx-textarea>
+      <p class="text-xs text-gray-500">This helps members understand when to use this list.</p>
+      @if (form().get('description')?.errors?.['required'] && form().get('description')?.touched) {
+        <p class="mt-1 text-sm text-red-600">Description is required</p>
+      }
+      @if (form().get('description')?.errors?.['minlength'] && form().get('description')?.touched) {
+        <p class="mt-1 text-sm text-red-600">Description must be at least 11 characters</p>
+      }
+      @if (form().get('description')?.errors?.['maxlength'] && form().get('description')?.touched) {
+        <p class="mt-1 text-sm text-red-600">Description cannot exceed 500 characters</p>
+      }
+    </div>
+  </div>
+</div>

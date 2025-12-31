@@ -8,12 +8,5 @@
   [styleClass]="styleClass()"
   [homeAriaLabel]="homeAriaLabel()"
   (onItemClick)="handleItemClick($event)">
-  <ng-template #item let-item>
-    <ng-container *ngTemplateOutlet="itemTemplate || null; context: { $implicit: item }"> </ng-container>
-  </ng-template>
-  @if (separatorTemplate) {
-    <ng-template #separator>
-      <ng-container *ngTemplateOutlet="separatorTemplate || null"></ng-container>
-    </ng-template>
-  }
+  <ng-template #separator> / </ng-template>
 </p-breadcrumb>

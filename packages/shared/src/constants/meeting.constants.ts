@@ -102,15 +102,15 @@ export const ARTIFACT_VISIBILITY_OPTIONS = [
 export interface MeetingTypeConfig {
   /** Display label for the meeting type */
   label: string;
-  /** Background color class (e.g., bg-purple-100) */
+  /** Background color class (e.g., bg-violet-100) */
   bgColor: string;
-  /** Text color class - 600 shade (e.g., text-purple-600) */
+  /** Text color class - 600 shade (e.g., text-violet-600) */
   textColor: string;
-  /** Text color class - 500 shade (e.g., text-purple-500) for alternate styling */
+  /** Text color class - 500 shade (e.g., text-violet-500) for alternate styling */
   textColorAlt: string;
-  /** Border color class - 500 shade (e.g., border-purple-500) */
+  /** Border color class - 500 shade (e.g., border-violet-500) */
   borderColor: string;
-  /** Border color class - 300 shade (e.g., border-purple-300) for lighter borders */
+  /** Border color class - 300 shade (e.g., border-violet-300) for lighter borders */
   borderColorLight: string;
   /** Font Awesome icon class */
   icon: string;
@@ -134,11 +134,11 @@ export interface MeetingTypeBadge {
 export const MEETING_TYPE_CONFIGS: Record<string, MeetingTypeConfig> = {
   technical: {
     label: 'Technical',
-    bgColor: 'bg-purple-100',
-    textColor: 'text-purple-600',
-    textColorAlt: 'text-purple-500',
-    borderColor: 'border-purple-500',
-    borderColorLight: 'border-purple-300',
+    bgColor: 'bg-violet-100',
+    textColor: 'text-violet-600',
+    textColorAlt: 'text-violet-500',
+    borderColor: 'border-violet-500',
+    borderColorLight: 'border-violet-300',
     icon: 'fa-light fa-code',
   },
   maintainers: {
@@ -161,11 +161,11 @@ export const MEETING_TYPE_CONFIGS: Record<string, MeetingTypeConfig> = {
   },
   marketing: {
     label: 'Marketing',
-    bgColor: 'bg-green-100',
-    textColor: 'text-green-600',
-    textColorAlt: 'text-green-500',
-    borderColor: 'border-green-500',
-    borderColorLight: 'border-green-300',
+    bgColor: 'bg-emerald-100',
+    textColor: 'text-emerald-600',
+    textColorAlt: 'text-emerald-500',
+    borderColor: 'border-emerald-500',
+    borderColorLight: 'border-emerald-300',
     icon: 'fa-light fa-chart-line-up',
   },
   legal: {

@@ -9,6 +9,7 @@ import { CardModule } from 'primeng/card';
   selector: 'lfx-card',
   imports: [NgTemplateOutlet, CardModule],
   templateUrl: './card.component.html',
+  styleUrl: './card.component.scss',
 })
 export class CardComponent {
   @ContentChild('header', { static: false, descendants: false }) public headerTemplate?: TemplateRef<any>;

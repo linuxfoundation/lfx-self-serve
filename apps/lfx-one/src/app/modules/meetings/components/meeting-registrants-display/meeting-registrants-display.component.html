@@ -73,7 +73,7 @@
         @if (!pastMeeting() && showAddRegistrant()) {
           <!-- Add Registrant Option -->
           <div
-            class="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors border-2 border-dashed border-blue-200 hover:border-blue-400"
+            class="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors border-2 border-solid border-blue-200 hover:border-blue-400"
             (click)="onAddRegistrantClick()"
             data-testid="add-registrant-button">
             <div class="w-8 h-8 bg-blue-100 border border-blue-200 rounded-full flex items-center justify-center">
@@ -96,7 +96,7 @@
           @for (participant of filteredPastParticipants(); track participant.uid) {
             <div class="flex items-center gap-2 p-2 rounded-md" [attr.data-testid]="'participant-' + participant.uid">
               @if (participant.is_attended) {
-                <i class="fa-light fa-check-circle text-green-500" pTooltip="Attended"></i>
+                <i class="fa-light fa-check-circle text-emerald-500" pTooltip="Attended"></i>
               } @else {
                 <i class="fa-light fa-times-circle text-red-500" pTooltip="Did Not Attend"></i>
               }
@@ -118,7 +118,7 @@
           }
           @for (registrant of filteredRegistrants(); track registrant.uid) {
             <div
-              class="bg-white border border-gray-200 rounded-lg p-4 space-y-3 shadow-md relative overflow-visible hover:border-blue-500 transition-colors"
+              class="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-3 shadow-md relative overflow-visible hover:border-blue-500 transition-colors"
               [ngClass]="{ 'cursor-pointer': meeting().organizer && registrant.type === 'committee' }"
               [attr.data-testid]="'registrant-' + registrant.uid">
               <!-- Top Section: Avatar + Name + LinkedIn -->

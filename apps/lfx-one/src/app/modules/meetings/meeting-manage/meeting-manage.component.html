@@ -10,14 +10,14 @@
     </a>
   </div>
 
-  <div class="bg-white rounded-lg border border-slate-200 shadow-sm">
+  <div class="bg-white rounded-lg border border-gray-200 shadow-sm">
     <!-- Header -->
-    <div class="border-b border-slate-200 p-6">
+    <div class="border-b border-gray-200 p-6">
       <div class="flex items-center justify-between">
         <h1 data-testid="meeting-manage-title">
           {{ isEditMode() ? 'Edit Meeting' : 'Create Meeting' }}
         </h1>
-        <div class="text-sm text-slate-500" data-testid="meeting-manage-step-indicator">Step {{ currentStep() }} of {{ totalSteps }}</div>
+        <div class="text-sm text-gray-500" data-testid="meeting-manage-step-indicator">Step {{ currentStep() }} of {{ totalSteps }}</div>
       </div>
     </div>
 
@@ -95,7 +95,7 @@
     </div>
 
     <!-- Footer Navigation -->
-    <div class="border-t border-slate-200 p-6">
+    <div class="border-t border-gray-200 p-6">
       <div class="flex justify-between">
         <!-- Previous Button -->
         @if (!isLastStep()) {

@@ -10,6 +10,7 @@ import { FileUploadModule } from 'primeng/fileupload';
   selector: 'lfx-file-upload',
   imports: [DecimalPipe, NgTemplateOutlet, FileUploadModule],
   templateUrl: './file-upload.component.html',
+  styleUrl: './file-upload.component.scss',
 })
 export class FileUploadComponent {
   // Template references for content projection (follow PrimeNG slot names)

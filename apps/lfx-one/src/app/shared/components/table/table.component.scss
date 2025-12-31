@@ -5,6 +5,33 @@
 // Styles are primarily handled by PrimeNG themes and Tailwind utilities
 // Add custom overrides here if needed
 
-.lfx-table {
-  // Custom table styles if needed
+::ng-deep {
+  .p-datatable {
+    .p-datatable-thead {
+      tr {
+        th {
+          @apply text-xs text-gray-500 font-medium;
+        }
+      }
+    }
+
+    .p-datatable-tbody {
+      tr {
+        td {
+          @apply text-xs leading-4 text-black;
+
+          a,
+          button,
+          i:not(.text-xs):not(.text-sm):not(.text-base):not(.text-lg):not(.text-xl):not(.text-2xl):not(.text-3xl) {
+            font-size: 0.875rem;
+            line-height: 1.25rem;
+          }
+
+          a {
+            @apply text-blue-500 hover:text-blue-600 hover:underline cursor-pointer text-sm font-medium;
+          }
+        }
+      }
+    }
+  }
 }

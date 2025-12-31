@@ -40,7 +40,7 @@
   @if (!hasFoundationSelected()) {
     <!-- No Foundation Selected State -->
     <div class="flex items-center justify-center p-12">
-      <div class="text-center space-y-3">
+      <div class="text-center flex flex-col gap-3">
         <i class="fa-light fa-circle-exclamation text-4xl text-gray-400"></i>
         <p class="text-sm text-gray-600 font-medium">Please select a foundation project to view organization data</p>
         <p class="text-xs text-gray-500">Use the project selector in the sidebar to choose a foundation</p>
@@ -53,16 +53,16 @@
           <!-- Membership Tier Card (Special) -->
           @if (metric.isMembershipTier) {
             <div
-              class="p-4 bg-white hover:border-blue-500 hover:border hover:border-solid rounded-lg border border-slate-200 transition-colors flex-shrink-0 w-80"
+              class="p-4 bg-white hover:border-blue-500 hover:border hover:border-solid rounded-lg border border-gray-200 transition-colors flex-shrink-0 w-80"
               [attr.data-testid]="metric.testId">
-              <div class="space-y-3">
+              <div class="flex flex-col gap-3">
                 <div class="flex items-center gap-1">
                   <i [class]="metric.icon + ' text-gray-500'" class="w-4 h-4"></i>
                   <h5 class="text-sm font-medium">{{ metric.title }}</h5>
                 </div>
 
                 <!-- Membership Info -->
-                <div class="space-y-2">
+                <div class="flex flex-col gap-2">
                   <div class="flex items-center justify-between">
                     <span class="text-sm text-gray-500">Tier</span>
                     <lfx-tag [value]="metric.tier || 'N/A'" severity="secondary"></lfx-tag>

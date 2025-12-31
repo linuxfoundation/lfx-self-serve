@@ -9,9 +9,7 @@ import { TableModule } from 'primeng/table';
   selector: 'lfx-table',
   imports: [NgIf, NgTemplateOutlet, TableModule],
   templateUrl: './table.component.html',
-  host: {
-    ngSkipHydration: 'true',
-  },
+  styleUrls: ['./table.component.scss'],
 })
 export class TableComponent {
   // Template references for content projection
@@ -129,6 +127,7 @@ export class TableComponent {
   public readonly stripedRows = input<boolean>(false);
   public readonly customSort = input<boolean>(false);
   public readonly size = input<'small' | 'large' | undefined>(undefined);
+  public readonly rowHover = input<boolean>(true);
 
   // Events
   public readonly onLazyLoad = output<any>();
