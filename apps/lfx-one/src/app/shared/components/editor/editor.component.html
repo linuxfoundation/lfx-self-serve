@@ -1,0 +1,54 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<ng-container [formGroup]="form()">
+  @if (showToolbar()) {
+    <p-editor
+      [formControlName]="control()"
+      [style]="style()"
+      [styleClass]="styleClass()"
+      [readonly]="readonly()"
+      [placeholder]="placeholder()"
+      (onTextChange)="handleTextChange($event)"
+      (onSelectionChange)="handleSelectionChange($event)"
+      [attr.data-testid]="dataTest()">
+      <ng-template #header>
+        <span class="ql-formats">
+          <button type="button" class="ql-bold" aria-label="Bold"></button>
+          <button type="button" class="ql-italic" aria-label="Italic"></button>
+          <button type="button" class="ql-underline" aria-label="Underline"></button>
+          <button type="button" class="ql-strike" aria-label="Strikethrough"></button>
+        </span>
+        <span class="ql-formats">
+          <button type="button" class="ql-list" value="ordered" aria-label="Ordered List"></button>
+          <button type="button" class="ql-list" value="bullet" aria-label="Bullet List"></button>
+        </span>
+        <span class="ql-formats">
+          <button type="button" class="ql-align" value="" aria-label="Align Left"></button>
+          <button type="button" class="ql-align" value="center" aria-label="Align Center"></button>
+          <button type="button" class="ql-align" value="right" aria-label="Align Right"></button>
+          <button type="button" class="ql-align" value="justify" aria-label="Justify"></button>
+        </span>
+        <span class="ql-formats">
+          <button type="button" class="ql-link" aria-label="Link"></button>
+        </span>
+        <span class="ql-formats">
+          <button type="button" class="ql-clean" aria-label="Remove Formatting"></button>
+        </span>
+      </ng-template>
+    </p-editor>
+  } @else {
+    <p-editor
+      [formControlName]="control()"
+      [style]="style()"
+      [styleClass]="styleClass()"
+      [readonly]="readonly()"
+      [placeholder]="placeholder()"
+      [modules]="{ toolbar: false }"
+      (onTextChange)="handleTextChange($event)"
+      (onSelectionChange)="handleSelectionChange($event)"
+      [attr.data-testid]="dataTest()">
+      <ng-template #header></ng-template>
+    </p-editor>
+  }
+</ng-container>

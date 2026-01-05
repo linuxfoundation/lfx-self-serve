@@ -149,15 +149,15 @@ export interface CreateGroupsIOServiceRequest {
   /** Service type */
   type: string;
   /** Domain for the service */
-  domain: string;
+  domain?: string;
   /** Prefix for mailing lists (optional) */
   prefix?: string;
   /** Associated project UID */
   project_uid: string;
   /** Groups.io group name */
-  group_name: string;
+  group_name?: string;
   /** Whether the service is publicly accessible */
-  public: boolean;
+  public?: boolean;
 }
 
 /**

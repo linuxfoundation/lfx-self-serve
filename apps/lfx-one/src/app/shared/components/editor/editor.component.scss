@@ -1,0 +1,11 @@
+/* Copyright The Linux Foundation and each contributor to LFX. */
+/* SPDX-License-Identifier: MIT */
+
+::ng-deep {
+  .p-editor {
+    .p-editor-content,
+    .p-editor-content * {
+      @apply text-sm;
+    }
+  }
+}

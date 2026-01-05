@@ -13,6 +13,7 @@ import { MailingListTypeLabelPipe } from '@pipes/mailing-list-type-label.pipe';
 import { MailingListVisibilitySeverityPipe } from '@pipes/mailing-list-visibility-severity.pipe';
 import { RemainingGroupsTooltipPipe } from '@pipes/remaining-groups-tooltip.pipe';
 import { SliceLinkedGroupsPipe } from '@pipes/slice-linked-groups.pipe';
+import { StripHtmlPipe } from '@pipes/strip-html.pipe';
 import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
@@ -28,6 +29,7 @@ import { TooltipModule } from 'primeng/tooltip';
     MailingListTypeLabelPipe,
     RemainingGroupsTooltipPipe,
     SliceLinkedGroupsPipe,
+    StripHtmlPipe,
   ],
   templateUrl: './mailing-list-table.component.html',
   styleUrl: './mailing-list-table.component.scss',

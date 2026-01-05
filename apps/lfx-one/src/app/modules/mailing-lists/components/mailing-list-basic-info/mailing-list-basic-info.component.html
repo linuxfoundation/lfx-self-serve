@@ -11,7 +11,7 @@
   <!-- Project Ownership - Read-only context -->
   <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
     <p class="text-sm text-neutral-950">
-      This mailing list belongs to: <span class="font-medium">{{ projectName() }}</span>
+      This mailing list belongs to: <span class="font-medium">{{ projectName() }} - {{ service()?.domain || '' }}</span>
     </p>
   </div>
 
@@ -50,23 +50,19 @@
     <!-- Right Column - Description -->
     <div class="flex flex-col gap-2">
       <label for="mailing-list-description" class="block text-sm text-neutral-950"> What is this list used for? <span class="text-red-500">*</span> </label>
-      <lfx-textarea
+      <lfx-editor
         [form]="form()"
         control="description"
-        id="mailing-list-description"
         placeholder="e.g., General development discussion and code reviews"
-        [rows]="4"
-        styleClass="w-full min-h-24"
-        data-testid="mailing-list-basic-info-description-input">
-      </lfx-textarea>
+        [style]="{ height: '125px' }"
+        dataTest="mailing-list-basic-info-description-input">
+      </lfx-editor>
       <p class="text-xs text-gray-500">This helps members understand when to use this list.</p>
       @if (form().get('description')?.errors?.['required'] && form().get('description')?.touched) {
         <p class="mt-1 text-sm text-red-600">Description is required</p>
-      }
-      @if (form().get('description')?.errors?.['minlength'] && form().get('description')?.touched) {
+      } @else if (form().get('description')?.errors?.['minlength'] && form().get('description')?.touched) {
         <p class="mt-1 text-sm text-red-600">Description must be at least 11 characters</p>
-      }
-      @if (form().get('description')?.errors?.['maxlength'] && form().get('description')?.touched) {
+      } @else if (form().get('description')?.errors?.['maxlength'] && form().get('description')?.touched) {
         <p class="mt-1 text-sm text-red-600">Description cannot exceed 500 characters</p>
       }
     </div>

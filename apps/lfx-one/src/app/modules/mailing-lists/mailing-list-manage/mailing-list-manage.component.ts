@@ -6,12 +6,12 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { MessageComponent } from '@components/message/message.component';
+import { CardComponent } from '@components/card/card.component';
 import { MAILING_LIST_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess, MailingListType } from '@lfx-one/shared/enums';
 import { CreateGroupsIOServiceRequest, CreateMailingListRequest, GroupsIOMailingList, GroupsIOService, MailingListCommittee } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
-import { announcementVisibilityValidator } from '@lfx-one/shared/validators';
+import { announcementVisibilityValidator, htmlMaxLengthValidator, htmlMinLengthValidator, htmlRequiredValidator } from '@lfx-one/shared/validators';
 import { MailingListService } from '@services/mailing-list.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -24,7 +24,7 @@ import { MailingListSettingsComponent } from '../components/mailing-list-setting
 
 @Component({
   selector: 'lfx-mailing-list-manage',
-  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, MessageComponent, StepperModule, MailingListBasicInfoComponent, MailingListSettingsComponent],
+  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, CardComponent, StepperModule, MailingListBasicInfoComponent, MailingListSettingsComponent],
   templateUrl: './mailing-list-manage.component.html',
   styleUrl: './mailing-list-manage.component.scss',
 })
@@ -54,20 +54,23 @@ export class MailingListManageComponent {
 
   // Parent service tracking for shared service creation
   public readonly parentService = signal<GroupsIOService | null>(null);
-  public readonly needsSharedServiceCreation = computed(() => this.parentService() !== null && this.availableServices().length === 0);
+  public readonly needsSharedServiceCreation = computed(
+    () => this.parentService() !== null && this.availableServices().filter((service) => service.type === 'shared').length === 0
+  );
 
   // Prefix calculation for shared services
   public readonly servicePrefix = computed(() => {
     if (this.needsSharedServiceCreation()) {
       const project = this.project();
-      return project ? `${this.cleanSlug(project.slug)}-` : '';
+      return project ? `${this.cleanSlug(project.slug)}` : '';
     }
+
     return this.selectedService()?.prefix || '';
   });
 
   // Max group name length accounting for prefix (total max is 34)
   public readonly maxGroupNameLength = computed(() => {
-    const prefix = this.servicePrefix();
+    const prefix = this.servicePrefix() + '-';
     return 34 - prefix.length;
   });
 
@@ -127,8 +130,8 @@ export class MailingListManageComponent {
     serviceCreation$
       .pipe(
         switchMap((newService: GroupsIOService | null) => {
-          const serviceUid = newService?.uid ?? this.selectedService()?.uid ?? '';
-          const data = this.prepareMailingListData(serviceUid);
+          const service = newService ?? this.selectedService();
+          const data = this.prepareMailingListData(service);
 
           return this.isEditMode() ? this.mailingListService.updateMailingList(this.mailingListId()!, data) : this.mailingListService.createMailingList(data);
         })
@@ -165,7 +168,7 @@ export class MailingListManageComponent {
       {
         // Step 1: Basic Information
         group_name: new FormControl('', [Validators.required, Validators.minLength(3), Validators.maxLength(34), Validators.pattern(/^[a-zA-Z0-9_-]+$/)]),
-        description: new FormControl('', [Validators.required, Validators.minLength(11), Validators.maxLength(500)]),
+        description: new FormControl('', [htmlRequiredValidator(), htmlMinLengthValidator(11), htmlMaxLengthValidator(500)]),
 
         // Step 2: Settings
         audience_access: new FormControl<MailingListAudienceAccess>(MailingListAudienceAccess.PUBLIC, [Validators.required]),
@@ -263,16 +266,20 @@ export class MailingListManageComponent {
     }
   }
 
-  private prepareMailingListData(serviceUid: string): CreateMailingListRequest {
+  private prepareMailingListData(service: GroupsIOService | null): CreateMailingListRequest {
     const formValue = this.form().value;
+    const prefix = this.servicePrefix() || this.cleanSlug(this.project()?.slug || '');
+    const groupName = service?.type === 'primary' ? formValue.group_name : `${prefix}-${formValue.group_name}`;
+
     return {
-      group_name: formValue.group_name,
+      group_name: groupName,
       public: formValue.public,
       type: formValue.type,
       audience_access: formValue.audience_access,
       description: formValue.description || '',
-      service_uid: serviceUid,
+      service_uid: service?.uid ?? '',
       committees: formValue.committees?.length > 0 ? formValue.committees : undefined,
+      title: formValue.group_name,
     };
   }
 
@@ -350,11 +357,9 @@ export class MailingListManageComponent {
 
     const serviceData: CreateGroupsIOServiceRequest = {
       type: 'shared',
-      prefix: `${this.cleanSlug(project.slug)}-`,
+      prefix: `${this.cleanSlug(project.slug)}`,
       project_uid: project.uid,
       domain: parent.domain,
-      group_name: parent.group_name,
-      public: true,
     };
 
     return this.mailingListService.createService(serviceData);

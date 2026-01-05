@@ -61,7 +61,7 @@
           <!-- Description Column -->
           <td>
             <div class="line-clamp-2 text-xs">
-              {{ mailingList.description || '-' }}
+              {{ (mailingList.description | stripHtml) || '-' }}
             </div>
           </td>
 
@@ -111,7 +111,7 @@
           <!-- Description Column -->
           <td>
             <div class="line-clamp-2 text-xs">
-              {{ mailingList.description || '-' }}
+              {{ (mailingList.description | stripHtml) || '-' }}
             </div>
           </td>
 

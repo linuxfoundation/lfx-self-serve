@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { MAILING_LIST_LABEL } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, MAILING_LIST_LABEL } from '@lfx-one/shared/constants';
 import { GroupsIOMailingList, MailingListCommittee, ProjectContext } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -186,7 +186,7 @@ export class MailingListDashboardComponent {
         value: committee.uid,
       }));
 
-      return [{ label: 'All Committees', value: null }, ...committeeOptions];
+      return [{ label: 'All ' + COMMITTEE_LABEL.plural, value: null }, ...committeeOptions];
     });
   }
 
