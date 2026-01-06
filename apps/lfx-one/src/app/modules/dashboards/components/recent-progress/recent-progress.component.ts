@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, ElementRef, inject, signal, ViewChild } from '@angular/core';
+import { Component, computed, inject, signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
@@ -18,6 +18,7 @@ import { hexToRgba, parseLocalDateString } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
 import { catchError, of, switchMap, tap } from 'rxjs';
 
 import type {
@@ -35,12 +36,12 @@ import type {
 
 @Component({
   selector: 'lfx-recent-progress',
-  imports: [FilterPillsComponent, MetricCardComponent],
+  imports: [FilterPillsComponent, MetricCardComponent, ScrollShadowDirective],
   templateUrl: './recent-progress.component.html',
   styleUrl: './recent-progress.component.scss',
 })
 export class RecentProgressComponent {
-  @ViewChild('progressScroll') protected progressScrollContainer!: ElementRef;
+  @ViewChild(ScrollShadowDirective) protected scrollShadowDirective!: ScrollShadowDirective;
 
   private readonly personaService = inject(PersonaService);
   private readonly analyticsService = inject(AnalyticsService);
@@ -103,20 +104,6 @@ export class RecentProgressComponent {
 
   protected setFilter(filter: string): void {
     this.selectedFilter.set(filter);
-    // Reset scroll position when filter changes
-    if (this.progressScrollContainer) {
-      this.progressScrollContainer.nativeElement.scrollLeft = 0;
-    }
-  }
-
-  protected scrollLeft(): void {
-    const container = this.progressScrollContainer.nativeElement;
-    container.scrollBy({ left: -300, behavior: 'smooth' });
-  }
-
-  protected scrollRight(): void {
-    const container = this.progressScrollContainer.nativeElement;
-    container.scrollBy({ left: 300, behavior: 'smooth' });
   }
 
   private getMetricConfig(title: string): DashboardMetricCard {

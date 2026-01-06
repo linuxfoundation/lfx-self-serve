@@ -3,9 +3,12 @@
 
 import { DatePipe } from '@angular/common';
 import { Component, inject, input, output, signal, WritableSignal } from '@angular/core';
+import { ReactiveFormsModule, FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
@@ -23,11 +26,14 @@ import { MemberFormComponent } from '../member-form/member-form.component';
   selector: 'lfx-committee-table',
   imports: [
     DatePipe,
+    ReactiveFormsModule,
     RouterLink,
     CardComponent,
     ButtonComponent,
     TableComponent,
     TagComponent,
+    InputTextComponent,
+    SelectComponent,
     TooltipModule,
     ConfirmDialogModule,
     DynamicDialogModule,
@@ -48,6 +54,9 @@ export class CommitteeTableComponent {
   public committees = input.required<Committee[]>();
   public canManageCommittee = input<boolean>(false);
   public committeeLabel = input<string>(COMMITTEE_LABEL.singular);
+  public searchForm = input.required<FormGroup>();
+  public categoryOptions = input.required<{ label: string; value: string | null }[]>();
+  public votingStatusOptions = input.required<{ label: string; value: string | null }[]>();
 
   // State
   public isDeleting: WritableSignal<boolean> = signal<boolean>(false);

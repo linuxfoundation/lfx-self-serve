@@ -12,136 +12,101 @@
 
   <!-- Page Title -->
   <h1 class="mb-6" data-testid="mailing-list-manage-title">
-    {{ isEditMode() ? 'Edit Mailing List' : 'Create Mailing List' }}
+    {{ isEditMode() ? 'Edit Mailing List' : 'Add Mailing List' }}
   </h1>
-  @if (hasNoServices()) {
-    <!-- No Services Empty State -->
-    <lfx-card data-testid="mailing-list-no-services-card">
-      <div class="p-8 md:p-12">
-        <div class="max-w-2xl mx-auto text-center flex flex-col gap-6">
-          <!-- Icon -->
-          <div class="flex justify-center">
-            <div class="w-20 h-20 rounded-full bg-slate-100 flex items-center justify-center">
-              <i class="fa-light fa-envelope text-4xl text-slate-400"></i>
-            </div>
+
+  <!-- Stepper -->
+  <p-stepper
+    [value]="currentStep()"
+    (valueChange)="goToStep($event)"
+    [linear]="!isEditMode()"
+    styleClass="mailing-list-manage-stepper mb-6"
+    data-testid="mailing-list-manage-stepper">
+    <p-step-list>
+      <p-step [value]="1" data-testid="mailing-list-manage-step-1"></p-step>
+      <p-step [value]="2" data-testid="mailing-list-manage-step-2"></p-step>
+      <p-step [value]="3" data-testid="mailing-list-manage-step-3"></p-step>
+    </p-step-list>
+
+    <p-step-panels>
+      <!-- Form Card -->
+      <div class="bg-white rounded-lg border border-gray-200 shadow-sm px-7">
+        <!-- Navigation Controls (Above Content) -->
+        <div class="flex items-center justify-between p-6 border-b border-gray-200">
+          <!-- Previous Button -->
+          <div>
+            @if (canGoPrevious()) {
+              <lfx-button
+                label="Previous"
+                icon="fa-light fa-chevron-left"
+                [text]="true"
+                (onClick)="previousStep()"
+                data-testid="mailing-list-manage-previous-btn">
+              </lfx-button>
+            }
           </div>
 
-          <!-- Message -->
-          <h2>Mailing list service hasn't been set up yet for this project. To create a mailing list for your project, contact support.</h2>
+          <!-- Right Side Buttons -->
+          <div class="flex gap-3">
+            @if (isLastStep()) {
+              <!-- Create/Update Button -->
+              <lfx-button
+                [label]="isEditMode() ? 'Save Changes' : 'Add Mailing List'"
+                [loading]="submitting()"
+                severity="info"
+                (onClick)="onSubmit()"
+                data-testid="mailing-list-manage-submit-btn">
+              </lfx-button>
+            } @else {
+              <!-- Cancel Button -->
+              <lfx-button label="Cancel" [text]="true" (onClick)="onCancel()" data-testid="mailing-list-manage-cancel-btn"> </lfx-button>
 
-          <!-- Actions -->
-          <div class="flex flex-col sm:flex-row gap-3 justify-center">
-            <lfx-button
-              href="https://jira.linuxfoundation.org/plugins/servlet/desk/portal/2"
-              target="_blank"
-              rel="noopener noreferrer"
-              label="Contact Support"
-              severity="info"
-              data-testid="mailing-list-contact-support-btn">
-            </lfx-button>
+              <!-- Next Button -->
+              <lfx-button
+                label="Next"
+                icon="fa-light fa-chevron-right"
+                iconPos="right"
+                [disabled]="!canGoNext()"
+                severity="info"
+                (onClick)="nextStep()"
+                data-testid="mailing-list-manage-next-btn">
+              </lfx-button>
+            }
           </div>
+        </div>
+
+        <!-- Step Content -->
+        <div class="p-6 md:p-8">
+          <p-step-panel [value]="1" data-testid="mailing-list-manage-panel-1">
+            <ng-template #content let-activateCallback="activateCallback">
+              <lfx-mailing-list-basic-info
+                [form]="form()"
+                [formValue]="formValue"
+                [service]="selectedService()"
+                [prefix]="servicePrefix()"
+                [maxGroupNameLength]="maxGroupNameLength()"
+                [isEditMode]="isEditMode()">
+              </lfx-mailing-list-basic-info>
+            </ng-template>
+          </p-step-panel>
+
+          <p-step-panel [value]="2" data-testid="mailing-list-manage-panel-2">
+            <ng-template #content let-activateCallback="activateCallback">
+              <lfx-mailing-list-settings [form]="form()"></lfx-mailing-list-settings>
+            </ng-template>
+          </p-step-panel>
+
+          <p-step-panel [value]="3" data-testid="mailing-list-manage-panel-3">
+            <ng-template #content let-activateCallback="activateCallback">
+              <!-- Step 3: People & Groups - Placeholder -->
+              <div class="text-center text-gray-500 py-8">
+                <p>Step 3: People & Groups Component</p>
+                <p class="text-sm mt-2">Coming next</p>
+              </div>
+            </ng-template>
+          </p-step-panel>
         </div>
       </div>
-    </lfx-card>
-  } @else {
-    <!-- Stepper -->
-    <p-stepper
-      [value]="currentStep()"
-      (valueChange)="goToStep($event)"
-      [linear]="!isEditMode()"
-      styleClass="mailing-list-manage-stepper mb-6"
-      data-testid="mailing-list-manage-stepper">
-      <p-step-list>
-        <p-step [value]="1" data-testid="mailing-list-manage-step-1"></p-step>
-        <p-step [value]="2" data-testid="mailing-list-manage-step-2"></p-step>
-        <p-step [value]="3" data-testid="mailing-list-manage-step-3"></p-step>
-      </p-step-list>
-
-      <p-step-panels>
-        <!-- Form Card -->
-        <div class="bg-white rounded-lg border border-gray-200 shadow-sm px-7">
-          <!-- Navigation Controls (Above Content) -->
-          <div class="flex items-center justify-between p-6 border-b border-gray-200">
-            <!-- Previous Button -->
-            <div>
-              @if (canGoPrevious()) {
-                <lfx-button
-                  label="Previous"
-                  icon="fa-light fa-chevron-left"
-                  [text]="true"
-                  (onClick)="previousStep()"
-                  data-testid="mailing-list-manage-previous-btn">
-                </lfx-button>
-              }
-            </div>
-
-            <!-- Right Side Buttons -->
-            <div class="flex gap-3">
-              @if (isLastStep()) {
-                <!-- Skip for Now (only on step 3 in create mode) -->
-                @if (!isEditMode()) {
-                  <lfx-button label="Skip for Now" [text]="true" (onClick)="onSkip()" data-testid="mailing-list-manage-skip-btn"> </lfx-button>
-                }
-
-                <!-- Create/Update Button -->
-                <lfx-button
-                  [label]="isEditMode() ? 'Save Changes' : 'Create Mailing List'"
-                  [loading]="submitting()"
-                  severity="info"
-                  (onClick)="onSubmit()"
-                  data-testid="mailing-list-manage-submit-btn">
-                </lfx-button>
-              } @else {
-                <!-- Cancel Button -->
-                <lfx-button label="Cancel" [text]="true" (onClick)="onCancel()" data-testid="mailing-list-manage-cancel-btn"> </lfx-button>
-
-                <!-- Next Button -->
-                <lfx-button
-                  label="Next"
-                  icon="fa-light fa-chevron-right"
-                  iconPos="right"
-                  [disabled]="!canGoNext()"
-                  severity="info"
-                  (onClick)="nextStep()"
-                  data-testid="mailing-list-manage-next-btn">
-                </lfx-button>
-              }
-            </div>
-          </div>
-
-          <!-- Step Content -->
-          <div class="p-6 md:p-8">
-            <p-step-panel [value]="1" data-testid="mailing-list-manage-panel-1">
-              <ng-template #content let-activateCallback="activateCallback">
-                <lfx-mailing-list-basic-info
-                  [form]="form()"
-                  [formValue]="formValue"
-                  [service]="selectedService()"
-                  [prefix]="servicePrefix()"
-                  [maxGroupNameLength]="maxGroupNameLength()"
-                  [isEditMode]="isEditMode()">
-                </lfx-mailing-list-basic-info>
-              </ng-template>
-            </p-step-panel>
-
-            <p-step-panel [value]="2" data-testid="mailing-list-manage-panel-2">
-              <ng-template #content let-activateCallback="activateCallback">
-                <lfx-mailing-list-settings [form]="form()"></lfx-mailing-list-settings>
-              </ng-template>
-            </p-step-panel>
-
-            <p-step-panel [value]="3" data-testid="mailing-list-manage-panel-3">
-              <ng-template #content let-activateCallback="activateCallback">
-                <!-- Step 3: People & Groups - Placeholder -->
-                <div class="text-center text-gray-500 py-8">
-                  <p>Step 3: People & Groups Component</p>
-                  <p class="text-sm mt-2">Coming next</p>
-                </div>
-              </ng-template>
-            </p-step-panel>
-          </div>
-        </div>
-      </p-step-panels>
-    </p-stepper>
-  }
+    </p-step-panels>
+  </p-stepper>
 </div>

@@ -2,6 +2,49 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <lfx-card>
+  <!-- Filter Bar Inside Card -->
+  <div class="pb-2 mb-2">
+    <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+      <!-- Search Input -->
+      <div class="flex-1">
+        <lfx-input-text
+          [form]="searchForm()"
+          control="search"
+          placeholder="Search mailing lists..."
+          icon="fa-light fa-search"
+          styleClass="w-full"
+          size="small"
+          data-testid="mailing-list-search-input"></lfx-input-text>
+      </div>
+
+      <!-- Committee Filter Dropdown -->
+      <div class="w-full sm:w-48">
+        <lfx-select
+          [form]="searchForm()"
+          control="committee"
+          size="small"
+          [options]="committeeFilterOptions()"
+          placeholder="Select Committee"
+          [showClear]="true"
+          styleClass="w-full"
+          data-testid="mailing-list-committee-filter"></lfx-select>
+      </div>
+
+      <!-- Status Filter Dropdown -->
+      <div class="w-full sm:w-48">
+        <lfx-select
+          [form]="searchForm()"
+          control="status"
+          size="small"
+          [options]="statusFilterOptions()"
+          placeholder="Select Status"
+          [showClear]="true"
+          styleClass="w-full"
+          data-testid="mailing-list-status-filter"></lfx-select>
+      </div>
+    </div>
+  </div>
+
   <lfx-table
     [value]="mailingLists()"
     [paginator]="mailingLists().length > 10"

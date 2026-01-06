@@ -2,12 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
-import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { Meeting, PastMeeting, ProjectContext } from '@lfx-one/shared/interfaces';
 import { getCurrentOrNextOccurrence, hasMeetingEnded } from '@lfx-one/shared/utils';
@@ -21,7 +19,7 @@ import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-
 
 @Component({
   selector: 'lfx-meetings-dashboard',
-  imports: [ReactiveFormsModule, MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent, CardComponent, SelectButtonComponent],
+  imports: [MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent, CardComponent],
   templateUrl: './meetings-dashboard.component.html',
   styleUrl: './meetings-dashboard.component.scss',
 })
@@ -42,11 +40,6 @@ export class MeetingsDashboardComponent {
   public topBarVisibilityFilter: WritableSignal<'mine' | 'public'>;
   public meetingTypeFilter: WritableSignal<string | null>;
   public meetingTypeOptions: Signal<{ label: string; value: string | null }[]>;
-  public readonly timeFilterOptions = [
-    { label: 'Upcoming', value: 'upcoming' },
-    { label: 'Past', value: 'past' },
-  ];
-  public filterForm: FormGroup;
   public project: Signal<ProjectContext | null>;
   public isMaintainer: Signal<boolean>;
   public isFoundationContext: Signal<boolean>;
@@ -76,21 +69,6 @@ export class MeetingsDashboardComponent {
     this.topBarVisibilityFilter = signal<'mine' | 'public'>('mine');
     this.meetingTypeFilter = signal<string | null>(null);
 
-    // Initialize filter form
-    this.filterForm = new FormGroup({
-      timeFilter: new FormControl<'upcoming' | 'past'>('upcoming'),
-    });
-
-    // Subscribe to time filter changes
-    this.filterForm
-      .get('timeFilter')
-      ?.valueChanges.pipe(takeUntilDestroyed())
-      .subscribe((value) => {
-        if (value) {
-          this.timeFilter.set(value);
-        }
-      });
-
     // Initialize meeting type options
     this.meetingTypeOptions = this.initializeMeetingTypeOptions();
 
@@ -108,6 +86,10 @@ export class MeetingsDashboardComponent {
 
   public onMeetingTypeChange(value: string | null): void {
     this.meetingTypeFilter.set(value);
+  }
+
+  public onTimeFilterChange(value: 'upcoming' | 'past'): void {
+    this.timeFilter.set(value);
   }
 
   private initializeUpcomingMeetings(): Signal<Meeting[]> {

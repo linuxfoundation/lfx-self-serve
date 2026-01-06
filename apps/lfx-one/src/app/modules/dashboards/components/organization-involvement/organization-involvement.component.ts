@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, ElementRef, inject, signal, ViewChild } from '@angular/core';
+import { Component, computed, inject, signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
 import { BASE_BAR_CHART_OPTIONS, BASE_LINE_CHART_OPTIONS, lfxColors, PRIMARY_INVOLVEMENT_METRICS } from '@lfx-one/shared/constants';
 import { hexToRgba } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
@@ -27,12 +28,12 @@ import type { ChartOptions, ChartType } from 'chart.js';
 
 @Component({
   selector: 'lfx-organization-involvement',
-  imports: [FilterPillsComponent, MetricCardComponent, TagComponent, DataCopilotComponent],
+  imports: [FilterPillsComponent, MetricCardComponent, TagComponent, DataCopilotComponent, ScrollShadowDirective],
   templateUrl: './organization-involvement.component.html',
   styleUrl: './organization-involvement.component.scss',
 })
 export class OrganizationInvolvementComponent {
-  @ViewChild('carouselScroll') public carouselScrollContainer!: ElementRef;
+  @ViewChild(ScrollShadowDirective) public scrollShadowDirective!: ScrollShadowDirective;
 
   private readonly analyticsService = inject(AnalyticsService);
   private readonly accountContextService = inject(AccountContextService);
@@ -85,18 +86,6 @@ export class OrganizationInvolvementComponent {
 
   public handleFilterChange(filter: string): void {
     this.selectedFilter.set(filter);
-  }
-
-  public scrollLeft(): void {
-    if (!this.carouselScrollContainer?.nativeElement) return;
-    const container = this.carouselScrollContainer.nativeElement;
-    container.scrollBy({ left: -300, behavior: 'smooth' });
-  }
-
-  public scrollRight(): void {
-    if (!this.carouselScrollContainer?.nativeElement) return;
-    const container = this.carouselScrollContainer.nativeElement;
-    container.scrollBy({ left: 300, behavior: 'smooth' });
   }
 
   private getMetricConfig(title: string): DashboardMetricCard {

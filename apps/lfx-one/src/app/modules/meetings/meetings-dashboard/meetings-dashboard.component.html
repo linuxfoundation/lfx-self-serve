@@ -20,26 +20,16 @@
       <p class="mt-2 text-gray-500">Coordinate decisions, align stakeholders, and maintain transparent governance in your project</p>
     </div>
 
-    <!-- Top Bar with Search and Meeting Type Filter -->
-    <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-gray-200 p-4 -mx-0 mb-4">
+    <!-- Top Bar with Search, Meeting Type Filter, and Time Filter -->
+    <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-gray-200 p-4 -mx-0 mb-8">
       @if (upcomingMeetings() || pastMeetings()) {
         <lfx-meetings-top-bar
           [meetingTypeOptions]="meetingTypeOptions()"
           (meetingTypeChange)="onMeetingTypeChange($event)"
           (searchQueryChange)="searchQuery.set($event)"
+          (timeFilterChange)="onTimeFilterChange($event)"
           [meetings]="timeFilter() === 'past' ? pastMeetings() : upcomingMeetings()" />
       }
-    </div>
-
-    <!-- Time Filter Bar (Upcoming/Past) -->
-    <div class="bg-white rounded-lg border border-gray-200 p-4 -mx-0 mb-8 flex justify-center">
-      <lfx-select-button
-        class="w-full"
-        [form]="filterForm"
-        control="timeFilter"
-        [options]="timeFilterOptions"
-        styleClass="meeting-time-filter"
-        data-testid="time-filter-select"></lfx-select-button>
     </div>
   </div>
 

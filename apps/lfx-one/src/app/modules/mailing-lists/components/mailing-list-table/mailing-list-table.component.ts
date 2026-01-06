@@ -2,9 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, input, output } from '@angular/core';
+import { ReactiveFormsModule, FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, MAILING_LIST_LABEL, MAILING_LIST_MAX_VISIBLE_GROUPS } from '@lfx-one/shared';
@@ -20,10 +23,13 @@ import { TooltipModule } from 'primeng/tooltip';
 @Component({
   selector: 'lfx-mailing-list-table',
   imports: [
+    ReactiveFormsModule,
     CardComponent,
     ButtonComponent,
     TableComponent,
     TagComponent,
+    InputTextComponent,
+    SelectComponent,
     TooltipModule,
     RouterLink,
     GroupEmailPipe,
@@ -41,6 +47,9 @@ export class MailingListTableComponent {
   public mailingLists = input.required<GroupsIOMailingList[]>();
   public isMaintainer = input<boolean>(false);
   public mailingListLabel = input<string>(MAILING_LIST_LABEL.singular);
+  public searchForm = input.required<FormGroup>();
+  public committeeFilterOptions = input.required<{ label: string; value: string | null }[]>();
+  public statusFilterOptions = input.required<{ label: string; value: string | null }[]>();
 
   // Constants
   protected readonly maxVisibleGroups = MAILING_LIST_MAX_VISIBLE_GROUPS;

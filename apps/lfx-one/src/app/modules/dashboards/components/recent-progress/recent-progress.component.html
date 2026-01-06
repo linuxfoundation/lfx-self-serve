@@ -20,7 +20,7 @@
       <div class="flex items-center gap-2">
         <button
           type="button"
-          (click)="scrollLeft()"
+          (click)="scrollShadowDirective.scrollLeft()"
           class="h-8 w-8 p-0 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 hover:border-gray-400 transition-colors"
           data-testid="dashboard-recent-progress-scroll-left"
           aria-label="Scroll left">
@@ -28,7 +28,7 @@
         </button>
         <button
           type="button"
-          (click)="scrollRight()"
+          (click)="scrollShadowDirective.scrollRight()"
           class="h-8 w-8 p-0 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 hover:border-gray-400 transition-colors"
           data-testid="dashboard-recent-progress-scroll-right"
           aria-label="Scroll right">
@@ -38,8 +38,8 @@
     </div>
   </div>
 
-  <div class="overflow-hidden">
-    <div #progressScroll class="flex gap-4 overflow-x-auto pb-2 hide-scrollbar scroll-smooth" data-testid="dashboard-recent-progress-items">
+  <div class="relative overflow-hidden">
+    <div lfxScrollShadow class="flex gap-4 overflow-x-auto pr-4 hide-scrollbar scroll-smooth" data-testid="dashboard-recent-progress-items">
       @for (item of filteredProgressItems(); track item.testId) {
         <lfx-metric-card
           [title]="item.title"
@@ -54,5 +54,21 @@
           [loading]="!!item.loading"></lfx-metric-card>
       }
     </div>
+
+    <!-- Right shadow fade -->
+    @if (scrollShadowDirective && scrollShadowDirective.showRightShadow()) {
+      <div
+        class="absolute top-0 bottom-0 right-0 w-32 z-10 pointer-events-none bg-[linear-gradient(to_right,transparent,#f9fafb)]"
+        data-testid="dashboard-recent-progress-shadow-right"
+        aria-hidden="true"></div>
+    }
+
+    <!-- Left shadow fade -->
+    @if (scrollShadowDirective && scrollShadowDirective.showLeftShadow()) {
+      <div
+        class="absolute top-0 bottom-0 left-0 w-32 z-10 pointer-events-none bg-[linear-gradient(to_left,transparent,#f9fafb)]"
+        data-testid="dashboard-recent-progress-shadow-left"
+        aria-hidden="true"></div>
+    }
   </div>
 </section>

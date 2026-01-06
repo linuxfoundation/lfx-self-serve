@@ -19,14 +19,23 @@ export class MeetingsTopBarComponent {
   public meetings = input.required<Meeting[]>();
   public readonly meetingTypeChange = output<string | null>();
   public readonly searchQueryChange = output<string>();
+  public readonly timeFilterChange = output<'upcoming' | 'past'>();
 
   public searchForm: FormGroup;
+  public timeFilterOptions: { label: string; value: 'upcoming' | 'past' }[];
 
   public constructor() {
+    // Initialize time filter options
+    this.timeFilterOptions = [
+      { label: 'Upcoming', value: 'upcoming' },
+      { label: 'Past', value: 'past' },
+    ];
+
     // Initialize form
     this.searchForm = new FormGroup({
       search: new FormControl(''),
       meetingType: new FormControl<string | null>(null),
+      timeFilter: new FormControl<'upcoming' | 'past'>('upcoming'),
     });
 
     // Subscribe to form changes and emit events
@@ -36,9 +45,23 @@ export class MeetingsTopBarComponent {
       .subscribe((value) => {
         this.searchQueryChange.emit(value || '');
       });
+
+    // Subscribe to time filter changes
+    this.searchForm
+      .get('timeFilter')
+      ?.valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((value) => {
+        if (value) {
+          this.timeFilterChange.emit(value);
+        }
+      });
   }
 
   public onMeetingTypeChange(value: string | null): void {
     this.meetingTypeChange.emit(value);
+  }
+
+  public onTimeFilterChange(value: 'upcoming' | 'past'): void {
+    this.timeFilterChange.emit(value);
   }
 }

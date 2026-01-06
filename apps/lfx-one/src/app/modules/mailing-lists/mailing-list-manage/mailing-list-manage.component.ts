@@ -6,7 +6,6 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { CardComponent } from '@components/card/card.component';
 import { MAILING_LIST_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess, MailingListType } from '@lfx-one/shared/enums';
 import { CreateGroupsIOServiceRequest, CreateMailingListRequest, GroupsIOMailingList, GroupsIOService, MailingListCommittee } from '@lfx-one/shared/interfaces';
@@ -24,7 +23,7 @@ import { MailingListSettingsComponent } from '../components/mailing-list-setting
 
 @Component({
   selector: 'lfx-mailing-list-manage',
-  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, CardComponent, StepperModule, MailingListBasicInfoComponent, MailingListSettingsComponent],
+  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, StepperModule, MailingListBasicInfoComponent, MailingListSettingsComponent],
   templateUrl: './mailing-list-manage.component.html',
   styleUrl: './mailing-list-manage.component.scss',
 })
@@ -50,7 +49,6 @@ export class MailingListManageComponent {
   public readonly servicesLoaded = signal<boolean>(false);
   public readonly availableServices = this.initializeServices();
   public readonly selectedService = computed(() => this.availableServices()[0] ?? null);
-  public readonly hasNoServices = computed(() => !this.isEditMode() && this.servicesLoaded() && this.availableServices().length === 0);
 
   // Parent service tracking for shared service creation
   public readonly parentService = signal<GroupsIOService | null>(null);
@@ -109,10 +107,6 @@ export class MailingListManageComponent {
 
   public onCancel(): void {
     this.router.navigate(['/mailing-lists']);
-  }
-
-  public onSkip(): void {
-    this.onSubmit();
   }
 
   public onSubmit(): void {

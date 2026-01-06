@@ -3,35 +3,33 @@
 
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
-import { SelectComponent } from '@components/select/select.component';
 import { COMMITTEE_LABEL, MAILING_LIST_LABEL } from '@lfx-one/shared/constants';
-import { GroupsIOMailingList, MailingListCommittee, ProjectContext } from '@lfx-one/shared/interfaces';
-import { FeatureFlagService } from '@services/feature-flag.service';
+import { GroupsIOMailingList, GroupsIOService, MailingListCommittee, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, filter, finalize, of, startWith, switchMap, tap } from 'rxjs';
 
 import { MailingListTableComponent } from '../components/mailing-list-table/mailing-list-table.component';
 
 @Component({
   selector: 'lfx-mailing-list-dashboard',
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, ButtonComponent, CardComponent, MailingListTableComponent],
+  imports: [ButtonComponent, CardComponent, MailingListTableComponent],
   templateUrl: './mailing-list-dashboard.component.html',
   styleUrl: './mailing-list-dashboard.component.scss',
 })
 export class MailingListDashboardComponent {
   // Inject services
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly projectService = inject(ProjectService);
   private readonly mailingListService = inject(MailingListService);
   private readonly personaService = inject(PersonaService);
-  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly router = inject(Router);
   private readonly messageService = inject(MessageService);
 
@@ -66,6 +64,11 @@ export class MailingListDashboardComponent {
   // Statistics
   public totalMailingLists: Signal<number>;
   public publicMailingLists: Signal<number>;
+
+  // Service availability signals
+  public servicesLoaded: WritableSignal<boolean>;
+  public availableServices: Signal<GroupsIOService[]>;
+  public hasNoServices: Signal<boolean>;
 
   public constructor() {
     // Initialize project context
@@ -103,6 +106,11 @@ export class MailingListDashboardComponent {
     // Statistics
     this.totalMailingLists = computed(() => this.mailingLists().length);
     this.publicMailingLists = computed(() => this.mailingLists().filter((ml) => ml.public).length);
+
+    // Initialize services check
+    this.servicesLoaded = signal(false);
+    this.availableServices = this.initializeServices();
+    this.hasNoServices = computed(() => this.servicesLoaded() && this.availableServices().length === 0);
   }
 
   /**
@@ -236,5 +244,43 @@ export class MailingListDashboardComponent {
 
       return filtered;
     });
+  }
+
+  private initializeServices(): Signal<GroupsIOService[]> {
+    const project$ = toObservable(this.project);
+
+    return toSignal(
+      project$.pipe(
+        tap(() => this.servicesLoaded.set(false)),
+        filter((project): project is NonNullable<typeof project> => project !== null),
+        switchMap((project) =>
+          this.mailingListService.getServicesByProject(project.uid).pipe(
+            switchMap((services) => {
+              if (services.length > 0) {
+                return of(services);
+              }
+
+              // No services found, check parent project for services
+              return this.projectService.getProject(project.slug, false).pipe(
+                switchMap((fullProject) => {
+                  if (!fullProject?.parent_uid) {
+                    return of([]);
+                  }
+
+                  return this.mailingListService.getServicesByProject(fullProject.parent_uid);
+                }),
+                catchError(() => of([]))
+              );
+            }),
+            tap(() => this.servicesLoaded.set(true)),
+            catchError(() => {
+              this.servicesLoaded.set(true);
+              return of([]);
+            })
+          )
+        )
+      ),
+      { initialValue: [] }
+    );
   }
 }

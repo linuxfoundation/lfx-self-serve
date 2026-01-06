@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, ElementRef, inject, input, signal, ViewChild } from '@angular/core';
+import { Component, computed, inject, input, signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
+import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
 import { BASE_BAR_CHART_OPTIONS, BASE_LINE_CHART_OPTIONS, lfxColors, PRIMARY_FOUNDATION_HEALTH_METRICS } from '@lfx-one/shared/constants';
 import { hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
@@ -23,12 +24,12 @@ import type {
 
 @Component({
   selector: 'lfx-foundation-health',
-  imports: [FilterPillsComponent, MetricCardComponent, DataCopilotComponent],
+  imports: [FilterPillsComponent, MetricCardComponent, DataCopilotComponent, ScrollShadowDirective],
   templateUrl: './foundation-health.component.html',
   styleUrl: './foundation-health.component.scss',
 })
 export class FoundationHealthComponent {
-  @ViewChild('carouselScroll') public carouselScrollContainer!: ElementRef;
+  @ViewChild(ScrollShadowDirective) public scrollShadowDirective!: ScrollShadowDirective;
 
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
@@ -86,18 +87,6 @@ export class FoundationHealthComponent {
 
   public handleFilterChange(filter: string): void {
     this.selectedFilter.set(filter);
-  }
-
-  public scrollLeft(): void {
-    if (!this.carouselScrollContainer?.nativeElement) return;
-    const container = this.carouselScrollContainer.nativeElement;
-    container.scrollBy({ left: -320, behavior: 'smooth' });
-  }
-
-  public scrollRight(): void {
-    if (!this.carouselScrollContainer?.nativeElement) return;
-    const container = this.carouselScrollContainer.nativeElement;
-    container.scrollBy({ left: 320, behavior: 'smooth' });
   }
 
   private initializeTotalProjectsCard() {

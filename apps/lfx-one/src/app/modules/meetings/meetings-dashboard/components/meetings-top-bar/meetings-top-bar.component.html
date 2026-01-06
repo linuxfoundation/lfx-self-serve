@@ -27,4 +27,17 @@
       (onChange)="onMeetingTypeChange($event.value)"
       data-testid="meeting-type-filter"></lfx-select>
   </div>
+
+  <!-- Time Filter Dropdown -->
+  <div class="w-full sm:w-40">
+    <lfx-select
+      [form]="searchForm"
+      control="timeFilter"
+      size="small"
+      [options]="timeFilterOptions"
+      placeholder="Select Time"
+      styleClass="w-full"
+      (onChange)="onTimeFilterChange($event.value)"
+      data-testid="time-filter-dropdown"></lfx-select>
+  </div>
 </div>
