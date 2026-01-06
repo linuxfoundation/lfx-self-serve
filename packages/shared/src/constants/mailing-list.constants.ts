@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MailingListType } from '../enums/mailing-list.enum';
+import { MailingListAudienceAccess, MailingListType } from '../enums/mailing-list.enum';
 
 /**
  * Configurable labels for mailing lists displayed throughout the UI
@@ -31,8 +31,27 @@ export const MAILING_LIST_MAX_VISIBLE_GROUPS = 2;
  */
 export const MAILING_LIST_TYPE_LABELS = {
   [MailingListType.ANNOUNCEMENT]: 'Announcement',
-  [MailingListType.DISCUSSION_MODERATED]: 'Moderated',
-  [MailingListType.DISCUSSION_OPEN]: 'Open',
+  [MailingListType.DISCUSSION_MODERATED]: 'Moderated Discussion',
+  [MailingListType.DISCUSSION_OPEN]: 'Open Discussion',
+} as const;
+
+/**
+ * Audience access display labels
+ * @description Human-readable labels for mailing list audience access options
+ */
+export const MAILING_LIST_AUDIENCE_ACCESS_LABELS = {
+  [MailingListAudienceAccess.PUBLIC]: 'Public',
+  [MailingListAudienceAccess.APPROVAL_REQUIRED]: 'Approval Required',
+  [MailingListAudienceAccess.INVITE_ONLY]: 'Invite Only',
+} as const;
+
+/**
+ * Visibility display labels
+ * @description Human-readable labels for mailing list visibility options
+ */
+export const MAILING_LIST_VISIBILITY_LABELS = {
+  true: 'Public',
+  false: 'Members Only',
 } as const;
 
 /**

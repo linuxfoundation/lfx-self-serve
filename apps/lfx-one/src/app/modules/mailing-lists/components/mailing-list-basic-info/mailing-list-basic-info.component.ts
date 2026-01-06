@@ -21,6 +21,7 @@ export class MailingListBasicInfoComponent {
   public readonly service = input<GroupsIOService | null>(null);
   public readonly prefix = input<string>('');
   public readonly maxGroupNameLength = input<number>(34);
+  public readonly isEditMode = input<boolean>(false);
 
   public readonly projectName = computed(() => {
     return this.service()?.project_name || this.projectContextService.selectedProject()?.name || this.projectContextService.selectedFoundation()?.name || '';

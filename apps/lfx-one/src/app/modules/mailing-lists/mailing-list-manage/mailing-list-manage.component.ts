@@ -217,8 +217,20 @@ export class MailingListManageComponent {
   }
 
   private populateFormWithMailingListData(mailingList: GroupsIOMailingList): void {
+    // Strip prefix from group_name in edit mode to prevent double-prefixing on submit
+    // The prefix is added back in prepareMailingListData when submitting
+    let groupName = mailingList.group_name;
+    const servicePrefix = mailingList.service?.prefix;
+
+    if (servicePrefix && mailingList.service?.type !== 'primary') {
+      const prefixWithSeparator = `${servicePrefix}-`;
+      if (groupName.startsWith(prefixWithSeparator)) {
+        groupName = groupName.slice(prefixWithSeparator.length);
+      }
+    }
+
     this.form().patchValue({
-      group_name: mailingList.group_name,
+      group_name: groupName,
       description: mailingList.description || '',
       audience_access: mailingList.audience_access || MailingListAudienceAccess.PUBLIC,
       type: mailingList.type || MailingListType.DISCUSSION_OPEN,

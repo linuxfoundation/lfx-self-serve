@@ -208,7 +208,7 @@ export class MailingListService {
   public async getMailingListById(req: Request, mailingListId: string): Promise<GroupsIOMailingList> {
     const params = {
       type: 'groupsio_mailing_list',
-      tags: `mailing_list_uid:${mailingListId}`,
+      tags: `groupsio_mailing_list_uid:${mailingListId}`,
     };
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(

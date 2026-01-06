@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, input, output } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TableComponent } from '@components/table/table.component';
@@ -24,6 +25,7 @@ import { TooltipModule } from 'primeng/tooltip';
     TableComponent,
     TagComponent,
     TooltipModule,
+    RouterLink,
     GroupEmailPipe,
     MailingListVisibilitySeverityPipe,
     MailingListTypeLabelPipe,

@@ -1,0 +1,188 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto py-6 px-8">
+  <!-- Loading State -->
+  @if (loading()) {
+    <div class="flex justify-center items-center min-h-96">
+      <div class="text-center">
+        <i class="fa-light fa-spinner-third fa-spin text-3xl text-blue-600 mb-4"></i>
+        <p class="text-gray-600">Loading {{ mailingListLabel.singular | lowercase }} details...</p>
+      </div>
+    </div>
+  }
+
+  <!-- Error State -->
+  @if (error()) {
+    <div class="flex justify-center items-center min-h-96">
+      <div class="text-center">
+        <i class="fa-light fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
+        <h2 class="mb-2">{{ mailingListLabel.singular }} Not Found</h2>
+        <p class="text-gray-600 mb-4">The {{ mailingListLabel.singular | lowercase }} you're looking for doesn't exist or has been removed.</p>
+        <lfx-button label="Back to {{ mailingListLabel.plural }}" styleClass="p-button-outlined" routerLink="/mailing-lists"></lfx-button>
+      </div>
+    </div>
+  }
+
+  <!-- Mailing List Content -->
+  @if (mailingList()?.uid && !loading() && !error()) {
+    @let ml = mailingList()!;
+    <div class="flex flex-col gap-6">
+      <!-- Header Section -->
+      <div class="flex justify-between items-start">
+        <div class="flex flex-col gap-4" data-testid="mailing-list-view-header">
+          <lfx-breadcrumb [model]="breadcrumbItems()" data-testid="mailing-list-view-breadcrumb"></lfx-breadcrumb>
+          <div class="flex flex-col gap-1">
+            <h1 data-testid="mailing-list-view-title">{{ ml.title }}</h1>
+            @if (ml.description) {
+              <p class="text-gray-500" data-testid="mailing-list-view-description">{{ ml.description | stripHtml }}</p>
+            }
+          </div>
+
+          <!-- Metadata Row -->
+          <div class="flex flex-wrap items-center gap-4 text-sm">
+            <!-- Public/Private Badge -->
+            <lfx-tag
+              [value]="ml.public ? 'Public' : 'Private'"
+              [severity]="ml.public | mailingListVisibilitySeverity"
+              data-testid="mailing-list-view-visibility-badge">
+            </lfx-tag>
+
+            <!-- Subscriber Count -->
+            <span class="flex items-center gap-1.5 text-gray-600" data-testid="mailing-list-view-subscriber-count">
+              <i class="fa-light fa-users"></i>
+              {{ subscriberCount() }} subscribers
+            </span>
+
+            <!-- Email Address -->
+            @if (emailAddress()) {
+              <span class="flex items-center gap-1.5 text-gray-600" data-testid="mailing-list-view-email">
+                {{ emailAddress() }}
+              </span>
+            }
+
+            <!-- View on Groups.io Link -->
+            @if (groupsIoUrl()) {
+              <a
+                [href]="groupsIoUrl()"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="flex items-center gap-1.5 text-blue-600 hover:text-blue-700"
+                data-testid="mailing-list-view-groups-io-link">
+                View on Groups.io
+                <i class="fa-light fa-external-link text-xs"></i>
+              </a>
+            }
+          </div>
+        </div>
+
+        <!-- Action Button -->
+        <div class="flex items-center gap-3">
+          <lfx-button
+            icon="fa-light fa-edit"
+            label="Edit {{ mailingListLabel.singular }}"
+            size="small"
+            [routerLink]="editRoute()"
+            data-testid="mailing-list-view-edit-button">
+          </lfx-button>
+        </div>
+      </div>
+
+      <!-- Two Column Grid -->
+      <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">
+        <!-- Left Column (2/3 width): Linked Groups -->
+        <div class="lg:col-span-2 h-full">
+          <lfx-card styleClass="h-full" data-testid="mailing-list-view-linked-groups">
+            <div class="flex items-start justify-between mb-4">
+              <div>
+                <h3 class="text-sm font-medium">
+                  Linked {{ committeeLabel.plural }}
+                  @if (linkedCommittees().length > 0) {
+                    ({{ linkedCommittees().length }})
+                  }
+                </h3>
+                @if (linkedCommittees().length > 0) {
+                  <p class="text-sm text-gray-500 mt-1">
+                    Members of these {{ committeeLabel.plural | lowercase }} are automatically subscribed to this {{ mailingListLabel.singular | lowercase }}.
+                  </p>
+                }
+              </div>
+              <lfx-button
+                [label]="'Manage ' + committeeLabel.plural"
+                size="small"
+                severity="secondary"
+                [outlined]="true"
+                [routerLink]="editRoute()"
+                data-testid="mailing-list-view-manage-groups-button">
+              </lfx-button>
+            </div>
+
+            @if (linkedCommittees().length > 0) {
+              <div class="flex flex-wrap gap-2" data-testid="mailing-list-view-committees-list">
+                @for (committee of linkedCommittees(); track committee.uid) {
+                  <lfx-tag [value]="committee.name || committee.uid" severity="info" [attr.data-testid]="'mailing-list-view-committee-' + committee.uid">
+                  </lfx-tag>
+                }
+              </div>
+            } @else {
+              <div class="text-center py-8" data-testid="mailing-list-view-no-committees">
+                <p class="text-sm text-gray-500">No {{ committeeLabel.plural | lowercase }} linked to this {{ mailingListLabel.singular | lowercase }}</p>
+              </div>
+            }
+          </lfx-card>
+        </div>
+
+        <!-- Right Column (1/3 width): Enabled Features -->
+        <div class="lg:col-span-1 h-full">
+          <lfx-card styleClass="h-full" data-testid="mailing-list-view-features">
+            <h3 class="text-sm font-medium mb-4">Enabled Features</h3>
+            <div class="flex flex-col gap-3">
+              <!-- Audience & Access -->
+              <div
+                class="flex items-center gap-2 text-sm text-gray-600 cursor-help"
+                pTooltip="Audience & Access: Controls who can discover and join this list."
+                tooltipPosition="left"
+                data-testid="mailing-list-view-audience-access">
+                <i class="fa-light fa-globe w-4 text-green-600"></i>
+                <span>{{ audienceAccessLabel() }}</span>
+              </div>
+
+              <!-- Posting Permission -->
+              <div
+                class="flex items-center gap-2 text-sm text-gray-600 cursor-help"
+                pTooltip="Posting Permission: Choose how conversations happen on this mailing list."
+                tooltipPosition="left"
+                data-testid="mailing-list-view-posting-type">
+                <i class="fa-light fa-envelope w-4 text-blue-600"></i>
+                <span>{{ postingTypeLabel() }}</span>
+              </div>
+
+              <!-- Attachments -->
+              <div
+                class="flex items-center gap-2 text-sm text-gray-600 cursor-help"
+                pTooltip="Attachments: Controls how files are handled."
+                tooltipPosition="left"
+                data-testid="mailing-list-view-attachments">
+                <i class="fa-light fa-paperclip w-4 text-indigo-600"></i>
+                <span>Attachments allowed</span>
+              </div>
+
+              <!-- Visibility -->
+              <div
+                class="flex items-center gap-2 text-sm text-gray-600 cursor-help"
+                pTooltip="Visibility: Defines who can read past discussions."
+                tooltipPosition="left"
+                data-testid="mailing-list-view-archive-visibility">
+                <i class="fa-light fa-box-archive w-4 text-teal-600"></i>
+                <span>{{ visibilityLabel() }}</span>
+              </div>
+            </div>
+          </lfx-card>
+        </div>
+      </div>
+
+      <!-- Subscribers Section (Placeholder) -->
+      <lfx-mailing-list-subscribers [mailingList]="mailingList()" data-testid="mailing-list-view-subscribers"> </lfx-mailing-list-subscribers>
+    </div>
+  }
+</div>

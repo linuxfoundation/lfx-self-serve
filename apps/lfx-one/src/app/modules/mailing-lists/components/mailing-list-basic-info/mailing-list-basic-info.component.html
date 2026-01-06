@@ -19,31 +19,44 @@
   <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
     <!-- Left Column - Mailing List Name -->
     <div class="flex flex-col gap-2">
-      <label for="mailing-list-name" class="block text-sm text-neutral-950"> Mailing List Name <span class="text-red-500">*</span> </label>
-      <lfx-input-text
-        size="small"
-        [form]="form()"
-        control="group_name"
-        id="mailing-list-name"
-        placeholder="e.g., dev, announce, community"
-        styleClass="w-full"
-        data-testid="mailing-list-basic-info-name-input">
-      </lfx-input-text>
-      <p class="text-xs text-gray-500">Use a simple, purpose-based name (e.g., dev, announce).</p>
-      <p class="text-xs text-gray-500 mt-2">
-        Email address: <span class="font-medium">{{ emailPreview() }}</span>
-      </p>
-      @if (form().get('group_name')?.errors?.['required'] && form().get('group_name')?.touched) {
-        <p class="mt-1 text-sm text-red-600">Mailing list name is required</p>
-      }
-      @if (form().get('group_name')?.errors?.['minlength'] && form().get('group_name')?.touched) {
-        <p class="mt-1 text-sm text-red-600">Name must be at least 3 characters</p>
-      }
-      @if (groupNameTooLong() && form().get('group_name')?.touched) {
-        <p class="mt-1 text-sm text-red-600">{{ groupNameLengthError() }}</p>
-      }
-      @if (form().get('group_name')?.errors?.['pattern'] && form().get('group_name')?.touched) {
-        <p class="mt-1 text-sm text-red-600">Name can only contain letters, numbers, hyphens, and underscores</p>
+      <label for="mailing-list-name" class="block text-sm text-neutral-950">
+        Mailing List Name
+        @if (!isEditMode()) {
+          <span class="text-red-500">*</span>
+        }
+      </label>
+      @if (isEditMode()) {
+        <!-- Read-only display in edit mode -->
+        <div class="px-3 py-2 bg-gray-100 border border-gray-200 rounded-md text-sm text-neutral-700" data-testid="mailing-list-basic-info-name-readonly">
+          {{ emailPreview() }}
+        </div>
+        <p class="text-xs text-gray-500">Mailing list name cannot be changed after creation.</p>
+      } @else {
+        <lfx-input-text
+          size="small"
+          [form]="form()"
+          control="group_name"
+          id="mailing-list-name"
+          placeholder="e.g., dev, announce, community"
+          styleClass="w-full"
+          data-testid="mailing-list-basic-info-name-input">
+        </lfx-input-text>
+        <p class="text-xs text-gray-500">Use a simple, purpose-based name (e.g., dev, announce).</p>
+        <p class="text-xs text-gray-500 mt-2">
+          Email address: <span class="font-medium">{{ emailPreview() }}</span>
+        </p>
+        @if (form().get('group_name')?.errors?.['required'] && form().get('group_name')?.touched) {
+          <p class="mt-1 text-sm text-red-600">Mailing list name is required</p>
+        }
+        @if (form().get('group_name')?.errors?.['minlength'] && form().get('group_name')?.touched) {
+          <p class="mt-1 text-sm text-red-600">Name must be at least 3 characters</p>
+        }
+        @if (groupNameTooLong() && form().get('group_name')?.touched) {
+          <p class="mt-1 text-sm text-red-600">{{ groupNameLengthError() }}</p>
+        }
+        @if (form().get('group_name')?.errors?.['pattern'] && form().get('group_name')?.touched) {
+          <p class="mt-1 text-sm text-red-600">Name can only contain letters, numbers, hyphens, and underscores</p>
+        }
       }
     </div>
 
