@@ -19,6 +19,21 @@ export const MAILING_LIST_LABEL = {
 } as const;
 
 /**
+ * Configurable labels for mailing list members displayed throughout the UI
+ * @description This constant allows the user-facing labels to be changed
+ * while keeping all code and file names consistent
+ * @readonly
+ * @example
+ * // Use in templates to display the label
+ * <h1>{{MAILING_LIST_MEMBER_LABEL.plural}}</h1> // Displays "Subscribers"
+ * <span>Add {{MAILING_LIST_MEMBER_LABEL.singular}}</span> // Displays "Add Subscriber"
+ */
+export const MAILING_LIST_MEMBER_LABEL = {
+  singular: 'Subscriber',
+  plural: 'Subscribers',
+} as const;
+
+/**
  * Maximum number of linked groups to show before displaying "+N more" badge
  * @description Controls how many group badges are visible in the table before collapsing
  * @readonly

@@ -1,0 +1,162 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card data-testid="mailing-list-members-card">
+  <div class="flex items-center justify-between mb-4 gap-4">
+    <!-- Search and Filter Controls -->
+    <div class="flex flex-col md:flex-row md:flex-wrap gap-4 flex-1" data-testid="mailing-list-members-filters">
+      <!-- Search Input -->
+      <div class="flex-1">
+        <lfx-input-text
+          [form]="filterForm"
+          control="search"
+          placeholder="Search members..."
+          icon="fa-light fa-search"
+          styleClass="w-full"
+          size="small"
+          data-testid="mailing-list-members-search">
+        </lfx-input-text>
+      </div>
+
+      <!-- Delivery Mode Filter -->
+      <div class="w-full flex-1 sm:flex-none md:w-48">
+        <lfx-select
+          [form]="filterForm"
+          control="deliveryMode"
+          size="small"
+          [options]="deliveryModeFilterOptions()"
+          placeholder="Filter by Delivery Mode"
+          [showClear]="true"
+          styleClass="w-full"
+          data-testid="mailing-list-members-delivery-mode-filter">
+        </lfx-select>
+      </div>
+
+      <!-- Role Filter -->
+      <div class="w-full flex-1 sm:flex-none md:w-48">
+        <lfx-select
+          [form]="filterForm"
+          control="role"
+          size="small"
+          [options]="roleFilterOptions()"
+          placeholder="Filter by Role"
+          [showClear]="true"
+          styleClass="w-full"
+          data-testid="mailing-list-members-role-filter">
+        </lfx-select>
+      </div>
+    </div>
+    <lfx-button
+      icon="fa-light fa-user-plus"
+      [label]="'Add ' + memberLabel.singular"
+      size="small"
+      severity="secondary"
+      [outlined]="true"
+      (onClick)="openAddMemberModal()"
+      data-testid="mailing-list-add-member-button">
+    </lfx-button>
+  </div>
+
+  @if (loading()) {
+    <div class="flex justify-center items-center py-8">
+      <i class="fa-light fa-spinner-third fa-spin text-2xl text-blue-600"></i>
+    </div>
+  } @else {
+    <lfx-table
+      [value]="filteredMembers()"
+      [paginator]="true"
+      [rows]="10"
+      [rowsPerPageOptions]="[10, 25, 50]"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords} members"
+      styleClass="p-datatable-sm"
+      sortField="email"
+      [sortOrder]="1"
+      data-testid="mailing-list-members-table">
+      <!-- Header Template -->
+      <ng-template #header>
+        <tr>
+          <th>Name</th>
+          <th>Title</th>
+          <th>Organization</th>
+          <th>Email</th>
+          <th>Delivery Mode</th>
+          <th>Role</th>
+          <th class="w-24">Actions</th>
+        </tr>
+      </ng-template>
+
+      <!-- Body Template -->
+      <ng-template #body let-member>
+        <tr [attr.data-testid]="'member-row-' + member.uid">
+          <td>{{ member | fullName }}</td>
+          <td>{{ member.job_title || '-' }}</td>
+          <td>{{ member.organization || '-' }}</td>
+          <td>
+            <a [href]="'mailto:' + member.email" class="text-blue-600 hover:text-blue-800 hover:underline">
+              {{ member.email }}
+            </a>
+          </td>
+
+          <!-- Delivery Mode Dropdown -->
+          <td>
+            <lfx-select-chip
+              [value]="member.delivery_mode"
+              [options]="deliveryModeOptions"
+              color="gray"
+              [testIdPrefix]="'member-delivery-mode-' + member.uid"
+              (onChange)="onDeliveryModeChange(member, $event)">
+            </lfx-select-chip>
+          </td>
+
+          <!-- Role Dropdown -->
+          <td>
+            <lfx-select-chip
+              [value]="member.mod_status"
+              [options]="roleOptions"
+              [color]="member.mod_status === 'moderator' ? 'purple' : 'blue'"
+              [testIdPrefix]="'member-role-' + member.uid"
+              (onChange)="onRoleChange(member, $event)">
+            </lfx-select-chip>
+          </td>
+
+          <!-- Actions -->
+          <td>
+            <div class="flex items-center gap-1">
+              <lfx-button
+                icon="fa-light fa-pen-to-square"
+                severity="secondary"
+                size="small"
+                [text]="true"
+                styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                (onClick)="openEditMemberModal(member)"
+                [attr.data-testid]="'member-edit-' + member.uid">
+              </lfx-button>
+              <lfx-button
+                icon="fa-light fa-trash"
+                severity="danger"
+                size="small"
+                [text]="true"
+                styleClass="h-8 w-8 text-gray-500 hover:text-red-600 hover:bg-red-50"
+                (onClick)="deleteMember(member)"
+                [attr.data-testid]="'member-delete-' + member.uid">
+              </lfx-button>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+
+      <!-- Empty Message Template -->
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="7" class="text-center py-8">
+            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2"></i>
+            <p class="text-sm text-gray-500">No {{ memberLabel.plural | lowercase }} found</p>
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  }
+</lfx-card>
+
+<p-confirmDialog></p-confirmDialog>

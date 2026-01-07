@@ -48,10 +48,10 @@
               data-testid="mailing-list-view-visibility-badge">
             </lfx-tag>
 
-            <!-- Subscriber Count -->
-            <span class="flex items-center gap-1.5 text-gray-600" data-testid="mailing-list-view-subscriber-count">
+            <!-- Member Count -->
+            <span class="flex items-center gap-1.5 text-gray-600" data-testid="mailing-list-view-member-count">
               <i class="fa-light fa-users"></i>
-              {{ subscriberCount() }} subscribers
+              {{ memberCount() }} {{ memberLabel.plural | lowercase }}
             </span>
 
             <!-- Email Address -->
@@ -181,8 +181,8 @@
         </div>
       </div>
 
-      <!-- Subscribers Section (Placeholder) -->
-      <lfx-mailing-list-subscribers [mailingList]="mailingList()" data-testid="mailing-list-view-subscribers"> </lfx-mailing-list-subscribers>
+      <!-- Members Section -->
+      <lfx-mailing-list-members [mailingList]="mailingList()" data-testid="mailing-list-view-members"> </lfx-mailing-list-members>
     </div>
   }
 </div>

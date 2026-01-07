@@ -33,7 +33,9 @@
           <div>
             <h4 class="text-sm font-semibold text-gray-900">{{ option.label }}</h4>
             <p class="text-xs text-gray-600 mt-1">{{ option.info.description }}</p>
-            <p class="text-xs text-gray-500 mt-1 italic">Examples: {{ option.info.examples }}</p>
+            @if (option.info.examples) {
+              <p class="text-xs text-gray-500 mt-1 italic">Examples: {{ option.info.examples }}</p>
+            }
           </div>
         </div>
       </div>

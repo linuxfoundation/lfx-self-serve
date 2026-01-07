@@ -25,4 +25,12 @@ router.post('/', (req, res, next) => mailingListController.createMailingList(req
 router.put('/:id', (req, res, next) => mailingListController.updateMailingList(req, res, next));
 router.delete('/:id', (req, res, next) => mailingListController.deleteMailingList(req, res, next));
 
+// Mailing List Member routes
+router.get('/:id/members', (req, res, next) => mailingListController.getMembers(req, res, next));
+router.get('/:id/members/count', (req, res, next) => mailingListController.getMembersCount(req, res, next));
+router.get('/:id/members/:memberId', (req, res, next) => mailingListController.getMemberById(req, res, next));
+router.post('/:id/members', (req, res, next) => mailingListController.createMember(req, res, next));
+router.put('/:id/members/:memberId', (req, res, next) => mailingListController.updateMember(req, res, next));
+router.delete('/:id/members/:memberId', (req, res, next) => mailingListController.deleteMember(req, res, next));
+
 export default router;

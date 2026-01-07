@@ -1,0 +1,110 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4" data-testid="manage-member-modal-form">
+  <!-- Form Fields -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+    <!-- First Name -->
+    <div class="flex flex-col gap-1">
+      <label for="first_name" class="text-sm text-slate-900">
+        First Name
+        @if (!isEditMode) {
+          <span class="text-red-500">*</span>
+        }
+      </label>
+      <lfx-input-text id="first_name" size="small" [form]="form" control="first_name" placeholder="Enter first name" data-testid="manage-member-first-name">
+      </lfx-input-text>
+      @if (form.get('first_name')?.errors?.['required'] && form.get('first_name')?.touched) {
+        <span class="text-red-500 text-xs">First name is required</span>
+      }
+    </div>
+
+    <!-- Last Name -->
+    <div class="flex flex-col gap-1">
+      <label for="last_name" class="text-sm text-slate-900">
+        Last Name
+        @if (!isEditMode) {
+          <span class="text-red-500">*</span>
+        }
+      </label>
+      <lfx-input-text id="last_name" size="small" [form]="form" control="last_name" placeholder="Enter last name" data-testid="manage-member-last-name">
+      </lfx-input-text>
+      @if (form.get('last_name')?.errors?.['required'] && form.get('last_name')?.touched) {
+        <span class="text-red-500 text-xs">Last name is required</span>
+      }
+    </div>
+  </div>
+
+  <!-- Title -->
+  <div class="flex flex-col gap-1">
+    <label for="job_title" class="text-sm text-slate-900">Title</label>
+    <lfx-input-text
+      id="job_title"
+      size="small"
+      [form]="form"
+      control="job_title"
+      placeholder="e.g., Senior Engineer, Product Manager"
+      data-testid="manage-member-job-title">
+    </lfx-input-text>
+  </div>
+
+  <!-- Organization -->
+  <div class="flex flex-col gap-1">
+    <label for="organization" class="text-sm text-slate-900">Organization</label>
+    <lfx-input-text
+      id="organization"
+      size="small"
+      [form]="form"
+      control="organization"
+      placeholder="e.g., Acme Corporation"
+      data-testid="manage-member-organization">
+    </lfx-input-text>
+  </div>
+
+  <!-- Email -->
+  <div class="flex flex-col gap-1">
+    <label for="email" class="text-sm text-slate-900">
+      Email
+      @if (!isEditMode) {
+        <span class="text-red-500">*</span>
+      }
+    </label>
+    <lfx-input-text id="email" size="small" type="email" [form]="form" control="email" placeholder="member@example.com" data-testid="manage-member-email">
+    </lfx-input-text>
+    @if (form.get('email')?.errors?.['required'] && form.get('email')?.touched) {
+      <span class="text-red-500 text-xs">Email is required</span>
+    }
+    @if (form.get('email')?.errors?.['email'] && form.get('email')?.touched) {
+      <span class="text-red-500 text-xs">Please enter a valid email address</span>
+    }
+  </div>
+
+  @if (isEditMode) {
+    <p class="text-slate-500 text-xs -mt-2">Name and email cannot be changed after member is added</p>
+  }
+
+  <!-- Delivery Mode (Add mode only) -->
+  @if (!isEditMode) {
+    <lfx-card-selector [form]="form" control="delivery_mode" label="Delivery Mode" [options]="deliveryModeOptions" testIdPrefix="manage-member-delivery-mode">
+    </lfx-card-selector>
+
+    <!-- Role (Add mode only) -->
+    <lfx-card-selector [form]="form" control="mod_status" label="Role" [options]="roleOptions" testIdPrefix="manage-member-role"> </lfx-card-selector>
+  }
+
+  <!-- Action Buttons -->
+  <div class="flex border-t border-gray-200 pt-4 justify-end items-center" data-testid="manage-member-modal-actions">
+    <div class="flex gap-2 items-center" data-testid="manage-member-modal-form-actions">
+      <lfx-button label="Cancel" severity="secondary" [text]="true" size="small" type="button" (onClick)="onCancel()" data-testid="manage-member-cancel-button">
+      </lfx-button>
+      <lfx-button
+        [label]="isEditMode ? 'Update Member' : 'Add Member'"
+        [loading]="submitting()"
+        [disabled]="form.invalid || submitting()"
+        type="submit"
+        size="small"
+        data-testid="manage-member-submit-button">
+      </lfx-button>
+    </div>
+  </div>
+</form>

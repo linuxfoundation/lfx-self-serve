@@ -13,6 +13,7 @@ import {
   COMMITTEE_LABEL,
   MAILING_LIST_AUDIENCE_ACCESS_LABELS,
   MAILING_LIST_LABEL,
+  MAILING_LIST_MEMBER_LABEL,
   MAILING_LIST_TYPE_LABELS,
   MAILING_LIST_VISIBILITY_LABELS,
 } from '@lfx-one/shared/constants';
@@ -25,7 +26,7 @@ import { MenuItem, MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
 
-import { MailingListSubscribersComponent } from '../components/mailing-list-subscribers/mailing-list-subscribers.component';
+import { MailingListMembersComponent } from '../components/mailing-list-members/mailing-list-members.component';
 
 @Component({
   selector: 'lfx-mailing-list-view',
@@ -38,7 +39,7 @@ import { MailingListSubscribersComponent } from '../components/mailing-list-subs
     RouterLink,
     MailingListVisibilitySeverityPipe,
     StripHtmlPipe,
-    MailingListSubscribersComponent,
+    MailingListMembersComponent,
     TooltipModule,
   ],
   templateUrl: './mailing-list-view.component.html',
@@ -52,6 +53,7 @@ export class MailingListViewComponent {
 
   // Constants for template
   protected readonly mailingListLabel = MAILING_LIST_LABEL;
+  protected readonly memberLabel = MAILING_LIST_MEMBER_LABEL;
   protected readonly committeeLabel = COMMITTEE_LABEL;
   protected readonly typeLabels = MAILING_LIST_TYPE_LABELS;
   protected readonly audienceAccessLabels = MAILING_LIST_AUDIENCE_ACCESS_LABELS;
@@ -66,7 +68,7 @@ export class MailingListViewComponent {
   // Computed signals for derived data
   public breadcrumbItems: Signal<MenuItem[]>;
   public emailAddress: Signal<string>;
-  public subscriberCount: Signal<number>;
+  public memberCount: Signal<number>;
   public linkedCommittees: Signal<MailingListCommittee[]>;
   public postingTypeLabel: Signal<string>;
   public audienceAccessLabel: Signal<string>;
@@ -93,7 +95,7 @@ export class MailingListViewComponent {
       return `${ml.group_name}@${ml.service.domain}`;
     });
 
-    this.subscriberCount = computed(() => {
+    this.memberCount = computed(() => {
       // Placeholder - will be populated from API when available
       return 0;
     });

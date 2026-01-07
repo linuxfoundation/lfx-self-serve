@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { GroupsIOServiceStatus, GroupsIOServiceType, MailingListAudienceAccess, MailingListType } from '../enums/mailing-list.enum';
+import {
+  GroupsIOServiceStatus,
+  GroupsIOServiceType,
+  MailingListAudienceAccess,
+  MailingListMemberDeliveryMode,
+  MailingListMemberModStatus,
+  MailingListMemberType,
+  MailingListType,
+} from '../enums/mailing-list.enum';
 
 /**
  * Linked group reference for mailing lists
@@ -173,4 +181,89 @@ export interface UpdateGroupsIOServiceRequest {
   public?: boolean;
   /** Service status (optional) */
   status?: string;
+}
+
+/**
+ * Mailing list member entity (Groups.io member)
+ * @description Represents a member of a mailing list
+ */
+export interface MailingListMember {
+  /** Unique member identifier */
+  uid: string;
+  /** Parent mailing list UID */
+  mailing_list_uid: string;
+  /** Member's username/handle */
+  username?: string;
+  /** Member's first name */
+  first_name?: string;
+  /** Member's last name */
+  last_name?: string;
+  /** Member's email address */
+  email: string;
+  /** Member's organization */
+  organization?: string;
+  /** Member's job title */
+  job_title?: string;
+  /** How member was added (committee or direct) */
+  member_type: MailingListMemberType;
+  /** Email delivery mode (normal, digest, none) */
+  delivery_mode: MailingListMemberDeliveryMode;
+  /** Moderation status (none, moderator, owner) */
+  mod_status: MailingListMemberModStatus;
+  /** Member active status */
+  status: string;
+  /** Last review timestamp */
+  last_reviewed_at?: string | null;
+  /** User who last reviewed */
+  last_reviewed_by?: string | null;
+  /** Creation timestamp */
+  created_at: string;
+  /** Last update timestamp */
+  updated_at: string;
+}
+
+/**
+ * Request payload for creating a mailing list member
+ * @description Input payload for adding members to mailing lists
+ */
+export interface CreateMailingListMemberRequest {
+  /** Member's email address (required) */
+  email: string;
+  /** Member's username/handle */
+  username?: string | null;
+  /** Member's first name */
+  first_name?: string | null;
+  /** Member's last name */
+  last_name?: string | null;
+  /** Member's organization */
+  organization?: string | null;
+  /** Member's job title */
+  job_title?: string | null;
+  /** How member was added */
+  member_type?: MailingListMemberType;
+  /** Email delivery mode */
+  delivery_mode?: MailingListMemberDeliveryMode;
+  /** Moderation status */
+  mod_status?: MailingListMemberModStatus;
+}
+
+/**
+ * Request payload for updating a mailing list member
+ * @description Partial update for existing members (email is immutable)
+ */
+export interface UpdateMailingListMemberRequest {
+  /** Member's username/handle */
+  username?: string | null;
+  /** Member's first name */
+  first_name?: string | null;
+  /** Member's last name */
+  last_name?: string | null;
+  /** Member's organization */
+  organization?: string | null;
+  /** Member's job title */
+  job_title?: string | null;
+  /** Email delivery mode */
+  delivery_mode?: MailingListMemberDeliveryMode;
+  /** Moderation status */
+  mod_status?: MailingListMemberModStatus;
 }

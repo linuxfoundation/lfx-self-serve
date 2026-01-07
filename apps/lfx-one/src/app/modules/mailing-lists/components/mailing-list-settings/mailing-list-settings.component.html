@@ -5,7 +5,7 @@
   <!-- Header -->
   <div class="mb-6">
     <h2 class="text-lg font-normal">Mailing List Settings</h2>
-    <p class="text-sm text-gray-500 mt-1">Configure how members interact with the mailing list</p>
+    <p class="text-sm text-gray-500 mt-1">Configure how {{ memberLabel.plural | lowercase }} interact with the mailing list</p>
   </div>
 
   <!-- Two Column Layout -->
@@ -60,7 +60,7 @@
                 inputId="audience-invite"></p-radioButton>
               <span class="text-sm text-neutral-950">Invite Only</span>
             </label>
-            <p class="text-xs text-gray-500 ml-7 mt-1">Only invited members can join.</p>
+            <p class="text-xs text-gray-500 ml-7 mt-1">Only invited {{ memberLabel.plural | lowercase }} can join.</p>
           </div>
         </div>
       </lfx-settings-card>
@@ -89,7 +89,7 @@
               <p-radioButton name="type" formControlName="type" value="discussion_moderated" inputId="posting-moderated"></p-radioButton>
               <span class="text-sm text-neutral-950">Moderated Discussion</span>
             </label>
-            <p class="text-xs text-gray-500 ml-7 mt-1">Members can post, but messages require moderation.</p>
+            <p class="text-xs text-gray-500 ml-7 mt-1">{{ memberLabel.plural }} can post, but messages require moderation.</p>
           </div>
 
           <!-- Open Discussion -->
@@ -142,7 +142,7 @@
           <!-- Members Only -->
           <label class="flex items-center gap-3 cursor-pointer">
             <p-radioButton name="visibility" formControlName="public" [value]="false" inputId="visibility-members"></p-radioButton>
-            <span class="text-sm text-neutral-950">Members only</span>
+            <span class="text-sm text-neutral-950">{{ memberLabel.plural }} only</span>
           </label>
 
           <!-- Error message for announcement type -->

@@ -4,6 +4,19 @@
 import { ChartData, ChartOptions, ChartType } from 'chart.js';
 
 /**
+ * Named entity interface for pipes
+ * @description Common interface for entities with name and email fields
+ */
+export interface NamedEntity {
+  /** First name of the entity */
+  first_name?: string | null;
+  /** Last name of the entity */
+  last_name?: string | null;
+  /** Email address of the entity */
+  email?: string;
+}
+
+/**
  * Feature toggle configuration
  * @description Configuration for feature toggle component
  */
@@ -35,8 +48,8 @@ export interface CardSelectorOptionInfo {
   icon: string;
   /** Description text for the option */
   description: string;
-  /** Example use cases */
-  examples: string;
+  /** Example use cases (optional) */
+  examples?: string;
   /** Color for the icon background (hex or color token) */
   color: string;
 }

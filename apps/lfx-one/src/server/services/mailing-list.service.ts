@@ -3,12 +3,15 @@
 
 import {
   CreateGroupsIOServiceRequest,
+  CreateMailingListMemberRequest,
   CreateMailingListRequest,
   GroupsIOMailingList,
   GroupsIOService,
+  MailingListMember,
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateGroupsIOServiceRequest,
+  UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -302,6 +305,150 @@ export class MailingListService {
 
     logger.debug(req, 'delete_mailing_list', 'Mailing list deleted successfully', {
       mailing_list_uid: mailingListId,
+    });
+  }
+
+  // ============================================
+  // Mailing List Member Methods
+  // ============================================
+
+  /**
+   * Fetches all members for a mailing list using query service
+   */
+  public async getMembers(req: Request, mailingListId: string, query: Record<string, unknown> = {}): Promise<MailingListMember[]> {
+    const params = {
+      ...query,
+      type: 'groupsio_member',
+      tags: `mailing_list_uid:${mailingListId}`,
+    };
+
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params
+    );
+
+    const members = resources.map((resource) => resource.data);
+
+    // Add writer access field to all members
+    return await this.accessCheckService.addAccessToResources(req, members, 'groupsio_member');
+  }
+
+  /**
+   * Fetches the count of members for a mailing list
+   */
+  public async getMembersCount(req: Request, mailingListId: string, query: Record<string, unknown> = {}): Promise<number> {
+    const params = {
+      ...query,
+      type: 'groupsio_member',
+      tags: `mailing_list_uid:${mailingListId}`,
+    };
+
+    const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', params);
+
+    return count;
+  }
+
+  /**
+   * Fetches a single member by ID
+   */
+  public async getMemberById(req: Request, mailingListId: string, memberId: string): Promise<MailingListMember> {
+    const member = await this.microserviceProxy.proxyRequest<MailingListMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
+      'GET'
+    );
+
+    if (!member) {
+      throw new ResourceNotFoundError('Mailing List Member', memberId, {
+        operation: 'get_member_by_id',
+        service: 'mailing_list_service',
+        path: `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
+      });
+    }
+
+    // Add writer access field to the member
+    return await this.accessCheckService.addAccessToResource(req, member, 'groupsio_member');
+  }
+
+  /**
+   * Creates a new member in a mailing list
+   */
+  public async createMember(req: Request, mailingListId: string, data: CreateMailingListMemberRequest): Promise<MailingListMember> {
+    const newMember = await this.microserviceProxy.proxyRequest<MailingListMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/members`,
+      'POST',
+      { v: '1' },
+      data
+    );
+
+    logger.debug(req, 'create_mailing_list_member', 'Mailing list member created successfully', {
+      mailing_list_uid: mailingListId,
+      member_uid: newMember.uid,
+    });
+
+    return newMember;
+  }
+
+  /**
+   * Updates an existing member using ETag for concurrency control
+   */
+  public async updateMember(req: Request, mailingListId: string, memberId: string, data: UpdateMailingListMemberRequest): Promise<MailingListMember> {
+    // Step 1: Fetch member with ETag
+    const { etag } = await this.etagService.fetchWithETag<MailingListMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
+      'update_mailing_list_member'
+    );
+
+    // Step 2: Update member with ETag
+    const updatedMember = await this.etagService.updateWithETag<MailingListMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
+      etag,
+      data,
+      'update_mailing_list_member'
+    );
+
+    logger.debug(req, 'update_mailing_list_member', 'Mailing list member updated successfully', {
+      mailing_list_uid: mailingListId,
+      member_uid: memberId,
+    });
+
+    return updatedMember;
+  }
+
+  /**
+   * Deletes a member using ETag for concurrency control
+   */
+  public async deleteMember(req: Request, mailingListId: string, memberId: string): Promise<void> {
+    // Step 1: Fetch member with ETag
+    const { etag } = await this.etagService.fetchWithETag<MailingListMember>(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
+      'delete_mailing_list_member'
+    );
+
+    // Step 2: Delete member with ETag
+    await this.etagService.deleteWithETag(
+      req,
+      'LFX_V2_SERVICE',
+      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
+      etag,
+      'delete_mailing_list_member'
+    );
+
+    logger.debug(req, 'delete_mailing_list_member', 'Mailing list member deleted successfully', {
+      mailing_list_uid: mailingListId,
+      member_uid: memberId,
     });
   }
 

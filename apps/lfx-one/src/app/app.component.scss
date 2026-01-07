@@ -13,4 +13,8 @@
       @apply text-sm;
     }
   }
+
+  .p-confirmdialog-message {
+    @apply text-sm max-w-lg;
+  }
 }

@@ -40,5 +40,6 @@ export type AccessCheckResourceType =
   | 'v1_meeting'
   | 'v1_past_meeting'
   | 'groupsio_service'
-  | 'groupsio_mailing_list';
+  | 'groupsio_mailing_list'
+  | 'groupsio_member';
 export type AccessCheckAccessType = 'writer' | 'viewer' | 'organizer';

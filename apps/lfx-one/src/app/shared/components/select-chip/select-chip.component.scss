@@ -1,0 +1,56 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+:host {
+  @apply inline-block;
+}
+
+.select-chip-trigger {
+  @apply border-none bg-transparent;
+
+  &:focus-visible {
+    @apply outline-none;
+
+    .select-chip-label {
+      @apply outline outline-2 outline-blue-500 outline-offset-1 py-0;
+    }
+  }
+}
+
+// Popover styling
+::ng-deep .select-chip-popover {
+  &::before,
+  &::after {
+    @apply hidden;
+  }
+
+  .p-popover-content {
+    @apply p-0;
+  }
+}
+
+.select-chip-menu {
+  @apply min-w-[120px] max-h-60 overflow-y-auto p-1;
+}
+
+.select-chip-option {
+  @apply flex items-center justify-between gap-2 w-full px-3 py-2;
+  @apply border-none rounded bg-transparent text-gray-700 text-sm text-left;
+  @apply cursor-pointer transition-colors duration-150;
+
+  &:hover:not(.disabled) {
+    @apply bg-gray-100;
+  }
+
+  &:focus-visible {
+    @apply outline-2 outline-blue-500 -outline-offset-2;
+  }
+
+  &.disabled {
+    @apply opacity-50 cursor-not-allowed;
+  }
+}
+
+.select-chip-empty {
+  @apply py-3 px-4 text-gray-500 text-sm text-center;
+}

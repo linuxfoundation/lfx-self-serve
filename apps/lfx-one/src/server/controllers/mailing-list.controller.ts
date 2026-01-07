@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreateGroupsIOServiceRequest, CreateMailingListRequest, UpdateGroupsIOServiceRequest } from '@lfx-one/shared/interfaces';
+import {
+  CreateGroupsIOServiceRequest,
+  CreateMailingListMemberRequest,
+  CreateMailingListRequest,
+  UpdateGroupsIOServiceRequest,
+  UpdateMailingListMemberRequest,
+} from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -348,6 +354,256 @@ export class MailingListController {
 
       logger.success(req, 'delete_mailing_list', startTime, {
         mailing_list_id: id,
+      });
+
+      res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  // ============================================
+  // Mailing List Member Endpoints
+  // ============================================
+
+  /**
+   * GET /mailing-lists/:id/members
+   */
+  public async getMembers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_mailing_list_members', {
+      mailing_list_id: id,
+      query_params: logger.sanitize(req.query as Record<string, unknown>),
+    });
+
+    try {
+      if (!id) {
+        const validationError = ServiceValidationError.forField('id', 'Mailing List ID is required', {
+          operation: 'get_mailing_list_members',
+          service: 'mailing_list_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const members = await this.mailingListService.getMembers(req, id, req.query);
+
+      logger.success(req, 'get_mailing_list_members', startTime, {
+        mailing_list_id: id,
+        member_count: members.length,
+      });
+
+      res.json(members);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /mailing-lists/:id/members/count
+   */
+  public async getMembersCount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_mailing_list_members_count', {
+      mailing_list_id: id,
+      query_params: logger.sanitize(req.query as Record<string, unknown>),
+    });
+
+    try {
+      if (!id) {
+        const validationError = ServiceValidationError.forField('id', 'Mailing List ID is required', {
+          operation: 'get_mailing_list_members_count',
+          service: 'mailing_list_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const count = await this.mailingListService.getMembersCount(req, id, req.query);
+
+      logger.success(req, 'get_mailing_list_members_count', startTime, {
+        mailing_list_id: id,
+        count,
+      });
+
+      res.json({ count });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /mailing-lists/:id/members/:memberId
+   */
+  public async getMemberById(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, memberId } = req.params;
+    const startTime = logger.startOperation(req, 'get_mailing_list_member_by_id', {
+      mailing_list_id: id,
+      member_id: memberId,
+    });
+
+    try {
+      if (!id) {
+        const validationError = ServiceValidationError.forField('id', 'Mailing List ID is required', {
+          operation: 'get_mailing_list_member_by_id',
+          service: 'mailing_list_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      if (!memberId) {
+        const validationError = ServiceValidationError.forField('memberId', 'Member ID is required', {
+          operation: 'get_mailing_list_member_by_id',
+          service: 'mailing_list_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const member = await this.mailingListService.getMemberById(req, id, memberId);
+
+      logger.success(req, 'get_mailing_list_member_by_id', startTime, {
+        mailing_list_id: id,
+        member_id: memberId,
+      });
+
+      res.json(member);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /mailing-lists/:id/members
+   */
+  public async createMember(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'create_mailing_list_member', {
+      mailing_list_id: id,
+      member_data: logger.sanitize(req.body),
+    });
+
+    try {
+      if (!id) {
+        const validationError = ServiceValidationError.forField('id', 'Mailing List ID is required', {
+          operation: 'create_mailing_list_member',
+          service: 'mailing_list_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const memberData: CreateMailingListMemberRequest = req.body;
+      const newMember = await this.mailingListService.createMember(req, id, memberData);
+
+      logger.success(req, 'create_mailing_list_member', startTime, {
+        mailing_list_id: id,
+        member_id: newMember.uid,
+      });
+
+      res.status(201).json(newMember);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /mailing-lists/:id/members/:memberId
+   */
+  public async updateMember(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, memberId } = req.params;
+    const startTime = logger.startOperation(req, 'update_mailing_list_member', {
+      mailing_list_id: id,
+      member_id: memberId,
+      update_data: logger.sanitize(req.body),
+    });
+
+    try {
+      if (!id) {
+        const validationError = ServiceValidationError.forField('id', 'Mailing List ID is required', {
+          operation: 'update_mailing_list_member',
+          service: 'mailing_list_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      if (!memberId) {
+        const validationError = ServiceValidationError.forField('memberId', 'Member ID is required', {
+          operation: 'update_mailing_list_member',
+          service: 'mailing_list_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const updateData: UpdateMailingListMemberRequest = req.body;
+      const updatedMember = await this.mailingListService.updateMember(req, id, memberId, updateData);
+
+      logger.success(req, 'update_mailing_list_member', startTime, {
+        mailing_list_id: id,
+        member_id: memberId,
+      });
+
+      res.json(updatedMember);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /mailing-lists/:id/members/:memberId
+   */
+  public async deleteMember(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id, memberId } = req.params;
+    const startTime = logger.startOperation(req, 'delete_mailing_list_member', {
+      mailing_list_id: id,
+      member_id: memberId,
+    });
+
+    try {
+      if (!id) {
+        const validationError = ServiceValidationError.forField('id', 'Mailing List ID is required', {
+          operation: 'delete_mailing_list_member',
+          service: 'mailing_list_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      if (!memberId) {
+        const validationError = ServiceValidationError.forField('memberId', 'Member ID is required', {
+          operation: 'delete_mailing_list_member',
+          service: 'mailing_list_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      await this.mailingListService.deleteMember(req, id, memberId);
+
+      logger.success(req, 'delete_mailing_list_member', startTime, {
+        mailing_list_id: id,
+        member_id: memberId,
       });
 
       res.status(204).send();
