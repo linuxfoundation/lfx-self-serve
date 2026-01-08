@@ -7,6 +7,7 @@ import { AuthContext } from '@lfx-one/shared/interfaces';
 import { ToastModule } from 'primeng/toast';
 
 import { AccountContextService } from './shared/services/account-context.service';
+import { DataDogRumService } from './shared/services/datadog-rum.service';
 import { FeatureFlagService } from './shared/services/feature-flag.service';
 import { PersonaService } from './shared/services/persona.service';
 import { SegmentService } from './shared/services/segment.service';
@@ -23,6 +24,7 @@ export class AppComponent {
   private readonly personaService = inject(PersonaService);
   private readonly segmentService = inject(SegmentService);
   private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly dataDogRumService = inject(DataDogRumService);
   private readonly accountContextService = inject(AccountContextService);
 
   public auth: AuthContext | undefined;
@@ -72,6 +74,9 @@ export class AppComponent {
       this.featureFlagService.initialize(this.auth.user).catch((error) => {
         console.error('Failed to initialize feature flags:', error);
       });
+
+      // Set DataDog RUM user context for session tracking
+      this.dataDogRumService.setUser(this.auth.user);
     }
   }
 }
