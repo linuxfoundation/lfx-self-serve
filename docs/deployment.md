@@ -238,6 +238,12 @@ NATS_URL=nats://lfx-platform-nats.lfx.svc.cluster.local:4222
 AI_PROXY_URL=https://litellm.tools.lfx.dev/chat/completions
 AI_API_KEY=your-ai-api-key
 
+# Runtime Client IDs (injected at container startup, not build time)
+# See docs/runtime-configuration.md for architecture details
+LD_CLIENT_ID=your-launchdarkly-client-id           # LaunchDarkly client-side ID for feature flags
+DD_RUM_CLIENT_ID=your-datadog-rum-client-token     # DataDog RUM client token (future)
+DD_RUM_APPLICATION_ID=your-datadog-rum-app-id      # DataDog RUM application ID (future)
+
 # E2E Test Configuration (Optional)
 # Test user credentials for automated testing
 TEST_USERNAME=your-test-username

@@ -181,50 +181,114 @@ export class FeatureFlagService {
 
 ### Provider Setup
 
-The OpenFeature provider is configured in `src/app/shared/providers/feature-flag.provider.ts`:
+The feature flag system uses two providers working together:
+
+1. **`runtime-config.provider.ts`**: Sets up runtime configuration via TransferState
+2. **`feature-flag.provider.ts`**: Initializes LaunchDarkly using the runtime config
+
+**Runtime Config Provider (`src/app/shared/providers/runtime-config.provider.ts`):**
 
 ```typescript
-function initializeOpenFeature(): () => Promise<void> {
-  return async () => {
-    // Skip initialization on server
-    if (typeof window === 'undefined') {
-      return;
-    }
+import { EnvironmentProviders, inject, makeStateKey, provideAppInitializer, REQUEST_CONTEXT, TransferState } from '@angular/core';
+import { RuntimeConfig } from '@lfx-one/shared';
 
-    // Skip if no client ID is configured
-    if (!environment.launchDarklyClientId) {
-      console.warn('LaunchDarkly client ID not configured - feature flags disabled');
-      return;
-    }
+export const RUNTIME_CONFIG_KEY = makeStateKey<RuntimeConfig>('runtimeConfig');
 
-    try {
-      const provider = new LaunchDarklyClientProvider(environment.launchDarklyClientId, {
-        initializationTimeout: 5,
-        streaming: true,
-        logger: basicLogger({ level: environment.production ? 'none' : 'info' }),
-      });
+export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
+  launchDarklyClientId: '',
+  dataDogRumClientId: '',
+  dataDogRumApplicationId: '',
+};
 
-      await OpenFeature.setProviderAndWait(provider);
-    } catch (error) {
-      console.error('Failed to initialize OpenFeature with LaunchDarkly:', error);
-      // App continues without feature flags
-    }
-  };
+async function initializeRuntimeConfig(): Promise<void> {
+  const transferState = inject(TransferState);
+  const reqContext = inject(REQUEST_CONTEXT, { optional: true }) as {
+    runtimeConfig: RuntimeConfig;
+  } | null;
+
+  // Server-side: Store config to TransferState for browser hydration
+  if (reqContext?.runtimeConfig) {
+    transferState.set(RUNTIME_CONFIG_KEY, reqContext.runtimeConfig);
+  }
 }
 
-/**
- * Provider for OpenFeature initialization using Angular 19's provideAppInitializer
- */
-export const provideFeatureFlags = (): EnvironmentProviders => provideAppInitializer(initializeOpenFeature());
+export const provideRuntimeConfig = (): EnvironmentProviders => provideAppInitializer(initializeRuntimeConfig);
+
+export function getRuntimeConfig(transferState: TransferState): RuntimeConfig {
+  return transferState.get(RUNTIME_CONFIG_KEY, DEFAULT_RUNTIME_CONFIG);
+}
+```
+
+**Feature Flag Provider (`src/app/shared/providers/feature-flag.provider.ts`):**
+
+```typescript
+import { EnvironmentProviders, inject, provideAppInitializer, TransferState } from '@angular/core';
+import { environment } from '@environments/environment';
+import { LaunchDarklyClientProvider } from '@openfeature/launchdarkly-client-provider';
+import { OpenFeature } from '@openfeature/web-sdk';
+import { basicLogger } from 'launchdarkly-js-client-sdk';
+
+import { getRuntimeConfig } from './runtime-config.provider';
+
+async function initializeOpenFeature(): Promise<void> {
+  // Skip on server - LaunchDarkly is browser-only
+  if (typeof window === 'undefined') {
+    return;
+  }
+
+  const transferState = inject(TransferState);
+  const runtimeConfig = getRuntimeConfig(transferState);
+  const clientId = runtimeConfig.launchDarklyClientId;
+
+  // Skip if no client ID is configured
+  if (!clientId) {
+    console.warn('LaunchDarkly client ID not configured - feature flags disabled');
+    return;
+  }
+
+  try {
+    const provider = new LaunchDarklyClientProvider(clientId, {
+      initializationTimeout: 5,
+      streaming: true,
+      logger: basicLogger({ level: environment.production ? 'none' : 'info' }),
+    });
+
+    await OpenFeature.setProviderAndWait(provider);
+  } catch (error) {
+    console.error('Failed to initialize OpenFeature with LaunchDarkly:', error);
+    // App continues without feature flags
+  }
+}
+
+export const provideFeatureFlags = (): EnvironmentProviders => provideAppInitializer(initializeOpenFeature);
+```
+
+**App Config (`src/app/app.config.ts`):**
+
+```typescript
+import { provideRuntimeConfig } from './shared/providers/runtime-config.provider';
+import { provideFeatureFlags } from './shared/providers/feature-flag.provider';
+
+export const appConfig: ApplicationConfig = {
+  providers: [
+    // ...other providers
+    provideRuntimeConfig(), // Must be before providers that depend on runtime config
+    provideFeatureFlags(),
+    // ...other providers
+  ],
+};
 ```
 
 **Provider Configuration:**
 
 - **provideAppInitializer**: Angular 19's modern API for app initialization, runs during application bootstrap before components render
-- **SSR Guard**: `typeof window === 'undefined'` check prevents server-side execution
+- **Runtime Config via TransferState**: Client IDs are passed from server to browser via Angular's TransferState mechanism
+- **SSR Guard**: `typeof window === 'undefined'` check prevents server-side execution of LaunchDarkly
 - **Graceful Degradation**: Missing configuration or errors allow app to continue with default flag values
 - **Streaming Mode**: Real-time flag updates from LaunchDarkly
 - **Environment-Aware Logging**: Info level in development, none in production
+
+For more details on the runtime configuration architecture, see [Runtime Configuration](../../runtime-configuration.md).
 
 ### Event Handling
 
@@ -563,28 +627,54 @@ The LaunchDarkly provider uses Server-Sent Events (SSE) for real-time updates:
 
 ## ⚙️ Configuration
 
-### Environment Setup
+### Runtime Environment Variables
 
-Feature flags require configuration in environment files:
+Feature flags use **runtime configuration injection** instead of build-time environment files. This allows a single Docker image to be deployed to any environment with different client IDs.
 
-**`src/environments/environment.ts` (development):**
+**Required Environment Variables:**
 
-```typescript
-export const environment = {
-  production: false,
-  launchDarklyClientId: 'your-dev-client-id-here',
-  // ... other environment variables
-};
+| Variable                | Description                         | Example                    |
+| ----------------------- | ----------------------------------- | -------------------------- |
+| `LD_CLIENT_ID`          | LaunchDarkly client-side ID         | `691b727361cbf309e9d74468` |
+| `DD_RUM_CLIENT_ID`      | DataDog RUM client token (future)   | `pub123456789`             |
+| `DD_RUM_APPLICATION_ID` | DataDog RUM application ID (future) | `app-uuid-here`            |
+
+**Local Development:**
+
+Add to your `.env` file (already gitignored):
+
+```bash
+# Runtime Client IDs for local development
+LD_CLIENT_ID=your-launchdarkly-dev-client-id
+DD_RUM_CLIENT_ID=your-datadog-rum-client-token
+DD_RUM_APPLICATION_ID=your-datadog-rum-app-id
 ```
 
-**`src/environments/environment.prod.ts` (production):**
+The server reads these via `dotenv` in development mode.
 
-```typescript
-export const environment = {
-  production: true,
-  launchDarklyClientId: 'your-prod-client-id-here',
-  // ... other environment variables
-};
+**Docker Deployment:**
+
+Pass environment variables at container runtime:
+
+```bash
+docker run \
+  -e LD_CLIENT_ID=prod-client-id \
+  -e DD_RUM_CLIENT_ID=prod-rum-token \
+  -e DD_RUM_APPLICATION_ID=prod-rum-app-id \
+  ghcr.io/linuxfoundation/lfx-v2-ui:latest
+```
+
+**Kubernetes Deployment:**
+
+Configure in your Kubernetes manifests or Helm values:
+
+```yaml
+env:
+  - name: LD_CLIENT_ID
+    valueFrom:
+      secretKeyRef:
+        name: lfx-one-secrets
+        key: launchdarkly-client-id
 ```
 
 **Getting Your Client ID:**
@@ -593,25 +683,28 @@ export const environment = {
 2. Navigate to Account Settings → Projects
 3. Select your project and environment (Development, Staging, Production)
 4. Copy the "Client-side ID" (not the SDK key)
-5. Add to appropriate environment file
+5. Set as `LD_CLIENT_ID` environment variable
 
 **Important:**
 
-- Use **different client IDs** for each environment
-- Client-side IDs are safe to commit to version control (they're public)
+- Use **different client IDs** for each environment via environment variables
+- Client-side IDs are safe to use in runtime configuration (they're public)
 - Server-side SDK keys should **never** be in client code
+- See [Runtime Configuration](../../runtime-configuration.md) for complete architecture details
 
 ### LaunchDarkly Provider Options
 
 The provider is configured in `feature-flag.provider.ts`:
 
 ```typescript
-const provider = new LaunchDarklyClientProvider(environment.launchDarklyClientId, {
+const provider = new LaunchDarklyClientProvider(clientId, {
   initializationTimeout: 5, // seconds
   streaming: true,
   logger: basicLogger({ level: environment.production ? 'none' : 'info' }),
 });
 ```
+
+Note: `clientId` comes from runtime configuration via TransferState, not from environment files.
 
 **Configuration Options:**
 
@@ -1296,21 +1389,30 @@ export class DashboardComponent {
 
 1. **Missing Environment Variable:**
 
-   ```typescript
-   // Check environment.ts
-   launchDarklyClientId: 'your-client-id-here';
+   ```bash
+   # Check if LD_CLIENT_ID is set
+   echo $LD_CLIENT_ID
    ```
 
-2. **Wrong Environment File:**
-   - Development uses `environment.ts`
-   - Production uses `environment.prod.ts`
-   - Verify correct file has the client ID
+2. **Local Development - Missing .env File:**
+   - Create `.env` file in project root
+   - Add `LD_CLIENT_ID=your-client-id`
+
+3. **Docker - Missing Runtime Variable:**
+   - Pass `-e LD_CLIENT_ID=xxx` when running container
+
+4. **TransferState Not Hydrating:**
+   - Check that `provideRuntimeConfig()` is before `provideFeatureFlags()` in `app.config.ts`
+   - Verify server is passing config via `REQUEST_CONTEXT`
 
 **Solution:**
 
-1. Add client ID to appropriate environment file
-2. Restart development server (`yarn dev`)
-3. Rebuild for production (`yarn build`)
+1. **Local development:** Add `LD_CLIENT_ID` to `.env` file
+2. **Docker:** Pass with `-e LD_CLIENT_ID=xxx`
+3. **Kubernetes:** Configure in deployment manifest
+4. Restart development server (`yarn dev`)
+
+See [Runtime Configuration Troubleshooting](../../runtime-configuration.md#troubleshooting) for more details.
 
 ### SSR vs Client-Side Initialization Timing
 
@@ -1440,11 +1542,12 @@ console.log('Flag value:', value);
 
 ## 🔗 Related Documentation
 
+- **[Runtime Configuration](../../runtime-configuration.md)** - How client IDs are injected at runtime
 - **[State Management](./state-management.md)** - Angular signals and reactive patterns
 - **[Angular Patterns](./angular-patterns.md)** - Zoneless change detection and modern Angular
 - **[Component Architecture](./component-architecture.md)** - Component design and organization
 - **[Authentication](../backend/authentication.md)** - User context and Auth0 integration
-- **[Environment Configuration](../../../CLAUDE.md#environment-configuration)** - Environment variables and setup
+- **[Deployment Guide](../../deployment.md)** - Environment variables and deployment
 
 ### External Resources
 
@@ -1455,5 +1558,5 @@ console.log('Flag value:', value);
 
 ---
 
-**Last Updated:** 2025-11-17
-**Version:** 1.0.0
+**Last Updated:** 2026-01-08
+**Version:** 2.0.0

@@ -62,10 +62,7 @@
               "safe-buffer",
               "lodash.isempty"
             ],
-            "externalDependencies": ["snowflake-sdk"],
-            "define": {
-              "LAUNCHDARKLY_CLIENT_ID": "''"
-            }
+            "externalDependencies": ["snowflake-sdk"]
           },
           "configurations": {
             "production": {
@@ -87,10 +84,7 @@
                   "replace": "src/environments/environment.ts",
                   "with": "src/environments/environment.prod.ts"
                 }
-              ],
-              "define": {
-                "LAUNCHDARKLY_CLIENT_ID": "''"
-              }
+              ]
             },
             "staging": {
               "budgets": [
@@ -111,10 +105,7 @@
                   "replace": "src/environments/environment.ts",
                   "with": "src/environments/environment.staging.ts"
                 }
-              ],
-              "define": {
-                "LAUNCHDARKLY_CLIENT_ID": "''"
-              }
+              ]
             },
             "development": {
               "optimization": false,
@@ -125,18 +116,12 @@
                   "replace": "src/environments/environment.ts",
                   "with": "src/environments/environment.dev.ts"
                 }
-              ],
-              "define": {
-                "LAUNCHDARKLY_CLIENT_ID": "''"
-              }
+              ]
             },
             "local": {
               "optimization": false,
               "extractLicenses": false,
-              "sourceMap": true,
-              "define": {
-                "LAUNCHDARKLY_CLIENT_ID": "''"
-              }
+              "sourceMap": true
             }
           },
           "defaultConfiguration": "production"

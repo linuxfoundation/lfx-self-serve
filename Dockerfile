@@ -24,13 +24,13 @@ RUN yarn install --immutable
 # NOW copy source code (changes here won't invalidate the dependency layer)
 COPY . .
 
-# Build shared package first (doesn't need --define flag)
+# Build shared package first
 RUN yarn workspace @lfx-one/shared build:${BUILD_ENV}
 
-# Build the Angular application with LaunchDarkly client ID from secret
-RUN --mount=type=secret,id=LAUNCHDARKLY_CLIENT_ID \
-    LAUNCHDARKLY_CLIENT_ID=$(cat /run/secrets/LAUNCHDARKLY_CLIENT_ID) && \
-    yarn workspace lfx-one-ui build:${BUILD_ENV} --define LAUNCHDARKLY_CLIENT_ID="'${LAUNCHDARKLY_CLIENT_ID}'"
+# Build the Angular application
+# Note: Client IDs (LaunchDarkly, DataDog RUM) are now injected at runtime
+# via environment variables (LD_CLIENT_ID, DD_RUM_CLIENT_ID, DD_RUM_APPLICATION_ID)
+RUN yarn workspace lfx-one-ui build:${BUILD_ENV}
 
 # Expose port 4000
 EXPOSE 4000

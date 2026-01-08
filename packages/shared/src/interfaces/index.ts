@@ -67,3 +67,6 @@ export * from './account.interface';
 
 // Mailing list interfaces
 export * from './mailing-list.interface';
+
+// Runtime config interfaces
+export * from './runtime-config.interface';

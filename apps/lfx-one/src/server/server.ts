@@ -4,7 +4,7 @@
 import { APP_BASE_HREF } from '@angular/common';
 import { REQUEST } from '@angular/core';
 import { AngularNodeAppEngine, createNodeRequestHandler, isMainModule, writeResponseToNodeResponse } from '@angular/ssr/node';
-import { AuthContext, User } from '@lfx-one/shared/interfaces';
+import { AuthContext, RuntimeConfig, User } from '@lfx-one/shared/interfaces';
 import dotenv from 'dotenv';
 import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
@@ -234,9 +234,17 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     auth.organizations = matchOrganizationNamesToAccounts(personaResult.organizationNames);
   }
 
+  // Build runtime config from environment variables
+  const runtimeConfig: RuntimeConfig = {
+    launchDarklyClientId: process.env['LD_CLIENT_ID'] || '',
+    dataDogRumClientId: process.env['DD_RUM_CLIENT_ID'] || '',
+    dataDogRumApplicationId: process.env['DD_RUM_APPLICATION_ID'] || '',
+  };
+
   angularApp
     .handle(req, {
       auth,
+      runtimeConfig,
       providers: [
         { provide: APP_BASE_HREF, useValue: process.env['PCC_BASE_URL'] },
         { provide: REQUEST, useValue: req },
