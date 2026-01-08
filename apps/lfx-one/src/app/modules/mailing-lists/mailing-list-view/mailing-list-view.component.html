@@ -113,6 +113,7 @@
                 severity="secondary"
                 [outlined]="true"
                 [routerLink]="editRoute()"
+                [queryParams]="{ step: '3' }"
                 data-testid="mailing-list-view-manage-groups-button">
               </lfx-button>
             </div>
@@ -155,16 +156,6 @@
                 data-testid="mailing-list-view-posting-type">
                 <i class="fa-light fa-envelope w-4 text-blue-600"></i>
                 <span>{{ postingTypeLabel() }}</span>
-              </div>
-
-              <!-- Attachments -->
-              <div
-                class="flex items-center gap-2 text-sm text-gray-600 cursor-help"
-                pTooltip="Attachments: Controls how files are handled."
-                tooltipPosition="left"
-                data-testid="mailing-list-view-attachments">
-                <i class="fa-light fa-paperclip w-4 text-indigo-600"></i>
-                <span>Attachments allowed</span>
               </div>
 
               <!-- Visibility -->

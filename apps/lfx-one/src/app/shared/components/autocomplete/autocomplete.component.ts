@@ -34,6 +34,9 @@ export class AutocompleteComponent {
   public completeOnFocus = input<boolean>(false);
   public autoHighlight = input<boolean>(false);
   public appendTo = input<any>(undefined);
+  public dropdown = input<boolean>(false);
+  public dropdownMode = input<'blank' | 'current'>('blank');
+  public dataKey = input<string>();
 
   public readonly completeMethod = output<AutoCompleteCompleteEvent>();
   public readonly onSelect = output<AutoCompleteSelectEvent>();

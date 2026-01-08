@@ -92,16 +92,28 @@
 
           <p-step-panel [value]="2" data-testid="mailing-list-manage-panel-2">
             <ng-template #content let-activateCallback="activateCallback">
-              <lfx-mailing-list-settings [form]="form()"></lfx-mailing-list-settings>
+              <lfx-mailing-list-settings [form]="form()" [isEditMode]="isEditMode()" [initialPublicValue]="initialPublicValue()"></lfx-mailing-list-settings>
             </ng-template>
           </p-step-panel>
 
           <p-step-panel [value]="3" data-testid="mailing-list-manage-panel-3">
             <ng-template #content let-activateCallback="activateCallback">
-              <!-- Step 3: People & Groups - Placeholder -->
-              <div class="text-center text-gray-500 py-8">
-                <p>Step 3: People & Groups Component</p>
-                <p class="text-sm mt-2">Coming next</p>
+              <!-- Step 3: People & Groups -->
+              <div class="flex flex-col gap-6">
+                <div>
+                  <h2 class="text-lg font-semibold text-gray-900 mb-1">People & {{ committeeLabel.plural }}</h2>
+                  <p class="text-sm text-gray-500">Add moderators and link groups to your mailing list</p>
+                </div>
+
+                <lfx-committee-selector
+                  [form]="form()"
+                  control="committees"
+                  [multiple]="true"
+                  [label]="committeeLabel.plural"
+                  [description]="committeeLabel.plural + ' will be automatically added to this mailing list.'"
+                  [placeholder]="'Search ' + committeeLabel.plural + '...'"
+                  testIdPrefix="mailing-list-committee-selector">
+                </lfx-committee-selector>
               </div>
             </ng-template>
           </p-step-panel>

@@ -8,149 +8,141 @@
     <p class="text-sm text-gray-500 mt-1">Configure how {{ memberLabel.plural | lowercase }} interact with the mailing list</p>
   </div>
 
-  <!-- Two Column Layout -->
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-8" [formGroup]="form()">
-    <!-- Left Column -->
-    <div class="flex flex-col gap-6">
-      <!-- 1. Audience & Access -->
-      <lfx-settings-card
-        icon="fa-light fa-globe"
-        iconColorClass="text-green-600"
-        iconBgClass="bg-green-50"
-        title="Audience & Access"
-        description="Controls who can discover and join this list."
-        testId="settings-audience-access">
-        <div class="flex flex-col gap-3">
-          <!-- Public -->
-          <div>
-            <label class="flex items-center gap-3 cursor-pointer">
-              <p-radioButton
-                name="audience_access"
-                formControlName="audience_access"
-                [value]="MailingListAudienceAccess.PUBLIC"
-                inputId="audience-public"></p-radioButton>
-              <span class="text-sm text-neutral-950 flex items-center gap-2">
-                Public
-                <span class="px-2 py-0.5 bg-blue-100 text-primary text-xs rounded">Recommended</span>
-              </span>
-            </label>
-            <p class="text-xs text-gray-500 ml-7 mt-1">Anyone can subscribe. Most projects start here.</p>
-          </div>
-
-          <!-- Approval Required -->
-          <div>
-            <label class="flex items-center gap-3 cursor-pointer">
-              <p-radioButton
-                name="audience_access"
-                formControlName="audience_access"
-                [value]="MailingListAudienceAccess.APPROVAL_REQUIRED"
-                inputId="audience-approval"></p-radioButton>
-              <span class="text-sm text-neutral-950">Approval Required</span>
-            </label>
-            <p class="text-xs text-gray-500 ml-7 mt-1">Users must request access and be approved.</p>
-          </div>
-
-          <!-- Invite Only -->
-          <div>
-            <label class="flex items-center gap-3 cursor-pointer">
-              <p-radioButton
-                name="audience_access"
-                formControlName="audience_access"
-                [value]="MailingListAudienceAccess.INVITE_ONLY"
-                inputId="audience-invite"></p-radioButton>
-              <span class="text-sm text-neutral-950">Invite Only</span>
-            </label>
-            <p class="text-xs text-gray-500 ml-7 mt-1">Only invited {{ memberLabel.plural | lowercase }} can join.</p>
-          </div>
-        </div>
-      </lfx-settings-card>
-
-      <!-- 2. Posting Permission -->
-      <lfx-settings-card
-        icon="fa-light fa-envelope"
-        iconColorClass="text-blue-600"
-        iconBgClass="bg-blue-50"
-        title="Posting Permission"
-        description="Choose how conversations happen on this mailing list."
-        testId="settings-posting-permission">
-        <div class="flex flex-col gap-4">
-          <!-- Announcement -->
-          <div>
-            <label class="flex items-center gap-3 cursor-pointer">
-              <p-radioButton name="type" formControlName="type" value="announcement" inputId="posting-announcement"></p-radioButton>
-              <span class="text-sm text-neutral-950">Announcement</span>
-            </label>
-            <p class="text-xs text-gray-500 ml-7 mt-1">Only moderators can post. Best for official updates.</p>
-          </div>
-
-          <!-- Moderated Discussion -->
-          <div>
-            <label class="flex items-center gap-3 cursor-pointer">
-              <p-radioButton name="type" formControlName="type" value="discussion_moderated" inputId="posting-moderated"></p-radioButton>
-              <span class="text-sm text-neutral-950">Moderated Discussion</span>
-            </label>
-            <p class="text-xs text-gray-500 ml-7 mt-1">{{ memberLabel.plural }} can post, but messages require moderation.</p>
-          </div>
-
-          <!-- Open Discussion -->
-          <div>
-            <label class="flex items-center gap-3 cursor-pointer">
-              <p-radioButton name="type" formControlName="type" value="discussion_open" inputId="posting-open"></p-radioButton>
-              <span class="text-sm text-neutral-950 flex items-center gap-2">
-                Open Discussion
-                <span class="px-2 py-0.5 bg-blue-100 text-primary text-xs rounded">Recommended</span>
-              </span>
-            </label>
-            <p class="text-xs text-gray-500 ml-7 mt-1">Anyone can post. Best for open community discussion.</p>
-          </div>
-        </div>
-      </lfx-settings-card>
-    </div>
-
-    <!-- Right Column -->
-    <div class="flex flex-col gap-6">
-      <!-- 3. Attachments -->
-      <lfx-settings-card
-        icon="fa-light fa-paperclip"
-        iconColorClass="text-indigo-500"
-        iconBgClass="bg-indigo-50"
-        title="Attachments"
-        description="Controls how files are handled."
-        testId="settings-attachments">
-        <div class="flex items-center justify-between">
-          <span class="text-sm text-neutral-950">Allow attachments</span>
-          <lfx-toggle [form]="form()" control="allow_attachments" id="allow-attachments"></lfx-toggle>
-        </div>
-        <p class="text-xs text-gray-500">Attachments are enabled with safe defaults.</p>
-      </lfx-settings-card>
-
-      <!-- 4. Visibility -->
-      <lfx-settings-card
-        icon="fa-light fa-box-archive"
-        iconColorClass="text-teal-500"
-        iconBgClass="bg-teal-50"
-        title="Visibility"
-        description="Defines who can read past discussions."
-        testId="settings-visibility">
-        <div class="flex flex-col gap-3">
-          <!-- Public -->
+  <!-- Three Column Layout -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-6 items-stretch" [formGroup]="form()">
+    <!-- 1. Audience & Access -->
+    <lfx-settings-card
+      icon="fa-light fa-globe"
+      iconColorClass="text-green-600"
+      iconBgClass="bg-green-50"
+      title="Audience & Access"
+      description="Controls who can discover and join this list."
+      testId="settings-audience-access">
+      <div class="flex flex-col gap-3">
+        <!-- Public -->
+        <div>
           <label class="flex items-center gap-3 cursor-pointer">
-            <p-radioButton name="visibility" formControlName="public" [value]="true" inputId="visibility-public"></p-radioButton>
-            <span class="text-sm text-neutral-950">Public</span>
+            <p-radioButton
+              name="audience_access"
+              formControlName="audience_access"
+              [value]="MailingListAudienceAccess.PUBLIC"
+              inputId="audience-public"></p-radioButton>
+            <span class="text-sm text-neutral-950 flex items-center gap-2">
+              Public
+              <span class="px-2 py-0.5 bg-blue-100 text-primary text-xs rounded">Recommended</span>
+            </span>
           </label>
+          <p class="text-xs text-gray-500 ml-7 mt-1">Anyone can subscribe. Most projects start here.</p>
+        </div>
 
-          <!-- Members Only -->
+        <!-- Approval Required -->
+        <div>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <p-radioButton
+              name="audience_access"
+              formControlName="audience_access"
+              [value]="MailingListAudienceAccess.APPROVAL_REQUIRED"
+              inputId="audience-approval"></p-radioButton>
+            <span class="text-sm text-neutral-950">Approval Required</span>
+          </label>
+          <p class="text-xs text-gray-500 ml-7 mt-1">Users must request access and be approved.</p>
+        </div>
+
+        <!-- Invite Only -->
+        <div>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <p-radioButton
+              name="audience_access"
+              formControlName="audience_access"
+              [value]="MailingListAudienceAccess.INVITE_ONLY"
+              inputId="audience-invite"></p-radioButton>
+            <span class="text-sm text-neutral-950">Invite Only</span>
+          </label>
+          <p class="text-xs text-gray-500 ml-7 mt-1">Only invited {{ memberLabel.plural | lowercase }} can join.</p>
+        </div>
+      </div>
+    </lfx-settings-card>
+
+    <!-- 2. Posting Permission -->
+    <lfx-settings-card
+      icon="fa-light fa-envelope"
+      iconColorClass="text-blue-600"
+      iconBgClass="bg-blue-50"
+      title="Posting Permission"
+      description="Choose how conversations happen on this mailing list."
+      testId="settings-posting-permission">
+      <div class="flex flex-col gap-4">
+        <!-- Open Discussion -->
+        <div>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <p-radioButton name="type" formControlName="type" value="discussion_open" inputId="posting-open"></p-radioButton>
+            <span class="text-sm text-neutral-950 flex items-center gap-2">
+              Open Discussion
+              <span class="px-2 py-0.5 bg-blue-100 text-primary text-xs rounded">Recommended</span>
+            </span>
+          </label>
+          <p class="text-xs text-gray-500 ml-7 mt-1">Anyone can post. Best for open community discussion.</p>
+        </div>
+
+        <!-- Moderated Discussion -->
+        <div>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <p-radioButton name="type" formControlName="type" value="discussion_moderated" inputId="posting-moderated"></p-radioButton>
+            <span class="text-sm text-neutral-950">Moderated Discussion</span>
+          </label>
+          <p class="text-xs text-gray-500 ml-7 mt-1">{{ memberLabel.plural }} can post, but messages require moderation.</p>
+        </div>
+
+        <!-- Announcement -->
+        <div>
+          <label class="flex items-center gap-3 cursor-pointer">
+            <p-radioButton name="type" formControlName="type" value="announcement" inputId="posting-announcement"></p-radioButton>
+            <span class="text-sm text-neutral-950">Announcement</span>
+          </label>
+          <p class="text-xs text-gray-500 ml-7 mt-1">Only moderators can post. Best for official updates.</p>
+        </div>
+      </div>
+    </lfx-settings-card>
+
+    <!-- 3. Visibility -->
+    <lfx-settings-card
+      icon="fa-light fa-box-archive"
+      iconColorClass="text-teal-500"
+      iconBgClass="bg-teal-50"
+      title="Visibility"
+      description="Defines who can read past discussions."
+      testId="settings-visibility">
+      <div class="flex flex-col gap-3">
+        <!-- Public -->
+        <label class="flex items-center gap-3" [class.cursor-pointer]="!isPublicDisabled()" [class.opacity-50]="isPublicDisabled()">
+          <p-radioButton name="visibility" formControlName="public" [value]="true" inputId="visibility-public" [disabled]="isPublicDisabled()"></p-radioButton>
+          <span class="text-sm text-neutral-950">Public</span>
+        </label>
+
+        <!-- Members Only -->
+        <div>
           <label class="flex items-center gap-3 cursor-pointer">
             <p-radioButton name="visibility" formControlName="public" [value]="false" inputId="visibility-members"></p-radioButton>
             <span class="text-sm text-neutral-950">{{ memberLabel.plural }} only</span>
           </label>
 
-          <!-- Error message for announcement type -->
-          @if (form().value.type === 'announcement' && form().value.public === false) {
-            <p class="text-xs text-red-600 mt-2">Announcement mailing lists must have public visibility.</p>
+          <!-- Warning message when Members only is selected -->
+          @if (form().value.public === false) {
+            <div class="ml-7 mt-2 flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-md p-3">
+              <i class="fa-light fa-triangle-exclamation text-amber-700 flex-shrink-0 mt-0.5"></i>
+              <p class="text-xs text-amber-800">
+                <strong>Note:</strong> Once selected, "{{ memberLabel.plural }} only" visibility cannot be changed to public later. This is a permanent privacy
+                setting from Groups.io.
+              </p>
+            </div>
           }
         </div>
-      </lfx-settings-card>
-    </div>
+
+        <!-- Error message for announcement type -->
+        @if (form().value.type === 'announcement' && form().value.public === false) {
+          <p class="text-xs text-red-600 mt-2">Announcement mailing lists must have public visibility.</p>
+        }
+      </div>
+    </lfx-settings-card>
   </div>
 </div>

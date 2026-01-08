@@ -566,3 +566,16 @@ export interface DashboardMeetingCardProps {
   /** Project name (optional) */
   project?: string;
 }
+
+/**
+ * Committee selector option
+ * @description Configuration for committee selector component options
+ */
+export interface CommitteeSelectorOption {
+  /** Unique identifier for the committee */
+  id: string;
+  /** Display name for the committee */
+  name: string;
+  /** Optional member count to display */
+  memberCount?: number;
+}

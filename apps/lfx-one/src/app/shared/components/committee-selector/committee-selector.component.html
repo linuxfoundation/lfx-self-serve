@@ -1,0 +1,91 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3" [attr.data-testid]="testIdPrefix()">
+  <!-- Label and Description -->
+  @if (label()) {
+    <div>
+      <label class="text-sm font-medium text-gray-700 block">{{ label() }}</label>
+      @if (description()) {
+        <p class="text-xs text-gray-500 mt-1">{{ description() }}</p>
+      }
+    </div>
+  }
+
+  @if (committeesLoading()) {
+    <!-- Loading State -->
+    <div class="flex items-center gap-2 p-3 bg-gray-50 rounded-lg">
+      <i class="fa-light fa-circle-notch fa-spin text-blue-600"></i>
+      <span class="text-sm text-gray-500">Loading committees...</span>
+    </div>
+  } @else {
+    <!-- Search Autocomplete -->
+    <lfx-autocomplete
+      [form]="searchForm"
+      control="search"
+      [suggestions]="filteredSuggestions()"
+      [placeholder]="placeholder()"
+      optionLabel="name"
+      dataKey="id"
+      styleClass="w-full"
+      inputStyleClass="w-full text-sm"
+      panelStyleClass="committee-selector-panel"
+      appendTo="body"
+      [completeOnFocus]="true"
+      (completeMethod)="onSearch($event)"
+      (onSelect)="onSelect($event)"
+      (onClear)="onClear()">
+      <!-- Custom item template -->
+      <ng-template #item let-option>
+        <div class="flex items-center gap-3 py-1">
+          <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+            <i class="fa-light fa-users text-sm text-blue-600"></i>
+          </div>
+          <div>
+            <p class="text-sm font-medium text-gray-900">{{ option.name }}</p>
+            @if (option.memberCount !== undefined) {
+              <p class="text-xs text-gray-500">{{ option.memberCount }} members</p>
+            }
+          </div>
+        </div>
+      </ng-template>
+
+      <!-- Empty template -->
+      <ng-template #empty>
+        <div class="p-3 text-center text-sm text-gray-500">No committees found</div>
+      </ng-template>
+    </lfx-autocomplete>
+
+    <!-- Selected Items List -->
+    @if (displayedSelectedItems().length > 0) {
+      <div class="flex flex-col gap-2 border border-gray-200 rounded-lg p-2" [attr.data-testid]="testIdPrefix() + '-selected-list'">
+        @for (item of displayedSelectedItems(); track item.id) {
+          <div
+            class="flex items-center justify-between p-2 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors"
+            [attr.data-testid]="testIdPrefix() + '-selected-' + item.id">
+            <div class="flex items-center gap-2 flex-1 min-w-0">
+              <div class="w-6 h-6 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                <i class="fa-light fa-users text-xs text-blue-600"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <p class="text-xs font-medium text-gray-900 truncate">{{ item.name }}</p>
+                @if (item.memberCount !== undefined) {
+                  <p class="text-[10px] text-gray-500">{{ item.memberCount }} members</p>
+                }
+              </div>
+            </div>
+            <p-button
+              [text]="true"
+              [rounded]="true"
+              severity="secondary"
+              icon="fa-light fa-xmark"
+              size="small"
+              styleClass="flex-shrink-0 !h-6 !w-6 !p-0"
+              (onClick)="removeOption(item)"
+              [attr.data-testid]="testIdPrefix() + '-remove-' + item.id"></p-button>
+          </div>
+        }
+      </div>
+    }
+  }
+</div>

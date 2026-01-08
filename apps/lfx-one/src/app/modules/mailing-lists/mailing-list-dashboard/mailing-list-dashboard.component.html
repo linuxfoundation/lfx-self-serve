@@ -40,12 +40,12 @@
   } @else {
     <div class="mb-8">
       <div class="mb-8">
-        <!-- Page Title with Create Mailing List Button -->
+        <!-- Page Title with Add Mailing List Button -->
         <div class="flex justify-between items-center w-full gap-4">
           <h1>{{ mailingListLabelPlural }}</h1>
           @if (canCreateMailingList()) {
             <lfx-button
-              [label]="'Create ' + mailingListLabel"
+              [label]="'Add ' + mailingListLabel"
               icon="fa-light fa-envelope mr-1"
               severity="info"
               size="small"

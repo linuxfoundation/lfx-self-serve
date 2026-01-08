@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { MAILING_LIST_TOTAL_STEPS } from '@lfx-one/shared/constants';
+import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
+import { COMMITTEE_LABEL, MAILING_LIST_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess, MailingListType } from '@lfx-one/shared/enums';
 import { CreateGroupsIOServiceRequest, CreateMailingListRequest, GroupsIOMailingList, GroupsIOService, MailingListCommittee } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
@@ -23,7 +24,15 @@ import { MailingListSettingsComponent } from '../components/mailing-list-setting
 
 @Component({
   selector: 'lfx-mailing-list-manage',
-  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, StepperModule, MailingListBasicInfoComponent, MailingListSettingsComponent],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    ButtonComponent,
+    StepperModule,
+    MailingListBasicInfoComponent,
+    MailingListSettingsComponent,
+    CommitteeSelectorComponent,
+  ],
   templateUrl: './mailing-list-manage.component.html',
   styleUrl: './mailing-list-manage.component.scss',
 })
@@ -36,11 +45,15 @@ export class MailingListManageComponent {
   private readonly projectService = inject(ProjectService);
 
   public readonly totalSteps = MAILING_LIST_TOTAL_STEPS;
+  public readonly committeeLabel = COMMITTEE_LABEL;
   public readonly mode = signal<'create' | 'edit'>('create');
   public readonly mailingListId = signal<string | null>(null);
   public readonly isEditMode = computed(() => this.mode() === 'edit');
-  public readonly currentStep = signal<number>(1);
   public readonly submitting = signal<boolean>(false);
+
+  // Stepper state - internal step tracking for create mode
+  private readonly internalStep = signal<number>(1);
+  public currentStep!: Signal<number>;
   public readonly form = signal<FormGroup>(this.createFormGroup());
   public readonly mailingList = this.initializeMailingList();
   public readonly project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
@@ -84,23 +97,63 @@ export class MailingListManageComponent {
   });
   public readonly isFirstStep = computed(() => this.currentStep() === 1);
   public readonly isLastStep = computed(() => this.currentStep() === this.totalSteps);
+  // Track initial public value for edit mode - Groups.io doesn't allow changing from private to public
+  public readonly initialPublicValue = computed(() => this.mailingList()?.public ?? null);
+
+  public constructor() {
+    // Initialize step based on mode - use query params in edit mode, internal signal in create mode
+    this.currentStep = toSignal(
+      this.route.queryParamMap.pipe(
+        switchMap((params) => {
+          // In edit mode, use query parameters
+          if (this.isEditMode()) {
+            const stepParam = params.get('step');
+            if (stepParam) {
+              const step = parseInt(stepParam, 10);
+              if (step >= 1 && step <= this.totalSteps) {
+                return of(step);
+              }
+            }
+            return of(1);
+          }
+          // In create mode, use internal step signal
+          return toObservable(this.internalStep);
+        })
+      ),
+      { initialValue: 1 }
+    );
+  }
 
   public nextStep(): void {
-    if (this.canGoNext()) {
-      this.currentStep.update((step) => step + 1);
+    const next = this.currentStep() + 1;
+    if (next <= this.totalSteps && this.canNavigateToStep(next)) {
+      if (this.isEditMode()) {
+        this.router.navigate([], { queryParams: { step: next } });
+      } else {
+        this.internalStep.set(next);
+      }
     }
   }
 
   public previousStep(): void {
-    if (this.canGoPrevious()) {
-      this.currentStep.update((step) => step - 1);
+    const previous = this.currentStep() - 1;
+    if (previous >= 1) {
+      if (this.isEditMode()) {
+        this.router.navigate([], { queryParams: { step: previous } });
+      } else {
+        this.internalStep.set(previous);
+      }
     }
   }
 
   public goToStep(step: number | undefined): void {
     if (step !== undefined && step >= 1 && step <= this.totalSteps) {
-      if (this.isEditMode() || step <= this.currentStep()) {
-        this.currentStep.set(step);
+      if (this.isEditMode()) {
+        // In edit mode, allow navigation to any step via query params
+        this.router.navigate([], { queryParams: { step } });
+      } else if (step <= this.currentStep()) {
+        // In create mode, only allow going back to previous steps
+        this.internalStep.set(step);
       }
     }
   }
@@ -167,7 +220,6 @@ export class MailingListManageComponent {
         // Step 2: Settings
         audience_access: new FormControl<MailingListAudienceAccess>(MailingListAudienceAccess.PUBLIC, [Validators.required]),
         type: new FormControl<MailingListType>(MailingListType.DISCUSSION_OPEN, [Validators.required]),
-        allow_attachments: new FormControl<boolean>(true),
         public: new FormControl<boolean>(true, [Validators.required]),
 
         // Step 3: People & Groups
