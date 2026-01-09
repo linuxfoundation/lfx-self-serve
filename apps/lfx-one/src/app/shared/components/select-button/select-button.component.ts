@@ -22,6 +22,7 @@ export class SelectButtonComponent {
   public readonly size = input<'small' | 'large'>('small');
   public readonly unselectable = input<boolean>(false);
   public readonly required = input<boolean>(false);
+  public readonly class = input<string>('');
   public readonly styleClass = input<string>('');
 
   // Events

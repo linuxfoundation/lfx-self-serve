@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 import {
   GroupsIOServiceStatus,
   GroupsIOServiceType,
@@ -11,6 +10,7 @@ import {
   MailingListMemberType,
   MailingListType,
 } from '../enums/mailing-list.enum';
+import { CommitteeReference } from './committee.interface';
 
 /**
  * Linked group reference for mailing lists
@@ -26,17 +26,10 @@ export interface LinkedGroup {
 }
 
 /**
- * Committee reference for mailing lists
- * @description Represents a committee linked to a mailing list with allowed voting statuses
+ * @deprecated Use CommitteeReference instead
+ * Type alias for backward compatibility
  */
-export interface MailingListCommittee {
-  /** Committee UID */
-  uid: string;
-  /** Committee display name */
-  name?: string;
-  /** Allowed voting statuses: Voting Rep, Alternate Voting Rep, Observer, Emeritus, None */
-  allowed_voting_statuses?: CommitteeMemberVotingStatus[];
-}
+export type MailingListCommittee = CommitteeReference;
 
 /**
  * Groups.io service entity
@@ -119,7 +112,7 @@ export interface GroupsIOMailingList {
   /** Last update timestamp */
   updated_at: string;
   /** Linked committees with names and allowed voting statuses */
-  committees?: MailingListCommittee[];
+  committees?: CommitteeReference[];
   /** Parent service details (enriched from service lookup) */
   service?: GroupsIOService;
 }
@@ -144,7 +137,7 @@ export interface CreateMailingListRequest {
   /** Parent service UID (required) */
   service_uid: string;
   /** Linked committees with allowed voting statuses */
-  committees?: MailingListCommittee[];
+  committees?: CommitteeReference[];
   /** Email subject prefix (optional) */
   subject_tag?: string;
 }

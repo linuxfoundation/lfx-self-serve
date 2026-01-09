@@ -1,0 +1,22 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="my-activity-dashboard">
+  <!-- Page Header -->
+  <div class="mb-8">
+    <h1>{{ activityLabel.singular }}</h1>
+    <p class="mt-2 text-gray-500" data-testid="my-activity-description">{{ activityLabel.description }}</p>
+  </div>
+
+  <!-- Top Bar with Tab Selector -->
+  <lfx-activity-top-bar [tabForm]="tabForm" [tabOptions]="mutableTabOptions" (tabChange)="onTabChange($event)"></lfx-activity-top-bar>
+
+  <!-- Content Area - Conditional Tables -->
+  <div class="min-h-[400px]">
+    @if (isVotesTab()) {
+      <lfx-votes-table [votes]="votes()"></lfx-votes-table>
+    } @else if (isSurveysTab()) {
+      <lfx-surveys-table [surveys]="surveys()"></lfx-surveys-table>
+    }
+  </div>
+</div>

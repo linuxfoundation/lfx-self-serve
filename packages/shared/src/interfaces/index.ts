@@ -70,3 +70,12 @@ export * from './mailing-list.interface';
 
 // Runtime config interfaces
 export * from './runtime-config.interface';
+
+// Poll interfaces
+export * from './poll.interface';
+
+// Survey interfaces
+export * from './survey.interface';
+
+// My Activity interfaces
+export * from './my-activity.interface';

@@ -1,0 +1,119 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card>
+  <div class="pb-2 mb-2">
+    <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+      <div class="flex-1 min-w-0">
+        <lfx-input-text
+          [form]="searchForm"
+          control="search"
+          placeholder="Search votes..."
+          icon="fa-light fa-search"
+          styleClass="w-full"
+          size="small"
+          data-testid="my-activity-votes-search-input"></lfx-input-text>
+      </div>
+
+      <div class="w-full sm:w-auto sm:shrink-0">
+        <lfx-select
+          [form]="searchForm"
+          control="status"
+          size="small"
+          [options]="statusOptions()"
+          placeholder="Status"
+          [showClear]="true"
+          (valueChange)="onStatusChange($event)"
+          data-testid="my-activity-votes-status-filter"></lfx-select>
+      </div>
+
+      <div class="w-full sm:w-auto sm:shrink-0">
+        <lfx-select
+          [form]="searchForm"
+          control="committee"
+          size="small"
+          [options]="committeeOptions()"
+          placeholder="Committee"
+          [showClear]="true"
+          (valueChange)="onCommitteeChange($event)"
+          data-testid="my-activity-votes-committee-filter"></lfx-select>
+      </div>
+    </div>
+  </div>
+
+  <lfx-table
+    [value]="filteredVotes()"
+    [paginator]="filteredVotes().length > 10"
+    [rows]="10"
+    [rowsPerPageOptions]="[10, 25, 50]"
+    [customSort]="true"
+    data-testid="my-activity-votes-table">
+    <ng-template #header>
+      <tr>
+        <th>Vote</th>
+        <th>Group</th>
+        <th>Status</th>
+        <th>Due</th>
+        <th></th>
+      </tr>
+    </ng-template>
+
+    <ng-template #body let-vote>
+      <tr [attr.data-testid]="'my-activity-vote-row-' + vote.poll_id">
+        <td>
+          <a href="#" class="text-blue-600 hover:text-blue-700 hover:underline font-medium" [attr.data-testid]="'my-activity-vote-name-' + vote.poll_id">
+            {{ vote.poll_name }}
+          </a>
+        </td>
+
+        <td>
+          <div class="flex flex-wrap gap-1">
+            @for (committee of vote.committees; track committee.uid) {
+              <span class="bg-blue-100 text-blue-500 text-xs px-2 py-1 rounded">
+                {{ committee.name || committee.uid }}
+              </span>
+            }
+          </div>
+        </td>
+
+        <td>
+          <lfx-tag [value]="vote | combinedVoteStatusLabel" [severity]="vote | combinedVoteStatusSeverity"></lfx-tag>
+        </td>
+
+        <td>
+          @if (vote | canVote) {
+            <span
+              [class.text-green-500]="vote.end_time | isDueWithinMonth"
+              [pTooltip]="(vote.end_time | isDueWithinMonth) ? (vote.end_time | date: 'MMMM d, y') || '' : ''"
+              tooltipPosition="top">
+              {{ vote.end_time | relativeDueDate }}
+            </span>
+          } @else {
+            <span>{{ vote.end_time | date: 'MMM d, y' }}</span>
+          }
+        </td>
+
+        <td>
+          <div class="flex items-center justify-end">
+            <lfx-button
+              [label]="vote | voteActionText"
+              [severity]="(vote | canVote) ? 'primary' : 'secondary'"
+              size="small"
+              [outlined]="true"
+              [attr.data-testid]="'my-activity-vote-action-' + vote.poll_id">
+            </lfx-button>
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template #emptymessage>
+      <tr>
+        <td colspan="5" class="text-center py-8">
+          <i class="fa-light fa-check-to-slot text-3xl text-gray-400 mb-2"></i>
+          <p class="text-sm text-gray-500">No votes found</p>
+        </td>
+      </tr>
+    </ng-template>
+  </lfx-table>
+</lfx-card>

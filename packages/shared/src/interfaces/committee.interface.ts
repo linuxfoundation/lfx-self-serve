@@ -2,6 +2,20 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
+import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+
+/**
+ * Lightweight committee reference for cross-module use
+ * @description Minimal committee data with voting status eligibility
+ */
+export interface CommitteeReference {
+  /** Committee UID */
+  uid: string;
+  /** Committee display name */
+  name?: string;
+  /** Allowed voting statuses: Voting Rep, Alternate Voting Rep, Observer, Emeritus, None */
+  allowed_voting_statuses?: CommitteeMemberVotingStatus[];
+}
 
 /**
  * Committee entity with complete details

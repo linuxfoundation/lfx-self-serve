@@ -6,7 +6,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { SidebarComponent } from '@components/sidebar/sidebar.component';
 import { environment } from '@environments/environment';
-import { COMMITTEE_LABEL, MAILING_LIST_LABEL } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, MAILING_LIST_LABEL, MY_ACTIVITY_LABEL } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AppService } from '@services/app.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -57,23 +57,35 @@ export class MainLayoutComponent {
       routerLink: '/mailing-lists',
     },
     {
+      label: MY_ACTIVITY_LABEL.singular,
+      icon: 'fa-light fa-clipboard-list',
+      routerLink: '/my-activity',
+    },
+    {
       label: 'Projects',
       icon: 'fa-light fa-folder-open',
       routerLink: '/projects',
     },
   ];
 
-  // Computed sidebar items based on feature flags
+  // Computed sidebar items based on feature flags and persona
   protected readonly sidebarItems = computed(() => {
     let items = [...this.baseSidebarItems];
+    const isBoardMember = this.personaService.currentPersona() === 'board-member';
 
     // Filter out Projects if feature flag is disabled
     if (!this.showProjectsInSidebar()) {
       items = items.filter((item) => item.label !== 'Projects');
     }
 
-    if (this.personaService.currentPersona() === 'board-member') {
+    // Hide Committees for board-member persona
+    if (isBoardMember) {
       items = items.filter((item) => item.label !== COMMITTEE_LABEL.plural);
+    }
+
+    // My Activity is only visible for board-member persona
+    if (!isBoardMember) {
+      items = items.filter((item) => item.label !== MY_ACTIVITY_LABEL.singular);
     }
 
     return items;

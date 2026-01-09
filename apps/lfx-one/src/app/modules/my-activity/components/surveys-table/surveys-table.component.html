@@ -1,0 +1,128 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card>
+  <div class="pb-2 mb-2">
+    <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+      <div class="flex-1 min-w-0">
+        <lfx-input-text
+          [form]="searchForm"
+          control="search"
+          placeholder="Search surveys..."
+          icon="fa-light fa-search"
+          styleClass="w-full"
+          size="small"
+          data-testid="my-activity-surveys-search-input"></lfx-input-text>
+      </div>
+
+      <div class="w-full sm:w-auto sm:shrink-0">
+        <lfx-select
+          [form]="searchForm"
+          control="status"
+          size="small"
+          [options]="statusOptions()"
+          placeholder="Status"
+          [showClear]="true"
+          (valueChange)="onStatusChange($event)"
+          data-testid="my-activity-surveys-status-filter"></lfx-select>
+      </div>
+
+      <div class="w-full sm:w-auto sm:shrink-0">
+        <lfx-select
+          [form]="searchForm"
+          control="committee"
+          size="small"
+          [options]="committeeOptions()"
+          placeholder="Committee"
+          [showClear]="true"
+          (valueChange)="onCommitteeChange($event)"
+          data-testid="my-activity-surveys-committee-filter"></lfx-select>
+      </div>
+    </div>
+  </div>
+
+  <lfx-table
+    [value]="filteredSurveys()"
+    [paginator]="filteredSurveys().length > 10"
+    [rows]="10"
+    [rowsPerPageOptions]="[10, 25, 50]"
+    [customSort]="true"
+    data-testid="my-activity-surveys-table">
+    <ng-template #header>
+      <tr>
+        <th>Survey</th>
+        <th>Group</th>
+        <th>Submitted On</th>
+        <th>Status</th>
+        <th>Due</th>
+        <th></th>
+      </tr>
+    </ng-template>
+
+    <ng-template #body let-survey>
+      <tr [attr.data-testid]="'my-activity-survey-row-' + survey.survey_id">
+        <td>
+          <a href="#" class="text-blue-600 hover:text-blue-700 hover:underline font-medium" [attr.data-testid]="'my-activity-survey-name-' + survey.survey_id">
+            {{ survey.survey_title }}
+          </a>
+        </td>
+
+        <td>
+          <div class="flex flex-wrap gap-1">
+            @for (committee of survey.committees; track committee.uid) {
+              <span class="bg-blue-100 text-blue-500 text-xs px-2 py-1 rounded">
+                {{ committee.name || committee.uid }}
+              </span>
+            }
+          </div>
+        </td>
+
+        <td>
+          @if (survey.response_datetime) {
+            <span>{{ survey.response_datetime | date: 'MMM d, y' }}</span>
+          } @else {
+            <span class="text-gray-400">—</span>
+          }
+        </td>
+
+        <td>
+          <lfx-tag [value]="survey | combinedSurveyStatusLabel" [severity]="survey | combinedSurveyStatusSeverity"></lfx-tag>
+        </td>
+
+        <td>
+          @if (survey | canTakeSurvey) {
+            <span
+              [class.text-green-500]="survey.survey_cutoff_date | isDueWithinMonth"
+              [pTooltip]="(survey.survey_cutoff_date | isDueWithinMonth) ? (survey.survey_cutoff_date | date: 'MMMM d, y') || '' : ''"
+              tooltipPosition="top">
+              {{ survey.survey_cutoff_date | relativeDueDate }}
+            </span>
+          } @else {
+            <span>{{ survey.survey_cutoff_date | date: 'MMM d, y' }}</span>
+          }
+        </td>
+
+        <td>
+          <div class="flex items-center justify-end">
+            <lfx-button
+              [label]="survey | surveyActionText"
+              [severity]="(survey | canTakeSurvey) ? 'primary' : 'secondary'"
+              size="small"
+              [outlined]="true"
+              [attr.data-testid]="'my-activity-survey-action-' + survey.survey_id">
+            </lfx-button>
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template #emptymessage>
+      <tr>
+        <td colspan="6" class="text-center py-8">
+          <i class="fa-light fa-clipboard-list text-3xl text-gray-400 mb-2"></i>
+          <p class="text-sm text-gray-500">No surveys found</p>
+        </td>
+      </tr>
+    </ng-template>
+  </lfx-table>
+</lfx-card>

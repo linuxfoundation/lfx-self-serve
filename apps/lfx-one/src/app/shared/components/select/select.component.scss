@@ -3,6 +3,7 @@
 
 ::ng-deep {
   .p-select-overlay {
+    @apply mt-1;
     .p-select-list-container {
       .p-select-option {
         @apply text-sm;
