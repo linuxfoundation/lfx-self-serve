@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
 import { COMMITTEE_LABEL, MAILING_LIST_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess, MailingListType } from '@lfx-one/shared/enums';
-import { CreateGroupsIOServiceRequest, CreateMailingListRequest, GroupsIOMailingList, GroupsIOService, MailingListCommittee } from '@lfx-one/shared/interfaces';
+import { CommitteeReference, CreateGroupsIOServiceRequest, CreateMailingListRequest, GroupsIOMailingList, GroupsIOService } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { announcementVisibilityValidator, htmlMaxLengthValidator, htmlMinLengthValidator, htmlRequiredValidator } from '@lfx-one/shared/validators';
 import { MailingListService } from '@services/mailing-list.service';
@@ -223,7 +223,7 @@ export class MailingListManageComponent {
         public: new FormControl<boolean>(true, [Validators.required]),
 
         // Step 3: People & Groups
-        committees: new FormControl<MailingListCommittee[]>([]),
+        committees: new FormControl<CommitteeReference[]>([]),
       },
       { validators: announcementVisibilityValidator() }
     );

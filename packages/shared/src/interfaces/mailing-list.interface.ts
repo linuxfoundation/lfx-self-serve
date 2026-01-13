@@ -26,12 +26,6 @@ export interface LinkedGroup {
 }
 
 /**
- * @deprecated Use CommitteeReference instead
- * Type alias for backward compatibility
- */
-export type MailingListCommittee = CommitteeReference;
-
-/**
  * Groups.io service entity
  * @description Represents a Groups.io service that mailing lists are associated with
  */

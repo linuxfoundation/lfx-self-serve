@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, signal } from '@angular/core';
+import { Component, computed, signal, Signal } from '@angular/core';
 import { FormControl, FormGroup } from '@angular/forms';
 import {
   CommitteeMemberVotingStatus,
@@ -25,29 +25,39 @@ import { VotesTableComponent } from '../components/votes-table/votes-table.compo
   templateUrl: './my-activity-dashboard.component.html',
 })
 export class MyActivityDashboardComponent {
+  // === Configuration ===
   protected readonly activityLabel = MY_ACTIVITY_LABEL;
   protected readonly mutableTabOptions = [...MY_ACTIVITY_TAB_OPTIONS];
 
-  public tabForm: FormGroup;
+  // === Forms ===
+  public tabForm = new FormGroup({
+    tab: new FormControl<MyActivityTab>('votes'),
+  });
 
+  // === Writable Signals ===
   private readonly activeTab = signal<MyActivityTab>('votes');
-
-  protected readonly isVotesTab = computed(() => this.activeTab() === 'votes');
-  protected readonly isSurveysTab = computed(() => this.activeTab() === 'surveys');
-
   protected readonly votes = signal<UserVote[]>(this.getMockVotes());
   protected readonly surveys = signal<UserSurvey[]>(this.getMockSurveys());
 
-  public constructor() {
-    this.tabForm = new FormGroup({
-      tab: new FormControl<MyActivityTab>('votes'),
-    });
-  }
+  // === Computed Signals ===
+  protected readonly isVotesTab: Signal<boolean> = this.initIsVotesTab();
+  protected readonly isSurveysTab: Signal<boolean> = this.initIsSurveysTab();
 
+  // === Protected Methods ===
   protected onTabChange(tab: MyActivityTab): void {
     this.activeTab.set(tab);
   }
 
+  // === Private Initializers ===
+  private initIsVotesTab(): Signal<boolean> {
+    return computed(() => this.activeTab() === 'votes');
+  }
+
+  private initIsSurveysTab(): Signal<boolean> {
+    return computed(() => this.activeTab() === 'surveys');
+  }
+
+  // === Private Helpers ===
   private getMockVotes(): UserVote[] {
     return [
       {

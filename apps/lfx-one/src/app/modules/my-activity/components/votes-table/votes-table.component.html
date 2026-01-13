@@ -100,6 +100,7 @@
               [severity]="(vote | canVote) ? 'primary' : 'secondary'"
               size="small"
               [outlined]="true"
+              (onClick)="onVoteClick(vote)"
               [attr.data-testid]="'my-activity-vote-action-' + vote.poll_id">
             </lfx-button>
           </div>
@@ -117,3 +118,6 @@
     </ng-template>
   </lfx-table>
 </lfx-card>
+
+<!-- Vote Details Drawer -->
+<lfx-vote-details-drawer [(visible)]="drawerVisible" [vote]="selectedVote()" (voteSubmitted)="onVoteSubmitted($event)"></lfx-vote-details-drawer>

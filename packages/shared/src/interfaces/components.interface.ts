@@ -579,3 +579,25 @@ export interface CommitteeSelectorOption {
   /** Optional member count to display */
   memberCount?: number;
 }
+
+/**
+ * Relative date display information
+ * @description Structure for displaying relative date with styling
+ */
+export interface RelativeDateInfo {
+  /** Display text (e.g., "3 days left", "Closed") */
+  text: string;
+  /** Tailwind color class for text styling */
+  color: string;
+}
+
+/**
+ * Generic tab option interface
+ * @description Configuration for tab options in tab-based navigation
+ */
+export interface TabOption<T = string> {
+  /** Display label for the tab */
+  label: string;
+  /** Value associated with the tab */
+  value: T;
+}

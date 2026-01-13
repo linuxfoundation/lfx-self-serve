@@ -1,0 +1,18 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+::ng-deep {
+  .vote-details-drawer {
+    .p-drawer-header {
+      @apply border-b border-slate-200 bg-white pb-4;
+    }
+
+    .p-drawer-content {
+      @apply px-4 sm:px-6 py-4 overflow-y-auto;
+    }
+
+    .p-drawer-footer {
+      @apply px-4 sm:px-6 py-4 bg-white;
+    }
+  }
+}

@@ -1,0 +1,25 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="text-center flex flex-col gap-4 p-2">
+  <!-- Success Icon -->
+  <div class="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto">
+    <svg class="w-6 h-6 text-green-600" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+      <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M5 13l4 4L19 7" />
+    </svg>
+  </div>
+
+  <!-- Title -->
+  <h3 class="text-lg font-semibold text-slate-900">Your Vote Has Been Submitted</h3>
+
+  <!-- Messages -->
+  <div class="flex flex-col gap-2">
+    <p class="text-sm text-slate-600">You successfully submitted your vote on "{{ config.data.pollName }}".</p>
+    <p class="text-sm text-slate-600">Your vote is final and cannot be changed.</p>
+  </div>
+
+  <!-- Done Button -->
+  <div class="flex justify-center pt-2">
+    <lfx-button label="Done" severity="primary" styleClass="w-full" class="w-full" (onClick)="onClose()" data-testid="vote-submitted-done"></lfx-button>
+  </div>
+</div>

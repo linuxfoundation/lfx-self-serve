@@ -1,0 +1,30 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div
+  class="flex items-center justify-between gap-3 px-3 py-4 border rounded-lg transition-colors"
+  [ngClass]="{
+    'border-blue-500': isSelected(),
+    'bg-blue-50': isSelected(),
+    'border-slate-200': !isSelected() && !isDisabled(),
+    'hover:border-slate-300': !isSelected() && !isDisabled(),
+    'opacity-60': isDisabled() && !isSelected(),
+    'cursor-not-allowed': isDisabled(),
+    'cursor-pointer': !isDisabled(),
+  }"
+  [class]="styleClass()"
+  [attr.data-testid]="testId()"
+  [attr.tabindex]="isDisabled() ? -1 : 0"
+  [attr.role]="'option'"
+  [attr.aria-selected]="isSelected()"
+  [attr.aria-disabled]="isDisabled()"
+  (click)="onCardClick()"
+  (keydown)="onKeydown($event)">
+  <!-- Label -->
+  <span class="text-base text-slate-700 font-semibold">{{ label() }}</span>
+
+  <!-- Selection indicator (checkmark) -->
+  @if (isSelected()) {
+    <i class="fa-solid fa-circle-check text-blue-500 text-lg"></i>
+  }
+</div>

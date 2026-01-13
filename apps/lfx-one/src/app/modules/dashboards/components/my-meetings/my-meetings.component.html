@@ -26,42 +26,60 @@
         <p-skeleton width="100%" height="140px"></p-skeleton>
       </div>
     } @else {
-      <div class="flex flex-col gap-1 overflow-scroll max-h-[30rem] py-1 -mt-1" data-testid="dashboard-my-meetings-list">
-        @if (todayMeetings().length > 0 || upcomingMeetings().length > 0) {
-          <!-- TODAY Section - only show if there are meetings today -->
-          @if (todayMeetings().length > 0) {
-            <div>
-              <div class="flex flex-col gap-3">
-                @for (item of todayMeetings(); track item.meeting.uid) {
-                  <lfx-dashboard-meeting-card
-                    class="-mt-2 py-2"
-                    [meeting]="item.meeting"
-                    [occurrence]="item.occurrence"
-                    [attr.data-testid]="'dashboard-my-meetings-today-item-' + item.meeting.uid" />
-                }
+      <div class="relative overflow-hidden flex-1">
+        <div lfxScrollShadow class="flex flex-col gap-1 overflow-scroll max-h-[30rem] py-1 -mt-1" data-testid="dashboard-my-meetings-list">
+          @if (todayMeetings().length > 0 || upcomingMeetings().length > 0) {
+            <!-- TODAY Section - only show if there are meetings today -->
+            @if (todayMeetings().length > 0) {
+              <div>
+                <div class="flex flex-col gap-3">
+                  @for (item of todayMeetings(); track item.meeting.uid) {
+                    <lfx-dashboard-meeting-card
+                      class="-mt-2 py-2"
+                      [meeting]="item.meeting"
+                      [occurrence]="item.occurrence"
+                      [attr.data-testid]="'dashboard-my-meetings-today-item-' + item.meeting.uid" />
+                  }
+                </div>
               </div>
-            </div>
-          }
+            }
 
-          <!-- UPCOMING Section - only show if there are upcoming meetings -->
-          @if (upcomingMeetings().length > 0) {
-            <div>
-              <div class="flex flex-col gap-3">
-                @for (item of upcomingMeetings(); track item.meeting.uid) {
-                  <lfx-dashboard-meeting-card
-                    [meeting]="item.meeting"
-                    [occurrence]="item.occurrence"
-                    [attr.data-testid]="'dashboard-my-meetings-upcoming-item-' + item.meeting.uid" />
-                }
+            <!-- UPCOMING Section - only show if there are upcoming meetings -->
+            @if (upcomingMeetings().length > 0) {
+              <div>
+                <div class="flex flex-col gap-3">
+                  @for (item of upcomingMeetings(); track item.meeting.uid) {
+                    <lfx-dashboard-meeting-card
+                      [meeting]="item.meeting"
+                      [occurrence]="item.occurrence"
+                      [attr.data-testid]="'dashboard-my-meetings-upcoming-item-' + item.meeting.uid" />
+                  }
+                </div>
               </div>
+            }
+          } @else {
+            <!-- Global empty state - only shows when no meetings at all -->
+            <div class="text-center py-8" data-testid="dashboard-my-meetings-empty">
+              <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+              <p class="text-sm text-gray-500">No meetings scheduled</p>
             </div>
           }
-        } @else {
-          <!-- Global empty state - only shows when no meetings at all -->
-          <div class="text-center py-8" data-testid="dashboard-my-meetings-empty">
-            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-            <p class="text-sm text-gray-500">No meetings scheduled</p>
-          </div>
+        </div>
+
+        <!-- Top shadow fade -->
+        @if (scrollShadowDirective && scrollShadowDirective.showTopShadow()) {
+          <div
+            class="absolute top-0 left-0 right-0 h-16 z-10 pointer-events-none bg-[linear-gradient(to_bottom,#f9fafb,transparent)]"
+            data-testid="dashboard-my-meetings-shadow-top"
+            aria-hidden="true"></div>
+        }
+
+        <!-- Bottom shadow fade -->
+        @if (scrollShadowDirective && scrollShadowDirective.showBottomShadow()) {
+          <div
+            class="absolute bottom-0 left-0 right-0 h-16 z-10 pointer-events-none bg-[linear-gradient(to_top,#f9fafb,transparent)]"
+            data-testid="dashboard-my-meetings-shadow-bottom"
+            aria-hidden="true"></div>
         }
       </div>
     }

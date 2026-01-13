@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DashboardMeetingCardComponent } from '@app/modules/dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { getActiveOccurrences } from '@lfx-one/shared';
 import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
+import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, of, switchMap, tap } from 'rxjs';
 
@@ -15,11 +16,13 @@ import type { MeetingWithOccurrence } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-my-meetings',
-  imports: [DashboardMeetingCardComponent, ButtonComponent, SkeletonModule],
+  imports: [DashboardMeetingCardComponent, ButtonComponent, SkeletonModule, ScrollShadowDirective],
   templateUrl: './my-meetings.component.html',
   styleUrl: './my-meetings.component.scss',
 })
 export class MyMeetingsComponent {
+  @ViewChild(ScrollShadowDirective) protected scrollShadowDirective!: ScrollShadowDirective;
+
   private readonly userService = inject(UserService);
   private readonly projectContextService = inject(ProjectContextService);
 

@@ -5,7 +5,7 @@ import { Component, computed, inject, input, output, signal, Signal } from '@ang
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AutocompleteComponent } from '@components/autocomplete/autocomplete.component';
-import { Committee, CommitteeSelectorOption, MailingListCommittee, VOTING_STATUSES } from '@lfx-one/shared';
+import { Committee, CommitteeReference, CommitteeSelectorOption, VOTING_STATUSES } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
@@ -166,8 +166,8 @@ export class CommitteeSelectorComponent {
           }
 
           return formControl.valueChanges.pipe(
-            startWith(formControl.value as MailingListCommittee[] | null),
-            map((value: MailingListCommittee[] | null) => this.mapFormValueToSelectedItems(value, options))
+            startWith(formControl.value as CommitteeReference[] | null),
+            map((value: CommitteeReference[] | null) => this.mapFormValueToSelectedItems(value, options))
           );
         })
       ),
@@ -177,9 +177,9 @@ export class CommitteeSelectorComponent {
 
   /**
    * Map form control value to selected items
-   * Handles array of MailingListCommittee objects and enriches with member count from options
+   * Handles array of CommitteeReference objects and enriches with member count from options
    */
-  private mapFormValueToSelectedItems(value: MailingListCommittee[] | null, options: CommitteeSelectorOption[]): CommitteeSelectorOption[] {
+  private mapFormValueToSelectedItems(value: CommitteeReference[] | null, options: CommitteeSelectorOption[]): CommitteeSelectorOption[] {
     if (!value || !Array.isArray(value)) {
       return [];
     }
@@ -208,7 +208,7 @@ export class CommitteeSelectorComponent {
 
   /**
    * Update the form control value
-   * Converts CommitteeSelectorOption array to MailingListCommittee format
+   * Converts CommitteeSelectorOption array to CommitteeReference format
    */
   private updateFormControl(selectedOptions: CommitteeSelectorOption[]): void {
     const formControl = this.form().get(this.control());
@@ -217,7 +217,7 @@ export class CommitteeSelectorComponent {
     }
 
     if (this.multiple()) {
-      const formValue: MailingListCommittee[] = selectedOptions.map((option) => ({
+      const formValue: CommitteeReference[] = selectedOptions.map((option) => ({
         uid: option.id,
         name: option.name,
         allowed_voting_statuses: VOTING_STATUSES.map((status) => status.value),

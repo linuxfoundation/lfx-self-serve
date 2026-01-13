@@ -8,7 +8,7 @@ import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { COMMITTEE_LABEL, MAILING_LIST_LABEL } from '@lfx-one/shared/constants';
-import { GroupsIOMailingList, GroupsIOService, MailingListCommittee, ProjectContext } from '@lfx-one/shared/interfaces';
+import { CommitteeReference, GroupsIOMailingList, GroupsIOService, ProjectContext } from '@lfx-one/shared/interfaces';
 import { MailingListService } from '@services/mailing-list.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -174,7 +174,7 @@ export class MailingListDashboardComponent {
       const mailingListsData = this.mailingLists();
 
       // Collect unique committees from all mailing lists
-      const committeeMap = new Map<string, MailingListCommittee>();
+      const committeeMap = new Map<string, CommitteeReference>();
       mailingListsData.forEach((ml) => {
         if (ml.committees?.length) {
           ml.committees.forEach((committee) => {

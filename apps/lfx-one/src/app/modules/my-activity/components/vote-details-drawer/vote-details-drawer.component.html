@@ -1,0 +1,218 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full vote-details-drawer"
+  data-testid="vote-details-drawer">
+  @if (vote(); as voteData) {
+    <!-- Header Section -->
+    <ng-template #header>
+      <div class="flex flex-col gap-3 w-full pr-4" data-testid="vote-details-drawer-header">
+        <!-- Close Button Row -->
+        <div class="flex items-center justify-between">
+          <div></div>
+          <button type="button" (click)="onClose()" class="text-slate-400 hover:text-slate-600 transition-colors p-1" data-testid="vote-details-drawer-close">
+            <i class="fa-light fa-xmark text-xl"></i>
+          </button>
+        </div>
+
+        <!-- Title -->
+        <h1 class="text-xl sm:text-2xl font-semibold text-slate-900" data-testid="vote-details-drawer-title">
+          {{ voteData.poll_name }}
+        </h1>
+
+        <!-- Meta Info -->
+        <div class="flex flex-wrap items-center gap-3">
+          <!-- Committee Badges -->
+          @for (committee of voteData.committees; track committee.uid) {
+            <span class="bg-blue-100 text-blue-700 text-xs px-2.5 py-1 rounded font-medium">
+              {{ committee.name || committee.uid }}
+            </span>
+          }
+
+          <!-- Status Tag -->
+          <lfx-tag
+            [value]="voteData | combinedVoteStatusLabel"
+            [severity]="voteData | combinedVoteStatusSeverity"
+            data-testid="vote-details-drawer-status"></lfx-tag>
+
+          <!-- Due Date Info -->
+          @if (voteData.poll_status === PollStatus.ENDED) {
+            <div class="flex flex-col">
+              <span class="text-sm text-slate-600"> Voting closed {{ voteData.end_time | date: 'MMM d, y' }} </span>
+            </div>
+          } @else {
+            <span class="text-sm text-slate-600"> Due {{ voteData.end_time | date: 'MMM d, y' }} </span>
+            <span class="text-sm" [class]="relativeDateInfo().color">
+              {{ relativeDateInfo().text }}
+            </span>
+          }
+
+          <!-- Selection Type -->
+          @if (selectionTypeText()) {
+            <span class="text-sm text-slate-600">{{ selectionTypeText() }}</span>
+          }
+        </div>
+      </div>
+    </ng-template>
+
+    <!-- Content Section -->
+    <div class="flex flex-col gap-6" data-testid="vote-details-drawer-content">
+      <!-- Warning for open votes -->
+      @if (showWarningMessage()) {
+        <lfx-message severity="warn" data-testid="vote-details-warning">
+          <ng-template #content>
+            <div class="flex items-start gap-2">
+              <i class="fa-solid fa-triangle-exclamation text-amber-600 mt-0.5"></i>
+              <p class="text-sm text-amber-800"><strong>Important:</strong> You cannot change your vote after submission.</p>
+            </div>
+          </ng-template>
+        </lfx-message>
+      }
+
+      <!-- Submission Info for submitted votes (not closed) -->
+      @if (showSubmittedMessage()) {
+        <lfx-message severity="success" data-testid="vote-details-submitted-info">
+          <ng-template #content>
+            <p class="text-sm text-green-800">You submitted your vote on {{ voteData.vote_creation_time | date: 'MMM d, y' }}</p>
+          </ng-template>
+        </lfx-message>
+      }
+
+      <!-- Vote Information Block -->
+      @if (voteData.description || voteData.creator || voteData.discussion_link) {
+        <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 flex flex-col gap-3" data-testid="vote-details-info-block">
+          <div class="flex items-center gap-2">
+            <i class="fa-light fa-circle-info text-blue-600"></i>
+            <h3 class="font-semibold text-blue-900">Vote Information</h3>
+          </div>
+
+          @if (voteData.description) {
+            <div>
+              <p class="text-sm font-medium text-blue-900 mb-1">Description:</p>
+              <p class="text-sm text-blue-800">{{ voteData.description }}</p>
+            </div>
+          }
+
+          @if (voteData.creator) {
+            <div>
+              <p class="text-sm font-medium text-blue-900 mb-1">Proposed by:</p>
+              <p class="text-sm text-blue-800">{{ voteData.creator }}</p>
+            </div>
+          }
+
+          @if (voteData.discussion_link) {
+            <div>
+              <a
+                [href]="voteData.discussion_link"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-sm text-blue-600 hover:text-blue-800 flex items-center gap-1 font-medium">
+                <i class="fa-light fa-arrow-up-right-from-square text-xs"></i>
+                View discussion thread
+              </a>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- Questions Section -->
+      <div class="flex flex-col gap-4" data-testid="vote-details-questions">
+        <h2 class="text-lg font-semibold">
+          {{ voteData.poll_questions.length > 1 ? 'Vote Questions' : 'Vote Question' }}
+        </h2>
+
+        @for (question of voteData.poll_questions; track question.question_id; let idx = $index) {
+          <div class="border border-slate-200 rounded-lg p-4 flex flex-col gap-4" [attr.data-testid]="'vote-details-question-' + question.question_id">
+            <!-- Question Header with Number -->
+            <div class="flex items-center gap-3 pb-3 border-b border-slate-200">
+              <span class="inline-flex items-center justify-center w-8 h-8 bg-blue-500 text-white text-sm font-semibold rounded-full flex-shrink-0">
+                Q{{ idx + 1 }}
+              </span>
+              <div class="flex-1">
+                <p class="text-base text-slate-900 font-medium">
+                  {{ question.prompt }}
+                </p>
+              </div>
+            </div>
+
+            <!-- Options -->
+            @if (question.choices.length === 0) {
+              <div class="text-center py-8">
+                <p class="text-sm text-slate-500">This vote is no longer available.</p>
+              </div>
+            } @else if (question.type === 'single_choice') {
+              <!-- Single Selection -->
+              <div class="flex flex-col gap-3">
+                @for (choice of question.choices; track choice.choice_id) {
+                  <lfx-selectable-card
+                    [form]="voteForm"
+                    [control]="question.question_id"
+                    [value]="choice.choice_id"
+                    [label]="choice.choice_text"
+                    [testId]="'vote-details-option-' + choice.choice_id"></lfx-selectable-card>
+                }
+              </div>
+            } @else {
+              <!-- Multiple Selection -->
+              @if (checkboxForms[question.question_id]; as questionGroup) {
+                <div class="flex flex-col gap-3">
+                  @for (choice of question.choices; track choice.choice_id) {
+                    <lfx-selectable-card
+                      [form]="questionGroup"
+                      [control]="choice.choice_id"
+                      [toggle]="true"
+                      [label]="choice.choice_text"
+                      [testId]="'vote-details-option-' + choice.choice_id"></lfx-selectable-card>
+                  }
+                </div>
+              }
+            }
+          </div>
+        }
+
+        <p-confirmdialog></p-confirmdialog>
+      </div>
+
+      <!-- Your Vote Section (for submitted/closed votes) -->
+      @if (hasUserVoted() && voteData.vote_creation_time) {
+        <div class="bg-slate-50 border border-slate-200 rounded-lg p-4" data-testid="vote-details-your-vote">
+          <h3 class="text-sm font-semibold text-slate-700 mb-2">Your Vote</h3>
+          @if (userVoteChoiceText()) {
+            <p class="text-sm text-slate-600">
+              You voted <span class="font-semibold text-slate-900">{{ userVoteChoiceText() }}</span> on {{ voteData.vote_creation_time | date: 'MMM d, y' }}
+            </p>
+          } @else {
+            <p class="text-sm text-slate-600">You submitted your vote on {{ voteData.vote_creation_time | date: 'MMM d, y' }}</p>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Footer Actions -->
+    @if (!isReadOnly()) {
+      <ng-template #footer>
+        <div class="flex gap-3 pt-4 border-t border-slate-200 bg-white" data-testid="vote-details-footer">
+          <lfx-button
+            label="Cancel"
+            severity="secondary"
+            [outlined]="true"
+            styleClass="flex-1"
+            (onClick)="onClose()"
+            data-testid="vote-details-cancel"></lfx-button>
+          <lfx-button
+            label="Submit Vote"
+            severity="primary"
+            styleClass="flex-1"
+            [disabled]="!allQuestionsAnswered()"
+            (onClick)="onSubmitClick()"
+            data-testid="vote-details-submit"></lfx-button>
+        </div>
+      </ng-template>
+    }
+  }
+</p-drawer>

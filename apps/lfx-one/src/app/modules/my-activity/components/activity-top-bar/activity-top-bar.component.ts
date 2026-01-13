@@ -4,12 +4,7 @@
 import { Component, input, output } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
-import { MyActivityTab } from '@lfx-one/shared/interfaces';
-
-interface TabOption {
-  label: string;
-  value: MyActivityTab;
-}
+import { MyActivityTab, TabOption } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-activity-top-bar',
@@ -17,11 +12,14 @@ interface TabOption {
   templateUrl: './activity-top-bar.component.html',
 })
 export class ActivityTopBarComponent {
-  public tabForm = input.required<FormGroup>();
-  public tabOptions = input.required<TabOption[]>();
+  // === Inputs ===
+  public readonly tabForm = input.required<FormGroup>();
+  public readonly tabOptions = input.required<TabOption<MyActivityTab>[]>();
 
+  // === Outputs ===
   public readonly tabChange = output<MyActivityTab>();
 
+  // === Protected Methods ===
   protected onTabChange(event: { value: MyActivityTab }): void {
     this.tabChange.emit(event.value);
   }

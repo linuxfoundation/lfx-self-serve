@@ -21,7 +21,7 @@ import { IsDueWithinMonthPipe } from '@pipes/is-due-within-month.pipe';
 import { RelativeDueDatePipe } from '@pipes/relative-due-date.pipe';
 import { SurveyActionTextPipe } from '@pipes/survey-action-text.pipe';
 import { TooltipModule } from 'primeng/tooltip';
-import { debounceTime, distinctUntilChanged, startWith } from 'rxjs';
+import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
 
 @Component({
   selector: 'lfx-surveys-table',
@@ -45,33 +45,27 @@ import { debounceTime, distinctUntilChanged, startWith } from 'rxjs';
   templateUrl: './surveys-table.component.html',
 })
 export class SurveysTableComponent {
-  public surveys = input.required<UserSurvey[]>();
+  // === Inputs ===
+  public readonly surveys = input.required<UserSurvey[]>();
 
-  public searchForm: FormGroup;
-  private readonly searchTerm: Signal<string>;
+  // === Forms ===
+  public searchForm = new FormGroup({
+    search: new FormControl<string>(''),
+    status: new FormControl<CombinedSurveyStatus | null>(null),
+    committee: new FormControl<string | null>(null),
+  });
+
+  // === Writable Signals ===
   private readonly statusFilter = signal<CombinedSurveyStatus | null>(null);
   private readonly committeeFilter = signal<string | null>(null);
 
-  protected readonly statusOptions: Signal<{ label: string; value: CombinedSurveyStatus | null }[]>;
-  protected readonly committeeOptions: Signal<{ label: string; value: string | null }[]>;
-  protected readonly filteredSurveys: Signal<UserSurvey[]>;
+  // === Computed Signals ===
+  private readonly searchTerm: Signal<string> = this.initSearchTerm();
+  protected readonly statusOptions: Signal<{ label: string; value: CombinedSurveyStatus | null }[]> = this.initStatusOptions();
+  protected readonly committeeOptions: Signal<{ label: string; value: string | null }[]> = this.initCommitteeOptions();
+  protected readonly filteredSurveys: Signal<UserSurvey[]> = this.initFilteredSurveys();
 
-  public constructor() {
-    this.searchForm = new FormGroup({
-      search: new FormControl<string>(''),
-      status: new FormControl<CombinedSurveyStatus | null>(null),
-      committee: new FormControl<string | null>(null),
-    });
-
-    this.searchTerm = toSignal(this.searchForm.get('search')!.valueChanges.pipe(startWith(''), debounceTime(300), distinctUntilChanged()), {
-      initialValue: '',
-    });
-
-    this.statusOptions = computed(() => this.initializeStatusOptions());
-    this.committeeOptions = computed(() => this.initializeCommitteeOptions());
-    this.filteredSurveys = computed(() => this.filterSurveys());
-  }
-
+  // === Protected Methods ===
   protected onStatusChange(value: CombinedSurveyStatus | null): void {
     this.statusFilter.set(value);
   }
@@ -80,81 +74,101 @@ export class SurveysTableComponent {
     this.committeeFilter.set(value);
   }
 
-  private initializeStatusOptions(): { label: string; value: CombinedSurveyStatus | null }[] {
-    const surveysData = this.surveys();
-    const statusCounts = new Map<CombinedSurveyStatus, number>();
+  // === Private Initializers ===
+  private initSearchTerm(): Signal<string> {
+    return toSignal(
+      this.searchForm.get('search')!.valueChanges.pipe(
+        startWith(''),
+        debounceTime(300),
+        distinctUntilChanged(),
+        map((value) => value ?? '')
+      ),
+      { initialValue: '' }
+    );
+  }
 
-    surveysData.forEach((survey) => {
-      const combinedStatus = getCombinedSurveyStatus(survey);
-      statusCounts.set(combinedStatus, (statusCounts.get(combinedStatus) || 0) + 1);
+  private initStatusOptions(): Signal<{ label: string; value: CombinedSurveyStatus | null }[]> {
+    return computed(() => {
+      const surveysData = this.surveys();
+      const statusCounts = new Map<CombinedSurveyStatus, number>();
+
+      surveysData.forEach((survey) => {
+        const combinedStatus = getCombinedSurveyStatus(survey);
+        statusCounts.set(combinedStatus, (statusCounts.get(combinedStatus) || 0) + 1);
+      });
+
+      const options: { label: string; value: CombinedSurveyStatus | null }[] = [{ label: MY_ACTIVITY_FILTER_LABELS.allStatus, value: null }];
+
+      const statusOrder: CombinedSurveyStatus[] = ['open', 'submitted', 'closed'];
+      statusOrder.forEach((status) => {
+        const count = statusCounts.get(status) || 0;
+        if (count > 0) {
+          options.push({
+            label: `${COMBINED_SURVEY_STATUS_LABELS[status]} (${count})`,
+            value: status,
+          });
+        }
+      });
+
+      return options;
     });
+  }
 
-    const options: { label: string; value: CombinedSurveyStatus | null }[] = [{ label: MY_ACTIVITY_FILTER_LABELS.allStatus, value: null }];
+  private initCommitteeOptions(): Signal<{ label: string; value: string | null }[]> {
+    return computed(() => {
+      const surveysData = this.surveys();
+      const committeeCounts = new Map<string, number>();
 
-    const statusOrder: CombinedSurveyStatus[] = ['open', 'submitted', 'closed'];
-    statusOrder.forEach((status) => {
-      const count = statusCounts.get(status) || 0;
-      if (count > 0) {
-        options.push({
-          label: `${COMBINED_SURVEY_STATUS_LABELS[status]} (${count})`,
-          value: status,
+      surveysData.forEach((survey) => {
+        survey.committees.forEach((committee) => {
+          const name = committee.name || committee.uid;
+          committeeCounts.set(name, (committeeCounts.get(name) || 0) + 1);
         });
+      });
+
+      const uniqueCommittees = Array.from(committeeCounts.keys()).sort((a, b) => a.localeCompare(b));
+
+      const options: { label: string; value: string | null }[] = [{ label: MY_ACTIVITY_FILTER_LABELS.allCommittees, value: null }];
+
+      uniqueCommittees.forEach((committee) => {
+        const count = committeeCounts.get(committee) || 0;
+        options.push({
+          label: `${committee} (${count})`,
+          value: committee,
+        });
+      });
+
+      return options;
+    });
+  }
+
+  private initFilteredSurveys(): Signal<UserSurvey[]> {
+    return computed(() => {
+      let filtered = this.surveys();
+
+      const searchTerm = this.searchTerm()?.toLowerCase() || '';
+      if (searchTerm) {
+        filtered = filtered.filter(
+          (survey) =>
+            survey.survey_title.toLowerCase().includes(searchTerm) || survey.committees.some((c) => (c.name || c.uid).toLowerCase().includes(searchTerm))
+        );
       }
-    });
 
-    return options;
+      const status = this.statusFilter();
+      if (status) {
+        filtered = filtered.filter((survey) => getCombinedSurveyStatus(survey) === status);
+      }
+
+      const committee = this.committeeFilter();
+      if (committee) {
+        filtered = filtered.filter((survey) => survey.committees.some((c) => (c.name || c.uid) === committee));
+      }
+
+      return this.sortSurveys(filtered);
+    });
   }
 
-  private initializeCommitteeOptions(): { label: string; value: string | null }[] {
-    const surveysData = this.surveys();
-    const committeeCounts = new Map<string, number>();
-
-    surveysData.forEach((survey) => {
-      survey.committees.forEach((committee) => {
-        const name = committee.name || committee.uid;
-        committeeCounts.set(name, (committeeCounts.get(name) || 0) + 1);
-      });
-    });
-
-    const uniqueCommittees = Array.from(committeeCounts.keys()).sort((a, b) => a.localeCompare(b));
-
-    const options: { label: string; value: string | null }[] = [{ label: MY_ACTIVITY_FILTER_LABELS.allCommittees, value: null }];
-
-    uniqueCommittees.forEach((committee) => {
-      const count = committeeCounts.get(committee) || 0;
-      options.push({
-        label: `${committee} (${count})`,
-        value: committee,
-      });
-    });
-
-    return options;
-  }
-
-  private filterSurveys(): UserSurvey[] {
-    let filtered = this.surveys();
-
-    const searchTerm = this.searchTerm()?.toLowerCase() || '';
-    if (searchTerm) {
-      filtered = filtered.filter(
-        (survey) =>
-          survey.survey_title.toLowerCase().includes(searchTerm) || survey.committees.some((c) => (c.name || c.uid).toLowerCase().includes(searchTerm))
-      );
-    }
-
-    const status = this.statusFilter();
-    if (status) {
-      filtered = filtered.filter((survey) => getCombinedSurveyStatus(survey) === status);
-    }
-
-    const committee = this.committeeFilter();
-    if (committee) {
-      filtered = filtered.filter((survey) => survey.committees.some((c) => (c.name || c.uid) === committee));
-    }
-
-    return this.sortSurveys(filtered);
-  }
-
+  // === Private Helpers ===
   private sortSurveys(surveys: UserSurvey[]): UserSurvey[] {
     const statusPriority: Record<CombinedSurveyStatus, number> = { open: 1, submitted: 2, closed: 3 };
 

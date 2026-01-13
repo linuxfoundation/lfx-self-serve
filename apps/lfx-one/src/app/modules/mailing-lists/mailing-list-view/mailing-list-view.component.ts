@@ -18,7 +18,7 @@ import {
   MAILING_LIST_VISIBILITY_LABELS,
 } from '@lfx-one/shared/constants';
 import { MailingListAudienceAccess } from '@lfx-one/shared/enums';
-import { GroupsIOMailingList, MailingListCommittee } from '@lfx-one/shared/interfaces';
+import { CommitteeReference, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { MailingListVisibilitySeverityPipe } from '@pipes/mailing-list-visibility-severity.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
 import { MailingListService } from '@services/mailing-list.service';
@@ -69,7 +69,7 @@ export class MailingListViewComponent {
   public breadcrumbItems: Signal<MenuItem[]>;
   public emailAddress: Signal<string>;
   public memberCount: Signal<number>;
-  public linkedCommittees: Signal<MailingListCommittee[]>;
+  public linkedCommittees: Signal<CommitteeReference[]>;
   public postingTypeLabel: Signal<string>;
   public audienceAccessLabel: Signal<string>;
   public visibilityLabel: Signal<string>;
