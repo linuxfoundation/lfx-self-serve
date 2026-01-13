@@ -423,6 +423,8 @@ export interface MeetingWithOccurrence {
   occurrence: MeetingOccurrence;
   /** Timestamp for sorting meetings chronologically (milliseconds since epoch) */
   sortTime: number;
+  /** Unique tracking key combining meeting uid and occurrence id */
+  trackId: string;
 }
 
 export interface CreateMeetingRequest {

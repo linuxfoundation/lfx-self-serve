@@ -1047,9 +1047,24 @@ export interface ProjectHealthMetricsDailyRow {
   PROJECT_ID: string;
 
   /**
+   * Project name
+   */
+  PROJECT_NAME: string;
+
+  /**
    * Project URL slug
    */
   PROJECT_SLUG: string;
+
+  /**
+   * Foundation ID
+   */
+  FOUNDATION_ID: string;
+
+  /**
+   * Foundation URL slug
+   */
+  FOUNDATION_SLUG: string;
 
   /**
    * Metric date (YYYY-MM-DD format)
@@ -1057,44 +1072,65 @@ export interface ProjectHealthMetricsDailyRow {
   METRIC_DATE: string;
 
   /**
-   * Average health score across all sub-projects
+   * Health score for this project
+   */
+  HEALTH_SCORE: number;
+
+  /**
+   * Health score category (Excellent, Healthy, Stable, Unsteady, Critical)
+   */
+  HEALTH_SCORE_CATEGORY: string;
+
+  /**
+   * Software value in dollars
+   */
+  SOFTWARE_VALUE: number;
+
+  /**
+   * Community Manager status
+   */
+  CM_STATUS: string;
+
+  /**
+   * Parent project ID
+   */
+  PARENT_ID: string | null;
+
+  /**
+   * Parent project slug
+   */
+  PARENT_SLUG: string | null;
+
+  /**
+   * Grandparent project ID
+   */
+  GRANDPARENT_ID: string | null;
+
+  /**
+   * Grandparent project slug
+   */
+  GRANDPARENTS_SLUG: string | null;
+}
+
+/**
+ * Aggregated health metrics row for foundation-level queries
+ * Result from GROUP BY METRIC_DATE aggregation on PROJECT_HEALTH_METRICS_DAILY
+ */
+export interface HealthMetricsAggregatedRow {
+  /**
+   * Foundation URL slug
+   */
+  FOUNDATION_SLUG: string;
+
+  /**
+   * Metric date (YYYY-MM-DD format)
+   */
+  METRIC_DATE: string;
+
+  /**
+   * Average health score across all projects in foundation for this date
    */
   AVG_HEALTH_SCORE: number;
-
-  /**
-   * Minimum health score among sub-projects
-   */
-  MIN_HEALTH_SCORE: number;
-
-  /**
-   * Maximum health score among sub-projects
-   */
-  MAX_HEALTH_SCORE: number;
-
-  /**
-   * Count of sub-projects with health score data
-   */
-  PROJECTS_WITH_HEALTH_SCORE_COUNT: number;
-
-  /**
-   * Total software value in dollars
-   */
-  TOTAL_SOFTWARE_VALUE: number;
-
-  /**
-   * Average software value per sub-project
-   */
-  AVG_SOFTWARE_VALUE: number;
-
-  /**
-   * Count of sub-projects with software value data
-   */
-  PROJECTS_WITH_SOFTWARE_VALUE_COUNT: number;
-
-  /**
-   * Total sub-projects count
-   */
-  TOTAL_SUB_PROJECTS_COUNT: number;
 }
 
 /**
@@ -1104,8 +1140,10 @@ export interface ProjectHealthMetricsDailyRow {
 export interface HealthMetricsDailyResponse {
   /**
    * Array of daily health metrics data
+   * - Foundation level: HealthMetricsAggregatedRow[] (aggregated by date)
+   * - Project level: ProjectHealthMetricsDailyRow[] (raw project data)
    */
-  data: FoundationHealthMetricsDailyRow[] | ProjectHealthMetricsDailyRow[];
+  data: HealthMetricsAggregatedRow[] | ProjectHealthMetricsDailyRow[];
 
   /**
    * Current average health score (from most recent date)

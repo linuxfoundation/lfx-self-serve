@@ -214,8 +214,7 @@ export class MailingListMembersComponent {
           this.error.set(false);
 
           return this.mailingListService.getMembers(ml.uid).pipe(
-            catchError((err) => {
-              console.error('Failed to load members', err);
+            catchError(() => {
               this.messageService.add({
                 severity: 'error',
                 summary: 'Error',
@@ -259,8 +258,7 @@ export class MailingListMembersComponent {
           detail: successMessage,
         });
       },
-      error: (err) => {
-        console.error(errorMessage, err);
+      error: () => {
         this.messageService.add({
           severity: 'error',
           summary: 'Error',

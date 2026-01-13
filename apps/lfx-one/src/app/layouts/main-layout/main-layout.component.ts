@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgClass } from '@angular/common';
 import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, inject } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
@@ -13,10 +14,11 @@ import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { DrawerModule } from 'primeng/drawer';
 import { filter } from 'rxjs';
+import { DevToolbarComponent } from '../dev-toolbar/dev-toolbar.component';
 
 @Component({
   selector: 'lfx-main-layout',
-  imports: [RouterModule, SidebarComponent, DrawerModule],
+  imports: [NgClass, RouterModule, SidebarComponent, DrawerModule, DevToolbarComponent],
   templateUrl: './main-layout.component.html',
   styleUrl: './main-layout.component.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -33,6 +35,7 @@ export class MainLayoutComponent {
   // Feature flags
   private readonly showProjectsInSidebar = this.featureFlagService.getBooleanFlag('sidebar-projects', false);
   private readonly enableProfileClick = this.featureFlagService.getBooleanFlag('sidebar-profile', false);
+  protected readonly showDevToolbar = this.featureFlagService.getBooleanFlag('dev-toolbar', true);
 
   // Base sidebar navigation items - matching React NavigationSidebar design
   private readonly baseSidebarItems: SidebarMenuItem[] = [

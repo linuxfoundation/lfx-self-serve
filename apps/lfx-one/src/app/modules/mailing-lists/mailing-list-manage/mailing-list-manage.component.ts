@@ -37,6 +37,7 @@ import { MailingListSettingsComponent } from '../components/mailing-list-setting
   styleUrl: './mailing-list-manage.component.scss',
 })
 export class MailingListManageComponent {
+  // Private injections
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly mailingListService = inject(MailingListService);
@@ -44,85 +45,37 @@ export class MailingListManageComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
 
+  // Protected constants
   public readonly totalSteps = MAILING_LIST_TOTAL_STEPS;
   public readonly committeeLabel = COMMITTEE_LABEL;
+
+  // Form
+  public readonly form = signal<FormGroup>(this.createFormGroup());
+
+  // Simple WritableSignals
   public readonly mode = signal<'create' | 'edit'>('create');
   public readonly mailingListId = signal<string | null>(null);
-  public readonly isEditMode = computed(() => this.mode() === 'edit');
   public readonly submitting = signal<boolean>(false);
-
-  // Stepper state - internal step tracking for create mode
-  private readonly internalStep = signal<number>(1);
-  public currentStep!: Signal<number>;
-  public readonly form = signal<FormGroup>(this.createFormGroup());
-  public readonly mailingList = this.initializeMailingList();
-  public readonly project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
-
-  // Services state - reactively fetched when project changes
   public readonly servicesLoaded = signal<boolean>(false);
-  public readonly availableServices = this.initializeServices();
-  public readonly selectedService = computed(() => this.availableServices()[0] ?? null);
-
-  // Parent service tracking for shared service creation
   public readonly parentService = signal<GroupsIOService | null>(null);
-  public readonly needsSharedServiceCreation = computed(
-    () => this.parentService() !== null && this.availableServices().filter((service) => service.type === 'shared').length === 0
-  );
+  private readonly internalStep = signal<number>(1);
 
-  // Prefix calculation for shared services
-  public readonly servicePrefix = computed(() => {
-    if (this.needsSharedServiceCreation()) {
-      const project = this.project();
-      return project ? `${this.cleanSlug(project.slug)}` : '';
-    }
-
-    return this.selectedService()?.prefix || '';
-  });
-
-  // Max group name length accounting for prefix (total max is 34)
-  public readonly maxGroupNameLength = computed(() => {
-    const prefix = this.servicePrefix() + '-';
-    return 34 - prefix.length;
-  });
-
-  // Track form changes reactively using toSignal
-  public readonly formValue = toSignal(this.form().valueChanges, { initialValue: this.form().value });
-
-  // Validation computed signals
-  public readonly canGoPrevious = computed(() => this.currentStep() > 1);
-  public readonly canGoNext = computed(() => {
-    // Access formValue to trigger reactivity on form changes
-    this.formValue();
-    return this.currentStep() < this.totalSteps && this.canNavigateToStep(this.currentStep() + 1);
-  });
-  public readonly isFirstStep = computed(() => this.currentStep() === 1);
-  public readonly isLastStep = computed(() => this.currentStep() === this.totalSteps);
-  // Track initial public value for edit mode - Groups.io doesn't allow changing from private to public
-  public readonly initialPublicValue = computed(() => this.mailingList()?.public ?? null);
-
-  public constructor() {
-    // Initialize step based on mode - use query params in edit mode, internal signal in create mode
-    this.currentStep = toSignal(
-      this.route.queryParamMap.pipe(
-        switchMap((params) => {
-          // In edit mode, use query parameters
-          if (this.isEditMode()) {
-            const stepParam = params.get('step');
-            if (stepParam) {
-              const step = parseInt(stepParam, 10);
-              if (step >= 1 && step <= this.totalSteps) {
-                return of(step);
-              }
-            }
-            return of(1);
-          }
-          // In create mode, use internal step signal
-          return toObservable(this.internalStep);
-        })
-      ),
-      { initialValue: 1 }
-    );
-  }
+  // Complex computed/toSignal signals
+  public readonly isEditMode: Signal<boolean> = this.initIsEditMode();
+  public readonly mailingList: Signal<GroupsIOMailingList | null> = this.initMailingList();
+  public readonly project: Signal<ReturnType<typeof this.projectContextService.selectedProject>> = this.initProject();
+  public readonly availableServices: Signal<GroupsIOService[]> = this.initServices();
+  public readonly selectedService: Signal<GroupsIOService | null> = this.initSelectedService();
+  public readonly needsSharedServiceCreation: Signal<boolean> = this.initNeedsSharedServiceCreation();
+  public readonly servicePrefix: Signal<string> = this.initServicePrefix();
+  public readonly maxGroupNameLength: Signal<number> = this.initMaxGroupNameLength();
+  public readonly formValue: Signal<Record<string, unknown>> = this.initFormValue();
+  public readonly canGoPrevious: Signal<boolean> = this.initCanGoPrevious();
+  public readonly canGoNext: Signal<boolean> = this.initCanGoNext();
+  public readonly isFirstStep: Signal<boolean> = this.initIsFirstStep();
+  public readonly isLastStep: Signal<boolean> = this.initIsLastStep();
+  public readonly initialPublicValue: Signal<boolean | null> = this.initInitialPublicValue();
+  public currentStep: Signal<number> = this.initCurrentStep();
 
   public nextStep(): void {
     const next = this.currentStep() + 1;
@@ -210,6 +163,7 @@ export class MailingListManageComponent {
     return this.isStepValid(this.currentStep());
   }
 
+  // Private initializer functions
   private createFormGroup(): FormGroup {
     return new FormGroup(
       {
@@ -229,7 +183,11 @@ export class MailingListManageComponent {
     );
   }
 
-  private initializeMailingList() {
+  private initIsEditMode(): Signal<boolean> {
+    return computed(() => this.mode() === 'edit');
+  }
+
+  private initMailingList(): Signal<GroupsIOMailingList | null> {
     return toSignal(
       this.route.paramMap.pipe(
         switchMap((params) => {
@@ -259,6 +217,136 @@ export class MailingListManageComponent {
         })
       ),
       { initialValue: null }
+    );
+  }
+
+  private initProject(): Signal<ReturnType<typeof this.projectContextService.selectedProject>> {
+    return computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+  }
+
+  private initServices(): Signal<GroupsIOService[]> {
+    return toSignal(
+      toObservable(this.project).pipe(
+        tap(() => {
+          this.servicesLoaded.set(false);
+          this.parentService.set(null);
+        }),
+        filter((project): project is NonNullable<typeof project> => project !== null),
+        switchMap((project) =>
+          this.mailingListService.getServicesByProject(project.uid).pipe(
+            switchMap((services) => {
+              if (services.length > 0) {
+                // Current project has services, no need to create shared service
+                this.parentService.set(null);
+                return of(services);
+              }
+
+              // No services found, fetch full project to get parent_uid
+              return this.projectService.getProject(project.slug, false).pipe(
+                switchMap((fullProject) => {
+                  if (!fullProject?.parent_uid) {
+                    return of([]);
+                  }
+
+                  // Fetch services from parent project
+                  return this.mailingListService.getServicesByProject(fullProject.parent_uid).pipe(
+                    tap((parentServices) => {
+                      // If parent has services, store the first one for shared service creation
+                      if (parentServices.length > 0) {
+                        this.parentService.set(parentServices[0]);
+                      }
+                    })
+                  );
+                }),
+                catchError(() => of([]))
+              );
+            }),
+            tap(() => this.servicesLoaded.set(true)),
+            catchError(() => {
+              this.servicesLoaded.set(true);
+              return of([]);
+            })
+          )
+        )
+      ),
+      { initialValue: [] }
+    );
+  }
+
+  private initSelectedService(): Signal<GroupsIOService | null> {
+    return computed(() => this.availableServices()[0] ?? null);
+  }
+
+  private initNeedsSharedServiceCreation(): Signal<boolean> {
+    return computed(() => this.parentService() !== null && this.availableServices().filter((service) => service.type === 'shared').length === 0);
+  }
+
+  private initServicePrefix(): Signal<string> {
+    return computed(() => {
+      if (this.needsSharedServiceCreation()) {
+        const project = this.project();
+        return project ? `${this.cleanSlug(project.slug)}` : '';
+      }
+
+      return this.selectedService()?.prefix || '';
+    });
+  }
+
+  private initMaxGroupNameLength(): Signal<number> {
+    return computed(() => {
+      const prefix = this.servicePrefix() + '-';
+      return 34 - prefix.length;
+    });
+  }
+
+  private initFormValue(): Signal<Record<string, unknown>> {
+    return toSignal(this.form().valueChanges, { initialValue: this.form().value });
+  }
+
+  private initCanGoPrevious(): Signal<boolean> {
+    return computed(() => this.currentStep() > 1);
+  }
+
+  private initCanGoNext(): Signal<boolean> {
+    return computed(() => {
+      // Access formValue to trigger reactivity on form changes
+      this.formValue();
+      return this.currentStep() < this.totalSteps && this.canNavigateToStep(this.currentStep() + 1);
+    });
+  }
+
+  private initIsFirstStep(): Signal<boolean> {
+    return computed(() => this.currentStep() === 1);
+  }
+
+  private initIsLastStep(): Signal<boolean> {
+    return computed(() => this.currentStep() === this.totalSteps);
+  }
+
+  private initInitialPublicValue(): Signal<boolean | null> {
+    return computed(() => this.mailingList()?.public ?? null);
+  }
+
+  private initCurrentStep(): Signal<number> {
+    return toSignal(
+      this.route.queryParamMap.pipe(
+        switchMap((params) => {
+          // In edit mode, use query parameters
+          if (this.isEditMode()) {
+            const stepParam = params.get('step');
+            if (stepParam) {
+              const step = parseInt(stepParam, 10);
+              if (step >= 1 && step <= this.totalSteps) {
+                return of(step);
+              }
+            }
+            return of(1);
+          }
+          // In create mode, use internal step signal
+          return toObservable(this.internalStep);
+        })
+      ),
+      { initialValue: 1 }
     );
   }
 
@@ -339,59 +427,6 @@ export class MailingListManageComponent {
       committees: formValue.committees?.length > 0 ? formValue.committees : undefined,
       title: formValue.group_name,
     };
-  }
-
-  /**
-   * Initializes services signal reactively based on project changes
-   * Falls back to parent project if no services found for current project
-   */
-  private initializeServices() {
-    return toSignal(
-      toObservable(this.project).pipe(
-        tap(() => {
-          this.servicesLoaded.set(false);
-          this.parentService.set(null);
-        }),
-        filter((project): project is NonNullable<typeof project> => project !== null),
-        switchMap((project) =>
-          this.mailingListService.getServicesByProject(project.uid).pipe(
-            switchMap((services) => {
-              if (services.length > 0) {
-                // Current project has services, no need to create shared service
-                this.parentService.set(null);
-                return of(services);
-              }
-
-              // No services found, fetch full project to get parent_uid
-              return this.projectService.getProject(project.slug, false).pipe(
-                switchMap((fullProject) => {
-                  if (!fullProject?.parent_uid) {
-                    return of([]);
-                  }
-
-                  // Fetch services from parent project
-                  return this.mailingListService.getServicesByProject(fullProject.parent_uid).pipe(
-                    tap((parentServices) => {
-                      // If parent has services, store the first one for shared service creation
-                      if (parentServices.length > 0) {
-                        this.parentService.set(parentServices[0]);
-                      }
-                    })
-                  );
-                }),
-                catchError(() => of([]))
-              );
-            }),
-            tap(() => this.servicesLoaded.set(true)),
-            catchError(() => {
-              this.servicesLoaded.set(true);
-              return of([]);
-            })
-          )
-        )
-      ),
-      { initialValue: [] }
-    );
   }
 
   /**

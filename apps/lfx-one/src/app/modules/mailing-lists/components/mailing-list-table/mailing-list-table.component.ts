@@ -11,7 +11,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { COMMITTEE_LABEL, MAILING_LIST_LABEL, MAILING_LIST_MAX_VISIBLE_GROUPS } from '@lfx-one/shared';
-import { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
+import { FilterOption, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { GroupEmailPipe } from '@pipes/group-email.pipe';
 import { MailingListTypeLabelPipe } from '@pipes/mailing-list-type-label.pipe';
 import { MailingListVisibilitySeverityPipe } from '@pipes/mailing-list-visibility-severity.pipe';
@@ -48,8 +48,8 @@ export class MailingListTableComponent {
   public isMaintainer = input<boolean>(false);
   public mailingListLabel = input<string>(MAILING_LIST_LABEL.singular);
   public searchForm = input.required<FormGroup>();
-  public committeeFilterOptions = input.required<{ label: string; value: string | null }[]>();
-  public statusFilterOptions = input.required<{ label: string; value: string | null }[]>();
+  public committeeFilterOptions = input.required<FilterOption[]>();
+  public statusFilterOptions = input.required<FilterOption[]>();
 
   // Constants
   protected readonly maxVisibleGroups = MAILING_LIST_MAX_VISIBLE_GROUPS;

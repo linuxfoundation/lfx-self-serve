@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, signal } from '@angular/core';
+import { Component, computed, inject, signal } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardSelectorComponent } from '@components/card-selector/card-selector.component';
@@ -32,8 +32,8 @@ export class ManageMemberModalComponent {
   public readonly mailingListName: string = this.config.data.mailingListName;
   public readonly member: MailingListMember | null = this.config.data.member || null;
 
-  // Computed
-  public readonly isEditMode = !!this.member;
+  // Computed signals
+  public readonly isEditMode = computed(() => !!this.member);
 
   // Constants
   protected readonly memberLabel = MAILING_LIST_MEMBER_LABEL;
@@ -134,7 +134,7 @@ export class ManageMemberModalComponent {
       this.submitting.set(true);
       const formValue = this.form.getRawValue();
 
-      if (this.isEditMode) {
+      if (this.isEditMode()) {
         // Update existing member - PUT requires full payload
         // Only job_title and organization are editable, preserve other fields from existing member
         const updateData = {
@@ -199,8 +199,6 @@ export class ManageMemberModalComponent {
 
   private handleError(error: unknown, defaultMessage: string): void {
     this.submitting.set(false);
-    console.error('Manage member modal error:', error);
-
     const errorMessage = error instanceof Error ? error.message : (error as { error?: { message?: string } })?.error?.message || defaultMessage;
 
     this.messageService.add({

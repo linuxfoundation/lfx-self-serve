@@ -1,0 +1,25 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+:host {
+  display: block;
+}
+
+// Override SelectButton for dark theme
+::ng-deep .dev-tools-select-button {
+  .p-selectbutton {
+    @apply bg-gray-800 border-gray-700;
+
+    .p-togglebutton {
+      @apply bg-gray-800 text-gray-300 border-gray-700;
+
+      &:hover {
+        @apply bg-gray-700;
+      }
+
+      &.p-togglebutton-checked {
+        @apply bg-blue-600 text-white border-blue-600;
+      }
+    }
+  }
+}

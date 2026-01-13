@@ -7,11 +7,11 @@ import { PersonaOption } from '../interfaces';
  * Persona options available for user selection
  */
 export const PERSONA_OPTIONS: PersonaOption[] = [
-  {
-    value: 'core-developer',
-    label: 'Core Developer',
-    description: 'New streamlined developer experience',
-  },
+  // {
+  //   value: 'core-developer',
+  //   label: 'Core Developer',
+  //   description: 'New streamlined developer experience',
+  // },
   {
     value: 'maintainer',
     label: 'Maintainer',

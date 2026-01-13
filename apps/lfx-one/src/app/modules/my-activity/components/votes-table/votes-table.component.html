@@ -82,10 +82,7 @@
 
         <td>
           @if (vote | canVote) {
-            <span
-              [class.text-green-500]="vote.end_time | isDueWithinMonth"
-              [pTooltip]="(vote.end_time | isDueWithinMonth) ? (vote.end_time | date: 'MMMM d, y') || '' : ''"
-              tooltipPosition="top">
+            <span [class.text-green-500]="vote.end_time | isDueWithinMonth">
               {{ vote.end_time | relativeDueDate }}
             </span>
           } @else {

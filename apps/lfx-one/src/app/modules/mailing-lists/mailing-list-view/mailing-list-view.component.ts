@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LowerCasePipe } from '@angular/common';
-import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
@@ -46,12 +46,13 @@ import { MailingListMembersComponent } from '../components/mailing-list-members/
   styleUrl: './mailing-list-view.component.scss',
 })
 export class MailingListViewComponent {
+  // Private injections
   private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
 
-  // Constants for template
+  // Protected constants
   protected readonly mailingListLabel = MAILING_LIST_LABEL;
   protected readonly memberLabel = MAILING_LIST_MEMBER_LABEL;
   protected readonly committeeLabel = COMMITTEE_LABEL;
@@ -59,80 +60,29 @@ export class MailingListViewComponent {
   protected readonly audienceAccessLabels = MAILING_LIST_AUDIENCE_ACCESS_LABELS;
   protected readonly visibilityLabels = MAILING_LIST_VISIBILITY_LABELS;
 
-  // State signals
-  public mailingList: Signal<GroupsIOMailingList | null>;
-  public loading: WritableSignal<boolean>;
-  public error: WritableSignal<boolean>;
-  public refresh: BehaviorSubject<void>;
+  // Simple WritableSignals
+  public loading = signal<boolean>(true);
+  public error = signal<boolean>(false);
+  public refresh = new BehaviorSubject<void>(undefined);
 
-  // Computed signals for derived data
-  public breadcrumbItems: Signal<MenuItem[]>;
-  public emailAddress: Signal<string>;
-  public memberCount: Signal<number>;
-  public linkedCommittees: Signal<CommitteeReference[]>;
-  public postingTypeLabel: Signal<string>;
-  public audienceAccessLabel: Signal<string>;
-  public visibilityLabel: Signal<string>;
-  public groupsIoUrl: Signal<string | null>;
-  public editRoute: Signal<string[]>;
-
-  public constructor() {
-    this.error = signal<boolean>(false);
-    this.refresh = new BehaviorSubject<void>(undefined);
-    this.loading = signal<boolean>(true);
-    this.mailingList = this.initializeMailingList();
-
-    // Computed signals
-    this.breadcrumbItems = computed(() => [
-      { label: this.mailingListLabel.plural, routerLink: ['/mailing-lists'] },
-      { label: this.mailingList()?.title || '' },
-    ]);
-
-    this.emailAddress = computed(() => {
-      const ml = this.mailingList();
-      if (!ml?.group_name) return '';
-      if (!ml.service?.domain) return ml.group_name;
-      return `${ml.group_name}@${ml.service.domain}`;
-    });
-
-    this.memberCount = computed(() => {
-      // Placeholder - will be populated from API when available
-      return 0;
-    });
-
-    this.linkedCommittees = computed(() => this.mailingList()?.committees || []);
-
-    this.postingTypeLabel = computed(() => {
-      const type = this.mailingList()?.type;
-      if (!type) return '-';
-      return this.typeLabels[type] || type;
-    });
-
-    this.audienceAccessLabel = computed(() => {
-      const access = this.mailingList()?.audience_access;
-      if (!access) return '-';
-      return this.audienceAccessLabels[access as MailingListAudienceAccess] || access;
-    });
-
-    this.visibilityLabel = computed(() => {
-      const isPublic = this.mailingList()?.public;
-      if (isPublic === undefined || isPublic === null) return '-';
-      return this.visibilityLabels[String(isPublic) as 'true' | 'false'];
-    });
-
-    this.groupsIoUrl = computed(() => this.mailingList()?.service?.url || null);
-
-    this.editRoute = computed(() => {
-      const uid = this.mailingList()?.uid;
-      return uid ? ['/mailing-lists', uid, 'edit'] : ['/mailing-lists'];
-    });
-  }
+  // Complex computed/toSignal signals
+  public readonly mailingList: Signal<GroupsIOMailingList | null> = this.initMailingList();
+  public readonly breadcrumbItems: Signal<MenuItem[]> = this.initBreadcrumbItems();
+  public readonly emailAddress: Signal<string> = this.initEmailAddress();
+  public readonly memberCount: Signal<number> = this.initMemberCount();
+  public readonly linkedCommittees: Signal<CommitteeReference[]> = this.initLinkedCommittees();
+  public readonly postingTypeLabel: Signal<string> = this.initPostingTypeLabel();
+  public readonly audienceAccessLabel: Signal<string> = this.initAudienceAccessLabel();
+  public readonly visibilityLabel: Signal<string> = this.initVisibilityLabel();
+  public readonly groupsIoUrl: Signal<string | null> = this.initGroupsIoUrl();
+  public readonly editRoute: Signal<string[]> = this.initEditRoute();
 
   public refreshData(): void {
     this.refresh.next();
   }
 
-  private initializeMailingList(): Signal<GroupsIOMailingList | null> {
+  // Private initializer functions
+  private initMailingList(): Signal<GroupsIOMailingList | null> {
     return toSignal(
       combineLatest([this.route.paramMap, this.refresh]).pipe(
         switchMap(([params]) => {
@@ -144,8 +94,7 @@ export class MailingListViewComponent {
           }
 
           return this.mailingListService.getMailingList(mailingListId).pipe(
-            catchError((error) => {
-              console.error('Failed to load mailing list', error);
+            catchError(() => {
               this.messageService.add({
                 severity: 'error',
                 summary: 'Error',
@@ -163,5 +112,64 @@ export class MailingListViewComponent {
       ),
       { initialValue: null }
     );
+  }
+
+  private initBreadcrumbItems(): Signal<MenuItem[]> {
+    return computed(() => [{ label: this.mailingListLabel.plural, routerLink: ['/mailing-lists'] }, { label: this.mailingList()?.title || '' }]);
+  }
+
+  private initEmailAddress(): Signal<string> {
+    return computed(() => {
+      const ml = this.mailingList();
+      if (!ml?.group_name) return '';
+      if (!ml.service?.domain) return ml.group_name;
+      return `${ml.group_name}@${ml.service.domain}`;
+    });
+  }
+
+  private initMemberCount(): Signal<number> {
+    return computed(() => {
+      // Placeholder - will be populated from API when available
+      return 0;
+    });
+  }
+
+  private initLinkedCommittees(): Signal<CommitteeReference[]> {
+    return computed(() => this.mailingList()?.committees || []);
+  }
+
+  private initPostingTypeLabel(): Signal<string> {
+    return computed(() => {
+      const type = this.mailingList()?.type;
+      if (!type) return '-';
+      return this.typeLabels[type] || type;
+    });
+  }
+
+  private initAudienceAccessLabel(): Signal<string> {
+    return computed(() => {
+      const access = this.mailingList()?.audience_access;
+      if (!access) return '-';
+      return this.audienceAccessLabels[access as MailingListAudienceAccess] || access;
+    });
+  }
+
+  private initVisibilityLabel(): Signal<string> {
+    return computed(() => {
+      const isPublic = this.mailingList()?.public;
+      if (isPublic === undefined || isPublic === null) return '-';
+      return this.visibilityLabels[String(isPublic) as 'true' | 'false'];
+    });
+  }
+
+  private initGroupsIoUrl(): Signal<string | null> {
+    return computed(() => this.mailingList()?.service?.url || null);
+  }
+
+  private initEditRoute(): Signal<string[]> {
+    return computed(() => {
+      const uid = this.mailingList()?.uid;
+      return uid ? ['/mailing-lists', uid, 'edit'] : ['/mailing-lists'];
+    });
   }
 }

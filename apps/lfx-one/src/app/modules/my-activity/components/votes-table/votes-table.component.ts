@@ -27,7 +27,6 @@ import { CombinedVoteStatusSeverityPipe } from '@pipes/combined-vote-status-seve
 import { IsDueWithinMonthPipe } from '@pipes/is-due-within-month.pipe';
 import { RelativeDueDatePipe } from '@pipes/relative-due-date.pipe';
 import { VoteActionTextPipe } from '@pipes/vote-action-text.pipe';
-import { TooltipModule } from 'primeng/tooltip';
 import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
 
 import { VoteDetailsDrawerComponent } from '../vote-details-drawer/vote-details-drawer.component';
@@ -49,7 +48,6 @@ import { VoteDetailsDrawerComponent } from '../vote-details-drawer/vote-details-
     VoteActionTextPipe,
     RelativeDueDatePipe,
     IsDueWithinMonthPipe,
-    TooltipModule,
     VoteDetailsDrawerComponent,
   ],
   templateUrl: './votes-table.component.html',

@@ -91,10 +91,7 @@
 
         <td>
           @if (survey | canTakeSurvey) {
-            <span
-              [class.text-green-500]="survey.survey_cutoff_date | isDueWithinMonth"
-              [pTooltip]="(survey.survey_cutoff_date | isDueWithinMonth) ? (survey.survey_cutoff_date | date: 'MMMM d, y') || '' : ''"
-              tooltipPosition="top">
+            <span [class.text-green-500]="survey.survey_cutoff_date | isDueWithinMonth">
               {{ survey.survey_cutoff_date | relativeDueDate }}
             </span>
           } @else {

@@ -20,7 +20,6 @@ import { CombinedSurveyStatusSeverityPipe } from '@pipes/combined-survey-status-
 import { IsDueWithinMonthPipe } from '@pipes/is-due-within-month.pipe';
 import { RelativeDueDatePipe } from '@pipes/relative-due-date.pipe';
 import { SurveyActionTextPipe } from '@pipes/survey-action-text.pipe';
-import { TooltipModule } from 'primeng/tooltip';
 import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
 
 @Component({
@@ -40,7 +39,6 @@ import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
     SurveyActionTextPipe,
     RelativeDueDatePipe,
     IsDueWithinMonthPipe,
-    TooltipModule,
   ],
   templateUrl: './surveys-table.component.html',
 })

@@ -1,9 +1,12 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex min-h-screen">
+<!-- Dev Toolbar (fixed at top) -->
+<lfx-dev-toolbar></lfx-dev-toolbar>
+
+<div class="flex min-h-screen" [ngClass]="{ 'pt-12': showDevToolbar() }">
   <!-- Sidebar - Desktop -->
-  <div class="hidden lg:block w-64 flex-shrink-0 fixed top-0 left-0">
+  <div class="hidden lg:block w-64 flex-shrink-0 fixed left-0" [ngClass]="{ 'top-12': showDevToolbar(), 'top-0': !showDevToolbar() }">
     <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems()" [showProjectSelector]="true"></lfx-sidebar>
   </div>
 
@@ -30,7 +33,7 @@
   <!-- Main Content Area -->
   <main class="flex-1 min-w-0 transition-all duration-300 lg:ml-64 flex flex-col" data-testid="main-content">
     <!-- Mobile Menu Button -->
-    <div class="lg:hidden sticky top-0 z-30 bg-white border-b border-gray-200 px-5 py-3">
+    <div class="lg:hidden sticky z-30 bg-white border-b border-gray-200 px-5 py-3" [ngClass]="{ 'top-12': showDevToolbar(), 'top-0': !showDevToolbar() }">
       <button
         type="button"
         class="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors"

@@ -33,7 +33,7 @@
             @if (todayMeetings().length > 0) {
               <div>
                 <div class="flex flex-col gap-3">
-                  @for (item of todayMeetings(); track item.meeting.uid) {
+                  @for (item of todayMeetings(); track item.trackId) {
                     <lfx-dashboard-meeting-card
                       class="-mt-2 py-2"
                       [meeting]="item.meeting"
@@ -48,7 +48,7 @@
             @if (upcomingMeetings().length > 0) {
               <div>
                 <div class="flex flex-col gap-3">
-                  @for (item of upcomingMeetings(); track item.meeting.uid) {
+                  @for (item of upcomingMeetings(); track item.trackId) {
                     <lfx-dashboard-meeting-card
                       [meeting]="item.meeting"
                       [occurrence]="item.occurrence"
@@ -67,7 +67,7 @@
         </div>
 
         <!-- Top shadow fade -->
-        @if (scrollShadowDirective && scrollShadowDirective.showTopShadow()) {
+        @if (showTopShadow()) {
           <div
             class="absolute top-0 left-0 right-0 h-16 z-10 pointer-events-none bg-[linear-gradient(to_bottom,#f9fafb,transparent)]"
             data-testid="dashboard-my-meetings-shadow-top"
@@ -75,7 +75,7 @@
         }
 
         <!-- Bottom shadow fade -->
-        @if (scrollShadowDirective && scrollShadowDirective.showBottomShadow()) {
+        @if (showBottomShadow()) {
           <div
             class="absolute bottom-0 left-0 right-0 h-16 z-10 pointer-events-none bg-[linear-gradient(to_top,#f9fafb,transparent)]"
             data-testid="dashboard-my-meetings-shadow-bottom"

@@ -26,7 +26,9 @@ import type {
   CodeCommitsDailyResponse,
   DashboardMetricCard,
   FoundationContributorsMentoredResponse,
+  HealthMetricsAggregatedRow,
   HealthMetricsDailyResponse,
+  ProjectHealthMetricsDailyRow,
   ProjectIssuesResolutionResponse,
   ProjectPullRequestsWeeklyResponse,
   UniqueContributorsWeeklyResponse,
@@ -542,7 +544,11 @@ export class RecentProgressComponent {
     };
   }
 
-  private transformHealthMetricsDaily(data: HealthMetricsDailyResponse, metric: DashboardMetricCard): DashboardMetricCard {
+  private transformHealthMetricsDaily(
+    data: HealthMetricsDailyResponse,
+    metric: DashboardMetricCard,
+    entityType: 'foundation' | 'project'
+  ): DashboardMetricCard {
     // Reverse the data to show oldest date on the left
     const chartData = [...data.data].reverse();
 
@@ -551,6 +557,17 @@ export class RecentProgressComponent {
 
     // Determine trend based on health score
     const trend = currentAvgHealthScore >= 50 ? 'up' : 'down';
+
+    // Helper to extract health score based on entity type
+    const getHealthScore = (row: HealthMetricsAggregatedRow | ProjectHealthMetricsDailyRow): number => {
+      if (entityType === 'foundation') {
+        return (row as HealthMetricsAggregatedRow).AVG_HEALTH_SCORE;
+      }
+      return (row as ProjectHealthMetricsDailyRow).HEALTH_SCORE;
+    };
+
+    // Tooltip label based on entity type
+    const tooltipLabel = entityType === 'foundation' ? 'Avg Health Score' : 'Health Score';
 
     return {
       ...metric,
@@ -562,7 +579,7 @@ export class RecentProgressComponent {
         datasets: [
           {
             label: 'Health Score',
-            data: chartData.map((row) => row.AVG_HEALTH_SCORE),
+            data: chartData.map((row) => getHealthScore(row)),
             borderColor: lfxColors.emerald[500],
             backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
             fill: true,
@@ -584,7 +601,7 @@ export class RecentProgressComponent {
               },
               label: (context) => {
                 const score = Math.round(context.parsed.y ?? 0);
-                return `Avg Health Score: ${score}`;
+                return `${tooltipLabel}: ${score}`;
               },
             },
           },
@@ -1031,7 +1048,7 @@ export class RecentProgressComponent {
   }
 
   private initializeHealthScoreCard() {
-    return computed(() => this.transformHealthMetricsDaily(this.healthMetricsDailyData(), this.getMetricConfig('Health Score')));
+    return computed(() => this.transformHealthMetricsDaily(this.healthMetricsDailyData(), this.getMetricConfig('Health Score'), this.entityType()));
   }
 
   private initializeCodeCommitsDailyCard() {

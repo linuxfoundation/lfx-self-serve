@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, ViewChild } from '@angular/core';
+import { Component, computed, inject, signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DashboardMeetingCardComponent } from '@app/modules/dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { ButtonComponent } from '@components/button/button.component';
@@ -21,7 +21,9 @@ import type { MeetingWithOccurrence } from '@lfx-one/shared/interfaces';
   styleUrl: './my-meetings.component.scss',
 })
 export class MyMeetingsComponent {
-  @ViewChild(ScrollShadowDirective) protected scrollShadowDirective!: ScrollShadowDirective;
+  private readonly scrollShadowDirective = viewChild(ScrollShadowDirective);
+  protected readonly showTopShadow = computed(() => this.scrollShadowDirective()?.showTopShadow() ?? false);
+  protected readonly showBottomShadow = computed(() => this.scrollShadowDirective()?.showBottomShadow() ?? false);
 
   private readonly userService = inject(UserService);
   private readonly projectContextService = inject(ProjectContextService);
@@ -59,6 +61,7 @@ export class MyMeetingsComponent {
                 meeting,
                 occurrence,
                 sortTime: startTimeMs,
+                trackId: `${meeting.uid}-${occurrence.occurrence_id}`,
               });
             }
           }
@@ -80,6 +83,7 @@ export class MyMeetingsComponent {
                 duration: meeting.duration,
               },
               sortTime: startTimeMs,
+              trackId: meeting.uid,
             });
           }
         }
@@ -114,6 +118,7 @@ export class MyMeetingsComponent {
                 meeting,
                 occurrence,
                 sortTime: startTimeMs,
+                trackId: `${meeting.uid}-${occurrence.occurrence_id}`,
               });
             }
           }
@@ -134,6 +139,7 @@ export class MyMeetingsComponent {
                 duration: meeting.duration,
               },
               sortTime: startTimeMs,
+              trackId: meeting.uid,
             });
           }
         }

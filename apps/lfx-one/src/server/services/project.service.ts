@@ -9,7 +9,6 @@ import {
   FoundationContributorsMentoredResponse,
   FoundationContributorsMentoredRow,
   FoundationHealthEventsMonthlyRow,
-  FoundationHealthMetricsDailyRow,
   FoundationHealthScoreDistributionResponse,
   FoundationHealthScoreDistributionRow,
   FoundationMaintainersDailyRow,
@@ -20,6 +19,7 @@ import {
   FoundationTotalProjectsResponse,
   FoundationUniqueContributorsDailyRow,
   HealthEventsMonthlyResponse,
+  HealthMetricsAggregatedRow,
   HealthMetricsDailyResponse,
   MonthlyMemberCountWithFoundation,
   MonthlyProjectCountWithFoundation,
@@ -1105,57 +1105,63 @@ export class ProjectService {
 
   /**
    * Get health metrics daily data from Snowflake
-   * Queries FOUNDATION_HEALTH_METRICS_DAILY or PROJECT_HEALTH_METRICS_DAILY table
+   * Queries PROJECT_HEALTH_METRICS_DAILY table with different aggregation based on entity type
    * @param slug - Foundation or project slug
-   * @param entityType - Query scope: 'foundation' (foundation-level data) or 'project' (single project data)
+   * @param entityType - Query scope: 'foundation' (aggregated by foundation) or 'project' (single project data)
    * @returns Daily health metrics data with current average health score
    */
   public async getHealthMetricsDaily(slug: string, entityType: 'foundation' | 'project'): Promise<HealthMetricsDailyResponse> {
-    // Query switching based on entity type
-    const query =
-      entityType === 'foundation'
-        ? `
-      SELECT
-        FOUNDATION_ID,
-        FOUNDATION_SLUG,
-        METRIC_DATE,
-        AVG_HEALTH_SCORE,
-        MIN_HEALTH_SCORE,
-        MAX_HEALTH_SCORE,
-        PROJECTS_WITH_HEALTH_SCORE_COUNT,
-        TOTAL_SOFTWARE_VALUE,
-        AVG_SOFTWARE_VALUE,
-        PROJECTS_WITH_SOFTWARE_VALUE_COUNT,
-        TOTAL_PROJECTS_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_METRICS_DAILY
-      WHERE FOUNDATION_SLUG = ?
-      ORDER BY METRIC_DATE DESC
-    `
-        : `
-      SELECT
-        PROJECT_ID,
-        PROJECT_SLUG,
-        METRIC_DATE,
-        AVG_HEALTH_SCORE,
-        MIN_HEALTH_SCORE,
-        MAX_HEALTH_SCORE,
-        PROJECTS_WITH_HEALTH_SCORE_COUNT,
-        TOTAL_SOFTWARE_VALUE,
-        AVG_SOFTWARE_VALUE,
-        PROJECTS_WITH_SOFTWARE_VALUE_COUNT,
-        TOTAL_SUB_PROJECTS_COUNT
-      FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_HEALTH_METRICS_DAILY
-      WHERE PROJECT_SLUG = ?
-      ORDER BY METRIC_DATE DESC
-    `;
+    if (entityType === 'foundation') {
+      // Foundation level: Aggregate health scores by date across all projects in the foundation
+      const query = `
+        SELECT
+          FOUNDATION_SLUG,
+          METRIC_DATE,
+          AVG(HEALTH_SCORE) AS AVG_HEALTH_SCORE
+        FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_HEALTH_METRICS_DAILY
+        WHERE FOUNDATION_SLUG = ?
+        GROUP BY FOUNDATION_SLUG, METRIC_DATE
+        ORDER BY METRIC_DATE DESC
+      `;
 
-    const result =
-      entityType === 'foundation'
-        ? await this.snowflakeService.execute<FoundationHealthMetricsDailyRow>(query, [slug])
-        : await this.snowflakeService.execute<ProjectHealthMetricsDailyRow>(query, [slug]);
+      const result = await this.snowflakeService.execute<HealthMetricsAggregatedRow>(query, [slug]);
 
-    // Get current average health score from most recent date
-    const currentAvgHealthScore = result.rows.length > 0 ? Math.round(result.rows[0].AVG_HEALTH_SCORE) : 0;
+      // Get current average health score from most recent date
+      const currentAvgHealthScore = result.rows.length > 0 ? Math.round(result.rows[0].AVG_HEALTH_SCORE) : 0;
+
+      return {
+        data: result.rows,
+        currentAvgHealthScore,
+        totalDays: result.rows.length,
+      };
+    }
+
+    // Project level: Return direct health score for the specific project
+    const query = `
+        SELECT
+          PROJECT_ID,
+          PROJECT_NAME,
+          PROJECT_SLUG,
+          FOUNDATION_ID,
+          FOUNDATION_SLUG,
+          METRIC_DATE,
+          HEALTH_SCORE,
+          HEALTH_SCORE_CATEGORY,
+          SOFTWARE_VALUE,
+          CM_STATUS,
+          PARENT_ID,
+          PARENT_SLUG,
+          GRANDPARENT_ID,
+          GRANDPARENTS_SLUG
+        FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_HEALTH_METRICS_DAILY
+        WHERE PROJECT_SLUG = ?
+        ORDER BY METRIC_DATE DESC
+      `;
+
+    const result = await this.snowflakeService.execute<ProjectHealthMetricsDailyRow>(query, [slug]);
+
+    // Get current health score from most recent date
+    const currentAvgHealthScore = result.rows.length > 0 ? Math.round(result.rows[0].HEALTH_SCORE) : 0;
 
     return {
       data: result.rows,
@@ -1337,11 +1343,6 @@ export class ProjectService {
           exists: false,
         };
       }
-
-      logger.debug(req, 'get_project_id_by_slug', 'Successfully resolved project slug to ID', {
-        slug,
-        project_id: uid,
-      });
 
       return {
         uid: uid.trim(),

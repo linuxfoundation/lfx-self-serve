@@ -40,16 +40,6 @@
 
     <!-- Bottom Navigation -->
     <div class="flex flex-col gap-2 items-start px-3 w-full">
-      <!-- Persona Selector -->
-      <div class="w-full mb-2">
-        <lfx-persona-selector></lfx-persona-selector>
-      </div>
-
-      <!-- Clear Cache nav item (feature flag controlled) -->
-      @if (showClearCacheButton()) {
-        <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: clearCacheMenuItem }"></ng-container>
-      }
-
       @if (footerItems().length > 0) {
         @for (item of footerItemsWithTestIds(); track item.label) {
           <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
