@@ -80,23 +80,36 @@
 }
 
 :root {
+  /* Form field small size styling (h-[42px] px-4 py-2.5) */
+  --p-form-field-sm-padding-x: 1rem;
+  --p-form-field-sm-padding-y: 0.625rem;
   --p-form-field-sm-font-size: 0.875rem;
+
+  /* Input text small size */
+  --p-inputtext-sm-padding-x: 1rem;
+  --p-inputtext-sm-padding-y: 0.625rem;
   --p-inputtext-sm-font-size: 0.875rem;
-  --p-inputtext-color: #333;
-  --p-select-color: #333;
-  --p-multiselect-color: #333;
-  --p-textarea-color: #333;
+
+  /* Select small size */
+  --p-select-sm-padding-x: 1rem;
+  --p-select-sm-padding-y: 0.625rem;
   --p-select-sm-font-size: 0.875rem;
-  --p-form-field-md-font-size: 1rem;
-  --p-form-field-lg-font-size: 1.125rem;
-  --p-select-md-font-size: 1rem;
+
+  /* Multiselect small size */
+  --p-multiselect-sm-padding-x: 1rem;
+  --p-multiselect-sm-padding-y: 0.625rem;
   --p-multiselect-sm-font-size: 0.875rem;
-  --p-multiselect-md-font-size: 1rem;
-  --p-inputtext-md-font-size: 1rem;
-  --p-textarea-border-color: var(--p-inputtext-border-color);
+
+  /* Textarea small size */
+  --p-textarea-sm-padding-x: 1rem;
+  --p-textarea-sm-padding-y: 0.625rem;
   --p-textarea-sm-font-size: 0.875rem;
-  --p-textarea-md-font-size: 1rem;
-  --p-textarea-lg-font-size: 1.125rem;
+
+  /* DatePicker small size */
+  --p-datepicker-sm-padding-x: 1rem;
+  --p-datepicker-sm-padding-y: 0.625rem;
+  --p-datepicker-sm-font-size: 0.875rem;
+
   --p-toggle-sm-font-size: 0.875rem;
   --p-inplace-padding: 0;
 

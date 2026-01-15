@@ -1,81 +1,100 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6">
-  <!-- Header -->
-  <div class="text-center mb-8">
-    <h2 class="mb-2">Meeting Platform & Features</h2>
-    <p class="text-gray-500 text-base">Select your video platform and enable transparency features like recording and public calendars</p>
+<div class="pb-4">
+  <!-- Step Title -->
+  <div class="mb-6">
+    <h2 class="font-normal">Meeting Platform & Features</h2>
+    <p class="text-sm text-gray-500 mt-1">Select your video platform and enable transparency features like recording and public calendars</p>
   </div>
 
-  <!-- Meeting Platform Selection -->
-  <div class="flex flex-col gap-2">
-    <label for="meeting-platform" class="block text-sm font-medium text-gray-900">Meeting Platform <span class="text-red-500">*</span></label>
-
-    <lfx-select
-      [form]="form()"
-      class="mb-4"
-      control="platform"
-      [options]="platformDropdownOptions"
-      placeholder="Select meeting platform"
-      styleClass="w-full"
-      id="meeting-platform"
-      data-testid="meeting-platform-select">
-    </lfx-select>
-
-    @if (form().get('platform')?.errors?.['required'] && form().get('platform')?.touched) {
-      <p class="mt-1 text-sm text-red-600" data-testid="platform-error">Please select a meeting platform</p>
-    }
-  </div>
-
-  <!-- Info Section -->
-  <lfx-message severity="info" icon="fa-light fa-info-circle">
-    <ng-template #content>
-      <h4 class="text-sm font-semibold mb-1">Meeting Features</h4>
-      <p class="text-sm">
-        Open source thrives on transparency and accessibility. Recording meetings, generating transcripts, and enabling features helps include community members
-        who can't attend live and creates valuable documentation.
-      </p>
-    </ng-template>
-  </lfx-message>
-
-  <!-- Meeting Features -->
-  <div class="flex flex-col gap-2">
-    <h3 class="text-base font-medium text-gray-900">Meeting Features</h3>
-
-    @for (feature of features; track feature.key) {
-      <lfx-feature-toggle [feature]="feature" [form]="form()"></lfx-feature-toggle>
-    }
-  </div>
-
-  <!-- Additional Options (if recording is enabled) -->
-  @if (form().get('recording_enabled')?.value) {
-    <div class="bg-gray-50 border border-gray-200 p-4 rounded-lg flex flex-col gap-4" data-testid="artifact-options">
-      <!-- Artifact Visibility -->
+  <!-- Two Column Layout -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <!-- Left Column - Platform & First Features -->
+    <div class="flex flex-col gap-6">
+      <!-- Meeting Platform -->
       <div>
-        <label for="artifact-visibility" class="block text-sm font-medium text-gray-700 mb-1">Recording & Summary Access</label>
+        <label for="meeting-platform" class="block text-neutral-950 mb-2">Meeting Platform <span class="text-red-500">*</span></label>
         <lfx-select
-          size="small"
           [form]="form()"
-          control="artifact_visibility"
-          [options]="artifactVisibilityOptions"
-          placeholder="Select artifact visibility"
+          control="platform"
+          [options]="platformDropdownOptions"
+          placeholder="Select meeting platform"
           styleClass="w-full"
-          id="artifact-visibility"
-          data-testid="artifact-visibility-select"></lfx-select>
-        <p class="mt-1 text-xs text-gray-500">Who can access recordings, transcripts, and AI summaries</p>
+          id="meeting-platform"
+          data-testid="meeting-platform-select">
+        </lfx-select>
+        @if (form().get('platform')?.errors?.['required'] && form().get('platform')?.touched) {
+          <p class="mt-1 text-sm text-red-600" data-testid="platform-error">Please select a meeting platform</p>
+        }
       </div>
 
-      <!-- Require AI Summary Approval (if AI summary is enabled) -->
-      @if (form().get('zoom_ai_enabled')?.value) {
-        <div class="flex items-center justify-between" data-testid="ai-summary-approval">
-          <div>
-            <label for="require-ai-approval" class="text-sm font-medium text-gray-900">Require AI Summary Approval</label>
-            <p class="text-xs text-gray-500">AI summary must be reviewed before sharing</p>
+      <!-- Info Box -->
+      <div class="bg-blue-50 border border-blue-200 rounded-lg p-4">
+        <div class="flex gap-3">
+          <div class="flex-shrink-0 mt-0.5">
+            <i class="fa-light fa-info-circle w-5 h-5 text-blue-500"></i>
           </div>
-          <lfx-toggle [form]="form()" control="require_ai_summary_approval" id="require-ai-approval" data-testid="require-ai-approval-toggle"></lfx-toggle>
+          <div>
+            <p class="text-blue-500 font-semibold mb-1">Meeting Features</p>
+            <p class="text-blue-500 text-sm">
+              Open source thrives on transparency and accessibility. Recording meetings, generating transcripts, and enabling features helps include community
+              members who can't attend live and creates valuable documentation.
+            </p>
+          </div>
         </div>
-      }
+      </div>
+
+      <!-- Meeting Features Section -->
+      <div class="flex flex-col gap-3">
+        <h4 class="text-neutral-950">Meeting Features</h4>
+
+        <!-- Enable Recording (with nested settings) -->
+        <lfx-feature-toggle [feature]="recordingFeature" [form]="form()">
+          @if (form().get('recording_enabled')?.value) {
+            <div class="mt-4 pt-4 border-t border-gray-200">
+              <label for="artifact-visibility" class="block text-neutral-950 mb-2">Recording & Summary Access</label>
+              <lfx-select
+                size="small"
+                [form]="form()"
+                control="artifact_visibility"
+                [options]="artifactVisibilityOptions"
+                placeholder="Select artifact visibility"
+                styleClass="w-full"
+                id="artifact-visibility"
+                data-testid="artifact-visibility-select"></lfx-select>
+              <p class="mt-1 text-xs text-gray-500">Who can access recordings, transcripts, and AI summaries</p>
+            </div>
+          }
+        </lfx-feature-toggle>
+
+        <!-- Generate Transcripts -->
+        <lfx-feature-toggle [feature]="transcriptFeature" [form]="form()"></lfx-feature-toggle>
+      </div>
     </div>
-  }
+
+    <!-- Right Column - Remaining Features -->
+    <div class="flex flex-col gap-3">
+      <!-- YouTube Auto-upload -->
+      <lfx-feature-toggle [feature]="youtubeFeature" [form]="form()"></lfx-feature-toggle>
+
+      <!-- AI Meeting Summary (with nested settings) -->
+      <lfx-feature-toggle [feature]="aiSummaryFeature" [form]="form()">
+        @if (form().get('zoom_ai_enabled')?.value) {
+          <div class="mt-4 pt-4 border-t border-gray-200">
+            <div class="flex items-center justify-between">
+              <div>
+                <label for="require-ai-approval" class="text-neutral-950">Require AI Summary Approval</label>
+                <p class="text-sm text-gray-500">AI summary must be reviewed before sharing</p>
+              </div>
+              <lfx-toggle [form]="form()" control="require_ai_summary_approval" id="require-ai-approval" data-testid="require-ai-approval-toggle"></lfx-toggle>
+            </div>
+          </div>
+        }
+      </lfx-feature-toggle>
+
+      <!-- Show in Public Calendar -->
+      <lfx-feature-toggle [feature]="calendarFeature" [form]="form()"></lfx-feature-toggle>
+    </div>
+  </div>
 </div>

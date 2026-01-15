@@ -10,7 +10,7 @@
   } @else {
     <!-- Committee Selection -->
     <div class="flex flex-col gap-1">
-      <label class="text-sm font-medium text-gray-700">Select {{ committeeLabel.plural }}</label>
+      <label class="block text-neutral-950 mb-2">Select {{ committeeLabel.plural }}</label>
       <lfx-multi-select
         [form]="committeeForm"
         control="committees"
@@ -34,8 +34,8 @@
     <!-- Voting Status Selection -->
     @if (hasVotingEnabledCommittee()) {
       <div class="flex flex-col gap-1">
-        <div class="flex items-center gap-1">
-          <label class="text-sm font-medium text-gray-700">Voting Status Selection</label>
+        <div class="flex items-center gap-1 mb-2">
+          <label class="block text-neutral-950">Voting Status Selection</label>
           <i
             class="fa-light fa-info-circle text-xs text-gray-500"
             pTooltip="Select which voting statuses committee members must have to participate in this meeting. Only members with the selected voting status(es) will be invited to the meeting."></i>
@@ -68,7 +68,7 @@
     @if (selectedCommitteeIds().length > 0) {
       <div class="flex flex-col gap-2 mt-4">
         <div class="flex items-center justify-between">
-          <h3 class="text-sm font-medium text-gray-700 flex items-center gap-1">
+          <h3 class="text-neutral-950 flex items-center gap-1">
             <span>{{ committeeLabel.singular }} Members</span>
             <i class="fa-light fa-info-circle text-xs text-gray-500" pTooltip="To manage group members, please visit the committee page."></i>
           </h3>

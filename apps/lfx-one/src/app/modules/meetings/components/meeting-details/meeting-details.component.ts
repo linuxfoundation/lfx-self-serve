@@ -70,6 +70,9 @@ export class MeetingDetailsComponent implements OnInit {
   // Duration options from shared constants
   public readonly durationOptions = MEETING_DURATION_OPTIONS;
 
+  // Feature toggle configs
+  public readonly recurringFeature = RECURRING_MEETING_FEATURE;
+
   // Recurrence options (dynamically updated based on selected date)
   public recurrenceOptions = signal<Array<{ label: string; value: string }>>([]);
 
@@ -78,9 +81,6 @@ export class MeetingDetailsComponent implements OnInit {
     label: `${tz.label} (${tz.offset})`,
     value: tz.value,
   }));
-
-  // Recurring meeting feature from shared constants
-  public readonly recurringFeature = RECURRING_MEETING_FEATURE;
 
   // Minimum date (yesterday)
   public readonly minDate = computed(() => {

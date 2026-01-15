@@ -1,0 +1,25 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+:host ::ng-deep {
+  .p-datepicker {
+    position: relative;
+
+    &::after {
+      content: '\f334'; // Font Awesome calendar-blank icon (no lines)
+      font-family: 'Font Awesome 6 Pro';
+      font-weight: 300; // fa-light
+      position: absolute;
+      right: 1rem;
+      top: 50%;
+      transform: translateY(-50%);
+      color: #9ca3af; // gray-400
+      pointer-events: none;
+      font-size: 0.875rem;
+    }
+
+    .p-datepicker-input {
+      padding-right: 2.5rem; // Make room for the icon
+    }
+  }
+}

@@ -1,193 +1,121 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="meeting-registrants-container max-w-4xl mx-auto" data-testid="meeting-registrants-container">
+<div class="pb-4" data-testid="meeting-registrants-container">
   <!-- Confirm Dialog for registrant deletion -->
   <p-confirmDialog></p-confirmDialog>
 
-  <!-- Main Card Container (following React pattern) -->
-  <!-- Header -->
-  <div class="text-center mb-8">
-    <h2 class="mb-2">Invite Guests</h2>
-    <p class="text-gray-500 text-base">Include key stakeholders and contributors who should participate in this discussion</p>
-  </div>
-
-  <!-- Committee Management -->
+  <!-- Step Title -->
   <div class="mb-6">
-    <lfx-meeting-committee-manager [selectedCommittees]="form().get('committees')?.value || []" [form]="form()"> </lfx-meeting-committee-manager>
+    <h2 class="font-normal">Invite Guests</h2>
+    <p class="text-sm text-gray-500 mt-1">Include key stakeholders and contributors who should participate in this discussion</p>
   </div>
 
-  <div class="flex items-center mb-4">
-    <div class="flex items-center gap-3">
-      <!-- <lfx-button size="small" label="Bulk Add" icon="fa-light fa-upload" severity="secondary" data-testid="bulk-add-button" (click)="onBulkAdd()">
-      </lfx-button> -->
-      @if (!showAddForm()) {
-        <lfx-button
-          size="small"
-          label="Add Guest"
-          icon="fa-light fa-user-plus"
-          severity="secondary"
-          data-testid="add-guest-button"
-          (click)="onToggleAddRegistrant()">
-        </lfx-button>
-      }
-    </div>
-  </div>
+  <!-- Two Column Layout -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <!-- Left Column - Add People -->
+    <div class="flex flex-col gap-6">
+      <h4 class="text-neutral-950">Add People</h4>
 
-  <!-- Add Registrant Modal Placeholder -->
-  @if (showAddForm()) {
-    <div class="mb-6 border border-gray-200 rounded-lg p-4 shadow-md">
-      <!-- Placeholder for Add Registrant Modal Component -->
+      <!-- Search People / Add Guest Form (always visible) -->
+      <div class="border border-gray-200 rounded-lg p-4">
+        <lfx-registrant-form [form]="addRegistrantForm" [registrant]="null"> </lfx-registrant-form>
 
-      <!-- Use the shared registrant-form component -->
-      <lfx-registrant-form [form]="addRegistrantForm" [registrant]="null"> </lfx-registrant-form>
+        <div class="flex items-center justify-end gap-3 mt-4">
+          <lfx-button
+            size="small"
+            label="Add Guest"
+            severity="info"
+            [disabled]="!addRegistrantForm.valid || !addRegistrantForm.dirty"
+            (click)="onAddRegistrant()"
+            data-testid="add-guest-button">
+          </lfx-button>
+        </div>
+      </div>
 
-      <div class="flex items-center justify-end gap-3">
-        <lfx-button
-          size="small"
-          label="Add Guest"
-          severity="info"
-          [disabled]="!addRegistrantForm.valid || !addRegistrantForm.dirty"
-          (click)="onAddRegistrant()">
-        </lfx-button>
-        <lfx-button size="small" label="Cancel" [text]="true" styleClass="text-gray-400 hover:text-gray-600" severity="secondary" (click)="onCloseAddForm()">
-        </lfx-button>
+      <!-- Committee Selection -->
+      <lfx-meeting-committee-manager [selectedCommittees]="form().get('committees')?.value || []" [form]="form()"> </lfx-meeting-committee-manager>
+
+      <!-- Show Meeting Attendees Toggle -->
+      <div class="mt-2">
+        <lfx-feature-toggle [feature]="showMeetingAttendeesFeature" [form]="form()"></lfx-feature-toggle>
       </div>
     </div>
-  }
 
-  <!-- Combined Import Component (Bulk Add + CSV Import with Tabs) -->
-  @if (showImport()) {
-    <div class="mb-6">
-      <!-- Placeholder for Combined Import Component (following React pattern) -->
-      <lfx-card>
-        <ng-template #header>
-          <div class="px-8 pt-4 flex items-center justify-between">
-            <h4 class="font-semibold text-gray-900 flex items-center gap-2">
-              <i class="fa-light fa-upload"></i>
-              Import Guests
-            </h4>
-            <lfx-button
-              size="small"
-              icon="fa-light fa-times"
-              [text]="true"
-              styleClass="text-gray-400 hover:text-gray-600"
-              severity="secondary"
-              (click)="onCloseImport()">
-            </lfx-button>
-          </div>
-        </ng-template>
-
-        <!-- Tab Navigation (simplified, will be replaced with actual tabs component) -->
-        <div class="border-b border-gray-200 mb-4">
-          <div class="flex space-x-2">
-            <lfx-button size="small" label="Bulk Email Add" severity="info" class="border-b-2 border-blue-500"> </lfx-button>
-            <lfx-button size="small" label="CSV Upload" severity="secondary"> </lfx-button>
-          </div>
-        </div>
-
-        <!-- Tab Content Placeholder -->
-        <div class="flex flex-col gap-4 mb-4">
-          <lfx-message severity="info" icon="fa-light fa-info-circle">
-            <ng-template #content>
-              <h5 class="text-sm font-semibold mb-2">Combined Import Component</h5>
-              <ul class="text-sm flex flex-col gap-1">
-                <li>• This will be a tabbed component with Bulk Email Add and CSV Upload tabs</li>
-                <li>• Follows the exact React pattern from the reference code</li>
-                <li>• Will include all functionality for both import methods</li>
-              </ul>
-            </ng-template>
-          </lfx-message>
-        </div>
-
-        <ng-template #footer>
-          <div class="flex gap-2">
-            <lfx-button size="small" label="Test Bulk Add" severity="info" (click)="handleBulkAdd({ emails: ['test1@example.com', 'test2@example.com'] })">
-            </lfx-button>
-            <lfx-button size="small" label="Test CSV Import" severity="success" (click)="handleImportCSV({ csvData: 'sample csv data' })"> </lfx-button>
-            <lfx-button size="small" label="Cancel" [text]="true" styleClass="text-gray-400 hover:text-gray-600" severity="secondary" (click)="onCloseImport()">
-            </lfx-button>
-          </div>
-        </ng-template>
-      </lfx-card>
-    </div>
-  }
-
-  <!-- Main registrants content -->
-  <div class="flex flex-col gap-4">
-    <!-- Stats and filters section (simplified) -->
-    <div class="flex items-center justify-between">
+    <!-- Right Column - Invitation List -->
+    <div class="flex flex-col gap-4">
+      <!-- Stats header -->
       @if (form().get('committees')?.value?.length > 0) {
-        <h6 class="font-semibold">
+        <h4 class="text-neutral-950">
           Additional Guests
           <span class="text-sm text-gray-500" data-testid="stats"> ({{ registrantCount() }}) </span>
-        </h6>
+        </h4>
       } @else {
-        <h6 class="font-semibold">Invited Guests ({{ registrantCount() }})</h6>
+        <h4 class="text-neutral-950">Invitation List ({{ registrantCount() }})</h4>
       }
-    </div>
 
-    <!-- Search and filters (simplified for now) -->
-    <div class="flex items-center gap-4 p-4 bg-gray-50 rounded-lg" [formGroup]="searchForm">
-      <div class="flex-1">
-        <lfx-input-text
-          size="small"
+      <!-- Search and filters -->
+      <div class="flex items-center gap-4 p-4 bg-gray-50 rounded-lg" [formGroup]="searchForm">
+        <div class="flex-1">
+          <lfx-input-text
+            size="small"
+            [form]="searchForm"
+            control="search"
+            placeholder="Search invited guests..."
+            icon="fa-light fa-search"
+            styleClass="w-full"
+            dataTest="search-input">
+          </lfx-input-text>
+        </div>
+        <lfx-select
           [form]="searchForm"
-          control="search"
-          placeholder="Search invited guests..."
-          icon="fa-light fa-search"
+          control="status"
+          [options]="statusOptions"
+          placeholder="Filter by status"
           styleClass="w-full"
-          dataTest="search-input">
-        </lfx-input-text>
+          data-testid="status-filter">
+        </lfx-select>
       </div>
-      <lfx-select [form]="searchForm" control="status" [options]="statusOptions" placeholder="Filter by status" styleClass="w-full" data-testid="status-filter">
-      </lfx-select>
-    </div>
 
-    <!-- Loading state -->
-    @if (loading()) {
-      <div class="text-center py-8" data-testid="loading-state">
-        <i class="fa-light fa-circle-notch fa-spin text-2xl text-blue-600 mb-2"></i>
-        <p class="text-sm text-gray-500">Loading guests...</p>
-      </div>
-    }
-
-    @if (registrants()) {
-      <!-- Empty state -->
-      @if (!loading() && filteredRegistrants().length === 0) {
-        <lfx-card styleClass="my-4">
-          <div class="flex items-center justify-center">
-            <div class="text-center max-w-md">
-              <div class="text-gray-400 mb-4">
-                <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
-                <h3 class="text-gray-600 mt-2">No guests found</h3>
-              </div>
-              <p class="text-gray-500">
-                @if (registrantCount() === 0) {
-                  Get started by adding your first guest
-                } @else {
-                  Try adjusting your search terms or filters
-                }
-              </p>
-            </div>
-          </div>
-        </lfx-card>
-      }
-
-      <!-- Registrants list -->
-      @if (!loading() && filteredRegistrants().length > 0) {
-        <div class="flex flex-col gap-2" data-testid="registrants-list">
-          @for (registrant of filteredRegistrants(); track registrant.uid ?? registrant.tempId) {
-            <lfx-registrant-card [registrant]="registrant" (onValidSave)="handleRegistrantUpdate($event)" (onDelete)="handleRegistrantDelete($event)">
-            </lfx-registrant-card>
-          }
+      <!-- Loading state -->
+      @if (loading()) {
+        <div class="text-center py-8" data-testid="loading-state">
+          <i class="fa-light fa-circle-notch fa-spin text-2xl text-blue-600 mb-2"></i>
+          <p class="text-sm text-gray-500">Loading guests...</p>
         </div>
       }
-    }
 
-    <!-- Show Meeting Attendees Toggle -->
-    <div class="mt-6">
-      <lfx-feature-toggle [feature]="showMeetingAttendeesFeature" [form]="form()"></lfx-feature-toggle>
+      @if (registrants()) {
+        <!-- Empty state -->
+        @if (!loading() && filteredRegistrants().length === 0) {
+          <div class="border-2 border-dashed border-gray-300 rounded-lg p-12 text-center">
+            <div class="flex flex-col items-center gap-4">
+              <div class="w-16 h-16 rounded-full bg-gray-100 flex items-center justify-center">
+                <i class="fa-light fa-users w-8 h-8 text-gray-400"></i>
+              </div>
+              <div>
+                @if (registrantCount() === 0) {
+                  <p class="mb-2 text-gray-700">No one invited yet</p>
+                  <p class="text-sm text-gray-500">Search for people, select a committee, or add manually</p>
+                } @else {
+                  <p class="mb-2 text-gray-700">No guests found</p>
+                  <p class="text-sm text-gray-500">Try adjusting your search terms or filters</p>
+                }
+              </div>
+            </div>
+          </div>
+        }
+
+        <!-- Registrants list -->
+        @if (!loading() && filteredRegistrants().length > 0) {
+          <div class="flex flex-col gap-2 border border-gray-200 rounded-lg p-3" data-testid="registrants-list">
+            @for (registrant of filteredRegistrants(); track registrant.uid ?? registrant.tempId) {
+              <lfx-registrant-card [registrant]="registrant" (onValidSave)="handleRegistrantUpdate($event)" (onDelete)="handleRegistrantDelete($event)">
+              </lfx-registrant-card>
+            }
+          </div>
+        }
+      }
     </div>
   </div>
 </div>

@@ -7,9 +7,7 @@
     @if (!showIndividualFields()) {
       <div class="flex flex-col gap-2">
         <div data-testid="registrant-form-search-container">
-          <div class="flex items-center justify-between mb-2">
-            <label class="text-sm font-medium text-gray-700">Search for User</label>
-          </div>
+          <label class="block text-neutral-950 mb-2">Search for User</label>
           <lfx-user-search
             [form]="form()"
             searchType="committee_member"
@@ -20,9 +18,8 @@
             organizationNameControl="org_name"
             placeholder="Search user..."
             styleClass="w-full"
-            class="w-full"
-            inputStyleClass="text-sm w-full"
-            panelStyleClass="text-sm w-full"
+            inputStyleClass="w-full text-sm"
+            panelStyleClass="w-full"
             dataTestId="registrant-form-user-search"
             (onUserSelect)="handleUserSelection()"
             (onManualEntry)="switchToManualEntry()">
@@ -53,7 +50,7 @@
 
         <!-- First Name -->
         <div data-testid="registrant-form-firstname-field" class="flex flex-col gap-1">
-          <label for="first_name" class="text-sm font-medium text-gray-700">First Name</label>
+          <label for="first_name" class="block text-neutral-950 mb-2">First Name</label>
           <lfx-input-text
             size="small"
             [form]="form()"
@@ -66,7 +63,7 @@
 
         <!-- Last Name -->
         <div data-testid="registrant-form-lastname-field" class="flex flex-col gap-1">
-          <label for="last_name" class="text-sm font-medium text-gray-700">Last Name</label>
+          <label for="last_name" class="block text-neutral-950 mb-2">Last Name</label>
           <lfx-input-text
             size="small"
             [form]="form()"
@@ -79,7 +76,7 @@
 
         <!-- Email -->
         <div class="md:col-span-2 flex flex-col gap-1" data-testid="registrant-form-email-field">
-          <label for="email" class="text-sm font-medium text-gray-700">Email</label>
+          <label for="email" class="block text-neutral-950 mb-2">Email</label>
           <lfx-input-text
             size="small"
             [form]="form()"
@@ -99,7 +96,7 @@
 
         <!-- Job Title -->
         <div data-testid="registrant-form-jobtitle-field" class="flex flex-col gap-1">
-          <label for="job_title" class="text-sm font-medium text-gray-700">Job Title</label>
+          <label for="job_title" class="block text-neutral-950 mb-2">Job Title</label>
           <lfx-input-text
             size="small"
             [form]="form()"
@@ -112,21 +109,22 @@
 
         <!-- Organization -->
         <div data-testid="registrant-form-organization-field" class="flex flex-col gap-1">
-          <label for="org_name" class="text-sm font-medium text-gray-700">Organization</label>
+          <label for="org_name" class="block text-neutral-950 mb-2">Organization</label>
           <lfx-organization-search
+            size="small"
             [form]="form()"
             nameControl="org_name"
             placeholder="Search organizations..."
             styleClass="w-full"
-            inputStyleClass="text-sm w-full"
-            panelStyleClass="text-sm w-full"
+            inputStyleClass="w-full text-sm"
+            panelStyleClass="w-full"
             dataTestId="registrant-form-organization-input">
           </lfx-organization-search>
         </div>
 
         <!-- LinkedIn Profile -->
         <div data-testid="registrant-form-linkedin-profile-field" class="flex flex-col gap-1">
-          <label for="linkedin_profile" class="text-sm font-medium text-gray-700">LinkedIn Profile</label>
+          <label for="linkedin_profile" class="block text-neutral-950 mb-2">LinkedIn Profile</label>
           <lfx-input-text
             size="small"
             [form]="form()"

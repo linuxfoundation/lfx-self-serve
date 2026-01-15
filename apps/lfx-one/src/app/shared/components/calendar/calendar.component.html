@@ -14,7 +14,6 @@
   <p-datePicker
     [formControlName]="control()"
     [placeholder]="placeholder()"
-    [showIcon]="showIcon()"
     [showButtonBar]="showButtonBar()"
     [dateFormat]="dateFormat()"
     [minDate]="minDate()"
@@ -22,6 +21,8 @@
     [appendTo]="appendTo()"
     (onSelect)="handleSelect($event)"
     inputStyleClass="w-full"
+    [class]="styleClass()"
+    [showIcon]="false"
     [size]="size()">
   </p-datePicker>
 </ng-container>

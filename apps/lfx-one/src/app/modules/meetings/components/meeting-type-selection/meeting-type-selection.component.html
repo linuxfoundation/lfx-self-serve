@@ -1,42 +1,44 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6">
-  <div class="flex flex-col">
-    <div class="text-center mb-4">
-      <h2 class="mb-2">Meeting Type & Privacy</h2>
-      <p class="text-gray-500 text-base">Choose the meeting category and visibility to ensure the right people have access</p>
+<div class="pb-4">
+  <!-- Step Title -->
+  <div class="mb-6">
+    <h2 class="font-normal">Meeting Type & Privacy</h2>
+    <p class="text-sm text-gray-500 mt-1">Choose the meeting category and visibility to ensure the right people have access</p>
+  </div>
+
+  <!-- Two Column Layout -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <!-- Left Column - Meeting Type Selection -->
+    <div class="flex flex-col gap-4">
+      <lfx-card-selector
+        [options]="meetingTypeOptions()"
+        [form]="form()"
+        control="meeting_type"
+        label="Select Meeting Type"
+        [required]="true"
+        errorMessage="Meeting type is required"
+        testIdPrefix="meeting-type" />
     </div>
 
-    <lfx-message severity="info" icon="fa-light fa-info-circle" title="Why meetings matter for open source projects">
-      <ng-template #content>
-        <div class="flex flex-col gap-1">
-          <p class="text-sm">
-            Regular meetings help maintain project momentum, align contributors, make important decisions, and build community. They provide structure and
-            transparency that keeps everyone on the same page.
-          </p>
+    <!-- Right Column - Privacy Settings -->
+    <div class="flex flex-col gap-4">
+      <lfx-card-selector [options]="privacyOptions" [form]="form()" control="restricted" label="Select Privacy Setting" testIdPrefix="meeting-privacy" />
+
+      <!-- Info box -->
+      <div class="bg-blue-50 border border-blue-200 rounded-lg p-4 mt-2">
+        <div class="flex gap-3">
+          <i class="fa-light fa-info-circle text-blue-500 flex-shrink-0 mt-0.5"></i>
+          <div>
+            <p class="text-sm text-blue-500">
+              <span class="font-semibold">Transparency is key</span>
+              <br />
+              Public meetings help build trust and encourage community participation. Consider making meetings public unless they involve confidential matters.
+            </p>
+          </div>
         </div>
-      </ng-template>
-    </lfx-message>
-  </div>
-
-  <div class="flex flex-col gap-6">
-    <lfx-card-selector
-      [options]="meetingTypeOptions()"
-      [form]="form()"
-      control="meeting_type"
-      label="Select Meeting Type"
-      [required]="true"
-      errorMessage="Meeting type is required"
-      testIdPrefix="meeting-type" />
-  </div>
-
-  <div class="flex flex-col gap-2">
-    <h3 class="text-lg font-semibold text-gray-900">Meeting Access</h3>
-    <p class="text-sm text-gray-600 mt-1 mb-0">Control who can view and join this meeting</p>
-
-    <div class="">
-      <lfx-feature-toggle [feature]="restrictedFeature" [form]="form()"></lfx-feature-toggle>
+      </div>
     </div>
   </div>
 </div>

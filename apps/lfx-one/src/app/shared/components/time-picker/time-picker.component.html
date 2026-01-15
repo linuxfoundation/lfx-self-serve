@@ -17,12 +17,12 @@
       [formControlName]="control()"
       [placeholder]="placeholder()"
       [pSize]="size() || 'small'"
-      [class]="width()"
+      [class]="styleClass()"
       (focus)="onInputFocus($event)"
       (input)="onInput($event)"
       (blur)="onInputBlur($event)" />
 
-    <p-popover #timePopover styleClass="time-picker-popover" [class]="width()">
+    <p-popover #timePopover styleClass="time-picker-popover">
       <div class="flex flex-col gap-1 p-2">
         @for (option of visibleTimeOptions(); track option.value) {
           <a class="text-sm text-left px-3 py-2 rounded hover:bg-gray-100 cursor-pointer" (click)="onTimeOptionClick(option)">

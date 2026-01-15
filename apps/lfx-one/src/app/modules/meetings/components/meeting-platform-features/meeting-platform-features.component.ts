@@ -5,7 +5,6 @@ import { Component, DestroyRef, inject, input, OnInit } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
-import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { ARTIFACT_VISIBILITY_OPTIONS, MEETING_FEATURES, MEETING_PLATFORMS } from '@lfx-one/shared/constants';
@@ -13,7 +12,7 @@ import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-meeting-platform-features',
-  imports: [ReactiveFormsModule, FeatureToggleComponent, MessageComponent, SelectComponent, ToggleComponent, TooltipModule],
+  imports: [ReactiveFormsModule, FeatureToggleComponent, SelectComponent, ToggleComponent, TooltipModule],
   templateUrl: './meeting-platform-features.component.html',
 })
 export class MeetingPlatformFeaturesComponent implements OnInit {
@@ -23,8 +22,14 @@ export class MeetingPlatformFeaturesComponent implements OnInit {
 
   // Constants from shared package
   public readonly platformOptions = MEETING_PLATFORMS;
-  public readonly features = MEETING_FEATURES;
   public readonly artifactVisibilityOptions = ARTIFACT_VISIBILITY_OPTIONS;
+
+  // Features for the two-column layout
+  public readonly recordingFeature = MEETING_FEATURES.find((f) => f.key === 'recording_enabled')!;
+  public readonly transcriptFeature = MEETING_FEATURES.find((f) => f.key === 'transcript_enabled')!;
+  public readonly youtubeFeature = MEETING_FEATURES.find((f) => f.key === 'youtube_upload_enabled')!;
+  public readonly aiSummaryFeature = MEETING_FEATURES.find((f) => f.key === 'zoom_ai_enabled')!;
+  public readonly calendarFeature = MEETING_FEATURES.find((f) => f.key === 'visibility')!;
 
   // Transform platforms into dropdown options (only available platforms)
   public readonly platformDropdownOptions = MEETING_PLATFORMS.map((platform) => ({

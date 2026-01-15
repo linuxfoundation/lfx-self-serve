@@ -1,23 +1,23 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="bg-white border border-gray-200 p-4 rounded-lg hover:border-primary transition-colors" [attr.data-testid]="'feature-' + feature().key">
+<div class="border border-gray-200 p-4 rounded-lg" [attr.data-testid]="'feature-' + feature().key">
   <div class="flex items-center justify-between">
-    <div class="flex items-center gap-3">
+    <div class="flex items-start gap-3">
       <div
-        class="p-2 rounded-lg text-center items-center justify-center flex"
+        class="w-10 h-10 rounded-lg text-center items-center justify-center flex"
         [style.background-color]="feature().color + '15'"
         [style.color]="feature().color">
-        <i [class]="feature().icon + ' text-sm w-4 h-4'"></i>
+        <i [class]="feature().icon + ' text-lg'"></i>
       </div>
-      <div>
-        <div class="flex items-center gap-2">
-          <label [for]="feature().key" class="text-sm font-semibold text-gray-900 cursor-pointer">{{ feature().title }}</label>
+      <div class="flex-1">
+        <div class="flex items-center gap-2 mb-1">
+          <p class="text-neutral-950">{{ feature().title }}</p>
           @if (feature().recommended) {
-            <span class="bg-blue-100 text-primary text-xs px-2 py-1 rounded-full font-medium">Recommended</span>
+            <span class="px-2 py-0.5 bg-blue-100 text-blue-500 text-xs rounded">Recommended</span>
           }
         </div>
-        <p class="text-xs text-gray-600">{{ feature().description }}</p>
+        <p class="text-sm text-gray-600">{{ feature().description }}</p>
       </div>
     </div>
     <lfx-toggle
@@ -29,4 +29,7 @@
       [attr.data-testid]="'toggle-' + feature().key">
     </lfx-toggle>
   </div>
+
+  <!-- Nested content slot - parent controls visibility with @if -->
+  <ng-content></ng-content>
 </div>

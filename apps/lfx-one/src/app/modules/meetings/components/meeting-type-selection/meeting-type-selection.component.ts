@@ -4,16 +4,14 @@
 import { Component, computed, inject, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardSelectorComponent } from '@components/card-selector/card-selector.component';
-import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
-import { MessageComponent } from '@components/message/message.component';
-import { lfxColors, RESTRICTED_MEETING_FEATURE } from '@lfx-one/shared/constants';
+import { lfxColors } from '@lfx-one/shared/constants';
 import { MeetingType } from '@lfx-one/shared/enums';
 import { CardSelectorOption, CardSelectorOptionInfo } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
 
 @Component({
   selector: 'lfx-meeting-type-selection',
-  imports: [ReactiveFormsModule, FeatureToggleComponent, MessageComponent, CardSelectorComponent],
+  imports: [ReactiveFormsModule, CardSelectorComponent],
   templateUrl: './meeting-type-selection.component.html',
 })
 export class MeetingTypeSelectionComponent {
@@ -22,11 +20,30 @@ export class MeetingTypeSelectionComponent {
   // Form group input from parent
   public readonly form = input.required<FormGroup>();
 
-  // Restricted meeting feature from shared constants
-  public readonly restrictedFeature = RESTRICTED_MEETING_FEATURE;
+  // Privacy options for Public/Restricted selection
+  public readonly privacyOptions: CardSelectorOption<boolean>[] = [
+    {
+      label: 'Public',
+      value: false,
+      info: {
+        icon: 'fa-light fa-globe',
+        description: 'Anyone can join this meeting. Best for community meetings and open discussions.',
+        color: lfxColors.emerald[500],
+      },
+    },
+    {
+      label: 'Restricted',
+      value: true,
+      info: {
+        icon: 'fa-light fa-lock',
+        description: 'Only invited guests can join. Best for board meetings and confidential discussions.',
+        color: lfxColors.amber[500],
+      },
+    },
+  ];
 
   // Meeting type options with their info - computed for template efficiency
-  // Filtered based on user role (currently showing only maintainers, technical, and other)
+  // Filtered based on user role (maintainers only see a subset of meeting types)
   public readonly meetingTypeOptions = computed<CardSelectorOption<MeetingType>[]>(() => {
     const allOptions = [
       { label: 'Board', value: MeetingType.BOARD },
@@ -37,7 +54,7 @@ export class MeetingTypeSelectionComponent {
       { label: 'Other', value: MeetingType.OTHER },
     ];
 
-    // Filter to only show maintainers, technical, and other meeting types
+    // Filter to only show maintainers, technical, and other meeting types for maintainer persona
     const allowedTypes = [MeetingType.MAINTAINERS, MeetingType.TECHNICAL, MeetingType.OTHER];
     const filteredOptions =
       this.personaService.currentPersona() === 'maintainer' ? allOptions.filter((option) => allowedTypes.includes(option.value)) : allOptions;
@@ -48,48 +65,41 @@ export class MeetingTypeSelectionComponent {
     }));
   });
 
-  // Meeting type info mapping (using colors consistent with committee colors)
+  // Meeting type info mapping with icons and colors matching the design
   private readonly meetingTypeInfo: Record<MeetingType, CardSelectorOptionInfo> = {
     [MeetingType.BOARD]: {
-      icon: 'fa-light fa-user-crown',
+      icon: 'fa-light fa-square-check',
       description: 'Governance meetings for project direction, funding, and strategic decisions',
-      examples: 'Quarterly reviews, budget planning, strategic roadmap discussions',
-      color: lfxColors.red[500],
+      color: lfxColors.violet[500],
     },
     [MeetingType.MAINTAINERS]: {
-      icon: 'fa-light fa-gear',
+      icon: 'fa-light fa-award',
       description: 'Regular sync meetings for core maintainers to discuss project health',
-      examples: 'Weekly standups, release planning, code review discussions',
       color: lfxColors.blue[500],
     },
     [MeetingType.MARKETING]: {
-      icon: 'fa-light fa-chart-line-up',
+      icon: 'fa-light fa-arrow-pointer',
       description: 'Community growth, outreach, and marketing strategy meetings',
-      examples: 'Conference planning, community campaigns, website updates',
       color: lfxColors.emerald[500],
     },
     [MeetingType.TECHNICAL]: {
-      icon: 'fa-light fa-brackets-curly',
+      icon: 'fa-light fa-code-simple',
       description: 'Technical discussions, architecture decisions, and development planning',
-      examples: 'RFC reviews, API design, performance optimization planning',
       color: lfxColors.violet[500],
     },
     [MeetingType.LEGAL]: {
-      icon: 'fa-light fa-scale-balanced',
+      icon: 'fa-light fa-shield',
       description: 'Legal compliance, licensing, and policy discussions',
-      examples: 'License reviews, contributor agreements, compliance audits',
       color: lfxColors.amber[500],
     },
     [MeetingType.OTHER]: {
-      icon: 'fa-light fa-folder-open',
+      icon: 'fa-light fa-bars',
       description: "General project meetings that don't fit other categories",
-      examples: 'Community events, workshops, informal discussions',
       color: lfxColors.gray[500],
     },
     [MeetingType.NONE]: {
-      icon: 'fa-light fa-folder-open',
+      icon: 'fa-light fa-bars',
       description: 'No specific meeting type',
-      examples: 'General meetings',
       color: lfxColors.gray[500],
     },
   };

@@ -5,10 +5,8 @@ import { Component, computed, DestroyRef, inject, input, OnInit, output, signal,
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
-import { CardComponent } from '@components/card/card.component';
 import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggle.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
-import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
 import { COMMITTEE_LABEL, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
 import { MeetingRegistrant, MeetingRegistrantWithState, RegistrantPendingChanges, RegistrantState } from '@lfx-one/shared/interfaces';
@@ -27,11 +25,9 @@ import { RegistrantFormComponent } from '../registrant-form/registrant-form.comp
   imports: [
     ReactiveFormsModule,
     ButtonComponent,
-    CardComponent,
     FeatureToggleComponent,
     InputTextComponent,
     MeetingCommitteeManagerComponent,
-    MessageComponent,
     SelectComponent,
     ConfirmDialogModule,
     RegistrantCardComponent,
@@ -61,8 +57,6 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   // Writable signals for state management
   public registrantsWithState: WritableSignal<MeetingRegistrantWithState[]> = signal([]);
   public loading: WritableSignal<boolean> = signal(true);
-  public showAddForm = signal<boolean>(false);
-  public showImport = signal<boolean>(false);
   public editingRegistrantId = signal<string | null>(null);
   public searchTerm = signal<string>('');
   public statusFilter = signal<string | null>(null);
@@ -122,25 +116,6 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
       });
   }
 
-  public onToggleAddRegistrant(): void {
-    this.showAddForm.set(false);
-    this.showAddForm.set(true);
-  }
-
-  public onBulkAdd(): void {
-    this.showAddForm.set(false);
-    this.showImport.set(true);
-  }
-
-  // Component handlers
-  public onCloseAddForm(): void {
-    this.showAddForm.set(false);
-  }
-
-  public onCloseImport(): void {
-    this.showImport.set(false);
-  }
-
   public onCancelEdit(): void {
     this.editingRegistrantId.set(null);
   }
@@ -189,28 +164,9 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
       // Emit updated registrant updates using the conversion logic
       this.emitRegistrantUpdates();
 
-      // Reset and close form
+      // Reset form
       this.addRegistrantForm.reset();
-      this.onCloseAddForm();
     }
-  }
-
-  public handleBulkAdd(emailData: any): void {
-    // TODO: Implement bulk add functionality
-    console.info('Bulk add:', emailData);
-    this.onCloseImport();
-  }
-
-  public handleImportCSV(csvData: any): void {
-    // TODO: Implement CSV import functionality
-    console.info('Import CSV:', csvData);
-    this.onCloseImport();
-  }
-
-  public handleSaveEdit(registrantData: any): void {
-    // TODO: Implement save edit functionality
-    console.info('Save edit:', registrantData);
-    this.onCancelEdit();
   }
 
   // Simplified registrant event handlers (only receive validated data)

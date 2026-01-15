@@ -1,17 +1,18 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6">
-  <div class="text-center mb-8">
-    <h2 class="mb-2">Resources & Links</h2>
-    <p class="text-gray-500 text-base">Share documents, agendas, and reference materials so participants come prepared</p>
+<div class="pb-4">
+  <!-- Step Title -->
+  <div class="mb-6">
+    <h2 class="font-normal">Resources & Links</h2>
+    <p class="text-sm text-gray-500 mt-1">Share documents, agendas, and reference materials so participants come prepared</p>
   </div>
 
-  <div class="flex flex-col gap-6">
-    <!-- Upload Files Section -->
-    <div>
-      <label class="text-sm font-semibold text-gray-900 mb-2 block">Upload Files</label>
-      <p class="text-xs text-gray-500 mb-4">Add documents, presentations, or other files guests should have access to</p>
+  <!-- Two Column Layout -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <!-- Upload Files Section - Left Column -->
+    <div class="flex flex-col gap-4">
+      <h4 class="text-neutral-950">Upload Files</h4>
 
       <lfx-file-upload
         [multiple]="true"
@@ -24,12 +25,9 @@
         [showCancelButton]="false"
         chooseLabel="Click to upload files or drag and drop">
       </lfx-file-upload>
-    </div>
 
-    <!-- Uploaded Files Display -->
-    @if (pendingAttachments().length > 0) {
-      <div>
-        <label class="text-sm font-semibold text-gray-900 mb-3 block"> Uploaded Files ({{ pendingAttachments().length }}) </label>
+      <!-- Uploaded Files Display -->
+      @if (pendingAttachments().length > 0) {
         <div class="flex flex-col gap-2">
           @for (attachment of pendingAttachments(); track attachment.id; let i = $index) {
             <div class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg" [attr.data-testid]="'meeting-attachment-item-' + i">
@@ -55,13 +53,10 @@
             </div>
           }
         </div>
-      </div>
-    }
+      }
 
-    <!-- Existing Attachments (for edit mode) -->
-    @if (isEditMode() && existingAttachments().length > 0) {
-      <div>
-        <label class="text-sm font-semibold text-gray-900 mb-3 block"> Existing Files ({{ existingAttachments().length }}) </label>
+      <!-- Existing Attachments (for edit mode) -->
+      @if (isEditMode() && existingAttachments().length > 0) {
         <div class="flex flex-col gap-2">
           @for (attachment of existingAttachments(); track attachment.uid; let i = $index) {
             <div
@@ -151,13 +146,13 @@
             </div>
           }
         </div>
-      </div>
-    }
+      }
+    </div>
 
-    <!-- Add Important Links Section -->
-    <div>
-      <label class="text-sm font-semibold text-gray-900 mb-2 block">Add Important Links</label>
-      <p class="text-xs text-gray-500 mb-4">Links to documents, repositories, or other resources relevant to this meeting</p>
+    <!-- Add Important Links Section - Right Column -->
+    <div class="flex flex-col gap-4">
+      <h4 class="text-neutral-950">Add Links</h4>
+
       <div class="flex flex-col gap-3">
         <input
           [(ngModel)]="newLink.title"
@@ -172,12 +167,9 @@
           </lfx-button>
         </div>
       </div>
-    </div>
 
-    <!-- Added Links Display -->
-    @if (importantLinksFormArray.length > 0) {
-      <div>
-        <label class="text-sm font-semibold text-gray-900 mb-3 block"> Added Links ({{ importantLinksFormArray.length }}) </label>
+      <!-- Added Links Display -->
+      @if (importantLinksFormArray.length > 0) {
         <div class="flex flex-col gap-2">
           @for (linkControl of importantLinksFormArray.controls; track $index; let i = $index) {
             <div class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg" [attr.data-testid]="'meeting-link-item-' + i">
@@ -194,58 +186,7 @@
             </div>
           }
         </div>
-      </div>
-    }
-
-    <!-- Useful Resources Info -->
-    <div class="bg-emerald-50 border border-emerald-200 p-4 rounded-lg">
-      <div class="flex items-start gap-3">
-        <i class="fa-light fa-circle-check w-5 h-5 text-emerald-600 mt-0.5"></i>
-        <div>
-          <h5 class="text-sm font-semibold text-emerald-800 mb-2">Useful resources to include</h5>
-          <ul class="text-sm text-emerald-700 flex flex-col gap-1">
-            <li>• Project repository or documentation links</li>
-            <li>• Previous meeting minutes or recordings</li>
-            <li>• Relevant GitHub issues or pull requests</li>
-            <li>• Project roadmap or planning documents</li>
-            <li>• Presentation slides or agenda documents</li>
-            <li>• Background reading materials</li>
-          </ul>
-        </div>
-      </div>
-    </div>
-  </div>
-
-  <!-- Meeting Summary -->
-  <div class="border-t border-gray-200 pt-6">
-    <div class="bg-gray-50 border border-gray-200 p-4 rounded-lg">
-      <h4 class="text-sm font-semibold text-gray-900 mb-3">Meeting Summary</h4>
-      <div class="grid grid-cols-2 gap-4 text-sm">
-        <div>
-          <span class="text-gray-500">Type:</span>
-          <span class="ml-1 text-gray-900">{{ meetingTypeLabel() }}</span>
-        </div>
-        <div>
-          <span class="text-gray-500">Platform:</span>
-          <span class="ml-1 text-gray-900 capitalize">{{ form().get('platform')?.value }}</span>
-        </div>
-        <div>
-          <span class="text-gray-500">Privacy:</span>
-          <span class="ml-1 text-gray-900">{{ form().get('restricted')?.value ? 'Private' : 'Public' }}</span>
-        </div>
-        <div>
-          <span class="text-gray-500">Features:</span>
-          <span class="ml-1 text-gray-900">{{ selectedFeatures().length }} enabled</span>
-        </div>
-        <div>
-          <span class="text-gray-500">Resources:</span>
-          <span class="ml-1 text-gray-900"> {{ pendingAttachments().length }} files, {{ importantLinksFormArray.length }} links </span>
-        </div>
-        <div class="col-span-2">
-          <span class="text-gray-500">Recurrence:</span>
-          <span class="ml-1 text-gray-900">{{ recurrenceLabel() }}</span>
-        </div>
-      </div>
+      }
     </div>
   </div>
 </div>
