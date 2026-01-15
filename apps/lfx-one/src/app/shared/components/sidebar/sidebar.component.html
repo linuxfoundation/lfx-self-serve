@@ -2,14 +2,14 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <aside
-  class="h-screen bg-white w-72 flex flex-col"
+  class="h-full bg-white w-72 flex flex-col"
   [ngClass]="{
     'border-r border-gray-200': !mobile(),
   }"
   data-testid="sidebar">
-  <div class="flex flex-col justify-between py-6 h-full">
+  <div class="flex flex-col py-6 h-full min-h-0 overflow-y-auto">
     <!-- Top Navigation -->
-    <div class="flex flex-col items-start w-full">
+    <div class="flex flex-col items-start w-full flex-1">
       <!-- LFX One Logo - Hidden on mobile (shown in drawer header instead) -->
       @if (!mobile()) {
         <div class="h-[20px] ml-2 w-[141.6px] px-3 py-3 mb-12">
@@ -38,8 +38,8 @@
       </div>
     </div>
 
-    <!-- Bottom Navigation -->
-    <div class="flex flex-col gap-2 items-start px-3 w-full">
+    <!-- Bottom Navigation (stays at bottom when space allows, scrolls with content otherwise) -->
+    <div class="flex flex-col gap-2 items-start px-3 w-full mt-auto pt-4">
       @if (footerItems().length > 0) {
         @for (item of footerItemsWithTestIds(); track item.label) {
           <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>

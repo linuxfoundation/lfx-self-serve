@@ -109,6 +109,10 @@ export interface GroupsIOMailingList {
   committees?: CommitteeReference[];
   /** Parent service details (enriched from service lookup) */
   service?: GroupsIOService;
+  /** Groups.io subgroup ID (nullable for legacy lists) */
+  group_id?: number | null;
+  /** Number of subscribers (read-only, maintained by service) */
+  subscriber_count: number;
 }
 
 /**
@@ -179,6 +183,10 @@ export interface MailingListMember {
   uid: string;
   /** Parent mailing list UID */
   mailing_list_uid: string;
+  /** Groups.io member ID */
+  member_id?: number;
+  /** Groups.io group ID for this membership */
+  group_id?: number;
   /** Member's username/handle */
   username?: string;
   /** Member's first name */

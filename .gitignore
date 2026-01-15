@@ -53,3 +53,6 @@ snowflake.log
 
 # Serena
 .serena/
+
+# Playwright MCP
+.playwright-mcp

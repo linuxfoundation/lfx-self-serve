@@ -6,7 +6,7 @@
 
 <div class="flex min-h-screen" [ngClass]="{ 'pt-12': showDevToolbar() }">
   <!-- Sidebar - Desktop -->
-  <div class="hidden lg:block w-64 flex-shrink-0 fixed left-0" [ngClass]="{ 'top-12': showDevToolbar(), 'top-0': !showDevToolbar() }">
+  <div class="hidden lg:block w-64 flex-shrink-0 fixed left-0 bottom-0" [ngClass]="{ 'top-12': showDevToolbar(), 'top-0': !showDevToolbar() }">
     <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems()" [showProjectSelector]="true"></lfx-sidebar>
   </div>
 

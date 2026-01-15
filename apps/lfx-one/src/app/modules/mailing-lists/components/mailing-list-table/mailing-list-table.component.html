@@ -143,7 +143,7 @@
           </td>
 
           <!-- Subscribers Column -->
-          <td>-</td>
+          <td>{{ mailingList.subscriber_count }}</td>
         } @else {
           <!-- PMO View Row -->
           <!-- Mailing List Column -->
@@ -185,8 +185,8 @@
           </td>
 
           <!-- Subscribers Column -->
-          <td>
-            <a [attr.data-testid]="'mailing-list-subscribers-' + mailingList.uid"> - </a>
+          <td [attr.data-testid]="'mailing-list-subscribers-' + mailingList.uid">
+            {{ mailingList.subscriber_count }}
           </td>
 
           <!-- Emails Sent Column -->
