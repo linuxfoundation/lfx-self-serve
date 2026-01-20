@@ -1,0 +1,168 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card data-testid="votes-table-card">
+  <div class="pb-2 mb-2">
+    <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+      <div class="flex-1 min-w-0">
+        <lfx-input-text
+          [form]="searchForm"
+          control="search"
+          [placeholder]="'Search ' + voteLabel.plural.toLowerCase() + '...'"
+          icon="fa-light fa-search"
+          styleClass="w-full"
+          size="small"
+          data-testid="votes-search-input"></lfx-input-text>
+      </div>
+
+      <div class="w-full sm:w-auto sm:shrink-0">
+        <lfx-select
+          [form]="searchForm"
+          control="group"
+          size="small"
+          [options]="groupOptions()"
+          placeholder="All Groups"
+          [showClear]="true"
+          (valueChange)="onGroupChange($event)"
+          data-testid="votes-group-filter"></lfx-select>
+      </div>
+
+      <div class="w-full sm:w-auto sm:shrink-0">
+        <lfx-select
+          [form]="searchForm"
+          control="status"
+          size="small"
+          [options]="statusOptions()"
+          placeholder="All Statuses"
+          [showClear]="true"
+          (valueChange)="onStatusChange($event)"
+          data-testid="votes-status-filter"></lfx-select>
+      </div>
+    </div>
+  </div>
+
+  <lfx-table
+    [value]="filteredVotes()"
+    [paginator]="filteredVotes().length > 10"
+    [rows]="10"
+    [rowsPerPageOptions]="[10, 25, 50]"
+    [customSort]="true"
+    data-testid="votes-table">
+    <ng-template #header>
+      <tr>
+        <th class="w-[28%]">{{ voteLabel.singular }} Name</th>
+        <th class="w-[20%]">Group</th>
+        <th class="w-[12%]">Status</th>
+        <th class="w-[12%]">Responses</th>
+        <th class="w-[14%]">Due</th>
+        <th class="w-[14%]"></th>
+      </tr>
+    </ng-template>
+
+    <ng-template #body let-vote>
+      <tr [attr.data-testid]="'votes-row-' + vote.uid" class="hover:bg-slate-50">
+        <td>
+          <button
+            type="button"
+            class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0"
+            (click)="onManageVote(vote.uid)"
+            [attr.data-testid]="'votes-name-' + vote.uid">
+            {{ vote.name }}
+          </button>
+        </td>
+
+        <td>
+          <span class="bg-blue-100 text-blue-500 text-xs px-2 py-1 rounded">
+            {{ vote.committee_name || 'Unknown' }}
+          </span>
+        </td>
+
+        <td>
+          <lfx-tag [value]="vote.status | pollStatusLabel" [severity]="vote.status | pollStatusSeverity"></lfx-tag>
+        </td>
+
+        <td>
+          <span class="text-xs text-slate-900" [attr.data-testid]="'votes-responses-' + vote.uid">
+            {{ vote.num_response_received }}
+          </span>
+        </td>
+
+        <td class="text-xs text-slate-900">
+          @if (vote.status === PollStatus.ENDED) {
+            <span>{{ vote.end_time | date: 'MMM d, y' }}</span>
+          } @else if (vote.status === PollStatus.DISABLED) {
+            <span class="text-gray-500">Draft</span>
+          } @else if (vote.end_time) {
+            <span>{{ vote.end_time | relativeDueDate }}</span>
+          } @else {
+            <span>-</span>
+          }
+        </td>
+
+        <td>
+          <div class="flex items-center justify-end">
+            @if (hasPMOAccess()) {
+              @if (vote.status === PollStatus.DISABLED) {
+                <lfx-button
+                  label="Edit"
+                  severity="secondary"
+                  size="small"
+                  [outlined]="true"
+                  (onClick)="onManageVote(vote.uid)"
+                  [attr.data-testid]="'votes-action-' + vote.uid">
+                </lfx-button>
+              } @else if (vote.status === PollStatus.ACTIVE) {
+                <lfx-button
+                  label="View"
+                  severity="secondary"
+                  size="small"
+                  [outlined]="true"
+                  (onClick)="onManageVote(vote.uid)"
+                  [attr.data-testid]="'votes-action-' + vote.uid">
+                </lfx-button>
+              } @else {
+                <lfx-button
+                  label="Review"
+                  severity="secondary"
+                  size="small"
+                  [outlined]="true"
+                  (onClick)="onManageVote(vote.uid)"
+                  [attr.data-testid]="'votes-action-' + vote.uid">
+                </lfx-button>
+              }
+            } @else {
+              @if (vote.status === PollStatus.ACTIVE) {
+                <lfx-button
+                  [label]="'Review & ' + voteLabel.singular"
+                  severity="secondary"
+                  size="small"
+                  [outlined]="true"
+                  (onClick)="onViewVote(vote.uid)"
+                  [attr.data-testid]="'votes-action-' + vote.uid">
+                </lfx-button>
+              } @else if (vote.status === PollStatus.ENDED) {
+                <lfx-button
+                  label="View Results"
+                  severity="secondary"
+                  size="small"
+                  [outlined]="true"
+                  (onClick)="onViewResults(vote.uid)"
+                  [attr.data-testid]="'votes-action-' + vote.uid">
+                </lfx-button>
+              }
+            }
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template #emptymessage>
+      <tr>
+        <td colspan="6" class="text-center py-8">
+          <i class="fa-light fa-check-to-slot text-3xl text-gray-400 mb-2"></i>
+          <p class="text-sm text-gray-500">No {{ voteLabel.plural.toLowerCase() }} found</p>
+        </td>
+      </tr>
+    </ng-template>
+  </lfx-table>
+</lfx-card>

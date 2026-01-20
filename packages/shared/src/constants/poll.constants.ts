@@ -6,6 +6,21 @@ import { TagSeverity } from '../interfaces/components.interface';
 import { PollQuestion } from '../interfaces/poll.interface';
 
 /**
+ * Configurable labels for votes displayed throughout the UI
+ * @description This constant allows the user-facing labels to be changed
+ * while keeping all code and file names consistent
+ * @readonly
+ * @example
+ * // Use in templates to display the label
+ * <h1>{{VOTE_LABEL.plural}}</h1> // Displays "Votes"
+ * <span>{{VOTE_LABEL.singular}} Name</span> // Displays "Vote Name"
+ */
+export const VOTE_LABEL = {
+  singular: 'Vote',
+  plural: 'Votes',
+} as const;
+
+/**
  * Poll status display labels
  * @description Human-readable labels for poll statuses
  */

@@ -30,3 +30,12 @@ export enum VoteResponseStatus {
   RESPONDED = 'responded',
   AWAITING_RESPONSE = 'awaiting_response',
 }
+
+/**
+ * Individual vote status from query service
+ * @description Status values as stored in lfx.index.individual_vote
+ */
+export enum IndividualVoteStatus {
+  AWAITING_RESPONSE = 'awaiting response',
+  RESPONDED = 'responded',
+}

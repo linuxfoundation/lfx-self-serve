@@ -36,6 +36,14 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/my-activity/my-activity.routes').then((m) => m.MY_ACTIVITY_ROUTES),
       },
       {
+        path: 'votes',
+        loadChildren: () => import('./modules/votes/votes.routes').then((m) => m.VOTE_ROUTES),
+      },
+      {
+        path: 'surveys',
+        loadChildren: () => import('./modules/surveys/surveys.routes').then((m) => m.SURVEY_ROUTES),
+      },
+      {
         path: 'settings',
         loadChildren: () => import('./modules/settings/settings.routes').then((m) => m.SETTINGS_ROUTES),
       },

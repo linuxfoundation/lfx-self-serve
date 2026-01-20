@@ -7,13 +7,14 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { NavigationEnd, Router, RouterModule } from '@angular/router';
 import { SidebarComponent } from '@components/sidebar/sidebar.component';
 import { environment } from '@environments/environment';
-import { COMMITTEE_LABEL, MAILING_LIST_LABEL, MY_ACTIVITY_LABEL } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, MAILING_LIST_LABEL, MY_ACTIVITY_LABEL, SURVEY_LABEL, VOTE_LABEL } from '@lfx-one/shared/constants';
 import { SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AppService } from '@services/app.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { DrawerModule } from 'primeng/drawer';
 import { filter } from 'rxjs';
+
 import { DevToolbarComponent } from '../dev-toolbar/dev-toolbar.component';
 
 @Component({
@@ -40,10 +41,24 @@ export class MainLayoutComponent {
   // Base sidebar navigation items - matching React NavigationSidebar design
   private readonly baseSidebarItems: SidebarMenuItem[] = [
     {
-      label: 'Overview',
+      label: 'Dashboard',
       icon: 'fa-light fa-grid-2',
       routerLink: '/',
     },
+    {
+      label: MY_ACTIVITY_LABEL.singular,
+      icon: 'fa-light fa-clipboard-list',
+      routerLink: '/my-activity',
+    },
+    {
+      label: 'Projects',
+      icon: 'fa-light fa-folder-open',
+      routerLink: '/projects',
+    },
+  ];
+
+  // Governance section items - collapsible section for board members/maintainers
+  private readonly governanceSectionItems: SidebarMenuItem[] = [
     {
       label: 'Meetings',
       icon: 'fa-light fa-calendar',
@@ -60,36 +75,71 @@ export class MainLayoutComponent {
       routerLink: '/mailing-lists',
     },
     {
-      label: MY_ACTIVITY_LABEL.singular,
-      icon: 'fa-light fa-clipboard-list',
-      routerLink: '/my-activity',
+      label: VOTE_LABEL.plural,
+      icon: 'fa-light fa-check-to-slot',
+      routerLink: '/votes',
     },
     {
-      label: 'Projects',
-      icon: 'fa-light fa-folder-open',
-      routerLink: '/projects',
+      label: SURVEY_LABEL.plural,
+      icon: 'fa-light fa-clipboard-list',
+      routerLink: '/surveys',
     },
   ];
 
   // Computed sidebar items based on feature flags and persona
   protected readonly sidebarItems = computed(() => {
-    let items = [...this.baseSidebarItems];
+    const items: SidebarMenuItem[] = [];
     const isBoardMember = this.personaService.currentPersona() === 'board-member';
 
-    // Filter out Projects if feature flag is disabled
-    if (!this.showProjectsInSidebar()) {
-      items = items.filter((item) => item.label !== 'Projects');
-    }
-
-    // Hide Committees for board-member persona
-    if (isBoardMember) {
-      items = items.filter((item) => item.label !== COMMITTEE_LABEL.plural);
-    }
+    // Always show Dashboard first
+    items.push({
+      label: 'Dashboard',
+      icon: 'fa-light fa-grid-2',
+      routerLink: '/',
+    });
 
     // My Activity is only visible for board-member persona
-    if (!isBoardMember) {
-      items = items.filter((item) => item.label !== MY_ACTIVITY_LABEL.singular);
+    if (isBoardMember) {
+      items.push({
+        label: MY_ACTIVITY_LABEL.singular,
+        icon: 'fa-light fa-clipboard-list',
+        routerLink: '/my-activity',
+      });
     }
+
+    // Add Projects if feature flag is enabled
+    if (this.showProjectsInSidebar()) {
+      items.push({
+        label: 'Projects',
+        icon: 'fa-light fa-folder-open',
+        routerLink: '/projects',
+      });
+    }
+
+    // Add Insights URL
+    items.push({
+      label: 'Insights',
+      icon: 'fa-light fa-chart-column',
+      url: 'https://insights.linuxfoundation.org/',
+      target: '_blank',
+      rel: 'noopener noreferrer',
+    });
+
+    // Governance section - filter items based on persona
+    let governanceItems = [...this.governanceSectionItems];
+
+    // Hide Groups (Committees) for board-member persona
+    if (isBoardMember) {
+      governanceItems = governanceItems.filter((item) => item.label !== COMMITTEE_LABEL.plural);
+    }
+
+    // Add Governance section with filtered items
+    items.push({
+      label: 'Governance',
+      isSection: true,
+      expanded: true,
+      items: governanceItems,
+    });
 
     return items;
   });

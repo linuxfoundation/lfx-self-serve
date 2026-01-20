@@ -5,6 +5,21 @@ import { SurveyResponseStatus, SurveyStatus } from '../enums/survey.enum';
 import { TagSeverity } from '../interfaces/components.interface';
 
 /**
+ * Configurable labels for surveys displayed throughout the UI
+ * @description This constant allows the user-facing labels to be changed
+ * while keeping all code and file names consistent
+ * @readonly
+ * @example
+ * // Use in templates to display the label
+ * <h1>{{SURVEY_LABEL.plural}}</h1> // Displays "Surveys"
+ * <span>{{SURVEY_LABEL.singular}} Name</span> // Displays "Survey Name"
+ */
+export const SURVEY_LABEL = {
+  singular: 'Survey',
+  plural: 'Surveys',
+} as const;
+
+/**
  * Survey status display labels
  * @description Human-readable labels for survey statuses
  */

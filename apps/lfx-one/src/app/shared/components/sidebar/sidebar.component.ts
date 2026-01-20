@@ -3,7 +3,7 @@
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { HttpParams } from '@angular/common/http';
-import { Component, computed, inject, input } from '@angular/core';
+import { Component, computed, inject, input, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
@@ -96,12 +96,26 @@ export class SidebarComponent {
     return this.projects().find((p: Project) => p.slug === foundation.slug) || null;
   });
 
-  // Computed items
+  // Section expanded state tracking - uses section labels as keys
+  protected readonly sectionExpandedState = signal<Record<string, boolean>>({});
+
+  // Computed items with test IDs, section state, and isExpanded property
   protected readonly itemsWithTestIds = computed(() =>
-    this.items().map((item) => ({
-      ...item,
-      testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
-    }))
+    this.items().map((item) => {
+      const expandedState = this.sectionExpandedState();
+      const defaultExpanded = item.expanded !== false;
+      const isExpanded = expandedState[item.label] ?? defaultExpanded;
+
+      return {
+        ...item,
+        testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
+        isExpanded,
+        items: item.items?.map((childItem) => ({
+          ...childItem,
+          testId: childItem.testId || `sidebar-item-${childItem.label.toLowerCase().replace(/\s+/g, '-')}`,
+        })),
+      };
+    })
   );
 
   protected readonly footerItemsWithTestIds = computed(() =>
@@ -110,6 +124,16 @@ export class SidebarComponent {
       testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
     }))
   );
+
+  /**
+   * Toggle section expanded state
+   */
+  protected onSectionToggle(sectionLabel: string, currentExpanded: boolean): void {
+    this.sectionExpandedState.update((state) => ({
+      ...state,
+      [sectionLabel]: !currentExpanded,
+    }));
+  }
 
   /**
    * Handle project selection change - distinguish between foundation and non-foundation projects
