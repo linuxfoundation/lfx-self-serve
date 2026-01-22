@@ -14,6 +14,7 @@ import { TableComponent } from '@components/table/table.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { Committee, CommitteeMember } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { PersonaService } from '@services/persona.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -45,6 +46,7 @@ export class CommitteeMembersComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
+  private readonly personaService = inject(PersonaService);
 
   // Input signals
   public committee = input.required<Committee | null>();
@@ -58,6 +60,8 @@ export class CommitteeMembersComponent implements OnInit {
   public isDeleting: WritableSignal<boolean>;
   public memberActionMenuItems: MenuItem[] = [];
   public committeeLabel = COMMITTEE_LABEL;
+  public isBoardMember: Signal<boolean>;
+  public canManageMembers: Signal<boolean>;
 
   // Filter-related variables
   public filterForm: FormGroup;
@@ -74,6 +78,9 @@ export class CommitteeMembersComponent implements OnInit {
     // Initialize all class variables
     this.selectedMember = signal<CommitteeMember | null>(null);
     this.isDeleting = signal<boolean>(false);
+    // Initialize permission signals
+    this.isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
+    this.canManageMembers = computed(() => !this.isBoardMember() && !!this.committee()?.writer);
     // Initialize filter form
     this.filterForm = this.initializeFilterForm();
     this.searchTerm = this.initializeSearchTerm();

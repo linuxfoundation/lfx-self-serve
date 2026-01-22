@@ -52,6 +52,7 @@ export class CommitteeDashboardComponent {
 
   // Permission signals
   public isMaintainer: Signal<boolean>;
+  public isBoardMember: Signal<boolean>;
   public isFoundationContext: Signal<boolean>;
   public foundationCreateCommitteeFlag: Signal<boolean>;
   public canCreateGroup: Signal<boolean>;
@@ -68,9 +69,14 @@ export class CommitteeDashboardComponent {
 
     // Initialize permission checks
     this.isMaintainer = computed(() => this.personaService.currentPersona() === 'maintainer');
+    this.isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
     this.isFoundationContext = computed(() => !this.projectContextService.selectedProject() && !!this.projectContextService.selectedFoundation());
     this.foundationCreateCommitteeFlag = this.featureFlagService.getBooleanFlag('foundation-create-committee', false);
     this.canCreateGroup = computed(() => {
+      // Board members cannot manage committees
+      if (this.isBoardMember()) {
+        return false;
+      }
       const isMaintainerAndNotFoundation = this.isMaintainer() && !this.isFoundationContext();
       const hasFeatureFlag = this.foundationCreateCommitteeFlag();
       return isMaintainerAndNotFoundation || hasFeatureFlag;

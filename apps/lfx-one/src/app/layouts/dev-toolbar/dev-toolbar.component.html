@@ -18,6 +18,26 @@
         </lfx-select-button>
       </div>
 
+      <!-- Organization Selector (only visible on board dashboard) -->
+      @if (showOrganizationSelector() && isOnBoardDashboard()) {
+        <div class="flex items-center gap-2" data-testid="dev-tools-bar-organization">
+          <label for="organization-select" class="text-sm">Organization:</label>
+          <lfx-select
+            [form]="form"
+            control="selectedAccountId"
+            [options]="availableAccounts"
+            optionLabel="accountName"
+            optionValue="accountId"
+            [filter]="true"
+            filterPlaceholder="Search organizations..."
+            placeholder="Select an organization"
+            [showClear]="false"
+            styleClass="min-w-[250px] dev-tools-select"
+            inputId="organization-select"
+            data-testid="dev-tools-bar-organization-select" />
+        </div>
+      }
+
       <!-- Spacer -->
       <div class="flex-1"></div>
 

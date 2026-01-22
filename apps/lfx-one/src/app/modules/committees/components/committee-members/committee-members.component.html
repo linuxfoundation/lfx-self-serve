@@ -7,7 +7,7 @@
     <div class="flex justify-between gap-4 mb-8">
       <h3 class="text-lg font-medium text-gray-900">{{ committeeLabel.singular }} Members</h3>
       <!-- Add Member Button -->
-      @if (committee()?.writer) {
+      @if (canManageMembers()) {
         <lfx-button label="Add Member" icon="fa-light fa-user-plus" size="small" severity="secondary" (onClick)="openAddMemberDialog()"> </lfx-button>
       }
     </div>
@@ -127,7 +127,7 @@
           }
           <td class="text-right relative">
             <lfx-menu #memberActionMenu [model]="memberActionMenuItems" [popup]="true" appendTo="body"> </lfx-menu>
-            @if (committee()?.writer) {
+            @if (canManageMembers()) {
               <lfx-button
                 icon="fa-light fa-ellipsis-vertical"
                 [text]="true"

@@ -47,9 +47,11 @@
         </div>
 
         <!-- Action Menu -->
-        <div class="flex items-center gap-3">
-          <lfx-button icon="fa-light fa-file-lines" label="Edit Group" size="small" [routerLink]="['/groups', committee()?.uid || '', 'edit']"> </lfx-button>
-        </div>
+        @if (!isBoardMember()) {
+          <div class="flex items-center gap-3">
+            <lfx-button icon="fa-light fa-file-lines" label="Edit Group" size="small" [routerLink]="['/groups', committee()?.uid || '', 'edit']"> </lfx-button>
+          </div>
+        }
       </div>
 
       <!-- Configurations Section -->

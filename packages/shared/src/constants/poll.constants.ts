@@ -241,3 +241,14 @@ export const VOTE_RESPONSE_TYPES = [
   { label: 'Single selection (radio buttons)', value: 'single', description: 'Each participant will select one option' },
   { label: 'Multiple selection (checkboxes)', value: 'multiple', description: 'Participants can select multiple options' },
 ] as const;
+
+/**
+ * Open vote confirmation dialog configuration
+ * @description Configuration for the confirmation dialog shown when opening a new vote
+ */
+export const OPEN_VOTE_CONFIRMATION = {
+  header: 'Open Vote',
+  message: 'Are you sure you want to open this vote? Once opened, notifications will be sent and voting will begin immediately.',
+  acceptLabel: 'Yes, open vote',
+  rejectLabel: 'Cancel',
+} as const;

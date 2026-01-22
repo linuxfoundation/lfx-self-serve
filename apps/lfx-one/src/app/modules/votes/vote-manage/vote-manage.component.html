@@ -1,6 +1,9 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- Confirmation Dialog -->
+<p-confirmDialog></p-confirmDialog>
+
 <div class="container px-8" data-testid="vote-manage">
   <!-- Back Navigation -->
   <div class="mb-4">
@@ -52,9 +55,9 @@
             </lfx-button>
 
             @if (isLastStep()) {
-              <!-- Create/Update Button -->
+              <!-- Save/Open Button -->
               <lfx-button
-                [label]="isEditMode() ? 'Save Changes' : 'Create ' + voteLabel.singular"
+                [label]="isEditMode() ? 'Save Changes' : 'Open ' + voteLabel.singular"
                 [loading]="submitting()"
                 severity="info"
                 (onClick)="onSubmit()"

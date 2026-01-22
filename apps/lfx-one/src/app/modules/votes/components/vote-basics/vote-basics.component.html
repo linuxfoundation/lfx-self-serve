@@ -82,6 +82,8 @@
           <div class="flex flex-col gap-1">
             <label for="eligible-participants" class="text-sm font-medium text-gray-700"> Eligible Participants <span class="text-red-500">*</span> </label>
             <lfx-select
+              styleClass="w-full"
+              appendTo="body"
               [form]="form()"
               control="eligible_participants"
               [options]="eligibleParticipantsOptions"

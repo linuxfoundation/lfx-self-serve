@@ -6,13 +6,14 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { COMMITTEE_LABEL, VOTE_LABEL, VOTE_TOTAL_STEPS } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, OPEN_VOTE_CONFIRMATION, VOTE_LABEL, VOTE_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { CommitteeReference, Vote } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { trimmedMinLength, trimmedRequired, validCommitteeReference } from '@lfx-one/shared/validators';
 import { ProjectContextService } from '@services/project-context.service';
-import { MessageService } from 'primeng/api';
+import { ConfirmationService, MessageService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
 import { combineLatest, distinctUntilChanged, map, of, switchMap } from 'rxjs';
 
@@ -22,7 +23,16 @@ import { VoteReviewComponent } from '../components/vote-review/vote-review.compo
 
 @Component({
   selector: 'lfx-vote-manage',
-  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, StepperModule, VoteBasicsComponent, VoteQuestionComponent, VoteReviewComponent],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    ButtonComponent,
+    ConfirmDialogModule,
+    StepperModule,
+    VoteBasicsComponent,
+    VoteQuestionComponent,
+    VoteReviewComponent,
+  ],
   templateUrl: './vote-manage.component.html',
   styleUrl: './vote-manage.component.scss',
 })
@@ -30,6 +40,7 @@ export class VoteManageComponent {
   // Private injections
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
+  private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
 
@@ -114,19 +125,20 @@ export class VoteManageComponent {
       return;
     }
 
-    this.submitting.set(true);
-
-    // TODO: Implement actual API call
-    // For now, simulate success
-    setTimeout(() => {
-      this.messageService.add({
-        severity: 'success',
-        summary: 'Success',
-        detail: `${this.voteLabel.singular} ${this.isEditMode() ? 'updated' : 'created'} successfully`,
+    // For create mode, show confirmation dialog before opening the vote
+    if (!this.isEditMode()) {
+      this.confirmationService.confirm({
+        header: OPEN_VOTE_CONFIRMATION.header,
+        message: OPEN_VOTE_CONFIRMATION.message,
+        acceptLabel: OPEN_VOTE_CONFIRMATION.acceptLabel,
+        rejectLabel: OPEN_VOTE_CONFIRMATION.rejectLabel,
+        acceptButtonStyleClass: 'p-button-info',
+        rejectButtonStyleClass: 'p-button-text',
+        accept: () => this.submitVote(),
       });
-      this.submitting.set(false);
-      this.router.navigate(['/votes']);
-    }, 1000);
+    } else {
+      this.submitVote();
+    }
   }
 
   public isCurrentStepValid(): boolean {
@@ -150,6 +162,23 @@ export class VoteManageComponent {
    */
   public createOptionControl(): FormControl<string> {
     return new FormControl('', { validators: [trimmedRequired()], nonNullable: true });
+  }
+
+  // Private methods
+  private submitVote(): void {
+    this.submitting.set(true);
+
+    // TODO: Implement actual API call
+    // For now, simulate success
+    setTimeout(() => {
+      this.messageService.add({
+        severity: 'success',
+        summary: 'Success',
+        detail: `${this.voteLabel.singular} ${this.isEditMode() ? 'updated' : 'opened'} successfully`,
+      });
+      this.submitting.set(false);
+      this.router.navigate(['/votes']);
+    }, 1000);
   }
 
   // Private initializer functions

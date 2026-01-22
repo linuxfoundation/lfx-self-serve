@@ -10,6 +10,7 @@ import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, CommitteeMember, getCommitteeCategorySeverity, TagSeverity } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
+import { PersonaService } from '@services/persona.service';
 import { MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap, throwError } from 'rxjs';
@@ -27,6 +28,7 @@ export class CommitteeViewComponent {
   private readonly router = inject(Router);
   private readonly committeeService = inject(CommitteeService);
   private readonly messageService = inject(MessageService);
+  private readonly personaService = inject(PersonaService);
 
   public committee: Signal<Committee | null>;
   public members: WritableSignal<CommitteeMember[]>;
@@ -38,6 +40,7 @@ export class CommitteeViewComponent {
   public refresh: BehaviorSubject<void>;
   public categorySeverity: Signal<TagSeverity>;
   public breadcrumbItems: Signal<MenuItem[]>;
+  public isBoardMember: Signal<boolean>;
 
   public constructor() {
     this.error = signal<boolean>(false);
@@ -53,6 +56,7 @@ export class CommitteeViewComponent {
       return getCommitteeCategorySeverity(category || '');
     });
     this.breadcrumbItems = computed(() => [{ label: 'Groups', routerLink: ['/groups'] }, { label: this.committee()?.name || '' }]);
+    this.isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
   }
 
   public goBack(): void {

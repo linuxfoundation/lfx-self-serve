@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, inject, input, output, signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, output, signal, Signal, WritableSignal } from '@angular/core';
 import { ReactiveFormsModule, FormGroup } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -14,6 +14,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
 import { CommitteeCategorySeverityPipe } from '@pipes/committee-category-severity.pipe';
 import { CommitteeService } from '@services/committee.service';
+import { PersonaService } from '@services/persona.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -49,6 +50,7 @@ export class CommitteeTableComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly dialogService = inject(DialogService);
+  private readonly personaService = inject(PersonaService);
 
   // Inputs
   public committees = input.required<Committee[]>();
@@ -60,6 +62,7 @@ export class CommitteeTableComponent {
 
   // State
   public isDeleting: WritableSignal<boolean> = signal<boolean>(false);
+  public isBoardMember: Signal<boolean> = computed(() => this.personaService.currentPersona() === 'board-member');
 
   // Outputs
   public readonly refresh = output<void>();
