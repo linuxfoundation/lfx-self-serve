@@ -65,7 +65,7 @@
           <button
             type="button"
             class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0"
-            (click)="onManageVote(vote.uid)"
+            (click)="onViewVote(vote.uid)"
             [attr.data-testid]="'votes-name-' + vote.uid">
             {{ vote.name }}
           </button>
@@ -108,7 +108,7 @@
                   severity="secondary"
                   size="small"
                   [outlined]="true"
-                  (onClick)="onManageVote(vote.uid)"
+                  [routerLink]="['/votes', vote.uid, 'edit']"
                   [attr.data-testid]="'votes-action-' + vote.uid">
                 </lfx-button>
               } @else if (vote.status === PollStatus.ACTIVE) {
@@ -117,7 +117,7 @@
                   severity="secondary"
                   size="small"
                   [outlined]="true"
-                  (onClick)="onManageVote(vote.uid)"
+                  (onClick)="onViewVote(vote.uid)"
                   [attr.data-testid]="'votes-action-' + vote.uid">
                 </lfx-button>
               } @else {
@@ -126,7 +126,7 @@
                   severity="secondary"
                   size="small"
                   [outlined]="true"
-                  (onClick)="onManageVote(vote.uid)"
+                  (onClick)="onViewResults(vote.uid)"
                   [attr.data-testid]="'votes-action-' + vote.uid">
                 </lfx-button>
               }
@@ -159,7 +159,7 @@
     <ng-template #emptymessage>
       <tr>
         <td colspan="6" class="text-center py-8">
-          <i class="fa-light fa-check-to-slot text-3xl text-gray-400 mb-2"></i>
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2"></i>
           <p class="text-sm text-gray-500">No {{ voteLabel.plural.toLowerCase() }} found</p>
         </td>
       </tr>

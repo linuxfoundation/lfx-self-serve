@@ -5,7 +5,12 @@
   <!-- Label and Description -->
   @if (label()) {
     <div>
-      <label class="text-sm font-medium text-gray-700 block">{{ label() }}</label>
+      <label class="text-sm font-medium text-gray-700 block">
+        {{ label() }}
+        @if (required()) {
+          <span class="text-red-500">*</span>
+        }
+      </label>
       @if (description()) {
         <p class="text-xs text-gray-500 mt-1">{{ description() }}</p>
       }
@@ -28,10 +33,12 @@
       optionLabel="name"
       dataKey="id"
       styleClass="w-full"
-      inputStyleClass="w-full text-sm"
+      inputStyleClass="w-full p-inputtext-sm"
       panelStyleClass="committee-selector-panel"
       appendTo="body"
       [completeOnFocus]="true"
+      [dropdown]="!multiple()"
+      [showClear]="!multiple() && displayedSelectedItems().length > 0"
       (completeMethod)="onSearch($event)"
       (onSelect)="onSelect($event)"
       (onClear)="onClear()">
@@ -56,8 +63,8 @@
       </ng-template>
     </lfx-autocomplete>
 
-    <!-- Selected Items List -->
-    @if (displayedSelectedItems().length > 0) {
+    <!-- Selected Items List (only for multiple selection mode) -->
+    @if (multiple() && displayedSelectedItems().length > 0) {
       <div class="flex flex-col gap-2 border border-gray-200 rounded-lg p-2" [attr.data-testid]="testIdPrefix() + '-selected-list'">
         @for (item of displayedSelectedItems(); track item.id) {
           <div

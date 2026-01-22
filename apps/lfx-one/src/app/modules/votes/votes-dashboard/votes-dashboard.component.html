@@ -14,7 +14,7 @@
         size="small"
         icon="fa-light fa-check-to-slot"
         severity="primary"
-        (onClick)="onCreateVote()"
+        [routerLink]="['/votes', 'create']"
         data-testid="votes-create-button">
       </lfx-button>
     }
@@ -39,8 +39,6 @@
     <lfx-votes-table
       [votes]="votes()"
       [hasPMOAccess]="hasPMOAccess()"
-      (createVote)="onCreateVote()"
-      (manageVote)="onManageVote($event)"
       (viewVote)="onViewVote($event)"
       (viewResults)="onViewResults($event)"
       data-testid="votes-table-container">

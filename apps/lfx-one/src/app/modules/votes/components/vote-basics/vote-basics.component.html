@@ -1,0 +1,119 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="vote-basics">
+  <!-- Step Title -->
+  <div>
+    <h2 class="text-lg font-semibold text-gray-900 mb-1">{{ voteLabel.singular }} Basics</h2>
+    <p class="text-sm text-gray-500">
+      Define the fundamental details of your {{ voteLabel.singular | lowercase }} including title, target {{ committeeLabel.singular | lowercase }}, and
+      eligibility criteria
+    </p>
+  </div>
+
+  <!-- Two Column Layout -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <!-- Left Column - Vote Information -->
+    <div class="flex flex-col gap-6">
+      <div>
+        <h3 class="text-base font-medium text-gray-900 mb-2">{{ voteLabel.singular }} Information</h3>
+        <p class="text-sm text-gray-500 mb-4">
+          Provide a clear title and optional description to help participants understand the {{ voteLabel.singular | lowercase }}.
+        </p>
+
+        <div class="flex flex-col gap-4">
+          <!-- Vote Title -->
+          <div class="flex flex-col gap-1">
+            <label for="vote-title" class="text-sm font-medium text-gray-700"> {{ voteLabel.singular }} Title <span class="text-red-500">*</span> </label>
+            <lfx-input-text [form]="form()" size="small" control="title" id="vote-title" placeholder="e.g., Approve Q4 2024 Budget" dataTest="vote-title-input">
+            </lfx-input-text>
+            @if (form().get('title')?.touched && form().get('title')?.errors?.['required']) {
+              <p class="text-red-500 text-xs">{{ voteLabel.singular }} title is required.</p>
+            }
+            @if (form().get('title')?.touched && form().get('title')?.errors?.['minlength']) {
+              <p class="text-red-500 text-xs">{{ voteLabel.singular }} title must be at least 3 characters.</p>
+            }
+          </div>
+
+          <!-- Description -->
+          <div class="flex flex-col gap-1">
+            <label for="vote-description" class="text-sm font-medium text-gray-700"> Description <span class="text-gray-400">(optional)</span> </label>
+            <lfx-textarea
+              [form]="form()"
+              control="description"
+              id="vote-description"
+              [placeholder]="'Provide context or additional details about this ' + (voteLabel.singular | lowercase)"
+              [rows]="4"
+              styleClass="w-full min-h-32"
+              data-testid="vote-description-textarea">
+            </lfx-textarea>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column - Group & Eligibility -->
+    <div class="flex flex-col gap-6">
+      <div>
+        <h3 class="text-base font-medium text-gray-900 mb-2">{{ committeeLabel.singular }} & Eligibility</h3>
+        <p class="text-sm text-gray-500 mb-4">
+          Select the {{ committeeLabel.singular | lowercase }} and define who within that {{ committeeLabel.singular | lowercase }} is eligible to vote.
+        </p>
+
+        <div class="flex flex-col gap-4">
+          <!-- Group/Committee Selector -->
+          <div class="flex flex-col gap-1">
+            <lfx-committee-selector
+              [form]="form()"
+              control="committee"
+              [multiple]="false"
+              [required]="true"
+              [label]="committeeLabel.singular"
+              [description]="'The selected ' + (committeeLabel.singular | lowercase) + ' defines who can vote.'"
+              [placeholder]="'Select a ' + (committeeLabel.singular | lowercase)"
+              testIdPrefix="vote-committee-selector">
+            </lfx-committee-selector>
+            @if (form().get('committee')?.touched && !form().get('committee')?.value) {
+              <p class="text-red-500 text-xs">{{ committeeLabel.singular }} is required.</p>
+            }
+          </div>
+
+          <!-- Eligible Participants -->
+          <div class="flex flex-col gap-1">
+            <label for="eligible-participants" class="text-sm font-medium text-gray-700"> Eligible Participants <span class="text-red-500">*</span> </label>
+            <lfx-select
+              [form]="form()"
+              control="eligible_participants"
+              [options]="eligibleParticipantsOptions"
+              optionLabel="label"
+              optionValue="value"
+              placeholder="Select eligible participants"
+              data-testid="vote-eligible-participants-select">
+            </lfx-select>
+            @if (form().get('eligible_participants')?.touched && !form().get('eligible_participants')?.value) {
+              <p class="text-red-500 text-xs">Eligible participants is required.</p>
+            }
+            <p class="text-xs text-gray-400">Defines who within the selected {{ committeeLabel.singular | lowercase }} will be eligible to vote.</p>
+          </div>
+
+          <!-- Close Date -->
+          <div class="flex flex-col gap-1">
+            <label for="close-date" class="text-sm font-medium text-gray-700"> Close Date <span class="text-red-500">*</span> </label>
+            <lfx-calendar
+              [form]="form()"
+              control="close_date"
+              placeholder="Select close date"
+              [minDate]="minDate"
+              [showButtonBar]="true"
+              data-testid="vote-close-date-calendar">
+            </lfx-calendar>
+            @if (form().get('close_date')?.touched && !form().get('close_date')?.value) {
+              <p class="text-red-500 text-xs">Close date is required.</p>
+            }
+            <p class="text-xs text-gray-400">The date when this {{ voteLabel.singular | lowercase }} will close and no longer accept responses.</p>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

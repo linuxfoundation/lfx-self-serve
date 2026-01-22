@@ -1,0 +1,130 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="vote-question">
+  <!-- Step Title -->
+  <div>
+    <h2 class="text-lg font-semibold text-gray-900 mb-1">{{ voteLabel.singular }} Questions</h2>
+    <p class="text-sm text-gray-500">Define the questions that will be presented to participants and the available voting options</p>
+  </div>
+
+  <!-- Questions Array -->
+  <div class="flex flex-col gap-6" [formGroup]="form()">
+    <ng-container formArrayName="questions">
+      @for (questionData of questionsData(); track $index; let qIdx = $index) {
+        <div class="border border-gray-200 rounded-lg p-6" [formGroupName]="qIdx" [attr.data-testid]="'vote-question-' + qIdx">
+          <!-- Question Header -->
+          <div class="flex items-center justify-between mb-4">
+            <h3 class="text-base font-medium text-gray-900">Question {{ qIdx + 1 }}</h3>
+            @if (questionsArray().length > 1) {
+              <lfx-button
+                [text]="true"
+                severity="danger"
+                icon="fa-light fa-trash"
+                (onClick)="removeQuestion(qIdx)"
+                styleClass="!h-8 !w-8 !p-0"
+                [attr.data-testid]="'vote-question-remove-' + qIdx">
+              </lfx-button>
+            }
+          </div>
+
+          <div class="flex flex-col gap-4">
+            <!-- Question Text -->
+            <div class="flex flex-col gap-1">
+              <label [for]="'vote-question-text-' + qIdx" class="text-sm font-medium text-gray-700"> Question <span class="text-red-500">*</span> </label>
+              <lfx-textarea
+                [form]="questionData.group"
+                control="question"
+                [id]="'vote-question-text-' + qIdx"
+                placeholder="e.g., Do you approve the proposed Q4 budget allocation?"
+                [rows]="3"
+                styleClass="w-full"
+                [dataTest]="'vote-question-textarea-' + qIdx">
+              </lfx-textarea>
+              @if (questionData.questionControl.touched && questionData.questionControl.errors?.['trimmedRequired']) {
+                <p class="text-red-500 text-xs">Question is required.</p>
+              }
+              @if (questionData.questionControl.touched && questionData.questionControl.errors?.['trimmedMinLength']) {
+                <p class="text-red-500 text-xs">Question must be at least 10 characters.</p>
+              }
+            </div>
+
+            <!-- Response Type -->
+            <div class="flex flex-col gap-1">
+              <label [for]="'vote-response-type-' + qIdx" class="text-sm font-medium text-gray-700"> Response Type <span class="text-red-500">*</span> </label>
+              <lfx-select
+                [form]="questionData.group"
+                control="response_type"
+                [options]="responseTypeOptions"
+                optionLabel="label"
+                optionValue="value"
+                placeholder="Select response type"
+                styleClass="w-full"
+                [attr.data-testid]="'vote-response-type-select-' + qIdx">
+              </lfx-select>
+              <p class="text-xs text-gray-400">
+                @if (questionData.responseTypeControl.value === 'single') {
+                  Each participant will select one option.
+                } @else {
+                  Participants can select multiple options.
+                }
+              </p>
+            </div>
+
+            <!-- Options -->
+            <div class="flex flex-col gap-2">
+              <label class="text-sm font-medium text-gray-700"> Options <span class="text-red-500">*</span> </label>
+              <div class="flex flex-col gap-2" formArrayName="options">
+                @for (optionControl of questionData.optionsControls; track $index; let oIdx = $index) {
+                  <div class="flex items-center gap-2">
+                    <input
+                      pInputText
+                      [formControlName]="oIdx"
+                      [id]="'vote-option-' + qIdx + '-' + oIdx"
+                      [placeholder]="'Option ' + (oIdx + 1)"
+                      class="flex-1 p-inputtext-sm"
+                      [attr.data-testid]="'vote-option-input-' + qIdx + '-' + oIdx" />
+                    @if (questionData.optionsControls.length > 2) {
+                      <lfx-button
+                        [text]="true"
+                        [rounded]="true"
+                        severity="secondary"
+                        icon="fa-light fa-xmark"
+                        (onClick)="removeOption(qIdx, oIdx)"
+                        styleClass="shrink-0 !h-9 !w-9 !p-0"
+                        [attr.data-testid]="'vote-option-remove-' + qIdx + '-' + oIdx">
+                      </lfx-button>
+                    }
+                  </div>
+                  @if (optionControl.touched && optionControl.errors) {
+                    <p class="text-red-500 text-xs ml-1">Option {{ oIdx + 1 }} is required.</p>
+                  }
+                }
+              </div>
+              <lfx-button
+                [text]="true"
+                icon="fa-light fa-plus"
+                label="Add Option"
+                (onClick)="addOption(qIdx)"
+                styleClass="mt-2 self-start"
+                [attr.data-testid]="'vote-add-option-btn-' + qIdx">
+              </lfx-button>
+            </div>
+          </div>
+        </div>
+      }
+    </ng-container>
+  </div>
+
+  <!-- Add Question Button -->
+  <div class="flex justify-center">
+    <lfx-button
+      [outlined]="true"
+      severity="secondary"
+      icon="fa-light fa-plus"
+      label="Add Another Question"
+      (onClick)="addQuestion()"
+      data-testid="vote-add-question-btn">
+    </lfx-button>
+  </div>
+</div>

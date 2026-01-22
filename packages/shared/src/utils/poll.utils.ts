@@ -46,12 +46,12 @@ function mapToCommitteeMemberVotingStatus(value: string): CommitteeMemberVotingS
 /**
  * Map string array to CommitteeMemberVotingStatus array
  * @description Converts query service voting status strings to enum array.
- * @remarks Function name uses 'Filers' to match the backend field name 'committee_filers',
+ * @remarks Function name uses 'Filters' to match the backend field name 'committee_filters',
  * which represents eligible voting statuses despite the naming convention.
- * @param values - The voting status strings from query service (from Vote.committee_filers)
+ * @param values - The voting status strings from query service (from Vote.committee_filters)
  * @returns Array of valid CommitteeMemberVotingStatus values
  */
-export function mapCommitteeFilersToVotingStatuses(values: string[]): CommitteeMemberVotingStatus[] {
+export function mapCommitteeFiltersToVotingStatuses(values: string[]): CommitteeMemberVotingStatus[] {
   return values.map((v) => mapToCommitteeMemberVotingStatus(v)).filter((v): v is CommitteeMemberVotingStatus => v !== undefined);
 }
 
@@ -88,7 +88,7 @@ export function toUserVote(vote: Vote, individualVote: IndividualVote): UserVote
       {
         uid: vote.committee_uid,
         name: vote.committee_name,
-        allowed_voting_statuses: mapCommitteeFilersToVotingStatuses(vote.committee_filers),
+        allowed_voting_statuses: mapCommitteeFiltersToVotingStatuses(vote.committee_filters),
       },
     ],
     end_time: vote.end_time,

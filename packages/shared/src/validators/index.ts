@@ -3,3 +3,4 @@
 
 export * from './mailing-list.validators';
 export * from './meeting.validators';
+export * from './vote.validators';

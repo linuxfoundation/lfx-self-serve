@@ -5,6 +5,7 @@ import { DatePipe } from '@angular/common';
 import { Component, computed, input, output, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -27,6 +28,7 @@ import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
     ButtonComponent,
     DatePipe,
     ReactiveFormsModule,
+    RouterLink,
     InputTextComponent,
     SelectComponent,
     PollStatusLabelPipe,
@@ -45,8 +47,6 @@ export class VotesTableComponent {
   public readonly hasPMOAccess = input<boolean>(false);
 
   // === Outputs ===
-  public readonly createVote = output<void>();
-  public readonly manageVote = output<string>();
   public readonly viewVote = output<string>();
   public readonly viewResults = output<string>();
 
@@ -74,14 +74,6 @@ export class VotesTableComponent {
 
   protected onGroupChange(value: string | null): void {
     this.groupFilter.set(value);
-  }
-
-  protected onCreateVote(): void {
-    this.createVote.emit();
-  }
-
-  protected onManageVote(voteId: string): void {
-    this.manageVote.emit(voteId);
   }
 
   protected onViewVote(voteId: string): void {

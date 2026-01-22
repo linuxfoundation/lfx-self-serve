@@ -28,6 +28,7 @@ export class CommitteeSelectorComponent {
 
   // Configuration
   public readonly multiple = input<boolean>(true);
+  public readonly required = input<boolean>(false);
   public readonly label = input<string>('');
   public readonly description = input<string>('');
   public readonly placeholder = input<string>('Search...');
@@ -88,14 +89,15 @@ export class CommitteeSelectorComponent {
       const updated = [...current, option];
       this.updateFormControl(updated);
       this.selectionChange.emit(updated);
+      // Clear the autocomplete input for multi-select
+      this.searchForm.get('search')?.setValue('');
     } else {
-      // Single-select mode: replace selection
+      // Single-select mode: replace selection and show in input
       this.updateFormControl([option]);
       this.selectionChange.emit(option);
+      // Set the input to show the selected item's name
+      this.searchForm.get('search')?.setValue(option.name);
     }
-
-    // Clear the autocomplete input
-    this.searchForm.get('search')?.setValue('');
   }
 
   /**
@@ -103,6 +105,12 @@ export class CommitteeSelectorComponent {
    */
   public onClear(): void {
     this.filteredSuggestions.set([]);
+
+    // For single-select mode, clear the form control when input is cleared
+    if (!this.multiple()) {
+      this.updateFormControl([]);
+      this.selectionChange.emit(null);
+    }
   }
 
   /**
@@ -166,8 +174,8 @@ export class CommitteeSelectorComponent {
           }
 
           return formControl.valueChanges.pipe(
-            startWith(formControl.value as CommitteeReference[] | null),
-            map((value: CommitteeReference[] | null) => this.mapFormValueToSelectedItems(value, options))
+            startWith(formControl.value as CommitteeReference | CommitteeReference[] | null),
+            map((value: CommitteeReference | CommitteeReference[] | null) => this.mapFormValueToSelectedItems(value, options))
           );
         })
       ),
@@ -177,14 +185,18 @@ export class CommitteeSelectorComponent {
 
   /**
    * Map form control value to selected items
-   * Handles array of CommitteeReference objects and enriches with member count from options
+   * Handles both single CommitteeReference object and array of CommitteeReference objects
+   * Enriches with member count from options
    */
-  private mapFormValueToSelectedItems(value: CommitteeReference[] | null, options: CommitteeSelectorOption[]): CommitteeSelectorOption[] {
-    if (!value || !Array.isArray(value)) {
+  private mapFormValueToSelectedItems(value: CommitteeReference | CommitteeReference[] | null, options: CommitteeSelectorOption[]): CommitteeSelectorOption[] {
+    if (!value) {
       return [];
     }
 
-    return value.map((item) => {
+    // Normalize to array - handle both single object and array values
+    const items = Array.isArray(value) ? value : [value];
+
+    return items.map((item) => {
       // Try to find the option to get member count
       const option = options.find((o) => o.id === item.uid);
       return {

@@ -157,13 +157,8 @@ export interface Vote {
   uid: string;
   /** Alias for uid - poll identifier */
   poll_id: string;
-  /**
-   * Eligible voting roles/statuses for this poll
-   * @remarks Field name is 'committee_filers' as defined in the backend query service API.
-   * Despite the naming suggesting 'filers' (people who file), this actually represents
-   * filter criteria for eligible voting statuses (e.g., 'voting_rep', 'alternate').
-   */
-  committee_filers: string[];
+  /** Eligible voting roles/statuses for this poll */
+  committee_filters: string[];
   /** V1 committee ID */
   committee_id: string;
   /** V2 committee UID */
@@ -247,4 +242,34 @@ export interface IndividualVote extends SESEmailTracking {
   vote_creation_time: string;
   /** Current status of this individual vote */
   vote_status: IndividualVoteStatus;
+}
+
+/**
+ * Form data structure for a question in the vote creation/edit form
+ * @description Used for template iteration with properly typed form controls
+ */
+export interface QuestionFormData {
+  /** The FormGroup for this question */
+  group: import('@angular/forms').FormGroup;
+  /** The question text control */
+  questionControl: import('@angular/forms').AbstractControl;
+  /** The response type control */
+  responseTypeControl: import('@angular/forms').AbstractControl;
+  /** Array of option controls */
+  optionsControls: import('@angular/forms').AbstractControl[];
+}
+
+/**
+ * Processed question data for the vote review step
+ * @description Used for displaying question summary in the review step
+ */
+export interface VoteReviewQuestion {
+  /** One-based question index for display */
+  index: number;
+  /** Question text */
+  question: string;
+  /** Response type (single or multiple) */
+  responseType: 'single' | 'multiple';
+  /** Array of non-empty option texts */
+  options: string[];
 }

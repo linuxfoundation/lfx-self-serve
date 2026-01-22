@@ -1,0 +1,101 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="vote-review">
+  <!-- Step Title -->
+  <div>
+    <h2 class="text-lg font-semibold text-gray-900 mb-1">Review and Open {{ voteLabel.singular }}</h2>
+    <p class="text-sm text-gray-500">Please review your {{ voteLabel.singular | lowercase }} details before creating</p>
+  </div>
+
+  <!-- Two Column Layout -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
+    <!-- Left Column - Vote Details -->
+    <div class="flex flex-col gap-4">
+      <!-- Vote Details Card -->
+      <div class="border border-gray-200 rounded-lg p-4 relative" data-testid="vote-review-details-card">
+        <lfx-button
+          [text]="true"
+          label="Edit"
+          (onClick)="onEditStep(1)"
+          styleClass="absolute top-4 right-4 !text-lfx-primary !p-0 !h-auto"
+          data-testid="vote-review-edit-basics-btn">
+        </lfx-button>
+        <h3 class="text-base font-medium text-gray-900 mb-4">{{ voteLabel.singular }} Details</h3>
+        <div class="flex flex-col gap-3 text-sm">
+          <div class="flex justify-between gap-4">
+            <span class="text-gray-500">{{ voteLabel.singular }} Title:</span>
+            <span class="text-gray-900 text-right">{{ title() }}</span>
+          </div>
+          @if (description()) {
+            <div class="flex justify-between gap-4">
+              <span class="text-gray-500">Description:</span>
+              <span class="text-gray-900 text-right break-words max-w-[60%]">{{ description() }}</span>
+            </div>
+          }
+          <div class="flex justify-between gap-4">
+            <span class="text-gray-500">{{ committeeLabel.singular }}:</span>
+            <span class="text-gray-900 text-right">{{ committee()?.name || 'Not selected' }}</span>
+          </div>
+          <div class="flex justify-between gap-4">
+            <span class="text-gray-500">Eligible Participants:</span>
+            <span class="text-gray-900 text-right">{{ eligibleParticipantsLabel() }}</span>
+          </div>
+          <div class="flex justify-between gap-4">
+            <span class="text-gray-500">Close Date:</span>
+            <span class="text-gray-900 text-right">
+              @if (closeDate()) {
+                {{ closeDate() | date: 'MMMM d, yyyy' }}
+              } @else {
+                Not set
+              }
+            </span>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column - Questions & Options -->
+    <div class="flex flex-col gap-4">
+      <!-- Questions & Options Card -->
+      <div class="border border-gray-200 rounded-lg p-4 relative" data-testid="vote-review-questions-card">
+        <lfx-button
+          [text]="true"
+          label="Edit"
+          (onClick)="onEditStep(2)"
+          styleClass="absolute top-4 right-4 !text-lfx-primary !p-0 !h-auto"
+          data-testid="vote-review-edit-questions-btn">
+        </lfx-button>
+        <h3 class="text-base font-medium text-gray-900 mb-4">Questions & Options</h3>
+        <div class="flex flex-col gap-4 text-sm">
+          @for (q of questions(); track q.index) {
+            <div class="flex flex-col gap-2" [attr.data-testid]="'vote-review-question-' + q.index">
+              @if (questions().length > 1) {
+                <span class="text-xs font-medium text-gray-400 uppercase">Question {{ q.index }}</span>
+              }
+              <div class="flex justify-between gap-4">
+                <span class="text-gray-500">Question:</span>
+                <span class="text-gray-900 text-right break-words max-w-[60%]">{{ q.question }}</span>
+              </div>
+              <div class="flex justify-between gap-4">
+                <span class="text-gray-500">Response Type:</span>
+                <span class="text-gray-900 text-right">{{ getResponseTypeLabel(q.responseType) }}</span>
+              </div>
+              <div class="flex flex-col gap-1">
+                <span class="text-gray-500">Options:</span>
+                <ul class="list-disc list-inside ml-4 mt-1">
+                  @for (option of q.options; track option; let oIdx = $index) {
+                    <li class="text-gray-900" [attr.data-testid]="'vote-review-option-' + q.index + '-' + oIdx">{{ option }}</li>
+                  }
+                </ul>
+              </div>
+              @if (questions().length > 1 && !$last) {
+                <hr class="border-gray-200 mt-2" />
+              }
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

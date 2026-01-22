@@ -1,7 +1,57 @@
 /* Copyright The Linux Foundation and each contributor to LFX. */
 /* SPDX-License-Identifier: MIT */
 
-::ng-deep {
+:host ::ng-deep {
+  // Base autocomplete styling
+  .p-autocomplete {
+    position: relative;
+
+    .p-autocomplete-input {
+      @apply rounded-md;
+    }
+  }
+
+  // Dropdown mode styling - only applied when dropdown-mode class is present
+  .p-autocomplete.dropdown-mode {
+    // Style the dropdown button to be transparent and overlay the custom caret
+    // Preserves click interactivity for cases where completeOnFocus is false
+    .p-autocomplete-dropdown {
+      @apply absolute right-0 top-0 bottom-0 w-10 bg-transparent border-0 text-transparent;
+
+      // Remove any button styling
+      &:hover,
+      &:focus {
+        @apply bg-transparent border-0;
+      }
+    }
+
+    // Add custom dropdown caret using ::after (same as calendar)
+    &::after {
+      content: '\f078'; // Font Awesome chevron-down icon
+      font-family: 'Font Awesome 6 Pro';
+      font-weight: 300; // fa-light
+      @apply absolute right-4 top-1/2 -translate-y-1/2 text-gray-400 pointer-events-none text-sm;
+    }
+
+    .p-autocomplete-input {
+      @apply pr-10; // Make room for the dropdown icon
+    }
+
+    // Clear button positioning when in dropdown mode (before the dropdown icon)
+    &.has-clear .p-autocomplete-clear-icon {
+      @apply right-9;
+    }
+  }
+
+  // Clear button base styling (applies to all modes)
+  .p-autocomplete-clear-icon {
+    @apply text-gray-400;
+
+    &:hover {
+      @apply text-gray-500;
+    }
+  }
+
   .p-autocomplete-list-container {
     .p-autocomplete-list {
       .p-autocomplete-option {

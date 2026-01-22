@@ -6,7 +6,7 @@
     [formControlName]="control()"
     [suggestions]="suggestions()"
     [placeholder]="placeholder()"
-    [styleClass]="styleClass()"
+    [styleClass]="computedStyleClass()"
     [optionLabel]="optionLabel()"
     [optionValue]="optionValue()"
     [inputStyleClass]="inputStyleClass()"
@@ -23,7 +23,9 @@
     [dropdown]="dropdown()"
     [dropdownMode]="dropdownMode()"
     [dataKey]="dataKey()"
-    [appendTo]="appendTo()">
+    [appendTo]="appendTo()"
+    [showClear]="showClear()"
+    [forceSelection]="forceSelection()">
     <!-- Empty message template -->
     @if (emptyTemplate) {
       <ng-template #empty>

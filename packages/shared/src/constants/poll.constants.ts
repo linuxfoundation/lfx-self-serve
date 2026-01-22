@@ -186,3 +186,58 @@ export const MOCK_POLL_DESCRIPTIONS: Map<string, string> = new Map([
   ['poll-004', 'Vote on the proposed updates to our community Code of Conduct.'],
   ['poll-005', 'Vote on the proposed Security Policy Amendment that includes enhanced security measures.'],
 ]);
+
+// ============================================================================
+// Vote Form Configuration Constants
+// ============================================================================
+
+/**
+ * Step titles for the vote creation/edit stepper
+ * @description Array of human-readable titles for each step in the vote form
+ */
+export const VOTE_STEP_TITLES = ['Vote Basics', 'Vote Question', 'Review & Confirm'] as const;
+
+/**
+ * Total number of steps in the vote wizard
+ * @description Must match the length of VOTE_STEP_TITLES array
+ */
+export const VOTE_TOTAL_STEPS = VOTE_STEP_TITLES.length;
+
+/**
+ * Vote form step indices
+ * @description One-based step numbers for form navigation and validation
+ * @readonly
+ */
+export const VOTE_FORM_STEPS = {
+  /** Step 1: Basic information (title, description, group, eligibility, close date) */
+  BASICS: 1,
+  /** Step 2: Question configuration (question text, response type, options) */
+  QUESTION: 2,
+  /** Step 3: Review and confirm all settings */
+  REVIEW: 3,
+} as const;
+
+/**
+ * Eligible participant options for vote creation
+ * @description Defines who within the selected group is eligible to vote
+ * Maps to the committee_filters field in the Vote interface
+ * Values align with CommitteeMemberVotingStatus enum snake_case values
+ */
+export const VOTE_ELIGIBLE_PARTICIPANTS = [
+  { label: 'Voting Reps Only', value: 'voting_rep', description: 'Only voting representatives can participate' },
+  {
+    label: 'Voting Reps and Alternates',
+    value: 'voting_rep,alternate_voting_rep',
+    description: 'Voting reps and their alternates can participate',
+  },
+  { label: 'All Members of the Group', value: 'all', description: 'All members of the selected group can participate' },
+] as const;
+
+/**
+ * Vote response type options
+ * @description Defines how participants can respond to the vote question
+ */
+export const VOTE_RESPONSE_TYPES = [
+  { label: 'Single selection (radio buttons)', value: 'single', description: 'Each participant will select one option' },
+  { label: 'Multiple selection (checkboxes)', value: 'multiple', description: 'Participants can select multiple options' },
+] as const;

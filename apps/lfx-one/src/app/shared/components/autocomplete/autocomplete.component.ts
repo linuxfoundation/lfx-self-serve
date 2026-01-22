@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, ContentChild, input, output, TemplateRef } from '@angular/core';
+import { Component, computed, ContentChild, input, output, Signal, TemplateRef } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { AutoCompleteCompleteEvent, AutoCompleteModule, AutoCompleteSelectEvent } from 'primeng/autocomplete';
 
@@ -37,10 +37,15 @@ export class AutocompleteComponent {
   public dropdown = input<boolean>(false);
   public dropdownMode = input<'blank' | 'current'>('blank');
   public dataKey = input<string>();
+  public showClear = input<boolean>(false);
+  public forceSelection = input<boolean>(false);
 
   public readonly completeMethod = output<AutoCompleteCompleteEvent>();
   public readonly onSelect = output<AutoCompleteSelectEvent>();
   public readonly onClear = output<void>();
+
+  // Computed style class that includes dropdown-mode and has-clear when applicable
+  public readonly computedStyleClass: Signal<string> = this.initComputedStyleClass();
 
   public searchCompleted(event: AutoCompleteCompleteEvent): void {
     this.completeMethod.emit(event);
@@ -48,5 +53,25 @@ export class AutocompleteComponent {
 
   public optionSelected(event: AutoCompleteSelectEvent): void {
     this.onSelect.emit(event);
+  }
+
+  private initComputedStyleClass(): Signal<string> {
+    return computed(() => {
+      const classes: string[] = [];
+
+      if (this.styleClass()) {
+        classes.push(this.styleClass()!);
+      }
+
+      if (this.dropdown()) {
+        classes.push('dropdown-mode');
+      }
+
+      if (this.showClear()) {
+        classes.push('has-clear');
+      }
+
+      return classes.join(' ');
+    });
   }
 }

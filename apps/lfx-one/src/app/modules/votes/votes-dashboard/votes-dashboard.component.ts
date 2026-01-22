@@ -3,6 +3,7 @@
 
 import { LowerCasePipe } from '@angular/common';
 import { Component, signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { PollStatus, PollType, VOTE_LABEL } from '@lfx-one/shared';
@@ -12,7 +13,7 @@ import { VotesTableComponent } from '../components/votes-table/votes-table.compo
 
 @Component({
   selector: 'lfx-votes-dashboard',
-  imports: [LowerCasePipe, CardComponent, ButtonComponent, VotesTableComponent],
+  imports: [LowerCasePipe, CardComponent, ButtonComponent, VotesTableComponent, RouterLink],
   templateUrl: './votes-dashboard.component.html',
   styleUrl: './votes-dashboard.component.scss',
 })
@@ -24,16 +25,6 @@ export class VotesDashboardComponent {
   // === Writable Signals ===
   protected readonly votes = signal<Vote[]>(this.getMockVotes());
   protected readonly hasPMOAccess = signal<boolean>(true);
-
-  // === Protected Methods ===
-  protected onCreateVote(): void {
-    // TODO: Navigate to create vote page
-  }
-
-  protected onManageVote(voteId: string): void {
-    // TODO: Navigate to manage vote page
-    void voteId;
-  }
 
   protected onViewVote(voteId: string): void {
     // TODO: Open vote drawer for viewing/voting
@@ -53,7 +44,7 @@ export class VotesDashboardComponent {
         poll_id: 'vote-001',
         name: 'Q4 2024 Budget Allocation',
         description: 'Vote on the proposed Q4 2024 budget allocation for project initiatives.',
-        committee_filers: ['voting_rep'],
+        committee_filters: ['voting_rep'],
         committee_id: 'comm-001',
         committee_uid: 'comm-001',
         committee_name: 'Technical Steering Committee',
@@ -78,7 +69,7 @@ export class VotesDashboardComponent {
         poll_id: 'vote-002',
         name: 'New Maintainer Election',
         description: 'Election to select a new maintainer for the core repository.',
-        committee_filers: ['voting_rep'],
+        committee_filters: ['voting_rep'],
         committee_id: 'comm-002',
         committee_uid: 'comm-002',
         committee_name: 'Governing Board',
@@ -103,7 +94,7 @@ export class VotesDashboardComponent {
         poll_id: 'vote-003',
         name: 'Annual Meeting Location',
         description: 'Vote to determine the location for our upcoming annual meeting.',
-        committee_filers: ['voting_rep'],
+        committee_filters: ['voting_rep'],
         committee_id: 'comm-001',
         committee_uid: 'comm-001',
         committee_name: 'Technical Steering Committee',
@@ -128,7 +119,7 @@ export class VotesDashboardComponent {
         poll_id: 'vote-004',
         name: 'Code of Conduct Updates',
         description: 'Vote on the proposed updates to our community Code of Conduct.',
-        committee_filers: ['voting_rep'],
+        committee_filters: ['voting_rep'],
         committee_id: 'comm-003',
         committee_uid: 'comm-003',
         committee_name: 'Advisory Board',
@@ -153,7 +144,7 @@ export class VotesDashboardComponent {
         poll_id: 'vote-005',
         name: 'Security Policy Amendment',
         description: 'Vote on the proposed Security Policy Amendment.',
-        committee_filers: ['voting_rep'],
+        committee_filters: ['voting_rep'],
         committee_id: 'comm-001',
         committee_uid: 'comm-001',
         committee_name: 'Technical Steering Committee',
