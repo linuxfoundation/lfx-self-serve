@@ -132,8 +132,8 @@ export class VoteManageComponent {
         message: OPEN_VOTE_CONFIRMATION.message,
         acceptLabel: OPEN_VOTE_CONFIRMATION.acceptLabel,
         rejectLabel: OPEN_VOTE_CONFIRMATION.rejectLabel,
-        acceptButtonStyleClass: 'p-button-info',
-        rejectButtonStyleClass: 'p-button-text',
+        acceptButtonStyleClass: 'p-button-info p-button-sm',
+        rejectButtonStyleClass: 'p-button-text p-button-sm',
         accept: () => this.submitVote(),
       });
     } else {

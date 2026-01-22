@@ -100,54 +100,82 @@
         </td>
 
         <td>
-          <div class="flex items-center justify-end">
+          <div class="flex items-center justify-end gap-1">
             @if (hasPMOAccess()) {
               @if (vote.status === PollStatus.DISABLED) {
+                <a [routerLink]="['/votes', vote.uid, 'edit']">
+                  <lfx-button
+                    icon="fa-light fa-pencil"
+                    severity="secondary"
+                    size="small"
+                    [text]="true"
+                    styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                    [attr.data-testid]="'votes-edit-' + vote.uid"
+                    pTooltip="Edit"
+                    tooltipPosition="top">
+                  </lfx-button>
+                </a>
                 <lfx-button
-                  label="Edit"
+                  icon="fa-light fa-trash-can"
                   severity="secondary"
                   size="small"
-                  [outlined]="true"
-                  [routerLink]="['/votes', vote.uid, 'edit']"
-                  [attr.data-testid]="'votes-action-' + vote.uid">
+                  [text]="true"
+                  styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
+                  (onClick)="onDeleteVote(vote)"
+                  [disabled]="isDeleting()"
+                  [attr.data-testid]="'votes-delete-' + vote.uid"
+                  pTooltip="Delete"
+                  tooltipPosition="top">
                 </lfx-button>
               } @else if (vote.status === PollStatus.ACTIVE) {
                 <lfx-button
-                  label="View"
+                  icon="fa-light fa-eye"
                   severity="secondary"
                   size="small"
-                  [outlined]="true"
+                  [text]="true"
+                  styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                   (onClick)="onViewVote(vote.uid)"
-                  [attr.data-testid]="'votes-action-' + vote.uid">
+                  [attr.data-testid]="'votes-view-' + vote.uid"
+                  pTooltip="View"
+                  tooltipPosition="top">
                 </lfx-button>
               } @else {
                 <lfx-button
-                  label="Review"
+                  icon="fa-light fa-chart-bar"
                   severity="secondary"
                   size="small"
-                  [outlined]="true"
+                  [text]="true"
+                  styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                   (onClick)="onViewResults(vote.uid)"
-                  [attr.data-testid]="'votes-action-' + vote.uid">
+                  [attr.data-testid]="'votes-results-' + vote.uid"
+                  pTooltip="View Results"
+                  tooltipPosition="top">
                 </lfx-button>
               }
             } @else {
               @if (vote.status === PollStatus.ACTIVE) {
                 <lfx-button
-                  [label]="'Review & ' + voteLabel.singular"
+                  icon="fa-light fa-check-to-slot"
                   severity="secondary"
                   size="small"
-                  [outlined]="true"
+                  [text]="true"
+                  styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                   (onClick)="onViewVote(vote.uid)"
-                  [attr.data-testid]="'votes-action-' + vote.uid">
+                  [attr.data-testid]="'votes-cast-' + vote.uid"
+                  [pTooltip]="'Review & ' + voteLabel.singular"
+                  tooltipPosition="top">
                 </lfx-button>
               } @else if (vote.status === PollStatus.ENDED) {
                 <lfx-button
-                  label="View Results"
+                  icon="fa-light fa-chart-bar"
                   severity="secondary"
                   size="small"
-                  [outlined]="true"
+                  [text]="true"
+                  styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                   (onClick)="onViewResults(vote.uid)"
-                  [attr.data-testid]="'votes-action-' + vote.uid">
+                  [attr.data-testid]="'votes-results-' + vote.uid"
+                  pTooltip="View Results"
+                  tooltipPosition="top">
                 </lfx-button>
               }
             }
@@ -166,3 +194,5 @@
     </ng-template>
   </lfx-table>
 </lfx-card>
+
+<p-confirmDialog></p-confirmDialog>

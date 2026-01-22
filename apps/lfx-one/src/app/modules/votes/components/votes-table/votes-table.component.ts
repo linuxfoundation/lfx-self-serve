@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -17,6 +17,9 @@ import { Vote } from '@lfx-one/shared/interfaces';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
 import { RelativeDueDatePipe } from '@pipes/relative-due-date.pipe';
+import { ConfirmationService } from 'primeng/api';
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { TooltipModule } from 'primeng/tooltip';
 import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
 
 @Component({
@@ -34,10 +37,16 @@ import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
     RelativeDueDatePipe,
+    TooltipModule,
+    ConfirmDialogModule,
   ],
+  providers: [ConfirmationService],
   templateUrl: './votes-table.component.html',
 })
 export class VotesTableComponent {
+  // === Injections ===
+  private readonly confirmationService = inject(ConfirmationService);
+
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL;
   protected readonly PollStatus = PollStatus;
@@ -49,6 +58,10 @@ export class VotesTableComponent {
   // === Outputs ===
   public readonly viewVote = output<string>();
   public readonly viewResults = output<string>();
+  public readonly refresh = output<void>();
+
+  // === Writable Signals ===
+  protected readonly isDeleting = signal(false);
 
   // === Forms ===
   public searchForm = new FormGroup({
@@ -82,6 +95,21 @@ export class VotesTableComponent {
 
   protected onViewResults(voteId: string): void {
     this.viewResults.emit(voteId);
+  }
+
+  protected onDeleteVote(vote: Vote): void {
+    this.confirmationService.confirm({
+      message: `Are you sure you want to delete the ${this.voteLabel.singular.toLowerCase()} "${vote.name}"? This action cannot be undone.`,
+      header: `Delete ${this.voteLabel.singular}`,
+      acceptLabel: 'Delete',
+      rejectLabel: 'Cancel',
+      acceptButtonStyleClass: 'p-button-danger p-button-sm',
+      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
+      accept: () => {
+        // TODO: Call votes service to delete when implemented
+        this.refresh.emit();
+      },
+    });
   }
 
   // === Private Initializers ===

@@ -6,6 +6,7 @@ export const environment = {
   urls: {
     home: 'http://localhost:4200',
     support: 'https://jira.linuxfoundation.org/plugins/servlet/desk',
+    pcc: 'https://pcc.dev.platform.linuxfoundation.org',
   },
   segment: {
     cdnUrl: 'https://lfx-segment.dev.platform.linuxfoundation.org/latest/lfx-segment-analytics.min.js?ver=1.0.1',

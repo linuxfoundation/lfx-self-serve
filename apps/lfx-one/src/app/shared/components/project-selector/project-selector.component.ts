@@ -49,7 +49,7 @@ export class ProjectSelectorComponent {
   private initializeDisplayName() {
     return computed(() => {
       const project = this.selectedProject();
-      return project?.name || 'Select Project';
+      return project?.name?.trim() ?? 'Select Project';
     });
   }
 

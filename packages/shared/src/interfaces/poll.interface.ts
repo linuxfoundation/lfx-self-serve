@@ -199,6 +199,8 @@ export interface Vote {
   status: PollStatus;
   /** Total number of voting request invitations sent */
   total_voting_request_invitations: number;
+  /** Vote results for generic/plurality voting (choice_id -> vote count) */
+  generic_choice_votes?: GenericChoiceVotes;
 }
 
 /**
@@ -272,4 +274,53 @@ export interface VoteReviewQuestion {
   responseType: 'single' | 'multiple';
   /** Array of non-empty option texts */
   options: string[];
+}
+
+/**
+ * Processed option data for vote results display
+ * @description Contains computed values for displaying vote results
+ */
+export interface VoteResultsOption {
+  /** Choice identifier */
+  choiceId: string;
+  /** Option text */
+  text: string;
+  /** Number of votes received */
+  voteCount: number;
+  /** Percentage of total votes (0-100) */
+  percentage: number;
+  /** Whether this option is the winner (highest votes, no tie) - only for closed votes */
+  isWinner: boolean;
+  /** Whether this option is tied for the lead - only for closed votes */
+  isTied: boolean;
+  /** Whether this option is currently leading (for live votes) */
+  isLeading: boolean;
+}
+
+/**
+ * Processed question data for vote results display
+ * @description Contains question with processed options for results view
+ */
+export interface VoteResultsQuestion {
+  /** Question identifier */
+  questionId: string;
+  /** Question text/prompt */
+  question: string;
+  /** Processed options with vote counts and percentages */
+  options: VoteResultsOption[];
+  /** Total votes cast for this question */
+  totalVotes: number;
+}
+
+/**
+ * Participation statistics for vote results
+ * @description Contains participation metrics for the results header
+ */
+export interface VoteParticipationStats {
+  /** Total number of eligible voters */
+  eligibleVoters: number;
+  /** Number of responses received */
+  totalResponses: number;
+  /** Participation rate as percentage (0-100) */
+  participationRate: number;
 }

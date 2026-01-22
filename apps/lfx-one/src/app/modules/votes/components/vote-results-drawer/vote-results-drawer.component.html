@@ -1,0 +1,312 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full vote-results-drawer"
+  data-testid="vote-results-drawer">
+  @if (vote(); as voteData) {
+    <!-- Header Section -->
+    <ng-template #header>
+      <div class="flex flex-col gap-3 w-full pr-4" data-testid="vote-results-drawer-header">
+        <!-- Title Row with Close Button -->
+        <div class="flex items-center justify-between gap-2">
+          <h1 class="text-lg sm:text-xl font-semibold text-slate-900 flex-1 min-w-0 truncate" data-testid="vote-results-drawer-title">
+            {{ voteData.name }}
+          </h1>
+          <button
+            type="button"
+            (click)="onClose()"
+            class="p-2 text-slate-400 hover:text-slate-600 hover:bg-slate-100 rounded-md transition-colors flex-shrink-0"
+            data-testid="vote-results-drawer-close">
+            <i class="fa-light fa-xmark text-xl"></i>
+          </button>
+        </div>
+
+        <!-- Status and Meta Info -->
+        <div class="flex flex-wrap items-center gap-2 text-sm text-slate-600">
+          <!-- Committee Badge -->
+          <span class="bg-blue-100 text-blue-700 text-xs px-2.5 py-1 rounded font-medium">
+            {{ voteData.committee_name || 'Unknown' }}
+          </span>
+          <span class="text-slate-400">•</span>
+          <!-- Status -->
+          <lfx-tag
+            [value]="voteData.status | pollStatusLabel"
+            [severity]="voteData.status | pollStatusSeverity"
+            data-testid="vote-results-drawer-status"></lfx-tag>
+          <span class="text-slate-400">•</span>
+          <!-- Close Date -->
+          @if (isVoteClosed()) {
+            <span>Closed {{ voteData.end_time | date: 'MMM d, y' }}</span>
+          } @else {
+            <span>Due {{ voteData.end_time | date: 'MMM d, y' }}</span>
+          }
+          <span class="text-slate-400">•</span>
+          <!-- Voting Method -->
+          <span>{{ votingMethodText() }}</span>
+        </div>
+      </div>
+    </ng-template>
+
+    <!-- Content Section -->
+    <div class="flex flex-col gap-6" data-testid="vote-results-drawer-content">
+      @if (loading()) {
+        <!-- Loading Skeleton -->
+        <div class="flex flex-col gap-6">
+          <!-- Participation Stats Skeleton -->
+          <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3">
+            <div class="flex items-center justify-between">
+              <p-skeleton width="80px" height="40px"></p-skeleton>
+              <p-skeleton width="80px" height="40px"></p-skeleton>
+              <p-skeleton width="80px" height="40px"></p-skeleton>
+            </div>
+            <p-skeleton width="100%" height="8px"></p-skeleton>
+          </div>
+
+          <!-- Questions Skeleton -->
+          <div class="flex flex-col gap-4">
+            <p-skeleton width="150px" height="24px"></p-skeleton>
+            @for (i of [1, 2, 3]; track i) {
+              <div class="rounded-lg border border-slate-200 p-4 flex flex-col gap-2">
+                <p-skeleton width="60%" height="16px"></p-skeleton>
+                <p-skeleton width="100%" height="8px"></p-skeleton>
+              </div>
+            }
+          </div>
+        </div>
+      } @else if (!isGenericPoll()) {
+        <!-- Non-Generic Poll - Redirect to PCC -->
+        <div class="flex flex-col items-center justify-center py-12 px-6 text-center" data-testid="vote-results-pcc-redirect">
+          <div class="w-16 h-16 rounded-full bg-blue-100 flex items-center justify-center mb-6">
+            <i class="fa-light fa-arrow-up-right-from-square text-2xl text-blue-600"></i>
+          </div>
+
+          <h2 class="text-xl font-semibold text-slate-900 mb-3">Advanced Voting Method</h2>
+
+          <p class="text-sm text-slate-600 mb-6 max-w-md">
+            This vote uses <span class="font-medium">{{ votingMethodText() }}</span
+            >, an advanced voting method. Results for this vote type are available in the Project Control Center.
+          </p>
+
+          <a [href]="pccVotingUrl()" target="_blank" rel="noopener noreferrer" class="inline-block">
+            <lfx-button
+              label="View in Project Control Center"
+              icon="fa-light fa-arrow-up-right-from-square"
+              severity="primary"
+              data-testid="vote-results-pcc-link"></lfx-button>
+          </a>
+
+          <!-- Vote Details Section for non-generic polls -->
+          @if (voteData.description) {
+            <div class="w-full mt-8 pt-6 border-t border-slate-200 text-left" data-testid="vote-results-details">
+              <h3 class="text-base font-semibold text-slate-900 mb-2">Vote Details</h3>
+              <p class="text-sm text-slate-700 leading-relaxed"><span class="font-medium">Description:</span> {{ voteData.description }}</p>
+            </div>
+          }
+        </div>
+      } @else if (!isVoteClosed()) {
+        <!-- Live/Active Vote - Simplified Layout -->
+        <div class="flex flex-col gap-6">
+          <!-- Vote Details Section (at top for live votes) -->
+          @if (voteData.description) {
+            <div class="flex flex-col gap-4" data-testid="vote-results-details">
+              <h2 class="text-lg font-semibold text-slate-900">Vote Details</h2>
+              <p class="text-sm text-slate-700 leading-relaxed"><span class="font-medium">Description:</span> {{ voteData.description }}</p>
+            </div>
+          }
+
+          <!-- Live Results -->
+          <div class="flex flex-col gap-6" data-testid="vote-results-questions">
+            <h2 class="text-lg font-semibold text-slate-900">Live Results</h2>
+
+            @for (question of questionsWithResults(); track question.questionId; let idx = $index) {
+              <div class="flex flex-col gap-4">
+                <!-- Question Header (only show for multi-question) -->
+                @if (questionsWithResults().length > 1) {
+                  <h3 class="text-base font-semibold text-slate-900">Q{{ idx + 1 }}. {{ question.question }}</h3>
+                }
+
+                <!-- Options with horizontal bars -->
+                <div class="flex flex-col gap-3">
+                  @for (option of question.options; track option.choiceId) {
+                    <div class="flex flex-col gap-1.5" [attr.data-testid]="'vote-results-option-' + option.choiceId">
+                      <div class="flex items-center justify-between text-sm">
+                        <span [class]="option.isLeading ? 'font-semibold text-slate-900' : 'font-normal text-slate-600'">
+                          {{ option.text }}
+                        </span>
+                        <span [class]="option.isLeading ? 'font-semibold text-slate-900' : 'font-normal text-slate-600'">
+                          {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }} · {{ option.percentage }}%
+                        </span>
+                      </div>
+                      <div class="h-2 bg-slate-200 rounded-full overflow-hidden">
+                        <div
+                          class="h-full rounded-full transition-all"
+                          [class.bg-blue-500]="option.isLeading"
+                          [class.bg-slate-300]="!option.isLeading"
+                          [style.width.%]="option.percentage"></div>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+
+          <!-- Participation Summary (at bottom for live votes) -->
+          <div class="pt-4 border-t border-slate-200 flex flex-col gap-4">
+            <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3" data-testid="vote-results-participation">
+              <div class="flex items-center justify-between text-sm text-slate-600">
+                <div class="text-center flex-1">
+                  <p class="text-xs text-slate-500">Total Participants</p>
+                  <p class="font-semibold text-slate-900 text-lg">{{ participationStats().eligibleVoters }}</p>
+                </div>
+                <div class="text-center flex-1">
+                  <p class="text-xs text-slate-500">Total Responses</p>
+                  <p class="font-semibold text-slate-900 text-lg">{{ participationStats().totalResponses }}</p>
+                </div>
+                <div class="text-center flex-1">
+                  <p class="text-xs text-slate-500">Response Rate</p>
+                  <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
+                </div>
+              </div>
+
+              <!-- Participation Progress Bar -->
+              <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+                <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
+              </div>
+            </div>
+
+            <!-- Admin Governance Note -->
+            <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg">
+              <p class="text-sm text-blue-800">
+                As the creator, you can monitor live results and close the vote when ready. Final results will be available after the vote closes.
+              </p>
+            </div>
+          </div>
+        </div>
+      } @else {
+        <!-- Closed Vote - Final Results Layout -->
+        <div class="flex flex-col gap-6">
+          <!-- Title -->
+          <h2 class="text-xl font-semibold text-slate-900">Final Results</h2>
+
+          <!-- Participation Bar (at top for closed votes) -->
+          <div class="p-4 bg-slate-50 rounded-lg border border-slate-200 flex flex-col gap-3" data-testid="vote-results-participation">
+            <div class="flex items-center justify-between text-sm text-slate-600">
+              <div class="text-center flex-1">
+                <p class="text-xs text-slate-500">Total Participants</p>
+                <p class="font-semibold text-slate-900 text-lg">{{ participationStats().eligibleVoters }}</p>
+              </div>
+              <div class="text-center flex-1">
+                <p class="text-xs text-slate-500">Total Responses</p>
+                <p class="font-semibold text-slate-900 text-lg">{{ participationStats().totalResponses }}</p>
+              </div>
+              <div class="text-center flex-1">
+                <p class="text-xs text-slate-500">Response Rate</p>
+                <p class="font-semibold text-blue-600 text-lg">{{ participationStats().participationRate }}%</p>
+              </div>
+            </div>
+
+            <!-- Participation Progress Bar -->
+            <div class="w-full bg-slate-200 rounded-full h-2 overflow-hidden">
+              <div class="h-full bg-blue-500 transition-all" [style.width.%]="participationStats().participationRate"></div>
+            </div>
+          </div>
+
+          <!-- Question Results -->
+          <div class="flex flex-col gap-6 mt-2" data-testid="vote-results-questions">
+            @for (question of questionsWithResults(); track question.questionId; let idx = $index) {
+              <div class="flex flex-col gap-4">
+                <!-- Question Header -->
+                <h3 class="text-base font-semibold text-slate-900">
+                  @if (questionsWithResults().length > 1) {
+                    Q{{ idx + 1 }}.
+                  }
+                  {{ question.question }}
+                </h3>
+
+                <!-- Options with Vote Results -->
+                <div class="flex flex-col gap-3">
+                  @for (option of question.options; track option.choiceId) {
+                    <div
+                      class="rounded-lg border p-4 transition-all"
+                      [class.border-green-300]="option.isWinner"
+                      [class.bg-green-50]="option.isWinner"
+                      [class.border-amber-300]="option.isTied"
+                      [class.bg-amber-50]="option.isTied"
+                      [class.border-slate-200]="!option.isWinner && !option.isTied"
+                      [class.bg-slate-50]="!option.isWinner && !option.isTied"
+                      [attr.data-testid]="'vote-results-option-' + option.choiceId">
+                      <div class="flex items-center justify-between mb-2">
+                        <div class="flex items-center gap-2">
+                          <span
+                            class="text-sm font-medium"
+                            [class.text-green-900]="option.isWinner"
+                            [class.text-amber-900]="option.isTied"
+                            [class.text-slate-900]="!option.isWinner && !option.isTied">
+                            {{ option.text }}
+                          </span>
+                          @if (option.isWinner) {
+                            <span class="inline-flex items-center gap-1 text-xs font-medium text-green-700 bg-green-100 px-2 py-0.5 rounded-full">
+                              <i class="fa-solid fa-check text-[10px]"></i>
+                              Winner
+                            </span>
+                          }
+                          @if (option.isTied) {
+                            <span class="inline-flex items-center gap-1 text-xs font-medium text-amber-700 bg-amber-100 px-2 py-0.5 rounded-full">
+                              <i class="fa-solid fa-equals text-[10px]"></i>
+                              Tied
+                            </span>
+                          }
+                        </div>
+                        <div class="flex items-center gap-2">
+                          <span
+                            class="text-sm font-semibold"
+                            [class.text-green-700]="option.isWinner"
+                            [class.text-amber-700]="option.isTied"
+                            [class.text-slate-700]="!option.isWinner && !option.isTied">
+                            {{ option.voteCount }} {{ option.voteCount === 1 ? 'vote' : 'votes' }}
+                          </span>
+                          <span
+                            class="text-sm"
+                            [class.text-green-600]="option.isWinner"
+                            [class.text-amber-600]="option.isTied"
+                            [class.text-slate-600]="!option.isWinner && !option.isTied">
+                            ({{ option.percentage }}%)
+                          </span>
+                        </div>
+                      </div>
+
+                      <!-- Progress Bar -->
+                      <div class="w-full bg-white rounded-full h-2 overflow-hidden">
+                        <div
+                          class="h-full transition-all"
+                          [class.bg-green-500]="option.isWinner"
+                          [class.bg-amber-500]="option.isTied"
+                          [class.bg-slate-400]="!option.isWinner && !option.isTied"
+                          [style.width.%]="option.percentage"></div>
+                      </div>
+                    </div>
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- Vote Details Section (at bottom for closed votes) -->
+        @if (voteData.description) {
+          <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-details">
+            <h2 class="text-lg font-semibold text-slate-900">Vote Details</h2>
+
+            <p class="text-sm text-slate-700 leading-relaxed"><span class="font-medium">Description:</span> {{ voteData.description }}</p>
+          </div>
+        }
+      }
+    </div>
+  }
+</p-drawer>

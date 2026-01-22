@@ -6,6 +6,10 @@
   width: 100%;
 }
 
+.sidebar-project-name {
+  @apply font-medium grow leading-5 text-wrap whitespace-pre-wrap w-28 relative shrink-0 text-base text-gray-900 tracking-tight line-clamp-2;
+}
+
 ::ng-deep {
   .project-selector-panel {
     @apply shadow-lg;

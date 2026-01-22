@@ -41,7 +41,11 @@
       [hasPMOAccess]="hasPMOAccess()"
       (viewVote)="onViewVote($event)"
       (viewResults)="onViewResults($event)"
+      (refresh)="refreshVotes()"
       data-testid="votes-table-container">
     </lfx-votes-table>
   }
 </div>
+
+<!-- Vote Results Drawer -->
+<lfx-vote-results-drawer [(visible)]="resultsDrawerVisible" [vote]="selectedVote()" data-testid="votes-results-drawer"></lfx-vote-results-drawer>

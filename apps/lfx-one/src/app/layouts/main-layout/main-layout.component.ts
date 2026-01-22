@@ -38,26 +38,8 @@ export class MainLayoutComponent {
   private readonly enableProfileClick = this.featureFlagService.getBooleanFlag('sidebar-profile', false);
   protected readonly showDevToolbar = this.featureFlagService.getBooleanFlag('dev-toolbar', true);
 
-  // Base sidebar navigation items - matching React NavigationSidebar design
-  private readonly baseSidebarItems: SidebarMenuItem[] = [
-    {
-      label: 'Dashboard',
-      icon: 'fa-light fa-grid-2',
-      routerLink: '/',
-    },
-    {
-      label: MY_ACTIVITY_LABEL.singular,
-      icon: 'fa-light fa-clipboard-list',
-      routerLink: '/my-activity',
-    },
-    {
-      label: 'Projects',
-      icon: 'fa-light fa-folder-open',
-      routerLink: '/projects',
-    },
-  ];
-
-  // Governance section items - collapsible section for board members/maintainers
+  // Governance section items - full list for maintainers
+  // Order: Meetings, Mailing Lists, Groups, Votes, Surveys
   private readonly governanceSectionItems: SidebarMenuItem[] = [
     {
       label: 'Meetings',
@@ -65,14 +47,14 @@ export class MainLayoutComponent {
       routerLink: '/meetings',
     },
     {
-      label: COMMITTEE_LABEL.plural,
-      icon: 'fa-light fa-users',
-      routerLink: '/groups',
-    },
-    {
       label: MAILING_LIST_LABEL.plural,
       icon: 'fa-light fa-envelope',
       routerLink: '/mailing-lists',
+    },
+    {
+      label: COMMITTEE_LABEL.plural,
+      icon: 'fa-light fa-users',
+      routerLink: '/groups',
     },
     {
       label: VOTE_LABEL.plural,
@@ -83,6 +65,26 @@ export class MainLayoutComponent {
       label: SURVEY_LABEL.plural,
       icon: 'fa-light fa-clipboard-list',
       routerLink: '/surveys',
+    },
+  ];
+
+  // Board member governance items - excludes Votes and Surveys
+  // Order: Meetings, Mailing Lists, Groups
+  private readonly boardMemberGovernanceItems: SidebarMenuItem[] = [
+    {
+      label: 'Meetings',
+      icon: 'fa-light fa-calendar',
+      routerLink: '/meetings',
+    },
+    {
+      label: MAILING_LIST_LABEL.plural,
+      icon: 'fa-light fa-envelope',
+      routerLink: '/mailing-lists',
+    },
+    {
+      label: COMMITTEE_LABEL.plural,
+      icon: 'fa-light fa-users',
+      routerLink: '/groups',
     },
   ];
 
@@ -98,15 +100,6 @@ export class MainLayoutComponent {
       routerLink: '/',
     });
 
-    // My Activity is only visible for board-member persona
-    if (isBoardMember) {
-      items.push({
-        label: MY_ACTIVITY_LABEL.singular,
-        icon: 'fa-light fa-clipboard-list',
-        routerLink: '/my-activity',
-      });
-    }
-
     // Add Projects if feature flag is enabled
     if (this.showProjectsInSidebar()) {
       items.push({
@@ -116,10 +109,18 @@ export class MainLayoutComponent {
       });
     }
 
-    // For board members, add governance items directly to main menu
-    // For other personas, wrap them in a collapsible Governance section
+    // For board members: Meetings, Mailing Lists, Groups, My Activity, Insights (no Votes/Surveys)
+    // For maintainers: Insights, then Governance section with Meetings, Mailing Lists, Groups, Votes, Surveys
     if (isBoardMember) {
-      items.push(...this.governanceSectionItems);
+      // Add governance items directly (Meetings, Mailing Lists, Groups - excludes Votes/Surveys)
+      items.push(...this.boardMemberGovernanceItems);
+
+      // Add My Activity for board members
+      items.push({
+        label: MY_ACTIVITY_LABEL.singular,
+        icon: 'fa-light fa-clipboard-list',
+        routerLink: '/my-activity',
+      });
 
       // Add Insights URL
       items.push({
@@ -130,7 +131,7 @@ export class MainLayoutComponent {
         rel: 'noopener noreferrer',
       });
     } else {
-      // Add Insights URL
+      // Add Insights URL for maintainers
       items.push({
         label: 'Insights',
         icon: 'fa-light fa-chart-column',
@@ -139,6 +140,7 @@ export class MainLayoutComponent {
         rel: 'noopener noreferrer',
       });
 
+      // Governance section for maintainers (Meetings, Mailing Lists, Groups, Votes, Surveys)
       items.push({
         label: 'Governance',
         isSection: true,
