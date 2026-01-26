@@ -53,7 +53,7 @@ export class FileUploadComponent {
 
   // Styling
   public readonly styleClass = input<string | undefined>(undefined);
-  public readonly style = input<{ [key: string]: any } | null | undefined>(undefined);
+  public readonly style = input<Record<string, any> | null | undefined>(undefined);
   public readonly dataTest = input<string | undefined>(undefined);
   public readonly uploadStyleClass = input<string | undefined>(undefined);
   public readonly chooseStyleClass = input<string | undefined>(undefined);

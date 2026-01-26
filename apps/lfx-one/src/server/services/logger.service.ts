@@ -46,7 +46,7 @@ export class LoggerService {
    * WeakMap to track operations per request without memory leaks
    * Key: Request object, Value: Map of operation name to state
    */
-  private operationStacks: WeakMap<Request, Map<string, OperationState>> = new WeakMap();
+  private operationStacks = new WeakMap<Request, Map<string, OperationState>>();
 
   private constructor() {}
 

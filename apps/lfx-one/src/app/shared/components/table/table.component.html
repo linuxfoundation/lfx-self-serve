@@ -101,9 +101,11 @@
   }
 
   <!-- Body template -->
-  <ng-template #body let-rowData let-columns="columns" let-rowIndex="rowIndex" *ngIf="bodyTemplate">
-    <ng-container *ngTemplateOutlet="bodyTemplate || null; context: { $implicit: rowData, columns: columns, rowIndex: rowIndex }"> </ng-container>
-  </ng-template>
+  @if (bodyTemplate) {
+    <ng-template #body let-rowData let-columns="columns" let-rowIndex="rowIndex">
+      <ng-container *ngTemplateOutlet="bodyTemplate || null; context: { $implicit: rowData, columns: columns, rowIndex: rowIndex }"> </ng-container>
+    </ng-template>
+  }
 
   <!-- Footer template -->
   @if (footerTemplate) {
@@ -141,14 +143,18 @@
   }
 
   <!-- Group header template -->
-  <ng-template #groupheader let-rowData let-rowIndex="rowIndex" *ngIf="groupHeaderTemplate">
-    <ng-container *ngTemplateOutlet="groupHeaderTemplate || null; context: { $implicit: rowData, rowIndex: rowIndex }"> </ng-container>
-  </ng-template>
+  @if (groupHeaderTemplate) {
+    <ng-template #groupheader let-rowData let-rowIndex="rowIndex">
+      <ng-container *ngTemplateOutlet="groupHeaderTemplate || null; context: { $implicit: rowData, rowIndex: rowIndex }"> </ng-container>
+    </ng-template>
+  }
 
   <!-- Group footer template -->
-  <ng-template #groupfooter let-rowData let-rowIndex="rowIndex" *ngIf="groupFooterTemplate">
-    <ng-container *ngTemplateOutlet="groupFooterTemplate || null; context: { $implicit: rowData, rowIndex: rowIndex }"> </ng-container>
-  </ng-template>
+  @if (groupFooterTemplate) {
+    <ng-template #groupfooter let-rowData let-rowIndex="rowIndex">
+      <ng-container *ngTemplateOutlet="groupFooterTemplate || null; context: { $implicit: rowData, rowIndex: rowIndex }"> </ng-container>
+    </ng-template>
+  }
 
   <!-- Paginator left template -->
   @if (paginatorLeftTemplate; as state) {

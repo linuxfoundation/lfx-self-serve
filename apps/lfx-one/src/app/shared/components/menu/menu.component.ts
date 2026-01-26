@@ -1,14 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgIf, NgTemplateOutlet } from '@angular/common';
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, ContentChild, input, output, TemplateRef, viewChild } from '@angular/core';
 import { MenuItem } from 'primeng/api';
 import { Menu, MenuModule } from 'primeng/menu';
 
 @Component({
   selector: 'lfx-menu',
-  imports: [NgIf, NgTemplateOutlet, MenuModule],
+  imports: [NgTemplateOutlet, MenuModule],
   templateUrl: './menu.component.html',
   styleUrl: './menu.component.scss',
 })
@@ -25,7 +25,7 @@ export class MenuComponent {
   public readonly model = input<MenuItem[] | undefined>(undefined);
 
   // Styling
-  public readonly style = input<{ [key: string]: any } | null | undefined>(undefined);
+  public readonly style = input<Record<string, any> | null | undefined>(undefined);
   public readonly styleClass = input<string | undefined>(undefined);
 
   // Behavior properties

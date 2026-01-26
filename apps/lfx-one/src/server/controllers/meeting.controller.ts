@@ -1470,10 +1470,10 @@ export class MeetingController {
 
     // Initialize the successes and failures arrays
     const successes: T[] = [];
-    const failures: Array<{
+    const failures: {
       input: I;
       error: { message: string; code?: string; details?: unknown };
-    }> = [];
+    }[] = [];
 
     // Process the results
     results.forEach((result, index) => {

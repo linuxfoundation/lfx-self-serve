@@ -255,7 +255,7 @@ export class MeetingResourcesSummaryComponent implements OnInit {
     }
 
     // Handle simple recurrence patterns
-    const labels: { [key: string]: string } = {
+    const labels: Record<string, string> = {
       daily: 'Daily',
       weekly: 'Weekly',
       weekdays: 'Every weekday',

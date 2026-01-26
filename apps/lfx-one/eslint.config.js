@@ -1,20 +1,13 @@
-import { fixupConfigRules, fixupPluginRules } from '@eslint/compat';
-import _import from 'eslint-plugin-import';
-import tsParser from '@typescript-eslint/parser';
-import path from 'node:path';
-import { fileURLToPath } from 'node:url';
-import js from '@eslint/js';
-import { FlatCompat } from '@eslint/eslintrc';
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const compat = new FlatCompat({
-  baseDirectory: __dirname,
-  recommendedConfig: js.configs.recommended,
-  allConfig: js.configs.all,
-});
+// @ts-check
+const eslint = require('@eslint/js');
+const { defineConfig } = require('eslint/config');
+const tseslint = require('typescript-eslint');
+const angular = require('angular-eslint');
 
-export default [
+module.exports = defineConfig([
   {
     ignores: [
       'vite.config.ts',
@@ -36,36 +29,15 @@ export default [
       'e2e/**/*',
     ],
   },
-  ...fixupConfigRules(
-    compat.extends(
-      'eslint:recommended',
-      'plugin:@typescript-eslint/eslint-recommended',
-      'plugin:@typescript-eslint/recommended',
-      'plugin:@angular-eslint/recommended',
-      'plugin:import/typescript'
-    )
-  ).map((config) => ({
-    ...config,
-    files: ['**/*.ts'],
-  })),
   {
     files: ['**/*.ts'],
-
-    plugins: {
-      import: fixupPluginRules(_import),
-    },
-
+    extends: [eslint.configs.recommended, tseslint.configs.recommended, tseslint.configs.stylistic, angular.configs.tsRecommended],
+    processor: angular.processInlineTemplates,
     languageOptions: {
-      parser: tsParser,
-      ecmaVersion: 2022,
-      sourceType: 'module',
-
       parserOptions: {
         project: './tsconfig.app.json',
-        createDefaultProgram: true,
       },
     },
-
     rules: {
       'no-forward-ref': 'off',
       'no-nested-ternary': 'error',
@@ -106,7 +78,6 @@ export default [
           format: ['PascalCase', 'camelCase', 'snake_case', 'UPPER_CASE'],
         },
       ],
-
       '@angular-eslint/component-selector': [
         'error',
         {
@@ -115,7 +86,6 @@ export default [
           style: 'kebab-case',
         },
       ],
-
       '@angular-eslint/directive-selector': [
         'error',
         {
@@ -136,9 +106,6 @@ export default [
       '@typescript-eslint/no-floating-promises': 'off',
       '@typescript-eslint/unbound-method': 'off',
       'class-methods-use-this': 'off',
-      'import/no-extraneous-dependencies': 'off',
-      'import/no-internal-modules': 'off',
-      'import/no-unassigned-import': 'off',
       'no-constant-condition': 'off',
       'no-empty': 'error',
       'comma-dangle': 'off',
@@ -152,7 +119,6 @@ export default [
           message: 'Only warn, error, info and trace allowed to be committed into code',
         },
       ],
-
       'max-len': [
         'error',
         {
@@ -160,11 +126,9 @@ export default [
           ignoreUrls: true,
         },
       ],
-
       'no-else-return': 'error',
       'array-bracket-spacing': 'error',
       'block-spacing': [2, 'always'],
-
       'brace-style': [
         2,
         '1tbs',
@@ -172,7 +136,6 @@ export default [
           allowSingleLine: true,
         },
       ],
-
       'comma-spacing': [
         2,
         {
@@ -180,10 +143,8 @@ export default [
           after: true,
         },
       ],
-
       'no-whitespace-before-property': 'error',
       radix: 'off',
-
       '@typescript-eslint/member-ordering': [
         2,
         {
@@ -196,29 +157,15 @@ export default [
       '@angular-eslint/no-output-native': 'off',
     },
   },
-  ...fixupConfigRules(compat.extends('plugin:@angular-eslint/template/recommended')).map((config) => ({
-    ...config,
-    files: ['**/*.html'],
-  })),
   {
     files: ['**/*.html'],
-
-    languageOptions: {
-      ecmaVersion: 5,
-      sourceType: 'script',
-
-      parserOptions: {
-        project: './tsconfig.app.json',
-      },
-    },
-
+    extends: [angular.configs.templateRecommended],
     rules: {
       '@angular-eslint/template/cyclomatic-complexity': 'off',
     },
   },
   {
     files: ['**/*.d.ts'],
-
     rules: {
       '@typescript-eslint/naming-convention': 'off',
       'max-len': 'off',
@@ -226,9 +173,8 @@ export default [
   },
   {
     files: ['**/config/styles/*.ts'],
-
     rules: {
       '@typescript-eslint/naming-convention': 'off',
     },
   },
-];
+]);

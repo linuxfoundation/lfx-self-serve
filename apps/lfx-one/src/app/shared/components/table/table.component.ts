@@ -1,13 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgIf, NgTemplateOutlet } from '@angular/common';
+import { NgTemplateOutlet } from '@angular/common';
 import { Component, ContentChild, input, output, TemplateRef } from '@angular/core';
 import { TableModule } from 'primeng/table';
 
 @Component({
   selector: 'lfx-table',
-  imports: [NgIf, NgTemplateOutlet, TableModule],
+  imports: [NgTemplateOutlet, TableModule],
   templateUrl: './table.component.html',
   styleUrls: ['./table.component.scss'],
 })
@@ -33,9 +33,9 @@ export class TableComponent {
   public readonly dataKey = input<string>('');
 
   // Styling properties
-  public readonly style = input<{ [key: string]: any } | null | undefined>(undefined);
+  public readonly style = input<Record<string, any> | null | undefined>(undefined);
   public readonly styleClass = input<string | undefined>(undefined);
-  public readonly tableStyle = input<{ [key: string]: any } | null | undefined>(undefined);
+  public readonly tableStyle = input<Record<string, any> | null | undefined>(undefined);
   public readonly tableStyleClass = input<string | undefined>(undefined);
 
   // Pagination properties
@@ -108,7 +108,7 @@ export class TableComponent {
   public readonly exportFunction = input<any>(null);
 
   // Row expansion properties
-  public readonly expandedRowKeys = input<{ [key: string]: boolean }>({});
+  public readonly expandedRowKeys = input<Record<string, boolean>>({});
   public readonly rowExpandMode = input<'single' | 'multiple'>('multiple');
 
   // State properties

@@ -54,7 +54,7 @@ export class AccessCheckService {
 
       // Create result map
       const resultMap = new Map<string, boolean>();
-      const userAccessInfo: Array<{ resourceId: string; username?: string; hasAccess: boolean }> = [];
+      const userAccessInfo: { resourceId: string; username?: string; hasAccess: boolean }[] = [];
 
       // Map results back to resource IDs
       for (let i = 0; i < resources.length; i++) {

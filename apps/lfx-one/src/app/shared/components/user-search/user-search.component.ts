@@ -50,7 +50,7 @@ export class UserSearchComponent {
   });
 
   // Initialize suggestions as a signal based on search query changes
-  protected suggestions: Signal<Array<UserSearchResult & { displayName: string }>>;
+  protected suggestions: Signal<(UserSearchResult & { displayName: string })[]>;
 
   public constructor() {
     // Initialize suggestions signal that reacts to search query changes

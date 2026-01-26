@@ -19,7 +19,7 @@ export class CardComponent {
 
   public readonly header = input<string>('');
   public readonly subheader = input<string>('');
-  public readonly style = input<{ [key: string]: any } | null | undefined>(undefined);
+  public readonly style = input<Record<string, any> | null | undefined>(undefined);
   public readonly styleClass = input<string>('');
   public readonly closable = input<boolean>(false);
 }

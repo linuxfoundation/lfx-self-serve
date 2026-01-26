@@ -18,7 +18,7 @@ export class BreadcrumbComponent {
 
   public readonly model = input<MenuItem[] | undefined>(undefined);
   public readonly home = input<MenuItem | undefined>(undefined);
-  public readonly style = input<{ [key: string]: any } | null | undefined>(undefined);
+  public readonly style = input<Record<string, any> | null | undefined>(undefined);
   public readonly styleClass = input<string | undefined>(undefined);
   public readonly homeAriaLabel = input<string | undefined>(undefined);
 

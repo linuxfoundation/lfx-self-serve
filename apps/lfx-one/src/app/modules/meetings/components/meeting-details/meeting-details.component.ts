@@ -74,7 +74,7 @@ export class MeetingDetailsComponent implements OnInit {
   public readonly recurringFeature = RECURRING_MEETING_FEATURE;
 
   // Recurrence options (dynamically updated based on selected date)
-  public recurrenceOptions = signal<Array<{ label: string; value: string }>>([]);
+  public recurrenceOptions = signal<{ label: string; value: string }[]>([]);
 
   // Timezone options from shared constants
   public readonly timezoneOptions = TIMEZONES.map((tz) => ({

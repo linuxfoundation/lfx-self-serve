@@ -17,7 +17,9 @@
   <ng-template #end>
     <ng-container *ngTemplateOutlet="endTemplate || null"></ng-container>
   </ng-template>
-  <ng-template #item let-item let-root="root" *ngIf="itemTemplate">
-    <ng-container *ngTemplateOutlet="itemTemplate || null; context: { $implicit: item, root: root }"> </ng-container>
-  </ng-template>
+  @if (itemTemplate) {
+    <ng-template #item let-item let-root="root">
+      <ng-container *ngTemplateOutlet="itemTemplate || null; context: { $implicit: item, root: root }"> </ng-container>
+    </ng-template>
+  }
 </p-menubar>

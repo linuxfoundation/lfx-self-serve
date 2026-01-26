@@ -30,7 +30,7 @@ export class SegmentService {
   private scriptLoaded = false;
   private analyticsReady = false;
   private analytics?: LfxSegmentAnalytics;
-  private identifyQueue: Array<{ user: unknown }> = [];
+  private identifyQueue: { user: unknown }[] = [];
 
   /**
    * Initialize the analytics service - should be called from app component

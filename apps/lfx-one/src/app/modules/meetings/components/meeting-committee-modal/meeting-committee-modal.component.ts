@@ -53,8 +53,8 @@ export class MeetingCommitteeModalComponent {
   public projectUid = computed(() => this.project()?.uid || '');
 
   // Track loaded committees to avoid duplicate API calls
-  private loadedCommitteeIds: Set<string> = new Set();
-  private committeesMembersCache: Map<string, CommitteeMemberDisplay[]> = new Map();
+  private loadedCommitteeIds = new Set<string>();
+  private committeesMembersCache = new Map<string, CommitteeMemberDisplay[]>();
 
   // Voting status options for dropdown
   public readonly votingStatusOptions = VOTING_STATUSES;

@@ -39,7 +39,7 @@ export class ButtonComponent {
   public readonly size = input<ButtonProps['size']>(undefined);
   public readonly variant = input<ButtonProps['variant']>(undefined);
   public readonly fluid = input<boolean | undefined>(false);
-  public readonly style = input<{ [key: string]: any } | null | undefined>(undefined);
+  public readonly style = input<Record<string, any> | null | undefined>(undefined);
   public readonly styleClass = input<string | undefined>(undefined);
 
   // Badge properties
