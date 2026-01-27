@@ -71,7 +71,7 @@ export class VoteResultsDrawerComponent {
       const pccBaseUrl = environment.urls.pcc;
       // Remove trailing slash if present
       const baseUrl = pccBaseUrl.endsWith('/') ? pccBaseUrl.slice(0, -1) : pccBaseUrl;
-      return `${baseUrl}/project/${v.project_id}/collaboration/voting`;
+      return `${baseUrl}/project/${v.project_uid}/collaboration/voting`;
     });
   }
 
@@ -164,7 +164,8 @@ export class VoteResultsDrawerComponent {
         [PollType.MEEK_STV]: 'Meek STV',
       };
 
-      return methodLabels[v.poll_type] || v.poll_type;
+      const pollType = v.poll_type ?? PollType.GENERIC;
+      return methodLabels[pollType] || pollType;
     });
   }
 }

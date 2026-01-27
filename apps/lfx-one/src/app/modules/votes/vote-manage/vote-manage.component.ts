@@ -340,12 +340,10 @@ export class VoteManageComponent {
 
   private getMockVote(voteId: string): Vote {
     return {
-      uid: voteId,
-      poll_id: voteId,
+      vote_uid: voteId,
       name: 'Mock Vote',
       description: 'This is a mock vote for testing',
       committee_filters: ['voting_rep'],
-      committee_id: 'comm-001',
       committee_uid: 'comm-001',
       committee_name: 'Technical Steering Committee',
       committee_type: 'technical',
@@ -358,8 +356,6 @@ export class VoteManageComponent {
       poll_questions: [],
       poll_type: PollType.GENERIC,
       project_uid: 'proj-001',
-      project_id: 'proj-001',
-      project_name: 'LFX Platform',
       pseudo_anonymity: false,
       status: PollStatus.DISABLED,
       total_voting_request_invitations: 0,

@@ -56,8 +56,6 @@ export class MeetingResourcesSummaryComponent implements OnInit {
   // File upload configuration
   public readonly acceptString = generateAcceptString();
 
-  public constructor() {}
-
   public ngOnInit(): void {
     // Initialize attachments from form
     const existingAttachments = this.form().get('attachments')?.value || [];

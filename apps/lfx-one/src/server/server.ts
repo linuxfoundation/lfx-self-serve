@@ -28,6 +28,7 @@ import projectsRouter from './routes/projects.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
 import searchRouter from './routes/search.route';
 import userRouter from './routes/user.route';
+import votesRouter from './routes/votes.route';
 import { serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { matchOrganizationNamesToAccounts } from './utils/organization-matcher';
@@ -188,6 +189,7 @@ app.use('/api/profile', profileRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/user', userRouter);
+app.use('/api/votes', votesRouter);
 
 // Add API error handler middleware
 app.use('/api/*', apiErrorHandler);

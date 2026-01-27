@@ -21,7 +21,7 @@
   </div>
 
   <!-- Votes Table or Empty State -->
-  @if (votes().length === 0) {
+  @if (!loading() && votes().length === 0) {
     <lfx-card data-testid="votes-empty-state-card">
       <div class="p-8 md:p-12">
         <div class="max-w-2xl mx-auto text-center flex flex-col gap-6">
@@ -39,6 +39,7 @@
     <lfx-votes-table
       [votes]="votes()"
       [hasPMOAccess]="hasPMOAccess()"
+      [loading]="loading()"
       (viewVote)="onViewVote($event)"
       (viewResults)="onViewResults($event)"
       (refresh)="refreshVotes()"

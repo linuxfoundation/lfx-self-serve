@@ -149,56 +149,51 @@ export interface SESEmailTracking {
 }
 
 /**
- * Full Vote entity from query service
- * @description Represents a board-level voting poll from lfx.index.vote
+ * Full Vote entity
+ * @description Represents a board-level voting poll aligned with LFX v2 voting service API
+ * @see https://github.com/linuxfoundation/lfx-v2-voting-service
  */
 export interface Vote {
-  /** Primary unique identifier */
-  uid: string;
-  /** Alias for uid - poll identifier */
-  poll_id: string;
-  /** Eligible voting roles/statuses for this poll */
-  committee_filters: string[];
-  /** V1 committee ID */
-  committee_id: string;
-  /** V2 committee UID */
-  committee_uid: string;
-  /** Committee name */
-  committee_name: string;
-  /** Committee type/category */
-  committee_type: string;
-  /** Whether committee voting is enabled */
-  committee_voting_status: boolean;
-  /** Poll creation timestamp */
-  creation_time: string;
-  /** Poll description */
-  description: string;
-  /** Poll end/deadline timestamp */
-  end_time: string;
-  /** Last modification timestamp */
-  last_modified_time: string;
+  /** Primary unique identifier (API field: vote_uid) */
+  vote_uid: string;
   /** Poll name/title */
   name: string;
-  /** Number of responses received */
-  num_response_received: number;
-  /** Number of winners (for elections) */
-  num_winners: number;
-  /** Questions in this poll */
-  poll_questions: PollQuestion[];
-  /** Poll voting method type */
-  poll_type: PollType;
-  /** V2 project UID */
-  project_uid: string;
-  /** V1 project ID */
-  project_id: string;
-  /** Project name */
-  project_name: string;
-  /** Whether voting is pseudo-anonymous */
-  pseudo_anonymity: boolean;
+  /** Poll description */
+  description?: string;
+  /** Poll creation timestamp */
+  creation_time?: string;
+  /** Last modification timestamp */
+  last_modified_time?: string;
+  /** Poll end/deadline timestamp */
+  end_time: string;
   /** Current poll status */
   status: PollStatus;
+  /** V2 project UID */
+  project_uid: string;
+  /** V2 committee UID */
+  committee_uid?: string;
+  /** Committee name */
+  committee_name?: string;
+  /** Committee type/category */
+  committee_type?: string;
+  /** Whether committee voting is enabled */
+  committee_voting_status?: boolean;
+  /** Eligible voting roles/statuses for this poll */
+  committee_filters?: string[];
+  /** Whether voting is pseudo-anonymous */
+  pseudo_anonymity?: boolean;
+  /** Poll voting method type */
+  poll_type?: PollType;
+  /** Number of winners (for elections) */
+  num_winners?: number;
+  /** Whether to allow abstain option */
+  allow_abstain?: boolean;
+  /** Questions in this poll */
+  poll_questions?: PollQuestion[];
   /** Total number of voting request invitations sent */
-  total_voting_request_invitations: number;
+  total_voting_request_invitations?: number;
+  /** Number of responses received */
+  num_response_received?: number;
   /** Vote results for generic/plurality voting (choice_id -> vote count) */
   generic_choice_votes?: GenericChoiceVotes;
 }
@@ -323,4 +318,111 @@ export interface VoteParticipationStats {
   totalResponses: number;
   /** Participation rate as percentage (0-100) */
   participationRate: number;
+}
+
+/**
+ * Choice definition for creating a poll question
+ * @description Used in CreatePollQuestion to define answer options
+ */
+export interface CreatePollChoice {
+  /** Display text for the choice */
+  choice_text: string;
+}
+
+/**
+ * Question definition for creating a poll
+ * @description Used in CreateVoteRequest to define poll questions
+ */
+export interface CreatePollQuestion {
+  /** Question text/prompt */
+  prompt: string;
+  /** Question type - single or multiple choice */
+  type: 'single_choice' | 'multiple_choice';
+  /** Available choices for this question */
+  choices: CreatePollChoice[];
+}
+
+/**
+ * Comment prompt definition for creating a poll
+ * @description Used in CreateVoteRequest to define optional comment prompts
+ */
+export interface CreatePollCommentPrompt {
+  /** Comment prompt text */
+  prompt: string;
+}
+
+/**
+ * Request body for creating a vote/poll
+ * @description Aligns with LFX v2 voting service API contract
+ * @see https://github.com/linuxfoundation/lfx-v2-voting-service
+ */
+export interface CreateVoteRequest {
+  /** Name/title of the poll (required) */
+  name: string;
+  /** Description of the poll */
+  description?: string;
+  /** Poll end/deadline timestamp in RFC3339/ISO format (required) */
+  end_time: string;
+  /** V2 project UID the poll belongs to (required) */
+  project_uid: string;
+  /** V2 committee UID - required for single committee votes */
+  committee_uid: string;
+  /** V2 committee UIDs - for multi-committee votes */
+  committee_uids?: string[];
+  /** Eligible voting roles/statuses for this poll (e.g., ["voting_rep"]) */
+  committee_filters?: string[];
+  /** Questions in this poll */
+  poll_questions?: CreatePollQuestion[];
+  /** Optional comment prompts for voter feedback */
+  poll_comment_prompts?: CreatePollCommentPrompt[];
+  /** Whether voting is pseudo-anonymous */
+  pseudo_anonymity?: boolean;
+  /** Poll voting method type (defaults to "generic") */
+  poll_type?: PollType;
+  /** Number of winners for elections */
+  num_winners?: number;
+  /** Whether to allow abstain option */
+  allow_abstain?: boolean;
+  /** Quorum percentage required for vote to be valid */
+  quorum_percentage?: number;
+  /** Winning threshold percentage required */
+  winning_threshold_percentage?: number;
+}
+
+/**
+ * Request body for updating a vote/poll
+ * @description Only permitted when vote status is "disabled"
+ * @see https://github.com/linuxfoundation/lfx-v2-voting-service
+ */
+export interface UpdateVoteRequest {
+  /** Name/title of the poll */
+  name?: string;
+  /** Description of the poll */
+  description?: string;
+  /** Poll end/deadline timestamp in RFC3339/ISO format */
+  end_time?: string;
+  /** V2 project UID the poll belongs to */
+  project_uid?: string;
+  /** V2 committee UID */
+  committee_uid?: string;
+  /** V2 committee UIDs - for multi-committee votes */
+  committee_uids?: string[];
+  /** Eligible voting roles/statuses for this poll */
+  committee_filters?: string[];
+  /** Questions in this poll */
+  poll_questions?: CreatePollQuestion[];
+  /** Optional comment prompts for voter feedback */
+  poll_comment_prompts?: CreatePollCommentPrompt[];
+  /** Whether voting is pseudo-anonymous */
+  pseudo_anonymity?: boolean;
+  /** Poll voting method type */
+  poll_type?: PollType;
+  /** Number of winners for elections */
+  num_winners?: number;
+  /** Whether to allow abstain option */
+  allow_abstain?: boolean;
+  /** Quorum percentage required for vote to be valid */
+  quorum_percentage?: number;
+  /** Winning threshold percentage required */
+  winning_threshold_percentage?: number;
 }

@@ -39,7 +39,6 @@ module.exports = defineConfig([
       },
     },
     rules: {
-      'no-forward-ref': 'off',
       'no-nested-ternary': 'error',
       '@angular-eslint/component-max-inline-declarations': 'error',
       '@angular-eslint/component-class-suffix': 'off',
@@ -47,35 +46,50 @@ module.exports = defineConfig([
       '@angular-eslint/no-output-on-prefix': 'off',
       '@typescript-eslint/naming-convention': [
         'error',
+        // Imports - can't control 3rd party names
         {
-          selector: 'default',
-          format: ['camelCase', 'snake_case', 'PascalCase', 'UPPER_CASE'],
+          selector: 'import',
+          format: null,
         },
+        // Destructured variables - often from APIs
         {
           selector: 'variable',
-          format: ['camelCase', 'UPPER_CASE', 'snake_case'],
+          modifiers: ['destructured'],
+          format: null,
         },
+        // Regular variables
+        {
+          selector: 'variable',
+          format: ['camelCase', 'UPPER_CASE', 'PascalCase'],
+          leadingUnderscore: 'allow',
+        },
+        // Parameters
         {
           selector: 'parameter',
           format: ['camelCase', 'PascalCase'],
           leadingUnderscore: 'allow',
         },
+        // Private members
         {
           selector: 'memberLike',
           modifiers: ['private'],
           format: ['camelCase'],
+          leadingUnderscore: 'allow',
         },
+        // Types
         {
           selector: 'typeLike',
           format: ['PascalCase'],
         },
+        // Type/interface properties - match API shapes
         {
           selector: 'typeProperty',
-          format: ['camelCase', 'snake_case', 'PascalCase'],
+          format: null,
         },
+        // Object literal properties - API payloads
         {
           selector: 'objectLiteralProperty',
-          format: ['PascalCase', 'camelCase', 'snake_case', 'UPPER_CASE'],
+          format: null,
         },
       ],
       '@angular-eslint/component-selector': [
@@ -108,7 +122,6 @@ module.exports = defineConfig([
       'class-methods-use-this': 'off',
       'no-constant-condition': 'off',
       'no-empty': 'error',
-      'comma-dangle': 'off',
       '@typescript-eslint/no-inferrable-types': 'off',
       '@typescript-eslint/explicit-member-accessibility': 'warn',
       'no-console': 'off',
@@ -119,31 +132,7 @@ module.exports = defineConfig([
           message: 'Only warn, error, info and trace allowed to be committed into code',
         },
       ],
-      'max-len': [
-        'error',
-        {
-          code: 160,
-          ignoreUrls: true,
-        },
-      ],
       'no-else-return': 'error',
-      'array-bracket-spacing': 'error',
-      'block-spacing': [2, 'always'],
-      'brace-style': [
-        2,
-        '1tbs',
-        {
-          allowSingleLine: true,
-        },
-      ],
-      'comma-spacing': [
-        2,
-        {
-          before: false,
-          after: true,
-        },
-      ],
-      'no-whitespace-before-property': 'error',
       radix: 'off',
       '@typescript-eslint/member-ordering': [
         2,
@@ -152,7 +141,7 @@ module.exports = defineConfig([
         },
       ],
       'no-empty-function': 'off',
-      '@typescript-eslint/no-empty-function': 'off',
+      '@typescript-eslint/no-empty-function': 'warn',
       '@angular-eslint/no-empty-lifecycle-method': 'off',
       '@angular-eslint/no-output-native': 'off',
     },
@@ -168,7 +157,6 @@ module.exports = defineConfig([
     files: ['**/*.d.ts'],
     rules: {
       '@typescript-eslint/naming-convention': 'off',
-      'max-len': 'off',
     },
   },
   {

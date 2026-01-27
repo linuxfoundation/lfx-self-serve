@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TitleCasePipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, InputSignal, OnInit, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, DestroyRef, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
@@ -24,7 +24,7 @@ interface CommitteeMemberDisplay extends CommitteeMember {
   imports: [TitleCasePipe, ReactiveFormsModule, MultiSelectComponent, TableComponent, TooltipModule],
   templateUrl: './meeting-committee-manager.component.html',
 })
-export class MeetingCommitteeManagerComponent implements OnInit {
+export class MeetingCommitteeManagerComponent {
   // Injected services
   private readonly committeeService = inject(CommitteeService);
   private readonly projectContextService = inject(ProjectContextService);
@@ -119,8 +119,6 @@ export class MeetingCommitteeManagerComponent implements OnInit {
       .pipe(takeUntilDestroyed())
       .subscribe((committees) => this.initializeFromSelectedCommittees(committees));
   }
-
-  public ngOnInit(): void {}
 
   /**
    * Initialize the component state from the selected committees input

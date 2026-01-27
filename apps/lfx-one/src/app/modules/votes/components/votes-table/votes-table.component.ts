@@ -54,6 +54,7 @@ export class VotesTableComponent {
   // === Inputs ===
   public readonly votes = input.required<Vote[]>();
   public readonly hasPMOAccess = input<boolean>(false);
+  public readonly loading = input<boolean>(false);
 
   // === Outputs ===
   public readonly viewVote = output<string>();

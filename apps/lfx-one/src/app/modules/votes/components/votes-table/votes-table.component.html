@@ -47,6 +47,7 @@
     [rows]="10"
     [rowsPerPageOptions]="[10, 25, 50]"
     [customSort]="true"
+    [loading]="loading()"
     data-testid="votes-table">
     <ng-template #header>
       <tr>
@@ -60,13 +61,13 @@
     </ng-template>
 
     <ng-template #body let-vote>
-      <tr [attr.data-testid]="'votes-row-' + vote.uid" class="hover:bg-slate-50">
+      <tr [attr.data-testid]="'votes-row-' + vote.vote_uid" class="hover:bg-slate-50">
         <td>
           <button
             type="button"
             class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0"
-            (click)="onViewVote(vote.uid)"
-            [attr.data-testid]="'votes-name-' + vote.uid">
+            (click)="onViewVote(vote.vote_uid)"
+            [attr.data-testid]="'votes-name-' + vote.vote_uid">
             {{ vote.name }}
           </button>
         </td>
@@ -82,7 +83,7 @@
         </td>
 
         <td>
-          <span class="text-xs text-slate-900" [attr.data-testid]="'votes-responses-' + vote.uid">
+          <span class="text-xs text-slate-900" [attr.data-testid]="'votes-responses-' + vote.vote_uid">
             {{ vote.num_response_received }}
           </span>
         </td>
@@ -103,14 +104,14 @@
           <div class="flex items-center justify-end gap-1">
             @if (hasPMOAccess()) {
               @if (vote.status === PollStatus.DISABLED) {
-                <a [routerLink]="['/votes', vote.uid, 'edit']">
+                <a [routerLink]="['/votes', vote.vote_uid, 'edit']">
                   <lfx-button
                     icon="fa-light fa-pencil"
                     severity="secondary"
                     size="small"
                     [text]="true"
                     styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                    [attr.data-testid]="'votes-edit-' + vote.uid"
+                    [attr.data-testid]="'votes-edit-' + vote.vote_uid"
                     pTooltip="Edit"
                     tooltipPosition="top">
                   </lfx-button>
@@ -123,7 +124,7 @@
                   styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                   (onClick)="onDeleteVote(vote)"
                   [disabled]="isDeleting()"
-                  [attr.data-testid]="'votes-delete-' + vote.uid"
+                  [attr.data-testid]="'votes-delete-' + vote.vote_uid"
                   pTooltip="Delete"
                   tooltipPosition="top">
                 </lfx-button>
@@ -134,8 +135,8 @@
                   size="small"
                   [text]="true"
                   styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                  (onClick)="onViewVote(vote.uid)"
-                  [attr.data-testid]="'votes-view-' + vote.uid"
+                  (onClick)="onViewVote(vote.vote_uid)"
+                  [attr.data-testid]="'votes-view-' + vote.vote_uid"
                   pTooltip="View"
                   tooltipPosition="top">
                 </lfx-button>
@@ -146,8 +147,8 @@
                   size="small"
                   [text]="true"
                   styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                  (onClick)="onViewResults(vote.uid)"
-                  [attr.data-testid]="'votes-results-' + vote.uid"
+                  (onClick)="onViewResults(vote.vote_uid)"
+                  [attr.data-testid]="'votes-results-' + vote.vote_uid"
                   pTooltip="View Results"
                   tooltipPosition="top">
                 </lfx-button>
@@ -160,8 +161,8 @@
                   size="small"
                   [text]="true"
                   styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                  (onClick)="onViewVote(vote.uid)"
-                  [attr.data-testid]="'votes-cast-' + vote.uid"
+                  (onClick)="onViewVote(vote.vote_uid)"
+                  [attr.data-testid]="'votes-cast-' + vote.vote_uid"
                   [pTooltip]="'Review & ' + voteLabel.singular"
                   tooltipPosition="top">
                 </lfx-button>
@@ -172,8 +173,8 @@
                   size="small"
                   [text]="true"
                   styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                  (onClick)="onViewResults(vote.uid)"
-                  [attr.data-testid]="'votes-results-' + vote.uid"
+                  (onClick)="onViewResults(vote.vote_uid)"
+                  [attr.data-testid]="'votes-results-' + vote.vote_uid"
                   pTooltip="View Results"
                   tooltipPosition="top">
                 </lfx-button>

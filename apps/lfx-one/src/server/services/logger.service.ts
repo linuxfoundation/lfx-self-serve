@@ -48,6 +48,7 @@ export class LoggerService {
    */
   private operationStacks = new WeakMap<Request, Map<string, OperationState>>();
 
+  // eslint-disable-next-line @typescript-eslint/no-empty-function
   private constructor() {}
 
   /**
