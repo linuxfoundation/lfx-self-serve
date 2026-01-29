@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, ContentChild, input, output, TemplateRef } from '@angular/core';
+import { Component, ContentChild, ElementRef, inject, input, output, TemplateRef } from '@angular/core';
 import { TableModule } from 'primeng/table';
 
 @Component({
@@ -26,6 +26,9 @@ export class TableComponent {
   @ContentChild('paginatorleft', { static: false, descendants: false }) public paginatorLeftTemplate?: TemplateRef<any>;
   @ContentChild('paginatorright', { static: false, descendants: false }) public paginatorRightTemplate?: TemplateRef<any>;
   @ContentChild('paginatordropdownitem', { static: false, descendants: false }) public paginatorDropdownItemTemplate?: TemplateRef<any>;
+
+  // Injected services
+  private readonly elementRef = inject(ElementRef);
 
   // Core data properties
   public readonly value = input<any[]>([]);
@@ -148,6 +151,52 @@ export class TableComponent {
   public readonly onHeaderCheckboxToggle = output<any>();
   public readonly onStateSave = output<any>();
   public readonly onStateRestore = output<any>();
+
+  // Host click handler for row selection
+  protected onHostClick(event: MouseEvent): void {
+    if (!this.selectionMode()) {
+      return;
+    }
+
+    const target = event.target as HTMLElement;
+
+    // Check if click is inside a button or interactive element - if so, don't trigger row select
+    if (target.closest('button, a, .p-button, [role="button"]')) {
+      return;
+    }
+
+    const tableElement = this.elementRef.nativeElement as HTMLElement;
+    const tbody = tableElement.querySelector('.p-datatable-tbody');
+
+    if (!tbody) {
+      return;
+    }
+
+    const row = target.closest('tr');
+    if (!row || !tbody.contains(row)) {
+      return;
+    }
+
+    // Get the row index from the data-row-index attribute (stable identifier)
+    // Consumers must add [attr.data-row-index]="rowIndex" to their tr elements
+    const rowIndexAttr = row.getAttribute('data-row-index');
+    if (rowIndexAttr === null) {
+      return;
+    }
+
+    const rowIndex = parseInt(rowIndexAttr, 10);
+    if (isNaN(rowIndex) || rowIndex < 0 || rowIndex >= this.value().length) {
+      return;
+    }
+
+    const rowData = this.value()[rowIndex];
+    this.onRowSelect.emit({
+      originalEvent: event,
+      data: rowData,
+      type: 'row',
+      index: rowIndex,
+    });
+  }
 
   // Event handlers
   protected handleLazyLoad(event: any): void {

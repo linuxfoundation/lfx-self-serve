@@ -98,6 +98,15 @@ export class VotesTableComponent {
     this.viewResults.emit(voteId);
   }
 
+  protected onRowSelect(event: { data: Vote }): void {
+    const vote = event.data;
+    if (vote.status === PollStatus.ENDED) {
+      this.viewResults.emit(vote.vote_uid);
+    } else {
+      this.viewVote.emit(vote.vote_uid);
+    }
+  }
+
   protected onDeleteVote(vote: Vote): void {
     this.confirmationService.confirm({
       message: `Are you sure you want to delete the ${this.voteLabel.singular.toLowerCase()} "${vote.name}"? This action cannot be undone.`,

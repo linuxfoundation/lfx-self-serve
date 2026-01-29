@@ -109,8 +109,8 @@ export class MainLayoutComponent {
       });
     }
 
-    // For board members: Meetings, Mailing Lists, Groups, My Activity, Insights (no Votes/Surveys)
-    // For maintainers: Insights, then Governance section with Meetings, Mailing Lists, Groups, Votes, Surveys
+    // For board members: Meetings, Mailing Lists, Groups, My Activity, then divider + Insights
+    // For maintainers: Governance section with Meetings, Mailing Lists, Groups, Votes, Surveys, then divider + Insights
     if (isBoardMember) {
       // Add governance items directly (Meetings, Mailing Lists, Groups - excludes Votes/Surveys)
       items.push(...this.boardMemberGovernanceItems);
@@ -121,25 +121,7 @@ export class MainLayoutComponent {
         icon: 'fa-light fa-clipboard-list',
         routerLink: '/my-activity',
       });
-
-      // Add Insights URL
-      items.push({
-        label: 'Insights',
-        icon: 'fa-light fa-chart-column',
-        url: 'https://insights.linuxfoundation.org/',
-        target: '_blank',
-        rel: 'noopener noreferrer',
-      });
     } else {
-      // Add Insights URL for maintainers
-      items.push({
-        label: 'Insights',
-        icon: 'fa-light fa-chart-column',
-        url: 'https://insights.linuxfoundation.org/',
-        target: '_blank',
-        rel: 'noopener noreferrer',
-      });
-
       // Governance section for maintainers (Meetings, Mailing Lists, Groups, Votes, Surveys)
       items.push({
         label: 'Governance',
@@ -148,6 +130,16 @@ export class MainLayoutComponent {
         items: this.governanceSectionItems,
       });
     }
+
+    // Insights URL - always shown below governance with a divider
+    items.push({
+      label: 'Insights',
+      icon: 'fa-light fa-chart-column',
+      url: 'https://insights.linuxfoundation.org/',
+      target: '_blank',
+      rel: 'noopener noreferrer',
+      dividerBefore: true,
+    });
 
     return items;
   });

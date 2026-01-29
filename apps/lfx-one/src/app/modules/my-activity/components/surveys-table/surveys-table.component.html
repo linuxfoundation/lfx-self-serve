@@ -47,6 +47,8 @@
     [rows]="10"
     [rowsPerPageOptions]="[10, 25, 50]"
     [customSort]="true"
+    selectionMode="single"
+    (onRowSelect)="onRowSelect($event)"
     data-testid="my-activity-surveys-table">
     <ng-template #header>
       <tr>
@@ -59,12 +61,12 @@
       </tr>
     </ng-template>
 
-    <ng-template #body let-survey>
-      <tr [attr.data-testid]="'my-activity-survey-row-' + survey.survey_id">
+    <ng-template #body let-survey let-rowIndex="rowIndex">
+      <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'my-activity-survey-row-' + survey.survey_id">
         <td>
-          <a href="#" class="text-blue-600 hover:text-blue-700 hover:underline font-medium" [attr.data-testid]="'my-activity-survey-name-' + survey.survey_id">
+          <span class="text-blue-600 font-medium" [attr.data-testid]="'my-activity-survey-name-' + survey.survey_id">
             {{ survey.survey_title }}
-          </a>
+          </span>
         </td>
 
         <td>

@@ -3,7 +3,7 @@
 
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input, output, signal, Signal, WritableSignal } from '@angular/core';
-import { ReactiveFormsModule, FormGroup } from '@angular/forms';
+import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -66,6 +66,7 @@ export class CommitteeTableComponent {
 
   // Outputs
   public readonly refresh = output<void>();
+  public readonly rowClick = output<Committee>();
 
   // Event handlers
   public onAddMember(committee: Committee): void {
@@ -100,6 +101,10 @@ export class CommitteeTableComponent {
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
       accept: () => this.performDelete(committee),
     });
+  }
+
+  protected onRowSelect(event: { data: Committee }): void {
+    this.rowClick.emit(event.data);
   }
 
   private performDelete(committee: Committee): void {

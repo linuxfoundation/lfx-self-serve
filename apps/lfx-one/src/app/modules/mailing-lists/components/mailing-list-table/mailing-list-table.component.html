@@ -52,6 +52,8 @@
     [rowsPerPageOptions]="[10, 25, 50]"
     sortField="title"
     [sortOrder]="1"
+    selectionMode="single"
+    (onRowSelect)="onRowSelect($event)"
     data-testid="mailing-list-dashboard-table">
     <!-- Header Template - Conditional based on isMaintainer -->
     <ng-template #header>
@@ -80,8 +82,8 @@
     </ng-template>
 
     <!-- Body Template -->
-    <ng-template #body let-mailingList>
-      <tr [attr.data-testid]="'mailing-list-row-' + mailingList.uid">
+    <ng-template #body let-mailingList let-rowIndex="rowIndex">
+      <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'mailing-list-row-' + mailingList.uid">
         @if (isMaintainer()) {
           <!-- Maintainer View Row -->
           <!-- Name Column -->

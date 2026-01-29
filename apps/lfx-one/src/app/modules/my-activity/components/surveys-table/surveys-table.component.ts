@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, input, signal, Signal } from '@angular/core';
+import { Component, computed, input, output, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -46,6 +46,9 @@ export class SurveysTableComponent {
   // === Inputs ===
   public readonly surveys = input.required<UserSurvey[]>();
 
+  // === Outputs ===
+  public readonly surveyClick = output<UserSurvey>();
+
   // === Forms ===
   public searchForm = new FormGroup({
     search: new FormControl<string>(''),
@@ -70,6 +73,14 @@ export class SurveysTableComponent {
 
   protected onCommitteeChange(value: string | null): void {
     this.committeeFilter.set(value);
+  }
+
+  protected onRowSelect(event: { data: UserSurvey }): void {
+    this.onSurveyClick(event.data);
+  }
+
+  protected onSurveyClick(survey: UserSurvey): void {
+    this.surveyClick.emit(survey);
   }
 
   // === Private Initializers ===

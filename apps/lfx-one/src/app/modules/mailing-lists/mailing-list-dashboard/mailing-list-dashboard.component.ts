@@ -89,6 +89,13 @@ export class MailingListDashboardComponent {
     this.refresh.next();
   }
 
+  /**
+   * Handle mailing list row click - navigate to detail page
+   */
+  public onMailingListClick(mailingList: GroupsIOMailingList): void {
+    this.router.navigate(['/mailing-lists', mailingList.uid]);
+  }
+
   // Private initializer functions
   private initializeSearchForm(): FormGroup {
     return new FormGroup({

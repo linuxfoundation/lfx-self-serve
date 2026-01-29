@@ -65,7 +65,8 @@
           [searchForm]="searchForm"
           [categoryOptions]="categories()"
           [votingStatusOptions]="votingStatusOptions()"
-          (refresh)="refreshCommittees()">
+          (refresh)="refreshCommittees()"
+          (rowClick)="onCommitteeClick($event)">
         </lfx-committee-table>
       }
     </div>

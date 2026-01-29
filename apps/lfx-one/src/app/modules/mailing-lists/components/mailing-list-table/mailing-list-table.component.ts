@@ -64,4 +64,10 @@ export class MailingListTableComponent {
 
   // Outputs
   public readonly refresh = output<void>();
+  public readonly rowClick = output<GroupsIOMailingList>();
+
+  // Event Handlers
+  protected onRowSelect(event: { data: GroupsIOMailingList }): void {
+    this.rowClick.emit(event.data);
+  }
 }

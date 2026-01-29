@@ -33,5 +33,14 @@
         }
       }
     }
+
+    // Selectable table rows
+    &.lfx-table-selectable {
+      .p-datatable-tbody {
+        tr {
+          @apply cursor-pointer;
+        }
+      }
+    }
   }
 }

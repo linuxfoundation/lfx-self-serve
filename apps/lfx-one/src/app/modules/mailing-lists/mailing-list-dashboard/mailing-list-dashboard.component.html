@@ -93,7 +93,8 @@
           [searchForm]="searchForm"
           [committeeFilterOptions]="committeeOptions()"
           [statusFilterOptions]="statusOptions()"
-          (refresh)="refreshMailingLists()">
+          (refresh)="refreshMailingLists()"
+          (rowClick)="onMailingListClick($event)">
         </lfx-mailing-list-table>
       }
     </div>

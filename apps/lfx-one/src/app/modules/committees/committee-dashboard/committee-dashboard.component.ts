@@ -138,6 +138,10 @@ export class CommitteeDashboardComponent {
     this.refresh.next();
   }
 
+  public onCommitteeClick(committee: Committee): void {
+    this.router.navigate(['/groups', committee.uid]);
+  }
+
   private initializeSearchForm(): FormGroup {
     return new FormGroup({
       search: new FormControl<string>(''),

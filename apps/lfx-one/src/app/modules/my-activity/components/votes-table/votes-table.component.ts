@@ -88,6 +88,10 @@ export class VotesTableComponent {
     this.committeeFilter.set(value);
   }
 
+  protected onRowSelect(event: { data: UserVote }): void {
+    this.onVoteClick(event.data);
+  }
+
   protected onVoteClick(vote: UserVote): void {
     const details = this.getMockVoteDetails(vote);
     this.selectedVote.set(details);

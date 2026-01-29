@@ -415,6 +415,8 @@ export interface SidebarMenuItem {
   isSection?: boolean;
   /** Default expanded state for sections (defaults to true) */
   expanded?: boolean;
+  /** Whether to render a divider line before this item */
+  dividerBefore?: boolean;
 }
 
 /**
