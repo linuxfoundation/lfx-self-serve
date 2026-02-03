@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { SurveyResponseStatus, SurveyStatus } from '../enums/survey.enum';
-import { UserSurvey } from '../interfaces/survey.interface';
+import { Survey, UserSurvey } from '../interfaces/survey.interface';
 
 /**
  * Combined survey status type
@@ -29,4 +29,48 @@ export function getCombinedSurveyStatus(survey: UserSurvey): CombinedSurveyStatu
   }
 
   return 'closed';
+}
+
+/**
+ * Get the computed display status for a survey
+ * @description Derives the display status from survey_status and survey_cutoff_date
+ * - 'sent' + current date < cutoff date → 'open'
+ * - 'scheduled' → 'scheduled'
+ * - 'sent' + current date >= cutoff date → 'closed'
+ * - 'draft' → 'draft'
+ * - 'open' → 'open'
+ * - 'closed' → 'closed'
+ * @param survey - The survey to compute status for
+ * @returns The computed display status as SurveyStatus
+ */
+export function getSurveyDisplayStatus(survey: Pick<Survey, 'survey_status' | 'survey_cutoff_date'>): SurveyStatus {
+  const status = survey.survey_status as SurveyStatus;
+
+  if (status === SurveyStatus.SENT) {
+    const cutoffDate = survey.survey_cutoff_date ? new Date(survey.survey_cutoff_date) : null;
+    const now = new Date();
+
+    if (cutoffDate && now >= cutoffDate) {
+      return SurveyStatus.CLOSED;
+    }
+    return SurveyStatus.OPEN;
+  }
+
+  if (status === SurveyStatus.SCHEDULED) {
+    return SurveyStatus.SCHEDULED;
+  }
+
+  if (status === SurveyStatus.DRAFT) {
+    return SurveyStatus.DRAFT;
+  }
+
+  if (status === SurveyStatus.OPEN) {
+    return SurveyStatus.OPEN;
+  }
+
+  if (status === SurveyStatus.CLOSED) {
+    return SurveyStatus.CLOSED;
+  }
+
+  return status as SurveyStatus;
 }

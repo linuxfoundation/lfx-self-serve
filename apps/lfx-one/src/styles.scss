@@ -141,3 +141,34 @@ html {
   font-size: 14px;
   background-color: #f9fafb;
 }
+
+/* Common Stepper Styling */
+.p-stepper {
+  .p-stepper-separator {
+    @apply flex-1;
+  }
+
+  .p-step {
+    .p-step-header {
+      @apply flex-col gap-2;
+
+      .p-step-number {
+        @apply transition-all duration-200 ease-in-out;
+      }
+
+      .p-step-title {
+        @apply text-xs whitespace-nowrap;
+      }
+    }
+
+    &.p-step-active {
+      .p-step-number {
+        @apply bg-blue-500 text-white border-blue-500;
+      }
+
+      .p-step-title {
+        @apply text-blue-500;
+      }
+    }
+  }
+}

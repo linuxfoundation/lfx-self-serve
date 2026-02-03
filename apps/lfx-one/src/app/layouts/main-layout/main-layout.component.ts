@@ -38,24 +38,8 @@ export class MainLayoutComponent {
   private readonly enableProfileClick = this.featureFlagService.getBooleanFlag('sidebar-profile', false);
   protected readonly showDevToolbar = this.featureFlagService.getBooleanFlag('dev-toolbar', true);
 
-  // Governance section items - full list for maintainers
-  // Order: Meetings, Mailing Lists, Groups, Votes, Surveys
+  // Governance section items - Votes, Surveys, Permissions only
   private readonly governanceSectionItems: SidebarMenuItem[] = [
-    {
-      label: 'Meetings',
-      icon: 'fa-light fa-calendar',
-      routerLink: '/meetings',
-    },
-    {
-      label: MAILING_LIST_LABEL.plural,
-      icon: 'fa-light fa-envelope',
-      routerLink: '/mailing-lists',
-    },
-    {
-      label: COMMITTEE_LABEL.plural,
-      icon: 'fa-light fa-users',
-      routerLink: '/groups',
-    },
     {
       label: VOTE_LABEL.plural,
       icon: 'fa-light fa-check-to-slot',
@@ -66,41 +50,48 @@ export class MainLayoutComponent {
       icon: 'fa-light fa-clipboard-list',
       routerLink: '/surveys',
     },
-  ];
-
-  // Board member governance items - excludes Votes and Surveys
-  // Order: Meetings, Mailing Lists, Groups
-  private readonly boardMemberGovernanceItems: SidebarMenuItem[] = [
     {
-      label: 'Meetings',
-      icon: 'fa-light fa-calendar',
-      routerLink: '/meetings',
-    },
-    {
-      label: MAILING_LIST_LABEL.plural,
-      icon: 'fa-light fa-envelope',
-      routerLink: '/mailing-lists',
-    },
-    {
-      label: COMMITTEE_LABEL.plural,
-      icon: 'fa-light fa-users',
-      routerLink: '/groups',
+      label: 'Permissions',
+      icon: 'fa-light fa-shield',
+      routerLink: '/settings',
     },
   ];
 
   // Computed sidebar items based on feature flags and persona
+  // Order: Overview, Meetings, Mailing Lists, Groups, Projects, My Activity, Insights, Governance
   protected readonly sidebarItems = computed(() => {
     const items: SidebarMenuItem[] = [];
     const isBoardMember = this.personaService.currentPersona() === 'board-member';
 
-    // Always show Dashboard first
+    // Overview (Dashboard)
     items.push({
-      label: 'Dashboard',
+      label: 'Overview',
       icon: 'fa-light fa-grid-2',
       routerLink: '/',
     });
 
-    // Add Projects if feature flag is enabled
+    // Meetings
+    items.push({
+      label: 'Meetings',
+      icon: 'fa-light fa-calendar',
+      routerLink: '/meetings',
+    });
+
+    // Mailing Lists
+    items.push({
+      label: MAILING_LIST_LABEL.plural,
+      icon: 'fa-light fa-envelope',
+      routerLink: '/mailing-lists',
+    });
+
+    // Groups
+    items.push({
+      label: COMMITTEE_LABEL.plural,
+      icon: 'fa-light fa-users',
+      routerLink: '/groups',
+    });
+
+    // Projects (conditionally shown based on feature flag)
     if (this.showProjectsInSidebar()) {
       items.push({
         label: 'Projects',
@@ -109,20 +100,24 @@ export class MainLayoutComponent {
       });
     }
 
-    // For board members: Meetings, Mailing Lists, Groups, My Activity, then divider + Insights
-    // For maintainers: Governance section with Meetings, Mailing Lists, Groups, Votes, Surveys, then divider + Insights
-    if (isBoardMember) {
-      // Add governance items directly (Meetings, Mailing Lists, Groups - excludes Votes/Surveys)
-      items.push(...this.boardMemberGovernanceItems);
+    // My Activity
+    items.push({
+      label: MY_ACTIVITY_LABEL.singular,
+      icon: 'fa-light fa-clipboard-list',
+      routerLink: '/my-activity',
+    });
 
-      // Add My Activity for board members
-      items.push({
-        label: MY_ACTIVITY_LABEL.singular,
-        icon: 'fa-light fa-clipboard-list',
-        routerLink: '/my-activity',
-      });
-    } else {
-      // Governance section for maintainers (Meetings, Mailing Lists, Groups, Votes, Surveys)
+    // Insights URL
+    items.push({
+      label: 'Insights',
+      icon: 'fa-light fa-chart-column',
+      url: 'https://insights.linuxfoundation.org/',
+      target: '_blank',
+      rel: 'noopener noreferrer',
+    });
+
+    // Governance section (Votes, Surveys, Permissions) - only for non-board-members
+    if (!isBoardMember) {
       items.push({
         label: 'Governance',
         isSection: true,
@@ -130,16 +125,6 @@ export class MainLayoutComponent {
         items: this.governanceSectionItems,
       });
     }
-
-    // Insights URL - always shown below governance with a divider
-    items.push({
-      label: 'Insights',
-      icon: 'fa-light fa-chart-column',
-      url: 'https://insights.linuxfoundation.org/',
-      target: '_blank',
-      rel: 'noopener noreferrer',
-      dividerBefore: true,
-    });
 
     return items;
   });
@@ -158,11 +143,6 @@ export class MainLayoutComponent {
       url: environment.urls.support,
       target: '_blank',
       rel: 'noopener noreferrer',
-    },
-    {
-      label: 'Permissions',
-      icon: 'fa-light fa-shield',
-      routerLink: '/settings',
     },
     {
       label: 'Logout',

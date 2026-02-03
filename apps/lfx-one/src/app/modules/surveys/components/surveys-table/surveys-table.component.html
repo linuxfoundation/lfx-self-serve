@@ -1,0 +1,176 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card data-testid="surveys-table-card">
+  <div class="pb-2 mb-2">
+    <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+      <div class="flex-1 min-w-0">
+        <lfx-input-text
+          [form]="searchForm"
+          control="search"
+          [placeholder]="'Search ' + surveyLabel.plural.toLowerCase() + '...'"
+          icon="fa-light fa-search"
+          styleClass="w-full"
+          size="small"
+          data-testid="surveys-search-input"></lfx-input-text>
+      </div>
+
+      <div class="w-full sm:w-auto sm:shrink-0">
+        <lfx-select
+          [form]="searchForm"
+          control="group"
+          size="small"
+          [options]="groupOptions()"
+          placeholder="All Groups"
+          [showClear]="true"
+          (valueChange)="onGroupChange($event)"
+          data-testid="surveys-group-filter"></lfx-select>
+      </div>
+
+      <div class="w-full sm:w-auto sm:shrink-0">
+        <lfx-select
+          [form]="searchForm"
+          control="surveyType"
+          size="small"
+          [options]="typeOptions()"
+          placeholder="All Types"
+          [showClear]="true"
+          (valueChange)="onTypeChange($event)"
+          data-testid="surveys-type-filter"></lfx-select>
+      </div>
+
+      <div class="w-full sm:w-auto sm:shrink-0">
+        <lfx-select
+          [form]="searchForm"
+          control="status"
+          size="small"
+          [options]="statusOptions()"
+          placeholder="All Statuses"
+          [showClear]="true"
+          (valueChange)="onStatusChange($event)"
+          data-testid="surveys-status-filter"></lfx-select>
+      </div>
+    </div>
+  </div>
+
+  <lfx-table
+    [value]="filteredSurveys()"
+    [paginator]="filteredSurveys().length > 10"
+    [rows]="10"
+    [rowsPerPageOptions]="[10, 25, 50]"
+    [customSort]="true"
+    [loading]="loading()"
+    selectionMode="single"
+    (onRowSelect)="onRowSelect($event)"
+    data-testid="surveys-table">
+    <ng-template #header>
+      <tr>
+        <th class="w-[23%]">{{ surveyLabel.singular }} Name</th>
+        <th class="w-[15%]">Survey Type</th>
+        <th class="w-[16%]">Group</th>
+        <th class="w-[11%]">Status</th>
+        <th class="w-[11%]">Responses</th>
+        <th class="w-[12%]">Due</th>
+        <th class="w-[12%]"></th>
+      </tr>
+    </ng-template>
+
+    <ng-template #body let-survey let-rowIndex="rowIndex">
+      <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'surveys-row-' + survey.id" class="hover:bg-slate-50">
+        <td>
+          <button
+            type="button"
+            class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0"
+            (click)="onViewResults(survey.id)"
+            [attr.data-testid]="'surveys-name-' + survey.id">
+            {{ survey.survey_title }}
+          </button>
+        </td>
+
+        <td>
+          <span class="bg-slate-100 text-slate-600 text-xs px-2 py-1 rounded">
+            {{ getSurveyTypeLabel(survey) }}
+          </span>
+        </td>
+
+        <td>
+          <span class="bg-blue-100 text-blue-500 text-xs px-2 py-1 rounded">
+            {{ getGroupName(survey) }}
+          </span>
+        </td>
+
+        <td>
+          <lfx-tag [value]="survey | surveyStatusLabel" [severity]="survey | surveyStatusSeverity"></lfx-tag>
+        </td>
+
+        <td>
+          <span
+            class="text-xs text-slate-900"
+            [pTooltip]="getResponseTooltip(survey)"
+            tooltipPosition="top"
+            [attr.data-testid]="'surveys-responses-' + survey.id">
+            {{ survey.total_responses }}
+          </span>
+        </td>
+
+        <td class="text-xs text-slate-900">
+          @if (survey.survey_status === SurveyStatus.CLOSED) {
+            <span>{{ survey.survey_cutoff_date | date: 'MMM d, y' }}</span>
+          } @else if (survey.survey_status === SurveyStatus.DRAFT) {
+            <span class="text-gray-400">&mdash;</span>
+          } @else if (survey.survey_cutoff_date) {
+            <span>{{ survey.survey_cutoff_date | relativeDueDate }}</span>
+          } @else {
+            <span class="text-gray-400">&mdash;</span>
+          }
+        </td>
+
+        <td>
+          <div class="flex items-center justify-end gap-1">
+            @if (hasPMOAccess() && survey.survey_status === SurveyStatus.DRAFT) {
+              <lfx-button label="Edit" severity="primary" size="small" [text]="true" [attr.data-testid]="'surveys-edit-' + survey.id"> </lfx-button>
+              <lfx-button
+                label="Delete"
+                severity="danger"
+                size="small"
+                [text]="true"
+                (onClick)="onDeleteSurvey(survey)"
+                [disabled]="isDeleting()"
+                [attr.data-testid]="'surveys-delete-' + survey.id">
+              </lfx-button>
+            } @else if (survey.survey_status === SurveyStatus.SENT || survey.survey_status === SurveyStatus.OPEN) {
+              <lfx-button
+                label="Results"
+                severity="primary"
+                size="small"
+                [text]="true"
+                (onClick)="onViewResults(survey.id)"
+                [attr.data-testid]="'surveys-results-' + survey.id">
+              </lfx-button>
+            } @else if (survey.survey_status === SurveyStatus.CLOSED) {
+              <lfx-button
+                label="Results"
+                severity="primary"
+                size="small"
+                [text]="true"
+                (onClick)="onViewResults(survey.id)"
+                [attr.data-testid]="'surveys-results-' + survey.id">
+              </lfx-button>
+            }
+          </div>
+        </td>
+      </tr>
+    </ng-template>
+
+    <ng-template #emptymessage>
+      <tr>
+        <td colspan="7" class="text-center py-8">
+          <i class="fa-light fa-clipboard-list text-3xl text-gray-400 mb-2"></i>
+          <p class="text-sm text-gray-500">No {{ surveyLabel.plural.toLowerCase() }} found</p>
+        </td>
+      </tr>
+    </ng-template>
+  </lfx-table>
+</lfx-card>
+
+<p-confirmDialog></p-confirmDialog>

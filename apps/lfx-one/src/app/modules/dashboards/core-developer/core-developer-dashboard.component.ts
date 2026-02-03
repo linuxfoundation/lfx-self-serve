@@ -26,7 +26,9 @@ export class CoreDeveloperDashboardComponent {
   public readonly refresh$: BehaviorSubject<void> = new BehaviorSubject<void>(undefined);
   private readonly rawCoreDevActions = signal(CORE_DEVELOPER_ACTION_ITEMS);
   public readonly coreDevActions = computed(() => {
-    return this.rawCoreDevActions().filter((item) => !this.hiddenActionsService.isActionHidden(item));
+    return this.rawCoreDevActions()
+      .filter((item) => !this.hiddenActionsService.isActionHidden(item))
+      .slice(0, 2);
   });
 
   public handleActionClick(): void {

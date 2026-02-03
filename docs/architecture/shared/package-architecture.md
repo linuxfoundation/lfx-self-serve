@@ -329,3 +329,258 @@ When shared package changes:
 - **Version Bump**: Use major version for breaking changes
 
 This shared package architecture provides a solid foundation for type-safe, maintainable code sharing across the monorepo.
+
+## 🛠 Utilities
+
+The shared package provides utility functions for common operations across the application.
+
+### Directory Structure
+
+```text
+packages/shared/src/utils/
+├── color.utils.ts          # Color manipulation functions
+├── date-time.utils.ts      # Date formatting and timezone handling
+├── file.utils.ts           # File type detection and validation
+├── form.utils.ts           # Form helpers
+├── html-utils.ts           # HTML sanitization
+├── meeting.utils.ts        # Meeting data transformations
+├── poll.utils.ts           # Poll status utilities
+├── rsvp-calculator.util.ts # RSVP calculations
+├── string.utils.ts         # String manipulation
+├── survey.utils.ts         # Survey data utilities
+└── url.utils.ts            # URL parsing and construction
+```
+
+### Color Utilities (`color.utils.ts`)
+
+Functions for color manipulation and conversion:
+
+```typescript
+import { hexToRgba, toHslaValue } from '@lfx-one/shared/utils';
+
+// Convert hex color to RGBA with opacity
+const rgba = hexToRgba('#3B82F6', 0.5); // 'rgba(59, 130, 246, 0.5)'
+
+// Convert color to HSLA value
+const hsla = toHslaValue('#3B82F6');
+```
+
+### Date-Time Utilities (`date-time.utils.ts`)
+
+Comprehensive date and time handling with timezone support (17 functions):
+
+```typescript
+import {
+  formatDate,
+  formatTime,
+  formatDateTime,
+  getRelativeDate,
+  convertToTimezone,
+  getTimezoneOffset,
+  isSameDay,
+  isToday,
+  isPast,
+  isFuture,
+} from '@lfx-one/shared/utils';
+
+// Format dates consistently across the application
+const formattedDate = formatDate(new Date(), 'MMM d, yyyy');
+const formattedTime = formatTime(new Date(), 'h:mm a');
+
+// Get relative date text
+const relative = getRelativeDate(new Date('2024-01-01')); // "3 months ago"
+
+// Timezone conversions
+const converted = convertToTimezone(date, 'America/New_York');
+```
+
+### File Utilities (`file.utils.ts`)
+
+File type detection and validation:
+
+```typescript
+import { getFileType, isValidFileType, getFileExtension } from '@lfx-one/shared/utils';
+
+// Detect file type
+const fileType = getFileType('document.pdf'); // 'pdf'
+
+// Validate file type against allowed types
+const isValid = isValidFileType(file, ['pdf', 'docx', 'xlsx']);
+```
+
+### Form Utilities (`form.utils.ts`)
+
+Angular reactive form helpers:
+
+```typescript
+import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
+
+// Mark all form controls as touched for validation display
+markFormControlsAsTouched(this.myForm);
+```
+
+### HTML Utilities (`html-utils.ts`)
+
+HTML sanitization functions:
+
+```typescript
+import { stripHtml } from '@lfx-one/shared/utils';
+
+// Remove HTML tags from string
+const plainText = stripHtml('<p>Hello <strong>World</strong></p>'); // "Hello World"
+```
+
+### Meeting Utilities (`meeting.utils.ts`)
+
+Meeting data transformations (9 functions):
+
+```typescript
+import { transformV1MeetingToV2, getMeetingStatus, getMeetingDuration, formatMeetingTime, isRecurringMeeting, getNextOccurrence } from '@lfx-one/shared/utils';
+
+// Transform legacy meeting format
+const v2Meeting = transformV1MeetingToV2(v1Meeting);
+
+// Get meeting status
+const status = getMeetingStatus(meeting); // 'upcoming' | 'in-progress' | 'completed'
+```
+
+### Poll Utilities (`poll.utils.ts`)
+
+Poll status management:
+
+```typescript
+import { getPollStatus, calculatePollResults } from '@lfx-one/shared/utils';
+
+// Get current poll status
+const status = getPollStatus(poll); // 'draft' | 'active' | 'closed'
+```
+
+### RSVP Calculator (`rsvp-calculator.util.ts`)
+
+RSVP calculations for meetings:
+
+```typescript
+import { calculateRsvpStats, getRsvpSummary } from '@lfx-one/shared/utils';
+
+// Calculate RSVP statistics
+const stats = calculateRsvpStats(rsvps);
+// { attending: 15, notAttending: 3, tentative: 2, noResponse: 5 }
+```
+
+### String Utilities (`string.utils.ts`)
+
+String manipulation helpers:
+
+```typescript
+import { parseToInt, truncate, capitalize } from '@lfx-one/shared/utils';
+
+// Parse string to integer safely
+const num = parseToInt('42', 0); // 42
+const fallback = parseToInt('invalid', 0); // 0
+```
+
+### Survey Utilities (`survey.utils.ts`)
+
+Survey data processing:
+
+```typescript
+import { calculateNpsScore, getSurveyStatus } from '@lfx-one/shared/utils';
+
+// Calculate NPS score from responses
+const nps = calculateNpsScore(responses);
+```
+
+### URL Utilities (`url.utils.ts`)
+
+URL parsing and construction:
+
+```typescript
+import { buildUrl, parseQueryParams, appendQueryParam } from '@lfx-one/shared/utils';
+
+// Build URL with query parameters
+const url = buildUrl('/api/meetings', { page: 1, limit: 10 });
+// '/api/meetings?page=1&limit=10'
+```
+
+## ✅ Validators
+
+The shared package provides reusable form validators for Angular reactive forms.
+
+### Directory Structure
+
+```text
+packages/shared/src/validators/
+├── mailing-list.validators.ts  # Mailing list form validators
+├── meeting.validators.ts       # Meeting form validators
+└── vote.validators.ts          # Vote form validators
+```
+
+### Mailing List Validators (`mailing-list.validators.ts`)
+
+```typescript
+import { MailingListValidators } from '@lfx-one/shared/validators';
+
+this.form = this.fb.group({
+  name: ['', [Validators.required, MailingListValidators.validName]],
+  email: ['', [Validators.required, MailingListValidators.validEmail]],
+  description: ['', [MailingListValidators.maxLength(500)]],
+});
+```
+
+### Meeting Validators (`meeting.validators.ts`)
+
+```typescript
+import { MeetingValidators } from '@lfx-one/shared/validators';
+
+this.form = this.fb.group(
+  {
+    title: ['', [Validators.required, MeetingValidators.validTitle]],
+    startTime: ['', [Validators.required]],
+    endTime: ['', [Validators.required]],
+    duration: ['', [MeetingValidators.validDuration]],
+  },
+  {
+    validators: [MeetingValidators.endTimeAfterStartTime],
+  }
+);
+```
+
+### Vote Validators (`vote.validators.ts`)
+
+```typescript
+import { VoteValidators } from '@lfx-one/shared/validators';
+
+this.form = this.fb.group({
+  question: ['', [Validators.required, VoteValidators.validQuestion]],
+  options: this.fb.array([], [VoteValidators.minOptions(2), VoteValidators.maxOptions(10)]),
+  deadline: ['', [Validators.required, VoteValidators.futureDate]],
+});
+```
+
+## 📁 Meeting Templates
+
+The shared package includes meeting template structures for consistent meeting creation.
+
+### Directory Structure
+
+```text
+packages/shared/src/meeting-templates/
+├── templates/              # Pre-defined meeting templates
+│   ├── standup.ts         # Daily standup template
+│   ├── retrospective.ts   # Sprint retrospective template
+│   └── planning.ts        # Sprint planning template
+├── interfaces/            # Template type definitions
+└── index.ts               # Template exports
+```
+
+### Usage
+
+```typescript
+import { MeetingTemplates, MeetingTemplateType } from '@lfx-one/shared/meeting-templates';
+
+// Get a pre-defined template
+const standupTemplate = MeetingTemplates.get(MeetingTemplateType.Standup);
+
+// Apply template to meeting form
+this.meetingForm.patchValue(standupTemplate.defaults);
+```

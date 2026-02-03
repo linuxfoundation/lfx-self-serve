@@ -145,8 +145,8 @@ export class MyMeetingsComponent {
         }
       }
 
-      // Sort by earliest time first and limit to 5
-      return meetings.sort((a, b) => a.sortTime - b.sortTime).slice(0, 5);
+      // Sort by earliest time first and limit to 2
+      return meetings.sort((a, b) => a.sortTime - b.sortTime).slice(0, 2);
     });
   }
 

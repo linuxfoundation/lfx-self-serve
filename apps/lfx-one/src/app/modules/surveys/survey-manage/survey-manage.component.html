@@ -1,0 +1,106 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Confirmation Dialog -->
+<p-confirmDialog></p-confirmDialog>
+
+<div class="container px-8" data-testid="survey-manage">
+  <!-- Back Navigation -->
+  <div class="mb-4">
+    <a routerLink="/surveys" class="inline-flex items-center text-gray-500 hover:text-gray-700 transition-colors">
+      <i class="fa-light fa-arrow-left mr-2"></i>
+      Back to {{ surveyLabel.plural }}
+    </a>
+  </div>
+
+  <!-- Page Title -->
+  <h1 class="mb-6" data-testid="survey-manage-title">
+    {{ isEditMode() ? 'Edit ' + surveyLabel.singular : 'Create ' + surveyLabel.singular }}
+  </h1>
+
+  <!-- Stepper -->
+  <p-stepper
+    [value]="currentStep()"
+    (valueChange)="goToStep($event)"
+    [linear]="!isEditMode()"
+    class="survey-manage-stepper mb-6"
+    data-testid="survey-manage-stepper">
+    <p-step-list>
+      <p-step [value]="1" data-testid="survey-manage-step-1">Audience & Type</p-step>
+      <p-step [value]="2" data-testid="survey-manage-step-2">Timing & Reminders</p-step>
+      <p-step [value]="3" data-testid="survey-manage-step-3">Email Draft</p-step>
+      <p-step [value]="4" data-testid="survey-manage-step-4">Review & Confirm</p-step>
+    </p-step-list>
+
+    <p-step-panels>
+      <!-- Form Card -->
+      <div class="bg-white rounded-lg border border-gray-200 shadow-sm px-7">
+        <!-- Navigation Controls (Above Content) -->
+        <div class="flex items-center justify-between p-6 border-b border-gray-200">
+          <!-- Previous Button -->
+          <div>
+            @if (canGoPrevious()) {
+              <lfx-button label="Previous" icon="fa-light fa-chevron-left" [text]="true" (onClick)="previousStep()" data-testid="survey-manage-previous-btn">
+              </lfx-button>
+            }
+          </div>
+
+          <!-- Right Side Buttons -->
+          <div class="flex gap-3">
+            <!-- Cancel Button - Always visible -->
+            <lfx-button label="Cancel" [outlined]="true" styleClass="border-0 text-gray-950" (onClick)="onCancel()" data-testid="survey-manage-cancel-btn">
+            </lfx-button>
+
+            <!-- Save as Draft Button - Always visible -->
+            <lfx-button label="Save as Draft" severity="secondary" [outlined]="true" (onClick)="onSaveAsDraft()" data-testid="survey-manage-draft-btn">
+            </lfx-button>
+
+            @if (isLastStep()) {
+              <!-- Submit Survey Button -->
+              <lfx-button [label]="submitButtonLabel()" [loading]="submitting()" severity="info" (onClick)="onSubmit()" data-testid="survey-manage-submit-btn">
+              </lfx-button>
+            } @else {
+              <!-- Next Button -->
+              <lfx-button
+                label="Next"
+                icon="fa-light fa-chevron-right"
+                iconPos="right"
+                [disabled]="!canGoNext()"
+                severity="info"
+                (onClick)="nextStep()"
+                data-testid="survey-manage-next-btn">
+              </lfx-button>
+            }
+          </div>
+        </div>
+
+        <!-- Step Content -->
+        <div class="p-6 md:p-8 min-h-[680px]">
+          <p-step-panel [value]="1" data-testid="survey-manage-panel-1">
+            <ng-template #content>
+              <lfx-survey-audience-type [form]="form()" [formValue]="formValue" [isEditMode]="isEditMode()"> </lfx-survey-audience-type>
+            </ng-template>
+          </p-step-panel>
+
+          <p-step-panel [value]="2" data-testid="survey-manage-panel-2">
+            <ng-template #content>
+              <lfx-survey-timing-reminders [form]="form()" [formValue]="formValue" [isEditMode]="isEditMode()"> </lfx-survey-timing-reminders>
+            </ng-template>
+          </p-step-panel>
+
+          <p-step-panel [value]="3" data-testid="survey-manage-panel-3">
+            <ng-template #content>
+              <lfx-survey-email-draft [form]="form()" [formValue]="formValue" [isEditMode]="isEditMode()"> </lfx-survey-email-draft>
+            </ng-template>
+          </p-step-panel>
+
+          <p-step-panel [value]="4" data-testid="survey-manage-panel-4">
+            <ng-template #content>
+              <lfx-survey-review [form]="form()" [isEditMode]="isEditMode()" (editStep)="goToStep($event)"> </lfx-survey-review>
+            </ng-template>
+          </p-step-panel>
+        </div>
+      </div>
+    </p-step-panels>
+  </p-stepper>
+</div>

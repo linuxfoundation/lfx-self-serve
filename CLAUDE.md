@@ -15,7 +15,10 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - [Angular 19 Development Patterns](#angular-19-development-patterns) - Zoneless change detection, signals, components
 - [Component Organization Pattern](#component-organization-pattern) - Standardized component structure
+- [Feature Modules](#feature-modules) - 10 application feature modules
 - [Shared Package (@lfx-one/shared)](#shared-package-lfx-oneshared) - Types, interfaces, constants
+- [Shared Package Utilities](#shared-package-utilities) - Generic utility modules
+- [Shared Package Validators](#shared-package-validators) - Form validators
 - [PrimeNG Component Wrappers](#primeng-component-wrappers) - UI library abstraction
 - [Path Mappings](#path-mappings) - Import aliases and conventions
 
@@ -58,23 +61,32 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LFX One is a Turborepo monorepo containing an Angular 19 SSR application with experimental zoneless change detection and Express.js server.
+LFX One is a Turborepo monorepo containing an Angular 19 SSR application with stable zoneless change detection and Express.js server.
 
 ## Monorepo Structure
 
 ```text
 lfx-v2-ui/
 ├── apps/
-│   └── lfx-one/              # Angular 19 SSR application with zoneless change detection
+│   └── lfx-one/              # Angular 19 SSR application with stable zoneless change detection
+│       ├── src/app/
+│       │   ├── layouts/      # Layout components
+│       │   ├── modules/      # 10 Feature modules (see Feature Modules section)
+│       │   └── shared/       # Shared application code
+│       │       ├── components/   # 45 UI components
+│       │       ├── pipes/        # 34 custom pipes
+│       │       └── services/     # 20 services
 │       ├── eslint.config.mjs # Angular-specific ESLint rules
 │       ├── .prettierrc       # Prettier configuration with Tailwind integration
 │       └── tailwind.config.js # Tailwind with PrimeUI plugin and LFX colors
 ├── packages/
-│   └── shared/               # Shared types, interfaces, constants, and enums
+│   └── shared/               # Shared types, interfaces, constants, utilities, and validators
 │       ├── src/
 │       │   ├── interfaces/   # TypeScript interfaces for components, auth, projects
 │       │   ├── constants/    # Design tokens (colors, font-sizes)
-│       │   └── enums/        # Shared enumerations
+│       │   ├── enums/        # Shared enumerations
+│       │   ├── utils/        # 11 utility modules (date, string, url, etc.)
+│       │   └── validators/   # 3 form validators (meeting, mailing-list, vote)
 │       ├── package.json      # Package configuration with proper exports
 │       └── tsconfig.json     # TypeScript configuration
 ├── docs/                     # Architecture and deployment documentation
@@ -194,6 +206,51 @@ interface RelativeDateInfo {
 // ✅ Import from shared package
 import { RelativeDateInfo } from '@lfx-one/shared/interfaces';
 ```
+
+## Feature Modules
+
+The application is organized into 10 feature modules under `apps/lfx-one/src/app/modules/`:
+
+| Module            | Description                                                                      |
+| ----------------- | -------------------------------------------------------------------------------- |
+| **committees**    | Committee management - view, create, and manage project committees               |
+| **dashboards**    | Role-based dashboards - personalized views for different user roles              |
+| **mailing-lists** | Mailing list management - subscribe, unsubscribe, and manage lists               |
+| **meetings**      | Meeting scheduling - create, manage, and join meetings with calendar integration |
+| **my-activity**   | User activity tracking - personal activity history and notifications             |
+| **pages**         | Static pages - about, help, and informational content                            |
+| **profile**       | User profile - profile management and account settings                           |
+| **settings**      | Application settings - preferences and configuration                             |
+| **surveys**       | Survey management - create surveys, collect responses, view NPS analytics        |
+| **votes**         | Voting system - create polls, cast votes, and view results                       |
+
+## Shared Package Utilities
+
+The shared package (`@lfx-one/shared`) provides utility modules in `packages/shared/src/utils/`:
+
+**Generic Utilities:**
+
+- `date-time.utils.ts` - Date formatting, timezone handling (`formatDate`, `formatTime`, `getRelativeDate`)
+- `string.utils.ts` - String manipulation (`parseToInt`, `truncate`)
+- `url.utils.ts` - URL parsing and construction (`buildUrl`, `parseQueryParams`)
+- `file.utils.ts` - File type detection (`getFileType`, `getFileExtension`)
+- `form.utils.ts` - Form helpers (`markFormControlsAsTouched`)
+- `html-utils.ts` - HTML sanitization (`stripHtml`)
+
+**Usage:**
+
+```typescript
+import { formatDate, getRelativeDate } from '@lfx-one/shared/utils';
+import { buildUrl, parseQueryParams } from '@lfx-one/shared/utils';
+```
+
+> **Note**: Domain-specific utilities (meetings, surveys, polls, etc.) are also available. See [Package Architecture docs](docs/architecture/shared/package-architecture.md) for complete documentation.
+
+## Shared Package Validators
+
+The shared package provides form validators in `packages/shared/src/validators/`. Import and use them in Angular reactive forms as needed.
+
+> **Note**: See [Package Architecture docs](docs/architecture/shared/package-architecture.md) for validator details and usage examples.
 
 ## Development Memories
 

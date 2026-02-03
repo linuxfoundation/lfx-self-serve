@@ -35,9 +35,11 @@ export class BoardMemberDashboardComponent {
     // Initialize board member actions with reactive pattern
     this.rawBoardMemberActions = this.initializeBoardMemberActions();
 
-    // Create filtered signal that removes hidden actions
+    // Create filtered signal that removes hidden actions and limits to 2
     this.boardMemberActions = computed(() => {
-      return this.rawBoardMemberActions().filter((item) => !this.hiddenActionsService.isActionHidden(item));
+      return this.rawBoardMemberActions()
+        .filter((item) => !this.hiddenActionsService.isActionHidden(item))
+        .slice(0, 2);
     });
   }
 

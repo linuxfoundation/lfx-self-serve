@@ -1,0 +1,70 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="survey-audience-type">
+  <!-- Step Title -->
+  <div>
+    <h2 class="text-lg font-normal text-gray-900 mb-1">Audience & NPS Survey Template</h2>
+    <p class="text-sm text-gray-500">Select who should receive this survey and choose the appropriate survey template</p>
+  </div>
+
+  <!-- Two Column Layout -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <!-- Left Column - Target Audience -->
+    <div class="flex flex-col gap-6">
+      <div>
+        <h3 class="text-base font-medium text-gray-900 mb-4">Target Audience</h3>
+        <p class="text-sm text-gray-500 mb-4">
+          The survey will be distributed to members of the selected groups. For Board groups, surveys are sent only to voting representatives.
+        </p>
+
+        <lfx-committee-checkbox-list
+          [form]="form()"
+          control="committees"
+          label="Select Groups"
+          [required]="true"
+          searchPlaceholder="Search groups..."
+          maxHeight="280px"
+          testIdPrefix="survey-committees">
+        </lfx-committee-checkbox-list>
+
+        @if (form().get('committees')?.touched && form().get('committees')?.errors) {
+          <p class="text-red-500 text-xs mt-1">Please select at least one group.</p>
+        }
+      </div>
+    </div>
+
+    <!-- Right Column - Survey Template -->
+    <div class="flex flex-col gap-6">
+      <div>
+        <h3 class="text-base font-medium text-gray-900 mb-4">NPS Survey Template <span class="text-red-500">*</span></h3>
+
+        <div class="flex flex-col gap-2">
+          <lfx-select
+            styleClass="w-full"
+            appendTo="body"
+            [form]="form()"
+            control="surveyTemplate"
+            [options]="surveyTemplateOptions"
+            optionLabel="label"
+            optionValue="value"
+            placeholder="Select Survey"
+            data-testid="survey-template-select">
+          </lfx-select>
+
+          @if (form().get('surveyTemplate')?.touched && !form().get('surveyTemplate')?.value) {
+            <p class="text-red-500 text-xs">Please select a survey template.</p>
+          }
+
+          <p class="text-sm text-gray-500 mt-2">
+            Need a new template?
+            <a href="#" (click)="$event.preventDefault()" class="text-blue-600 hover:text-blue-700 inline-flex items-center gap-1">
+              Send request
+              <i class="fa-light fa-arrow-up-right-from-square text-xs"></i>
+            </a>
+          </p>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

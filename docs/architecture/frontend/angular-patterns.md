@@ -2,7 +2,9 @@
 
 ## ⚡ Zoneless Change Detection
 
-Angular 19 introduces experimental zoneless change detection, which this application uses for improved performance.
+Angular 19 provides zoneless change detection as a stable feature, which this application uses for improved performance.
+
+> **Note**: Zoneless change detection is now stable in Angular 19. The experimental API `provideExperimentalZonelessChangeDetection()` has been replaced with `provideZonelessChangeDetection()`.
 
 ### Configuration
 
@@ -10,7 +12,7 @@ Angular 19 introduces experimental zoneless change detection, which this applica
 // app.config.ts
 export const appConfig: ApplicationConfig = {
   providers: [
-    provideExperimentalZonelessChangeDetection(),
+    provideZonelessChangeDetection(),
     provideRouter(routes),
     provideClientHydration(withEventReplay()),
     provideHttpClient(withFetch()),

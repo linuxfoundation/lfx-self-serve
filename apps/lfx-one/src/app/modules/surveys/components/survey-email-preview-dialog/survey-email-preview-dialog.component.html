@@ -1,0 +1,24 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="survey-email-preview-dialog">
+  <!-- Description -->
+  <p class="text-sm text-gray-500">This is how the email will appear to recipients. Variables have been replaced with sample data.</p>
+
+  <!-- Subject Preview -->
+  <div class="flex flex-col gap-1">
+    <label class="text-sm font-medium text-neutral-950">Subject:</label>
+    <p class="p-3 bg-gray-50 rounded-md text-sm">{{ previewSubject }}</p>
+  </div>
+
+  <!-- Body Preview -->
+  <div class="flex flex-col gap-1">
+    <label class="text-sm font-medium text-neutral-950">Body:</label>
+    <div class="p-3 bg-gray-50 rounded-md text-sm whitespace-pre-wrap">{{ previewBody }}</div>
+  </div>
+
+  <!-- Footer -->
+  <div class="flex justify-end pt-2">
+    <lfx-button label="Close" severity="secondary" [outlined]="true" (onClick)="close()" data-testid="preview-close-btn"> </lfx-button>
+  </div>
+</div>

@@ -25,7 +25,9 @@ export class MaintainerDashboardComponent {
   public readonly refresh$: BehaviorSubject<void> = new BehaviorSubject<void>(undefined);
   private readonly rawMaintainerActions = signal([]);
   public readonly maintainerActions = computed(() => {
-    return this.rawMaintainerActions().filter((item) => !this.hiddenActionsService.isActionHidden(item));
+    return this.rawMaintainerActions()
+      .filter((item) => !this.hiddenActionsService.isActionHidden(item))
+      .slice(0, 2);
   });
 
   public handleActionClick(): void {

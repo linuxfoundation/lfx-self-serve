@@ -1,0 +1,135 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="survey-timing-reminders">
+  <!-- Step Title -->
+  <div>
+    <h2 class="text-lg font-normal text-gray-900 mb-1">Timing & Reminders</h2>
+    <p class="text-sm text-gray-500">Configure when the survey should be sent and how participants will be reminded</p>
+  </div>
+
+  <!-- Two Column Layout -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <!-- Left Column - Distribution Settings -->
+    <div class="flex flex-col gap-6">
+      <div>
+        <label class="block mb-4 text-neutral-950"> When should the survey be distributed? <span class="text-red-500">*</span> </label>
+
+        <div class="flex flex-col gap-4">
+          <!-- Horizontal Option Group -->
+          <div class="grid grid-cols-2 gap-3">
+            @for (option of distributionOptions; track option.value) {
+              <label
+                class="cursor-pointer rounded-lg border-2 p-4 transition-all"
+                [class.border-blue-500]="distributionMethod() === option.value"
+                [class.bg-blue-50]="distributionMethod() === option.value"
+                [class.border-gray-300]="distributionMethod() !== option.value"
+                [class.bg-white]="distributionMethod() !== option.value"
+                [class.hover:border-gray-400]="distributionMethod() !== option.value"
+                [attr.data-testid]="'distribution-option-' + option.value">
+                <input type="radio" [checked]="distributionMethod() === option.value" (change)="setDistributionMethod(option.value)" class="sr-only" />
+                <div class="flex items-center gap-3">
+                  <div
+                    class="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0"
+                    [class.border-blue-500]="distributionMethod() === option.value"
+                    [class.border-gray-300]="distributionMethod() !== option.value"
+                    [class.bg-white]="true">
+                    @if (distributionMethod() === option.value) {
+                      <div class="w-3 h-3 rounded-full bg-blue-500"></div>
+                    }
+                  </div>
+                  <span class="text-sm font-medium text-slate-900">{{ option.label }}</span>
+                </div>
+              </label>
+            }
+          </div>
+
+          <!-- Conditional Schedule Date Field -->
+          @if (isScheduled()) {
+            <div class="flex flex-col gap-2 pt-2">
+              <label class="block mb-2 text-neutral-950"> Schedule Date <span class="text-red-500">*</span> </label>
+              <lfx-calendar
+                [form]="form()"
+                control="scheduledDate"
+                placeholder="Select date"
+                [minDate]="todayDate"
+                styleClass="w-full"
+                data-testid="scheduled-date-picker"
+                appendTo="body">
+              </lfx-calendar>
+            </div>
+          }
+
+          <!-- Cutoff Date -->
+          <div class="flex flex-col gap-2 pt-2">
+            <label class="block mb-2 text-neutral-950"> Survey Cutoff Date <span class="text-red-500">*</span> </label>
+            <p class="text-xs text-gray-500 mb-2">The date when the survey will close and no longer accept responses.</p>
+            <lfx-calendar
+              [form]="form()"
+              control="cutoffDate"
+              placeholder="Select date"
+              [minDate]="minCutoffDate()"
+              styleClass="w-full"
+              data-testid="cutoff-date-picker"
+              appendTo="body">
+            </lfx-calendar>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column - Reminder Settings -->
+    <div class="flex flex-col gap-6">
+      <div>
+        <label class="block mb-4 text-neutral-950"> How should reminders be sent? <span class="text-red-500">*</span> </label>
+
+        <div class="flex flex-col gap-4">
+          <div class="flex gap-3">
+            @for (option of reminderTypeOptions; track option.value) {
+              <label
+                class="flex-1 cursor-pointer rounded-lg border-2 p-4 transition-all"
+                [class.border-blue-500]="reminderType() === option.value"
+                [class.bg-blue-50]="reminderType() === option.value"
+                [class.border-gray-300]="reminderType() !== option.value"
+                [class.bg-white]="reminderType() !== option.value"
+                [class.hover:border-gray-400]="reminderType() !== option.value"
+                [attr.data-testid]="'reminder-type-option-' + option.value">
+                <input type="radio" [checked]="reminderType() === option.value" (change)="setReminderType(option.value)" class="sr-only" />
+                <div class="flex items-center gap-3">
+                  <div
+                    class="w-5 h-5 rounded-full border-2 flex items-center justify-center flex-shrink-0"
+                    [class.border-blue-500]="reminderType() === option.value"
+                    [class.border-gray-300]="reminderType() !== option.value"
+                    [class.bg-white]="true">
+                    @if (reminderType() === option.value) {
+                      <div class="w-3 h-3 rounded-full bg-blue-500"></div>
+                    }
+                  </div>
+                  <span class="text-sm font-medium text-slate-900">{{ option.label }}</span>
+                </div>
+              </label>
+            }
+          </div>
+
+          @if (isAutomatic()) {
+            <div class="flex flex-col gap-2 pt-2">
+              <label class="block mb-2 text-neutral-950">Reminder Frequency</label>
+              <p class="text-xs text-gray-500 mb-2">How often should automatic reminders be sent to non-respondents?</p>
+              <lfx-select
+                styleClass="w-full"
+                appendTo="body"
+                [form]="form()"
+                control="reminderFrequency"
+                [options]="reminderFrequencyOptions"
+                optionLabel="label"
+                optionValue="value"
+                placeholder="Select frequency"
+                data-testid="reminder-frequency-select">
+              </lfx-select>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

@@ -9,6 +9,8 @@ export enum SurveyStatus {
   OPEN = 'open',
   CLOSED = 'closed',
   SCHEDULED = 'scheduled',
+  DRAFT = 'draft',
+  SENT = 'sent',
 }
 
 /**

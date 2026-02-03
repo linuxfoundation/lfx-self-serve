@@ -210,7 +210,7 @@ export const DEFAULT_MEETING_TYPE_CONFIG: MeetingTypeConfig = {
  * Step titles for the meeting creation/edit stepper
  * @description Array of human-readable titles for each step in the meeting form
  */
-export const MEETING_STEP_TITLES = ['Meeting Type', 'Meeting Details', 'Platform & Features', 'Resources & Summary', 'Manage Guests'];
+export const MEETING_STEP_TITLES = ['Meeting Type', 'Meeting Details', 'Platform & Features', 'Resources & Links', 'Invite Guests'];
 
 /**
  * Total number of steps in the meeting form

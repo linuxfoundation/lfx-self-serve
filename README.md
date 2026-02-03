@@ -1,20 +1,20 @@
 # LFX One
 
 This is a monorepo for the LFX One application, built
-with Angular 19 and experimental zoneless change detection.
+with Angular 19 and zoneless change detection.
 
 ## What's inside?
 
 ### Apps and Packages
 
-- `apps/lfx-one`: Angular 19 SSR application with zoneless change detection and
+- `apps/lfx-one`: Angular 19 SSR application with stable zoneless change detection and
   direct PrimeNG UI components
 
 The app is 100% [TypeScript](https://www.typescriptlang.org/).
 
 ### Architecture
 
-- **Frontend**: Angular 19 with experimental zoneless change detection, Angular
+- **Frontend**: Angular 19 with stable zoneless change detection, Angular
   Signals, PrimeNG components, Tailwind CSS
 - **UI Framework**: PrimeNG 19 with custom LFX UI Core preset and Tailwind CSS integration
 - **Styling**: Tailwind CSS v3 with PrimeUI plugin, CSS layers architecture,
@@ -169,22 +169,53 @@ yarn lint --filter=lfx-one
 lfx-one/
 ├── apps/
 │   └── lfx-one/              # Angular 19 SSR application
-│       ├── src/app/config/   # Tailwind custom configurations
-│       │   └── styles/       # Colors and font-size configurations
+│       ├── src/app/
+│       │   ├── layouts/      # Layout components
+│       │   ├── modules/      # Feature modules (see below)
+│       │   └── shared/       # Shared code
+│       │       ├── components/   # 45 UI components
+│       │       ├── pipes/        # 34 custom pipes
+│       │       └── services/     # 20 services
 │       ├── eslint.config.mjs # Angular-specific ESLint rules
 │       ├── .prettierrc       # Prettier with Tailwind integration
 │       └── tailwind.config.js # Tailwind with PrimeUI plugin
+├── packages/
+│   └── shared/               # Shared types, interfaces, utilities
+│       ├── src/
+│       │   ├── interfaces/   # TypeScript interfaces
+│       │   ├── constants/    # Design tokens
+│       │   ├── enums/        # Shared enumerations
+│       │   ├── utils/        # 11 utility modules
+│       │   └── validators/   # 3 form validators
+│       └── package.json
 ├── docs/                     # Architecture and deployment documentation
 ├── turbo.json               # Turborepo pipeline configuration
 ├── ecosystem.config.js      # PM2 production configuration
 └── package.json             # Root workspace configuration
 ```
 
+## Feature Modules
+
+The application is organized into 10 feature modules under `apps/lfx-one/src/app/modules/`:
+
+| Module            | Description                                                                      |
+| ----------------- | -------------------------------------------------------------------------------- |
+| **committees**    | Committee management - view, create, and manage project committees               |
+| **dashboards**    | Role-based dashboards - personalized views for different user roles              |
+| **mailing-lists** | Mailing list management - subscribe, unsubscribe, and manage lists               |
+| **meetings**      | Meeting scheduling - create, manage, and join meetings with calendar integration |
+| **my-activity**   | User activity tracking - personal activity history and notifications             |
+| **pages**         | Static pages - about, help, and informational content                            |
+| **profile**       | User profile - profile management and account settings                           |
+| **settings**      | Application settings - preferences and configuration                             |
+| **surveys**       | Survey management - create surveys, collect responses, view NPS analytics        |
+| **votes**         | Voting system - create polls, cast votes, and view results                       |
+
 ## Key Features
 
 ### Angular 19 with Zoneless Change Detection
 
-- **Experimental zoneless change detection** for improved performance
+- **Stable zoneless change detection** for improved performance
 - **Angular Signals** for reactive state management (preferred over RxJS)
 - **Standalone components** with explicit imports
 - **Component prefix**: All components use `lfx-` prefix (enforced by ESLint)
@@ -317,7 +348,7 @@ export class ExampleComponent {}
 
 ### Frontend
 
-- **Angular 19** with experimental zoneless change detection
+- **Angular 19** with stable zoneless change detection
 - **Angular Signals** for state management
 - **PrimeNG 19** UI component library with custom LFX preset
 - **Tailwind CSS v3** with PrimeUI plugin

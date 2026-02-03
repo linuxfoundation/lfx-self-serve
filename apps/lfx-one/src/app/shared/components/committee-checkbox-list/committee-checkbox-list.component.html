@@ -1,0 +1,76 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-3" [attr.data-testid]="testIdPrefix()">
+  <!-- Label -->
+  @if (label()) {
+    <label class="text-sm font-medium text-gray-700">
+      {{ label() }}
+      @if (required()) {
+        <span class="text-red-500">*</span>
+      }
+    </label>
+  }
+
+  <!-- Description -->
+  @if (description()) {
+    <p class="text-sm text-gray-500">{{ description() }}</p>
+  }
+
+  @if (committeesLoading()) {
+    <!-- Loading State -->
+    <div class="flex items-center gap-2 p-3 bg-gray-50 rounded-lg border border-gray-200">
+      <i class="fa-light fa-circle-notch fa-spin text-blue-600"></i>
+      <span class="text-sm text-gray-500">Loading groups...</span>
+    </div>
+  } @else {
+    <!-- Search Field -->
+    <div class="relative">
+      <i class="fa-light fa-search absolute left-3 top-1/2 -translate-y-1/2 text-gray-400 text-sm"></i>
+      <lfx-input-text
+        [form]="searchForm"
+        control="search"
+        [placeholder]="searchPlaceholder()"
+        size="small"
+        styleClass="w-full pl-9"
+        [attr.data-testid]="testIdPrefix() + '-search'">
+      </lfx-input-text>
+    </div>
+
+    <!-- Checkbox List -->
+    <div class="border border-gray-300 rounded-lg overflow-hidden">
+      <div class="overflow-y-auto" [style.max-height]="maxHeight()">
+        @for (option of filteredOptions(); track option.id) {
+          <label
+            class="flex items-center gap-3 px-3 py-2.5 hover:bg-slate-50 cursor-pointer border-b border-gray-100 last:border-b-0"
+            [attr.data-testid]="testIdPrefix() + '-option-' + option.id">
+            <p-checkbox [binary]="true" [ngModel]="isSelected(option)" (ngModelChange)="toggleSelection(option)" styleClass="mr-0"> </p-checkbox>
+            <div class="flex-1 flex items-center justify-between min-w-0">
+              <span class="text-sm text-gray-900 truncate">{{ option.name }}</span>
+              @if (option.memberCount !== undefined) {
+                <span class="text-xs text-gray-500 flex-shrink-0 ml-2">{{ option.memberCount }} participants</span>
+              }
+            </div>
+          </label>
+        } @empty {
+          <div class="px-3 py-4 text-center text-sm text-gray-500">
+            @if (searchQuery()) {
+              No groups found matching "{{ searchQuery() }}"
+            } @else {
+              No groups available
+            }
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Selection Summary -->
+    @if (selectedItems().length > 0) {
+      <div class="p-3 bg-blue-50 border border-blue-200 rounded-lg" [attr.data-testid]="testIdPrefix() + '-summary'">
+        <p class="text-sm text-gray-900">
+          This survey will go to <span class="font-semibold">{{ totalParticipants() }} participants</span> in {{ selectedGroupNames() }}.
+        </p>
+      </div>
+    }
+  }
+</div>

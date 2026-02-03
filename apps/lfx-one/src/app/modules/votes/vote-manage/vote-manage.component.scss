@@ -2,11 +2,5 @@
 // SPDX-License-Identifier: MIT
 
 :host {
-  display: block;
-}
-
-::ng-deep .vote-manage-stepper {
-  .p-stepper-header {
-    flex: 1;
-  }
+  @apply block;
 }

@@ -21,6 +21,10 @@
 
   .p-button.p-button-text {
     @apply ring-0 outline-none;
+
+    &.p-button-primary:not(:disabled):hover {
+      @apply bg-blue-100 text-black;
+    }
   }
 
   /* Small button sizing for cards */

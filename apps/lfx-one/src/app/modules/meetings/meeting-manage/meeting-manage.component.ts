@@ -69,6 +69,7 @@ import { MeetingTypeSelectionComponent } from '../components/meeting-type-select
   ],
   providers: [ConfirmationService],
   templateUrl: './meeting-manage.component.html',
+  styleUrl: './meeting-manage.component.scss',
 })
 export class MeetingManageComponent {
   private readonly router = inject(Router);

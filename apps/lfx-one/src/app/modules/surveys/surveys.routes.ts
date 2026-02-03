@@ -11,4 +11,14 @@ export const SURVEY_ROUTES: Routes = [
     canActivate: [authGuard],
     data: { preload: true, preloadDelay: 1500 },
   },
+  {
+    path: 'create',
+    loadComponent: () => import('./survey-manage/survey-manage.component').then((m) => m.SurveyManageComponent),
+    canActivate: [authGuard],
+  },
+  {
+    path: ':id/edit',
+    loadComponent: () => import('./survey-manage/survey-manage.component').then((m) => m.SurveyManageComponent),
+    canActivate: [authGuard],
+  },
 ];

@@ -1,0 +1,104 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6" data-testid="survey-email-draft">
+  <!-- Step Title -->
+  <div>
+    <h2 class="text-lg font-normal text-gray-900 mb-1">What would you like to say to your participants?</h2>
+    <p class="text-sm text-gray-500">Your survey will be distributed via email. Customize the subject and message below.</p>
+  </div>
+
+  <!-- Two Column Layout -->
+  <div class="grid grid-cols-1 lg:grid-cols-[1fr_320px] gap-6">
+    <!-- Left Column - Email Form -->
+    <div class="flex flex-col gap-6">
+      <!-- Email Subject -->
+      <div class="flex flex-col gap-2">
+        <label class="block text-neutral-950 text-sm"> Subject Line <span class="text-red-500">*</span> </label>
+        <lfx-input-text
+          [form]="form()"
+          control="emailSubject"
+          placeholder="Enter email subject"
+          size="small"
+          styleClass="w-full"
+          data-testid="email-subject-input">
+        </lfx-input-text>
+        @if (form().get('emailSubject')?.touched && form().get('emailSubject')?.errors) {
+          <p class="text-red-500 text-xs">Please enter an email subject.</p>
+        }
+      </div>
+
+      <!-- Email Body -->
+      <div class="flex flex-col gap-2">
+        <label class="block text-neutral-950 text-sm"> Body <span class="text-red-500">*</span> </label>
+        <lfx-textarea
+          [form]="form()"
+          control="emailBody"
+          placeholder="Enter email body"
+          [rows]="12"
+          styleClass="w-full text-sm"
+          data-testid="email-body-textarea">
+        </lfx-textarea>
+        @if (form().get('emailBody')?.touched && form().get('emailBody')?.errors) {
+          <p class="text-red-500 text-xs">Please enter the email body content.</p>
+        }
+      </div>
+
+      <!-- Tip and Preview Button -->
+      <div class="flex flex-col gap-3">
+        <p class="text-sm text-gray-500">Tip: Use custom variables from the sidebar to personalize your message.</p>
+        <div>
+          <lfx-button
+            label="Preview Email"
+            icon="fa-light fa-eye"
+            [outlined]="true"
+            severity="secondary"
+            (onClick)="openPreview()"
+            data-testid="preview-email-btn">
+          </lfx-button>
+        </div>
+      </div>
+    </div>
+
+    <!-- Right Column - Custom Variables -->
+    <div class="flex flex-col gap-2">
+      <!-- Invisible label for alignment -->
+      <label class="block text-neutral-950 text-sm opacity-0 pointer-events-none">&nbsp;</label>
+
+      <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+        <h3 class="text-sm font-semibold text-neutral-950 mb-1">Custom Variables</h3>
+        <p class="text-xs text-gray-500 mb-4">Click to copy and paste into your email.</p>
+
+        <div class="flex flex-col gap-4">
+          @for (groupKey of variableGroups; track groupKey) {
+            <div>
+              <h4 class="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                {{ templateVariables[groupKey].label }}
+              </h4>
+              <div class="flex flex-col gap-1">
+                @for (variable of templateVariables[groupKey].variables; track variable) {
+                  <button
+                    type="button"
+                    (click)="copyVariable(variable)"
+                    class="w-full text-left px-3 py-1.5 rounded text-xs font-mono transition-colors"
+                    [class.bg-green-100]="copiedVariable() === variable"
+                    [class.text-green-700]="copiedVariable() === variable"
+                    [class.bg-white]="copiedVariable() !== variable"
+                    [class.text-gray-700]="copiedVariable() !== variable"
+                    [class.hover:bg-gray-100]="copiedVariable() !== variable"
+                    [attr.data-testid]="'variable-btn-' + variable">
+                    @if (copiedVariable() === variable) {
+                      <i class="fa-solid fa-check mr-1"></i> Copied!
+                    } @else {
+                      {{ variable }}
+                    }
+                  </button>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    </div>
+  </div>
+</div>

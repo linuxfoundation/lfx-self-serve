@@ -2,20 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 import { Pipe, PipeTransform } from '@angular/core';
-import { SurveyStatus, SURVEY_STATUS_SEVERITY, TagSeverity } from '@lfx-one/shared';
+import { Survey, SURVEY_STATUS_SEVERITY, TagSeverity } from '@lfx-one/shared';
+import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 
 /**
- * Transforms survey status to tag severity for consistent styling
- * @description Maps SurveyStatus enum values to appropriate tag colors
+ * Transforms survey to tag severity for consistent styling
+ * @description Computes display status from survey_status and survey_cutoff_date, then maps to appropriate tag colors
  * @example
  * <!-- In template -->
- * <lfx-tag [severity]="survey.survey_status | surveyStatusSeverity">{{ survey.survey_status }}</lfx-tag>
+ * <lfx-tag [severity]="survey | surveyStatusSeverity">{{ survey | surveyStatusLabel }}</lfx-tag>
  */
 @Pipe({
   name: 'surveyStatusSeverity',
 })
 export class SurveyStatusSeverityPipe implements PipeTransform {
-  public transform(status: SurveyStatus): TagSeverity {
-    return SURVEY_STATUS_SEVERITY[status] ?? 'secondary';
+  public transform(survey: Pick<Survey, 'survey_status' | 'survey_cutoff_date'>): TagSeverity {
+    const displayStatus = getSurveyDisplayStatus(survey);
+    return SURVEY_STATUS_SEVERITY[displayStatus] ?? 'secondary';
   }
 }

@@ -2,26 +2,58 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8">
-  <div class="mb-8">
-    <h1>{{ surveyLabelPlural }}</h1>
-    <p class="mt-2 text-gray-500" data-testid="surveys-dashboard-description">Create and manage surveys to gather feedback from your community.</p>
+  <!-- Page Header -->
+  <div class="flex items-center justify-between mb-8">
+    <div>
+      <h1 data-testid="surveys-dashboard-title">{{ surveyLabelPlural }}</h1>
+      <p class="mt-2 text-gray-500" data-testid="surveys-dashboard-description">Create and manage surveys to gather feedback from your community.</p>
+    </div>
+    @if (hasPMOAccess()) {
+      <lfx-button
+        [label]="'Create ' + surveyLabel"
+        size="small"
+        icon="fa-light fa-clipboard-list"
+        severity="primary"
+        [routerLink]="['/surveys', 'create']"
+        data-testid="surveys-create-button">
+      </lfx-button>
+    }
   </div>
 
-  <!-- Coming Soon Placeholder -->
-  <lfx-card data-testid="surveys-coming-soon-card">
-    <div class="p-8 md:p-12">
-      <div class="max-w-2xl mx-auto text-center flex flex-col gap-6">
-        <div class="flex justify-center">
-          <div class="w-20 h-20 rounded-full bg-violet-100 flex items-center justify-center">
-            <i class="fa-light fa-clipboard-list text-4xl text-violet-600"></i>
+  <!-- Surveys Table or Empty State -->
+  @if (!loading() && surveys().length === 0) {
+    <lfx-card data-testid="surveys-empty-state-card">
+      <div class="p-8 md:p-12">
+        <div class="max-w-2xl mx-auto text-center flex flex-col gap-6">
+          <div class="flex justify-center">
+            <div class="w-20 h-20 rounded-full bg-violet-100 flex items-center justify-center">
+              <i class="fa-light fa-clipboard-list text-4xl text-violet-600"></i>
+            </div>
           </div>
+          <h2 class="text-xl font-semibold text-gray-900">No {{ surveyLabelPlural | lowercase }} yet</h2>
+          <p class="text-gray-600">Create a {{ surveyLabel | lowercase }} to gather feedback from your project community.</p>
         </div>
-        <h2 class="text-xl font-semibold text-gray-900">{{ surveyLabelPlural }} Coming Soon</h2>
-        <p class="text-gray-600">
-          The surveys feature is currently under development. Soon you'll be able to create, distribute, and analyze surveys to gather valuable feedback from
-          your project community.
-        </p>
       </div>
-    </div>
-  </lfx-card>
+    </lfx-card>
+  } @else {
+    <lfx-surveys-table
+      [surveys]="surveys()"
+      [hasPMOAccess]="hasPMOAccess()"
+      [loading]="loading()"
+      (viewResults)="onViewResults($event)"
+      (rowClick)="onRowClick($event)"
+      (refresh)="refreshSurveys()"
+      data-testid="surveys-table-container">
+    </lfx-surveys-table>
+  }
 </div>
+
+<!-- Survey Results Drawer -->
+<lfx-survey-results-drawer
+  [(visible)]="resultsDrawerVisible"
+  [survey]="selectedSurvey()"
+  [hasPMOAccess]="hasPMOAccess()"
+  (duplicate)="onDuplicateSurvey($event)"
+  (closeSurvey)="onCloseSurvey($event)"
+  data-testid="survey-results-drawer">
+</lfx-survey-results-drawer>
