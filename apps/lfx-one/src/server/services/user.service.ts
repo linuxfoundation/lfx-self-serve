@@ -469,9 +469,11 @@ export class UserService {
    * @param req - Express request object
    * @param email - User's email address for registration check
    * @param projectUid - Project UID to filter meetings by
+   * @param query - Query parameters for filtering
+   * @param limit - Optional limit on number of meetings to return
    * @returns Array of Meeting objects the user is registered for
    */
-  public async getUserMeetings(req: Request, email: string, projectUid: string, query: Record<string, any>): Promise<Meeting[]> {
+  public async getUserMeetings(req: Request, email: string, projectUid: string, query: Record<string, any>, limit?: number): Promise<Meeting[]> {
     // Step 1: Get all meetings the user has access to, filtered by project
     // Note: Writers have API access to all meetings, but we still filter by registration
     const meetings = await this.meetingService.getMeetings(req, query, 'meeting', false);
@@ -495,7 +497,12 @@ export class UserService {
     // Step 2: Filter ALL meetings by registration status
     // For "my meetings", we only show meetings the user is actually registered for
     // This applies to both public and private meetings, regardless of writer status
-    const filteredMeetings = await this.filterMeetingsByRegistration(req, allMeetings, email, m2mToken, baseUrl);
+    let filteredMeetings = await this.filterMeetingsByRegistration(req, allMeetings, email, m2mToken, baseUrl);
+
+    // Step 3: Apply limit if specified
+    if (limit !== undefined && limit > 0) {
+      filteredMeetings = filteredMeetings.slice(0, limit);
+    }
 
     return filteredMeetings;
   }

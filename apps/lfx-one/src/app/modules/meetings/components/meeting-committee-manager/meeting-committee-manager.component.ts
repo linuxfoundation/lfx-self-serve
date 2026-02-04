@@ -1,18 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { TitleCasePipe } from '@angular/common';
 import { Component, computed, DestroyRef, inject, input, InputSignal, output, OutputEmitterRef, signal, Signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MultiSelectComponent } from '@components/multi-select/multi-select.component';
-import { TableComponent } from '@components/table/table.component';
 import { Committee, CommitteeMember, MeetingCommittee } from '@lfx-one/shared';
 import { COMMITTEE_LABEL, VOTING_STATUSES } from '@lfx-one/shared/constants';
 import { CommitteeService } from '@services/committee.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, filter, forkJoin, map, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, filter, forkJoin, map, of, switchMap, tap } from 'rxjs';
 
 interface CommitteeMemberDisplay extends CommitteeMember {
   committeeName: string;
@@ -21,7 +19,7 @@ interface CommitteeMemberDisplay extends CommitteeMember {
 
 @Component({
   selector: 'lfx-meeting-committee-manager',
-  imports: [TitleCasePipe, ReactiveFormsModule, MultiSelectComponent, TableComponent, TooltipModule],
+  imports: [ReactiveFormsModule, MultiSelectComponent, TooltipModule],
   templateUrl: './meeting-committee-manager.component.html',
 })
 export class MeetingCommitteeManagerComponent {
@@ -36,6 +34,7 @@ export class MeetingCommitteeManagerComponent {
 
   // Outputs
   public readonly committeesChange: OutputEmitterRef<MeetingCommittee[]> = output<MeetingCommittee[]>();
+  public readonly committeeMembersChange: OutputEmitterRef<CommitteeMember[]> = output<CommitteeMember[]>();
 
   // State management
   public selectedCommitteeIds: WritableSignal<string[]> = signal([]);
@@ -59,21 +58,6 @@ export class MeetingCommitteeManagerComponent {
     const selectedIds = this.selectedCommitteeIds();
     const committees = this.committeeOptions();
     return committees.some((c) => selectedIds.includes(c.uid) && c.enable_voting);
-  });
-
-  public tableColspan = computed(() => {
-    const hasVoting = this.hasVotingEnabledCommittee();
-    const hasMultipleCommittees = this.selectedCommitteeIds().length > 1;
-
-    if (hasVoting) {
-      return 5; // Name, Organization, Committee, Role, Voting Status
-    }
-
-    if (hasMultipleCommittees) {
-      return 3; // Name, Organization, Committee
-    }
-
-    return 2; // Name, Organization
   });
 
   public constructor() {
@@ -114,10 +98,18 @@ export class MeetingCommitteeManagerComponent {
         this.updateParentForm(this.selectedCommitteeIds());
       });
 
-    // Subscribe to selected committees changes
-    toObservable(this.selectedCommittees)
+    // Subscribe to selected committees changes - wait for options to load first
+    combineLatest([toObservable(this.selectedCommittees), toObservable(this.committeeOptions)])
+      .pipe(
+        takeUntilDestroyed(),
+        filter(([, options]) => options.length > 0) // Only proceed when options are loaded
+      )
+      .subscribe(([committees]) => this.initializeFromSelectedCommittees(committees));
+
+    // Emit committee members whenever they change
+    toObservable(this.filteredCommitteeMembers)
       .pipe(takeUntilDestroyed())
-      .subscribe((committees) => this.initializeFromSelectedCommittees(committees));
+      .subscribe((members) => this.committeeMembersChange.emit(members));
   }
 
   /**

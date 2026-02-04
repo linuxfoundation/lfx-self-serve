@@ -257,6 +257,38 @@ export interface QuestionFormData {
 }
 
 /**
+ * Form value structure for a question in the vote form
+ * @description Represents the raw form values extracted from the question FormGroup
+ */
+export interface QuestionFormValue {
+  /** Question text/prompt */
+  question: string;
+  /** Response type - single or multiple choice */
+  response_type: 'single' | 'multiple';
+  /** Array of option texts */
+  options: string[];
+}
+
+/**
+ * Form value structure for the vote creation/edit form
+ * @description Represents the raw form values extracted from the vote FormGroup
+ */
+export interface VoteFormValue {
+  /** Vote title */
+  title: string;
+  /** Vote description */
+  description: string;
+  /** Selected committee reference (contains uid and other metadata) */
+  committee: CommitteeReference | null;
+  /** Eligible participants filter value */
+  eligible_participants: string;
+  /** Vote close/end date */
+  close_date: Date | null;
+  /** Array of question form values */
+  questions: QuestionFormValue[];
+}
+
+/**
  * Processed question data for the vote review step
  * @description Used for displaying question summary in the review step
  */

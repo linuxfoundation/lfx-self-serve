@@ -45,25 +45,29 @@ export class MyMeetingsComponent {
       const meetings: MeetingWithOccurrence[] = [];
 
       for (const meeting of this.allMeetings()) {
-        // Process occurrences if they exist
+        // Process occurrences if they exist - find the FIRST active occurrence for today
         if (meeting.occurrences && meeting.occurrences.length > 0) {
-          // Get only active (non-cancelled) occurrences
-          const activeOccurrences = getActiveOccurrences(meeting.occurrences);
+          // Get only active (non-cancelled) occurrences, sorted by start_time for stable selection
+          const activeOccurrences = getActiveOccurrences(meeting.occurrences).sort(
+            (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+          );
 
-          for (const occurrence of activeOccurrences) {
+          // Find the first occurrence that's happening today and hasn't ended
+          const todayOccurrence = activeOccurrences.find((occurrence) => {
             const startTime = new Date(occurrence.start_time);
             const startTimeMs = startTime.getTime();
             const endTime = startTimeMs + occurrence.duration * 60 * 1000 + buffer;
+            return startTime >= today && startTime < todayEnd && endTime >= currentTime;
+          });
 
-            // Include if meeting is today and hasn't ended yet (including buffer)
-            if (startTime >= today && startTime < todayEnd && endTime >= currentTime) {
-              meetings.push({
-                meeting,
-                occurrence,
-                sortTime: startTimeMs,
-                trackId: `${meeting.uid}-${occurrence.occurrence_id}`,
-              });
-            }
+          if (todayOccurrence) {
+            const startTimeMs = new Date(todayOccurrence.start_time).getTime();
+            meetings.push({
+              meeting,
+              occurrence: todayOccurrence,
+              sortTime: startTimeMs,
+              trackId: meeting.uid,
+            });
           }
         } else {
           // Handle meetings without occurrences (single meetings)
@@ -103,24 +107,27 @@ export class MyMeetingsComponent {
       const meetings: MeetingWithOccurrence[] = [];
 
       for (const meeting of this.allMeetings()) {
-        // Process occurrences if they exist
+        // Process occurrences if they exist - find the FIRST active occurrence after today
         if (meeting.occurrences && meeting.occurrences.length > 0) {
-          // Get only active (non-cancelled) occurrences
-          const activeOccurrences = getActiveOccurrences(meeting.occurrences);
+          // Get only active (non-cancelled) occurrences, sorted by start_time for stable selection
+          const activeOccurrences = getActiveOccurrences(meeting.occurrences).sort(
+            (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+          );
 
-          for (const occurrence of activeOccurrences) {
+          // Find the first occurrence that's after today
+          const upcomingOccurrence = activeOccurrences.find((occurrence) => {
             const startTime = new Date(occurrence.start_time);
-            const startTimeMs = startTime.getTime();
+            return startTime >= todayEnd;
+          });
 
-            // Include if meeting is after today
-            if (startTime >= todayEnd) {
-              meetings.push({
-                meeting,
-                occurrence,
-                sortTime: startTimeMs,
-                trackId: `${meeting.uid}-${occurrence.occurrence_id}`,
-              });
-            }
+          if (upcomingOccurrence) {
+            const startTimeMs = new Date(upcomingOccurrence.start_time).getTime();
+            meetings.push({
+              meeting,
+              occurrence: upcomingOccurrence,
+              sortTime: startTimeMs,
+              trackId: meeting.uid,
+            });
           }
         } else {
           // Handle meetings without occurrences (single meetings)
@@ -164,7 +171,8 @@ export class MyMeetingsComponent {
             return of([]);
           }
 
-          return this.userService.getUserMeetings(project.uid).pipe(
+          // Limit to 2 meetings for the dashboard display
+          return this.userService.getUserMeetings(project.uid, 2).pipe(
             tap(() => this.loading.set(false)),
             catchError((error) => {
               console.error('Failed to load user meetings:', error);

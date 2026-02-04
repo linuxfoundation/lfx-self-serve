@@ -8,10 +8,11 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { COMMITTEE_LABEL, OPEN_VOTE_CONFIRMATION, VOTE_LABEL, VOTE_TOTAL_STEPS } from '@lfx-one/shared/constants';
 import { PollStatus, PollType } from '@lfx-one/shared/enums';
-import { CommitteeReference, Vote } from '@lfx-one/shared/interfaces';
-import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { CommitteeReference, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
+import { buildCreateVoteRequest, markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { trimmedMinLength, trimmedRequired, validCommitteeReference } from '@lfx-one/shared/validators';
 import { ProjectContextService } from '@services/project-context.service';
+import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
@@ -43,6 +44,7 @@ export class VoteManageComponent {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly voteService = inject(VoteService);
 
   // Protected constants
   public readonly totalSteps = VOTE_TOTAL_STEPS;
@@ -111,11 +113,44 @@ export class VoteManageComponent {
   }
 
   public onSaveAsDraft(): void {
-    // TODO: Implement save as draft functionality
-    this.messageService.add({
-      severity: 'info',
-      summary: 'Draft',
-      detail: `${this.voteLabel.singular} saved as draft`,
+    if (this.form().invalid) {
+      this.markAllFormControlsAsTouched();
+      return;
+    }
+
+    const project = this.project();
+    if (!project?.uid) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'No project selected',
+      });
+      return;
+    }
+
+    this.submitting.set(true);
+
+    const formValue = this.form().value as VoteFormValue;
+    const createRequest = buildCreateVoteRequest(formValue, project.uid);
+
+    this.voteService.createVote(createRequest).subscribe({
+      next: () => {
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Success',
+          detail: `${this.voteLabel.singular} saved as draft`,
+        });
+        this.submitting.set(false);
+        this.router.navigate(['/votes']);
+      },
+      error: (error) => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: `Failed to save ${this.voteLabel.singular.toLowerCase()} as draft: ${error.message || 'Unknown error'}`,
+        });
+        this.submitting.set(false);
+      },
     });
   }
 
@@ -166,19 +201,55 @@ export class VoteManageComponent {
 
   // Private methods
   private submitVote(): void {
+    const project = this.project();
+    if (!project?.uid) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'No project selected',
+      });
+      return;
+    }
+
     this.submitting.set(true);
 
-    // TODO: Implement actual API call
-    // For now, simulate success
-    setTimeout(() => {
-      this.messageService.add({
-        severity: 'success',
-        summary: 'Success',
-        detail: `${this.voteLabel.singular} ${this.isEditMode() ? 'updated' : 'opened'} successfully`,
-      });
-      this.submitting.set(false);
-      this.router.navigate(['/votes']);
-    }, 1000);
+    const formValue = this.form().value as VoteFormValue;
+    const createRequest = buildCreateVoteRequest(formValue, project.uid);
+
+    // Create the vote first, then enable it to open immediately
+    this.voteService.createVote(createRequest).subscribe({
+      next: (createdVote) => {
+        // After creating, enable the vote to open it
+        this.voteService.enableVote(createdVote.vote_uid).subscribe({
+          next: () => {
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Success',
+              detail: `${this.voteLabel.singular} opened successfully`,
+            });
+            this.submitting.set(false);
+            this.router.navigate(['/votes']);
+          },
+          error: (error) => {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: `${this.voteLabel.singular} created but failed to enable: ${error.message || 'Unknown error'}`,
+            });
+            this.submitting.set(false);
+            this.router.navigate(['/votes']);
+          },
+        });
+      },
+      error: (error) => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: `Failed to create ${this.voteLabel.singular.toLowerCase()}: ${error.message || 'Unknown error'}`,
+        });
+        this.submitting.set(false);
+      },
+    });
   }
 
   // Private initializer functions

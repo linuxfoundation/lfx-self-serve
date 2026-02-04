@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, signal } from '@angular/core';
+import { Component, input, output, signal } from '@angular/core';
 import { toObservable } from '@angular/core/rxjs-interop';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
@@ -20,6 +20,9 @@ export class RegistrantFormComponent {
   // Inputs
   public form = input.required<FormGroup>();
   public registrant = input<MeetingRegistrant | null>(null);
+
+  // Output event for when a user is selected from search (for direct add)
+  public readonly onUserSelected = output<void>();
 
   // State to track whether we're showing search or individual fields
   public showIndividualFields = signal(false);
@@ -40,12 +43,13 @@ export class RegistrantFormComponent {
   /**
    * Handle user selection from search component
    * The form controls are already populated by the search component
+   * Emit event for parent to add the user directly to the guest list
    */
   public handleUserSelection(): void {
     // The search component has already populated the form controls
-    // Now show the individual input fields
-    this.showIndividualFields.set(true);
+    // Emit event so parent can add the user directly
     this.form().markAsDirty();
+    this.onUserSelected.emit();
   }
 
   /**

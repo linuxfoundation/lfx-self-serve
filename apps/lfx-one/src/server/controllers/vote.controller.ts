@@ -164,4 +164,39 @@ export class VoteController {
       next(error);
     }
   }
+
+  /**
+   * PUT /votes/:uid/enable
+   */
+  public async enableVote(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'enable_vote', {
+      vote_uid: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'enable_vote',
+          service: 'vote_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      const vote = await this.voteService.enableVote(req, uid);
+
+      logger.success(req, 'enable_vote', startTime, {
+        vote_uid: uid,
+        project_uid: vote.project_uid,
+        name: vote.name,
+        status: vote.status,
+      });
+
+      res.json(vote);
+    } catch (error) {
+      next(error);
+    }
+  }
 }

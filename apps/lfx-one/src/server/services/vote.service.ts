@@ -123,4 +123,22 @@ export class VoteService {
     // Step 2: Delete vote with ETag
     await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, etag, 'delete_vote');
   }
+
+  /**
+   * Enables a vote (changes status from disabled to active)
+   */
+  public async enableVote(req: Request, voteUid: string): Promise<Vote> {
+    logger.debug(req, 'enable_vote', 'Enabling vote', {
+      vote_uid: voteUid,
+    });
+
+    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}/enable`, 'PUT');
+
+    logger.debug(req, 'enable_vote', 'Vote enabled successfully', {
+      vote_uid: voteUid,
+      status: vote.status,
+    });
+
+    return vote;
+  }
 }

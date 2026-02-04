@@ -80,4 +80,14 @@ export class VoteService {
       })
     );
   }
+
+  public enableVote(voteUid: string): Observable<Vote> {
+    return this.http.put<Vote>(`/api/votes/${voteUid}/enable`, {}).pipe(
+      take(1),
+      catchError((error) => {
+        console.error(`Failed to enable vote ${voteUid}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
 }

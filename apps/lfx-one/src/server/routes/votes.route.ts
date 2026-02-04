@@ -24,4 +24,7 @@ router.put('/:uid', (req, res, next) => voteController.updateVote(req, res, next
 // DELETE /votes/:uid - delete a vote
 router.delete('/:uid', (req, res, next) => voteController.deleteVote(req, res, next));
 
+// PUT /votes/:uid/enable - enable a vote
+router.put('/:uid/enable', (req, res, next) => voteController.enableVote(req, res, next));
+
 export default router;

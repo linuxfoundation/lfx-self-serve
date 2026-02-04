@@ -129,9 +129,14 @@ export class UserService {
    * Gets all meetings for the current authenticated user filtered by project
    * Returns meetings the user is registered for or has access to
    * @param projectUid - Project UID to filter meetings by
+   * @param limit - Optional limit on number of meetings to return
    */
-  public getUserMeetings(projectUid: string): Observable<Meeting[]> {
-    return this.http.get<Meeting[]>('/api/user/meetings', { params: { projectUid } }).pipe(
+  public getUserMeetings(projectUid: string, limit?: number): Observable<Meeting[]> {
+    const params: Record<string, string> = { projectUid };
+    if (limit !== undefined) {
+      params['limit'] = limit.toString();
+    }
+    return this.http.get<Meeting[]>('/api/user/meetings', { params }).pipe(
       catchError((error) => {
         console.error('Failed to load user meetings:', error);
         return of([]);

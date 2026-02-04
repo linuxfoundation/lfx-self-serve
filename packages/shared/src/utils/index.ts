@@ -12,3 +12,4 @@ export * from './string.utils';
 export * from './url.utils';
 export * from './poll.utils';
 export * from './survey.utils';
+export * from './vote.utils';

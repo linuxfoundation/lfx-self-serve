@@ -48,6 +48,7 @@ import { UserService } from '@services/user.service';
 import { AnimateOnScrollModule } from 'primeng/animateonscroll';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, map, of, switchMap, take, tap } from 'rxjs';
@@ -67,6 +68,7 @@ import { PublicRegistrationModalComponent } from '../../components/public-regist
     TooltipModule,
     AnimateOnScrollModule,
     ConfirmDialogModule,
+    DrawerModule,
     ExpandableTextComponent,
     LinkifyPipe,
     FileTypeIconPipe,
@@ -96,6 +98,7 @@ export class MeetingCardComponent implements OnInit {
   public readonly showBorder = input<boolean>(false);
 
   public showRegistrants: WritableSignal<boolean> = signal(false);
+  public showMyRsvp: WritableSignal<boolean> = signal(false);
   public meeting: WritableSignal<Meeting | PastMeeting> = signal({} as Meeting | PastMeeting);
   public occurrence: WritableSignal<MeetingOccurrence | null> = signal(null);
   public recording: WritableSignal<PastMeetingRecording | null> = signal(null);
@@ -137,6 +140,11 @@ export class MeetingCardComponent implements OnInit {
   public readonly isInvited: Signal<boolean> = computed(() => this.meeting().invited ?? false);
   public readonly canRegisterForMeeting: Signal<boolean> = computed(
     () => !this.isInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
+  );
+  // Computed signal to check if user can toggle between RSVP Details and RSVP Button Group
+  // True when user is both an organizer AND invited to the meeting (for non-past, non-legacy meetings)
+  public readonly canToggleRsvpView: Signal<boolean> = computed(
+    () => !!this.meeting().organizer && this.isInvited() && !this.pastMeeting() && !this.isLegacyMeeting()
   );
 
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
@@ -212,6 +220,14 @@ export class MeetingCardComponent implements OnInit {
     }
 
     this.showRegistrants.set(!this.showRegistrants());
+  }
+
+  public onRsvpViewToggle(): void {
+    this.showMyRsvp.set(!this.showMyRsvp());
+  }
+
+  public onDrawerHide(): void {
+    this.showRegistrants.set(false);
   }
 
   public openCommitteeModal(): void {

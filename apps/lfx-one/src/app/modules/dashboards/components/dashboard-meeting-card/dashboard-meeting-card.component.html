@@ -11,6 +11,14 @@
         [severity]="meetingTypeInfo().severity"
         [icon]="meetingTypeInfo().icon"
         data-testid="dashboard-meeting-card-type-badge"></lfx-tag>
+      @if (isRecurring()) {
+        <lfx-tag
+          [value]="meeting().recurrence | recurrenceSummary"
+          severity="secondary"
+          icon="fa-light fa-repeat"
+          pTooltip="This is a recurring meeting"
+          data-testid="dashboard-meeting-card-recurring-badge"></lfx-tag>
+      }
     </div>
 
     <!-- Meeting title with file icons -->

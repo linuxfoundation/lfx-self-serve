@@ -731,10 +731,23 @@ export class MeetingService {
       // Handle response - it might be wrapped in { data: [] } or be a direct array
       const allRsvps = response.rsvps ?? [];
 
-      // Filter for current user's RSVP (optionally by occurrence)
-      const userRsvp = allRsvps.find((rsvp) => rsvp.username === username && (!occurrenceId || rsvp.occurrence_id === occurrenceId));
+      // Filter RSVPs for current user
+      const userRsvps = allRsvps.filter((rsvp) => rsvp.username === username);
 
-      return userRsvp || null;
+      if (occurrenceId) {
+        // First try to find an occurrence-specific RSVP (takes precedence)
+        const occurrenceRsvp = userRsvps.find((rsvp) => rsvp.occurrence_id === occurrenceId);
+        if (occurrenceRsvp) {
+          return occurrenceRsvp;
+        }
+
+        // Fall back to meeting-level RSVP (no occurrence_id means RSVP for all occurrences)
+        const meetingRsvp = userRsvps.find((rsvp) => !rsvp.occurrence_id);
+        return meetingRsvp || null;
+      }
+
+      // No occurrence specified - return any RSVP for this user
+      return userRsvps[0] || null;
     } catch (error) {
       logger.warning(req, 'get_meeting_rsvp_by_username', 'Failed to fetch user RSVP, returning null', {
         meeting_uid: meetingUid,

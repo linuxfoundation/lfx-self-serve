@@ -19,7 +19,7 @@
 
       <!-- Search People / Add Guest Form (always visible) -->
       <div class="border border-gray-200 rounded-lg p-4">
-        <lfx-registrant-form [form]="addRegistrantForm" [registrant]="null"> </lfx-registrant-form>
+        <lfx-registrant-form [form]="addRegistrantForm" [registrant]="null" (onUserSelected)="onUserSelectedFromSearch()"> </lfx-registrant-form>
 
         <div class="flex items-center justify-end gap-3 mt-4">
           <lfx-button
@@ -34,7 +34,11 @@
       </div>
 
       <!-- Committee Selection -->
-      <lfx-meeting-committee-manager [selectedCommittees]="form().get('committees')?.value || []" [form]="form()"> </lfx-meeting-committee-manager>
+      <lfx-meeting-committee-manager
+        [selectedCommittees]="form().get('committees')?.value || []"
+        [form]="form()"
+        (committeeMembersChange)="onCommitteeMembersChange($event)">
+      </lfx-meeting-committee-manager>
 
       <!-- Show Meeting Attendees Toggle -->
       <div class="mt-2">
@@ -45,14 +49,22 @@
     <!-- Right Column - Invitation List -->
     <div class="flex flex-col gap-4">
       <!-- Stats header -->
-      @if (form().get('committees')?.value?.length > 0) {
-        <h4 class="text-neutral-950">
-          Additional Guests
-          <span class="text-sm text-gray-500" data-testid="stats"> ({{ registrantCount() }}) </span>
-        </h4>
-      } @else {
+      <div class="flex flex-col gap-1">
         <h4 class="text-neutral-950">Invitation List ({{ registrantCount() }})</h4>
-      }
+        @if (committeeMemberCount() > 0 || directGuestCount() > 0) {
+          <p class="text-xs text-gray-500" data-testid="stats">
+            @if (committeeMemberCount() > 0) {
+              <span>{{ committeeMemberCount() }} from committees</span>
+            }
+            @if (committeeMemberCount() > 0 && directGuestCount() > 0) {
+              <span> · </span>
+            }
+            @if (directGuestCount() > 0) {
+              <span>{{ directGuestCount() }} direct guests</span>
+            }
+          </p>
+        }
+      </div>
 
       <!-- Search and filters -->
       <div class="flex items-center gap-4 p-4 bg-gray-50 rounded-lg" [formGroup]="searchForm">
@@ -108,7 +120,7 @@
 
         <!-- Registrants list -->
         @if (!loading() && filteredRegistrants().length > 0) {
-          <div class="flex flex-col gap-2 border border-gray-200 rounded-lg p-3" data-testid="registrants-list">
+          <div class="flex flex-col gap-2 max-h-[400px] overflow-y-auto border border-gray-200 rounded-lg p-3" data-testid="registrants-list">
             @for (registrant of filteredRegistrants(); track registrant.uid ?? registrant.tempId) {
               <lfx-registrant-card [registrant]="registrant" (onValidSave)="handleRegistrantUpdate($event)" (onDelete)="handleRegistrantDelete($event)">
               </lfx-registrant-card>

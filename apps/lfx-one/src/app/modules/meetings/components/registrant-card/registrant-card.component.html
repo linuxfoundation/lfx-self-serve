@@ -41,45 +41,64 @@
     </lfx-card>
   } @else {
     <!-- Normal Display (Registrant Card Component) -->
-    <div class="p-3 border border-gray-200 rounded-lg hover:bg-gray-50 transition-colors">
-      <div class="flex items-center justify-between">
-        <div class="flex-1 min-w-0">
-          <!-- Status badge and name -->
-          <div class="flex items-center gap-2 mb-1">
-            <!-- Status badge (will include invited/accepted/declined/maybe) -->
-            <lfx-badge value="Invited" severity="secondary" size="small" styleClass="inline-flex items-center"> </lfx-badge>
-            @if (registrant().host) {
-              <lfx-badge value="Host" severity="success" size="small" styleClass="inline-flex items-center"> </lfx-badge>
-            }
-            <h4 class="font-medium truncate">
-              {{ registrant().first_name && registrant().last_name ? registrant().first_name + ' ' + registrant().last_name : registrant().email }}
-            </h4>
-          </div>
-
-          <div class="flex items-center gap-4 text-sm text-gray-600 mb-1">
-            <div class="flex items-center gap-1">
-              <i class="fa-light fa-envelope text-xs"></i>
-              <span class="truncate">{{ registrant().email }}</span>
-            </div>
-
-            @if (registrant().job_title) {
-              <div class="flex items-center gap-1">
-                <i class="fa-light fa-briefcase text-xs"></i>
-                <span class="truncate">{{ registrant().job_title }}</span>
-              </div>
-            }
-
-            @if (registrant().org_name) {
-              <div class="flex items-center gap-1">
-                <i class="fa-light fa-building text-xs"></i>
-                <span class="truncate">{{ registrant().org_name }}</span>
-              </div>
-            }
-          </div>
+    <div class="flex items-center justify-between p-3 bg-gray-50 rounded-lg hover:bg-gray-100 transition-colors">
+      <div class="flex items-center gap-3 flex-1 min-w-0">
+        <!-- Type icon -->
+        <div
+          class="w-8 h-8 rounded-full flex items-center justify-center flex-shrink-0"
+          [class.bg-blue-100]="registrant().type === 'committee'"
+          [class.bg-green-100]="registrant().type !== 'committee'">
+          @if (registrant().type === 'committee') {
+            <i class="fa-light fa-users text-sm text-blue-600"></i>
+          } @else {
+            <i class="fa-light fa-user-plus text-sm text-green-600"></i>
+          }
         </div>
 
-        <!-- Action buttons -->
-        <div class="flex items-center gap-2 ml-3">
+        <!-- Name, badges, and details -->
+        <div class="flex-1 min-w-0">
+          <div class="flex items-center gap-2 mb-0.5 flex-wrap">
+            <p class="text-neutral-950 truncate font-medium">
+              {{ registrant().first_name && registrant().last_name ? registrant().first_name + ' ' + registrant().last_name : registrant().email }}
+            </p>
+            @if (registrant().username) {
+              <span class="text-xs font-mono text-white bg-blue-600 px-1.5 py-0.5 rounded flex-shrink-0">
+                {{ registrant().username }}
+              </span>
+            }
+            @if (registrant().host) {
+              <lfx-badge value="Host" severity="success" size="small" styleClass="inline-flex items-center flex-shrink-0"> </lfx-badge>
+            }
+          </div>
+          @if (registrant().email && registrant().first_name) {
+            <p class="text-sm text-gray-500 truncate">{{ registrant().email }}</p>
+          }
+          @if (registrant().type === 'committee' && registrant().committee_name) {
+            <p class="text-xs text-gray-500 mt-0.5">
+              {{ registrant().committee_name }}
+              @if (registrant().committee_role) {
+                · {{ registrant().committee_role }}
+              }
+            </p>
+          } @else if (registrant().org_name || registrant().job_title) {
+            <p class="text-xs text-gray-500 mt-0.5">
+              @if (registrant().job_title) {
+                {{ registrant().job_title }}
+              }
+              @if (registrant().job_title && registrant().org_name) {
+                ·
+              }
+              @if (registrant().org_name) {
+                {{ registrant().org_name }}
+              }
+            </p>
+          }
+        </div>
+      </div>
+
+      <!-- Action buttons (hidden for committee members - they can only be removed via committee selection) -->
+      @if (registrant().type !== 'committee') {
+        <div class="flex items-center gap-1 flex-shrink-0">
           <lfx-button
             size="small"
             icon="fa-light fa-edit"
@@ -97,7 +116,7 @@
             [attr.data-testid]="'delete-' + registrant().uid">
           </lfx-button>
         </div>
-      </div>
+      }
     </div>
   }
 </div>

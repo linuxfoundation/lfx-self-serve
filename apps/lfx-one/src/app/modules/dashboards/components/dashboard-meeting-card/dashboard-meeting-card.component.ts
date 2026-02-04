@@ -19,6 +19,7 @@ import {
   TagSeverity,
 } from '@lfx-one/shared';
 import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
+import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
 import { TooltipModule } from 'primeng/tooltip';
@@ -26,7 +27,7 @@ import { catchError, combineLatest, map, of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-dashboard-meeting-card',
-  imports: [NgClass, ButtonComponent, TagComponent, TooltipModule, ClipboardModule, FileTypeIconPipe],
+  imports: [NgClass, ButtonComponent, TagComponent, TooltipModule, ClipboardModule, FileTypeIconPipe, RecurrenceSummaryPipe],
   templateUrl: './dashboard-meeting-card.component.html',
 })
 export class DashboardMeetingCardComponent {
@@ -54,6 +55,7 @@ export class DashboardMeetingCardComponent {
   public readonly hasAiSummary: Signal<boolean> = this.initHasAiSummary();
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
   public readonly isLegacyMeeting: Signal<boolean> = this.initIsLegacyMeeting();
+  public readonly isRecurring: Signal<boolean> = this.initIsRecurring();
   public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
 
   public constructor() {
@@ -235,6 +237,10 @@ export class DashboardMeetingCardComponent {
 
   private initIsLegacyMeeting(): Signal<boolean> {
     return computed(() => this.meeting().version === 'v1');
+  }
+
+  private initIsRecurring(): Signal<boolean> {
+    return computed(() => !!this.meeting().recurrence);
   }
 
   private initMeetingDetailUrl(): Signal<string> {

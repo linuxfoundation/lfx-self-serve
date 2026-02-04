@@ -9,7 +9,7 @@ import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggl
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { COMMITTEE_LABEL, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
-import { MeetingRegistrant, MeetingRegistrantWithState, RegistrantPendingChanges, RegistrantState } from '@lfx-one/shared/interfaces';
+import { CommitteeMember, MeetingRegistrant, MeetingRegistrantWithState, RegistrantPendingChanges, RegistrantState } from '@lfx-one/shared/interfaces';
 import { generateTempId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { ConfirmationService } from 'primeng/api';
@@ -62,10 +62,12 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   public statusFilter = signal<string | null>(null);
 
   // Simple computed signals
-  public readonly visibleRegistrants = computed(() => this.registrantsWithState().filter((r) => r.state !== 'deleted' && r.type !== 'committee'));
+  public readonly visibleRegistrants = computed(() => this.registrantsWithState().filter((r) => r.state !== 'deleted'));
   public readonly registrantCount = computed(() => this.visibleRegistrants().length);
   public readonly hostCount = computed(() => this.visibleRegistrants().filter((r) => r.host).length);
   public readonly memberCount = computed(() => this.visibleRegistrants().filter((r) => r.org_is_member).length);
+  public readonly committeeMemberCount = computed(() => this.visibleRegistrants().filter((r) => r.type === 'committee').length);
+  public readonly directGuestCount = computed(() => this.visibleRegistrants().filter((r) => r.type === 'direct').length);
 
   // Complex computed signals (using private initializers)
   public readonly registrants = signal<MeetingRegistrant[]>([]);
@@ -77,9 +79,10 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
 
   // Static configuration
   public statusOptions = [
-    { label: 'All Registrants', value: null },
+    { label: 'All Guests', value: null },
     { label: 'Hosts Only', value: 'host' },
-    { label: COMMITTEE_LABEL.singular + ' Members', value: 'member' },
+    { label: COMMITTEE_LABEL.singular + ' Members', value: 'committee' },
+    { label: 'Direct Guests Only', value: 'direct' },
   ];
 
   public constructor() {
@@ -123,49 +126,16 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   // Action handlers
   public onAddRegistrant(): void {
     if (this.addRegistrantForm.valid) {
-      const formValue = this.addRegistrantForm.value;
+      this.addRegistrantFromForm();
+    }
+  }
 
-      // Build complete MeetingRegistrant object
-      const registrantData: MeetingRegistrant = {
-        uid: '', // Will be assigned by API
-        meeting_uid: this.meetingUid(),
-        occurrence_id: null,
-        email: formValue.email,
-        first_name: formValue.first_name,
-        last_name: formValue.last_name,
-        job_title: formValue.job_title || null,
-        org_name: formValue.org_name || null,
-        host: formValue.host || false,
-        org_is_member: false,
-        org_is_project_member: false,
-        avatar_url: null,
-        username: null,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-        type: 'direct',
-        invite_accepted: null,
-        attended: null,
-        linkedin_profile: formValue.linkedin_profile || null,
-      };
-
-      // Create new registrant with temporary ID for immediate UI updates
-      const newRegistrant: MeetingRegistrantWithState = {
-        ...registrantData,
-        meeting_uid: this.meetingUid(),
-        uid: '', // Will be assigned by API
-        state: 'new' as RegistrantState,
-        tempId: generateTempId(),
-        originalData: undefined,
-      };
-
-      // Add to local state for immediate UI feedback
-      this.registrantsWithState.update((registrants) => [...registrants, newRegistrant]);
-
-      // Emit updated registrant updates using the conversion logic
-      this.emitRegistrantUpdates();
-
-      // Reset form
-      this.addRegistrantForm.reset();
+  /**
+   * Handle user selection from search - add user directly to guest list
+   */
+  public onUserSelectedFromSearch(): void {
+    if (this.addRegistrantForm.valid) {
+      this.addRegistrantFromForm();
     }
   }
 
@@ -220,6 +190,98 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
     });
   }
 
+  /**
+   * Handle committee members change - sync committee members with registrants list
+   */
+  public onCommitteeMembersChange(members: CommitteeMember[]): void {
+    this.registrantsWithState.update((registrants) => {
+      // Remove all existing committee members (they'll be replaced with the new list)
+      const nonCommitteeRegistrants = registrants.filter((r) => r.type !== 'committee');
+
+      // Convert committee members to MeetingRegistrantWithState
+      const committeeRegistrants: MeetingRegistrantWithState[] = members.map((member) => ({
+        uid: '', // Will be assigned by API when meeting is saved
+        meeting_uid: this.meetingUid(),
+        occurrence_id: null,
+        email: member.email,
+        first_name: member.first_name,
+        last_name: member.last_name,
+        job_title: member.job_title || null,
+        org_name: member.organization?.name || null,
+        host: false,
+        org_is_member: false,
+        org_is_project_member: false,
+        avatar_url: null,
+        username: member.username || null,
+        linkedin_profile: member.linkedin_profile || null,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+        type: 'committee' as const,
+        committee_uid: member.committee_uid,
+        committee_name: member.committee_name,
+        committee_role: member.role?.name || null,
+        committee_voting_status: member.voting?.status || null,
+        invite_accepted: null,
+        attended: null,
+        state: 'new' as RegistrantState,
+        tempId: generateTempId(),
+        originalData: undefined,
+      }));
+
+      // Return non-committee registrants first, then committee members
+      return [...nonCommitteeRegistrants, ...committeeRegistrants];
+    });
+  }
+
+  /**
+   * Common method to add a registrant from the form values
+   */
+  private addRegistrantFromForm(): void {
+    const formValue = this.addRegistrantForm.value;
+
+    // Build complete MeetingRegistrant object
+    const registrantData: MeetingRegistrant = {
+      uid: '', // Will be assigned by API
+      meeting_uid: this.meetingUid(),
+      occurrence_id: null,
+      email: formValue.email,
+      first_name: formValue.first_name,
+      last_name: formValue.last_name,
+      job_title: formValue.job_title || null,
+      org_name: formValue.org_name || null,
+      host: formValue.host || false,
+      org_is_member: false,
+      org_is_project_member: false,
+      avatar_url: null,
+      username: null,
+      created_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+      type: 'direct',
+      invite_accepted: null,
+      attended: null,
+      linkedin_profile: formValue.linkedin_profile || null,
+    };
+
+    // Create new registrant with temporary ID for immediate UI updates
+    const newRegistrant: MeetingRegistrantWithState = {
+      ...registrantData,
+      meeting_uid: this.meetingUid(),
+      uid: '', // Will be assigned by API
+      state: 'new' as RegistrantState,
+      tempId: generateTempId(),
+      originalData: undefined,
+    };
+
+    // Add to local state at the top for immediate UI feedback
+    this.registrantsWithState.update((registrants) => [newRegistrant, ...registrants]);
+
+    // Emit updated registrant updates using the conversion logic
+    this.emitRegistrantUpdates();
+
+    // Reset form
+    this.addRegistrantForm.reset();
+  }
+
   private initFilteredRegistrants() {
     return computed(() => {
       let filtered = this.visibleRegistrants();
@@ -233,7 +295,8 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
             registrant.first_name?.toLowerCase().includes(search) ||
             registrant.last_name?.toLowerCase().includes(search) ||
             registrant.email?.toLowerCase().includes(search) ||
-            registrant.org_name?.toLowerCase().includes(search)
+            registrant.org_name?.toLowerCase().includes(search) ||
+            registrant.committee_name?.toLowerCase().includes(search)
         );
       }
 
@@ -243,11 +306,11 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
           case 'host':
             filtered = filtered.filter((r) => r.host);
             break;
-          case 'member':
-            filtered = filtered.filter((r) => r.org_is_member);
+          case 'committee':
+            filtered = filtered.filter((r) => r.type === 'committee');
             break;
-          case 'project_member':
-            filtered = filtered.filter((r) => r.org_is_project_member);
+          case 'direct':
+            filtered = filtered.filter((r) => r.type === 'direct');
             break;
         }
       }
