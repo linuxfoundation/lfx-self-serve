@@ -1,0 +1,117 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="w-full flex flex-col gap-6" data-testid="profile-affiliations">
+  <!-- Page Header -->
+  <div class="flex flex-col gap-2">
+    <h2 class="text-2xl font-semibold text-gray-900">Affiliations</h2>
+    <p class="text-sm text-slate-600">Organizations you are associated with through verified identities and project participation.</p>
+    <p class="text-xs text-slate-500">Affiliations are used to represent you accurately across projects and reports.</p>
+  </div>
+
+  <!-- Affiliations Table Card -->
+  <lfx-card data-testid="affiliations-card">
+    <div class="flex flex-col gap-4">
+      <!-- Card Header -->
+      <div class="flex items-center justify-between">
+        <h3 class="text-base font-semibold text-slate-900">Your Affiliations</h3>
+        @if (hasUnverifiedAffiliations()) {
+          <lfx-button
+            label="Verify identities"
+            icon="fa-light fa-circle-exclamation"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            (onClick)="openVerifyIdentitiesModal()"
+            data-testid="verify-identities-header-btn" />
+        }
+      </div>
+
+      <!-- Affiliations Table -->
+      <lfx-table [value]="sortedAffiliations()" data-testid="affiliations-table">
+        <ng-template #header>
+          <tr>
+            <th class="text-left">Organization</th>
+            <th class="text-left">Basis</th>
+            <th class="text-left">Scope</th>
+            <th class="text-left">Status</th>
+            <th class="text-left">Dates</th>
+          </tr>
+        </ng-template>
+        <ng-template #body let-affiliation let-rowIndex="rowIndex">
+          <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'affiliation-row-' + affiliation.id">
+            <!-- Organization -->
+            <td>
+              <div class="flex items-center gap-3">
+                @if (affiliation.organizationLogo) {
+                  <img
+                    [src]="affiliation.organizationLogo"
+                    [alt]="affiliation.organization"
+                    class="w-8 h-8 rounded object-contain border border-slate-200 bg-white p-0.5"
+                    loading="lazy" />
+                } @else {
+                  <div class="w-8 h-8 rounded bg-slate-100 flex items-center justify-center">
+                    <i class="fa-light fa-building text-slate-500"></i>
+                  </div>
+                }
+                <span class="font-medium text-slate-900">{{ affiliation.organization }}</span>
+              </div>
+            </td>
+
+            <!-- Basis -->
+            <td>
+              <div class="flex flex-col gap-0.5">
+                <span class="text-sm text-slate-700">{{ affiliation.basis.source }}</span>
+                @if (affiliation.basis.contributionCount !== undefined) {
+                  <span class="text-xs text-slate-500">{{ affiliation.basis.contributionCount }} contributions</span>
+                }
+              </div>
+            </td>
+
+            <!-- Scope -->
+            <td>
+              <lfx-tag [value]="affiliation.scope" severity="secondary" [rounded]="true" />
+            </td>
+
+            <!-- Status -->
+            <td>
+              @if (affiliation.verified) {
+                <div class="flex items-center gap-2">
+                  <i class="fa-solid fa-circle-check text-blue-600"></i>
+                  <span class="text-sm font-medium text-blue-600">Verified affiliation</span>
+                </div>
+              } @else {
+                <div class="flex flex-col gap-1">
+                  <div class="flex items-center gap-2">
+                    <i class="fa-light fa-circle-exclamation text-amber-600"></i>
+                    <span class="text-sm font-medium text-amber-600">Unverified</span>
+                  </div>
+                  <p class="text-xs text-slate-600">Verify your identity to confirm this affiliation.</p>
+                </div>
+              }
+            </td>
+
+            <!-- Dates -->
+            <td>
+              <div class="flex items-center gap-1.5 text-sm text-slate-600">
+                <i class="fa-light fa-calendar text-slate-400"></i>
+                <span>{{ affiliation.startDate }} – {{ affiliation.endDate || 'Present' }}</span>
+              </div>
+            </td>
+          </tr>
+        </ng-template>
+        <ng-template #emptymessage>
+          <tr>
+            <td colspan="5" class="text-center py-8">
+              <div class="flex flex-col items-center gap-2">
+                <i class="fa-light fa-building text-3xl text-gray-300"></i>
+                <p class="text-sm text-gray-500">No affiliations found</p>
+                <p class="text-xs text-gray-400">Connect your identities to see your organizational affiliations</p>
+              </div>
+            </td>
+          </tr>
+        </ng-template>
+      </lfx-table>
+    </div>
+  </lfx-card>
+</div>

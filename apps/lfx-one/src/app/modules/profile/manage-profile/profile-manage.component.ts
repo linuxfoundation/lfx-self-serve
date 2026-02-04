@@ -17,21 +17,9 @@ import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, finalize, of, switchMap, tap } from 'rxjs';
 
-import { ProfileNavComponent } from '../components/profile-nav/profile-nav.component';
-
 @Component({
   selector: 'lfx-profile-manage',
-  imports: [
-    ReactiveFormsModule,
-    CardComponent,
-    InputTextComponent,
-    MessageComponent,
-    SelectComponent,
-    ButtonComponent,
-    ToastModule,
-    TooltipModule,
-    ProfileNavComponent,
-  ],
+  imports: [ReactiveFormsModule, CardComponent, InputTextComponent, MessageComponent, SelectComponent, ButtonComponent, ToastModule, TooltipModule],
   providers: [MessageService],
   templateUrl: './profile-manage.component.html',
 })

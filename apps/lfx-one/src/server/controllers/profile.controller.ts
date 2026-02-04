@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MOCK_AFFILIATIONS, MOCK_IDENTITIES, MOCK_PROJECTS, MOCK_SKILLS } from '@lfx-one/shared/constants';
 import {
   AddEmailRequest,
   CombinedProfile,
@@ -659,6 +660,176 @@ export class ProfileController {
       });
 
       res.json(tokenInfo);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/profile/overview/projects - Get user's project affiliations for overview
+   * Returns mock data for now - will be replaced with actual service call
+   */
+  public async getOverviewProjects(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_overview_projects');
+
+    try {
+      const username = await getUsernameFromAuth(req);
+
+      if (!username) {
+        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
+          operation: 'get_overview_projects',
+          service: 'profile_controller',
+          path: req.path,
+        });
+
+        return next(validationError);
+      }
+
+      logger.success(req, 'get_overview_projects', startTime, {
+        username,
+        project_count: MOCK_PROJECTS.length,
+      });
+
+      res.json(MOCK_PROJECTS);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/profile/overview/identities - Get user's connected identities for overview
+   * Returns mock data for now - will be replaced with actual service call
+   */
+  public async getOverviewIdentities(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_overview_identities');
+
+    try {
+      const username = await getUsernameFromAuth(req);
+
+      if (!username) {
+        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
+          operation: 'get_overview_identities',
+          service: 'profile_controller',
+          path: req.path,
+        });
+
+        return next(validationError);
+      }
+
+      logger.success(req, 'get_overview_identities', startTime, {
+        username,
+        identity_count: MOCK_IDENTITIES.length,
+      });
+
+      res.json(MOCK_IDENTITIES);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/profile/overview/skills - Get user's skills
+   * Returns mock data for now - will be replaced with actual service call
+   */
+  public async getOverviewSkills(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_overview_skills');
+
+    try {
+      const username = await getUsernameFromAuth(req);
+
+      if (!username) {
+        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
+          operation: 'get_overview_skills',
+          service: 'profile_controller',
+          path: req.path,
+        });
+
+        return next(validationError);
+      }
+
+      logger.success(req, 'get_overview_skills', startTime, {
+        username,
+        skill_count: MOCK_SKILLS.length,
+      });
+
+      res.json(MOCK_SKILLS);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * PUT /api/profile/overview/skills - Update user's skills
+   * Accepts mock data for now - will be replaced with actual service call
+   */
+  public async updateOverviewSkills(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'update_overview_skills', {
+      request_body_keys: Object.keys(req.body),
+    });
+
+    try {
+      const username = await getUsernameFromAuth(req);
+
+      if (!username) {
+        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
+          operation: 'update_overview_skills',
+          service: 'profile_controller',
+          path: req.path,
+        });
+
+        return next(validationError);
+      }
+
+      const { skills } = req.body as { skills: string[] };
+
+      if (!Array.isArray(skills)) {
+        const validationError = ServiceValidationError.forField('skills', 'Skills must be an array', {
+          operation: 'update_overview_skills',
+          service: 'profile_controller',
+          path: req.path,
+        });
+
+        return next(validationError);
+      }
+
+      // Mock response - will be replaced with actual service call
+      logger.success(req, 'update_overview_skills', startTime, {
+        username,
+        skill_count: skills.length,
+      });
+
+      res.json({ skills, message: 'Skills updated successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/profile/affiliations - Get user's organizational affiliations
+   * Returns mock data for now - will be replaced with actual service call
+   */
+  public async getAffiliations(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_affiliations');
+
+    try {
+      const username = await getUsernameFromAuth(req);
+
+      if (!username) {
+        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
+          operation: 'get_affiliations',
+          service: 'profile_controller',
+          path: req.path,
+        });
+
+        return next(validationError);
+      }
+
+      logger.success(req, 'get_affiliations', startTime, {
+        username,
+        affiliation_count: MOCK_AFFILIATIONS.length,
+      });
+
+      res.json(MOCK_AFFILIATIONS);
     } catch (error) {
       next(error);
     }

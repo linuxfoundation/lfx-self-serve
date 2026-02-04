@@ -1,0 +1,91 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="profile-layout">
+  <div class="flex flex-col gap-6">
+    <!-- Page Title -->
+    <h1 class="font-semibold text-xl" data-testid="profile-page-title">My Profile</h1>
+
+    <!-- Profile Header Card -->
+    <lfx-card data-testid="profile-header-card">
+      @if (loading()) {
+        <div class="flex items-center justify-center py-8">
+          <i class="fa-light fa-circle-notch fa-spin text-3xl text-blue-400"></i>
+        </div>
+      } @else {
+        <div class="flex flex-col md:flex-row items-start gap-6">
+          <!-- Avatar -->
+          <lfx-avatar
+            [label]="initials()"
+            [image]="profileData()?.avatarUrl || ''"
+            size="xlarge"
+            shape="circle"
+            styleClass="shrink-0"
+            data-testid="profile-avatar" />
+
+          <!-- Profile Info -->
+          <div class="flex-1 flex flex-col md:flex-row gap-6">
+            <!-- Name and Job Info -->
+            <div class="flex-1 min-w-0">
+              <h2 class="text-lg font-semibold text-gray-900 truncate" data-testid="profile-display-name">
+                {{ displayName() }}
+              </h2>
+              @if (profileData()?.username) {
+                <p class="text-sm text-gray-500" data-testid="profile-username">&#64;{{ profileData()?.username }}</p>
+              }
+              @if (jobInfo()) {
+                <p class="text-sm text-gray-600 mt-1" data-testid="profile-job-info">
+                  {{ jobInfo() }}
+                </p>
+              }
+            </div>
+
+            <!-- Location Info -->
+            @if (locationInfo()) {
+              <div class="flex items-start gap-2 text-sm text-gray-500" data-testid="profile-location-info">
+                <i class="fa-light fa-location-dot mt-0.5"></i>
+                <span>{{ locationInfo() }}</span>
+              </div>
+            }
+          </div>
+        </div>
+      }
+    </lfx-card>
+
+    <!-- Tab Navigation -->
+    <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-slate-200 shadow-sm p-4" data-testid="profile-tabs-container">
+      <!-- Mobile: Dropdown -->
+      <div class="md:hidden">
+        <lfx-select
+          [form]="tabForm"
+          control="selectedTab"
+          [options]="tabOptions"
+          placeholder="Select a tab"
+          styleClass="w-full"
+          size="small"
+          data-testid="profile-tabs-dropdown" />
+      </div>
+
+      <!-- Desktop: Horizontal tabs with scroll -->
+      <div class="hidden md:flex items-center gap-1 overflow-x-auto" data-testid="profile-tabs-desktop">
+        @for (tab of tabs; track tab.id) {
+          <a
+            [routerLink]="tab.route"
+            routerLinkActive="bg-blue-50 text-blue-600 border-blue-200"
+            class="inline-flex items-center gap-2 px-4 py-2 text-sm font-medium rounded-lg transition-colors whitespace-nowrap text-gray-600 hover:bg-gray-50 border border-transparent"
+            [attr.data-testid]="'profile-tab-' + tab.id">
+            @if (tab.icon) {
+              <i [class]="tab.icon"></i>
+            }
+            {{ tab.label }}
+          </a>
+        }
+      </div>
+    </div>
+
+    <!-- Router Outlet for child components -->
+    <div class="pb-8" data-testid="profile-content">
+      <router-outlet />
+    </div>
+  </div>
+</div>

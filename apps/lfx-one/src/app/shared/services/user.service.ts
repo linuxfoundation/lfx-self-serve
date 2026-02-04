@@ -5,12 +5,15 @@ import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import {
   AddEmailRequest,
+  Affiliation,
   ChangePasswordRequest,
   CombinedProfile,
+  ConnectedIdentity,
   CreateUserPermissionRequest,
   EmailManagementData,
   EmailPreferences,
   Meeting,
+  ProfileProject,
   ProfileUpdateRequest,
   TwoFactorSettings,
   UpdateEmailPreferencesRequest,
@@ -139,6 +142,63 @@ export class UserService {
     return this.http.get<Meeting[]>('/api/user/meetings', { params }).pipe(
       catchError((error) => {
         console.error('Failed to load user meetings:', error);
+        return of([]);
+      })
+    );
+  }
+
+  // Profile overview methods
+
+  /**
+   * Get user's project affiliations for profile overview
+   */
+  public getOverviewProjects(): Observable<ProfileProject[]> {
+    return this.http.get<ProfileProject[]>('/api/profile/overview/projects').pipe(
+      catchError((error) => {
+        console.error('Failed to load overview projects:', error);
+        return of([]);
+      })
+    );
+  }
+
+  /**
+   * Get user's connected identities for profile overview
+   */
+  public getOverviewIdentities(): Observable<ConnectedIdentity[]> {
+    return this.http.get<ConnectedIdentity[]>('/api/profile/overview/identities').pipe(
+      catchError((error) => {
+        console.error('Failed to load overview identities:', error);
+        return of([]);
+      })
+    );
+  }
+
+  /**
+   * Get user's skills for profile overview
+   */
+  public getOverviewSkills(): Observable<string[]> {
+    return this.http.get<string[]>('/api/profile/overview/skills').pipe(
+      catchError((error) => {
+        console.error('Failed to load overview skills:', error);
+        return of([]);
+      })
+    );
+  }
+
+  /**
+   * Update user's skills
+   */
+  public updateOverviewSkills(skills: string[]): Observable<{ skills: string[]; message: string }> {
+    return this.http.put<{ skills: string[]; message: string }>('/api/profile/overview/skills', { skills }).pipe(take(1));
+  }
+
+  /**
+   * Get user's organizational affiliations
+   */
+  public getAffiliations(): Observable<Affiliation[]> {
+    return this.http.get<Affiliation[]>('/api/profile/affiliations').pipe(
+      catchError((error) => {
+        console.error('Failed to load affiliations:', error);
         return of([]);
       })
     );

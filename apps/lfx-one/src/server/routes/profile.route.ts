@@ -43,4 +43,21 @@ router.put('/email-preferences', (req, res, next) => profileController.updateEma
 // GET /api/profile/developer - Get current user's developer token information
 router.get('/developer', (req, res, next) => profileController.getDeveloperTokenInfo(req, res, next));
 
+// Profile overview routes (mock data for now)
+
+// GET /api/profile/overview/projects - Get user's project affiliations for overview
+router.get('/overview/projects', (req, res, next) => profileController.getOverviewProjects(req, res, next));
+
+// GET /api/profile/overview/identities - Get user's connected identities for overview
+router.get('/overview/identities', (req, res, next) => profileController.getOverviewIdentities(req, res, next));
+
+// GET /api/profile/overview/skills - Get user's skills
+router.get('/overview/skills', (req, res, next) => profileController.getOverviewSkills(req, res, next));
+
+// PUT /api/profile/overview/skills - Update user's skills
+router.put('/overview/skills', (req, res, next) => profileController.updateOverviewSkills(req, res, next));
+
+// GET /api/profile/affiliations - Get user's organizational affiliations
+router.get('/affiliations', (req, res, next) => profileController.getAffiliations(req, res, next));
+
 export default router;
