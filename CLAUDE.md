@@ -70,28 +70,44 @@ lfx-v2-ui/
 ├── apps/
 │   └── lfx-one/              # Angular 19 SSR application with stable zoneless change detection
 │       ├── src/app/
-│       │   ├── layouts/      # Layout components
+│       │   ├── layouts/      # Layout components (main-layout, profile-layout, project-layout, dev-toolbar)
 │       │   ├── modules/      # 10 Feature modules (see Feature Modules section)
 │       │   └── shared/       # Shared application code
-│       │       ├── components/   # 45 UI components
+│       │       ├── components/   # 46 UI components
+│       │       ├── directives/   # Custom directives (scroll-shadow)
+│       │       ├── guards/       # Route guards (auth, writer)
+│       │       ├── interceptors/ # HTTP interceptors (authentication)
 │       │       ├── pipes/        # 34 custom pipes
-│       │       └── services/     # 20 services
-│       ├── eslint.config.mjs # Angular-specific ESLint rules
-│       ├── .prettierrc       # Prettier configuration with Tailwind integration
+│       │       ├── providers/    # App providers (datadog-rum, feature-flag, runtime-config)
+│       │       ├── services/     # 20 services
+│       │       ├── strategies/   # Routing strategies (custom-preloading)
+│       │       └── utils/        # App utilities (console-override)
+│       ├── src/server/       # Express.js SSR server
+│       │   ├── controllers/  # 13 route controllers
+│       │   ├── errors/       # Custom error classes (base, authentication, microservice, validation)
+│       │   ├── helpers/      # Server helpers (error-serializer, http-status, meeting, url-validation, validation)
+│       │   ├── middleware/   # Express middleware (auth, error-handler)
+│       │   ├── routes/       # 13 API route definitions
+│       │   ├── services/     # 18 backend services (api-client, microservice-proxy, nats, snowflake, etc.)
+│       │   ├── utils/        # Server utilities (auth-helper, lock-manager, m2m-token, security, etc.)
+│       │   ├── server.ts     # Express server entry point
+│       │   └── server-logger.ts # Pino logger configuration
+│       ├── eslint.config.js  # Angular-specific ESLint rules
+│       ├── .prettierrc.js    # Prettier configuration with Tailwind integration
+│       ├── ecosystem.config.js # PM2 production configuration
 │       └── tailwind.config.js # Tailwind with PrimeUI plugin and LFX colors
 ├── packages/
 │   └── shared/               # Shared types, interfaces, constants, utilities, and validators
 │       ├── src/
-│       │   ├── interfaces/   # TypeScript interfaces for components, auth, projects
-│       │   ├── constants/    # Design tokens (colors, font-sizes)
-│       │   ├── enums/        # Shared enumerations
-│       │   ├── utils/        # 11 utility modules (date, string, url, etc.)
+│       │   ├── interfaces/   # 30 TypeScript interface files (meetings, committees, auth, projects, etc.)
+│       │   ├── constants/    # 30 constant files (design tokens, API config, domain constants)
+│       │   ├── enums/        # 10 shared enumerations (committee, meeting, poll, survey, etc.)
+│       │   ├── utils/        # 12 utility modules (date, string, url, meeting, poll, survey, etc.)
 │       │   └── validators/   # 3 form validators (meeting, mailing-list, vote)
 │       ├── package.json      # Package configuration with proper exports
 │       └── tsconfig.json     # TypeScript configuration
 ├── docs/                     # Architecture and deployment documentation
 ├── turbo.json               # Turborepo pipeline configuration
-├── ecosystem.config.js      # PM2 production configuration
 └── package.json             # Root workspace configuration
 ```
 
@@ -236,6 +252,15 @@ The shared package (`@lfx-one/shared`) provides utility modules in `packages/sha
 - `file.utils.ts` - File type detection (`getFileType`, `getFileExtension`)
 - `form.utils.ts` - Form helpers (`markFormControlsAsTouched`)
 - `html-utils.ts` - HTML sanitization (`stripHtml`)
+- `color.utils.ts` - Color manipulation utilities
+
+**Domain-Specific Utilities:**
+
+- `meeting.utils.ts` - Meeting data helpers
+- `poll.utils.ts` - Poll/voting calculation utilities
+- `survey.utils.ts` - Survey data processing
+- `vote.utils.ts` - Vote data utilities
+- `rsvp-calculator.util.ts` - RSVP statistics calculation
 
 **Usage:**
 
@@ -244,7 +269,7 @@ import { formatDate, getRelativeDate } from '@lfx-one/shared/utils';
 import { buildUrl, parseQueryParams } from '@lfx-one/shared/utils';
 ```
 
-> **Note**: Domain-specific utilities (meetings, surveys, polls, etc.) are also available. See [Package Architecture docs](docs/architecture/shared/package-architecture.md) for complete documentation.
+> **Note**: See [Package Architecture docs](docs/architecture/shared/package-architecture.md) for complete documentation.
 
 ## Shared Package Validators
 

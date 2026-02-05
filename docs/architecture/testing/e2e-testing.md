@@ -1,36 +1,42 @@
 # End-to-End Testing Architecture
 
-## 🏗 Overview
+## Overview
 
-Our E2E testing strategy employs a **dual architecture approach** combining content-based and structural tests to ensure comprehensive, maintainable, and reliable test coverage across the LFX One application.
+This document defines the E2E testing architecture and patterns for LFX One. The testing infrastructure (Playwright config, auth helpers, mock data) is in place. Test spec files should follow the dual architecture approach described below.
 
-## 🎯 Dual Testing Architecture
+### Current State
 
-### Content-Based Tests (Original)
+The E2E testing infrastructure is set up with:
+
+```text
+apps/lfx-one/e2e/
+├── fixtures/
+│   └── mock-data/           # Mock data for tests
+│       ├── index.ts
+│       └── projects.mock.ts
+└── helpers/
+    ├── auth.helper.ts       # Authentication setup for tests
+    ├── api-mock.helper.ts   # API mocking utilities
+    └── global-setup.ts      # Global Playwright setup
+```
+
+Test spec files (`.spec.ts`) should be added to the `e2e/` directory following the patterns documented below.
+
+## Dual Testing Architecture
+
+### Content-Based Tests
 
 - **Purpose**: Validate user experience and visible content
 - **Target**: Text content, user interactions, workflows
 - **Best For**: Acceptance testing, user journey validation
-- **Examples**: `homepage.spec.ts`, `project-dashboard.spec.ts`
+- **Naming**: `[feature].spec.ts`
 
 ### Structural Tests (Robust)
 
 - **Purpose**: Validate component architecture and framework integration
 - **Target**: Component structure, Angular signals, data attributes
 - **Best For**: Technical validation, UI library independence
-- **Examples**: `homepage-robust.spec.ts`, `project-dashboard-robust.spec.ts`
-
-## 📊 Current Test Coverage
-
-```text
-Total E2E Tests: 85+ (All Passing)
-├── Homepage Tests: 33 tests
-│   ├── homepage.spec.ts: 11 content-based tests
-│   └── homepage-robust.spec.ts: 22 structural tests
-└── Project Dashboard Tests: 52 tests
-    ├── project-dashboard.spec.ts: 29 content-based tests
-    └── project-dashboard-robust.spec.ts: 23 structural tests
-```
+- **Naming**: `[feature]-robust.spec.ts`
 
 ## 🛠 Technical Stack
 

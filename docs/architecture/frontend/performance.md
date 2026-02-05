@@ -53,7 +53,7 @@ export function app(): express.Express {
 // Angular 19 Zoneless
 export const appConfig: ApplicationConfig = {
   providers: [
-    provideExperimentalZonelessChangeDetection(),
+    provideZonelessChangeDetection(),
     // Signals-based change detection
     // Manual triggering when needed
     // Better tree-shaking and smaller bundles

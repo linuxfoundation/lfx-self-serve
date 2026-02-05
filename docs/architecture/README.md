@@ -2,7 +2,7 @@
 
 ## 🏗 System Overview
 
-LFX One is a modern Angular 19 SSR application built with experimental zoneless change detection, featuring a sophisticated backend architecture and comprehensive design system integration.
+LFX One is a modern Angular 19 SSR application built with stable zoneless change detection, featuring a sophisticated backend architecture and comprehensive design system integration.
 
 ## 📖 Architecture Documentation Guide
 
@@ -76,7 +76,7 @@ LFX One is a modern Angular 19 SSR application built with experimental zoneless 
 
 ### Frontend
 
-- **Angular 19** with experimental zoneless change detection
+- **Angular 19** with stable zoneless change detection
 - **Angular Signals** for reactive state management
 - **PrimeNG 19** with custom LFX UI Core preset
 - **Tailwind CSS v3** with CSS layers architecture

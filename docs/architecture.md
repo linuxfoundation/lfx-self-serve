@@ -13,7 +13,7 @@
 
 ### Frontend Stack
 
-- **Angular 19**: Modern Angular with experimental zoneless change detection and SSR
+- **Angular 19**: Modern Angular with stable zoneless change detection and SSR
 - **Angular Signals**: Reactive state management (preferred over RxJS for simple data)
 - **PrimeNG 19**: UI components with custom LFX UI Core preset and Tailwind CSS integration
 - **Tailwind CSS v3**: Utility-first styling framework with PrimeUI plugin
@@ -24,7 +24,7 @@
 
 ## ⚡ Zoneless Change Detection
 
-Angular 19 introduces experimental zoneless change detection, which this application uses for improved performance:
+Angular 19 introduces stable zoneless change detection, which this application uses for improved performance:
 
 ### Configuration
 
@@ -32,7 +32,7 @@ Angular 19 introduces experimental zoneless change detection, which this applica
 // app.config.ts
 export const appConfig: ApplicationConfig = {
   providers: [
-    provideExperimentalZonelessChangeDetection(),
+    provideZonelessChangeDetection(),
     provideRouter(routes),
     provideClientHydration(withEventReplay()),
     provideHttpClient(withFetch()),
@@ -460,7 +460,7 @@ export const environment = {
 ```typescript
 // app.config.server.ts
 export const config = mergeApplicationConfig(appConfig, {
-  providers: [provideServerRendering(), provideServerRouting(serverRoutes)],
+  providers: [provideServerRendering(withRoutes(serverRoutes))],
 });
 ```
 

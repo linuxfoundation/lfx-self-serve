@@ -36,7 +36,7 @@ LFX One uses **OpenFeature** as a vendor-agnostic abstraction layer with **Launc
 
 ### Benefits for LFX One
 
-1. **Zoneless Compatibility**: Fully compatible with Angular 19's experimental zoneless change detection
+1. **Zoneless Compatibility**: Fully compatible with Angular 19's stable zoneless change detection
 2. **Real-time Updates**: Flag changes in LaunchDarkly propagate instantly to the UI without refresh
 3. **Type Safety**: TypeScript interfaces ensure compile-time safety for flag values
 4. **SSR Support**: Graceful handling of server-side rendering with browser-only initialization

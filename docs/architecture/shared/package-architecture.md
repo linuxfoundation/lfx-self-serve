@@ -1,31 +1,113 @@
 # Package Architecture
 
-## 📦 Shared Package Structure
+## Shared Package Structure
 
-The `@lfx-one/shared` package provides common interfaces, constants, and utilities used across the monorepo.
+The `@lfx-one/shared` package provides common interfaces, constants, enums, utilities, and validators used across the monorepo.
 
-## 🏗 Directory Structure
+## Directory Structure
 
 ```text
 packages/shared/
 ├── src/
-│   ├── interfaces/          # TypeScript interfaces
-│   │   ├── auth.ts         # Authentication types
-│   │   ├── components.ts   # Component prop interfaces
-│   │   ├── project.ts      # Project data models
-│   │   └── index.ts        # Interface exports
-│   ├── constants/          # Application constants
-│   │   ├── colors.ts       # LFX brand colors
-│   │   ├── font-sizes.ts   # Typography scales
-│   │   └── index.ts        # Constant exports
-│   ├── enums/             # TypeScript enums
-│   │   └── index.ts       # Enum exports
-│   └── index.ts           # Main package export
-├── package.json           # Package configuration
-└── tsconfig.json         # TypeScript configuration
+│   ├── interfaces/                    # 30 TypeScript interface files
+│   │   ├── access-check.interface.ts  # Permission/access check types
+│   │   ├── account.interface.ts       # Account/organization types
+│   │   ├── ai.interface.ts            # AI service types
+│   │   ├── analytics-data.interface.ts # Analytics data models
+│   │   ├── api.interface.ts           # API request/response types
+│   │   ├── auth.interface.ts          # Authentication types (User, AuthContext, M2M, RouteAuthConfig)
+│   │   ├── calendar.interface.ts      # Calendar/FullCalendar types
+│   │   ├── committee.interface.ts     # Committee data models
+│   │   ├── components.interface.ts    # Component prop interfaces (Avatar, etc.)
+│   │   ├── dashboard-metric.interface.ts # Dashboard metric types
+│   │   ├── filter.interface.ts        # Filter/search filter types
+│   │   ├── mailing-list.interface.ts  # Mailing list data models
+│   │   ├── meeting-attachment.interface.ts # Meeting attachment types
+│   │   ├── meeting.interface.ts       # Meeting data models
+│   │   ├── member.interface.ts        # Member/membership types
+│   │   ├── my-activity.interface.ts   # User activity types
+│   │   ├── organization.interface.ts  # Organization data models
+│   │   ├── permissions.interface.ts   # Permission types
+│   │   ├── persona.interface.ts       # User persona types
+│   │   ├── poll.interface.ts          # Poll/voting types
+│   │   ├── profile.interface.ts       # User profile types
+│   │   ├── project.interface.ts       # Project data models
+│   │   ├── runtime-config.interface.ts # Runtime configuration types
+│   │   ├── search.interface.ts        # Search types
+│   │   ├── segment.interface.ts       # Analytics segment types
+│   │   ├── snowflake.interface.ts     # Snowflake query types
+│   │   ├── survey.interface.ts        # Survey data models
+│   │   ├── user-profile.interface.ts  # Extended user profile types
+│   │   ├── user-statistics.interface.ts # User statistics types
+│   │   └── index.ts                   # Interface exports
+│   ├── constants/                     # 30 constant files
+│   │   ├── accounts.constants.ts      # Account-related constants
+│   │   ├── action-items.constants.ts  # Action item constants
+│   │   ├── ai.constants.ts            # AI configuration constants
+│   │   ├── analytics.constants.ts     # Analytics constants
+│   │   ├── api.constants.ts           # API endpoint constants
+│   │   ├── chart-options.constants.ts # Chart.js configuration
+│   │   ├── colors.constants.ts        # LFX brand colors
+│   │   ├── committees.constants.ts    # Committee constants
+│   │   ├── cookie.constants.ts        # Cookie configuration
+│   │   ├── countries.constants.ts     # Country list
+│   │   ├── dashboard-metrics.constants.ts # Dashboard metric definitions
+│   │   ├── file-upload.constants.ts   # File upload constraints
+│   │   ├── font-sizes.constants.ts    # Typography scales
+│   │   ├── mailing-list.constants.ts  # Mailing list constants
+│   │   ├── meeting-templates/         # Meeting template data
+│   │   ├── meeting.constants.ts       # Meeting constants
+│   │   ├── my-activity.constants.ts   # Activity tracking constants
+│   │   ├── persona.constants.ts       # Persona configuration
+│   │   ├── poll.constants.ts          # Poll/vote constants
+│   │   ├── primeng-theme.constants.ts # PrimeNG theme configuration
+│   │   ├── profile.constants.ts       # Profile constants
+│   │   ├── server.constants.ts        # Server-side constants
+│   │   ├── snowflake.constant.ts      # Snowflake configuration
+│   │   ├── states.constants.ts        # US states list
+│   │   ├── survey.constants.ts        # Survey constants
+│   │   ├── tag.constants.ts           # Tag constants
+│   │   ├── timezones.constants.ts     # Timezone definitions
+│   │   ├── tshirt-sizes.constants.ts  # T-shirt size options
+│   │   ├── typography.constants.ts    # Typography constants
+│   │   ├── validation.constants.ts    # Validation rules
+│   │   └── index.ts                   # Constant exports
+│   ├── enums/                         # 10 shared enumerations
+│   │   ├── committee-member.enum.ts   # Committee member roles
+│   │   ├── committee.enum.ts          # Committee types/categories
+│   │   ├── error.enum.ts              # Error codes
+│   │   ├── mailing-list.enum.ts       # Mailing list types
+│   │   ├── meeting.enum.ts            # Meeting statuses/types
+│   │   ├── nats.enum.ts               # NATS subjects
+│   │   ├── poll.enum.ts               # Poll statuses
+│   │   ├── snowflake.enum.ts          # Snowflake query types
+│   │   ├── survey.enum.ts             # Survey statuses
+│   │   └── index.ts                   # Enum exports
+│   ├── utils/                         # 12 utility modules
+│   │   ├── color.utils.ts             # Color manipulation (hexToRgba, toHslaValue)
+│   │   ├── date-time.utils.ts         # Date formatting, timezone handling
+│   │   ├── file.utils.ts              # File type detection
+│   │   ├── form.utils.ts              # Angular form helpers
+│   │   ├── html-utils.ts              # HTML sanitization
+│   │   ├── meeting.utils.ts           # Meeting data transformations
+│   │   ├── poll.utils.ts              # Poll status utilities
+│   │   ├── rsvp-calculator.util.ts    # RSVP statistics
+│   │   ├── string.utils.ts            # String manipulation
+│   │   ├── survey.utils.ts            # Survey data processing
+│   │   ├── url.utils.ts               # URL parsing and construction
+│   │   ├── vote.utils.ts              # Vote data utilities
+│   │   └── index.ts                   # Utility exports
+│   ├── validators/                    # 3 form validators
+│   │   ├── mailing-list.validators.ts # Mailing list form validators
+│   │   ├── meeting.validators.ts      # Meeting form validators
+│   │   ├── vote.validators.ts         # Vote form validators
+│   │   └── index.ts                   # Validator exports
+│   └── index.ts                       # Main package export
+├── package.json                       # Package configuration
+└── tsconfig.json                      # TypeScript configuration
 ```
 
-## 📋 Package Configuration
+## Package Configuration
 
 ### Package.json Exports
 
@@ -38,44 +120,65 @@ packages/shared/
   "types": "./dist/index.d.ts",
   "exports": {
     ".": {
+      "types": "./dist/index.d.ts",
       "import": "./dist/index.js",
-      "types": "./dist/index.d.ts"
+      "require": "./dist/index.js",
+      "default": "./dist/index.js"
     },
     "./interfaces": {
+      "types": "./dist/interfaces/index.d.ts",
       "import": "./dist/interfaces/index.js",
-      "types": "./dist/interfaces/index.d.ts"
+      "require": "./dist/interfaces/index.js",
+      "default": "./dist/interfaces/index.js"
     },
     "./enums": {
+      "types": "./dist/enums/index.d.ts",
       "import": "./dist/enums/index.js",
-      "types": "./dist/enums/index.d.ts"
+      "require": "./dist/enums/index.js",
+      "default": "./dist/enums/index.js"
     },
     "./constants": {
+      "types": "./dist/constants/index.d.ts",
       "import": "./dist/constants/index.js",
-      "types": "./dist/constants/index.d.ts"
-    }
+      "require": "./dist/constants/index.js",
+      "default": "./dist/constants/index.js"
+    },
+    "./validators": {
+      "types": "./dist/validators/index.d.ts",
+      "import": "./dist/validators/index.js",
+      "require": "./dist/validators/index.js",
+      "default": "./dist/validators/index.js"
+    },
+    "./src/*": "./src/*",
+    "./package.json": "./package.json"
   }
 }
 ```
 
-### Multiple Export Patterns
-
-The package supports multiple import patterns for flexibility:
+### Import Patterns
 
 ```typescript
-// Main export (all interfaces)
+// Main export (all interfaces, constants, enums)
 import { User, AuthContext, AvatarProps } from '@lfx-one/shared';
 
-// Specific exports
+// Specific sub-path exports
 import { User, AuthContext } from '@lfx-one/shared/interfaces';
 import { lfxColors } from '@lfx-one/shared/constants';
+import { MeetingStatus } from '@lfx-one/shared/enums';
+import { formatDate, getRelativeDate } from '@lfx-one/shared/utils';
+import { MeetingValidators } from '@lfx-one/shared/validators';
+
+// Direct source imports (for development hot reloading)
+import { User } from '@lfx-one/shared/src/interfaces/auth.interface';
 ```
 
-## 🔧 Interface Architecture
+## Interface Architecture
 
-### Authentication Interfaces
+### Key Interfaces
+
+#### Authentication (`auth.interface.ts`)
 
 ```typescript
-// packages/shared/src/interfaces/auth.ts
 export interface User {
   sid: string;
   'https://sso.linuxfoundation.org/claims/username': string;
@@ -93,113 +196,72 @@ export interface User {
 export interface AuthContext {
   authenticated: boolean;
   user: User | null;
+  persona?: PersonaType | null;
+  organizations?: Account[];
 }
 ```
 
-### Component Interfaces
+Also includes: `M2MTokenResponse`, `BearerTokenOptions`, `RouteAuthConfig`, `AuthDecision`, `TokenExtractionResult`, `AuthMiddlewareResult`, `AuthConfig`
+
+#### Component Interfaces (`components.interface.ts`)
 
 ```typescript
-// packages/shared/src/interfaces/components.ts
-export interface AvatarSizeOptions {
-  size: 'large' | 'xlarge' | 'normal';
-}
-
-export interface AvatarShapeOptions {
-  shape: 'square' | 'circle';
-}
-
 export interface AvatarProps {
   label?: string;
   icon?: string;
   image?: string;
-  size?: AvatarSizeOptions['size'];
-  shape?: AvatarShapeOptions['shape'];
+  size?: 'large' | 'xlarge' | 'normal';
+  shape?: 'square' | 'circle';
   style?: Record<string, string | number> | null;
   styleClass?: string;
   ariaLabel?: string;
 }
 ```
 
-### Project Interfaces
+### Interface File Naming Convention
+
+All interface files use the `.interface.ts` suffix:
+
+- `auth.interface.ts` (not `auth.ts`)
+- `meeting.interface.ts` (not `meeting.ts`)
+- `project.interface.ts` (not `project.ts`)
+
+## Constants Architecture
+
+### Design Tokens
 
 ```typescript
-// packages/shared/src/interfaces/project.ts
-export interface Project {
-  id: string;
-  name: string;
-  description: string;
-  // Additional project fields as implemented
-}
+// colors.constants.ts - LFX brand colors used in Tailwind config
+import { lfxColors } from '@lfx-one/shared/constants';
+
+// font-sizes.constants.ts - Typography scales used in Tailwind config
+import { lfxFontSizes } from '@lfx-one/shared/constants';
 ```
 
-## 🎨 Constants Architecture
+### Domain Constants
 
-### Color System
+Constants are organized by domain (meetings, committees, surveys, polls, etc.) and include configuration values, status labels, validation rules, and reference data (countries, timezones, states).
 
-```typescript
-// packages/shared/src/constants/colors.ts
-export const lfxColors = {
-  primary: {
-    50: '#eff6ff',
-    100: '#dbeafe',
-    // ... full color scale
-    900: '#1e3a8a',
-  },
-  // Additional color scales
-};
-```
+## Build Process
 
-### Typography Constants
-
-```typescript
-// packages/shared/src/constants/font-sizes.ts
-export const lfxFontSizes = {
-  '2xs': ['0.625rem', { lineHeight: '0.75rem' }],
-  xs: ['0.75rem', { lineHeight: '1rem' }],
-  // ... additional font sizes
-};
-```
-
-## 📤 Export Strategy
-
-### Main Index Export
-
-```typescript
-// packages/shared/src/index.ts
-// Export all interfaces
-export * from './interfaces';
-
-// Export all constants
-export * from './constants';
-
-// Export all enums
-export * from './enums';
-```
-
-### Category-Specific Exports
-
-```typescript
-// packages/shared/src/interfaces/index.ts
-export * from './project';
-export * from './components';
-export * from './auth';
-```
-
-## 🔄 Build Process
-
-### TypeScript Compilation
+### TypeScript Configuration
 
 ```json
-// tsconfig.json
 {
   "compilerOptions": {
     "target": "ES2022",
-    "module": "ESNext",
+    "module": "ES2022",
     "moduleResolution": "bundler",
     "declaration": true,
-    "declarationMap": true,
-    "outDir": "./dist"
-  }
+    "outDir": "./dist",
+    "rootDir": "./src",
+    "strict": true,
+    "esModuleInterop": true,
+    "skipLibCheck": true,
+    "isolatedModules": true
+  },
+  "include": ["src/**/*"],
+  "exclude": ["dist", "node_modules"]
 }
 ```
 
@@ -207,380 +269,104 @@ export * from './auth';
 
 ```bash
 # Build the shared package
-cd packages/shared
-npm run build
+cd packages/shared && yarn build
 
 # Watch for changes
-npm run watch
+cd packages/shared && yarn watch
 
 # Type checking only
-npm run check-types
+cd packages/shared && yarn check-types
 ```
 
-## 🎯 Usage Patterns
+## Package Dependencies
 
-### Frontend Usage
+### Runtime Dependencies
 
-```typescript
-// Angular component
-import { User, AvatarProps } from '@lfx-one/shared/interfaces';
-import { lfxColors } from '@lfx-one/shared/constants';
-
-@Component({
-  selector: 'lfx-user-card',
-  template: `...`,
-})
-export class UserCardComponent {
-  @Input() user: User;
-  @Input() avatarProps: AvatarProps;
+```json
+{
+  "dependencies": {
+    "date-fns": "^4.1.0",
+    "date-fns-tz": "^3.2.0"
+  }
 }
 ```
 
-### Backend Usage
+### Peer Dependencies
 
-```typescript
-// Express server
-import { User, AuthContext } from '@lfx-one/shared/interfaces';
-
-app.use('/**', (req: Request, res: Response, next: NextFunction) => {
-  const auth: AuthContext = {
-    authenticated: false,
-    user: null,
-  };
-
-  if (req.oidc?.isAuthenticated()) {
-    auth.authenticated = true;
-    auth.user = req.oidc?.user as User;
+```json
+{
+  "peerDependencies": {
+    "@angular/forms": "^20.3.15",
+    "@fullcalendar/core": "^6.1.19",
+    "chart.js": "^4.5.0",
+    "snowflake-sdk": "^2.3.1"
   }
-
-  // ... rest of handler
-});
+}
 ```
-
-## 🔧 Development Workflow
-
-### Adding New Interfaces
-
-1. Create interface file in appropriate category
-2. Export from category index file
-3. Add to main index if needed
-4. Build the package
-5. Use in applications
-
-### Type Safety Benefits
-
-- **Compile-time Validation**: TypeScript catches type mismatches
-- **IDE Support**: IntelliSense and auto-completion
-- **Refactoring Safety**: Rename/change detection across projects
-- **API Consistency**: Shared interfaces ensure consistent data structures
-
-## 📊 Package Dependencies
 
 ### Development Dependencies
 
 ```json
 {
   "devDependencies": {
+    "@fullcalendar/core": "^6.1.19",
     "typescript": "5.8.3"
   }
 }
 ```
 
-### Runtime Dependencies
-
-The shared package has no runtime dependencies to avoid version conflicts.
-
-## 🔄 Version Management
-
-### Semantic Versioning
-
-- **Major**: Breaking interface changes
-- **Minor**: New interfaces or optional properties
-- **Patch**: Bug fixes or documentation updates
-
-### Dependency Updates
-
-When shared package changes:
-
-1. Build the shared package
-2. Update dependent applications
-3. Test integration
-4. Deploy applications
-
-## 🎯 Best Practices
-
-### Interface Design
-
-- **Immutable by Design**: Use readonly properties where appropriate
-- **Optional Properties**: Make optional what can be undefined
-- **Descriptive Names**: Use clear, descriptive interface names
-- **Documentation**: Add JSDoc comments for complex interfaces
-
-### Export Strategy
-
-- **Granular Exports**: Allow importing specific categories
-- **Barrel Exports**: Provide convenient main export
-- **Type-Only Exports**: Use when appropriate to reduce bundle size
-
-### Breaking Changes
-
-- **Deprecation**: Mark old interfaces as deprecated
-- **Migration Path**: Provide clear migration instructions
-- **Version Bump**: Use major version for breaking changes
-
-This shared package architecture provides a solid foundation for type-safe, maintainable code sharing across the monorepo.
-
-## 🛠 Utilities
-
-The shared package provides utility functions for common operations across the application.
-
-### Directory Structure
-
-```text
-packages/shared/src/utils/
-├── color.utils.ts          # Color manipulation functions
-├── date-time.utils.ts      # Date formatting and timezone handling
-├── file.utils.ts           # File type detection and validation
-├── form.utils.ts           # Form helpers
-├── html-utils.ts           # HTML sanitization
-├── meeting.utils.ts        # Meeting data transformations
-├── poll.utils.ts           # Poll status utilities
-├── rsvp-calculator.util.ts # RSVP calculations
-├── string.utils.ts         # String manipulation
-├── survey.utils.ts         # Survey data utilities
-└── url.utils.ts            # URL parsing and construction
-```
-
-### Color Utilities (`color.utils.ts`)
-
-Functions for color manipulation and conversion:
-
-```typescript
-import { hexToRgba, toHslaValue } from '@lfx-one/shared/utils';
-
-// Convert hex color to RGBA with opacity
-const rgba = hexToRgba('#3B82F6', 0.5); // 'rgba(59, 130, 246, 0.5)'
-
-// Convert color to HSLA value
-const hsla = toHslaValue('#3B82F6');
-```
-
-### Date-Time Utilities (`date-time.utils.ts`)
-
-Comprehensive date and time handling with timezone support (17 functions):
-
-```typescript
-import {
-  formatDate,
-  formatTime,
-  formatDateTime,
-  getRelativeDate,
-  convertToTimezone,
-  getTimezoneOffset,
-  isSameDay,
-  isToday,
-  isPast,
-  isFuture,
-} from '@lfx-one/shared/utils';
-
-// Format dates consistently across the application
-const formattedDate = formatDate(new Date(), 'MMM d, yyyy');
-const formattedTime = formatTime(new Date(), 'h:mm a');
-
-// Get relative date text
-const relative = getRelativeDate(new Date('2024-01-01')); // "3 months ago"
-
-// Timezone conversions
-const converted = convertToTimezone(date, 'America/New_York');
-```
-
-### File Utilities (`file.utils.ts`)
-
-File type detection and validation:
-
-```typescript
-import { getFileType, isValidFileType, getFileExtension } from '@lfx-one/shared/utils';
-
-// Detect file type
-const fileType = getFileType('document.pdf'); // 'pdf'
-
-// Validate file type against allowed types
-const isValid = isValidFileType(file, ['pdf', 'docx', 'xlsx']);
-```
-
-### Form Utilities (`form.utils.ts`)
-
-Angular reactive form helpers:
-
-```typescript
-import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
-
-// Mark all form controls as touched for validation display
-markFormControlsAsTouched(this.myForm);
-```
-
-### HTML Utilities (`html-utils.ts`)
-
-HTML sanitization functions:
-
-```typescript
-import { stripHtml } from '@lfx-one/shared/utils';
-
-// Remove HTML tags from string
-const plainText = stripHtml('<p>Hello <strong>World</strong></p>'); // "Hello World"
-```
-
-### Meeting Utilities (`meeting.utils.ts`)
-
-Meeting data transformations (9 functions):
-
-```typescript
-import { transformV1MeetingToV2, getMeetingStatus, getMeetingDuration, formatMeetingTime, isRecurringMeeting, getNextOccurrence } from '@lfx-one/shared/utils';
-
-// Transform legacy meeting format
-const v2Meeting = transformV1MeetingToV2(v1Meeting);
-
-// Get meeting status
-const status = getMeetingStatus(meeting); // 'upcoming' | 'in-progress' | 'completed'
-```
-
-### Poll Utilities (`poll.utils.ts`)
-
-Poll status management:
-
-```typescript
-import { getPollStatus, calculatePollResults } from '@lfx-one/shared/utils';
-
-// Get current poll status
-const status = getPollStatus(poll); // 'draft' | 'active' | 'closed'
-```
-
-### RSVP Calculator (`rsvp-calculator.util.ts`)
-
-RSVP calculations for meetings:
-
-```typescript
-import { calculateRsvpStats, getRsvpSummary } from '@lfx-one/shared/utils';
-
-// Calculate RSVP statistics
-const stats = calculateRsvpStats(rsvps);
-// { attending: 15, notAttending: 3, tentative: 2, noResponse: 5 }
-```
-
-### String Utilities (`string.utils.ts`)
-
-String manipulation helpers:
-
-```typescript
-import { parseToInt, truncate, capitalize } from '@lfx-one/shared/utils';
-
-// Parse string to integer safely
-const num = parseToInt('42', 0); // 42
-const fallback = parseToInt('invalid', 0); // 0
-```
-
-### Survey Utilities (`survey.utils.ts`)
-
-Survey data processing:
-
-```typescript
-import { calculateNpsScore, getSurveyStatus } from '@lfx-one/shared/utils';
-
-// Calculate NPS score from responses
-const nps = calculateNpsScore(responses);
-```
-
-### URL Utilities (`url.utils.ts`)
-
-URL parsing and construction:
-
-```typescript
-import { buildUrl, parseQueryParams, appendQueryParam } from '@lfx-one/shared/utils';
-
-// Build URL with query parameters
-const url = buildUrl('/api/meetings', { page: 1, limit: 10 });
-// '/api/meetings?page=1&limit=10'
-```
-
-## ✅ Validators
-
-The shared package provides reusable form validators for Angular reactive forms.
-
-### Directory Structure
-
-```text
-packages/shared/src/validators/
-├── mailing-list.validators.ts  # Mailing list form validators
-├── meeting.validators.ts       # Meeting form validators
-└── vote.validators.ts          # Vote form validators
-```
-
-### Mailing List Validators (`mailing-list.validators.ts`)
-
-```typescript
-import { MailingListValidators } from '@lfx-one/shared/validators';
-
-this.form = this.fb.group({
-  name: ['', [Validators.required, MailingListValidators.validName]],
-  email: ['', [Validators.required, MailingListValidators.validEmail]],
-  description: ['', [MailingListValidators.maxLength(500)]],
-});
-```
-
-### Meeting Validators (`meeting.validators.ts`)
+## Utilities
+
+The shared package provides 12 utility modules for common operations. See [CLAUDE.md Shared Package Utilities](../../CLAUDE.md#shared-package-utilities) for usage examples.
+
+### Generic Utilities
+
+| Module               | Description                                                                        |
+| -------------------- | ---------------------------------------------------------------------------------- |
+| `color.utils.ts`     | Color manipulation (`hexToRgba`, `toHslaValue`)                                    |
+| `date-time.utils.ts` | Date formatting, timezone handling (`formatDate`, `formatTime`, `getRelativeDate`) |
+| `file.utils.ts`      | File type detection (`getFileType`, `getFileExtension`)                            |
+| `form.utils.ts`      | Angular form helpers (`markFormControlsAsTouched`)                                 |
+| `html-utils.ts`      | HTML sanitization (`stripHtml`)                                                    |
+| `string.utils.ts`    | String manipulation (`parseToInt`, `truncate`)                                     |
+| `url.utils.ts`       | URL parsing and construction (`buildUrl`, `parseQueryParams`)                      |
+
+### Domain-Specific Utilities
+
+| Module                    | Description                                                                 |
+| ------------------------- | --------------------------------------------------------------------------- |
+| `meeting.utils.ts`        | Meeting data transformations (`transformV1MeetingToV2`, `getMeetingStatus`) |
+| `poll.utils.ts`           | Poll status utilities (`getPollStatus`)                                     |
+| `rsvp-calculator.util.ts` | RSVP statistics calculation                                                 |
+| `survey.utils.ts`         | Survey data processing (`calculateNpsScore`, `getSurveyStatus`)             |
+| `vote.utils.ts`           | Vote data utilities                                                         |
+
+## Validators
+
+The shared package provides 3 form validator modules for Angular reactive forms.
 
 ```typescript
 import { MeetingValidators } from '@lfx-one/shared/validators';
-
-this.form = this.fb.group(
-  {
-    title: ['', [Validators.required, MeetingValidators.validTitle]],
-    startTime: ['', [Validators.required]],
-    endTime: ['', [Validators.required]],
-    duration: ['', [MeetingValidators.validDuration]],
-  },
-  {
-    validators: [MeetingValidators.endTimeAfterStartTime],
-  }
-);
-```
-
-### Vote Validators (`vote.validators.ts`)
-
-```typescript
+import { MailingListValidators } from '@lfx-one/shared/validators';
 import { VoteValidators } from '@lfx-one/shared/validators';
-
-this.form = this.fb.group({
-  question: ['', [Validators.required, VoteValidators.validQuestion]],
-  options: this.fb.array([], [VoteValidators.minOptions(2), VoteValidators.maxOptions(10)]),
-  deadline: ['', [Validators.required, VoteValidators.futureDate]],
-});
 ```
 
-## 📁 Meeting Templates
+- **`meeting.validators.ts`** - Meeting form validators (title, duration, time range)
+- **`mailing-list.validators.ts`** - Mailing list form validators (name, email)
+- **`vote.validators.ts`** - Vote form validators (question, options count, deadline)
 
-The shared package includes meeting template structures for consistent meeting creation.
+## Best Practices
 
-### Directory Structure
+### Interface Design
 
-```text
-packages/shared/src/meeting-templates/
-├── templates/              # Pre-defined meeting templates
-│   ├── standup.ts         # Daily standup template
-│   ├── retrospective.ts   # Sprint retrospective template
-│   └── planning.ts        # Sprint planning template
-├── interfaces/            # Template type definitions
-└── index.ts               # Template exports
-```
+- **File naming**: Use `.interface.ts` suffix for all interface files
+- **Shared location**: All interfaces go in `@lfx-one/shared/interfaces`, even component-specific ones
+- **Optional properties**: Use `?` for properties that may be undefined
+- **TypeScript interfaces over union types**: Better maintainability
 
-### Usage
+### Adding New Content
 
-```typescript
-import { MeetingTemplates, MeetingTemplateType } from '@lfx-one/shared/meeting-templates';
-
-// Get a pre-defined template
-const standupTemplate = MeetingTemplates.get(MeetingTemplateType.Standup);
-
-// Apply template to meeting form
-this.meetingForm.patchValue(standupTemplate.defaults);
-```
+1. Create the file in the appropriate directory (`interfaces/`, `constants/`, `enums/`, `utils/`, `validators/`)
+2. Export from the directory's `index.ts`
+3. Build the package (`yarn build` from `packages/shared/`)
+4. Import using the sub-path export pattern (`@lfx-one/shared/interfaces`)

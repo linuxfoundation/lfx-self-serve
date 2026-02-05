@@ -1,7 +1,7 @@
 # LFX One
 
 This is a monorepo for the LFX One application, built
-with Angular 19 and experimental zoneless change detection.
+with Angular 19 and stable zoneless change detection.
 
 ## What's inside?
 
@@ -14,7 +14,7 @@ The app is 100% [TypeScript](https://www.typescriptlang.org/).
 
 ### Architecture
 
-- **Frontend**: Angular 19 with experimental zoneless change detection, Angular
+- **Frontend**: Angular 19 with stable zoneless change detection, Angular
   Signals, PrimeNG components, Tailwind CSS
 - **UI Framework**: PrimeNG 19 with custom LFX UI Core preset and Tailwind CSS integration
 - **Styling**: Tailwind CSS v3 with PrimeUI plugin, CSS layers architecture,
@@ -317,7 +317,7 @@ export class ExampleComponent {}
 
 ### Frontend
 
-- **Angular 19** with experimental zoneless change detection
+- **Angular 19** with stable zoneless change detection
 - **Angular Signals** for state management
 - **PrimeNG 19** UI component library with custom LFX preset
 - **Tailwind CSS v3** with PrimeUI plugin

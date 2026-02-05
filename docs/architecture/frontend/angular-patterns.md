@@ -95,7 +95,7 @@ export class DataService {
 ```typescript
 // app.config.server.ts
 export const config = mergeApplicationConfig(appConfig, {
-  providers: [provideServerRendering(), provideServerRouting(serverRoutes)],
+  providers: [provideServerRendering(withRoutes(serverRoutes))],
 });
 ```
 
