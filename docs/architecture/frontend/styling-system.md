@@ -163,7 +163,7 @@ module.exports = {
 ```
 
 > **Note**: Colors and font sizes are imported from `@lfx-one/shared` package, not local config files. The Tailwind config uses ESM syntax (`export default`).
-
+>
 > **Note**: While Open Sans is the declared `sans` font, `Inter` is explicitly applied to body text elements (h1-h6, p, label, button, input) in `styles.scss` and is the primary visible font. The `inter` font family utility class is available via Tailwind.
 
 ### PrimeUI Plugin Integration

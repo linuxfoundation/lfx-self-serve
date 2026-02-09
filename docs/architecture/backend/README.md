@@ -133,7 +133,7 @@ Discover PM2 configuration, production deployment, and server management.
 - **ETag Concurrency Control**: Safe concurrent operations with optimistic locking
 - **Custom Error Hierarchy**: Typed error classes for authentication, authorization, validation, and microservice errors
 
-### Core Services
+### Core Platform Services
 
 - **Server-Side Rendering**: Angular 19 built-in SSR with Express.js for optimal SEO and performance
 - **Authentication**: Auth0 integration with selective route protection (public/optional/required)
