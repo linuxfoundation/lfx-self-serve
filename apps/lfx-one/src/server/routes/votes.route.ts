@@ -12,6 +12,9 @@ const voteController = new VoteController();
 // GET /votes - get all votes
 router.get('/', (req, res, next) => voteController.getVotes(req, res, next));
 
+// GET /votes/:uid/results - get vote results
+router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(req, res, next));
+
 // GET /votes/:uid - get a single vote
 router.get('/:uid', (req, res, next) => voteController.getVoteById(req, res, next));
 

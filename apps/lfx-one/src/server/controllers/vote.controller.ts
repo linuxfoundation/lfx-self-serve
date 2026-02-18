@@ -85,7 +85,7 @@ export class VoteController {
       const vote = await this.voteService.createVote(req, voteData);
 
       logger.success(req, 'create_vote', startTime, {
-        vote_uid: vote.vote_uid,
+        uid: vote.uid,
         project_uid: vote.project_uid,
         name: vote.name,
       });
@@ -160,6 +160,40 @@ export class VoteController {
       });
 
       res.status(204).send();
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /votes/:uid/results
+   */
+  public async getVoteResults(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_vote_results', {
+      vote_uid: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_vote_results',
+          service: 'vote_controller',
+          logStartTime: startTime,
+        })
+      ) {
+        return;
+      }
+
+      const results = await this.voteService.getVoteResults(req, uid);
+
+      logger.success(req, 'get_vote_results', startTime, {
+        vote_uid: uid,
+        num_poll_results: results.poll_results?.length ?? 0,
+        num_votes_cast: results.num_votes_cast,
+      });
+
+      res.json(results);
     } catch (error) {
       next(error);
     }

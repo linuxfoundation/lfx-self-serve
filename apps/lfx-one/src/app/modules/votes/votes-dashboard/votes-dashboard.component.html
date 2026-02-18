@@ -49,4 +49,8 @@
 </div>
 
 <!-- Vote Results Drawer -->
-<lfx-vote-results-drawer [(visible)]="resultsDrawerVisible" [vote]="selectedVote()" data-testid="votes-results-drawer"></lfx-vote-results-drawer>
+<lfx-vote-results-drawer
+  [(visible)]="resultsDrawerVisible"
+  [voteId]="selectedVoteId()"
+  [listVote]="selectedListVote()"
+  data-testid="votes-results-drawer"></lfx-vote-results-drawer>

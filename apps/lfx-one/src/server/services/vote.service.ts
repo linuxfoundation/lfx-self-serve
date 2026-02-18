@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreateVoteRequest, QueryServiceResponse, UpdateVoteRequest, Vote } from '@lfx-one/shared/interfaces';
+import { CreateVoteRequest, QueryServiceResponse, UpdateVoteRequest, Vote, VoteResultsResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
@@ -60,7 +60,7 @@ export class VoteService {
 
     const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, 'GET');
 
-    if (!vote || !vote.vote_uid) {
+    if (!vote || !vote.uid) {
       throw new ResourceNotFoundError('Vote', voteUid, {
         operation: 'get_vote_by_id',
         service: 'vote_service',
@@ -140,5 +140,22 @@ export class VoteService {
     });
 
     return vote;
+  }
+
+  /**
+   * Fetches aggregated vote results for a given vote
+   */
+  public async getVoteResults(req: Request, voteUid: string): Promise<VoteResultsResponse> {
+    logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid });
+
+    const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}/results`, 'GET');
+
+    logger.debug(req, 'get_vote_results', 'Completed vote results fetch', {
+      vote_uid: voteUid,
+      num_poll_results: results.poll_results?.length ?? 0,
+      num_votes_cast: results.num_votes_cast,
+    });
+
+    return results;
   }
 }

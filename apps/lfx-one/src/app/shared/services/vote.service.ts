@@ -3,7 +3,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { CreateVoteRequest, UpdateVoteRequest, Vote } from '@lfx-one/shared/interfaces';
+import { CreateVoteRequest, UpdateVoteRequest, Vote, VoteResultsResponse } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of, take, tap, throwError } from 'rxjs';
 
 @Injectable({
@@ -76,6 +76,15 @@ export class VoteService {
       take(1),
       catchError((error) => {
         console.error(`Failed to delete vote ${voteUid}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
+  public getVoteResults(voteUid: string): Observable<VoteResultsResponse> {
+    return this.http.get<VoteResultsResponse>(`/api/votes/${voteUid}/results`).pipe(
+      catchError((error) => {
+        console.error(`Failed to load vote results ${voteUid}:`, error);
         return throwError(() => error);
       })
     );

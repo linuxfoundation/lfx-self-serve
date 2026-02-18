@@ -220,7 +220,7 @@ export class VoteManageComponent {
     this.voteService.createVote(createRequest).subscribe({
       next: (createdVote) => {
         // After creating, enable the vote to open it
-        this.voteService.enableVote(createdVote.vote_uid).subscribe({
+        this.voteService.enableVote(createdVote.uid).subscribe({
           next: () => {
             this.messageService.add({
               severity: 'success',
@@ -411,7 +411,7 @@ export class VoteManageComponent {
 
   private getMockVote(voteId: string): Vote {
     return {
-      vote_uid: voteId,
+      uid: voteId,
       name: 'Mock Vote',
       description: 'This is a mock vote for testing',
       committee_filters: ['voting_rep'],

@@ -63,13 +63,13 @@
     </ng-template>
 
     <ng-template #body let-vote let-rowIndex="rowIndex">
-      <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'votes-row-' + vote.vote_uid">
+      <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'votes-row-' + vote.uid">
         <td>
           <button
             type="button"
             class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0"
-            (click)="onViewVote(vote.vote_uid)"
-            [attr.data-testid]="'votes-name-' + vote.vote_uid">
+            (click)="onViewVote(vote.uid)"
+            [attr.data-testid]="'votes-name-' + vote.uid">
             {{ vote.name }}
           </button>
         </td>
@@ -85,7 +85,7 @@
         </td>
 
         <td>
-          <span class="text-xs text-slate-900" [attr.data-testid]="'votes-responses-' + vote.vote_uid">
+          <span class="text-xs text-slate-900" [attr.data-testid]="'votes-responses-' + vote.uid">
             {{ vote.num_response_received }}
           </span>
         </td>
@@ -106,8 +106,8 @@
           <div class="flex items-center justify-end gap-1">
             @if (hasPMOAccess()) {
               @if (vote.status === PollStatus.DISABLED) {
-                <a [routerLink]="['/votes', vote.vote_uid, 'edit']">
-                  <lfx-button label="Edit" severity="primary" size="small" [text]="true" [attr.data-testid]="'votes-edit-' + vote.vote_uid"> </lfx-button>
+                <a [routerLink]="['/votes', vote.uid, 'edit']">
+                  <lfx-button label="Edit" severity="primary" size="small" [text]="true" [attr.data-testid]="'votes-edit-' + vote.uid"> </lfx-button>
                 </a>
                 <lfx-button
                   label="Delete"
@@ -116,7 +116,7 @@
                   [text]="true"
                   (onClick)="onDeleteVote(vote)"
                   [disabled]="isDeleting()"
-                  [attr.data-testid]="'votes-delete-' + vote.vote_uid">
+                  [attr.data-testid]="'votes-delete-' + vote.uid">
                 </lfx-button>
               } @else if (vote.status === PollStatus.ACTIVE) {
                 <lfx-button
@@ -124,8 +124,8 @@
                   severity="primary"
                   size="small"
                   [text]="true"
-                  (onClick)="onViewVote(vote.vote_uid)"
-                  [attr.data-testid]="'votes-view-' + vote.vote_uid">
+                  (onClick)="onViewVote(vote.uid)"
+                  [attr.data-testid]="'votes-view-' + vote.uid">
                 </lfx-button>
               } @else {
                 <lfx-button
@@ -133,8 +133,8 @@
                   severity="primary"
                   size="small"
                   [text]="true"
-                  (onClick)="onViewResults(vote.vote_uid)"
-                  [attr.data-testid]="'votes-results-' + vote.vote_uid">
+                  (onClick)="onViewResults(vote.uid)"
+                  [attr.data-testid]="'votes-results-' + vote.uid">
                 </lfx-button>
               }
             } @else {
@@ -144,8 +144,8 @@
                   severity="primary"
                   size="small"
                   [text]="true"
-                  (onClick)="onViewVote(vote.vote_uid)"
-                  [attr.data-testid]="'votes-cast-' + vote.vote_uid">
+                  (onClick)="onViewVote(vote.uid)"
+                  [attr.data-testid]="'votes-cast-' + vote.uid">
                 </lfx-button>
               } @else if (vote.status === PollStatus.ENDED) {
                 <lfx-button
@@ -153,8 +153,8 @@
                   severity="primary"
                   size="small"
                   [text]="true"
-                  (onClick)="onViewResults(vote.vote_uid)"
-                  [attr.data-testid]="'votes-results-' + vote.vote_uid">
+                  (onClick)="onViewResults(vote.uid)"
+                  [attr.data-testid]="'votes-results-' + vote.uid">
                 </lfx-button>
               }
             }

@@ -43,7 +43,7 @@ export class VotesDashboardComponent {
   // === Computed Signals ===
   protected readonly project: Signal<ProjectContext | null> = this.initProject();
   protected readonly votes: Signal<Vote[]> = this.initVotes();
-  protected readonly selectedVote: Signal<Vote | null> = this.initSelectedVote();
+  protected readonly selectedListVote: Signal<Vote | null> = this.initSelectedListVote();
 
   protected onViewVote(voteId: string): void {
     this.selectedVoteId.set(voteId);
@@ -90,11 +90,11 @@ export class VotesDashboardComponent {
     );
   }
 
-  private initSelectedVote(): Signal<Vote | null> {
+  private initSelectedListVote(): Signal<Vote | null> {
     return computed(() => {
       const id = this.selectedVoteId();
       if (!id) return null;
-      return this.votes().find((v) => v.vote_uid === id) || null;
+      return this.votes().find((v) => v.uid === id) || null;
     });
   }
 }

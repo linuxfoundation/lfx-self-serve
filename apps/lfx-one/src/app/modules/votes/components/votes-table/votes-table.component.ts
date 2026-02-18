@@ -101,9 +101,9 @@ export class VotesTableComponent {
   protected onRowSelect(event: { data: Vote }): void {
     const vote = event.data;
     if (vote.status === PollStatus.ENDED) {
-      this.viewResults.emit(vote.vote_uid);
+      this.viewResults.emit(vote.uid);
     } else {
-      this.viewVote.emit(vote.vote_uid);
+      this.viewVote.emit(vote.uid);
     }
   }
 
