@@ -4,7 +4,6 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { PastMeeting, PastMeetingRecording, PastMeetingSummary, UpdatePastMeetingSummaryRequest } from '@lfx-one/shared/interfaces';
-import { isUuid } from '@lfx-one/shared/utils';
 import { logger } from '../services/logger.service';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { MeetingService } from '../services/meeting.service';
@@ -24,21 +23,14 @@ export class PastMeetingController {
     });
 
     try {
-      // TODO(v1-migration): Remove V1 past meeting fetch once all meetings are migrated to V2
-      // Get both 'past_meeting' and 'v1_past_meeting' types in parallel
-      const [regularPastMeetings, v1PastMeetings] = await Promise.all([
-        this.meetingService.getMeetings(req, req.query as Record<string, any>, 'past_meeting'),
-        this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_past_meeting'),
-      ]);
-
-      // Combine the meetings
-      const meetings = [...regularPastMeetings, ...v1PastMeetings] as PastMeeting[];
+      // All past meetings are now ITX-managed (v1_past_meeting type)
+      const meetings = (await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_past_meeting')) as PastMeeting[];
 
       // TODO: Remove this once we have a way to get the registrants count
       // Process each meeting individually to add registrant and participant counts
       await Promise.all(
         meetings.map(async (meeting) => {
-          const counts = await this.addParticipantsCount(req, meeting.uid);
+          const counts = await this.addParticipantsCount(req, meeting.id);
           meeting.individual_registrants_count = counts.individual_registrants_count;
           meeting.committee_members_count = counts.committee_members_count;
           meeting.participant_count = counts.participant_count;
@@ -49,8 +41,6 @@ export class PastMeetingController {
       // Log the success
       logger.success(req, 'get_past_meetings', startTime, {
         meeting_count: meetings.length,
-        regular_past_meeting_count: regularPastMeetings.length,
-        v1_past_meeting_count: v1PastMeetings.length,
       });
 
       // Send the meetings data to the client
@@ -68,7 +58,7 @@ export class PastMeetingController {
   public async getPastMeetingParticipants(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const startTime = logger.startOperation(req, 'get_past_meeting_participants', {
-      past_meeting_uid: uid,
+      past_meeting_id: uid,
     });
 
     try {
@@ -88,7 +78,7 @@ export class PastMeetingController {
 
       // Log the success
       logger.success(req, 'get_past_meeting_participants', startTime, {
-        past_meeting_uid: uid,
+        past_meeting_id: uid,
         participant_count: participants.length,
       });
 
@@ -97,7 +87,7 @@ export class PastMeetingController {
     } catch (error) {
       // Log the error
       logger.error(req, 'get_past_meeting_participants', startTime, error, {
-        past_meeting_uid: uid,
+        past_meeting_id: uid,
       });
 
       // Send the error to the next middleware
@@ -111,7 +101,7 @@ export class PastMeetingController {
   public async getPastMeetingRecording(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const startTime = logger.startOperation(req, 'get_past_meeting_recording', {
-      past_meeting_uid: uid,
+      past_meeting_id: uid,
     });
 
     try {
@@ -126,11 +116,8 @@ export class PastMeetingController {
         return;
       }
 
-      // Determine if this is a v1 meeting based on UID format
-      const isV1 = !isUuid(uid);
-
       // Get the past meeting recording
-      const recording: PastMeetingRecording | null = await this.meetingService.getPastMeetingRecording(req, uid, isV1);
+      const recording: PastMeetingRecording | null = await this.meetingService.getPastMeetingRecording(req, uid);
 
       // If no recording found, return 404
       if (!recording) {
@@ -143,7 +130,7 @@ export class PastMeetingController {
 
       // Log the success
       logger.success(req, 'get_past_meeting_recording', startTime, {
-        past_meeting_uid: uid,
+        past_meeting_id: uid,
         recording_uid: recording.uid,
         recording_count: recording.recording_count,
         session_count: recording.sessions?.length || 0,
@@ -154,7 +141,7 @@ export class PastMeetingController {
     } catch (error) {
       // Log the error
       logger.error(req, 'get_past_meeting_recording', startTime, error, {
-        past_meeting_uid: uid,
+        past_meeting_id: uid,
       });
 
       // Send the error to the next middleware
@@ -168,7 +155,7 @@ export class PastMeetingController {
   public async getPastMeetingSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const startTime = logger.startOperation(req, 'get_past_meeting_summary', {
-      past_meeting_uid: uid,
+      past_meeting_id: uid,
     });
 
     try {
@@ -183,11 +170,8 @@ export class PastMeetingController {
         return;
       }
 
-      // Determine if this is a v1 meeting based on UID format
-      const isV1 = !isUuid(uid);
-
       // Get the past meeting summary
-      const summary: PastMeetingSummary | null = await this.meetingService.getPastMeetingSummary(req, uid, isV1);
+      const summary: PastMeetingSummary | null = await this.meetingService.getPastMeetingSummary(req, uid);
 
       // If no summary found, return 404
       if (!summary) {
@@ -200,7 +184,7 @@ export class PastMeetingController {
 
       // Log the success
       logger.success(req, 'get_past_meeting_summary', startTime, {
-        past_meeting_uid: uid,
+        past_meeting_id: uid,
         summary_uid: summary.uid,
         approved: summary.approved,
         requires_approval: summary.requires_approval,
@@ -211,7 +195,7 @@ export class PastMeetingController {
     } catch (error) {
       // Log the error
       logger.error(req, 'get_past_meeting_summary', startTime, error, {
-        past_meeting_uid: uid,
+        past_meeting_id: uid,
       });
 
       // Send the error to the next middleware
@@ -225,7 +209,7 @@ export class PastMeetingController {
   public async getPastMeetingAttachments(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const startTime = logger.startOperation(req, 'get_past_meeting_attachments', {
-      past_meeting_uid: uid,
+      past_meeting_id: uid,
     });
 
     try {
@@ -245,7 +229,7 @@ export class PastMeetingController {
 
       // Log the success
       logger.success(req, 'get_past_meeting_attachments', startTime, {
-        past_meeting_uid: uid,
+        past_meeting_id: uid,
         attachment_count: attachments.length,
       });
 
@@ -254,7 +238,7 @@ export class PastMeetingController {
     } catch (error) {
       // Log the error
       logger.error(req, 'get_past_meeting_attachments', startTime, error, {
-        past_meeting_uid: uid,
+        past_meeting_id: uid,
       });
 
       // Send the error to the next middleware
@@ -268,7 +252,7 @@ export class PastMeetingController {
   public async updatePastMeetingSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid, summaryUid } = req.params;
     const startTime = logger.startOperation(req, 'update_past_meeting_summary', {
-      past_meeting_uid: uid,
+      past_meeting_id: uid,
       summary_uid: summaryUid,
     });
 
@@ -305,7 +289,7 @@ export class PastMeetingController {
 
       // Log the success
       logger.success(req, 'update_past_meeting_summary', startTime, {
-        past_meeting_uid: uid,
+        past_meeting_id: uid,
         summary_uid: summaryUid,
       });
 
@@ -314,7 +298,7 @@ export class PastMeetingController {
     } catch (error) {
       // Log the error
       logger.error(req, 'update_past_meeting_summary', startTime, error, {
-        past_meeting_uid: uid,
+        past_meeting_id: uid,
         summary_uid: summaryUid,
       });
 
@@ -334,7 +318,7 @@ export class PastMeetingController {
     pastMeetingUid: string
   ): Promise<{ individual_registrants_count: number; committee_members_count: number; participant_count: number; attended_count: number }> {
     const startTime = logger.startOperation(req, 'add_participant_counts', {
-      past_meeting_uid: pastMeetingUid,
+      past_meeting_id: pastMeetingUid,
     });
 
     try {
@@ -354,7 +338,7 @@ export class PastMeetingController {
       };
 
       logger.success(req, 'add_participant_counts', startTime, {
-        past_meeting_uid: pastMeetingUid,
+        past_meeting_id: pastMeetingUid,
         invited_count: invitedCount,
         attended_count: attendedCount,
         total_count: totalParticipantCount,
@@ -364,7 +348,7 @@ export class PastMeetingController {
     } catch (error) {
       // Log error but don't fail - default to 0 counts
       logger.error(req, 'add_participant_counts', startTime, error, {
-        past_meeting_uid: pastMeetingUid,
+        past_meeting_id: pastMeetingUid,
       });
 
       return {

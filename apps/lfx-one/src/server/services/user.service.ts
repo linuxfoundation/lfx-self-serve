@@ -476,15 +476,10 @@ export class UserService {
   public async getUserMeetings(req: Request, email: string, projectUid: string, query: Record<string, any>, limit?: number): Promise<Meeting[]> {
     // Step 1: Get all meetings the user has access to, filtered by project
     // Note: Writers have API access to all meetings, but we still filter by registration
-    const meetings = await this.meetingService.getMeetings(req, query, 'meeting', false);
-    const v1Meetings = await this.meetingService.getMeetings(req, query, 'v1_meeting', false);
-
-    const allMeetings = [...meetings, ...v1Meetings];
+    const allMeetings = await this.meetingService.getMeetings(req, query, 'v1_meeting', false);
 
     logger.debug(req, 'get_user_meetings', 'Retrieved meetings from API', {
       total_meetings: allMeetings.length,
-      regular_meetings: meetings.length,
-      v1_meetings: v1Meetings.length,
     });
 
     if (allMeetings.length === 0) {
@@ -519,20 +514,14 @@ export class UserService {
     const registrationChecks = await Promise.all(
       meetings.map(async (meeting) => {
         try {
+          // All meetings are now ITX-managed, use v1_meeting_registrant type
           const query = {
             v: 1,
-            type: 'meeting_registrant',
-            parent: `meeting:${meeting.uid}`,
-            tags_all: [`email:${email}`],
+            type: 'v1_meeting_registrant',
+            parent: '',
+            tags_all: [`email:${email}`, `meeting_id:${meeting.id}`],
             ...DEFAULT_QUERY_PARAMS,
           };
-
-          // If meeting is v1, use v1_meeting_registrant type and tags_all format
-          if (meeting.version === 'v1') {
-            query.type = 'v1_meeting_registrant';
-            query.tags_all.push(`meeting_uid:${meeting.uid}`);
-            query.parent = '';
-          }
 
           const response = await this.apiClientService.request<QueryServiceResponse<MeetingRegistrant>>('GET', `${baseUrl}/query/resources`, m2mToken, query);
 
@@ -540,14 +529,14 @@ export class UserService {
           const isRegistered = response.data.resources && response.data.resources.length > 0;
 
           logger.debug(req, 'filter_meetings_by_registration', 'Checked user registration for meeting', {
-            meeting_uid: meeting.uid,
+            meeting_id: meeting.id,
             is_registered: isRegistered,
           });
 
           return isRegistered ? meeting : null;
         } catch (error) {
           logger.warning(req, 'filter_meetings_by_registration', 'Failed to check registration for meeting', {
-            meeting_uid: meeting.uid,
+            meeting_id: meeting.id,
             err: error,
           });
           return null;
@@ -594,7 +583,7 @@ export class UserService {
     for (const meeting of meetings) {
       if (meeting.occurrences && meeting.occurrences.length > 0) {
         // Filter active occurrences (not cancelled)
-        const activeOccurrences = meeting.occurrences.filter((occ) => !occ.is_cancelled);
+        const activeOccurrences = meeting.occurrences.filter((occ) => occ.status !== 'cancel');
 
         for (const occurrence of activeOccurrences) {
           const startTime = new Date(occurrence.start_time);
@@ -648,9 +637,8 @@ export class UserService {
 
     const params = new URLSearchParams();
     if (meeting.password) params.set('password', meeting.password);
-    if (meeting.version === 'v1') params.set('v1', 'true');
     const queryString = params.toString();
-    const buttonLink = queryString ? `/meetings/${meeting.uid}?${queryString}` : `/meetings/${meeting.uid}`;
+    const buttonLink = queryString ? `/meetings/${meeting.id}?${queryString}` : `/meetings/${meeting.id}`;
 
     return {
       type: 'Review Agenda',

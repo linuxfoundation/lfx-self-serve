@@ -50,7 +50,7 @@
             data-testid="share-meeting-button"
             tooltip="Share Meeting"></lfx-button>
         }
-        @if (meeting().project_slug && meeting().organizer && !pastMeeting() && !isLegacyMeeting()) {
+        @if (meeting().project_slug && meeting().organizer && !pastMeeting()) {
           <lfx-button
             icon="fa-light fa-edit"
             [text]="true"
@@ -59,21 +59,9 @@
             severity="secondary"
             data-testid="edit-meeting-button"
             tooltip="Edit Meeting"
-            [routerLink]="['/meetings', meeting().uid, 'edit']"></lfx-button>
-
-          <lfx-button
-            icon="fa-light fa-people-group"
-            [text]="true"
-            [rounded]="true"
-            size="small"
-            severity="secondary"
-            data-testid="committees-button"
-            (click)="openCommitteeModal()"
-            [tooltip]="
-              meeting().committees && meeting().committees!.length > 0 ? 'Manage ' + committeeLabel.plural : 'Connect ' + committeeLabel.plural
-            "></lfx-button>
+            [routerLink]="['/meetings', meeting().id, 'edit']"></lfx-button>
         }
-        @if (meeting().organizer && !isLegacyMeeting()) {
+        @if (meeting().organizer) {
           <lfx-button
             icon="fa-light fa-trash"
             [text]="true"
@@ -134,7 +122,7 @@
     }
 
     <!-- AI Summary Review Banner for Organizers -->
-    @if (pastMeeting() && meeting().organizer && !isLegacyMeeting() && hasSummary() && !summaryApproved()) {
+    @if (pastMeeting() && meeting().organizer && hasSummary() && !summaryApproved()) {
       <div class="flex items-center gap-2.5 px-3.5 py-3 bg-blue-50 border border-blue-200 rounded-md mb-3">
         <i class="fa-light fa-sparkles text-base text-blue-600 flex-shrink-0 mt-0.5"></i>
         <div class="flex-1 flex items-center justify-between gap-3">
@@ -153,48 +141,20 @@
 
     <!-- Two Column Info Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5" data-testid="meeting-info-cards">
-      <!-- Resources Card Column -->
+      <!-- Resources Card Column (Coming Soon) -->
       <div class="flex flex-col">
         <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60" data-testid="resources-card">
           <div class="flex items-center justify-between gap-2">
-            <div class="flex items-center gap-2 text-xs tracking-wide leading-tight text-gray-600">
+            <div class="flex items-center gap-2 text-xs tracking-wide leading-tight text-gray-400">
               <i class="fa-light fa-paperclip text-xs"></i>
               <span>Resources</span>
+              <span
+                class="inline-flex items-center gap-0.5 text-[10px] font-medium text-gray-400 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded-full">
+                <i class="fa-light fa-clock text-[8px]"></i>
+                Coming Soon
+              </span>
             </div>
-            @if (!pastMeeting() && meeting().organizer && !isLegacyMeeting()) {
-              <lfx-button
-                icon="fa-light fa-upload text-xs"
-                label="Add"
-                size="small"
-                severity="secondary"
-                data-testid="add-resource-button"
-                [routerLink]="['/meetings', meeting().uid, 'edit']"
-                [queryParams]="{ step: '4' }">
-              </lfx-button>
-            }
           </div>
-
-          @if (totalResourcesCount() === 0) {
-            <p class="text-[12.25px] leading-tight tracking-tight text-gray-500">None</p>
-          } @else {
-            <div class="grid grid-cols-2 gap-1">
-              @for (attachment of attachments(); track attachment.uid) {
-                <a
-                  [href]="attachment.type === 'link' ? attachment.link : '/api/meetings/' + meeting().uid + '/attachments/' + attachment.uid"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="inline-flex !text-black font-semibold items-center gap-1.5 px-2 py-1.5 bg-gray-200/80 hover:bg-gray-300/80 rounded text-[12px] tracking-wide transition-colors h-[26px]"
-                  [pTooltip]="attachment.type === 'link' ? attachment.name : attachment.name + ' (' + (attachment.file_size || 0 | fileSize) + ')'">
-                  @if (attachment.type === 'link') {
-                    <i class="fa-light fa-arrow-up-right-from-square w-3.5 h-3.5 flex-shrink-0"></i>
-                  } @else {
-                    <i [class]="(attachment.mime_type || '' | fileTypeIcon) + ' w-3.5 h-3.5 flex-shrink-0'"></i>
-                  }
-                  <span class="truncate">{{ attachment.name }}</span>
-                </a>
-              }
-            </div>
-          }
         </div>
 
         <!-- Action Buttons for Resources Column -->
@@ -221,7 +181,7 @@
                 size="small"
                 class="w-full"
                 label="Join Meeting"
-                [routerLink]="['/meetings', meeting().uid]"
+                [routerLink]="['/meetings', meeting().id]"
                 [queryParams]="joinQueryParams()"
                 rel="noopener noreferrer"
                 icon="fa-light fa-video"
@@ -232,7 +192,7 @@
             }
           </div>
         }
-        @if (pastMeeting() && meeting().organizer && !isLegacyMeeting()) {
+        @if (pastMeeting() && meeting().organizer) {
           <div class="flex flex-col md:flex-row gap-2 mt-3.5">
             @if (hasRecording()) {
               <lfx-button
@@ -264,15 +224,11 @@
 
       <!-- People/Attendees Card Column -->
       <div class="flex flex-col">
-        @if (meeting().organizer && !isLegacyMeeting()) {
+        @if (meeting().organizer) {
           <!-- Organizer view with optional toggle for invited organizers -->
           @if (canToggleRsvpView() && showMyRsvp()) {
             <!-- Show RSVP Button Group when organizer toggles to set their own RSVP -->
-            <lfx-rsvp-button-group
-              [meeting]="meeting()"
-              [occurrenceId]="occurrence()?.occurrence_id"
-              [disabled]="isLegacyMeeting()"
-              disabledMessage="RSVP functionality will soon be available for all upcoming LFX meetings visible to you">
+            <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id" [disabled]="true" disabledMessage="Coming Soon">
             </lfx-rsvp-button-group>
           } @else {
             <!-- Show RSVP Details for organizers (default view) -->
@@ -280,20 +236,16 @@
               [meeting]="meeting()"
               [currentOccurrence]="currentOccurrence()"
               [pastMeeting]="pastMeeting()"
-              [showAddButton]="!pastMeeting() && !isLegacyMeeting()"
+              [showAddButton]="!pastMeeting()"
               [additionalRegistrantsCount]="additionalRegistrantsCount()"
-              [disabled]="isLegacyMeeting()"
-              disabledMessage="RSVP functionality will soon be available for all upcoming LFX meetings visible to you">
+              [disabled]="true"
+              disabledMessage="Coming Soon">
             </lfx-meeting-rsvp-details>
           }
         } @else if (!pastMeeting()) {
           <!-- Show RSVP Selection for authenticated invited non-organizers (upcoming meetings only) -->
           @if (isInvited()) {
-            <lfx-rsvp-button-group
-              [meeting]="meeting()"
-              [occurrenceId]="occurrence()?.occurrence_id"
-              [disabled]="isLegacyMeeting()"
-              disabledMessage="RSVP functionality will soon be available for all upcoming LFX meetings visible to you">
+            <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id" [disabled]="true" disabledMessage="Coming Soon">
             </lfx-rsvp-button-group>
           } @else if (canRegisterForMeeting()) {
             <div class="h-full flex items-center justify-center">
@@ -343,7 +295,7 @@
 
         <!-- Action Buttons for People Column -->
         <div class="flex gap-2" [ngClass]="{ 'mt-3.5': !pastMeeting() || meeting().organizer }">
-          @if (meeting().organizer && !isLegacyMeeting()) {
+          @if (meeting().organizer) {
             <lfx-button
               class="w-full"
               icon="fa-light fa-users"
@@ -384,8 +336,8 @@
       </div>
     </div>
 
-    <!-- Meeting Registrants Drawer (v2 meetings only, shown if feature enabled OR user is organizer) -->
-    @if (!isLegacyMeeting() && (meeting().show_meeting_attendees || meeting().organizer)) {
+    <!-- Meeting Registrants Drawer -->
+    @if (meeting().organizer) {
       <p-drawer [visible]="showRegistrants()" position="right" styleClass="lg:w-1/3 w-full" (onHide)="onDrawerHide()" data-testid="meeting-registrants-drawer">
         <ng-template #header>
           <div class="flex items-center gap-3">

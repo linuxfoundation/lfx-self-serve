@@ -115,7 +115,7 @@ export class MeetingsDashboardComponent {
               const activeMeetings = meetings.filter((meeting) => {
                 // For recurring meetings, check if there's at least one occurrence that hasn't ended
                 if (meeting.occurrences && meeting.occurrences.length > 0) {
-                  return meeting.occurrences.some((occurrence) => !occurrence.is_cancelled && !hasMeetingEnded(meeting, occurrence));
+                  return meeting.occurrences.some((occurrence) => occurrence.status !== 'cancel' && !hasMeetingEnded(meeting, occurrence));
                 }
 
                 // For one-time meetings, check if the meeting itself hasn't ended

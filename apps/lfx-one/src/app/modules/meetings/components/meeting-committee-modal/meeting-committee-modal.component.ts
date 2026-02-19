@@ -194,7 +194,7 @@ export class MeetingCommitteeModalComponent {
     };
 
     this.meetingService
-      .updateMeeting(this.meeting.uid, updateRequest)
+      .updateMeeting(this.meeting.id, updateRequest)
       .pipe(take(1))
       .subscribe({
         next: () => {

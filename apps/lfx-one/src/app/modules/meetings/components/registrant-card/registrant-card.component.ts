@@ -52,7 +52,7 @@ export class RegistrantCardComponent implements OnInit {
         ...registrant,
         ...this.form.value,
         uid: registrant.uid,
-        meeting_uid: registrant.meeting_uid,
+        meeting_id: registrant.meeting_id,
         occurrence_id: registrant.occurrence_id,
         org_is_member: registrant.org_is_member,
         org_is_project_member: registrant.org_is_project_member,

@@ -66,7 +66,7 @@ export class MyMeetingsComponent {
               meeting,
               occurrence: todayOccurrence,
               sortTime: startTimeMs,
-              trackId: meeting.uid,
+              trackId: meeting.id,
             });
           }
         } else {
@@ -87,7 +87,7 @@ export class MyMeetingsComponent {
                 duration: meeting.duration,
               },
               sortTime: startTimeMs,
-              trackId: meeting.uid,
+              trackId: meeting.id,
             });
           }
         }
@@ -126,7 +126,7 @@ export class MyMeetingsComponent {
               meeting,
               occurrence: upcomingOccurrence,
               sortTime: startTimeMs,
-              trackId: meeting.uid,
+              trackId: meeting.id,
             });
           }
         } else {
@@ -146,7 +146,7 @@ export class MyMeetingsComponent {
                 duration: meeting.duration,
               },
               sortTime: startTimeMs,
-              trackId: meeting.uid,
+              trackId: meeting.id,
             });
           }
         }

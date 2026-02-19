@@ -460,14 +460,14 @@ export class MeetingManageComponent {
       visibility: formValue.visibility || MeetingVisibility.PRIVATE,
       restricted: formValue.restricted || false,
       recording_enabled: formValue.recording_enabled || false,
-      transcript_enabled: formValue.transcript_enabled || false,
-      youtube_upload_enabled: formValue.youtube_upload_enabled || false,
-      show_meeting_attendees: formValue.show_meeting_attendees || false,
+      transcript_enabled: formValue.recording_enabled ? formValue.transcript_enabled || false : false,
+      youtube_upload_enabled: formValue.recording_enabled ? formValue.youtube_upload_enabled || false : false,
+      show_meeting_attendees: false, // Coming Soon — disabled in form
       zoom_config: {
-        ai_companion_enabled: formValue.zoom_ai_enabled || false,
-        ai_summary_require_approval: formValue.require_ai_summary_approval || false,
+        ai_companion_enabled: formValue.recording_enabled ? formValue.zoom_ai_enabled || false : false,
+        ai_summary_require_approval: formValue.recording_enabled ? formValue.require_ai_summary_approval || false : false,
       },
-      artifact_visibility: formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY,
+      artifact_visibility: formValue.recording_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
       committees: formValue.committees || [],
@@ -475,7 +475,7 @@ export class MeetingManageComponent {
   }
 
   private handleMeetingSuccess(meeting: Meeting): void {
-    this.meetingId.set(meeting.uid);
+    this.meetingId.set(meeting.id);
 
     // If we're in create mode and before the resources step (step 4), just continue to next step
     // We need to process attachments starting from step 4 (Resources & Summary) onwards
@@ -486,7 +486,7 @@ export class MeetingManageComponent {
     }
 
     // Process attachment operations using extracted method
-    this.processAttachmentOperations(meeting.uid).subscribe({
+    this.processAttachmentOperations(meeting.id).subscribe({
       next: (result) => {
         if (result) {
           // Process attachment operations after meeting save
@@ -892,7 +892,7 @@ export class MeetingManageComponent {
         recording_enabled: new FormControl(false),
         transcript_enabled: new FormControl({ value: false, disabled: true }),
         youtube_upload_enabled: new FormControl({ value: false, disabled: true }),
-        show_meeting_attendees: new FormControl(false),
+        show_meeting_attendees: new FormControl({ value: false, disabled: true }),
         zoom_ai_enabled: new FormControl({ value: false, disabled: true }),
         require_ai_summary_approval: new FormControl(false),
         artifact_visibility: new FormControl(DEFAULT_ARTIFACT_VISIBILITY),

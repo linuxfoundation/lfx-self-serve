@@ -38,7 +38,7 @@
                       class="-mt-2 py-2"
                       [meeting]="item.meeting"
                       [occurrence]="item.occurrence"
-                      [attr.data-testid]="'dashboard-my-meetings-today-item-' + item.meeting.uid" />
+                      [attr.data-testid]="'dashboard-my-meetings-today-item-' + item.meeting.id" />
                   }
                 </div>
               </div>
@@ -52,7 +52,7 @@
                     <lfx-dashboard-meeting-card
                       [meeting]="item.meeting"
                       [occurrence]="item.occurrence"
-                      [attr.data-testid]="'dashboard-my-meetings-upcoming-item-' + item.meeting.uid" />
+                      [attr.data-testid]="'dashboard-my-meetings-upcoming-item-' + item.meeting.id" />
                   }
                 </div>
               </div>

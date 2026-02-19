@@ -34,7 +34,6 @@ import {
   PastMeetingSummary,
   TagSeverity,
 } from '@lfx-one/shared';
-import { MeetingCommitteeModalComponent } from '@modules/meetings/components/meeting-committee-modal/meeting-committee-modal.component';
 import { RecordingModalComponent } from '@modules/meetings/components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@modules/meetings/components/summary-modal/summary-modal.component';
 import { FileSizePipe } from '@pipes/file-size.pipe';
@@ -133,7 +132,6 @@ export class MeetingCardComponent implements OnInit {
   public readonly joinUrl: Signal<string | null>;
   public readonly authenticated: Signal<boolean> = this.userService.authenticated;
 
-  public readonly isLegacyMeeting: Signal<boolean> = this.initIsLegacyMeeting();
   public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
 
   // Computed signals for invited/registration status to ensure reactivity after registration
@@ -142,10 +140,9 @@ export class MeetingCardComponent implements OnInit {
     () => !this.isInvited() && !this.meeting().restricted && this.meeting().visibility === 'public'
   );
   // Computed signal to check if user can toggle between RSVP Details and RSVP Button Group
-  // True when user is both an organizer AND invited to the meeting (for non-past, non-legacy meetings)
-  public readonly canToggleRsvpView: Signal<boolean> = computed(
-    () => !!this.meeting().organizer && this.isInvited() && !this.pastMeeting() && !this.isLegacyMeeting()
-  );
+  // True when user is both an organizer AND invited to the meeting (for non-past meetings)
+  // RSVP is currently disabled (Coming Soon) - will be enabled when ITX backend supports it
+  public readonly canToggleRsvpView: Signal<boolean> = computed(() => false);
 
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
@@ -158,7 +155,7 @@ export class MeetingCardComponent implements OnInit {
 
   public constructor() {
     effect(() => {
-      if (!this.meeting()?.uid) {
+      if (!this.meeting()?.id) {
         this.meeting.set(this.meetingInput());
       }
       // Priority: explicit occurrenceInput > current occurrence for upcoming > null for past without input
@@ -180,18 +177,21 @@ export class MeetingCardComponent implements OnInit {
     const user$ = toObservable(this.userService.user);
     const authenticated$ = toObservable(this.userService.authenticated);
     const pastMeeting$ = toObservable(this.pastMeeting);
-    const isLegacyMeeting$ = toObservable(this.isLegacyMeeting);
 
-    const joinUrl$ = combineLatest([meeting$, occurrence$, user$, authenticated$, pastMeeting$, isLegacyMeeting$]).pipe(
-      switchMap(([meeting, occurrence, user, authenticated, isPastMeeting, isLegacy]) => {
-        // For v1 meetings, use the join_url directly from the meeting object
-        if (isLegacy && meeting.join_url && !isPastMeeting && canJoinMeeting(meeting, occurrence)) {
-          return of(meeting.join_url);
+    const joinUrl$ = combineLatest([meeting$, occurrence$, user$, authenticated$, pastMeeting$]).pipe(
+      switchMap(([meeting, occurrence, user, authenticated, isPastMeeting]) => {
+        if (!meeting.id || isPastMeeting || !canJoinMeeting(meeting, occurrence)) {
+          return of(null);
         }
 
-        // For v2 meetings, fetch join URL from API for authenticated users
-        if (meeting.uid && authenticated && user?.email && !isPastMeeting && canJoinMeeting(meeting, occurrence)) {
-          return this.meetingService.getPublicMeetingJoinUrl(meeting.uid, meeting.password, { email: user.email }).pipe(
+        // Use public_link directly if available (e.g. for legacy meetings with join_url from query service)
+        if (meeting.public_link) {
+          return of(meeting.public_link);
+        }
+
+        // Otherwise fetch join URL from API for authenticated users
+        if (authenticated && user?.email) {
+          return this.meetingService.getPublicMeetingJoinUrl(meeting.id, meeting.password, { email: user.email }).pipe(
             map((res) => buildJoinUrlWithParams(res.join_url, user)),
             catchError(() => of(null))
           );
@@ -213,7 +213,7 @@ export class MeetingCardComponent implements OnInit {
 
   public onRegistrantsToggle(): void {
     if (this.meetingRegistrantCount() === 0 && !this.pastMeeting()) {
-      this.router.navigate(['/meetings', this.meeting().uid, 'edit'], {
+      this.router.navigate(['/meetings', this.meeting().id, 'edit'], {
         queryParams: { step: '5' },
       });
       return;
@@ -230,36 +230,12 @@ export class MeetingCardComponent implements OnInit {
     this.showRegistrants.set(false);
   }
 
-  public openCommitteeModal(): void {
-    const header =
-      this.meeting().committees && this.meeting().committees!.length > 0 ? 'Manage ' + this.committeeLabel.singular : 'Connect ' + this.committeeLabel.singular;
-    const dialogRef = this.dialogService.open(MeetingCommitteeModalComponent, {
-      header,
-      width: '950px',
-      modal: true,
-      closable: true,
-      dismissableMask: true,
-      data: {
-        meeting: this.meeting(),
-      },
-    }) as DynamicDialogRef;
-
-    dialogRef.onClose.pipe(take(1)).subscribe((result) => {
-      if (result) {
-        this.refreshMeeting();
-      }
-    });
-  }
-
   public copyMeetingLink(): void {
     const meeting = this.meeting();
-    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + meeting.uid);
+    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + meeting.id);
 
     if (meeting.password) {
       meetingUrl.searchParams.set('password', meeting.password);
-    }
-    if (this.isLegacyMeeting()) {
-      meetingUrl.searchParams.set('v1', 'true');
     }
 
     this.clipboard.copy(meetingUrl.toString());
@@ -281,7 +257,7 @@ export class MeetingCardComponent implements OnInit {
       closable: true,
       dismissableMask: true,
       data: {
-        meetingId: meeting.uid,
+        meetingId: meeting.id,
         meetingTitle: this.meetingTitle(),
         user: user,
       },
@@ -327,7 +303,7 @@ export class MeetingCardComponent implements OnInit {
       data: {
         summaryContent: this.summaryContent(),
         summaryUid: this.summary()?.uid,
-        pastMeetingUid: this.meeting().uid,
+        pastMeetingUid: this.meeting().id,
         meetingTitle: this.meetingTitle(),
         approved: this.summaryApproved(),
       },
@@ -476,7 +452,7 @@ export class MeetingCardComponent implements OnInit {
 
   private refreshMeeting(): void {
     this.meetingService
-      .getMeeting(this.meeting().uid)
+      .getMeeting(this.meeting().id)
       .pipe(
         take(1),
         tap((meeting) => {
@@ -489,7 +465,7 @@ export class MeetingCardComponent implements OnInit {
 
   private initAttachments(): Signal<MeetingAttachment[]> {
     return runInInjectionContext(this.injector, () => {
-      return toSignal(this.meetingService.getMeetingAttachments(this.meetingInput().uid).pipe(catchError(() => of([]))), {
+      return toSignal(this.meetingService.getMeetingAttachments(this.meetingInput().id).pipe(catchError(() => of([]))), {
         initialValue: [],
       });
     });
@@ -498,7 +474,7 @@ export class MeetingCardComponent implements OnInit {
   private initRecording(): void {
     runInInjectionContext(this.injector, () => {
       toSignal(
-        this.meetingService.getPastMeetingRecording(this.meetingInput().uid).pipe(
+        this.meetingService.getPastMeetingRecording(this.meetingInput().id).pipe(
           catchError(() => of(null)),
           tap((recording) => this.recording.set(recording))
         ),
@@ -510,7 +486,7 @@ export class MeetingCardComponent implements OnInit {
   private initSummary(): void {
     runInInjectionContext(this.injector, () => {
       toSignal(
-        this.meetingService.getPastMeetingSummary(this.meetingInput().uid).pipe(
+        this.meetingService.getPastMeetingSummary(this.meetingInput().id).pipe(
           catchError(() => of(null)),
           tap((summary) => this.summary.set(summary))
         ),
@@ -561,8 +537,6 @@ export class MeetingCardComponent implements OnInit {
         (meeting.recording_enabled ? 1 : 0) +
         (meeting.transcript_enabled ? 1 : 0) +
         (meeting.youtube_upload_enabled ? 1 : 0) +
-        (meeting.show_meeting_attendees ? 1 : 0) +
-        (meeting.zoom_config?.ai_companion_enabled ? 1 : 0) +
         (meeting.visibility === 'public' ? 1 : 0)
       );
     });
@@ -707,10 +681,6 @@ export class MeetingCardComponent implements OnInit {
     return computed(() => this.summaryContent() !== null);
   }
 
-  private initIsLegacyMeeting(): Signal<boolean> {
-    return computed(() => this.meetingInput().version === 'v1');
-  }
-
   private initMeetingDetailUrl(): Signal<string> {
     return computed(() => {
       const meeting = this.meetingInput();
@@ -720,12 +690,8 @@ export class MeetingCardComponent implements OnInit {
         params.set('password', meeting.password);
       }
 
-      if (this.isLegacyMeeting()) {
-        params.set('v1', 'true');
-      }
-
       const queryString = params.toString();
-      return queryString ? `/meetings/${meeting.uid}?${queryString}` : `/meetings/${meeting.uid}`;
+      return queryString ? `/meetings/${meeting.id}?${queryString}` : `/meetings/${meeting.id}`;
     });
   }
 
@@ -758,10 +724,6 @@ export class MeetingCardComponent implements OnInit {
 
       if (meeting.password) {
         params['password'] = meeting.password;
-      }
-
-      if (this.isLegacyMeeting()) {
-        params['v1'] = 'true';
       }
 
       return params;

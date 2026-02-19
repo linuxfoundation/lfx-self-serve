@@ -393,7 +393,7 @@ export class MeetingService {
    */
   public stripMetadata(meetingUid: string, registrant: MeetingRegistrantWithState): CreateMeetingRegistrantRequest {
     return {
-      meeting_uid: meetingUid,
+      meeting_id: meetingUid,
       email: registrant.email,
       first_name: registrant.first_name,
       last_name: registrant.last_name,
@@ -408,7 +408,7 @@ export class MeetingService {
    */
   public getChangedFields(registrant: MeetingRegistrantWithState): UpdateMeetingRegistrantRequest {
     return {
-      meeting_uid: registrant.meeting_uid,
+      meeting_id: registrant.meeting_id,
       email: registrant.email,
       first_name: registrant.first_name,
       last_name: registrant.last_name,
@@ -487,7 +487,7 @@ export class MeetingService {
     return this.http.post<MeetingRegistrant>('/public/api/meetings/register', registrantData).pipe(
       take(1),
       catchError((error) => {
-        console.error(`Failed to register for public meeting ${registrantData.meeting_uid}:`, error);
+        console.error(`Failed to register for public meeting ${registrantData.meeting_id}:`, error);
         return throwError(() => error);
       })
     );

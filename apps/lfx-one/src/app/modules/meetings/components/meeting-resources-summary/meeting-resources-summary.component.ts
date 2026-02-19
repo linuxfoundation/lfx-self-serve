@@ -1,7 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, OnInit, output, signal } from '@angular/core';
 import { FormArray, FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -10,12 +9,11 @@ import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-
 import { RecurrenceType } from '@lfx-one/shared/enums';
 import { CustomRecurrencePattern, MeetingAttachment, PendingAttachment } from '@lfx-one/shared/interfaces';
 import { buildRecurrenceSummary, generateAcceptString, getAcceptedFileTypesDisplay, getMimeTypeDisplayName, isFileTypeAllowed } from '@lfx-one/shared/utils';
-import { FileSizePipe } from '@pipes/file-size.pipe';
 import { MessageService } from 'primeng/api';
 
 @Component({
   selector: 'lfx-meeting-resources-summary',
-  imports: [NgClass, ReactiveFormsModule, FormsModule, FileUploadComponent, ButtonComponent, FileSizePipe],
+  imports: [ReactiveFormsModule, FormsModule, FileUploadComponent, ButtonComponent],
   templateUrl: './meeting-resources-summary.component.html',
 })
 export class MeetingResourcesSummaryComponent implements OnInit {
@@ -217,7 +215,7 @@ export class MeetingResourcesSummaryComponent implements OnInit {
     if (form.get('recording_enabled')?.value) features.push('Recording');
     if (form.get('transcript_enabled')?.value) features.push('Transcripts');
     if (form.get('youtube_upload_enabled')?.value) features.push('YouTube Upload');
-    if (form.get('show_meeting_attendees')?.value) features.push('Show Attendees');
+    if (form.get('show_meeting_attendees')?.value ?? false) features.push('Show Attendees');
     if (form.get('zoom_ai_enabled')?.value) features.push('AI Summary');
 
     return features;

@@ -5,7 +5,7 @@
   <div class="flex flex-col gap-2">
     <div class="flex items-center justify-between">
       <a
-        [routerLink]="['/project', project()?.slug, 'meetings', upcomingMeeting()!.uid]"
+        [routerLink]="['/project', project()?.slug, 'meetings', upcomingMeeting()!.id]"
         class="text-sm font-medium text-primary hover:text-primary-600 hover:underline line-clamp-2"
         [pTooltip]="upcomingMeeting()!.title || 'Meeting'">
         {{ upcomingMeeting()!.title || 'Meeting' }}

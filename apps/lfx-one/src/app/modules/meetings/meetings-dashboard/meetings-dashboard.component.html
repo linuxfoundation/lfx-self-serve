@@ -73,9 +73,9 @@
       </lfx-card>
     } @else if (filteredMeetings().length > 0) {
       <div class="flex flex-col gap-4">
-        @for (meeting of filteredMeetings(); track meeting.uid; let i = $index) {
+        @for (meeting of filteredMeetings(); track meeting.id; let i = $index) {
           <lfx-meeting-card
-            [attr.id]="'meeting-' + meeting.uid"
+            [attr.id]="'meeting-' + meeting.id"
             [meetingInput]="meeting"
             (meetingUpdated)="refreshMeetings()"
             (meetingDeleted)="refreshMeetings()"

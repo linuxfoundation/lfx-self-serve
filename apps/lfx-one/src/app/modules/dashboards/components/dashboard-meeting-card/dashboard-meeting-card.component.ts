@@ -54,7 +54,6 @@ export class DashboardMeetingCardComponent {
 
   public readonly hasAiSummary: Signal<boolean> = this.initHasAiSummary();
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
-  public readonly isLegacyMeeting: Signal<boolean> = this.initIsLegacyMeeting();
   public readonly isRecurring: Signal<boolean> = this.initIsRecurring();
   public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
 
@@ -62,8 +61,8 @@ export class DashboardMeetingCardComponent {
     const meeting$ = toObservable(this.meeting);
     const attachments$ = meeting$.pipe(
       switchMap((meeting) => {
-        if (meeting?.uid) {
-          return this.meetingService.getMeetingAttachments(meeting.uid).pipe(catchError(() => of([])));
+        if (meeting?.id) {
+          return this.meetingService.getMeetingAttachments(meeting.id).pipe(catchError(() => of([])));
         }
         return of([]);
       })
@@ -73,18 +72,21 @@ export class DashboardMeetingCardComponent {
 
     const user$ = toObservable(this.userService.user);
     const authenticated$ = toObservable(this.userService.authenticated);
-    const isLegacyMeeting$ = toObservable(this.isLegacyMeeting);
 
-    const joinUrl$ = combineLatest([meeting$, user$, authenticated$, isLegacyMeeting$]).pipe(
-      switchMap(([meeting, user, authenticated, isLegacy]) => {
-        // For v1 meetings, use the join_url directly from the meeting object
-        if (isLegacy && meeting.join_url && this.canJoinMeeting()) {
-          return of(meeting.join_url);
+    const joinUrl$ = combineLatest([meeting$, user$, authenticated$]).pipe(
+      switchMap(([meeting, user, authenticated]) => {
+        if (!meeting.id || !this.canJoinMeeting()) {
+          return of(null);
         }
 
-        // For v2 meetings, fetch join URL from API for authenticated users
-        if (meeting.uid && authenticated && user?.email && this.canJoinMeeting()) {
-          return this.meetingService.getPublicMeetingJoinUrl(meeting.uid, meeting.password, { email: user.email }).pipe(
+        // Use public_link directly if available (e.g. for legacy meetings with join_url from query service)
+        if (meeting.public_link) {
+          return of(meeting.public_link);
+        }
+
+        // Otherwise fetch join URL from API for authenticated users
+        if (authenticated && user?.email) {
+          return this.meetingService.getPublicMeetingJoinUrl(meeting.id, meeting.password, { email: user.email }).pipe(
             map((res) => buildJoinUrlWithParams(res.join_url, user)),
             catchError(() => of(null))
           );
@@ -235,10 +237,6 @@ export class DashboardMeetingCardComponent {
     });
   }
 
-  private initIsLegacyMeeting(): Signal<boolean> {
-    return computed(() => this.meeting().version === 'v1');
-  }
-
   private initIsRecurring(): Signal<boolean> {
     return computed(() => !!this.meeting().recurrence);
   }
@@ -252,12 +250,8 @@ export class DashboardMeetingCardComponent {
         params.set('password', meeting.password);
       }
 
-      if (this.isLegacyMeeting()) {
-        params.set('v1', 'true');
-      }
-
       const queryString = params.toString();
-      return queryString ? `/meetings/${meeting.uid}?${queryString}` : `/meetings/${meeting.uid}`;
+      return queryString ? `/meetings/${meeting.id}?${queryString}` : `/meetings/${meeting.id}`;
     });
   }
 }

@@ -110,8 +110,6 @@ export class MeetingJoinComponent {
   public meetingTitle: Signal<string>;
   public meetingDescription: Signal<string>;
   public hasAiCompanion: Signal<boolean>;
-  public isLegacyMeeting: Signal<boolean>;
-
   // Computed signals for invited/registration status
   public isInvited: Signal<boolean>;
   public canRegisterForMeeting: Signal<boolean>;
@@ -131,7 +129,6 @@ export class MeetingJoinComponent {
     this.meetingTitle = this.initializeMeetingTitle();
     this.meetingDescription = this.initializeMeetingDescription();
     this.hasAiCompanion = this.initializeHasAiCompanion();
-    this.isLegacyMeeting = this.initializeIsLegacyMeeting();
 
     // Initialize invited/registration signals
     this.isInvited = this.initializeIsInvited();
@@ -150,15 +147,11 @@ export class MeetingJoinComponent {
 
   public handleCopyLink(): void {
     const meeting = this.meeting();
-    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + meeting.uid);
+    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + meeting.id);
 
     if (meeting.password) {
       meetingUrl.searchParams.set('password', meeting.password);
     }
-    if (this.isLegacyMeeting()) {
-      meetingUrl.searchParams.set('v1', 'true');
-    }
-
     this.clipboard.copy(meetingUrl.toString());
     this.messageService.add({
       severity: 'success',
@@ -168,6 +161,16 @@ export class MeetingJoinComponent {
   }
 
   public onRegistrantsToggle(): void {
+    const meeting = this.meeting();
+    if (!meeting.show_meeting_attendees) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Show Members is not enabled',
+        detail: 'Please contact the meeting organizer to enable show members',
+      });
+      return;
+    }
+
     this.showRegistrants.set(!this.showRegistrants());
   }
 
@@ -191,7 +194,7 @@ export class MeetingJoinComponent {
       closable: true,
       dismissableMask: true,
       data: {
-        meetingId: meeting.uid,
+        meetingId: meeting.id,
         meetingTitle: this.meetingTitle(),
         user: user,
       },
@@ -359,12 +362,8 @@ export class MeetingJoinComponent {
       if (meeting.password) {
         params.set('password', meeting.password);
       }
-      if (this.isLegacyMeeting()) {
-        params.set('v1', 'true');
-      }
-
       const queryString = params.toString();
-      return queryString ? `${environment.urls.home}/meetings/${meeting.uid}?${queryString}` : `${environment.urls.home}/meetings/${meeting.uid}`;
+      return queryString ? `${environment.urls.home}/meetings/${meeting.id}?${queryString}` : `${environment.urls.home}/meetings/${meeting.id}`;
     });
   }
 
@@ -408,7 +407,7 @@ export class MeetingJoinComponent {
           this.joinUrlError.set(null);
 
           // Only fetch when meeting is joinable and we have necessary user info
-          if (!canJoin || !meeting?.uid) {
+          if (!canJoin || !meeting?.id) {
             this.isLoadingJoinUrl.set(false);
             return of(undefined);
           }
@@ -448,7 +447,7 @@ export class MeetingJoinComponent {
   private fetchJoinUrl(meeting: Meeting, email: string): Observable<string | undefined> {
     this.isLoadingJoinUrl.set(true);
 
-    return this.meetingService.getPublicMeetingJoinUrl(meeting.uid, meeting.password, { email }).pipe(
+    return this.meetingService.getPublicMeetingJoinUrl(meeting.id, meeting.password, { email }).pipe(
       map((res) => {
         this.isLoadingJoinUrl.set(false);
         if (res.join_url) {
@@ -478,10 +477,10 @@ export class MeetingJoinComponent {
     return toSignal(
       toObservable(this.meeting).pipe(
         switchMap((meeting) => {
-          if (meeting?.uid) {
-            return this.meetingService.getMeetingAttachments(meeting.uid).pipe(
+          if (meeting?.id) {
+            return this.meetingService.getMeetingAttachments(meeting.id).pipe(
               catchError((error) => {
-                console.error(`Failed to load attachments for meeting ${meeting.uid}:`, error);
+                console.error(`Failed to load attachments for meeting ${meeting.id}:`, error);
                 return of([]);
               })
             );
@@ -524,10 +523,6 @@ export class MeetingJoinComponent {
 
   private initializeHasAiCompanion(): Signal<boolean> {
     return computed(() => this.meeting()?.zoom_config?.ai_companion_enabled || false);
-  }
-
-  private initializeIsLegacyMeeting(): Signal<boolean> {
-    return computed(() => this.meeting()?.version === 'v1');
   }
 
   private initializeIsInvited(): Signal<boolean> {

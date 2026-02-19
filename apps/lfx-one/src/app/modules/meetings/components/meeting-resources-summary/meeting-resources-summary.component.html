@@ -4,189 +4,51 @@
 <div class="pb-4">
   <!-- Step Title -->
   <div class="mb-6">
-    <h2 class="font-normal">Resources & Links</h2>
+    <div class="flex items-center gap-3">
+      <h2 class="font-normal">Resources & Links</h2>
+      <span class="inline-flex items-center gap-1 text-xs font-medium text-gray-400 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full">
+        <i class="fa-light fa-clock text-[10px]"></i>
+        Coming Soon
+      </span>
+    </div>
     <p class="text-sm text-gray-500 mt-1">Share documents, agendas, and reference materials so participants come prepared</p>
   </div>
 
-  <!-- Two Column Layout -->
-  <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-    <!-- Upload Files Section - Left Column -->
-    <div class="flex flex-col gap-4">
-      <h4 class="text-neutral-950">Upload Files</h4>
+  <!-- Disabled content overlay -->
+  <div class="relative">
+    <div class="opacity-40 pointer-events-none select-none" aria-disabled="true">
+      <!-- Two Column Layout -->
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+        <!-- Upload Files Section - Left Column -->
+        <div class="flex flex-col gap-4">
+          <h4 class="text-neutral-950">Upload Files</h4>
 
-      <lfx-file-upload
-        [multiple]="true"
-        [accept]="acceptString"
-        [maxFileSize]="10485760"
-        (onSelect)="onFileSelect($event)"
-        [customUpload]="true"
-        dataTest="meeting-attachment-upload"
-        [showUploadButton]="false"
-        [showCancelButton]="false"
-        chooseLabel="Click to upload files or drag and drop">
-      </lfx-file-upload>
-
-      <!-- Uploaded Files Display -->
-      @if (pendingAttachments().length > 0) {
-        <div class="flex flex-col gap-2">
-          @for (attachment of pendingAttachments(); track attachment.id; let i = $index) {
-            <div class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg" [attr.data-testid]="'meeting-attachment-item-' + i">
-              <div class="flex items-center gap-3">
-                <div class="p-2 bg-blue-100 rounded-lg">
-                  <i class="fa-light fa-file text-blue-600"></i>
-                </div>
-                <div>
-                  <p class="text-sm font-medium text-gray-900">{{ attachment.fileName }}</p>
-                  <p class="text-xs text-gray-500">{{ getFileType(attachment.fileName) }} • {{ attachment.fileSize | fileSize }}</p>
-                </div>
-              </div>
-              @if (attachment.uploading) {
-                <i class="fa-light fa-spinner fa-spin text-blue-600"></i>
-              } @else {
-                <button
-                  (click)="removeAttachment(attachment.id)"
-                  class="h-6 w-6 p-0 text-gray-400 hover:text-red-500 flex items-center justify-center"
-                  data-testid="remove-attachment-btn">
-                  <i class="fa-light fa-times w-3 h-3"></i>
-                </button>
-              }
-            </div>
-          }
+          <lfx-file-upload
+            [multiple]="true"
+            [accept]="acceptString"
+            [maxFileSize]="10485760"
+            (onSelect)="onFileSelect($event)"
+            [customUpload]="true"
+            dataTest="meeting-attachment-upload"
+            [showUploadButton]="false"
+            [showCancelButton]="false"
+            chooseLabel="Click to upload files or drag and drop">
+          </lfx-file-upload>
         </div>
-      }
 
-      <!-- Existing Attachments (for edit mode) -->
-      @if (isEditMode() && existingAttachments().length > 0) {
-        <div class="flex flex-col gap-2">
-          @for (attachment of existingAttachments(); track attachment.uid; let i = $index) {
-            <div
-              [ngClass]="{
-                'flex items-center justify-between p-3 rounded-lg border': true,
-                'bg-red-50 border-red-200 opacity-60': isPendingDeletion(attachment.uid),
-                'bg-gray-50 border-gray-200': !isPendingDeletion(attachment.uid),
-              }"
-              [attr.data-testid]="'existing-attachment-item-' + i">
-              <div class="flex items-center gap-3">
-                <div
-                  [ngClass]="{
-                    'p-2 rounded-lg': true,
-                    'bg-red-100': isPendingDeletion(attachment.uid),
-                    'bg-emerald-100': !isPendingDeletion(attachment.uid),
-                  }">
-                  <i
-                    [ngClass]="{
-                      'fa-light fa-file': true,
-                      'text-red-600': isPendingDeletion(attachment.uid),
-                      'text-emerald-600': !isPendingDeletion(attachment.uid),
-                    }"></i>
-                </div>
-                <div>
-                  <p
-                    [ngClass]="{
-                      'text-sm font-medium': true,
-                      'text-red-900 line-through': isPendingDeletion(attachment.uid),
-                      'text-gray-900': !isPendingDeletion(attachment.uid),
-                    }">
-                    {{ attachment.name }}
-                  </p>
-                  <p class="text-xs text-gray-500">
-                    {{ getFileType(attachment.name) }}
-                    @if (attachment.file_size) {
-                      • {{ attachment.file_size | fileSize }}
-                    }
-                    @if (isPendingDeletion(attachment.uid)) {
-                      • <span class="text-red-600 font-semibold">Marked for deletion</span>
-                    }
-                  </p>
-                </div>
-              </div>
-              <div class="flex items-center gap-2">
-                @if (attachment.type === 'file' && !isPendingDeletion(attachment.uid)) {
-                  <a
-                    [href]="'/api/meetings/' + meetingId() + '/attachments/' + attachment.uid"
-                    target="_blank"
-                    class="h-6 w-6 p-0 text-gray-400 hover:text-emerald-500 flex items-center justify-center"
-                    data-testid="view-attachment-btn"
-                    title="View">
-                    <i class="fa-light fa-eye w-3 h-3"></i>
-                  </a>
-                  <a
-                    [href]="'/api/meetings/' + meetingId() + '/attachments/' + attachment.uid + '?download=true'"
-                    class="h-6 w-6 p-0 text-gray-400 hover:text-blue-500 flex items-center justify-center"
-                    data-testid="download-attachment-btn"
-                    title="Download">
-                    <i class="fa-light fa-download w-3 h-3"></i>
-                  </a>
-                }
-                @if (isPendingDeletion(attachment.uid)) {
-                  <button
-                    (click)="undoDeleteAttachment.emit(attachment.uid)"
-                    class="h-6 w-6 p-0 text-blue-500 hover:text-blue-600 flex items-center justify-center"
-                    data-testid="undo-delete-attachment-btn">
-                    <i class="fa-light fa-undo w-3 h-3"></i>
-                  </button>
-                } @else {
-                  <button
-                    (click)="onDeleteExistingAttachment(attachment.uid)"
-                    [disabled]="deletingAttachmentId() === attachment.uid"
-                    [ngClass]="{
-                      'h-6 w-6 p-0 flex items-center justify-center': true,
-                      'text-gray-300 cursor-not-allowed': deletingAttachmentId() === attachment.uid,
-                      'text-gray-400 hover:text-red-500': deletingAttachmentId() !== attachment.uid,
-                    }"
-                    data-testid="delete-existing-attachment-btn">
-                    @if (deletingAttachmentId() === attachment.uid) {
-                      <i class="fa-light fa-spinner fa-spin w-3 h-3"></i>
-                    } @else {
-                      <i class="fa-light fa-trash w-3 h-3"></i>
-                    }
-                  </button>
-                }
-              </div>
+        <!-- Add Important Links Section - Right Column -->
+        <div class="flex flex-col gap-4">
+          <h4 class="text-neutral-950">Add Links</h4>
+
+          <div class="flex flex-col gap-3">
+            <input placeholder="Link title (e.g., Project Repository)" class="w-full h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg" disabled />
+            <div class="flex items-center gap-3">
+              <input placeholder="https://github.com/your-project/repo" class="flex-1 h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg" disabled />
+              <lfx-button [disabled]="true" icon="fa-light fa-plus" size="small" data-testid="add-link-btn"> </lfx-button>
             </div>
-          }
-        </div>
-      }
-    </div>
-
-    <!-- Add Important Links Section - Right Column -->
-    <div class="flex flex-col gap-4">
-      <h4 class="text-neutral-950">Add Links</h4>
-
-      <div class="flex flex-col gap-3">
-        <input
-          [(ngModel)]="newLink.title"
-          placeholder="Link title (e.g., Project Repository)"
-          class="w-full h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-        <div class="flex items-center gap-3">
-          <input
-            [(ngModel)]="newLink.url"
-            placeholder="https://github.com/your-project/repo"
-            class="flex-1 h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:border-blue-500 focus:ring-1 focus:ring-blue-500" />
-          <lfx-button (onClick)="addLink()" [disabled]="!newLink.title || !newLink.url" icon="fa-light fa-plus" size="small" data-testid="add-link-btn">
-          </lfx-button>
+          </div>
         </div>
       </div>
-
-      <!-- Added Links Display -->
-      @if (importantLinksFormArray.length > 0) {
-        <div class="flex flex-col gap-2">
-          @for (linkControl of importantLinksFormArray.controls; track $index; let i = $index) {
-            <div class="flex items-center justify-between p-3 bg-gray-50 border border-gray-200 rounded-lg" [attr.data-testid]="'meeting-link-item-' + i">
-              <div>
-                <p class="text-sm font-medium text-gray-900">{{ linkControl.get('title')?.value }}</p>
-                <p class="text-xs text-gray-500">{{ linkControl.get('url')?.value }}</p>
-              </div>
-              <button
-                (click)="removeLink(i)"
-                class="h-6 w-6 p-0 text-gray-400 hover:text-red-500 flex items-center justify-center"
-                data-testid="remove-link-btn">
-                <i class="fa-light fa-times w-3 h-3"></i>
-              </button>
-            </div>
-          }
-        </div>
-      }
     </div>
   </div>
 </div>

@@ -9,7 +9,7 @@ export interface MeetingAttachment {
   /** Unique attachment identifier */
   uid: string;
   /** Meeting this attachment belongs to */
-  meeting_uid: string;
+  meeting_id: string;
   /** Attachment type: 'file' for uploaded files, 'link' for external URLs */
   type: 'file' | 'link';
   /** Attachment name */
@@ -80,7 +80,7 @@ export interface PastMeetingAttachment {
   /** Unique attachment identifier */
   uid: string;
   /** Past meeting this attachment belongs to */
-  past_meeting_uid: string;
+  past_meeting_id: string;
   /** Attachment type: 'file' for uploaded files, 'link' for external URLs */
   type: 'file' | 'link';
   /** Custom name for the attachment */

@@ -96,7 +96,7 @@ export class MeetingRegistrantsDisplayComponent {
       closable: true,
       dismissableMask: true,
       data: {
-        meetingId: this.meeting().uid,
+        meetingId: this.meeting().id,
         registrant: null,
       },
     }) as DynamicDialogRef;
@@ -123,8 +123,8 @@ export class MeetingRegistrantsDisplayComponent {
               this.registrantsLoading.set(true);
               // Use access-controlled endpoint for meeting join page, regular endpoint for organizer views
               const registrantsObservable = useMyEndpoint
-                ? this.meetingService.getMyMeetingRegistrants(this.meeting().uid, true)
-                : this.meetingService.getMeetingRegistrants(this.meeting().uid, true);
+                ? this.meetingService.getMyMeetingRegistrants(this.meeting().id, true)
+                : this.meetingService.getMeetingRegistrants(this.meeting().id, true);
 
               return registrantsObservable.pipe(
                 catchError(() => of([])),
@@ -153,7 +153,7 @@ export class MeetingRegistrantsDisplayComponent {
         switchMap(() => {
           this.registrantsLoading.set(true);
           return this.meetingService
-            .getPastMeetingParticipants(this.meeting().uid)
+            .getPastMeetingParticipants(this.meeting().id)
             .pipe(catchError(() => of([])))
             .pipe(
               map((participants) => participants.sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as PastMeetingParticipant[]),

@@ -68,7 +68,7 @@ export class PublicRegistrationModalComponent {
 
       this.meetingService
         .registerForPublicMeeting({
-          meeting_uid: this.meetingId,
+          meeting_id: this.meetingId,
           email: formValue.email,
           first_name: formValue.first_name,
           last_name: formValue.last_name,

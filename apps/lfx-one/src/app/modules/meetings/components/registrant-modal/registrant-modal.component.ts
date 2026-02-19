@@ -83,7 +83,7 @@ export class RegistrantModalComponent {
       if (this.isEditMode) {
         // For edit mode, call update API
         const updateData = this.meetingService.getChangedFields({
-          meeting_uid: this.meetingId,
+          meeting_id: this.meetingId,
           ...formValue,
         });
 

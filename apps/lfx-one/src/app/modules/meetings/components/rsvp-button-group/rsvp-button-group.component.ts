@@ -146,7 +146,7 @@ export class RsvpButtonGroupComponent {
   }
 
   private initializeMeetingUid(): Signal<string> {
-    return computed(() => this.meeting().uid);
+    return computed(() => this.meeting().id);
   }
 
   private initializeIsRecurring(): Signal<boolean> {
@@ -158,8 +158,8 @@ export class RsvpButtonGroupComponent {
       combineLatest([toObservable(this.meeting), toObservable(this.authenticated), toObservable(this.refreshTrigger)]).pipe(
         switchMap(([meeting, authenticated]) => {
           const occurrenceId = this.meeting().recurrence ? this.occurrenceId() : undefined;
-          if (authenticated && meeting?.uid) {
-            return this.meetingService.getMeetingRsvpByUsername(meeting.uid, occurrenceId).pipe(catchError(() => of(null)));
+          if (authenticated && meeting?.id) {
+            return this.meetingService.getMeetingRsvpByUsername(meeting.id, occurrenceId).pipe(catchError(() => of(null)));
           }
           return of(null);
         })

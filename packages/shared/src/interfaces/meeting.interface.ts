@@ -4,168 +4,8 @@
 import { ArtifactVisibility, MeetingType, MeetingVisibility, RecurrenceType } from '../enums';
 
 // ============================================================================
-// V1 Legacy Meeting Interfaces (for server-side transformation)
+// V1 Legacy Summary Interfaces (still used by transformV1SummaryToV2)
 // ============================================================================
-
-/**
- * V1 user reference (created_by, updated_by)
- */
-export interface V1UserReference {
-  email?: string;
-  username?: string;
-}
-
-/**
- * V1 recurrence configuration (all values are strings)
- */
-export interface V1MeetingRecurrence {
-  type?: string;
-  repeat_interval?: string;
-  end_times?: string;
-  end_date_time?: string;
-  monthly_day?: string;
-  monthly_week?: string;
-  monthly_week_day?: string;
-  weekly_days?: string;
-}
-
-/**
- * V1 meeting occurrence (topic/agenda instead of title/description, duration as string)
- */
-export interface V1MeetingOccurrence {
-  occurrence_id: string;
-  topic?: string;
-  agenda?: string;
-  start_time: string;
-  duration: string;
-  status?: string;
-  registrant_count?: string;
-  response_count_yes?: string;
-  response_count_no?: string;
-  is_cancelled?: boolean;
-}
-
-/**
- * V1 updated occurrence information
- */
-export interface V1UpdatedOccurrence {
-  old_occurrence_id: string;
-  new_occurrence_id: string;
-  topic?: string;
-  agenda?: string;
-  duration?: string;
-  timezone?: string;
-  all_following?: boolean;
-  recurrence?: V1MeetingRecurrence | null;
-}
-
-/**
- * V1 committee structure (uses 'filters' instead of 'allowed_voting_statuses')
- */
-export interface V1MeetingCommittee {
-  uid: string;
-  filters?: string[];
-  allowed_voting_statuses?: string[];
-  name?: string;
-}
-
-/**
- * V1 Meeting session (for past meetings)
- */
-export interface V1MeetingSession {
-  uuid: string;
-  start_time: string;
-  end_time: string;
-}
-
-/**
- * V1 Meeting data structure from the legacy API
- * @description Raw V1 meeting data before transformation to V2 format
- */
-export interface V1Meeting {
-  // Identifiers
-  id: string;
-  meeting_id: string;
-  project_id: string;
-  project_sfid?: string;
-  proj_id?: string; // Salesforce ID (appears in past meetings)
-  project_slug?: string;
-
-  // For past meetings with occurrences
-  occurrence_id?: string;
-  meeting_and_occurrence_id?: string;
-
-  // Content (v1 uses topic/agenda instead of title/description)
-  topic: string;
-  agenda?: string;
-
-  // Timing
-  start_time: string;
-  duration: string; // V1 uses string, V2 uses number
-  timezone: string;
-  early_join_time?: string; // V1 uses string, V2 uses early_join_time_minutes as number
-  last_end_time?: string; // Unix timestamp as string
-
-  // Past meeting timing
-  scheduled_start_time?: string;
-  scheduled_end_time?: string;
-  sessions?: V1MeetingSession[];
-
-  // Recurrence
-  recurrence?: V1MeetingRecurrence | null;
-  occurrences?: V1MeetingOccurrence[];
-  cancelled_occurrences?: string[];
-  updated_occurrences?: V1UpdatedOccurrence[];
-  type?: string; // Zoom meeting type (1=instant, 2=scheduled, 3=recurring no fixed time, 8=recurring fixed time)
-
-  // Committee (v1 uses single committee string, v2 uses committees array)
-  committee?: string; // "NONE" or committee UID
-  committee_filters?: string[] | null;
-  committees?: V1MeetingCommittee[] | null; // Some v1 meetings have this
-
-  // Visibility & Access
-  visibility: 'public' | 'private';
-  restricted: boolean;
-  recording_enabled: boolean;
-  transcript_enabled: boolean;
-  recording_access?: string;
-  transcript_access?: string;
-  recording_password?: string;
-
-  // Artifacts (for past meetings)
-  artifacts?: unknown[] | null;
-
-  // Meeting configuration
-  meeting_type: string;
-  password?: string;
-
-  // Zoom-specific
-  join_url?: string;
-  passcode?: string;
-  host_key?: string;
-  user_id?: string;
-  zoom_ai_enabled?: boolean;
-  require_ai_summary_approval?: boolean;
-  concurrent_zoom_user_enabled?: boolean;
-
-  // Email & Sync
-  use_new_invite_email_address?: boolean;
-  use_unique_ics_uid?: string;
-  mailing_list_group_ids?: string[] | null;
-  last_bulk_registrant_job_status?: string;
-  last_bulk_registrants_job_failed_count?: string;
-  last_bulk_registrants_job_warning_count?: string;
-  last_mailing_list_members_sync_job_status?: string;
-  last_mailing_list_members_sync_job_failed_count?: string;
-  last_mailing_list_members_sync_job_warning_count?: string;
-
-  // Timestamps & Audit
-  created_at: string;
-  modified_at?: string; // V1 uses modified_at, V2 uses updated_at
-  created_by?: V1UserReference;
-  updated_by?: V1UserReference;
-  updated_by_list?: V1UserReference[];
-}
 
 /**
  * V1 Legacy summary detail item
@@ -308,14 +148,12 @@ export interface MeetingCommittee {
 
 export interface Meeting {
   // API Response fields - not in create payload
-  /** UUID of the LFX Meeting */
-  uid: string;
-  /** Legacy meeting ID for v1 meetings (response only) */
-  id?: string;
+  /** Unique identifier for the meeting */
+  id: string;
   /** Timestamp when meeting was created */
   created_at: string;
   /** Timestamp when meeting was last updated */
-  updated_at: string;
+  modified_at: string;
   /** Write access permission for current user (response only) */
   organizer?: boolean;
 
@@ -352,7 +190,7 @@ export interface Meeting {
   /** YouTube upload integration */
   youtube_upload_enabled: boolean | null;
   /** Show meeting attendees on meeting details page */
-  show_meeting_attendees: boolean | null;
+  show_meeting_attendees?: boolean | null;
   /** Who can access meeting artifacts (recordings, transcripts, AI summaries) */
   artifact_visibility: ArtifactVisibility | null;
   /** Minutes before meeting registrants can join */
@@ -364,11 +202,18 @@ export interface Meeting {
   /** Zoom-specific settings */
   zoom_config?: ZoomConfig | null;
 
+  /** 6-digit Zoom host key */
+  host_key?: string;
+  /** Zoom meeting passcode */
+  passcode?: string;
+
   // Fields NOT in API - likely response-only
   /** Invited to meeting (response only) */
   invited: boolean;
-  /** Meeting join URL */
-  join_url?: string;
+  /** Meeting public link (join URL) */
+  public_link?: string;
+  /** Total registrant count from API */
+  registrant_count?: number;
   /** Count fields (response only) */
   individual_registrants_count: number;
   /** Count fields (response only) */
@@ -389,8 +234,6 @@ export interface Meeting {
   project_name: string;
   /** Project slug */
   project_slug: string;
-  /** Meeting version - v1 for legacy meetings, v2 for new meetings (response only) */
-  version?: 'v1' | 'v2';
 }
 
 /**
@@ -401,15 +244,17 @@ export interface MeetingOccurrence {
   /** Unique identifier for the occurrence */
   occurrence_id: string;
   /** Meeting title */
-  title: string;
+  title?: string;
   /** Meeting description */
-  description: string;
+  description?: string;
   /** Meeting start time in RFC3339 format */
   start_time: string;
   /** Meeting duration in minutes (0-600) */
   duration: number;
-  /** Whether this occurrence has been cancelled */
-  is_cancelled?: boolean;
+  /** Occurrence status ("available" or "cancel") */
+  status?: string;
+  /** Total registrant count for this occurrence */
+  registrant_count?: number;
 }
 
 /**
@@ -526,7 +371,7 @@ export interface MeetingRegistrant {
   /** Unique identifier for the registrant (auto-generated) */
   uid: string;
   /** Meeting UUID this registrant belongs to */
-  meeting_uid: string;
+  meeting_id: string;
   /** Registrant's email address */
   email: string;
   /** Registrant's first name */
@@ -585,7 +430,7 @@ export interface MeetingRegistrant {
  */
 export interface CreateMeetingRegistrantRequest {
   /** UUID of the meeting */
-  meeting_uid: string;
+  meeting_id: string;
   /** User's email address */
   email: string;
   /** User's first name */
@@ -612,7 +457,7 @@ export interface CreateMeetingRegistrantRequest {
  */
 export interface UpdateMeetingRegistrantRequest {
   /** UUID of the meeting (required) */
-  meeting_uid: string;
+  meeting_id: string;
   /** User's email address (required) */
   email: string;
   /** User's first name (required) */
@@ -786,7 +631,7 @@ export interface PastMeeting extends Meeting {
   /** Scheduled end time for past meetings */
   scheduled_end_time: string;
   /** Original meeting UID (different from uid which is the past meeting occurrence UID) */
-  meeting_uid: string;
+  meeting_id: string;
   /** The specific occurrence ID for recurring meetings */
   occurrence_id: string;
   /** Platform-specific meeting ID (e.g., Zoom meeting ID) */
@@ -803,9 +648,9 @@ export interface PastMeetingParticipant {
   /** Unique identifier for the participant */
   uid: string;
   /** Original meeting UUID this participant belongs to */
-  meeting_uid: string;
+  meeting_id: string;
   /** Past meeting UUID for the specific occurrence */
-  past_meeting_uid: string;
+  past_meeting_id: string;
   /** Participant's email address */
   email: string;
   /** Participant's first name */
@@ -887,7 +732,7 @@ export interface PastMeetingRecording {
   /** Unique identifier for the recording */
   uid: string;
   /** Past meeting UID this recording belongs to */
-  past_meeting_uid: string;
+  past_meeting_id: string;
   /** Platform (e.g., Zoom) */
   platform: string;
   /** Platform-specific meeting ID */
@@ -944,9 +789,9 @@ export interface PastMeetingSummary {
   /** Unique identifier for the summary */
   uid: string;
   /** Original meeting UID */
-  meeting_uid: string;
+  meeting_id: string;
   /** Past meeting UID this summary belongs to */
-  past_meeting_uid: string;
+  past_meeting_id: string;
   /** Platform (e.g., Zoom) */
   platform: string;
   /** Whether the summary has been approved */
@@ -1013,7 +858,7 @@ export interface MeetingRsvp {
   /** Unique identifier for the RSVP */
   id: string;
   /** Meeting UUID this RSVP belongs to */
-  meeting_uid: string;
+  meeting_id: string;
   /** User's registrant ID */
   registrant_id: string;
   /** User's username */

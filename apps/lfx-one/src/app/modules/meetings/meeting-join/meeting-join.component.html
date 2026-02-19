@@ -31,12 +31,13 @@
               }
 
               <!-- View Guests Button (for invited users) -->
-              @if (authenticated() && meeting().invited && meeting().show_meeting_attendees && !isLegacyMeeting()) {
+              @if (authenticated() && meeting().invited) {
                 <lfx-button
                   label="Show Members"
                   icon="fa-light fa-users"
                   [outlined]="true"
                   severity="primary"
+                  [disabled]="!meeting().show_meeting_attendees"
                   (onClick)="onRegistrantsToggle()"
                   styleClass="py-[0.15rem] text-xs"
                   data-testid="view-members-button">
@@ -165,8 +166,8 @@
                   </div>
                 </div>
               }
-            } @else if (authenticated() && meeting().organizer && !isLegacyMeeting()) {
-              <!-- RSVP Details - Future Meeting (Authenticated Organizers) -->
+            } @else if (authenticated() && meeting().organizer) {
+              <!-- RSVP Details - Future Meeting (Authenticated Organizers) - Coming Soon -->
               <div class="w-full md:w-[296px]">
                 <lfx-meeting-rsvp-details
                   [meeting]="meeting()"
@@ -175,16 +176,23 @@
                   [pastMeeting]="false"
                   [showAddButton]="true"
                   [additionalRegistrantsCount]="0"
+                  [disabled]="true"
+                  disabledMessage="Coming Soon"
                   backgroundColor="bg-gray-50"
                   borderColor="border-gray-200">
                 </lfx-meeting-rsvp-details>
               </div>
-            } @else if (authenticated() && !isLegacyMeeting()) {
-              <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) -->
+            } @else if (authenticated()) {
+              <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) - Coming Soon -->
               <div class="w-full md:w-[296px]">
                 @if (isInvited()) {
                   @defer (when meeting()) {
-                    <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+                    <lfx-rsvp-button-group
+                      [meeting]="meeting()"
+                      [occurrenceId]="currentOccurrence()?.occurrence_id"
+                      [disabled]="true"
+                      disabledMessage="Coming Soon">
+                    </lfx-rsvp-button-group>
                   }
                 } @else if (canRegisterForMeeting()) {
                   <lfx-button
@@ -276,7 +284,7 @@
                   <div class="flex flex-col gap-2">
                     @for (attachment of attachments(); track attachment.uid; let i = $index) {
                       <a
-                        [href]="attachment.type === 'link' ? attachment.link : '/api/meetings/' + meeting().uid + '/attachments/' + attachment.uid"
+                        [href]="attachment.type === 'link' ? attachment.link : '/api/meetings/' + meeting().id + '/attachments/' + attachment.uid"
                         target="_blank"
                         rel="noopener noreferrer"
                         class="bg-gray-200 hover:bg-gray-300 rounded px-3 py-2 flex items-center gap-3 min-w-[180px] transition-colors cursor-pointer"
