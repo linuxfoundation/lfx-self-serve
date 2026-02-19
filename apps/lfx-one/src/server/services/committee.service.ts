@@ -80,22 +80,15 @@ export class CommitteeService {
    * Fetches a single committee by ID
    */
   public async getCommitteeById(req: Request, committeeId: string): Promise<Committee> {
-    const params = {
-      type: 'committee',
-      tags: `committee_uid:${committeeId}`,
-    };
+    const committee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
-
-    if (!resources || resources.length === 0) {
+    if (!committee) {
       throw new ResourceNotFoundError('Committee', committeeId, {
         operation: 'get_committee_by_id',
         service: 'committee_service',
         path: `/committees/${committeeId}`,
       });
     }
-
-    const committee = resources[0].data;
 
     // Fetch committee settings and merge
     const settings = await this.getCommitteeSettings(req, committeeId);
@@ -239,21 +232,14 @@ export class CommitteeService {
    * Fetches a single committee member by ID
    */
   public async getCommitteeMemberById(req: Request, committeeId: string, memberId: string): Promise<CommitteeMember> {
-    const params = {
-      type: 'committee_member',
-      parent: `committee_member:${memberId}`,
-      committee_uid: committeeId,
-    };
-
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(
+    const member = await this.microserviceProxy.proxyRequest<CommitteeMember>(
       req,
       'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      params
+      `/committees/${committeeId}/members/${memberId}`,
+      'GET'
     );
 
-    if (!resources || resources.length === 0) {
+    if (!member) {
       throw new ResourceNotFoundError('Committee member', memberId, {
         operation: 'get_committee_member_by_id',
         service: 'committee_service',
@@ -261,7 +247,7 @@ export class CommitteeService {
       });
     }
 
-    return resources[0].data;
+    return member;
   }
 
   /**

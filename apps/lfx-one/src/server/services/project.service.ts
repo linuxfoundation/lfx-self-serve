@@ -110,29 +110,15 @@ export class ProjectService {
    * Fetches a single project by ID
    */
   public async getProjectById(req: Request, uid: string, access: boolean = true): Promise<Project> {
-    const params = {
-      type: 'project',
-      tags: uid,
-    };
+    const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, 'GET');
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
-
-    if (!resources || resources.length === 0) {
+    if (!project) {
       throw new ResourceNotFoundError('Project', uid, {
         operation: 'get_project_by_id',
         service: 'project_service',
-        path: '/query/resources',
+        path: `/projects/${uid}`,
       });
     }
-
-    if (resources.length > 1) {
-      logger.warning(req, 'get_project_by_id', 'Multiple projects found for single ID lookup', {
-        project_id: uid,
-        result_count: resources.length,
-      });
-    }
-
-    const project = resources[0].data;
 
     // Add writer access field to the project
     if (access) {
