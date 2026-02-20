@@ -232,12 +232,7 @@ export class CommitteeService {
    * Fetches a single committee member by ID
    */
   public async getCommitteeMemberById(req: Request, committeeId: string, memberId: string): Promise<CommitteeMember> {
-    const member = await this.microserviceProxy.proxyRequest<CommitteeMember>(
-      req,
-      'LFX_V2_SERVICE',
-      `/committees/${committeeId}/members/${memberId}`,
-      'GET'
-    );
+    const member = await this.microserviceProxy.proxyRequest<CommitteeMember>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/members/${memberId}`, 'GET');
 
     if (!member) {
       throw new ResourceNotFoundError('Committee member', memberId, {

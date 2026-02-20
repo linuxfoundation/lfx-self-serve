@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { DEFAULT_QUERY_PARAMS, NATS_CONFIG } from '@lfx-one/shared/constants';
-import { parseToInt } from '@lfx-one/shared/utils';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
@@ -24,6 +23,7 @@ import {
   UserPullRequestsResponse,
   UserPullRequestsRow,
 } from '@lfx-one/shared/interfaces';
+import { parseToInt } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';

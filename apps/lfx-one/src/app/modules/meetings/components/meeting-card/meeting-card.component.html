@@ -237,9 +237,7 @@
               [currentOccurrence]="currentOccurrence()"
               [pastMeeting]="pastMeeting()"
               [showAddButton]="!pastMeeting()"
-              [additionalRegistrantsCount]="additionalRegistrantsCount()"
-              [disabled]="true"
-              disabledMessage="Coming Soon">
+              [additionalRegistrantsCount]="additionalRegistrantsCount()">
             </lfx-meeting-rsvp-details>
           }
         } @else if (!pastMeeting()) {

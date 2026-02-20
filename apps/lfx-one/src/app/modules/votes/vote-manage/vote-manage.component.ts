@@ -7,16 +7,15 @@ import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } fr
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { COMMITTEE_LABEL, OPEN_VOTE_CONFIRMATION, VOTE_LABEL, VOTE_TOTAL_STEPS } from '@lfx-one/shared/constants';
-import { PollStatus, PollType } from '@lfx-one/shared/enums';
 import { CommitteeReference, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
-import { buildCreateVoteRequest, markFormControlsAsTouched } from '@lfx-one/shared/utils';
+import { buildCreateVoteRequest, buildUpdateVoteRequest, mapVoteToFormValue, markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { trimmedMinLength, trimmedRequired, validCommitteeReference } from '@lfx-one/shared/validators';
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { combineLatest, distinctUntilChanged, map, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
 
 import { VoteBasicsComponent } from '../components/vote-basics/vote-basics.component';
 import { VoteQuestionComponent } from '../components/vote-question/vote-question.component';
@@ -58,6 +57,7 @@ export class VoteManageComponent {
   public readonly mode = signal<'create' | 'edit'>('create');
   public readonly voteId = signal<string | null>(null);
   public readonly submitting = signal<boolean>(false);
+  public readonly loading = signal<boolean>(false);
   private readonly internalStep = signal<number>(1);
 
   // Complex computed/toSignal signals
@@ -131,27 +131,50 @@ export class VoteManageComponent {
     this.submitting.set(true);
 
     const formValue = this.form().value as VoteFormValue;
-    const createRequest = buildCreateVoteRequest(formValue, project.uid);
 
-    this.voteService.createVote(createRequest).subscribe({
-      next: () => {
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Success',
-          detail: `${this.voteLabel.singular} saved as draft`,
-        });
-        this.submitting.set(false);
-        this.router.navigate(['/votes']);
-      },
-      error: (error) => {
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Error',
-          detail: `Failed to save ${this.voteLabel.singular.toLowerCase()} as draft: ${error.message || 'Unknown error'}`,
-        });
-        this.submitting.set(false);
-      },
-    });
+    if (this.isEditMode() && this.voteId()) {
+      const updateRequest = buildUpdateVoteRequest(formValue, project.uid);
+      this.voteService.updateVote(this.voteId()!, updateRequest).subscribe({
+        next: () => {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: `${this.voteLabel.singular} updated successfully`,
+          });
+          this.submitting.set(false);
+          this.router.navigate(['/votes']);
+        },
+        error: (error) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: `Failed to update ${this.voteLabel.singular.toLowerCase()}: ${error.message || 'Unknown error'}`,
+          });
+          this.submitting.set(false);
+        },
+      });
+    } else {
+      const createRequest = buildCreateVoteRequest(formValue, project.uid);
+      this.voteService.createVote(createRequest).subscribe({
+        next: () => {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: `${this.voteLabel.singular} saved as draft`,
+          });
+          this.submitting.set(false);
+          this.router.navigate(['/votes']);
+        },
+        error: (error) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: `Failed to save ${this.voteLabel.singular.toLowerCase()} as draft: ${error.message || 'Unknown error'}`,
+          });
+          this.submitting.set(false);
+        },
+      });
+    }
   }
 
   public onSubmit(): void {
@@ -214,42 +237,104 @@ export class VoteManageComponent {
     this.submitting.set(true);
 
     const formValue = this.form().value as VoteFormValue;
-    const createRequest = buildCreateVoteRequest(formValue, project.uid);
 
-    // Create the vote first, then enable it to open immediately
-    this.voteService.createVote(createRequest).subscribe({
-      next: (createdVote) => {
-        // After creating, enable the vote to open it
-        this.voteService.enableVote(createdVote.uid).subscribe({
-          next: () => {
-            this.messageService.add({
-              severity: 'success',
-              summary: 'Success',
-              detail: `${this.voteLabel.singular} opened successfully`,
-            });
-            this.submitting.set(false);
-            this.router.navigate(['/votes']);
-          },
-          error: (error) => {
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Error',
-              detail: `${this.voteLabel.singular} created but failed to enable: ${error.message || 'Unknown error'}`,
-            });
-            this.submitting.set(false);
-            this.router.navigate(['/votes']);
-          },
-        });
-      },
-      error: (error) => {
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Error',
-          detail: `Failed to create ${this.voteLabel.singular.toLowerCase()}: ${error.message || 'Unknown error'}`,
-        });
-        this.submitting.set(false);
-      },
+    if (this.isEditMode() && this.voteId()) {
+      const updateRequest = buildUpdateVoteRequest(formValue, project.uid);
+      this.voteService.updateVote(this.voteId()!, updateRequest).subscribe({
+        next: () => {
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Success',
+            detail: `${this.voteLabel.singular} updated successfully`,
+          });
+          this.submitting.set(false);
+          this.router.navigate(['/votes']);
+        },
+        error: (error) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: `Failed to update ${this.voteLabel.singular.toLowerCase()}: ${error.message || 'Unknown error'}`,
+          });
+          this.submitting.set(false);
+        },
+      });
+    } else {
+      const createRequest = buildCreateVoteRequest(formValue, project.uid);
+      // Create the vote first, then enable it to open immediately
+      this.voteService.createVote(createRequest).subscribe({
+        next: (createdVote) => {
+          // After creating, enable the vote to open it
+          this.voteService.enableVote(createdVote.uid).subscribe({
+            next: () => {
+              this.messageService.add({
+                severity: 'success',
+                summary: 'Success',
+                detail: `${this.voteLabel.singular} opened successfully`,
+              });
+              this.submitting.set(false);
+              this.router.navigate(['/votes']);
+            },
+            error: (error) => {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: `${this.voteLabel.singular} created but failed to enable: ${error.message || 'Unknown error'}`,
+              });
+              this.submitting.set(false);
+              this.router.navigate(['/votes']);
+            },
+          });
+        },
+        error: (error) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: `Failed to create ${this.voteLabel.singular.toLowerCase()}: ${error.message || 'Unknown error'}`,
+          });
+          this.submitting.set(false);
+        },
+      });
+    }
+  }
+
+  /**
+   * Patches the form with data from a fetched Vote entity.
+   * Rebuilds the questions FormArray to match the vote's poll_questions.
+   */
+  private patchFormWithVote(vote: Vote): void {
+    const formValue = mapVoteToFormValue(vote);
+    const form = this.form();
+
+    // Patch scalar fields (Step 1)
+    form.patchValue({
+      title: formValue.title,
+      description: formValue.description,
+      committee: formValue.committee,
+      eligible_participants: formValue.eligible_participants,
+      close_date: formValue.close_date,
     });
+
+    // Rebuild questions FormArray (Step 2)
+    const questionsArray = form.get('questions') as FormArray;
+    questionsArray.clear();
+
+    if (formValue.questions.length > 0) {
+      for (const question of formValue.questions) {
+        const questionGroup = new FormGroup({
+          question: new FormControl(question.question, [trimmedRequired(), trimmedMinLength(10)]),
+          response_type: new FormControl<'single' | 'multiple'>(question.response_type, [Validators.required]),
+          options: new FormArray(
+            question.options.map((option) => new FormControl(option, { validators: [trimmedRequired()], nonNullable: true })),
+            [Validators.minLength(2)]
+          ),
+        });
+        questionsArray.push(questionGroup);
+      }
+    } else {
+      // Ensure at least one empty question group exists
+      questionsArray.push(this.createQuestionFormGroup());
+    }
   }
 
   // Private initializer functions
@@ -279,9 +364,23 @@ export class VoteManageComponent {
           if (voteId) {
             this.mode.set('edit');
             this.voteId.set(voteId);
-            // TODO: Fetch vote from API
-            // For now, return mock data
-            return of(this.getMockVote(voteId));
+            this.loading.set(true);
+            return this.voteService.getVote(voteId).pipe(
+              tap((vote) => {
+                this.loading.set(false);
+                this.patchFormWithVote(vote);
+              }),
+              catchError(() => {
+                this.loading.set(false);
+                this.messageService.add({
+                  severity: 'error',
+                  summary: 'Error',
+                  detail: 'Failed to load vote details',
+                });
+                this.router.navigate(['/votes']);
+                return of(null);
+              })
+            );
           }
           this.mode.set('create');
           return of(null);
@@ -407,29 +506,5 @@ export class VoteManageComponent {
 
   private markAllFormControlsAsTouched(): void {
     markFormControlsAsTouched(this.form());
-  }
-
-  private getMockVote(voteId: string): Vote {
-    return {
-      uid: voteId,
-      name: 'Mock Vote',
-      description: 'This is a mock vote for testing',
-      committee_filters: ['voting_rep'],
-      committee_uid: 'comm-001',
-      committee_name: 'Technical Steering Committee',
-      committee_type: 'technical',
-      committee_voting_status: true,
-      creation_time: new Date().toISOString(),
-      end_time: new Date(Date.now() + 7 * 24 * 60 * 60 * 1000).toISOString(),
-      last_modified_time: new Date().toISOString(),
-      num_response_received: 0,
-      num_winners: 1,
-      poll_questions: [],
-      poll_type: PollType.GENERIC,
-      project_uid: 'proj-001',
-      pseudo_anonymity: false,
-      status: PollStatus.DISABLED,
-      total_voting_request_invitations: 0,
-    };
   }
 }

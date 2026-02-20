@@ -502,8 +502,8 @@ export interface CreatePollCommentPrompt {
 export interface CreateVoteRequest {
   /** Name/title of the poll (required) */
   name: string;
-  /** Description of the poll */
-  description?: string;
+  /** Description of the poll (required by voting service API) */
+  description: string;
   /** Poll end/deadline timestamp in RFC3339/ISO format (required) */
   end_time: string;
   /** V2 project UID the poll belongs to (required) */

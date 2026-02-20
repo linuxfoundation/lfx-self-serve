@@ -172,7 +172,7 @@ export class MyMeetingsComponent {
           }
 
           // Limit to 2 meetings for the dashboard display
-          return this.userService.getUserMeetings(project.uid, 2).pipe(
+          return this.userService.getUserMeetings(project.uid, 100).pipe(
             tap(() => this.loading.set(false)),
             catchError((error) => {
               console.error('Failed to load user meetings:', error);

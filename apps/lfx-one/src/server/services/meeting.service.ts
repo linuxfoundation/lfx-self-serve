@@ -464,8 +464,8 @@ export class MeetingService {
     });
 
     const params = {
-      type: 'past_meeting_participant',
-      tags: `past_meeting_id:${pastMeetingUid}`,
+      type: 'v1_past_meeting_participant',
+      tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
     };
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(
@@ -703,7 +703,7 @@ export class MeetingService {
     try {
       const params = {
         tags: `meeting_id:${meetingUid}`,
-        type: 'meeting_rsvp',
+        type: 'v1_meeting_rsvp',
       };
 
       const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(

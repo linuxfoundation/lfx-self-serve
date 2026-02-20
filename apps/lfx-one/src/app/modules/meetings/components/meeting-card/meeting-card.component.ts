@@ -36,8 +36,6 @@ import {
 } from '@lfx-one/shared';
 import { RecordingModalComponent } from '@modules/meetings/components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@modules/meetings/components/summary-modal/summary-modal.component';
-import { FileSizePipe } from '@pipes/file-size.pipe';
-import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
@@ -70,8 +68,6 @@ import { PublicRegistrationModalComponent } from '../../components/public-regist
     DrawerModule,
     ExpandableTextComponent,
     LinkifyPipe,
-    FileTypeIconPipe,
-    FileSizePipe,
     ClipboardModule,
     RsvpButtonGroupComponent,
     MeetingRsvpDetailsComponent,
