@@ -12,18 +12,90 @@
   <!-- Dashboard Sections -->
   <div class="flex flex-col gap-6" data-testid="dashboard-sections-grid">
     <!-- Recent Progress - Full Width -->
-    <lfx-recent-progress />
+    @defer (on idle) {
+      <lfx-recent-progress />
+    } @placeholder {
+      <section data-testid="dashboard-recent-progress-placeholder">
+        <div class="flex items-center justify-between mb-4">
+          <p-skeleton width="10rem" height="1.5rem" />
+          <div class="flex items-center gap-2">
+            <p-skeleton width="2rem" height="2rem" borderRadius="4px" />
+            <p-skeleton width="2rem" height="2rem" borderRadius="4px" />
+          </div>
+        </div>
+        <div class="flex gap-4 overflow-hidden">
+          @for (i of [1, 2, 3, 4]; track i) {
+            <div class="p-4 bg-white border border-gray-200 rounded-lg flex-shrink-0 w-[calc(100vw-3rem)] md:w-80">
+              <div class="flex flex-col gap-2">
+                <div class="flex items-center gap-2">
+                  <p-skeleton width="1rem" height="1rem" borderRadius="4px" />
+                  <p-skeleton width="6rem" height="0.875rem" />
+                </div>
+                <div class="mt-3 w-full h-16">
+                  <p-skeleton width="100%" height="100%" borderRadius="8px" />
+                </div>
+                <div class="flex flex-col gap-1 mt-auto">
+                  <p-skeleton width="3rem" height="1.75rem" />
+                  <p-skeleton width="70%" height="0.75rem" />
+                </div>
+              </div>
+            </div>
+          }
+        </div>
+      </section>
+    }
 
     <!-- Middle Row - Two Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
       <!-- My Meetings -->
-      <lfx-my-meetings class="h-full" />
+      @defer (on idle) {
+        <lfx-my-meetings class="h-full" />
+      } @placeholder {
+        <section class="flex flex-col flex-1" data-testid="dashboard-my-meetings-placeholder">
+          <div class="flex items-center justify-between mb-4 h-8">
+            <div class="flex items-center gap-2">
+              <p-skeleton width="1.125rem" height="1.125rem" borderRadius="4px" />
+              <p-skeleton width="7rem" height="1rem" />
+            </div>
+            <p-skeleton width="4rem" height="1rem" />
+          </div>
+          <div class="flex flex-col gap-3">
+            <p-skeleton width="100%" height="140px" />
+          </div>
+        </section>
+      }
 
       <!-- Pending Actions -->
-      <lfx-pending-actions class="h-full" [pendingActions]="coreDevActions()" (actionClick)="handleActionClick()" />
+      @defer (on idle) {
+        <lfx-pending-actions class="h-full" [pendingActions]="coreDevActions()" (actionClick)="handleActionClick()" />
+      } @placeholder {
+        <section class="flex flex-col flex-1" data-testid="dashboard-pending-actions-placeholder">
+          <div class="flex items-center justify-between mb-4 px-2 h-8">
+            <div class="flex items-center gap-2">
+              <p-skeleton width="1.125rem" height="1.125rem" borderRadius="4px" />
+              <p-skeleton width="9rem" height="1rem" />
+            </div>
+          </div>
+          <div class="flex flex-col gap-3 px-2">
+            <p-skeleton width="100%" height="140px" />
+          </div>
+        </section>
+      }
     </div>
 
-    <!-- My Projects - Full Width -->
-    <lfx-my-projects />
+    <!-- My Projects - Full Width (below fold) -->
+    @defer (on viewport) {
+      <lfx-my-projects />
+    } @placeholder {
+      <div data-testid="dashboard-my-projects-placeholder">
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <p-skeleton width="1.125rem" height="1.125rem" borderRadius="4px" />
+            <p-skeleton width="6rem" height="1rem" />
+          </div>
+        </div>
+        <p-skeleton width="100%" height="200px" borderRadius="8px" />
+      </div>
+    }
   </div>
 </div>
