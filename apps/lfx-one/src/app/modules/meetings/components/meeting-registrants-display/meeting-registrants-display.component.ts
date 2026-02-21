@@ -38,11 +38,9 @@ export class MeetingRegistrantsDisplayComponent {
   // Search and filter controls
   public readonly searchControl: FormControl<string> = new FormControl<string>('', { nonNullable: true });
   public readonly rsvpFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
-  public readonly roleFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
   public readonly groupFilterControl: FormControl<string> = new FormControl<string>('all', { nonNullable: true });
   public readonly filterForm: FormGroup = new FormGroup({
     rsvpFilter: this.rsvpFilterControl,
-    roleFilter: this.roleFilterControl,
     groupFilter: this.groupFilterControl,
   });
 
@@ -53,9 +51,6 @@ export class MeetingRegistrantsDisplayComponent {
     { label: 'Declined', value: 'no' },
     { label: 'Pending', value: 'pending' },
   ];
-
-  // Role filter options computed from registrants
-  public readonly roleFilterOptions = this.initRoleFilterOptions();
 
   // Group (Committee) filter options computed from meeting committees
   public readonly groupFilterOptions = this.initGroupFilterOptions();
@@ -68,7 +63,6 @@ export class MeetingRegistrantsDisplayComponent {
 
   // Filter signals from form controls
   public readonly rsvpFilter: Signal<string> = toSignal(this.rsvpFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
-  public readonly roleFilter: Signal<string> = toSignal(this.roleFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
   public readonly groupFilter: Signal<string> = toSignal(this.groupFilterControl.valueChanges.pipe(startWith('all')), { initialValue: 'all' });
 
   // Filtered registrants based on search and filters
@@ -143,28 +137,6 @@ export class MeetingRegistrantsDisplayComponent {
     );
   }
 
-  private initRoleFilterOptions() {
-    return computed(() => {
-      const registrants = this.registrants();
-      const roles = new Set<string>();
-
-      registrants.forEach((registrant) => {
-        if (registrant.committee_role) {
-          roles.add(registrant.committee_role);
-        }
-      });
-
-      const options = [{ label: 'All Roles', value: 'all' }];
-      Array.from(roles)
-        .sort()
-        .forEach((role) => {
-          options.push({ label: role, value: role });
-        });
-
-      return options;
-    });
-  }
-
   private initGroupFilterOptions() {
     return computed(() => {
       const meeting = this.meeting();
@@ -194,7 +166,6 @@ export class MeetingRegistrantsDisplayComponent {
       const registrants = this.registrants();
       const query = this.searchQuery().toLowerCase().trim();
       const rsvp = this.rsvpFilter();
-      const role = this.roleFilter();
       const group = this.groupFilter();
 
       return registrants.filter((registrant) => {
@@ -223,13 +194,10 @@ export class MeetingRegistrantsDisplayComponent {
           }
         }
 
-        // Role filter
-        const matchesRole = role === 'all' || registrant.committee_role === role;
-
         // Group (Committee) filter
         const matchesGroup = group === 'all' || registrant.committee_uid === group;
 
-        return matchesSearch && matchesRsvp && matchesRole && matchesGroup;
+        return matchesSearch && matchesRsvp && matchesGroup;
       });
     });
   }

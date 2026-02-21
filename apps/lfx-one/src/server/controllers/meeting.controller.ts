@@ -9,10 +9,13 @@ import {
   CreateMeetingRequest,
   CreateMeetingRsvpRequest,
   GenerateAgendaResponse,
+  Meeting,
   MeetingRegistrant,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
 } from '@lfx-one/shared/interfaces';
+import { NATS_CONFIG } from '@lfx-one/shared/constants';
+import { NatsSubjects } from '@lfx-one/shared/enums';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -22,6 +25,7 @@ import { AiService } from '../services/ai.service';
 import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
+import { NatsService } from '../services/nats.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -31,6 +35,7 @@ export class MeetingController {
   private meetingService: MeetingService = new MeetingService();
   private aiService: AiService = new AiService();
   private committeeService: CommitteeService = new CommitteeService();
+  private natsService: NatsService = new NatsService();
 
   /**
    * GET /meetings
@@ -54,7 +59,7 @@ export class MeetingController {
             logger.warning(req, 'get_meetings', 'Failed to fetch registrants for meeting', {
               meeting_id: m.id,
               title: m.title,
-              error: error instanceof Error ? error.message : 'Unknown error',
+              err: error,
             });
             return null;
           });
@@ -427,9 +432,9 @@ export class MeetingController {
         return;
       }
 
-      // Step 1: Get the meeting to check show_meeting_attendees setting
-      logger.debug(req, 'get_my_meeting_registrants', 'Fetching meeting details', { meeting_id: uid });
-      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', false);
+      // Step 1: Get the meeting with access check to determine organizer status
+      logger.debug(req, 'get_my_meeting_registrants', 'Fetching meeting details with access check', { meeting_id: uid });
+      const meeting = await this.meetingService.getMeetingById(req, uid, 'v1_meeting', true);
       if (!meeting) {
         logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
@@ -497,20 +502,28 @@ export class MeetingController {
         registrant_count: userRegistrantCheck.length,
       });
 
-      // Step 6: If user is not a registrant, return empty array
+      // Step 6: If user is not a registrant, check if they are an organizer
       if (userRegistrantCheck.length === 0) {
-        logger.success(req, 'get_my_meeting_registrants', startTime, {
+        if (!meeting.organizer) {
+          logger.success(req, 'get_my_meeting_registrants', startTime, {
+            meeting_id: uid,
+            user_email: userEmail,
+            is_registrant: false,
+            is_organizer: false,
+            registrant_count: 0,
+          });
+          res.json([]);
+          return;
+        }
+
+        logger.debug(req, 'get_my_meeting_registrants', 'User is not a registrant but is an organizer, granting access', {
           meeting_id: uid,
           user_email: userEmail,
-          is_registrant: false,
-          registrant_count: 0,
         });
-        res.json([]);
-        return;
       }
 
-      // Step 7: User is a registrant, fetch all registrants using M2M token
-      logger.debug(req, 'get_my_meeting_registrants', 'User is a registrant, setting up M2M token', {
+      // Step 7: User is a registrant or organizer, fetch all registrants using M2M token
+      logger.debug(req, 'get_my_meeting_registrants', 'Fetching registrants with M2M token', {
         meeting_id: uid,
         user_email: userEmail,
         include_rsvp: includeRsvp,
@@ -529,7 +542,7 @@ export class MeetingController {
       });
 
       // Enrich committee registrant data with committee details and member info
-      const enrichedRegistrants = await this.enrichCommitteeRegistrants(req, registrants);
+      const enrichedRegistrants = await this.enrichCommitteeRegistrants(req, meeting, registrants);
 
       // Restore original token (delete if it was undefined to avoid leaving M2M token)
       if (originalToken !== undefined) {
@@ -541,7 +554,8 @@ export class MeetingController {
       logger.success(req, 'get_my_meeting_registrants', startTime, {
         meeting_id: uid,
         user_email: userEmail,
-        is_registrant: true,
+        is_registrant: userRegistrantCheck.length > 0,
+        is_organizer: meeting.organizer,
         registrant_count: enrichedRegistrants.length,
         include_rsvp: includeRsvp,
       });
@@ -1143,7 +1157,7 @@ export class MeetingController {
         logger.warning(req, 'get_meeting_attachment_metadata', 'Failed to fetch metadata, using defaults', {
           meeting_id: uid,
           attachment_id: attachmentId,
-          error: metadataError instanceof Error ? metadataError.message : metadataError,
+          err: metadataError,
         });
       }
 
@@ -1524,55 +1538,63 @@ export class MeetingController {
   }
 
   /**
-   * Enriches committee registrants with committee details and member information
-   * For each committee registrant, fetches committee name/category and member voting/role/appointed_by
+   * Enriches committee registrants with committee details and member information.
+   * Uses the meeting's committees array as the source of truth for which committees
+   * are involved, then fetches committee details and members to populate registrant fields.
    */
-  private async enrichCommitteeRegistrants(req: Request, registrants: MeetingRegistrant[]): Promise<MeetingRegistrant[]> {
-    // Filter for committee type registrants
-    const committeeRegistrants = registrants.filter((r) => r.type === 'committee' && r.committee_uid);
+  private async enrichCommitteeRegistrants(req: Request, meeting: Meeting, registrants: MeetingRegistrant[]): Promise<MeetingRegistrant[]> {
+    // Use the meeting's committees as the source of truth
+    const meetingCommittees = meeting.committees || [];
 
-    if (committeeRegistrants.length === 0) {
+    if (meetingCommittees.length === 0) {
       return registrants;
     }
 
-    // Get unique committee UIDs
-    const uniqueCommitteeUids = [
-      ...new Set(committeeRegistrants.map((r) => r.committee_uid).filter((uid): uid is string => uid !== null && uid !== undefined)),
-    ];
+    const v2CommitteeUids = meetingCommittees.map((c) => c.uid);
 
-    logger.debug(req, 'enrich_committee_registrants', 'Enriching committee data', {
+    logger.debug(req, 'enrich_committee_registrants', 'Enriching committee data from meeting committees', {
       total_registrants: registrants.length,
-      committee_registrants: committeeRegistrants.length,
-      unique_committees: uniqueCommitteeUids.length,
+      meeting_committee_count: v2CommitteeUids.length,
+      v2_committee_uids: v2CommitteeUids,
     });
 
-    // Fetch committee details and members in parallel
+    // Resolve v2 committee UIDs to v1 SFIDs via NATS lookup
+    // Registrant committee_uid is a v1 ID; meeting committees use v2 IDs
+    const v1ToV2Map = await this.resolveV2ToV1CommitteeMappings(req, v2CommitteeUids);
+
+    logger.debug(req, 'enrich_committee_registrants', 'Resolved v2→v1 committee mappings', {
+      mappings_resolved: v1ToV2Map.size,
+    });
+
+    if (v1ToV2Map.size === 0) {
+      return registrants;
+    }
+
+    // Fetch committee details and members in parallel for all meeting committees
     const [committees, membersByCommittee] = await Promise.all([
-      // Fetch all committees
       Promise.all(
-        uniqueCommitteeUids.map(async (uid) => {
+        v2CommitteeUids.map(async (uid) => {
           try {
             const committee = await this.committeeService.getCommitteeById(req, uid);
             return { uid, committee };
           } catch (error) {
             logger.warning(req, 'enrich_committee_registrants', 'Failed to fetch committee', {
               committee_uid: uid,
-              error: error instanceof Error ? error.message : 'Unknown error',
+              err: error,
             });
             return { uid, committee: null };
           }
         })
       ),
-      // Fetch all committee members
       Promise.all(
-        uniqueCommitteeUids.map(async (uid) => {
+        v2CommitteeUids.map(async (uid) => {
           try {
             const members = await this.committeeService.getCommitteeMembers(req, uid);
             return { uid, members };
           } catch (error) {
             logger.warning(req, 'enrich_committee_registrants', 'Failed to fetch committee members', {
               committee_uid: uid,
-              error: error instanceof Error ? error.message : 'Unknown error',
+              err: error,
             });
             return { uid, members: [] };
           }
@@ -1580,21 +1602,26 @@ export class MeetingController {
       ),
     ]);
 
-    // Build lookup maps
+    // Build lookup maps keyed by v2 committee UID
     const committeeMap = new Map<string, Committee | null>();
     committees.forEach(({ uid, committee }) => committeeMap.set(uid, committee));
-
     const memberMap = new Map<string, CommitteeMember[]>();
     membersByCommittee.forEach(({ uid, members }) => memberMap.set(uid, members));
 
-    // Enrich registrants
+    // Enrich registrants that have a committee_uid (v1 ID) set
     return registrants.map((registrant) => {
-      if (registrant.type !== 'committee' || !registrant.committee_uid) {
+      if (!registrant.committee_uid) {
         return registrant;
       }
 
-      const committee = committeeMap.get(registrant.committee_uid);
-      const members = memberMap.get(registrant.committee_uid) || [];
+      // Map registrant's v1 committee_uid to the corresponding v2 UID
+      const v2Uid = v1ToV2Map.get(registrant.committee_uid);
+      if (!v2Uid) {
+        return registrant;
+      }
+
+      const committee = committeeMap.get(v2Uid);
+      const members = memberMap.get(v2Uid) || [];
 
       // Find the member by email
       const member = members.find((m) => m.email.toLowerCase() === registrant.email.toLowerCase());
@@ -1602,13 +1629,71 @@ export class MeetingController {
       return {
         ...registrant,
         // Committee details
-        committee_name: committee?.name || registrant.committee_name || null,
+        committee_name: committee?.name || null,
         committee_category: committee?.category || null,
         // Member details
-        committee_role: member?.role?.name || registrant.committee_role || null,
+        committee_role: member?.role?.name || null,
         committee_voting_status: member?.voting?.status || null,
         committee_appointed_by: member?.appointed_by || null,
       };
     });
+  }
+
+  /**
+   * Resolves v2 committee UIDs to v1 committee SFIDs via NATS lookup.
+   * Returns a map of v1_sfid → v2_uid for matching registrants to committees.
+   */
+  private async resolveV2ToV1CommitteeMappings(req: Request, v2CommitteeUids: string[]): Promise<Map<string, string>> {
+    const v1ToV2Map = new Map<string, string>();
+    const codec = this.natsService.getCodec();
+
+    const results = await Promise.all(
+      v2CommitteeUids.map(async (v2Uid) => {
+        try {
+          const lookupKey = `committee.uid.${v2Uid}`;
+          const response = await this.natsService.request(NatsSubjects.LOOKUP_V1_MAPPING, codec.encode(lookupKey), {
+            timeout: NATS_CONFIG.REQUEST_TIMEOUT,
+          });
+
+          const responseText = codec.decode(response.data);
+
+          // Response format: "{project_sfid}:{committee_sfid}" or empty/error
+          if (!responseText || responseText.startsWith('error:')) {
+            logger.warning(req, 'resolve_v2_to_v1_committee', 'NATS lookup returned no mapping', {
+              v2_uid: v2Uid,
+              response: responseText || '(empty)',
+            });
+            return null;
+          }
+
+          // Extract the committee_sfid (second part after the colon)
+          const parts = responseText.split(':');
+          if (parts.length < 2 || !parts[1]) {
+            logger.warning(req, 'resolve_v2_to_v1_committee', 'Unexpected NATS response format', {
+              v2_uid: v2Uid,
+              response: responseText,
+            });
+            return null;
+          }
+
+          const v1Sfid = parts[1];
+          return { v1Sfid, v2Uid };
+        } catch (error) {
+          logger.warning(req, 'resolve_v2_to_v1_committee', 'Failed to resolve v2→v1 committee mapping', {
+            v2_uid: v2Uid,
+            err: error,
+          });
+          return null;
+        }
+      })
+    );
+
+    for (const result of results) {
+      if (result) {
+        v1ToV2Map.set(result.v1Sfid, result.v2Uid);
+      }
+    }
+
+    return v1ToV2Map;
   }
 }

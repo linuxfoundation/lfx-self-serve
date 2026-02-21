@@ -11,4 +11,5 @@ export enum NatsSubjects {
   EMAIL_TO_USERNAME = 'lfx.auth-service.email_to_username',
   EMAIL_TO_SUB = 'lfx.auth-service.email_to_sub',
   USERNAME_TO_USER_INFO = 'lfx.auth-service.username_to_user_info',
+  LOOKUP_V1_MAPPING = 'lfx.lookup_v1_mapping',
 }

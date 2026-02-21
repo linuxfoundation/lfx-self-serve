@@ -100,9 +100,25 @@ export class PublicMeetingController {
         meeting.organizer = false;
       }
 
-      // Registrant counts are loaded on-demand by the frontend drawer component
-      meeting.individual_registrants_count = 0;
-      meeting.committee_members_count = 0;
+      // Fetch registrant counts for organizers, otherwise default to 0
+      if (meeting.organizer) {
+        try {
+          const registrants = await this.meetingService.getMeetingRegistrants(req, id);
+          const committeeMembers = registrants.filter((r) => r.type === 'committee').length;
+          meeting.individual_registrants_count = registrants.length - committeeMembers;
+          meeting.committee_members_count = committeeMembers;
+        } catch (error) {
+          logger.warning(req, 'get_public_meeting_by_id', 'Failed to fetch registrant counts for organizer', {
+            meeting_id: id,
+            err: error,
+          });
+          meeting.individual_registrants_count = 0;
+          meeting.committee_members_count = 0;
+        }
+      } else {
+        meeting.individual_registrants_count = 0;
+        meeting.committee_members_count = 0;
+      }
 
       // Log the success
       logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_id: id, project_uid: meeting.project_uid, title: meeting.title });

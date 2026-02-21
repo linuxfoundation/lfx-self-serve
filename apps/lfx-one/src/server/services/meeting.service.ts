@@ -25,6 +25,7 @@ import { transformV1SummaryToV2 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
@@ -224,39 +225,31 @@ export class MeetingService {
     // After creating, fetch the meeting with retry to handle permission propagation delay.
     // The GET may return 403 initially due to a race condition — permissions are eventually consistent.
     const meetingId = newMeeting.id;
-    const maxRetries = 5;
-    const retryDelayMs = 2000;
+    let fetchedMeeting: Meeting | undefined;
 
-    for (let attempt = 1; attempt <= maxRetries; attempt++) {
-      try {
-        const meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingId}`, 'GET');
-        meeting.id = meetingId;
-        logger.debug(req, 'create_meeting', 'Fetched created meeting successfully', { meeting_id: meetingId, attempt });
-        return meeting;
-      } catch (error: any) {
-        const is403 = error?.statusCode === 403 || error?.status === 403;
-
-        if (is403 && attempt < maxRetries) {
-          logger.debug(req, 'create_meeting', 'GET returned 403, retrying after delay', {
-            meeting_id: meetingId,
-            attempt,
-            next_retry_ms: retryDelayMs,
-          });
-          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
-          continue;
+    const resolved = await pollEndpoint({
+      req,
+      operation: 'create_meeting',
+      pollFn: async () => {
+        try {
+          const meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingId}`, 'GET');
+          meeting.id = meetingId;
+          fetchedMeeting = meeting;
+          return true;
+        } catch (error: any) {
+          const is403 = error?.statusCode === 403 || error?.status === 403;
+          if (is403) return false;
+          throw error;
         }
+      },
+      metadata: { meeting_id: meetingId },
+    });
 
-        // Non-403 error or final attempt exhausted — fall back to the POST response
-        logger.warning(req, 'create_meeting', 'Failed to fetch created meeting, returning POST response', {
-          meeting_id: meetingId,
-          attempt,
-          is_403: is403,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
-        return newMeeting;
-      }
+    if (resolved && fetchedMeeting) {
+      return fetchedMeeting;
     }
 
+    logger.warning(req, 'create_meeting', 'Failed to fetch created meeting, returning POST response', { meeting_id: meetingId });
     return newMeeting;
   }
 
@@ -302,6 +295,21 @@ export class MeetingService {
     });
 
     await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'DELETE');
+
+    // After deleting, poll the query service until the meeting no longer appears.
+    // The upstream service uses eventual consistency, so the resource may still be indexed briefly.
+    await pollEndpoint({
+      req,
+      operation: 'delete_meeting',
+      pollFn: async () => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'v1_meeting',
+          tags: `${meetingUid}`,
+        });
+        return resources.length === 0;
+      },
+      metadata: { meeting_id: meetingUid },
+    });
   }
 
   /**
@@ -341,14 +349,32 @@ export class MeetingService {
       try {
         const rsvps = await this.getMeetingRsvps(req, meetingUid);
 
-        // Create a map of username to RSVP for quick lookup
-        const rsvpMap = new Map(rsvps.map((rsvp) => [rsvp.username, rsvp]));
+        // Group RSVPs by registrant_id for lookup
+        const rsvpsByRegistrant = new Map<string, MeetingRsvp[]>();
+        for (const rsvp of rsvps) {
+          const key = rsvp.registrant_id;
+          if (!rsvpsByRegistrant.has(key)) {
+            rsvpsByRegistrant.set(key, []);
+          }
+          rsvpsByRegistrant.get(key)!.push(rsvp);
+        }
 
-        // Attach RSVP data to each registrant
-        registrants = registrants.map((registrant) => ({
-          ...registrant,
-          rsvp: registrant.username ? rsvpMap.get(registrant.username) || null : null,
-        }));
+        // Attach most recent RSVP to each registrant by uid
+        registrants = registrants.map((registrant) => {
+          const registrantRsvps = rsvpsByRegistrant.get(registrant.uid);
+          if (!registrantRsvps || registrantRsvps.length === 0) {
+            return { ...registrant, rsvp: null };
+          }
+
+          // Sort by most recent modification and pick the first
+          const sorted = [...registrantRsvps].sort((a, b) => {
+            const dateA = new Date(a.modified_at || a.created_at).getTime();
+            const dateB = new Date(b.modified_at || b.created_at).getTime();
+            return dateB - dateA;
+          });
+
+          return { ...registrant, rsvp: sorted[0] };
+        });
       } catch (error) {
         logger.warning(req, 'get_meeting_registrants', 'Failed to fetch RSVPs for registrants, returning registrants without RSVP data', {
           meeting_id: meetingUid,

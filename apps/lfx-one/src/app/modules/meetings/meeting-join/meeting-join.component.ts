@@ -113,6 +113,8 @@ export class MeetingJoinComponent {
   // Computed signals for invited/registration status
   public isInvited: Signal<boolean>;
   public canRegisterForMeeting: Signal<boolean>;
+  public canToggleRsvpView: Signal<boolean>;
+  public showMyRsvp: WritableSignal<boolean> = signal<boolean>(false);
 
   // Form value signals for reactivity
   public formValues: Signal<{ name: string; email: string; organization: string }>;
@@ -133,6 +135,7 @@ export class MeetingJoinComponent {
     // Initialize invited/registration signals
     this.isInvited = this.initializeIsInvited();
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
+    this.canToggleRsvpView = this.initializeCanToggleRsvpView();
 
     this.returnTo = this.initializeReturnTo();
     this.canJoinMeeting = this.initializeCanJoinMeeting();
@@ -181,6 +184,10 @@ export class MeetingJoinComponent {
   public onEmailErrorClick(): void {
     this.joinUrlError.set(null);
     this.showGuestForm.set(true);
+  }
+
+  public onRsvpViewToggle(): void {
+    this.showMyRsvp.set(!this.showMyRsvp());
   }
 
   public registerForMeeting(): void {
@@ -519,6 +526,10 @@ export class MeetingJoinComponent {
       const meeting = this.meeting();
       return !this.isInvited() && !meeting?.restricted && meeting?.visibility === 'public';
     });
+  }
+
+  private initializeCanToggleRsvpView(): Signal<boolean> {
+    return computed(() => !!this.meeting()?.organizer && this.isInvited());
   }
 
   private initializeEmailError(): Signal<boolean> {

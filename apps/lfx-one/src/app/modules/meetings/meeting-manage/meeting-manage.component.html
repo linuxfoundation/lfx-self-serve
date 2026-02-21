@@ -15,156 +15,196 @@
     {{ isEditMode() ? 'Edit Meeting' : 'Create Meeting' }}
   </h1>
 
-  <!-- Stepper -->
-  <p-stepper
-    [value]="currentStep()"
-    (valueChange)="goToStep($event)"
-    [linear]="!isEditMode()"
-    styleClass="meeting-manage-stepper mb-6"
-    data-testid="meeting-manage-stepper">
-    <p-step-list>
-      <p-step [value]="1" data-testid="meeting-manage-step-1">Meeting Type</p-step>
-      <p-step [value]="2" data-testid="meeting-manage-step-2">Meeting Details</p-step>
-      <p-step [value]="3" data-testid="meeting-manage-step-3">Platform & Features</p-step>
-      <p-step [value]="4" data-testid="meeting-manage-step-4">Resources & Links (Coming Soon)</p-step>
-      <p-step [value]="5" data-testid="meeting-manage-step-5">Invite Guests</p-step>
-    </p-step-list>
+  @if (meetingLoading()) {
+    <!-- Loading skeleton while meeting data is being fetched -->
+    <div class="flex flex-col gap-6" data-testid="meeting-manage-loading">
+      <!-- Stepper skeleton -->
+      <div class="flex items-center gap-4">
+        @for (step of [1, 2, 3, 4, 5]; track step) {
+          <p-skeleton shape="circle" size="2.5rem"></p-skeleton>
+          @if (step < 5) {
+            <p-skeleton width="4rem" height="0.25rem"></p-skeleton>
+          }
+        }
+      </div>
 
-    <p-step-panels>
-      <!-- Form Card -->
+      <!-- Form card skeleton -->
       <div class="bg-white rounded-lg border border-gray-200 shadow-sm px-7">
-        <!-- Navigation Controls (Above Content) -->
+        <!-- Navigation bar skeleton -->
         <div class="flex items-center justify-between p-6 border-b border-gray-200">
-          <!-- Previous Button -->
-          <div>
-            @if (canGoPrevious()) {
-              <lfx-button label="Previous" icon="fa-light fa-chevron-left" [text]="true" (onClick)="previousStep()" data-testid="meeting-manage-previous-btn">
-              </lfx-button>
-            }
-          </div>
-
-          <!-- Right Side Buttons -->
+          <p-skeleton width="5rem" height="2rem"></p-skeleton>
           <div class="flex gap-3">
-            @if (!isLastMeetingStep() && !isLastStep()) {
-              <!-- Steps 1-3: Cancel + Next -->
-              @if (!isEditMode()) {
-                <lfx-button label="Cancel" [text]="true" (onClick)="onCancel()" data-testid="meeting-manage-cancel-btn"> </lfx-button>
-              }
-              <lfx-button
-                label="Next"
-                icon="fa-light fa-chevron-right"
-                iconPos="right"
-                [disabled]="!canProceed()"
-                severity="info"
-                (onClick)="nextStep()"
-                data-testid="meeting-manage-next-btn">
-              </lfx-button>
-            } @else if (isLastMeetingStep() && !isEditMode()) {
-              <!-- Step 4 Create Mode: Cancel + Create Meeting -->
-              <lfx-button label="Cancel" [text]="true" (onClick)="onCancel()" data-testid="meeting-manage-cancel-btn"> </lfx-button>
-              <lfx-button
-                label="Create Meeting"
-                icon="fa-light fa-calendar-days"
-                [loading]="submitting()"
-                [disabled]="!canProceed() || submitting()"
-                severity="info"
-                (onClick)="onSubmit()"
-                data-testid="meeting-manage-submit-btn">
-              </lfx-button>
-            } @else if (isLastMeetingStep() && isEditMode()) {
-              <!-- Step 4 Edit Mode: Next -->
-              <lfx-button
-                label="Next"
-                icon="fa-light fa-chevron-right"
-                iconPos="right"
-                severity="info"
-                (onClick)="nextStep()"
-                data-testid="meeting-manage-next-btn">
-              </lfx-button>
-            } @else if (isLastStep() && !isEditMode()) {
-              <!-- Step 5 Create Mode: Skip For Now + Invite Guests -->
-              <lfx-button label="Skip For Now" [text]="true" (onClick)="onCancel()" data-testid="meeting-manage-cancel-btn"> </lfx-button>
-              <lfx-button
-                label="Invite Guests"
-                icon="fa-light fa-envelope"
-                [loading]="submitting()"
-                [disabled]="!hasRegistrantUpdates() || submitting()"
-                severity="info"
-                (onClick)="onManageRegistrants()"
-                data-testid="meeting-manage-submit-btn">
-              </lfx-button>
-            } @else {
-              <!-- Step 5 Edit Mode: Update Meeting -->
-              <lfx-button
-                label="Update Meeting"
-                icon="fa-light fa-check"
-                [loading]="submitting()"
-                [disabled]="!canProceed() || submitting()"
-                severity="info"
-                (onClick)="onSubmitAll()"
-                data-testid="meeting-manage-update-btn">
-              </lfx-button>
-            }
+            <p-skeleton width="5rem" height="2rem"></p-skeleton>
           </div>
         </div>
 
-        <!-- Step Content -->
-        <div class="p-6 md:p-8">
-          <p-step-panel [value]="1" data-testid="meeting-manage-panel-0">
-            <ng-template #content let-activateCallback="activateCallback">
-              <lfx-meeting-type-selection [form]="form()"></lfx-meeting-type-selection>
-            </ng-template>
-          </p-step-panel>
-
-          <p-step-panel [value]="2" data-testid="meeting-manage-panel-1">
-            <ng-template #content let-activateCallback="activateCallback">
-              <lfx-meeting-details [form]="form()"></lfx-meeting-details>
-            </ng-template>
-          </p-step-panel>
-
-          <p-step-panel [value]="3" data-testid="meeting-manage-panel-2">
-            <ng-template #content let-activateCallback="activateCallback">
-              <lfx-meeting-platform-features [form]="form()"></lfx-meeting-platform-features>
-            </ng-template>
-          </p-step-panel>
-
-          <p-step-panel [value]="4" data-testid="meeting-manage-panel-3">
-            <ng-template #content let-activateCallback="activateCallback">
-              <lfx-meeting-resources-summary
-                [form]="form()"
-                [meetingId]="meetingId()"
-                [existingAttachments]="attachments()"
-                [isEditMode]="isEditMode()"
-                [deletingAttachmentId]="deletingAttachmentId()"
-                [pendingAttachmentDeletions]="pendingAttachmentDeletions()"
-                (goToStep)="goToStep($event)"
-                (deleteAttachment)="deleteAttachment($event)"
-                (undoDeleteAttachment)="undoDeleteAttachment($event)"
-                (deleteLinkAttachment)="deleteLinkAttachment($event)">
-              </lfx-meeting-resources-summary>
-            </ng-template>
-          </p-step-panel>
-
-          <p-step-panel [value]="5" data-testid="meeting-manage-panel-4">
-            <ng-template #content let-activateCallback="activateCallback">
-              @if (meetingId()) {
-                <lfx-meeting-registrants-manager
-                  [meetingUid]="meetingId()!"
-                  [form]="form()"
-                  [(registrantUpdates)]="registrantUpdates"
-                  [refresh]="registrantUpdatesRefresh$">
-                </lfx-meeting-registrants-manager>
-              } @else {
-                <div class="text-center py-8 text-gray-500">
-                  <p>Meeting must be created before managing guests.</p>
-                </div>
-              }
-            </ng-template>
-          </p-step-panel>
+        <!-- Content skeleton -->
+        <div class="flex flex-col gap-5 p-6 md:p-8">
+          <p-skeleton width="40%" height="1.5rem"></p-skeleton>
+          <p-skeleton width="100%" height="2.5rem"></p-skeleton>
+          <p-skeleton width="60%" height="1.5rem"></p-skeleton>
+          <p-skeleton width="100%" height="2.5rem"></p-skeleton>
+          <div class="flex gap-4">
+            <p-skeleton width="50%" height="2.5rem"></p-skeleton>
+            <p-skeleton width="50%" height="2.5rem"></p-skeleton>
+          </div>
+          <p-skeleton width="30%" height="1.5rem"></p-skeleton>
+          <p-skeleton width="100%" height="5rem"></p-skeleton>
         </div>
       </div>
-    </p-step-panels>
-  </p-stepper>
+    </div>
+  } @else {
+    <!-- Stepper -->
+    <p-stepper
+      [value]="currentStep()"
+      (valueChange)="goToStep($event)"
+      [linear]="!isEditMode()"
+      styleClass="meeting-manage-stepper mb-6"
+      data-testid="meeting-manage-stepper">
+      <p-step-list>
+        <p-step [value]="1" data-testid="meeting-manage-step-1">Meeting Type</p-step>
+        <p-step [value]="2" data-testid="meeting-manage-step-2">Meeting Details</p-step>
+        <p-step [value]="3" data-testid="meeting-manage-step-3">Platform & Features</p-step>
+        <p-step [value]="4" data-testid="meeting-manage-step-4">Resources & Links (Coming Soon)</p-step>
+        <p-step [value]="5" data-testid="meeting-manage-step-5">Invite Guests</p-step>
+      </p-step-list>
+
+      <p-step-panels>
+        <!-- Form Card -->
+        <div class="bg-white rounded-lg border border-gray-200 shadow-sm px-7">
+          <!-- Navigation Controls (Above Content) -->
+          <div class="flex items-center justify-between p-6 border-b border-gray-200">
+            <!-- Previous Button -->
+            <div>
+              @if (canGoPrevious()) {
+                <lfx-button label="Previous" icon="fa-light fa-chevron-left" [text]="true" (onClick)="previousStep()" data-testid="meeting-manage-previous-btn">
+                </lfx-button>
+              }
+            </div>
+
+            <!-- Right Side Buttons -->
+            <div class="flex gap-3">
+              @if (!isLastMeetingStep() && !isLastStep()) {
+                <!-- Steps 1-3: Cancel + Next -->
+                @if (!isEditMode()) {
+                  <lfx-button label="Cancel" [text]="true" (onClick)="onCancel()" data-testid="meeting-manage-cancel-btn"> </lfx-button>
+                }
+                <lfx-button
+                  label="Next"
+                  icon="fa-light fa-chevron-right"
+                  iconPos="right"
+                  [disabled]="!canProceed()"
+                  severity="info"
+                  (onClick)="nextStep()"
+                  data-testid="meeting-manage-next-btn">
+                </lfx-button>
+              } @else if (isLastMeetingStep() && !isEditMode()) {
+                <!-- Step 4 Create Mode: Cancel + Create Meeting -->
+                <lfx-button label="Cancel" [text]="true" (onClick)="onCancel()" data-testid="meeting-manage-cancel-btn"> </lfx-button>
+                <lfx-button
+                  label="Create Meeting"
+                  icon="fa-light fa-calendar-days"
+                  [loading]="submitting()"
+                  [disabled]="!canProceed() || submitting()"
+                  severity="info"
+                  (onClick)="onSubmit()"
+                  data-testid="meeting-manage-submit-btn">
+                </lfx-button>
+              } @else if (isLastMeetingStep() && isEditMode()) {
+                <!-- Step 4 Edit Mode: Next -->
+                <lfx-button
+                  label="Next"
+                  icon="fa-light fa-chevron-right"
+                  iconPos="right"
+                  severity="info"
+                  (onClick)="nextStep()"
+                  data-testid="meeting-manage-next-btn">
+                </lfx-button>
+              } @else if (isLastStep() && !isEditMode()) {
+                <!-- Step 5 Create Mode: Skip For Now + Invite Guests -->
+                <lfx-button label="Skip For Now" [text]="true" (onClick)="onCancel()" data-testid="meeting-manage-cancel-btn"> </lfx-button>
+                <lfx-button
+                  label="Invite Guests"
+                  icon="fa-light fa-envelope"
+                  [loading]="submitting()"
+                  [disabled]="!hasRegistrantUpdates() || submitting()"
+                  severity="info"
+                  (onClick)="onManageRegistrants()"
+                  data-testid="meeting-manage-submit-btn">
+                </lfx-button>
+              } @else {
+                <!-- Step 5 Edit Mode: Update Meeting -->
+                <lfx-button
+                  label="Update Meeting"
+                  icon="fa-light fa-check"
+                  [loading]="submitting()"
+                  [disabled]="!canProceed() || submitting()"
+                  severity="info"
+                  (onClick)="onSubmitAll()"
+                  data-testid="meeting-manage-update-btn">
+                </lfx-button>
+              }
+            </div>
+          </div>
+
+          <!-- Step Content -->
+          <div class="p-6 md:p-8">
+            <p-step-panel [value]="1" data-testid="meeting-manage-panel-0">
+              <ng-template #content let-activateCallback="activateCallback">
+                <lfx-meeting-type-selection [form]="form()"></lfx-meeting-type-selection>
+              </ng-template>
+            </p-step-panel>
+
+            <p-step-panel [value]="2" data-testid="meeting-manage-panel-1">
+              <ng-template #content let-activateCallback="activateCallback">
+                <lfx-meeting-details [form]="form()"></lfx-meeting-details>
+              </ng-template>
+            </p-step-panel>
+
+            <p-step-panel [value]="3" data-testid="meeting-manage-panel-2">
+              <ng-template #content let-activateCallback="activateCallback">
+                <lfx-meeting-platform-features [form]="form()"></lfx-meeting-platform-features>
+              </ng-template>
+            </p-step-panel>
+
+            <p-step-panel [value]="4" data-testid="meeting-manage-panel-3">
+              <ng-template #content let-activateCallback="activateCallback">
+                <lfx-meeting-resources-summary
+                  [form]="form()"
+                  [meetingId]="meetingId()"
+                  [existingAttachments]="attachments()"
+                  [isEditMode]="isEditMode()"
+                  [deletingAttachmentId]="deletingAttachmentId()"
+                  [pendingAttachmentDeletions]="pendingAttachmentDeletions()"
+                  (goToStep)="goToStep($event)"
+                  (deleteAttachment)="deleteAttachment($event)"
+                  (undoDeleteAttachment)="undoDeleteAttachment($event)"
+                  (deleteLinkAttachment)="deleteLinkAttachment($event)">
+                </lfx-meeting-resources-summary>
+              </ng-template>
+            </p-step-panel>
+
+            <p-step-panel [value]="5" data-testid="meeting-manage-panel-4">
+              <ng-template #content let-activateCallback="activateCallback">
+                @if (meetingId()) {
+                  <lfx-meeting-registrants-manager
+                    [meetingUid]="meetingId()!"
+                    [form]="form()"
+                    [(registrantUpdates)]="registrantUpdates"
+                    [refresh]="registrantUpdatesRefresh$">
+                  </lfx-meeting-registrants-manager>
+                } @else {
+                  <div class="text-center py-8 text-gray-500">
+                    <p>Meeting must be created before managing guests.</p>
+                  </div>
+                }
+              </ng-template>
+            </p-step-panel>
+          </div>
+        </div>
+      </p-step-panels>
+    </p-stepper>
+  }
 </div>
 
 <!-- Confirmation Dialog -->

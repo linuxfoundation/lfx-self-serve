@@ -30,6 +30,16 @@
                 <lfx-tag [value]="badge.text" [severity]="badge.severity" [icon]="badge.icon" [attr.data-testid]="'meeting-badge-type'"></lfx-tag>
               }
 
+              <!-- Recurring Badge -->
+              @if (meeting().recurrence) {
+                <lfx-tag
+                  [value]="meeting().recurrence | recurrenceSummary"
+                  severity="secondary"
+                  icon="fa-light fa-repeat"
+                  pTooltip="This is a recurring meeting"
+                  data-testid="recurring-badge"></lfx-tag>
+              }
+
               <!-- View Guests Button (for organizers and invited users) -->
               @if (authenticated() && (meeting().organizer || meeting().invited)) {
                 <lfx-button
@@ -42,16 +52,6 @@
                   styleClass="py-[0.15rem] text-xs"
                   data-testid="view-members-button">
                 </lfx-button>
-              }
-
-              <!-- Recurring Badge -->
-              @if (meeting().recurrence) {
-                <lfx-tag
-                  [value]="meeting().recurrence | recurrenceSummary"
-                  severity="secondary"
-                  icon="fa-light fa-repeat"
-                  pTooltip="This is a recurring meeting"
-                  data-testid="recurring-badge"></lfx-tag>
               }
             </div>
 
@@ -167,18 +167,41 @@
                 </div>
               }
             } @else if (authenticated() && meeting().organizer) {
-              <!-- RSVP Details - Future Meeting (Authenticated Organizers) - Coming Soon -->
-              <div class="w-full md:w-[296px]">
-                <lfx-meeting-rsvp-details
-                  [meeting]="meeting()"
-                  [project]="project()"
-                  [currentOccurrence]="currentOccurrence()"
-                  [pastMeeting]="false"
-                  [showAddButton]="true"
-                  [additionalRegistrantsCount]="0"
-                  backgroundColor="bg-gray-50"
-                  borderColor="border-gray-200">
-                </lfx-meeting-rsvp-details>
+              <!-- RSVP Section - Future Meeting (Authenticated Organizers) -->
+              <div class="w-full md:w-[296px] flex flex-col gap-2">
+                @if (canToggleRsvpView() && showMyRsvp()) {
+                  <!-- Show RSVP Button Group when organizer toggles to set their own RSVP -->
+                  <lfx-rsvp-button-group
+                    [meeting]="meeting()"
+                    [occurrenceId]="currentOccurrence()?.occurrence_id"
+                    [disabled]="true"
+                    disabledMessage="Coming Soon">
+                  </lfx-rsvp-button-group>
+                } @else {
+                  <!-- Show RSVP Details for organizers (default view) -->
+                  <lfx-meeting-rsvp-details
+                    [meeting]="meeting()"
+                    [project]="project()"
+                    [currentOccurrence]="currentOccurrence()"
+                    [pastMeeting]="false"
+                    [showAddButton]="true"
+                    [additionalRegistrantsCount]="0"
+                    backgroundColor="bg-gray-50"
+                    borderColor="border-gray-200">
+                  </lfx-meeting-rsvp-details>
+                }
+                @if (canToggleRsvpView()) {
+                  <lfx-button
+                    class="w-full"
+                    styleClass="w-full"
+                    [icon]="showMyRsvp() ? 'fa-light fa-users' : 'fa-light fa-hand'"
+                    [label]="showMyRsvp() ? 'Show Guests' : 'Set My RSVP'"
+                    size="small"
+                    severity="secondary"
+                    (onClick)="onRsvpViewToggle()"
+                    data-testid="toggle-rsvp-view-button">
+                  </lfx-button>
+                }
               </div>
             } @else if (authenticated()) {
               <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) - Coming Soon -->

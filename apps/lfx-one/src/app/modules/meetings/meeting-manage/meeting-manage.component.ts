@@ -44,6 +44,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { toZonedTime } from 'date-fns-tz';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { SkeletonModule } from 'primeng/skeleton';
 import { StepperModule } from 'primeng/stepper';
 import { BehaviorSubject, catchError, concat, filter, finalize, forkJoin, from, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
 
@@ -66,6 +67,7 @@ import { MeetingTypeSelectionComponent } from '../components/meeting-type-select
     MeetingResourcesSummaryComponent,
     MeetingRegistrantsManagerComponent,
     RouterLink,
+    SkeletonModule,
   ],
   providers: [ConfirmationService],
   templateUrl: './meeting-manage.component.html',
@@ -90,6 +92,7 @@ export class MeetingManageComponent {
   });
   // Initialize meeting data using toSignal
   public meeting = this.initializeMeeting();
+  public meetingLoading = computed(() => this.isEditMode() && this.meeting() === null);
   // Initialize meeting attachments with refresh capability
   private attachmentsRefresh$ = new BehaviorSubject<void>(undefined);
   public attachments = this.initializeAttachments();
@@ -1176,17 +1179,10 @@ export class MeetingManageComponent {
 
     if (totalFailed === 0) {
       // All successful
-      const parts = [];
-      if (registrantSuccess > 0) {
-        parts.push(`${registrantSuccess} guest(s)`);
-      }
-      if (attachmentSuccess > 0) {
-        parts.push(`${attachmentSuccess} attachment(s)`);
-      }
       this.messageService.add({
         severity: 'success',
         summary: 'Success',
-        detail: `Meeting updated successfully with ${parts.join(' and ')}`,
+        detail: `Meeting updated successfully`,
       });
     } else if (totalSuccess > 0 && totalFailed > 0) {
       // Partial success
