@@ -137,8 +137,7 @@ export class MeetingCardComponent implements OnInit {
   );
   // Computed signal to check if user can toggle between RSVP Details and RSVP Button Group
   // True when user is both an organizer AND invited to the meeting (for non-past meetings)
-  // RSVP is currently disabled (Coming Soon) - will be enabled when ITX backend supports it
-  public readonly canToggleRsvpView: Signal<boolean> = computed(() => false);
+  public readonly canToggleRsvpView: Signal<boolean> = computed(() => !!this.meeting().organizer && this.isInvited() && !this.pastMeeting());
 
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();

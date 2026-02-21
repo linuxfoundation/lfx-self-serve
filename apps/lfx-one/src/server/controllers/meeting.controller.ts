@@ -78,10 +78,12 @@ export class MeetingController {
             committee_count: committeeCount,
             invited,
           });
-        } else if (m.organizer) {
-          logger.debug(req, 'get_meetings', 'Registrants null despite organizer — deferring to invite check', {
+        } else {
+          // Registrants not available (non-organizer or fetch failed) — defer to invite check
+          logger.debug(req, 'get_meetings', 'Registrants unavailable — deferring to invite check', {
             meeting_id: m.id,
             title: m.title,
+            organizer: m.organizer,
           });
           meetingsNeedingInviteCheck.push(i);
         }
