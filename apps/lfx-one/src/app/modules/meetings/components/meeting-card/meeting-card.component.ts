@@ -180,7 +180,7 @@ export class MeetingCardComponent implements OnInit {
           return of(null);
         }
 
-        // Use public_link directly if available (e.g. for legacy meetings with join_url from query service)
+        // Use public_link directly if available (e.g. for legacy meetings with link from query service)
         if (meeting.public_link) {
           return of(meeting.public_link);
         }
@@ -188,7 +188,7 @@ export class MeetingCardComponent implements OnInit {
         // Otherwise fetch join URL from API for authenticated users
         if (authenticated && user?.email) {
           return this.meetingService.getPublicMeetingJoinUrl(meeting.id, meeting.password, { email: user.email }).pipe(
-            map((res) => buildJoinUrlWithParams(res.join_url, user)),
+            map((res) => buildJoinUrlWithParams(res.link, user)),
             catchError(() => of(null))
           );
         }
@@ -200,7 +200,8 @@ export class MeetingCardComponent implements OnInit {
   }
 
   public ngOnInit(): void {
-    this.attachments = this.initAttachments();
+    // TODO: Resources section is "Coming Soon" — skip attachment fetches until enabled
+    // this.attachments = this.initAttachments();
     if (this.pastMeeting()) {
       this.initRecording();
       this.initSummary();

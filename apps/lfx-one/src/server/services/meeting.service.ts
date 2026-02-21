@@ -3,6 +3,7 @@
 
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
+  ApiResponse,
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
   CreateMeetingRsvpRequest,
@@ -27,7 +28,6 @@ import { getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
-import { ETagService } from './etag.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -37,7 +37,6 @@ import { ProjectService } from './project.service';
  */
 export class MeetingService {
   private accessCheckService: AccessCheckService;
-  private etagService: ETagService;
   private microserviceProxy: MicroserviceProxyService;
   private committeeService: CommitteeService;
   private projectService: ProjectService;
@@ -45,7 +44,6 @@ export class MeetingService {
   public constructor() {
     this.accessCheckService = new AccessCheckService();
     this.microserviceProxy = new MicroserviceProxyService();
-    this.etagService = new ETagService();
     this.committeeService = new CommitteeService();
     this.projectService = new ProjectService();
   }
@@ -81,20 +79,31 @@ export class MeetingService {
       id: resource.data.id || resource.id?.split(':').pop() || resource.id,
     }));
 
-    // Get project name for each meeting
-    logger.debug(req, 'get_meetings', 'Enriching meetings with project names', {
-      count: meetings.length,
-    });
-    meetings = await this.getMeetingProjectName(req, meetings);
+    // Enrich meetings with project names and committee data in parallel (independent enrichments)
+    const hasCommittees = meetings.some((m) => m.committees && m.committees.length > 0);
 
-    // Get committee data for each committee associated with the meeting
-    if (meetings.some((m) => m.committees && m.committees.length > 0)) {
-      const meetingsWithCommittees = meetings.filter((m) => m.committees && m.committees.length > 0).length;
-      logger.info(req, 'enrich_committees', 'Enriching meetings with committee data', {
-        total_meetings: meetings.length,
-        meetings_with_committees: meetingsWithCommittees,
-      });
-      meetings = await this.getMeetingCommittees(req, meetings);
+    logger.debug(req, 'get_meetings', 'Enriching meetings with project names and committee data', {
+      count: meetings.length,
+      has_committees: hasCommittees,
+    });
+
+    const [meetingsWithProjects, committeeNameMap] = await Promise.all([
+      this.getMeetingProjectName(req, meetings),
+      hasCommittees ? this.getCommitteeNameMap(req, meetings) : Promise.resolve(new Map<string, string>()),
+    ]);
+
+    // Merge committee names into project-enriched meetings
+    meetings = meetingsWithProjects;
+    if (hasCommittees && committeeNameMap.size > 0) {
+      meetings
+        .filter((m) => m.committees && m.committees.length > 0)
+        .forEach((m) => {
+          m.committees = m.committees.map((c) => ({
+            uid: c.uid,
+            name: committeeNameMap.get(c.uid) || c.name,
+            allowed_voting_statuses: c.allowed_voting_statuses,
+          }));
+        });
     }
 
     if (access) {
@@ -141,7 +150,7 @@ export class MeetingService {
     });
 
     // All meetings are now ITX-managed, use the ITX endpoint
-    let meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'GET');
+    const meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'GET');
 
     // Set the meeting ID from the URL param
     meeting.id = meetingUid;
@@ -159,8 +168,12 @@ export class MeetingService {
         meeting_id: meetingUid,
         committee_count: meeting.committees.length,
       });
-      const meetingWithCommittees = await this.getMeetingCommittees(req, [meeting]);
-      meeting = meetingWithCommittees[0];
+      const committeeNameMap = await this.getCommitteeNameMap(req, [meeting]);
+      meeting.committees = meeting.committees.map((c) => ({
+        uid: c.uid,
+        name: committeeNameMap.get(c.uid) || c.name,
+        allowed_voting_statuses: c.allowed_voting_statuses,
+      }));
     }
 
     if (access) {
@@ -198,21 +211,57 @@ export class MeetingService {
       ['X-Sync']: 'true',
     });
 
+    // After creating, fetch the meeting with retry to handle permission propagation delay.
+    // The GET may return 403 initially due to a race condition — permissions are eventually consistent.
+    const meetingId = newMeeting.id;
+    const maxRetries = 5;
+    const retryDelayMs = 2000;
+
+    for (let attempt = 1; attempt <= maxRetries; attempt++) {
+      try {
+        const meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingId}`, 'GET');
+        meeting.id = meetingId;
+        logger.debug(req, 'create_meeting', 'Fetched created meeting successfully', { meeting_id: meetingId, attempt });
+        return meeting;
+      } catch (error: any) {
+        const is403 = error?.statusCode === 403 || error?.status === 403;
+
+        if (is403 && attempt < maxRetries) {
+          logger.debug(req, 'create_meeting', 'GET returned 403, retrying after delay', {
+            meeting_id: meetingId,
+            attempt,
+            next_retry_ms: retryDelayMs,
+          });
+          await new Promise((resolve) => setTimeout(resolve, retryDelayMs));
+          continue;
+        }
+
+        // Non-403 error or final attempt exhausted — fall back to the POST response
+        logger.warning(req, 'create_meeting', 'Failed to fetch created meeting, returning POST response', {
+          meeting_id: meetingId,
+          attempt,
+          is_403: is403,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+        return newMeeting;
+      }
+    }
+
     return newMeeting;
   }
 
   /**
-   * Updates a meeting using ETag for concurrency control
+   * Updates a meeting directly via microservice proxy
    */
-  public async updateMeeting(req: Request, meetingUid: string, meetingData: UpdateMeetingRequest, editType?: 'single' | 'future'): Promise<Meeting> {
-    // Step 1: Fetch meeting with ETag
-    const { etag, data } = await this.etagService.fetchWithETag<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'update_meeting');
+  public async updateMeeting(req: Request, meetingUid: string, meetingData: UpdateMeetingRequest, editType?: 'single' | 'future'): Promise<ApiResponse<void>> {
+    // Fetch existing meeting to merge organizers
+    const existingMeeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'GET');
 
     // Get the logged-in user's username to maintain organizer if not provided
     const username = await getUsernameFromAuth(req);
 
     // Create organizers array ensuring no duplicates or null values
-    const existingOrganizers = data.organizers || [];
+    const existingOrganizers = existingMeeting.organizers || [];
     const organizersSet = new Set(existingOrganizers.filter((organizer) => organizer != null));
 
     // Add current user as organizer if username exists and not already included
@@ -229,38 +278,24 @@ export class MeetingService {
     const sanitizedPayload = logger.sanitize({ updatePayload, editType });
     logger.debug(req, 'update_meeting', 'Updating meeting payload', sanitizedPayload);
 
-    // Step 2: Update meeting with ETag, including editType query parameter if provided
-    let path = `/itx/meetings/${meetingUid}`;
-    if (editType) {
-      path += `?editType=${editType}`;
-    }
+    const query = editType ? { editType } : undefined;
 
-    const updatedMeeting = await this.etagService.updateWithETag<Meeting>(req, 'LFX_V2_SERVICE', path, etag, updatePayload, 'update_meeting');
-
-    return updatedMeeting;
+    return await this.microserviceProxy.proxyRequestWithResponse<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'PUT', query, updatePayload);
   }
 
   /**
-   * Deletes a meeting using ETag for concurrency control
+   * Deletes a meeting directly via microservice proxy
    */
   public async deleteMeeting(req: Request, meetingUid: string): Promise<void> {
-    logger.debug(req, 'delete_meeting', 'Deleting meeting with ETag', {
+    logger.debug(req, 'delete_meeting', 'Deleting meeting', {
       meeting_id: meetingUid,
     });
 
-    // Step 1: Fetch meeting with ETag
-    const { etag } = await this.etagService.fetchWithETag<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'delete_meeting');
-
-    logger.debug(req, 'delete_meeting', 'Fetched ETag for deletion', {
-      meeting_id: meetingUid,
-    });
-
-    // Step 2: Delete meeting with ETag
-    await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, etag, 'delete_meeting');
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'DELETE');
   }
 
   /**
-   * Cancels a meeting occurrence using ETag for concurrency control
+   * Cancels a meeting occurrence directly via microservice proxy
    */
   public async cancelOccurrence(req: Request, meetingUid: string, occurrenceId: string): Promise<void> {
     logger.debug(req, 'cancel_occurrence', 'Canceling meeting occurrence', {
@@ -268,11 +303,7 @@ export class MeetingService {
       occurrence_id: occurrenceId,
     });
 
-    // Step 1: Fetch meeting with ETag
-    const { etag } = await this.etagService.fetchWithETag<Meeting>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}`, 'cancel_occurrence');
-
-    // Step 2: Cancel occurrence with ETag
-    await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/occurrences/${occurrenceId}`, etag, 'cancel_occurrence');
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/occurrences/${occurrenceId}`, 'DELETE');
   }
 
   /**
@@ -373,7 +404,7 @@ export class MeetingService {
   }
 
   /**
-   * Updates an existing meeting registrant using ETag for concurrency control
+   * Updates an existing meeting registrant directly via microservice proxy
    */
   public async updateMeetingRegistrant(
     req: Request,
@@ -381,54 +412,31 @@ export class MeetingService {
     registrantUid: string,
     updateData: UpdateMeetingRegistrantRequest
   ): Promise<MeetingRegistrant> {
-    // Step 1: Fetch registrant with ETag
-    const { etag } = await this.etagService.fetchWithETag<MeetingRegistrant>(
-      req,
-      'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/registrants/${registrantUid}`,
-      'update_meeting_registrant'
-    );
-
     const sanitizedPayload = logger.sanitize({ updateData });
     logger.debug(req, 'update_meeting_registrant', 'Updating meeting registrant payload', sanitizedPayload);
 
-    // Step 2: Update registrant with ETag
-    const updatedRegistrant = await this.etagService.updateWithETag<MeetingRegistrant>(
+    const updatedRegistrant = await this.microserviceProxy.proxyRequest<MeetingRegistrant>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${meetingUid}/registrants/${registrantUid}`,
-      etag,
-      updateData,
-      'update_meeting_registrant'
+      'PUT',
+      undefined,
+      updateData
     );
 
     return updatedRegistrant;
   }
 
   /**
-   * Deletes a meeting registrant using ETag for concurrency control
+   * Deletes a meeting registrant directly via microservice proxy
    */
   public async deleteMeetingRegistrant(req: Request, meetingUid: string, registrantUid: string): Promise<void> {
-    logger.debug(req, 'delete_meeting_registrant', 'Deleting registrant with ETag', {
+    logger.debug(req, 'delete_meeting_registrant', 'Deleting registrant', {
       meeting_id: meetingUid,
       registrant_uid: registrantUid,
     });
 
-    // Step 1: Fetch registrant with ETag
-    const { etag } = await this.etagService.fetchWithETag<MeetingRegistrant>(
-      req,
-      'LFX_V2_SERVICE',
-      `/itx/meetings/${meetingUid}/registrants/${registrantUid}`,
-      'delete_meeting_registrant'
-    );
-
-    logger.debug(req, 'delete_meeting_registrant', 'Fetched ETag for deletion', {
-      meeting_id: meetingUid,
-      registrant_uid: registrantUid,
-    });
-
-    // Step 2: Delete registrant with ETag
-    await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/registrants/${registrantUid}`, etag, 'delete_meeting_registrant');
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/registrants/${registrantUid}`, 'DELETE');
   }
 
   /**
@@ -447,12 +455,16 @@ export class MeetingService {
   /**
    * Fetches meeting join URL by meeting UID
    */
-  public async getMeetingJoinUrl(req: Request, meetingUid: string): Promise<MeetingJoinURL> {
-    logger.debug(req, 'get_meeting_join_url', 'Fetching meeting join URL', {
+  public async getMeetingJoinUrl(req: Request, meetingUid: string, email?: string): Promise<MeetingJoinURL> {
+    logger.debug(req, 'get_meeting_link', 'Fetching meeting join URL', {
       meeting_id: meetingUid,
     });
 
-    return await this.microserviceProxy.proxyRequest<MeetingJoinURL>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/join_url`, 'GET');
+    const params = {
+      email: email,
+    };
+
+    return await this.microserviceProxy.proxyRequest<MeetingJoinURL>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/join_link`, 'GET', params);
   }
 
   /**
@@ -563,7 +575,7 @@ export class MeetingService {
   }
 
   /**
-   * Updates past meeting summary edited content using ETag for concurrency control
+   * Updates past meeting summary edited content directly via microservice proxy
    */
   public async updatePastMeetingSummary(
     req: Request,
@@ -576,25 +588,16 @@ export class MeetingService {
       summary_uid: summaryUid,
     });
 
-    // Step 1: Fetch summary with ETag
-    const { etag } = await this.etagService.fetchWithETag<PastMeetingSummary>(
-      req,
-      'LFX_V2_SERVICE',
-      `/itx/past_meetings/${pastMeetingUid}/summaries/${summaryUid}`,
-      'update_past_meeting_summary'
-    );
-
     const sanitizedPayload = logger.sanitize({ updateData });
     logger.debug(req, 'update_past_meeting_summary', 'Updating past meeting summary payload', sanitizedPayload);
 
-    // Step 2: Update summary with ETag
-    const updatedSummary = await this.etagService.updateWithETag<PastMeetingSummary>(
+    const updatedSummary = await this.microserviceProxy.proxyRequest<PastMeetingSummary>(
       req,
       'LFX_V2_SERVICE',
       `/itx/past_meetings/${pastMeetingUid}/summaries/${summaryUid}`,
-      etag,
-      updateData,
-      'update_past_meeting_summary'
+      'PUT',
+      undefined,
+      updateData
     );
 
     return updatedSummary;
@@ -865,24 +868,32 @@ export class MeetingService {
     return newRegistrant;
   }
 
-  private async getMeetingCommittees(req: Request, meetings: Meeting[]): Promise<Meeting[]> {
-    // Get unique committee UIDs
+  /**
+   * Fetches committee names for all unique committees referenced in meetings.
+   * Returns a Map of committee UID -> committee name for merging into meeting data.
+   */
+  private async getCommitteeNameMap(req: Request, meetings: Meeting[]): Promise<Map<string, string>> {
     const uniqueCommitteeUids = [
       ...new Set(
         meetings
           .filter((m) => m.committees && m.committees.length > 0)
-          .map((m) => m.committees)
-          .flat()
+          .flatMap((m) => m.committees)
           .map((c: { uid: string }) => c.uid)
       ),
     ];
 
-    // Get each committee
-    const committees = await Promise.all(
+    const meetingsWithCommittees = meetings.filter((m) => m.committees && m.committees.length > 0).length;
+    logger.info(req, 'enrich_committees', 'Enriching meetings with committee data', {
+      total_meetings: meetings.length,
+      meetings_with_committees: meetingsWithCommittees,
+      unique_committees: uniqueCommitteeUids.length,
+    });
+
+    const results = await Promise.all(
       uniqueCommitteeUids.map(async (uid) => {
         try {
           const committee = await this.committeeService.getCommitteeById(req, uid);
-          return { uid: committee.uid, name: committee.name };
+          return { uid, name: committee.name };
         } catch (error) {
           logger.warning(req, 'get_meeting_committees', 'Committee enrichment failed; continuing without name', { committee_uid: uid, err: error });
           return { uid, name: undefined };
@@ -890,21 +901,14 @@ export class MeetingService {
       })
     );
 
-    // Add committee data to each meeting
-    meetings
-      .filter((m) => m.committees && m.committees.length > 0)
-      .forEach((m) => {
-        m.committees = m.committees.map((c) => {
-          const committee = committees.find((cc) => cc.uid === c.uid);
-          return {
-            uid: c.uid,
-            name: committee?.name,
-            allowed_voting_statuses: c.allowed_voting_statuses,
-          };
-        });
-      });
+    const nameMap = new Map<string, string>();
+    for (const { uid, name } of results) {
+      if (name) {
+        nameMap.set(uid, name);
+      }
+    }
 
-    return meetings;
+    return nameMap;
   }
 
   private async getMeetingProjectName(req: Request, meetings: Meeting[]): Promise<Meeting[]> {

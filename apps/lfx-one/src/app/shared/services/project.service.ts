@@ -4,7 +4,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { PendingActionItem, Project } from '@lfx-one/shared/interfaces';
-import { BehaviorSubject, catchError, Observable, of, tap } from 'rxjs';
+import { BehaviorSubject, catchError, Observable, of, shareReplay, tap } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -14,27 +14,37 @@ export class ProjectService {
   public project$: BehaviorSubject<Project | null> = new BehaviorSubject<Project | null>(null);
 
   private readonly http = inject(HttpClient);
+  private readonly projectCache = new Map<string, Observable<Project | null>>();
+  private readonly projectsCache = new Map<string, Observable<Project[]>>();
 
   public getProjects(params?: HttpParams): Observable<Project[]> {
-    return this.http.get<Project[]>('/api/projects', { params }).pipe(
-      catchError(() => {
-        return of([]);
-      })
-    );
+    const cacheKey = params?.toString() || '';
+    if (!this.projectsCache.has(cacheKey)) {
+      const projects$ = this.http.get<Project[]>('/api/projects', { params }).pipe(
+        catchError(() => of([])),
+        shareReplay(1)
+      );
+      this.projectsCache.set(cacheKey, projects$);
+    }
+    return this.projectsCache.get(cacheKey)!;
   }
 
   public getProject(slug: string, current: boolean = true): Observable<Project | null> {
-    return this.http.get<Project>(`/api/projects/${slug}`).pipe(
-      catchError(() => {
-        return of(null);
-      }),
-      tap((project) => {
-        if (current) {
-          this.project$.next(project);
-          this.project.set(project);
-        }
-      })
-    );
+    const cacheKey = `${slug}:${current}`;
+    if (!this.projectCache.has(cacheKey)) {
+      const project$ = this.http.get<Project>(`/api/projects/${slug}`).pipe(
+        catchError(() => of(null)),
+        shareReplay(1),
+        tap((project) => {
+          if (current) {
+            this.project$.next(project);
+            this.project.set(project);
+          }
+        })
+      );
+      this.projectCache.set(cacheKey, project$);
+    }
+    return this.projectCache.get(cacheKey)!;
   }
 
   public searchProjects(query: string): Observable<Project[]> {

@@ -22,6 +22,7 @@
         [filterPlaceHolder]="'Search ' + committeeLabel.plural.toLowerCase()"
         [showToggleAll]="true"
         class="w-full"
+        appendTo="body"
         data-testid="meeting-committee-multi-select"></lfx-multi-select>
     </div>
     @if (selectedCommitteeIds().length === 0) {

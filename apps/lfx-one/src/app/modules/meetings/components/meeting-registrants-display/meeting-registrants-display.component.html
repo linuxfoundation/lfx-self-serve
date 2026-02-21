@@ -72,9 +72,10 @@
       <div class="flex flex-col gap-2">
         @if (!pastMeeting() && showAddRegistrant()) {
           <!-- Add Registrant Option -->
-          <div
-            class="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors border-2 border-solid border-blue-200 hover:border-blue-400"
-            (click)="onAddRegistrantClick()"
+          <a
+            class="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors border-2 border-solid border-blue-200 hover:border-blue-400 no-underline"
+            [routerLink]="['/meetings', meeting().id, 'edit']"
+            [queryParams]="{ step: '5' }"
             data-testid="add-registrant-button">
             <div class="w-8 h-8 bg-blue-100 border border-blue-200 rounded-full flex items-center justify-center">
               <i class="fa-light fa-plus text-blue-500"></i>
@@ -83,7 +84,7 @@
               <span class="text-sm text-blue-600 font-medium">Add Guests</span>
               <span class="text-xs text-blue-500">Click to add new guests</span>
             </div>
-          </div>
+          </a>
         }
 
         @if (pastMeeting()) {

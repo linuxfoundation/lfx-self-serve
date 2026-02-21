@@ -16,10 +16,6 @@ export const routes: Routes = [
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
       {
-        path: 'projects',
-        loadComponent: () => import('./modules/pages/home/home.component').then((m) => m.HomeComponent),
-      },
-      {
         path: 'meetings',
         loadChildren: () => import('./modules/meetings/meetings.routes').then((m) => m.MEETING_ROUTES),
       },

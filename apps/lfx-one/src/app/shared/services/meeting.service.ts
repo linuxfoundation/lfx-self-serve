@@ -169,12 +169,12 @@ export class MeetingService {
     );
   }
 
-  public updateMeeting(id: string, meeting: UpdateMeetingRequest, editType?: 'single' | 'future'): Observable<Meeting> {
+  public updateMeeting(id: string, meeting: UpdateMeetingRequest, editType?: 'single' | 'future'): Observable<void> {
     let params = new HttpParams();
     if (editType) {
       params = params.set('editType', editType);
     }
-    return this.http.put<Meeting>(`/api/meetings/${id}`, meeting, { params }).pipe(
+    return this.http.put<void>(`/api/meetings/${id}`, meeting, { params }).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to update meeting ${id}:`, error);

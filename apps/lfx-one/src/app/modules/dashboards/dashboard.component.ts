@@ -5,7 +5,6 @@ import { Component, computed, inject, Signal } from '@angular/core';
 import { PersonaType } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
 
-import { HomeComponent } from '../pages/home/home.component';
 import { BoardMemberDashboardComponent } from './board-member/board-member-dashboard.component';
 import { CoreDeveloperDashboardComponent } from './core-developer/core-developer-dashboard.component';
 import { MaintainerDashboardComponent } from './maintainer/maintainer-dashboard.component';
@@ -16,7 +15,7 @@ import { MaintainerDashboardComponent } from './maintainer/maintainer-dashboard.
  */
 @Component({
   selector: 'lfx-dashboard',
-  imports: [CoreDeveloperDashboardComponent, MaintainerDashboardComponent, BoardMemberDashboardComponent, HomeComponent],
+  imports: [CoreDeveloperDashboardComponent, MaintainerDashboardComponent, BoardMemberDashboardComponent],
   templateUrl: './dashboard.component.html',
 })
 export class DashboardComponent {

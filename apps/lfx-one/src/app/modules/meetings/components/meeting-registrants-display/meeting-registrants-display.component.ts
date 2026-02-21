@@ -5,23 +5,21 @@ import { NgClass } from '@angular/common';
 import { Component, computed, effect, inject, input, InputSignal, output, OutputEmitterRef, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
 import { SelectComponent } from '@components/select/select.component';
 import { Meeting, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared';
-import { RegistrantModalComponent } from '@modules/meetings/components/registrant-modal/registrant-modal.component';
 import { MeetingService } from '@services/meeting.service';
-import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, debounceTime, filter, finalize, map, of, startWith, switchMap, take, tap } from 'rxjs';
+import { BehaviorSubject, catchError, debounceTime, filter, finalize, map, of, startWith, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-registrants-display',
-  imports: [AvatarComponent, TooltipModule, ReactiveFormsModule, SelectComponent, NgClass],
+  imports: [AvatarComponent, TooltipModule, ReactiveFormsModule, SelectComponent, NgClass, RouterLink],
   templateUrl: './meeting-registrants-display.component.html',
 })
 export class MeetingRegistrantsDisplayComponent {
   private readonly meetingService = inject(MeetingService);
-  private readonly dialogService = inject(DialogService);
 
   public readonly meeting: InputSignal<Meeting | PastMeeting> = input.required<Meeting | PastMeeting>();
   public readonly pastMeeting: InputSignal<boolean> = input<boolean>(false);
@@ -85,26 +83,6 @@ export class MeetingRegistrantsDisplayComponent {
         this.registrantsLoading.set(true);
         this.refresh$.next(true);
       }
-    });
-  }
-
-  public onAddRegistrantClick(): void {
-    const dialogRef = this.dialogService.open(RegistrantModalComponent, {
-      header: 'Add Guests',
-      width: '650px',
-      modal: true,
-      closable: true,
-      dismissableMask: true,
-      data: {
-        meetingId: this.meeting().id,
-        registrant: null,
-      },
-    }) as DynamicDialogRef;
-
-    dialogRef.onChildComponentLoaded.pipe(take(1)).subscribe((component) => {
-      component.registrantSaved.subscribe(() => {
-        this.refresh();
-      });
     });
   }
 

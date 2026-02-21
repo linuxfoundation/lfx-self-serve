@@ -8,7 +8,7 @@
     "build:development": "turbo run build:development",
     "build:production": "turbo run build:production",
     "build:staging": "turbo run build:staging",
-    "start": "turbo run start",
+    "start": "turbo run start --log-prefix=none",
     "lint": "turbo run lint",
     "test": "turbo run test",
     "e2e": "turbo run e2e",

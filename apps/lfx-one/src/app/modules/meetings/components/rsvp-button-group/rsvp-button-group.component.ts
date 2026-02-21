@@ -157,6 +157,10 @@ export class RsvpButtonGroupComponent {
     return toSignal(
       combineLatest([toObservable(this.meeting), toObservable(this.authenticated), toObservable(this.refreshTrigger)]).pipe(
         switchMap(([meeting, authenticated]) => {
+          // Skip fetch when component is disabled (e.g. "Coming Soon" state)
+          if (this.disabled()) {
+            return of(null);
+          }
           const occurrenceId = this.meeting().recurrence ? this.occurrenceId() : undefined;
           if (authenticated && meeting?.id) {
             return this.meetingService.getMeetingRsvpByUsername(meeting.id, occurrenceId).pipe(catchError(() => of(null)));

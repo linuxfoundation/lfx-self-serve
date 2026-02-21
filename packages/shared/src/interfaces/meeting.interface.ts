@@ -577,7 +577,7 @@ export interface BatchRegistrantOperationResponse<T = unknown> {
  */
 export interface MeetingJoinURL {
   /** Meeting join URL */
-  join_url: string;
+  link: string;
 }
 
 /**

@@ -48,7 +48,7 @@ export class SelectComponent {
   public readonly style = input<Record<string, any> | null | undefined>(undefined);
   public readonly panelStyleClass = input<string>('');
   public readonly panelStyle = input<Record<string, any> | null | undefined>(undefined);
-  public readonly appendTo = input<any>(undefined);
+  public readonly appendTo = input<any>('body');
   public readonly variant = input<'filled' | 'outlined'>('outlined');
 
   // Behavior properties

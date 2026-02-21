@@ -145,13 +145,13 @@ export class PublicMeetingController {
     const { id } = req.params;
     const { password } = req.query;
     const email: string = req.body.email ?? req.oidc.user?.['email'] ?? '';
-    const startTime = logger.startOperation(req, 'post_meeting_join_url', {
+    const startTime = logger.startOperation(req, 'post_meeting_link', {
       meeting_id: id,
     });
 
     try {
       // Check if the meeting UID is provided
-      if (!this.validateMeetingId(id, 'post_meeting_join_url', req, next, startTime)) {
+      if (!this.validateMeetingId(id, 'post_meeting_link', req, next, startTime)) {
         return;
       }
 
@@ -159,14 +159,14 @@ export class PublicMeetingController {
 
       if (!meeting) {
         throw new ResourceNotFoundError('Meeting', id, {
-          operation: 'post_meeting_join_url',
+          operation: 'post_meeting_link',
           service: 'public_meeting_controller',
           path: `/itx/meetings/${id}`,
         });
       }
 
       // Check if the user has passed in a password, if so, check if it's correct
-      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_join_url', req, next)) {
+      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_link', req, next)) {
         return;
       }
 
@@ -175,7 +175,7 @@ export class PublicMeetingController {
         const earlyJoinMinutes = meeting?.early_join_time_minutes ?? 10;
 
         const validationError = ServiceValidationError.forField('timing', `You can join the meeting up to ${earlyJoinMinutes} minutes before the start time`, {
-          operation: 'post_meeting_join_url',
+          operation: 'post_meeting_link',
           service: 'public_meeting_controller',
           path: req.path,
         });
@@ -196,11 +196,12 @@ export class PublicMeetingController {
         return;
       }
 
-      const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
+      const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id, email);
 
       // Log the success
-      logger.success(req, 'post_meeting_join_url', startTime, {
+      logger.success(req, 'post_meeting_link', startTime, {
         meeting_id: id,
+        email: email,
         project_uid: meeting.project_uid,
         title: meeting.title,
       });
@@ -381,20 +382,20 @@ export class PublicMeetingController {
    * Handles join URL logic for public meetings
    */
   private async handleJoinUrlForPublicMeeting(req: Request, meeting: any, id: string): Promise<void> {
-    const startTime = logger.startOperation(req, 'handle_join_url_for_public_meeting', {
+    const startTime = logger.startOperation(req, 'handle_link_for_public_meeting', {
       meeting_id: id,
     });
 
     try {
       const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
-      meeting.public_link = joinUrlData.join_url;
+      meeting.public_link = joinUrlData.link;
 
-      logger.success(req, 'handle_join_url_for_public_meeting', startTime, {
+      logger.success(req, 'handle_link_for_public_meeting', startTime, {
         meeting_id: id,
-        has_join_url: !!joinUrlData.join_url,
+        has_link: !!joinUrlData.link,
       });
     } catch (error) {
-      logger.warning(req, 'handle_join_url_for_public_meeting', 'Failed to fetch join URL, continuing without it', {
+      logger.warning(req, 'handle_link_for_public_meeting', 'Failed to fetch join URL, continuing without it', {
         meeting_id: id,
         has_token: !!req.bearerToken,
         err: error,
@@ -428,7 +429,7 @@ export class PublicMeetingController {
     if (!email) {
       // Create a validation error (error handler will log)
       const validationError = ServiceValidationError.forField('email', 'Email is required', {
-        operation: 'post_meeting_join_url',
+        operation: 'post_meeting_link',
         service: 'public_meeting_controller',
         path: req.path,
       });
@@ -441,7 +442,7 @@ export class PublicMeetingController {
     const registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, id, email);
     if (registrants.resources.length === 0) {
       const authError = new AuthorizationError('The email address is not registered for this restricted meeting', {
-        operation: 'post_meeting_join_url',
+        operation: 'post_meeting_link',
         service: 'public_meeting_controller',
         path: `/itx/meetings/${id}`,
       });

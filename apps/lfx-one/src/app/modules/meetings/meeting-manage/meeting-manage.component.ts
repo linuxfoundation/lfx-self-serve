@@ -238,14 +238,18 @@ export class MeetingManageComponent {
 
     this.submitting.set(true);
     const meetingData = this.prepareMeetingData();
-    const operation = this.isEditMode()
-      ? this.meetingService.updateMeeting(this.meetingId()!, meetingData as UpdateMeetingRequest, 'single')
-      : this.meetingService.createMeeting(meetingData as CreateMeetingRequest);
 
-    operation.subscribe({
-      next: (meeting) => this.handleMeetingSuccess(meeting),
-      error: (error) => this.handleMeetingError(error),
-    });
+    if (this.isEditMode()) {
+      this.meetingService.updateMeeting(this.meetingId()!, meetingData as UpdateMeetingRequest, 'single').subscribe({
+        next: () => this.handleMeetingSuccess(),
+        error: (error) => this.handleMeetingError(error),
+      });
+    } else {
+      this.meetingService.createMeeting(meetingData as CreateMeetingRequest).subscribe({
+        next: (meeting) => this.handleMeetingSuccess(meeting),
+        error: (error) => this.handleMeetingError(error),
+      });
+    }
   }
 
   public deleteAttachment(attachmentId: string): void {
@@ -302,7 +306,7 @@ export class MeetingManageComponent {
       .pipe(finalize(() => this.submitting.set(false)))
       .subscribe({
         next: (result: {
-          meeting: Meeting;
+          meeting: void;
           registrants: { type: string; success: number; failed: number }[];
           attachments: {
             deletions: { successes: number; failures: string[] };
@@ -474,8 +478,13 @@ export class MeetingManageComponent {
     };
   }
 
-  private handleMeetingSuccess(meeting: Meeting): void {
-    this.meetingId.set(meeting.id);
+  private handleMeetingSuccess(meeting?: Meeting): void {
+    // In create mode, set the meeting ID from the response; in edit mode, it's already set
+    if (meeting) {
+      this.meetingId.set(meeting.id);
+    }
+
+    const meetingId = this.meetingId()!;
 
     // If we're in create mode and before the resources step (step 4), just continue to next step
     // We need to process attachments starting from step 4 (Resources & Summary) onwards
@@ -486,7 +495,7 @@ export class MeetingManageComponent {
     }
 
     // Process attachment operations using extracted method
-    this.processAttachmentOperations(meeting.id).subscribe({
+    this.processAttachmentOperations(meetingId).subscribe({
       next: (result) => {
         if (result) {
           // Process attachment operations after meeting save
@@ -828,7 +837,6 @@ export class MeetingManageComponent {
       case 2: // Meeting Details
         return !!(
           form.get('title')?.value &&
-          form.get('description')?.value &&
           form.get('startDate')?.value &&
           form.get('startTime')?.value &&
           form.get('timezone')?.value &&
@@ -862,7 +870,7 @@ export class MeetingManageComponent {
 
         // Step 2: Meeting Details
         title: new FormControl('', [Validators.required]),
-        description: new FormControl('', [Validators.required, Validators.maxLength(2000)]),
+        description: new FormControl('', [Validators.maxLength(2000)]),
         aiPrompt: new FormControl(''),
         startDate: new FormControl(defaultDateTime.date, [Validators.required]),
         startTime: new FormControl(defaultDateTime.time, [Validators.required]),

@@ -58,8 +58,8 @@ export class UserSearchComponent {
       startWith(''),
       distinctUntilChanged(),
       debounceTime(300),
-      switchMap((searchTerm: string | null) => {
-        const trimmedTerm = searchTerm?.trim() || '';
+      switchMap((searchTerm: string | object | null) => {
+        const trimmedTerm = typeof searchTerm === 'string' ? searchTerm.trim() : '';
 
         // Only fetch suggestions when user types at least 2 characters
         if (trimmedTerm.length < 2) {

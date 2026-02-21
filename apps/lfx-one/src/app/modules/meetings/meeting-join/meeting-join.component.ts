@@ -450,14 +450,14 @@ export class MeetingJoinComponent {
     return this.meetingService.getPublicMeetingJoinUrl(meeting.id, meeting.password, { email }).pipe(
       map((res) => {
         this.isLoadingJoinUrl.set(false);
-        if (res.join_url) {
+        if (res.link) {
           // For authenticated users, use the user object
           // For guests, pass name and organization from form
           if (this.authenticated()) {
-            return buildJoinUrlWithParams(res.join_url, this.user());
+            return buildJoinUrlWithParams(res.link, this.user());
           }
 
-          return buildJoinUrlWithParams(res.join_url, null, {
+          return buildJoinUrlWithParams(res.link, null, {
             name: this.joinForm.get('name')?.value,
             organization: this.joinForm.get('organization')?.value,
           });

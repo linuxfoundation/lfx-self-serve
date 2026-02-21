@@ -16,7 +16,7 @@ import {
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
-import { addInvitedStatusToMeeting, addInvitedStatusToMeetings } from '../helpers/meeting.helper';
+import { addInvitedStatusToMeeting, isUserInvitedToMeeting } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
 import { CommitteeService } from '../services/committee.service';
@@ -43,42 +43,44 @@ export class MeetingController {
     try {
       const meetings = await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_meeting', true);
 
-      // TODO: Remove this once we have a way to get the registrants count
-      const counts = await Promise.all(
+      const userEmail = (req.oidc.user?.['email'] as string)?.toLowerCase() || '';
+      const registrantsByMeeting = await Promise.all(
         meetings.map(async (m) => {
           if (!m.organizer) {
-            return {
-              individual_registrants_count: 0,
-              committee_members_count: 0,
-            };
+            return null;
           }
-
-          const registrants = await this.meetingService.getMeetingRegistrants(req, m.id);
-          const committeeMembers = registrants.filter((r) => r.type === 'committee').length ?? 0;
-
-          return {
-            individual_registrants_count: registrants.length - committeeMembers,
-            committee_members_count: committeeMembers,
-          };
+          return this.meetingService.getMeetingRegistrants(req, m.id).catch(() => null);
         })
       );
-
-      // Check if the user is invited to the meeting
-      const userEmail = (req.oidc.user?.['email'] as string) || '';
-      const invitedMeetings = await addInvitedStatusToMeetings(req, meetings, userEmail);
-
-      invitedMeetings.forEach((m, i) => {
-        m.individual_registrants_count = counts[i].individual_registrants_count;
-        m.committee_members_count = counts[i].committee_members_count;
+      const meetingsNeedingInviteCheck: number[] = [];
+      const result = meetings.map((m, i) => {
+        const registrants = registrantsByMeeting[i];
+        let individualCount = 0;
+        let committeeCount = 0;
+        let invited = false;
+        if (registrants) {
+          committeeCount = registrants.filter((r) => r.type === 'committee').length;
+          individualCount = registrants.length - committeeCount;
+          invited = userEmail ? registrants.some((r) => r.email?.toLowerCase() === userEmail) : false;
+        } else if (m.organizer) {
+          meetingsNeedingInviteCheck.push(i);
+        }
+        return { ...m, individual_registrants_count: individualCount, committee_members_count: committeeCount, invited };
       });
+      if (meetingsNeedingInviteCheck.length > 0 && userEmail) {
+        const m2mToken = await generateM2MToken(req);
+        await Promise.all(
+          meetingsNeedingInviteCheck.map(async (idx) => {
+            result[idx].invited = await isUserInvitedToMeeting(req, result[idx].id, userEmail, m2mToken).catch(() => false);
+          })
+        );
+      }
 
-      // Log the success
       logger.success(req, 'get_meetings', startTime, {
-        meeting_count: meetings.length,
+        meeting_count: result.length,
       });
 
-      // Send the meetings data to the client
-      res.json(invitedMeetings);
+      res.json(result);
     } catch (error) {
       next(error);
     }
@@ -137,23 +139,26 @@ export class MeetingController {
         title: meeting.title,
       });
 
-      // TODO: Remove this once we have a way to get the registrants count
-      try {
-        const registrants = await this.meetingService.getMeetingRegistrants(req, meeting.id);
-        const committeeMembers = registrants.filter((r) => r.type === 'committee').length ?? 0;
-
-        meeting.individual_registrants_count = registrants.length - committeeMembers;
-        meeting.committee_members_count = committeeMembers;
-      } catch (error) {
-        // Log the error for registrants fetch failure
-        logger.error(req, 'get_meeting_by_id', startTime, error, {
-          meeting_id: uid,
-        });
-      }
-
-      // Check if the user is invited to the meeting
       const userEmail = (req.oidc.user?.['email'] as string) || '';
-      const meetingWithInvitedStatus = await addInvitedStatusToMeeting(req, meeting, userEmail);
+
+      // Run registrant counts and invited status check in parallel
+      const [registrants, meetingWithInvitedStatus] = await Promise.all([
+        // TODO: Remove this once we have a way to get the registrants count
+        this.meetingService.getMeetingRegistrants(req, meeting.id).catch((error) => {
+          logger.error(req, 'get_meeting_by_id', startTime, error, { meeting_id: uid });
+          return null;
+        }),
+        addInvitedStatusToMeeting(req, meeting, userEmail),
+      ]);
+
+      if (registrants) {
+        const committeeMembers = registrants.filter((r) => r.type === 'committee').length;
+        meetingWithInvitedStatus.individual_registrants_count = registrants.length - committeeMembers;
+        meetingWithInvitedStatus.committee_members_count = committeeMembers;
+      } else {
+        meetingWithInvitedStatus.individual_registrants_count = 0;
+        meetingWithInvitedStatus.committee_members_count = 0;
+      }
 
       // Send the meeting data to the client
       res.json(meetingWithInvitedStatus);
@@ -225,18 +230,17 @@ export class MeetingController {
       }
 
       // Update the meeting
-      const meeting = await this.meetingService.updateMeeting(req, uid, meetingData, editType as 'single' | 'future');
+      const response = await this.meetingService.updateMeeting(req, uid, meetingData, editType as 'single' | 'future');
 
       // Log the success
       logger.success(req, 'update_meeting', startTime, {
         meeting_id: uid,
-        project_uid: meeting.project_uid,
-        title: meeting.title,
         edit_type: editType || 'single',
+        status_code: response.status,
       });
 
-      // Send the updated meeting data to the client
-      res.json(meeting);
+      // Forward the upstream status code to the client
+      res.status(response.status).send();
     } catch (error) {
       // Send the error to the next middleware
       next(error);
