@@ -176,7 +176,7 @@ export class MeetingCardComponent implements OnInit {
 
     const joinUrl$ = combineLatest([meeting$, occurrence$, user$, authenticated$, pastMeeting$]).pipe(
       switchMap(([meeting, occurrence, user, authenticated, isPastMeeting]) => {
-        if (!meeting.id || isPastMeeting || !canJoinMeeting(meeting, occurrence)) {
+        if (!meeting.id || isPastMeeting || !canJoinMeeting(meeting, occurrence) || (meeting.restricted && !meeting.invited)) {
           return of(null);
         }
 
@@ -647,7 +647,15 @@ export class MeetingCardComponent implements OnInit {
       if (this.pastMeeting()) {
         return false;
       }
-      return canJoinMeeting(this.meeting(), this.occurrence());
+
+      const meeting = this.meeting();
+
+      // Restricted meetings require the user to be invited
+      if (meeting.restricted && !meeting.invited) {
+        return false;
+      }
+
+      return canJoinMeeting(meeting, this.occurrence());
     });
   }
 

@@ -468,7 +468,7 @@ export class MeetingService {
       email: email,
     };
 
-    const response = await this.microserviceProxy.proxyRequest<{ join_url: string }>(
+    const response = await this.microserviceProxy.proxyRequest<{ join_url: string; link: string }>(
       req,
       'LFX_V2_SERVICE',
       `/itx/meetings/${meetingUid}/join_link`,
@@ -476,7 +476,7 @@ export class MeetingService {
       params
     );
 
-    return { link: response.join_url };
+    return { link: response.join_url || response.link };
   }
 
   /**

@@ -221,7 +221,14 @@ export class DashboardMeetingCardComponent {
 
   private initCanJoinMeeting(): Signal<boolean> {
     return computed(() => {
-      return canJoinMeeting(this.meeting(), this.occurrence());
+      const meeting = this.meeting();
+
+      // Restricted meetings require the user to be invited
+      if (meeting.restricted && !meeting.invited) {
+        return false;
+      }
+
+      return canJoinMeeting(meeting, this.occurrence());
     });
   }
 
