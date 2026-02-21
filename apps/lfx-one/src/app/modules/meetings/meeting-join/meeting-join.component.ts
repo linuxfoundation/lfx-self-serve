@@ -162,7 +162,7 @@ export class MeetingJoinComponent {
 
   public onRegistrantsToggle(): void {
     const meeting = this.meeting();
-    if (!meeting.show_meeting_attendees) {
+    if (!meeting.organizer && !meeting.invited) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Show Members is not enabled',

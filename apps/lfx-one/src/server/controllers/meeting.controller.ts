@@ -438,24 +438,25 @@ export class MeetingController {
         return;
       }
 
-      // All ITX meetings are treated as having show_meeting_attendees enabled
-      const showMeetingAttendees = meeting.show_meeting_attendees ?? false;
+      // TODO: Reimplement show_meeting_attendees check
+      // // All ITX meetings are treated as having show_meeting_attendees enabled
+      // const showMeetingAttendees = meeting.show_meeting_attendees ?? false;
 
-      logger.debug(req, 'get_my_meeting_registrants', 'Meeting found, checking show_meeting_attendees', {
-        meeting_id: uid,
-        show_meeting_attendees: showMeetingAttendees,
-      });
+      // logger.debug(req, 'get_my_meeting_registrants', 'Meeting found, checking show_meeting_attendees', {
+      //   meeting_id: uid,
+      //   show_meeting_attendees: showMeetingAttendees,
+      // });
 
-      // Step 2-4: Check if show_meeting_attendees is enabled
-      if (!showMeetingAttendees) {
-        logger.success(req, 'get_my_meeting_registrants', startTime, {
-          meeting_id: uid,
-          show_meeting_attendees: false,
-          registrant_count: 0,
-        });
-        res.json([]);
-        return;
-      }
+      // // Step 2-4: Check if show_meeting_attendees is enabled
+      // if (!showMeetingAttendees) {
+      //   logger.success(req, 'get_my_meeting_registrants', startTime, {
+      //     meeting_id: uid,
+      //     show_meeting_attendees: false,
+      //     registrant_count: 0,
+      //   });
+      //   res.json([]);
+      //   return;
+      // }
 
       // Step 5: Check if current user is a registrant (access control)
       const userEmail = req.oidc?.user?.['email'] as string | undefined;

@@ -60,12 +60,13 @@ export class PublicMeetingController {
 
       // Fetch project and invited status in parallel (both depend only on meeting data)
       const isAuthenticated = req.oidc?.isAuthenticated();
-      const [project] = await Promise.all([
+      const [project, meetingWithInvited] = await Promise.all([
         this.projectService.getProjectById(req, meeting.project_uid, false),
         isAuthenticated
           ? addInvitedStatusToMeeting(req, meeting, (req.oidc.user?.['email'] as string) || '', m2mToken)
           : Promise.resolve(Object.assign(meeting, { invited: false })),
       ]);
+      meeting = meetingWithInvited;
 
       if (!project) {
         throw new ResourceNotFoundError('Project', meeting.project_uid, {
@@ -73,6 +74,30 @@ export class PublicMeetingController {
           service: 'public_meeting_controller',
           path: `/projects/${meeting.project_uid}`,
         });
+      }
+
+      // Check organizer status for authenticated users (needed for all meeting types)
+      if (isAuthenticated) {
+        // Temporarily restore user's original token for the access check
+        if (originalToken !== undefined) {
+          req.bearerToken = originalToken;
+        }
+
+        try {
+          meeting = await this.accessCheckService.addAccessToResource(req, meeting, 'v1_meeting', 'organizer');
+        } catch (error) {
+          // If organizer check fails, log but continue with organizer = false
+          logger.warning(req, 'get_public_meeting_by_id', 'Failed to check organizer status, continuing with organizer = false', {
+            err: error,
+            meeting_id: id,
+          });
+          meeting.organizer = false;
+        }
+
+        // Restore M2M token for subsequent operations (e.g., fetching public join URL)
+        req.bearerToken = m2mToken;
+      } else {
+        meeting.organizer = false;
       }
 
       // Registrant counts are loaded on-demand by the frontend drawer component
@@ -105,28 +130,6 @@ export class PublicMeetingController {
       const { password } = req.query;
       if (!this.validateMeetingPassword(password as string, meeting.password as string, 'get_public_meeting_by_id', req, next)) {
         return;
-      }
-
-      // Check if user is authenticated and add organizer field
-      if (req.oidc?.isAuthenticated()) {
-        // Restore user's original token before organizer check
-        if (originalToken !== undefined) {
-          req.bearerToken = originalToken;
-        }
-
-        try {
-          meeting = await this.accessCheckService.addAccessToResource(req, meeting, 'meeting', 'organizer');
-        } catch (error) {
-          // If organizer check fails, log but continue with organizer = false
-          logger.warning(req, 'get_public_meeting_by_id', 'Failed to check organizer status, continuing with organizer = false', {
-            err: error,
-            meeting_id: id,
-          });
-          meeting.organizer = false;
-        }
-      } else {
-        // User is not authenticated, set organizer to false
-        meeting.organizer = false;
       }
 
       // Send the meeting and project data to the client
