@@ -4,7 +4,7 @@
 import { NgClass, NgTemplateOutlet } from '@angular/common';
 import { Component, computed, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
@@ -21,6 +21,7 @@ import { tap } from 'rxjs';
   styleUrl: './sidebar.component.scss',
 })
 export class SidebarComponent {
+  private readonly router = inject(Router);
   private readonly projectService = inject(ProjectService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
@@ -131,6 +132,9 @@ export class SidebarComponent {
       this.projectContextService.setProject(projectContext);
       this.projectContextService.clearFoundation();
     }
+
+    // Navigate to overview page on project change
+    this.router.navigate(['/']);
   }
 
   /**

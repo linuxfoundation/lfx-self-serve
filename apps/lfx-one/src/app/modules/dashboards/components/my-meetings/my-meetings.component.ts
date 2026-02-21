@@ -12,7 +12,7 @@ import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directiv
 import { SkeletonModule } from 'primeng/skeleton';
 import { catchError, of, switchMap, tap } from 'rxjs';
 
-import type { MeetingWithOccurrence } from '@lfx-one/shared/interfaces';
+import type { Meeting, MeetingWithOccurrence } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-my-meetings',
@@ -28,150 +28,44 @@ export class MyMeetingsComponent {
   private readonly userService = inject(UserService);
   private readonly projectContextService = inject(ProjectContextService);
 
+  private static readonly bufferMs = 40 * 60 * 1000; // 40 minutes
+
   protected readonly loading = signal(true);
   private readonly selectedProject = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
-  private readonly allMeetings = this.initializeAllMeetings();
-  protected readonly todayMeetings = this.initializeTodayMeetings();
-  protected readonly upcomingMeetings = this.initializeUpcomingMeetings();
+  private readonly rawMeetings = this.initializeRawMeetings();
+  private readonly allMeetings = computed(() => this.expandAndSort(this.rawMeetings()));
 
-  private initializeTodayMeetings() {
+  // Next 2 meetings chronologically (deduplicated by meeting)
+  protected readonly nextMeetings = this.initializeNextMeetings();
+
+  private initializeNextMeetings() {
     return computed<MeetingWithOccurrence[]>(() => {
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const todayEnd = new Date(today.getTime() + 24 * 60 * 60 * 1000);
-      const currentTime = now.getTime();
-      const buffer = 40 * 60 * 1000; // 40 minutes in milliseconds
+      const seen = new Set<string>();
 
-      const meetings: MeetingWithOccurrence[] = [];
-
-      for (const meeting of this.allMeetings()) {
-        // Process occurrences if they exist - find the FIRST active occurrence for today
-        if (meeting.occurrences && meeting.occurrences.length > 0) {
-          // Get only active (non-cancelled) occurrences, sorted by start_time for stable selection
-          const activeOccurrences = getActiveOccurrences(meeting.occurrences).sort(
-            (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-          );
-
-          // Find the first occurrence that's happening today and hasn't ended
-          const todayOccurrence = activeOccurrences.find((occurrence) => {
-            const startTime = new Date(occurrence.start_time);
-            const startTimeMs = startTime.getTime();
-            const endTime = startTimeMs + occurrence.duration * 60 * 1000 + buffer;
-            return startTime >= today && startTime < todayEnd && endTime >= currentTime;
-          });
-
-          if (todayOccurrence) {
-            const startTimeMs = new Date(todayOccurrence.start_time).getTime();
-            meetings.push({
-              meeting,
-              occurrence: todayOccurrence,
-              sortTime: startTimeMs,
-              trackId: meeting.id,
-            });
+      return this.allMeetings()
+        .filter((m) => {
+          if (seen.has(m.trackId)) {
+            return false;
           }
-        } else {
-          // Handle meetings without occurrences (single meetings)
-          const startTime = new Date(meeting.start_time);
-          const startTimeMs = startTime.getTime();
-          const endTime = startTimeMs + meeting.duration * 60 * 1000 + buffer;
-
-          // Include if meeting is today and hasn't ended yet (including buffer)
-          if (startTime >= today && startTime < todayEnd && endTime >= currentTime) {
-            meetings.push({
-              meeting,
-              occurrence: {
-                occurrence_id: '',
-                title: meeting.title,
-                description: meeting.description,
-                start_time: meeting.start_time,
-                duration: meeting.duration,
-              },
-              sortTime: startTimeMs,
-              trackId: meeting.id,
-            });
-          }
-        }
-      }
-
-      // Sort by earliest time first
-      return meetings.sort((a, b) => a.sortTime - b.sortTime);
+          seen.add(m.trackId);
+          return true;
+        })
+        .slice(0, 2);
     });
   }
 
-  private initializeUpcomingMeetings() {
-    return computed<MeetingWithOccurrence[]>(() => {
-      const now = new Date();
-      const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
-      const todayEnd = new Date(today.getTime() + 24 * 60 * 60 * 1000);
-
-      const meetings: MeetingWithOccurrence[] = [];
-
-      for (const meeting of this.allMeetings()) {
-        // Process occurrences if they exist - find the FIRST active occurrence after today
-        if (meeting.occurrences && meeting.occurrences.length > 0) {
-          // Get only active (non-cancelled) occurrences, sorted by start_time for stable selection
-          const activeOccurrences = getActiveOccurrences(meeting.occurrences).sort(
-            (a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
-          );
-
-          // Find the first occurrence that's after today
-          const upcomingOccurrence = activeOccurrences.find((occurrence) => {
-            const startTime = new Date(occurrence.start_time);
-            return startTime >= todayEnd;
-          });
-
-          if (upcomingOccurrence) {
-            const startTimeMs = new Date(upcomingOccurrence.start_time).getTime();
-            meetings.push({
-              meeting,
-              occurrence: upcomingOccurrence,
-              sortTime: startTimeMs,
-              trackId: meeting.id,
-            });
-          }
-        } else {
-          // Handle meetings without occurrences (single meetings)
-          const startTime = new Date(meeting.start_time);
-          const startTimeMs = startTime.getTime();
-
-          // Include if meeting is after today
-          if (startTime >= todayEnd) {
-            meetings.push({
-              meeting,
-              occurrence: {
-                occurrence_id: '',
-                title: meeting.title,
-                description: meeting.description,
-                start_time: meeting.start_time,
-                duration: meeting.duration,
-              },
-              sortTime: startTimeMs,
-              trackId: meeting.id,
-            });
-          }
-        }
-      }
-
-      // Sort by earliest time first and limit to 2
-      return meetings.sort((a, b) => a.sortTime - b.sortTime).slice(0, 2);
-    });
-  }
-
-  private initializeAllMeetings() {
-    // Convert project signal to observable to react to project changes
+  private initializeRawMeetings() {
     const project$ = toObservable(this.selectedProject);
 
     return toSignal(
       project$.pipe(
         tap(() => this.loading.set(true)),
         switchMap((project) => {
-          // If no project/foundation selected, return empty array
           if (!project?.uid) {
             this.loading.set(false);
             return of([]);
           }
 
-          // Limit to 2 meetings for the dashboard display
           return this.userService.getUserMeetings(project.uid, 100).pipe(
             tap(() => this.loading.set(false)),
             catchError((error) => {
@@ -182,7 +76,44 @@ export class MyMeetingsComponent {
           );
         })
       ),
-      { initialValue: [] }
+      { initialValue: [] as Meeting[] }
     );
+  }
+
+  /** Expand raw meetings into a sorted MeetingWithOccurrence list, filtering out ended entries */
+  private expandAndSort(meetings: Meeting[]): MeetingWithOccurrence[] {
+    const now = Date.now();
+    const entries: MeetingWithOccurrence[] = [];
+
+    for (const meeting of meetings) {
+      if (meeting.occurrences && meeting.occurrences.length > 0) {
+        for (const occurrence of getActiveOccurrences(meeting.occurrences)) {
+          const startMs = new Date(occurrence.start_time).getTime();
+          const endMs = startMs + occurrence.duration * 60 * 1000 + MyMeetingsComponent.bufferMs;
+          if (endMs >= now) {
+            entries.push({ meeting, occurrence, sortTime: startMs, trackId: meeting.id });
+          }
+        }
+      } else {
+        const startMs = new Date(meeting.start_time).getTime();
+        const endMs = startMs + meeting.duration * 60 * 1000 + MyMeetingsComponent.bufferMs;
+        if (endMs >= now) {
+          entries.push({
+            meeting,
+            occurrence: {
+              occurrence_id: '',
+              title: meeting.title,
+              description: meeting.description,
+              start_time: meeting.start_time,
+              duration: meeting.duration,
+            },
+            sortTime: startMs,
+            trackId: meeting.id,
+          });
+        }
+      }
+    }
+
+    return entries.sort((a, b) => a.sortTime - b.sortTime);
   }
 }

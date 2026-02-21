@@ -116,3 +116,23 @@ export interface PaginationInfo {
   hasNext: boolean;
   hasPrev: boolean;
 }
+
+/**
+ * Paginated response wrapper for cursor-based pagination
+ * @description Generic response structure for API endpoints that support page_token pagination
+ */
+export interface PaginatedResponse<T> {
+  /** Array of response items */
+  data: T[];
+  /** Cursor token for fetching the next page (undefined when no more pages) */
+  page_token?: string;
+}
+
+/**
+ * Internal page result used for accumulating paginated data in reactive streams
+ * @description Extends PaginatedResponse with a reset flag for scan-based accumulation
+ */
+export interface PageResult<T> extends PaginatedResponse<T> {
+  /** When true, replaces accumulated data; when false, appends to it */
+  reset: boolean;
+}

@@ -23,42 +23,35 @@
   <div class="flex flex-col flex-1">
     @if (loading()) {
       <div class="flex flex-col gap-3" data-testid="dashboard-my-meetings-loading">
-        <p-skeleton width="100%" height="140px"></p-skeleton>
+        @for (_ of [1]; track $index) {
+          <div class="bg-white rounded-xl border shadow-md p-4 flex flex-col gap-3">
+            <!-- Badge row -->
+            <div class="flex items-center gap-2">
+              <p-skeleton width="5rem" height="1.25rem" borderRadius="1rem"></p-skeleton>
+            </div>
+            <!-- Title + time -->
+            <div class="flex flex-col gap-1.5">
+              <p-skeleton width="75%" height="0.875rem"></p-skeleton>
+              <p-skeleton width="40%" height="0.75rem"></p-skeleton>
+            </div>
+            <!-- Action buttons -->
+            <p-skeleton width="100%" height="2rem" borderRadius="6px"></p-skeleton>
+          </div>
+        }
       </div>
     } @else {
       <div class="relative overflow-hidden flex-1">
         <div lfxScrollShadow class="flex flex-col gap-1 overflow-scroll max-h-[30rem] py-1 -mt-1" data-testid="dashboard-my-meetings-list">
-          @if (todayMeetings().length > 0 || upcomingMeetings().length > 0) {
-            <!-- TODAY Section - only show if there are meetings today -->
-            @if (todayMeetings().length > 0) {
-              <div>
-                <div class="flex flex-col gap-3">
-                  @for (item of todayMeetings(); track item.trackId) {
-                    <lfx-dashboard-meeting-card
-                      class="-mt-2 py-2"
-                      [meeting]="item.meeting"
-                      [occurrence]="item.occurrence"
-                      [attr.data-testid]="'dashboard-my-meetings-today-item-' + item.meeting.id" />
-                  }
-                </div>
-              </div>
-            }
-
-            <!-- UPCOMING Section - only show if there are upcoming meetings -->
-            @if (upcomingMeetings().length > 0) {
-              <div>
-                <div class="flex flex-col gap-3">
-                  @for (item of upcomingMeetings(); track item.trackId) {
-                    <lfx-dashboard-meeting-card
-                      [meeting]="item.meeting"
-                      [occurrence]="item.occurrence"
-                      [attr.data-testid]="'dashboard-my-meetings-upcoming-item-' + item.meeting.id" />
-                  }
-                </div>
-              </div>
-            }
+          @if (nextMeetings().length > 0) {
+            <div class="flex flex-col gap-3">
+              @for (item of nextMeetings(); track item.trackId) {
+                <lfx-dashboard-meeting-card
+                  [meeting]="item.meeting"
+                  [occurrence]="item.occurrence"
+                  [attr.data-testid]="'dashboard-my-meetings-item-' + item.meeting.id" />
+              }
+            </div>
           } @else {
-            <!-- Global empty state - only shows when no meetings at all -->
             <div class="text-center py-8" data-testid="dashboard-my-meetings-empty">
               <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
               <p class="text-sm text-gray-500">No meetings scheduled</p>

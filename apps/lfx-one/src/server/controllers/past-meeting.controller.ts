@@ -24,7 +24,10 @@ export class PastMeetingController {
 
     try {
       // All past meetings are now ITX-managed (v1_past_meeting type)
-      const meetings = (await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_past_meeting')) as PastMeeting[];
+      const { data: meetings, page_token } = (await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_past_meeting')) as {
+        data: PastMeeting[];
+        page_token?: string;
+      };
 
       // TODO: Remove this once we have a way to get the registrants count
       // Process each meeting individually to add registrant and participant counts
@@ -41,10 +44,11 @@ export class PastMeetingController {
       // Log the success
       logger.success(req, 'get_past_meetings', startTime, {
         meeting_count: meetings.length,
+        has_more_pages: !!page_token,
       });
 
       // Send the meetings data to the client
-      res.json(meetings);
+      res.json({ data: meetings, page_token });
     } catch (error) {
       // Log the error
       logger.error(req, 'get_past_meetings', startTime, error);

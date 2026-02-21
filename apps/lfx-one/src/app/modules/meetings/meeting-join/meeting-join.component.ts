@@ -162,7 +162,7 @@ export class MeetingJoinComponent {
 
   public onRegistrantsToggle(): void {
     const meeting = this.meeting();
-    if (!meeting.show_meeting_attendees) {
+    if (!meeting.organizer && !meeting.invited) {
       this.messageService.add({
         severity: 'warn',
         summary: 'Show Members is not enabled',
@@ -472,24 +472,9 @@ export class MeetingJoinComponent {
     );
   }
 
+  // TODO: Re-implement attachments with a public endpoint
   private initializeAttachments(): Signal<MeetingAttachment[]> {
-    // Convert meeting signal to observable to react to changes
-    return toSignal(
-      toObservable(this.meeting).pipe(
-        switchMap((meeting) => {
-          if (meeting?.id) {
-            return this.meetingService.getMeetingAttachments(meeting.id).pipe(
-              catchError((error) => {
-                console.error(`Failed to load attachments for meeting ${meeting.id}:`, error);
-                return of([]);
-              })
-            );
-          }
-          return of([]);
-        })
-      ),
-      { initialValue: [] }
-    );
+    return signal<MeetingAttachment[]>([]);
   }
 
   private initializeAlertMessage(): Signal<string> {

@@ -41,7 +41,7 @@ export class MeetingController {
     });
 
     try {
-      const meetings = await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_meeting', true);
+      const { data: meetings, page_token } = await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_meeting', true);
 
       const userEmail = (req.oidc.user?.['email'] as string)?.toLowerCase() || '';
       const registrantsByMeeting = await Promise.all(
@@ -78,10 +78,12 @@ export class MeetingController {
             committee_count: committeeCount,
             invited,
           });
-        } else if (m.organizer) {
-          logger.debug(req, 'get_meetings', 'Registrants null despite organizer — deferring to invite check', {
+        } else {
+          // Registrants not available (non-organizer or fetch failed) — defer to invite check
+          logger.debug(req, 'get_meetings', 'Registrants unavailable — deferring to invite check', {
             meeting_id: m.id,
             title: m.title,
+            organizer: m.organizer,
           });
           meetingsNeedingInviteCheck.push(i);
         }
@@ -98,9 +100,10 @@ export class MeetingController {
 
       logger.success(req, 'get_meetings', startTime, {
         meeting_count: result.length,
+        has_more_pages: !!page_token,
       });
 
-      res.json(result);
+      res.json({ data: result, page_token });
     } catch (error) {
       next(error);
     }
@@ -437,24 +440,25 @@ export class MeetingController {
         return;
       }
 
-      // All ITX meetings are treated as having show_meeting_attendees enabled
-      const showMeetingAttendees = meeting.show_meeting_attendees ?? false;
+      // TODO: Reimplement show_meeting_attendees check
+      // // All ITX meetings are treated as having show_meeting_attendees enabled
+      // const showMeetingAttendees = meeting.show_meeting_attendees ?? false;
 
-      logger.debug(req, 'get_my_meeting_registrants', 'Meeting found, checking show_meeting_attendees', {
-        meeting_id: uid,
-        show_meeting_attendees: showMeetingAttendees,
-      });
+      // logger.debug(req, 'get_my_meeting_registrants', 'Meeting found, checking show_meeting_attendees', {
+      //   meeting_id: uid,
+      //   show_meeting_attendees: showMeetingAttendees,
+      // });
 
-      // Step 2-4: Check if show_meeting_attendees is enabled
-      if (!showMeetingAttendees) {
-        logger.success(req, 'get_my_meeting_registrants', startTime, {
-          meeting_id: uid,
-          show_meeting_attendees: false,
-          registrant_count: 0,
-        });
-        res.json([]);
-        return;
-      }
+      // // Step 2-4: Check if show_meeting_attendees is enabled
+      // if (!showMeetingAttendees) {
+      //   logger.success(req, 'get_my_meeting_registrants', startTime, {
+      //     meeting_id: uid,
+      //     show_meeting_attendees: false,
+      //     registrant_count: 0,
+      //   });
+      //   res.json([]);
+      //   return;
+      // }
 
       // Step 5: Check if current user is a registrant (access control)
       const userEmail = req.oidc?.user?.['email'] as string | undefined;

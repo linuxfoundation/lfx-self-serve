@@ -137,8 +137,7 @@ export class MeetingCardComponent implements OnInit {
   );
   // Computed signal to check if user can toggle between RSVP Details and RSVP Button Group
   // True when user is both an organizer AND invited to the meeting (for non-past meetings)
-  // RSVP is currently disabled (Coming Soon) - will be enabled when ITX backend supports it
-  public readonly canToggleRsvpView: Signal<boolean> = computed(() => false);
+  public readonly canToggleRsvpView: Signal<boolean> = computed(() => !!this.meeting().organizer && this.isInvited() && !this.pastMeeting());
 
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
@@ -176,7 +175,7 @@ export class MeetingCardComponent implements OnInit {
 
     const joinUrl$ = combineLatest([meeting$, occurrence$, user$, authenticated$, pastMeeting$]).pipe(
       switchMap(([meeting, occurrence, user, authenticated, isPastMeeting]) => {
-        if (!meeting.id || isPastMeeting || !canJoinMeeting(meeting, occurrence)) {
+        if (!meeting.id || isPastMeeting || !canJoinMeeting(meeting, occurrence) || (meeting.restricted && !meeting.invited)) {
           return of(null);
         }
 
@@ -647,7 +646,15 @@ export class MeetingCardComponent implements OnInit {
       if (this.pastMeeting()) {
         return false;
       }
-      return canJoinMeeting(this.meeting(), this.occurrence());
+
+      const meeting = this.meeting();
+
+      // Restricted meetings require the user to be invited
+      if (meeting.restricted && !meeting.invited) {
+        return false;
+      }
+
+      return canJoinMeeting(meeting, this.occurrence());
     });
   }
 

@@ -30,14 +30,14 @@
                 <lfx-tag [value]="badge.text" [severity]="badge.severity" [icon]="badge.icon" [attr.data-testid]="'meeting-badge-type'"></lfx-tag>
               }
 
-              <!-- View Guests Button (for invited users) -->
-              @if (authenticated() && meeting().invited) {
+              <!-- View Guests Button (for organizers and invited users) -->
+              @if (authenticated() && (meeting().organizer || meeting().invited)) {
                 <lfx-button
                   label="Show Members"
                   icon="fa-light fa-users"
                   [outlined]="true"
                   severity="primary"
-                  [disabled]="!meeting().show_meeting_attendees"
+                  [disabled]="!meeting().organizer && !meeting().invited"
                   (onClick)="onRegistrantsToggle()"
                   styleClass="py-[0.15rem] text-xs"
                   data-testid="view-members-button">
@@ -208,7 +208,7 @@
             }
           </div>
 
-          <!-- Meeting Registrants Drawer (only shown if user is invited) -->
+          <!-- Meeting Registrants Drawer (shown for organizers and invited users) -->
 
           <p-drawer
             [visible]="showRegistrants()"
