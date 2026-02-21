@@ -11,6 +11,7 @@ import {
   MeetingJoinURL,
   MeetingRegistrant,
   MeetingRsvp,
+  PaginatedResponse,
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
@@ -57,7 +58,7 @@ export class MeetingService {
     query: Record<string, any> = {},
     meetingType: QueryServiceMeetingType = 'v1_meeting',
     access: boolean = true
-  ): Promise<Meeting[]> {
+  ): Promise<PaginatedResponse<Meeting>> {
     logger.debug(req, 'get_meetings', 'Starting meeting fetch', {
       type: meetingType,
       query_params: Object.keys(query),
@@ -68,11 +69,18 @@ export class MeetingService {
       type: meetingType,
     };
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
+    const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Meeting>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params
+    );
 
     logger.debug(req, 'get_meetings', 'Fetched resources from query service', {
       count: resources.length,
       type: meetingType,
+      has_more_pages: !!page_token,
     });
 
     let meetings: Meeting[] = resources.map((resource) => ({
@@ -112,14 +120,15 @@ export class MeetingService {
         count: meetings.length,
       });
       // Add writer access field to all meetings
-      return await this.accessCheckService.addAccessToResources(req, meetings, meetingType, 'organizer');
+      const accessMeetings = await this.accessCheckService.addAccessToResources(req, meetings, meetingType, 'organizer');
+      return { data: accessMeetings, page_token };
     }
 
     logger.debug(req, 'get_meetings', 'Completed meeting fetch', {
       final_count: meetings.length,
     });
 
-    return meetings;
+    return { data: meetings, page_token };
   }
 
   /**
@@ -459,7 +468,15 @@ export class MeetingService {
       email: email,
     };
 
-    return await this.microserviceProxy.proxyRequest<MeetingJoinURL>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/join_link`, 'GET', params);
+    const response = await this.microserviceProxy.proxyRequest<{ join_url: string }>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${meetingUid}/join_link`,
+      'GET',
+      params
+    );
+
+    return { link: response.join_url };
   }
 
   /**

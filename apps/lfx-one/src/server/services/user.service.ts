@@ -476,7 +476,7 @@ export class UserService {
   public async getUserMeetings(req: Request, email: string, projectUid: string, query: Record<string, any>, limit?: number): Promise<Meeting[]> {
     // Step 1: Get all meetings the user has access to, filtered by project
     // Note: Writers have API access to all meetings, but we still filter by registration
-    const allMeetings = await this.meetingService.getMeetings(req, query, 'v1_meeting', false);
+    const { data: allMeetings } = await this.meetingService.getMeetings(req, query, 'v1_meeting', false);
 
     logger.debug(req, 'get_user_meetings', 'Retrieved meetings from API', {
       total_meetings: allMeetings.length,

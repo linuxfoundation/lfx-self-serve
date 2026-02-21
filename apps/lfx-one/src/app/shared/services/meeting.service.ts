@@ -18,6 +18,7 @@ import {
   MeetingRegistrant,
   MeetingRegistrantWithState,
   MeetingRsvp,
+  PaginatedResponse,
   PastMeeting,
   PastMeetingAttachment,
   PastMeetingParticipant,
@@ -39,20 +40,20 @@ export class MeetingService {
 
   private readonly http = inject(HttpClient);
 
-  public getMeetings(params?: HttpParams): Observable<Meeting[]> {
-    return this.http.get<Meeting[]>('/api/meetings', { params }).pipe(
+  public getMeetings(params?: HttpParams): Observable<PaginatedResponse<Meeting>> {
+    return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params }).pipe(
       catchError((error) => {
         console.error('Failed to load meetings:', error);
-        return of([]);
+        return of({ data: [] as Meeting[], page_token: undefined });
       })
     );
   }
 
-  public getPastMeetings(params?: HttpParams): Observable<PastMeeting[]> {
-    return this.http.get<PastMeeting[]>('/api/past-meetings', { params }).pipe(
+  public getPastMeetings(params?: HttpParams): Observable<PaginatedResponse<PastMeeting>> {
+    return this.http.get<PaginatedResponse<PastMeeting>>('/api/past-meetings', { params }).pipe(
       catchError((error) => {
         console.error('Failed to load past meetings:', error);
-        return of([]);
+        return of({ data: [] as PastMeeting[], page_token: undefined });
       })
     );
   }
@@ -68,7 +69,7 @@ export class MeetingService {
       params = params.set('order', orderBy);
     }
 
-    return this.getMeetings(params);
+    return this.getMeetings(params).pipe(map((response) => response.data));
   }
 
   public getMeetingsCountByProject(uid: string): Observable<number> {
@@ -99,7 +100,7 @@ export class MeetingService {
       params = params.set('limit', limit.toString());
     }
 
-    return this.getMeetings(params);
+    return this.getMeetings(params).pipe(map((response) => response.data));
   }
 
   public getPastMeetingsByProject(uid: string, limit: number = 3): Observable<PastMeeting[]> {
@@ -113,6 +114,31 @@ export class MeetingService {
     // When implemented, add: params = params.set('sort', 'scheduled_start_time_desc');
     // This will enable backend sorting instead of client-side sorting in the component
 
+    return this.getPastMeetings(params).pipe(map((response) => response.data));
+  }
+
+  public getMeetingsByProjectPaginated(uid: string, limit?: number, orderBy?: string, pageToken?: string): Observable<PaginatedResponse<Meeting>> {
+    let params = new HttpParams().set('tags', `project_uid:${uid}`);
+    if (limit) {
+      params = params.set('limit', limit.toString());
+    }
+    if (orderBy) {
+      params = params.set('order', orderBy);
+    }
+    if (pageToken) {
+      params = params.set('page_token', pageToken);
+    }
+    return this.getMeetings(params);
+  }
+
+  public getPastMeetingsByProjectPaginated(uid: string, limit?: number, pageToken?: string): Observable<PaginatedResponse<PastMeeting>> {
+    let params = new HttpParams().set('tags', `project_uid:${uid}`);
+    if (limit) {
+      params = params.set('limit', limit.toString());
+    }
+    if (pageToken) {
+      params = params.set('page_token', pageToken);
+    }
     return this.getPastMeetings(params);
   }
 

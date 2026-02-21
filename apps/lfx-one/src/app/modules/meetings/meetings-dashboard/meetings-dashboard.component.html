@@ -74,6 +74,14 @@
     } @else if (filteredMeetings().length > 0) {
       <div class="flex flex-col gap-4">
         @for (meeting of filteredMeetings(); track meeting.id; let i = $index) {
+          <!-- Invisible sentinel at the midpoint triggers auto-load when scrolled into view -->
+          @if (i === autoLoadTriggerIndex() && hasMore()) {
+            @defer (on viewport) {
+              <div lfxOnRender (rendered)="loadMore()" class="h-0 w-full"></div>
+            } @placeholder {
+              <div class="h-0 w-full" data-testid="meetings-load-more-sentinel"></div>
+            }
+          }
           <lfx-meeting-card
             [attr.id]="'meeting-' + meeting.id"
             [meetingInput]="meeting"
@@ -83,6 +91,24 @@
             [showBorder]="true"></lfx-meeting-card>
         }
       </div>
+
+      @if (hasMore()) {
+        <div class="flex justify-center mt-6">
+          @if (loadingMore()) {
+            <div class="flex flex-col gap-4 w-full">
+              @for (item of [0, 1]; track item) {
+                <div class="bg-white border border-gray-200 rounded-lg p-6 animate-pulse">
+                  <div class="h-6 bg-gray-200 rounded mb-4 w-4/5"></div>
+                  <div class="h-5 bg-gray-200 rounded mb-3"></div>
+                  <div class="h-4 bg-gray-200 rounded w-3/5"></div>
+                </div>
+              }
+            </div>
+          } @else {
+            <lfx-button label="Load More" severity="secondary" [attr.data-testid]="'meetings-load-more-button'" (onClick)="loadMore()" />
+          }
+        </div>
+      }
     }
   </div>
 </div>

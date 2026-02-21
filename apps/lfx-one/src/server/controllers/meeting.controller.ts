@@ -41,7 +41,7 @@ export class MeetingController {
     });
 
     try {
-      const meetings = await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_meeting', true);
+      const { data: meetings, page_token } = await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_meeting', true);
 
       const userEmail = (req.oidc.user?.['email'] as string)?.toLowerCase() || '';
       const registrantsByMeeting = await Promise.all(
@@ -98,9 +98,10 @@ export class MeetingController {
 
       logger.success(req, 'get_meetings', startTime, {
         meeting_count: result.length,
+        has_more_pages: !!page_token,
       });
 
-      res.json(result);
+      res.json({ data: result, page_token });
     } catch (error) {
       next(error);
     }
