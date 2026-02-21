@@ -6,7 +6,6 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { Meeting } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-meetings-top-bar',
@@ -16,7 +15,6 @@ import { Meeting } from '@lfx-one/shared/interfaces';
 })
 export class MeetingsTopBarComponent {
   public meetingTypeOptions = input.required<{ label: string; value: string | null }[]>();
-  public meetings = input.required<Meeting[]>();
   public readonly meetingTypeChange = output<string | null>();
   public readonly searchQueryChange = output<string>();
   public readonly timeFilterChange = output<'upcoming' | 'past'>();

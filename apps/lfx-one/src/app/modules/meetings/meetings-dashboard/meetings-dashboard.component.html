@@ -27,8 +27,7 @@
           [meetingTypeOptions]="meetingTypeOptions()"
           (meetingTypeChange)="onMeetingTypeChange($event)"
           (searchQueryChange)="searchQuery.set($event)"
-          (timeFilterChange)="onTimeFilterChange($event)"
-          [meetings]="timeFilter() === 'past' ? pastMeetings() : upcomingMeetings()" />
+          (timeFilterChange)="onTimeFilterChange($event)" />
       }
     </div>
   </div>

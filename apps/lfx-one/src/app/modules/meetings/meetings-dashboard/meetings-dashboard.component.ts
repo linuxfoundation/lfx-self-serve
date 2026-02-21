@@ -14,7 +14,7 @@ import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { OnRenderDirective } from '@shared/directives/on-render.directive';
-import { BehaviorSubject, catchError, combineLatest, finalize, map, merge, of, scan, Subject, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, merge, of, scan, Subject, switchMap, tap } from 'rxjs';
 
 import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-top-bar.component';
 
@@ -37,6 +37,7 @@ export class MeetingsDashboardComponent {
   public filteredMeetings: Signal<(Meeting | PastMeeting)[]>;
   public refresh$: BehaviorSubject<void>;
   public searchQuery: WritableSignal<string>;
+  public debouncedSearchQuery: Signal<string>;
   public timeFilter: WritableSignal<'upcoming' | 'past'>;
   public topBarVisibilityFilter: WritableSignal<'mine' | 'public'>;
   public meetingTypeFilter: WritableSignal<string | null>;
@@ -74,6 +75,7 @@ export class MeetingsDashboardComponent {
     this.pastMeetingsLoading = signal<boolean>(true);
     this.refresh$ = new BehaviorSubject<void>(undefined);
     this.searchQuery = signal<string>('');
+    this.debouncedSearchQuery = toSignal(toObservable(this.searchQuery).pipe(debounceTime(300), distinctUntilChanged()), { initialValue: '' });
     this.timeFilter = signal<'upcoming' | 'past'>('upcoming');
     this.topBarVisibilityFilter = signal<'mine' | 'public'>('mine');
     this.meetingTypeFilter = signal<string | null>(null);
@@ -123,17 +125,20 @@ export class MeetingsDashboardComponent {
   private initializeUpcomingMeetings(): Signal<Meeting[]> {
     const project$ = toObservable(this.project);
     const timeFilter$ = toObservable(this.timeFilter);
+    const searchQuery$ = toObservable(this.debouncedSearchQuery);
+    const meetingType$ = toObservable(this.meetingTypeFilter);
 
-    // First page: emits on context/filter/refresh changes (resets accumulator)
-    const firstPage$ = combineLatest([project$, timeFilter$, this.refresh$]).pipe(
-      switchMap(([project, timeFilter]) => {
+    // First page: emits on context/filter/refresh/search changes (resets accumulator)
+    const firstPage$ = combineLatest([project$, timeFilter$, this.refresh$, searchQuery$, meetingType$]).pipe(
+      switchMap(([project, timeFilter, , searchQuery, meetingType]) => {
         if (!project?.uid || timeFilter !== 'upcoming') {
           this.meetingsLoading.set(false);
           return of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true });
         }
 
         this.meetingsLoading.set(true);
-        return this.meetingService.getMeetingsByProjectPaginated(project.uid, 50).pipe(
+        const filters = this.buildMeetingTypeFilters(meetingType);
+        return this.meetingService.getMeetingsByProjectPaginated(project.uid, 50, undefined, undefined, searchQuery || undefined, filters).pipe(
           map((r): PageResult<Meeting> => ({ ...r, reset: true })),
           catchError(() => of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true })),
           finalize(() => this.meetingsLoading.set(false))
@@ -149,7 +154,9 @@ export class MeetingsDashboardComponent {
           return of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: false });
         }
         this.loadingMore.set(true);
-        return this.meetingService.getMeetingsByProjectPaginated(projectUid, 50, undefined, pageToken).pipe(
+        const searchName = this.debouncedSearchQuery() || undefined;
+        const filters = this.buildMeetingTypeFilters(this.meetingTypeFilter());
+        return this.meetingService.getMeetingsByProjectPaginated(projectUid, 50, undefined, pageToken, searchName, filters).pipe(
           map((r): PageResult<Meeting> => ({ ...r, reset: false })),
           catchError(() => of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: false })),
           finalize(() => this.loadingMore.set(false))
@@ -172,17 +179,20 @@ export class MeetingsDashboardComponent {
   private initializePastMeetings(): Signal<PastMeeting[]> {
     const project$ = toObservable(this.project);
     const timeFilter$ = toObservable(this.timeFilter);
+    const searchQuery$ = toObservable(this.debouncedSearchQuery);
+    const meetingType$ = toObservable(this.meetingTypeFilter);
 
-    // First page: emits on context/filter/refresh changes (resets accumulator)
-    const firstPage$ = combineLatest([project$, timeFilter$, this.refresh$]).pipe(
-      switchMap(([project, timeFilter]) => {
+    // First page: emits on context/filter/refresh/search changes (resets accumulator)
+    const firstPage$ = combineLatest([project$, timeFilter$, this.refresh$, searchQuery$, meetingType$]).pipe(
+      switchMap(([project, timeFilter, , searchQuery, meetingType]) => {
         if (!project?.uid || timeFilter !== 'past') {
           this.pastMeetingsLoading.set(false);
           return of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: true });
         }
 
         this.pastMeetingsLoading.set(true);
-        return this.meetingService.getPastMeetingsByProjectPaginated(project.uid, 50).pipe(
+        const filters = this.buildMeetingTypeFilters(meetingType);
+        return this.meetingService.getPastMeetingsByProjectPaginated(project.uid, 50, undefined, searchQuery || undefined, filters).pipe(
           map((r): PageResult<PastMeeting> => ({ ...r, reset: true })),
           catchError(() => of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: true })),
           finalize(() => this.pastMeetingsLoading.set(false))
@@ -198,7 +208,9 @@ export class MeetingsDashboardComponent {
           return of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: false });
         }
         this.loadingMore.set(true);
-        return this.meetingService.getPastMeetingsByProjectPaginated(projectUid, 50, pageToken).pipe(
+        const searchName = this.debouncedSearchQuery() || undefined;
+        const filters = this.buildMeetingTypeFilters(this.meetingTypeFilter());
+        return this.meetingService.getPastMeetingsByProjectPaginated(projectUid, 50, pageToken, searchName, filters).pipe(
           map((r): PageResult<PastMeeting> => ({ ...r, reset: false })),
           catchError(() => of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: false })),
           finalize(() => this.loadingMore.set(false))
@@ -243,9 +255,9 @@ export class MeetingsDashboardComponent {
 
   private initializeMeetingTypeOptions(): Signal<{ label: string; value: string | null }[]> {
     return computed(() => {
-      const types = Object.entries(MEETING_TYPE_CONFIGS).map(([value, config]) => ({
+      const types = Object.entries(MEETING_TYPE_CONFIGS).map(([, config]) => ({
         label: config.label,
-        value: value,
+        value: config.label,
       }));
 
       return [{ label: 'All Types', value: null }, ...types];
@@ -254,29 +266,14 @@ export class MeetingsDashboardComponent {
 
   private initializeFilteredMeetings(): Signal<(Meeting | PastMeeting)[]> {
     return computed(() => {
-      // Get appropriate meetings based on time filter
-      const timeFilter = this.timeFilter();
-      let filtered: (Meeting | PastMeeting)[] = timeFilter === 'past' ? this.pastMeetings() : this.upcomingMeetings();
-
-      // Apply meeting type filter
-      const typeFilter = this.meetingTypeFilter();
-      if (typeFilter) {
-        filtered = filtered.filter((meeting) => meeting.meeting_type?.toLowerCase() === typeFilter.toLowerCase());
-      }
-
-      // Apply search filter
-      const search = this.searchQuery()?.toLowerCase() || '';
-      if (search) {
-        filtered = filtered.filter(
-          (meeting) =>
-            meeting.title?.toLowerCase().includes(search) ||
-            meeting.description?.toLowerCase().includes(search) ||
-            meeting.meeting_type?.toLowerCase().includes(search) ||
-            meeting.committees?.some((committee) => committee.name?.toLowerCase().includes(search))
-        );
-      }
-
-      return filtered;
+      return this.timeFilter() === 'past' ? this.pastMeetings() : this.upcomingMeetings();
     });
+  }
+
+  private buildMeetingTypeFilters(meetingType: string | null): string[] | undefined {
+    if (!meetingType) {
+      return undefined;
+    }
+    return [`meeting_type:${meetingType}`];
   }
 }

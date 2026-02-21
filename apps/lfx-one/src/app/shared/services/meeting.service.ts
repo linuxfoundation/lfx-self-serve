@@ -117,7 +117,14 @@ export class MeetingService {
     return this.getPastMeetings(params).pipe(map((response) => response.data));
   }
 
-  public getMeetingsByProjectPaginated(uid: string, limit?: number, orderBy?: string, pageToken?: string): Observable<PaginatedResponse<Meeting>> {
+  public getMeetingsByProjectPaginated(
+    uid: string,
+    limit?: number,
+    orderBy?: string,
+    pageToken?: string,
+    searchName?: string,
+    filters?: string[]
+  ): Observable<PaginatedResponse<Meeting>> {
     let params = new HttpParams().set('tags', `project_uid:${uid}`);
     if (limit) {
       params = params.set('limit', limit.toString());
@@ -128,16 +135,38 @@ export class MeetingService {
     if (pageToken) {
       params = params.set('page_token', pageToken);
     }
+    if (searchName) {
+      params = params.set('name', searchName);
+    }
+    if (filters?.length) {
+      for (const filter of filters) {
+        params = params.append('filters', filter);
+      }
+    }
     return this.getMeetings(params);
   }
 
-  public getPastMeetingsByProjectPaginated(uid: string, limit?: number, pageToken?: string): Observable<PaginatedResponse<PastMeeting>> {
+  public getPastMeetingsByProjectPaginated(
+    uid: string,
+    limit?: number,
+    pageToken?: string,
+    searchName?: string,
+    filters?: string[]
+  ): Observable<PaginatedResponse<PastMeeting>> {
     let params = new HttpParams().set('tags', `project_uid:${uid}`);
     if (limit) {
       params = params.set('limit', limit.toString());
     }
     if (pageToken) {
       params = params.set('page_token', pageToken);
+    }
+    if (searchName) {
+      params = params.set('name', searchName);
+    }
+    if (filters?.length) {
+      for (const filter of filters) {
+        params = params.append('filters', filter);
+      }
     }
     return this.getPastMeetings(params);
   }
