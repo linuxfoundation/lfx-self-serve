@@ -47,9 +47,17 @@ export class MeetingController {
       const registrantsByMeeting = await Promise.all(
         meetings.map(async (m) => {
           if (!m.organizer) {
+            logger.debug(req, 'get_meetings', 'Skipping registrant fetch — no organizer', { meeting_id: m.id, title: m.title });
             return null;
           }
-          return this.meetingService.getMeetingRegistrants(req, m.id).catch(() => null);
+          return this.meetingService.getMeetingRegistrants(req, m.id).catch((error) => {
+            logger.warning(req, 'get_meetings', 'Failed to fetch registrants for meeting', {
+              meeting_id: m.id,
+              title: m.title,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
+            return null;
+          });
         })
       );
       const meetingsNeedingInviteCheck: number[] = [];
@@ -62,7 +70,19 @@ export class MeetingController {
           committeeCount = registrants.filter((r) => r.type === 'committee').length;
           individualCount = registrants.length - committeeCount;
           invited = userEmail ? registrants.some((r) => r.email?.toLowerCase() === userEmail) : false;
+          logger.debug(req, 'get_meetings', 'Registrant counts computed', {
+            meeting_id: m.id,
+            title: m.title,
+            total_registrants: registrants.length,
+            individual_count: individualCount,
+            committee_count: committeeCount,
+            invited,
+          });
         } else if (m.organizer) {
+          logger.debug(req, 'get_meetings', 'Registrants null despite organizer — deferring to invite check', {
+            meeting_id: m.id,
+            title: m.title,
+          });
           meetingsNeedingInviteCheck.push(i);
         }
         return { ...m, individual_registrants_count: individualCount, committee_members_count: committeeCount, invited };
@@ -470,11 +490,11 @@ export class MeetingController {
       logger.debug(req, 'get_my_meeting_registrants', 'User registrant check complete', {
         meeting_id: uid,
         user_email: userEmail,
-        registrant_count: userRegistrantCheck.resources?.length || 0,
+        registrant_count: userRegistrantCheck.length,
       });
 
       // Step 6: If user is not a registrant, return empty array
-      if (!userRegistrantCheck.resources || userRegistrantCheck.resources.length === 0) {
+      if (userRegistrantCheck.length === 0) {
         logger.success(req, 'get_my_meeting_registrants', startTime, {
           meeting_id: uid,
           user_email: userEmail,

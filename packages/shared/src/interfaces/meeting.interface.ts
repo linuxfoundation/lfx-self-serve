@@ -859,22 +859,30 @@ export interface MeetingRsvp {
   id: string;
   /** Meeting UUID this RSVP belongs to */
   meeting_id: string;
+  /** Combined meeting and occurrence identifier (e.g., "95156357074" or "95156357074_1707321600000") */
+  meeting_and_occurrence_id?: string;
   /** User's registrant ID */
   registrant_id: string;
   /** User's username */
   username: string;
+  /** User's display name */
+  name?: string;
   /** User's email address */
   email: string;
   /** User's RSVP response */
   response: RsvpResponse;
   /** Scope of the RSVP (which occurrences it applies to) */
   scope: RsvpScope;
-  /** Occurrence ID (only present when scope is 'single') */
+  /** Occurrence ID (empty string when no specific occurrence) */
   occurrence_id?: string;
   /** Creation timestamp */
   created_at: string;
-  /** Last update timestamp */
-  updated_at: string;
+  /** Last modification timestamp (API field name) */
+  modified_at?: string;
+  /** Last update timestamp (alias for modified_at) */
+  updated_at?: string;
+  /** Timestamp of the RSVP response */
+  response_date?: string;
 }
 
 /**

@@ -25,7 +25,7 @@ export async function isUserInvitedToMeeting(req: Request, meetingUid: string, e
   const token = m2mToken || (await generateM2MToken(req));
   const registrants = await meetingService.getMeetingRegistrantsByEmail(req, meetingUid, email, token);
 
-  return registrants.resources.length > 0;
+  return registrants.length > 0;
 }
 
 /**

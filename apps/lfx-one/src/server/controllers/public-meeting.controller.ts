@@ -440,7 +440,7 @@ export class PublicMeetingController {
 
     // Query the meeting registrants filtered by the user's email to validate if the user was invited to the meeting
     const registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, id, email);
-    if (registrants.resources.length === 0) {
+    if (registrants.length === 0) {
       const authError = new AuthorizationError('The email address is not registered for this restricted meeting', {
         operation: 'post_meeting_link',
         service: 'public_meeting_controller',
@@ -452,7 +452,7 @@ export class PublicMeetingController {
     logger.success(req, 'restricted_meeting_check', helperStartTime, {
       meeting_id: id,
       email,
-      registrant_count: registrants.resources.length,
+      registrant_count: registrants.length,
     });
   }
 }
