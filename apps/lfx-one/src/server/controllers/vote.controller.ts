@@ -23,13 +23,35 @@ export class VoteController {
     });
 
     try {
-      const votes = await this.voteService.getVotes(req, req.query as Record<string, any>);
+      const { data, page_token } = await this.voteService.getVotes(req, req.query as Record<string, any>);
 
       logger.success(req, 'get_votes', startTime, {
-        vote_count: votes.length,
+        vote_count: data.length,
+        has_more_pages: !!page_token,
       });
 
-      res.json(votes);
+      res.json({ data, page_token });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /votes/count
+   */
+  public async getVotesCount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_votes_count', {
+      query_params: logger.sanitize(req.query as Record<string, any>),
+    });
+
+    try {
+      const count = await this.voteService.getVotesCount(req, req.query as Record<string, any>);
+
+      logger.success(req, 'get_votes_count', startTime, {
+        count,
+      });
+
+      res.json({ count });
     } catch (error) {
       next(error);
     }
@@ -223,8 +245,6 @@ export class VoteController {
 
       logger.success(req, 'enable_vote', startTime, {
         vote_uid: uid,
-        project_uid: vote.project_uid,
-        name: vote.name,
         status: vote.status,
       });
 

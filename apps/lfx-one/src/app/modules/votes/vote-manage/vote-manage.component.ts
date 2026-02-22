@@ -240,15 +240,29 @@ export class VoteManageComponent {
 
     if (this.isEditMode() && this.voteId()) {
       const updateRequest = buildUpdateVoteRequest(formValue, project.uid);
+      // Update the vote first, then enable it to open immediately
       this.voteService.updateVote(this.voteId()!, updateRequest).subscribe({
         next: () => {
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: `${this.voteLabel.singular} updated successfully`,
+          this.voteService.enableVote(this.voteId()!).subscribe({
+            next: () => {
+              this.messageService.add({
+                severity: 'success',
+                summary: 'Success',
+                detail: `${this.voteLabel.singular} opened successfully`,
+              });
+              this.submitting.set(false);
+              this.router.navigate(['/votes']);
+            },
+            error: (error) => {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: `${this.voteLabel.singular} updated but failed to enable: ${error.message || 'Unknown error'}`,
+              });
+              this.submitting.set(false);
+              this.router.navigate(['/votes']);
+            },
           });
-          this.submitting.set(false);
-          this.router.navigate(['/votes']);
         },
         error: (error) => {
           this.messageService.add({

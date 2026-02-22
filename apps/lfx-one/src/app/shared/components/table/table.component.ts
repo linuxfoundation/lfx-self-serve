@@ -1,8 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgTemplateOutlet } from '@angular/common';
-import { Component, ContentChild, ElementRef, inject, input, output, TemplateRef } from '@angular/core';
+import { isPlatformBrowser, NgTemplateOutlet } from '@angular/common';
+import {
+  AfterContentInit,
+  Component,
+  computed,
+  ContentChild,
+  ElementRef,
+  inject,
+  input,
+  output,
+  PLATFORM_ID,
+  signal,
+  Signal,
+  TemplateRef,
+} from '@angular/core';
 import { TableModule } from 'primeng/table';
 
 @Component({
@@ -11,7 +24,7 @@ import { TableModule } from 'primeng/table';
   templateUrl: './table.component.html',
   styleUrls: ['./table.component.scss'],
 })
-export class TableComponent {
+export class TableComponent implements AfterContentInit {
   // Template references for content projection
   @ContentChild('header', { static: false, descendants: false }) public headerTemplate?: TemplateRef<any>;
   @ContentChild('body', { static: false, descendants: false }) public bodyTemplate?: TemplateRef<any>;
@@ -29,6 +42,7 @@ export class TableComponent {
 
   // Injected services
   private readonly elementRef = inject(ElementRef);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // Core data properties
   public readonly value = input<any[]>([]);
@@ -95,6 +109,9 @@ export class TableComponent {
   // Loading properties
   public readonly loading = input<boolean>(false);
   public readonly loadingIcon = input<string>('pi pi-spinner pi-spin');
+  public readonly skeletonColumns = input<number>(0);
+  public readonly skeletonRows = input<number>(5);
+  protected readonly defaultSkeletonCols = signal<number>(4);
 
   // Resize properties
   public readonly resizableColumns = input<boolean>(false);
@@ -151,6 +168,39 @@ export class TableComponent {
   public readonly onHeaderCheckboxToggle = output<any>();
   public readonly onStateSave = output<any>();
   public readonly onStateRestore = output<any>();
+
+  // === Skeleton Computed Signals ===
+  protected readonly resolvedSkeletonCols: Signal<number> = computed(() => this.skeletonColumns() || this.columns().length || this.defaultSkeletonCols());
+
+  protected readonly skeletonRowData: Signal<{ idx: number; delay: string; cols: { idx: number; width: string }[] }[]> = this.initSkeletonRowData();
+
+  // When loading, swap real data with skeleton placeholder data so PrimeNG renders skeleton rows
+  protected readonly displayValue: Signal<any[]> = computed(() => {
+    if (this.loading() && !this.loadingBodyTemplate) {
+      return this.skeletonRowData();
+    }
+    return this.value();
+  });
+
+  // === Lifecycle ===
+  public ngAfterContentInit(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+
+    // Detect column count from header template by counting <th> elements after render
+    if (!this.skeletonColumns() && !this.columns().length) {
+      setTimeout(() => {
+        const thead = (this.elementRef.nativeElement as HTMLElement).querySelector('.p-datatable-thead');
+        if (thead) {
+          const thCount = thead.querySelectorAll('th').length;
+          if (thCount > 0) {
+            this.defaultSkeletonCols.set(thCount);
+          }
+        }
+      });
+    }
+  }
 
   // Host click handler for row selection
   protected onHostClick(event: MouseEvent): void {
@@ -269,5 +319,30 @@ export class TableComponent {
 
   protected handleStateRestore(event: any): void {
     this.onStateRestore.emit(event);
+  }
+
+  // === Private Initializers ===
+  private initSkeletonRowData(): Signal<{ idx: number; delay: string; cols: { idx: number; width: string }[] }[]> {
+    const widthMatrix = [
+      ['70%', '60%', '50%', '40%', '55%', '45%'],
+      ['55%', '75%', '65%', '35%', '60%', '50%'],
+      ['80%', '50%', '45%', '55%', '70%', '40%'],
+      ['45%', '65%', '70%', '50%', '45%', '55%'],
+      ['65%', '55%', '60%', '45%', '65%', '50%'],
+    ];
+
+    return computed(() => {
+      const numRows = this.skeletonRows();
+      const numCols = this.resolvedSkeletonCols();
+
+      return Array.from({ length: numRows }, (_, rowIdx) => ({
+        idx: rowIdx,
+        delay: `${rowIdx * 0.07}s`,
+        cols: Array.from({ length: numCols }, (_unused, colIdx) => ({
+          idx: colIdx,
+          width: widthMatrix[rowIdx % widthMatrix.length][colIdx % widthMatrix[0].length],
+        })),
+      }));
+    });
   }
 }

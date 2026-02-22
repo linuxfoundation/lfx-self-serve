@@ -57,7 +57,7 @@
             @if (isLastStep()) {
               <!-- Save/Open Button -->
               <lfx-button
-                [label]="isEditMode() ? 'Save Changes' : 'Open ' + voteLabel.singular"
+                [label]="'Open ' + voteLabel.singular"
                 [loading]="submitting()"
                 severity="info"
                 (onClick)="onSubmit()"

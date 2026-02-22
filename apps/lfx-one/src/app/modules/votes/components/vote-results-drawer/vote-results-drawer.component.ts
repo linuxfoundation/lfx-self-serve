@@ -47,9 +47,9 @@ export class VoteResultsDrawerComponent {
   // === Computed Signals ===
   protected readonly isGenericPoll: Signal<boolean> = this.initIsGenericPoll();
   protected readonly pccVotingUrl: Signal<string> = this.initPccVotingUrl();
-  protected readonly isVoteClosed: Signal<boolean> = this.initIsVoteClosed();
   protected readonly isLoading: Signal<boolean> = computed(() => this.loadingVoteDetails() || this.loadingVoteResults());
   protected readonly participationStats: Signal<VoteParticipationStats> = this.initParticipationStats();
+  protected readonly isVoteClosed: Signal<boolean> = this.initIsVoteClosed();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = this.initQuestionsWithResults();
   protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
   protected readonly votingMethodText: Signal<string> = this.initVotingMethodText();
@@ -125,7 +125,11 @@ export class VoteResultsDrawerComponent {
   private initIsVoteClosed(): Signal<boolean> {
     return computed(() => {
       const v = this.vote();
-      return v?.status === PollStatus.ENDED;
+      if (v?.status === PollStatus.ENDED) return true;
+
+      // Treat 100% participation as finalized even if the vote hasn't formally ended
+      const stats = this.participationStats();
+      return stats.eligibleVoters > 0 && stats.participationRate >= 100;
     });
   }
 

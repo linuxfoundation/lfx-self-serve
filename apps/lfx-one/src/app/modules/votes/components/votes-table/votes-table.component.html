@@ -23,7 +23,8 @@
           [options]="groupOptions()"
           placeholder="All Groups"
           [showClear]="true"
-          (valueChange)="onGroupChange($event)"
+          [filter]="true"
+          filterPlaceholder="Search groups..."
           data-testid="votes-group-filter"></lfx-select>
       </div>
 
@@ -35,21 +36,29 @@
           [options]="statusOptions()"
           placeholder="All Statuses"
           [showClear]="true"
-          (valueChange)="onStatusChange($event)"
           data-testid="votes-status-filter"></lfx-select>
       </div>
     </div>
   </div>
 
   <lfx-table
-    [value]="filteredVotes()"
-    [paginator]="filteredVotes().length > 10"
-    [rows]="10"
+    [value]="votes()"
+    [paginator]="true"
+    [rows]="rowsPerPage()"
+    [first]="first()"
+    [totalRecords]="totalRecords()"
     [rowsPerPageOptions]="[10, 25, 50]"
+    [lazy]="lazy()"
+    [lazyLoadOnInit]="false"
     [customSort]="true"
     [loading]="loading()"
+    [showPageLinks]="false"
+    [showFirstLastIcon]="false"
+    [showCurrentPageReport]="true"
+    currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
     selectionMode="single"
     (onRowSelect)="onRowSelect($event)"
+    (onPage)="onPageChange($event)"
     data-testid="votes-table">
     <ng-template #header>
       <tr>

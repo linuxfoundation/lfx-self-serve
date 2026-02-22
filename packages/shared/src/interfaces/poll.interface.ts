@@ -5,6 +5,19 @@ import { IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus } from '
 import { CommitteeReference } from './committee.interface';
 
 /**
+ * Filter state for the votes dashboard table
+ * @description Emitted by the votes table when search/filter controls change
+ */
+export interface VoteFilterState {
+  /** Search term for name typeahead */
+  search: string;
+  /** Status filter (active, disabled, ended) */
+  status: PollStatus | null;
+  /** Group/committee name filter */
+  group: string | null;
+}
+
+/**
  * User's vote/poll participation
  * @description Represents a user's participation in a poll - aligns with lfx-pcc VoteResponse
  */
