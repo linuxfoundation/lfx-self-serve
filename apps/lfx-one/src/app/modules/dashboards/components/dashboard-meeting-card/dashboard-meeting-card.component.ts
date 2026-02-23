@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { ClipboardModule } from '@angular/cdk/clipboard';
-import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
@@ -11,14 +10,14 @@ import {
   buildJoinUrlWithParams,
   canJoinMeeting,
   DEFAULT_MEETING_TYPE_CONFIG,
+  extractUrls,
   Meeting,
   MEETING_TYPE_CONFIGS,
-  MeetingAttachment,
   MeetingOccurrence,
   MeetingTypeBadge,
   TagSeverity,
+  UrlMetadata,
 } from '@lfx-one/shared';
-import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
@@ -27,7 +26,7 @@ import { catchError, combineLatest, map, of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-dashboard-meeting-card',
-  imports: [NgClass, ButtonComponent, TagComponent, TooltipModule, ClipboardModule, FileTypeIconPipe, RecurrenceSummaryPipe],
+  imports: [ButtonComponent, TagComponent, TooltipModule, ClipboardModule, RecurrenceSummaryPipe],
   templateUrl: './dashboard-meeting-card.component.html',
 })
 export class DashboardMeetingCardComponent {
@@ -37,7 +36,7 @@ export class DashboardMeetingCardComponent {
   public readonly meeting = input.required<Meeting>();
   public readonly occurrence = input<MeetingOccurrence | null>(null);
 
-  public readonly attachments: Signal<MeetingAttachment[]>;
+  public readonly resolvedResources: Signal<UrlMetadata[]> = this.initResolvedResources();
   public readonly joinUrl: Signal<string | null>;
 
   // Computed values
@@ -59,17 +58,6 @@ export class DashboardMeetingCardComponent {
 
   public constructor() {
     const meeting$ = toObservable(this.meeting);
-    const attachments$ = meeting$.pipe(
-      switchMap((meeting) => {
-        if (meeting?.id) {
-          return this.meetingService.getMeetingAttachments(meeting.id).pipe(catchError(() => of([])));
-        }
-        return of([]);
-      })
-    );
-
-    this.attachments = toSignal(attachments$, { initialValue: [] });
-
     const user$ = toObservable(this.userService.user);
     const authenticated$ = toObservable(this.userService.authenticated);
 
@@ -260,5 +248,23 @@ export class DashboardMeetingCardComponent {
       const queryString = params.toString();
       return queryString ? `/meetings/${meeting.id}?${queryString}` : `/meetings/${meeting.id}`;
     });
+  }
+
+  private initResolvedResources(): Signal<UrlMetadata[]> {
+    const description$ = toObservable(this.meeting).pipe(map((meeting) => this.occurrence()?.description || meeting.description || ''));
+
+    return toSignal(
+      description$.pipe(
+        map((description) => extractUrls(description)),
+        switchMap((urls) => {
+          if (urls.length === 0) {
+            return of([]);
+          }
+          return this.meetingService.resolveUrlMetadata(urls);
+        }),
+        catchError(() => of([] as UrlMetadata[]))
+      ),
+      { initialValue: [] }
+    );
   }
 }

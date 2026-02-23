@@ -903,3 +903,27 @@ export interface CreateMeetingRsvpRequest {
   /** User's RSVP response */
   response: RsvpResponse;
 }
+
+// ============================================================================
+// URL Metadata Interfaces (for resource link resolution)
+// ============================================================================
+
+/** Single URL metadata result */
+export interface UrlMetadata {
+  /** The original URL */
+  url: string;
+  /** Extracted page title, or null if unavailable */
+  title: string | null;
+  /** Domain name (without www prefix) */
+  domain: string;
+}
+
+/** Request body for POST /api/url-metadata */
+export interface UrlMetadataRequest {
+  urls: string[];
+}
+
+/** Response body for POST /api/url-metadata */
+export interface UrlMetadataResponse {
+  results: UrlMetadata[];
+}

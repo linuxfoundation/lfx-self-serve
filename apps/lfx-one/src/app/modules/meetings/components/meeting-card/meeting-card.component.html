@@ -141,21 +141,44 @@
 
     <!-- Two Column Info Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5" data-testid="meeting-info-cards">
-      <!-- Resources Card Column (Coming Soon) -->
+      <!-- Resources Card Column -->
       <div class="flex flex-col">
-        <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60" data-testid="resources-card">
-          <div class="flex items-center justify-between gap-2">
-            <div class="flex items-center gap-2 text-xs tracking-wide leading-tight text-gray-400">
-              <i class="fa-light fa-paperclip text-xs"></i>
-              <span>Resources</span>
-              <span
-                class="inline-flex items-center gap-0.5 text-[10px] font-medium text-gray-400 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded-full">
-                <i class="fa-light fa-clock text-[8px]"></i>
-                Coming Soon
-              </span>
+        @defer (on idle) {
+          <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60" data-testid="resources-card">
+            <div class="flex items-center justify-between gap-2">
+              <div class="flex items-center gap-2 text-xs tracking-wide leading-tight text-gray-400">
+                <i class="fa-light fa-paperclip text-xs"></i>
+                <span>Resources</span>
+                @if (resolvedResources().length > 0) {
+                  <span class="inline-flex items-center text-[10px] font-medium text-gray-500 bg-gray-200/80 px-1.5 py-0.5 rounded-full">
+                    {{ resolvedResources().length }}
+                  </span>
+                }
+              </div>
             </div>
+            @if (resolvedResources().length > 0) {
+              <div class="flex flex-col gap-1.5">
+                @for (resource of resolvedResources(); track resource.url; let i = $index) {
+                  <a
+                    [href]="resource.url"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="bg-gray-200 hover:bg-gray-300 rounded px-2.5 py-1.5 flex items-center gap-2.5 transition-colors cursor-pointer"
+                    [attr.data-testid]="'resource-link-' + i">
+                    <i class="fa-light fa-arrow-up-right-from-square text-lg text-black w-5 flex-shrink-0"></i>
+                    <span class="text-xs text-gray-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-sans">{{
+                      resource.title || resource.domain
+                    }}</span>
+                  </a>
+                }
+              </div>
+            } @else {
+              <p class="text-xs text-gray-400 italic">No resources available</p>
+            }
           </div>
-        </div>
+        } @placeholder {
+          <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60 animate-pulse min-h-[60px]"></div>
+        }
 
         <!-- Action Buttons for Resources Column -->
         <!-- Join Meeting Button - Show when meeting can be joined -->

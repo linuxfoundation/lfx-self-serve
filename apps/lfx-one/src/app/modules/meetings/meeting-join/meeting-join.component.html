@@ -293,43 +293,47 @@
 
             <!-- Right: Resources Card (fixed width) -->
             <div class="w-full md:w-[296px]">
-              <div class="bg-gray-50 border border-gray-200 rounded-md p-3" [attr.data-testid]="'resources-card'">
-                <!-- Resources Header -->
-                <div class="flex items-center gap-2 mb-2">
-                  <i class="fa-light fa-paperclip text-gray-500 text-xs"></i>
-                  <h3 class="text-gray-600 text-sm font-normal">Resources</h3>
-                </div>
-
-                <!-- Attachments List -->
-                @if (attachments().length > 0) {
-                  <div class="flex flex-col gap-2">
-                    @for (attachment of attachments(); track attachment.uid; let i = $index) {
-                      <a
-                        [href]="attachment.type === 'link' ? attachment.link : '/api/meetings/' + meeting().id + '/attachments/' + attachment.uid"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="bg-gray-200 hover:bg-gray-300 rounded px-3 py-2 flex items-center gap-3 min-w-[180px] transition-colors cursor-pointer"
-                        [attr.data-testid]="'meeting-attachment-' + i">
-                        <!-- Icon - File or Link -->
-                        @if (attachment.type === 'link') {
-                          <i class="fa-light fa-arrow-up-right-from-square text-3xl text-black w-8 flex-shrink-0"></i>
-                        } @else {
-                          <i [class]="(attachment.mime_type || '' | fileTypeIcon) + ' text-3xl text-black w-8 flex-shrink-0'"></i>
-                        }
-
-                        <!-- Attachment Name -->
-                        <span class="text-sm text-gray-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-sans">{{ attachment.name }}</span>
-                      </a>
+              @defer (on idle) {
+                <div class="bg-gray-50 border border-gray-200 rounded-md p-3" [attr.data-testid]="'resources-card'">
+                  <!-- Resources Header -->
+                  <div class="flex items-center gap-2 mb-2">
+                    <i class="fa-light fa-paperclip text-gray-500 text-xs"></i>
+                    <h3 class="text-gray-600 text-sm font-normal">Resources</h3>
+                    @if (resolvedResources().length > 0) {
+                      <span class="inline-flex items-center text-[10px] font-medium text-gray-500 bg-gray-200/80 px-1.5 py-0.5 rounded-full">
+                        {{ resolvedResources().length }}
+                      </span>
                     }
                   </div>
-                } @else {
-                  @if (!authenticated() && meeting().visibility === 'private') {
-                    <p class="text-sm text-gray-500 italic">If you have been invited to this meeting, resources may be available when you sign in.</p>
+
+                  <!-- Resources List -->
+                  @if (resolvedResources().length > 0) {
+                    <div class="flex flex-col gap-2">
+                      @for (resource of resolvedResources(); track resource.url; let i = $index) {
+                        <a
+                          [href]="resource.url"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="bg-gray-200 hover:bg-gray-300 rounded px-3 py-2 flex items-center gap-3 min-w-[180px] transition-colors cursor-pointer"
+                          [attr.data-testid]="'meeting-resource-' + i">
+                          <i class="fa-light fa-arrow-up-right-from-square text-3xl text-black w-8 flex-shrink-0"></i>
+                          <span class="text-sm text-gray-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-sans">{{
+                            resource.title || resource.domain
+                          }}</span>
+                        </a>
+                      }
+                    </div>
                   } @else {
-                    <p class="text-sm text-gray-500 italic">No resources available</p>
+                    @if (!authenticated() && meeting().visibility === 'private') {
+                      <p class="text-sm text-gray-500 italic">If you have been invited to this meeting, resources may be available when you sign in.</p>
+                    } @else {
+                      <p class="text-sm text-gray-500 italic">No resources available</p>
+                    }
                   }
-                }
-              </div>
+                </div>
+              } @placeholder {
+                <div class="bg-gray-50 border border-gray-200 rounded-md p-3 animate-pulse min-h-[80px]"></div>
+              }
             </div>
           </div>
 

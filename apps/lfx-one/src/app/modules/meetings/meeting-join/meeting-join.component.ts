@@ -17,15 +17,15 @@ import { environment } from '@environments/environment';
 import {
   buildJoinUrlWithParams,
   canJoinMeeting,
+  extractUrls,
   getCurrentOrNextOccurrence,
   Meeting,
-  MeetingAttachment,
   MeetingOccurrence,
   Project,
   TagSeverity,
+  UrlMetadata,
   User,
 } from '@lfx-one/shared';
-import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
@@ -60,7 +60,6 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     MeetingTimePipe,
     RecurrenceSummaryPipe,
     LinkifyPipe,
-    FileTypeIconPipe,
     ExpandableTextComponent,
     HeaderComponent,
     DynamicDialogModule,
@@ -97,7 +96,7 @@ export class MeetingJoinComponent {
   public fetchedJoinUrl: Signal<string | undefined>;
   public isLoadingJoinUrl: WritableSignal<boolean> = signal<boolean>(false);
   public joinUrlError: WritableSignal<string | null> = signal<string | null>(null);
-  public attachments: Signal<MeetingAttachment[]>;
+  public resolvedResources: Signal<UrlMetadata[]>;
   public messageSeverity: Signal<'success' | 'info' | 'warn'>;
   public messageIcon: Signal<string>;
   public alertMessage: Signal<string>;
@@ -140,7 +139,7 @@ export class MeetingJoinComponent {
     this.returnTo = this.initializeReturnTo();
     this.canJoinMeeting = this.initializeCanJoinMeeting();
     this.fetchedJoinUrl = this.initializeFetchedJoinUrl();
-    this.attachments = this.initializeAttachments();
+    this.resolvedResources = this.initializeResolvedResources();
     this.messageSeverity = this.initializeMessageSeverity();
     this.messageIcon = this.initializeMessageIcon();
     this.alertMessage = this.initializeAlertMessage();
@@ -479,9 +478,20 @@ export class MeetingJoinComponent {
     );
   }
 
-  // TODO: Re-implement attachments with a public endpoint
-  private initializeAttachments(): Signal<MeetingAttachment[]> {
-    return signal<MeetingAttachment[]>([]);
+  private initializeResolvedResources(): Signal<UrlMetadata[]> {
+    return toSignal(
+      toObservable(this.meetingDescription).pipe(
+        map((description) => extractUrls(description)),
+        switchMap((urls) => {
+          if (urls.length === 0) {
+            return of([]);
+          }
+          return this.meetingService.resolveUrlMetadata(urls);
+        }),
+        catchError(() => of([] as UrlMetadata[]))
+      ),
+      { initialValue: [] }
+    );
   }
 
   private initializeAlertMessage(): Signal<string> {

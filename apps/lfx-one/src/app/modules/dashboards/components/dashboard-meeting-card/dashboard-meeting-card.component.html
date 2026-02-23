@@ -93,22 +93,23 @@
           </div>
         </div>
       </div>
-      @if (attachments().length > 0) {
-        <div class="flex items-center gap-1 flex-shrink-0 mt-0.5">
-          @for (attachment of attachments(); track attachment.uid; let index = $index) {
-            <a
-              [href]="attachment.type === 'link' ? attachment.link : '/api/meetings/' + meeting().id + '/attachments/' + attachment.uid"
-              target="_blank"
-              rel="noopener noreferrer"
-              [download]="attachment.type === 'file' ? attachment.name : null"
-              class="w-6 h-6 rounded bg-blue-50 flex items-center justify-center hover:bg-blue-100 transition-colors cursor-pointer"
-              [attr.data-testid]="'dashboard-meeting-card-file-icon-' + (index + 1)"
-              [pTooltip]="attachment.name"
-              tooltipPosition="top">
-              <i class="text-xs text-primary" [ngClass]="attachment.mime_type || '' | fileTypeIcon"></i>
-            </a>
-          }
-        </div>
+      @defer (on idle) {
+        @if (resolvedResources().length > 0) {
+          <div class="flex items-center gap-1 flex-shrink-0 mt-0.5">
+            @for (resource of resolvedResources(); track resource.url; let index = $index) {
+              <a
+                [href]="resource.url"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors cursor-pointer"
+                [attr.data-testid]="'dashboard-meeting-card-resource-icon-' + (index + 1)"
+                [pTooltip]="resource.title || resource.domain"
+                tooltipPosition="top">
+                <i class="fa-light fa-arrow-up-right-from-square text-xs text-black"></i>
+              </a>
+            }
+          </div>
+        }
       }
     </div>
 

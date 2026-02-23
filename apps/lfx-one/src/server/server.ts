@@ -28,6 +28,7 @@ import projectsRouter from './routes/projects.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
 import searchRouter from './routes/search.route';
 import surveysRouter from './routes/surveys.route';
+import urlMetadataRouter from './routes/url-metadata.route';
 import userRouter from './routes/user.route';
 import votesRouter from './routes/votes.route';
 import { serverLogger } from './server-logger';
@@ -192,6 +193,7 @@ app.use('/api/analytics', analyticsRouter);
 app.use('/api/user', userRouter);
 app.use('/api/votes', votesRouter);
 app.use('/api/surveys', surveysRouter);
+app.use('/api/url-metadata', urlMetadataRouter);
 
 // Add API error handler middleware
 app.use('/api/*', apiErrorHandler);
