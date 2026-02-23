@@ -18,6 +18,26 @@
         </lfx-select-button>
       </div>
 
+      <!-- Board Member Project Override -->
+      @if (isBoardMember()) {
+        <div class="flex items-center gap-2" data-testid="dev-tools-bar-project-override">
+          <label for="project-override-select" class="text-sm">Project:</label>
+          <lfx-select
+            [form]="form"
+            control="selectedProjectUid"
+            [options]="projectContextService.availableProjects"
+            optionLabel="name"
+            optionValue="uid"
+            [filter]="true"
+            filterPlaceholder="Search projects..."
+            placeholder="Select a project"
+            [showClear]="false"
+            styleClass="min-w-[250px] dev-tools-select"
+            inputId="project-override-select"
+            data-testid="dev-tools-bar-project-override-select" />
+        </div>
+      }
+
       <!-- Organization Selector (only visible on board dashboard) -->
       @if (showOrganizationSelector() && isOnBoardDashboard()) {
         <div class="flex items-center gap-2" data-testid="dev-tools-bar-organization">

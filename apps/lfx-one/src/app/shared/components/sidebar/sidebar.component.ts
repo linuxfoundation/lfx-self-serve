@@ -57,11 +57,6 @@ export class SidebarComponent {
       return null;
     }
 
-    // TODO: DEMO - Remove when proper permissions are implemented
-    if (this.isBoardMember()) {
-      return this.foundationProjects().find((p: Project) => p.slug === 'tlf') || null;
-    }
-
     return this.projects().find((p: Project) => p.slug === foundation.slug) || null;
   });
 
