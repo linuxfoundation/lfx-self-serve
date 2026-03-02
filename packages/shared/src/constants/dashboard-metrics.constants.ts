@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DashboardDrawerType } from '../interfaces';
 import type { DashboardMetricCard } from '../interfaces';
 import { hexToRgba } from '../utils';
 import { EMPTY_CHART_DATA, NO_TOOLTIP_CHART_OPTIONS } from './chart-options.constants';
@@ -22,6 +23,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: DashboardMetricCard[] = [
     chartType: 'line',
     category: 'projects',
     testId: 'foundation-health-card-total-projects',
+    drawerType: DashboardDrawerType.TotalProjects,
   },
   {
     title: 'Total Members',

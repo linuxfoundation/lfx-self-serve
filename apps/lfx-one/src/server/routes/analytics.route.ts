@@ -57,6 +57,12 @@ router.get('/foundation-software-value', (req, res, next) => analyticsController
 // Foundation maintainers endpoint
 router.get('/foundation-maintainers', (req, res, next) => analyticsController.getFoundationMaintainers(req, res, next));
 
+// Foundation projects detail endpoint (total projects drill-down table)
+router.get('/foundation-projects-detail', (req, res, next) => analyticsController.getFoundationProjectsDetail(req, res, next));
+
+// Foundation projects lifecycle distribution endpoint (total projects drill-down secondary chart)
+router.get('/foundation-projects-lifecycle-distribution', (req, res, next) => analyticsController.getFoundationProjectsLifecycleDistribution(req, res, next));
+
 // Foundation health score distribution endpoint
 router.get('/foundation-health-score-distribution', (req, res, next) => analyticsController.getFoundationHealthScoreDistribution(req, res, next));
 

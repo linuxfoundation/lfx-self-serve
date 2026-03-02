@@ -13,7 +13,13 @@ import {
   FoundationHealthScoreDistributionRow,
   FoundationMaintainersDailyRow,
   FoundationMaintainersResponse,
+  FoundationProjectsDetailResponse,
+  FoundationProjectsDetailRow,
+  FoundationProjectsLifecycleDistributionResponse,
+  FoundationProjectsLifecycleDistributionRow,
+  LifecycleStage,
   FoundationSoftwareValueResponse,
+  FoundationTotalProjectsMonthlyRow,
   FoundationTopProjectBySoftwareValueRow,
   FoundationTotalMembersResponse,
   FoundationTotalProjectsResponse,
@@ -22,7 +28,6 @@ import {
   HealthMetricsAggregatedRow,
   HealthMetricsDailyResponse,
   MonthlyMemberCountWithFoundation,
-  MonthlyProjectCountWithFoundation,
   PendingActionItem,
   PendingSurveyRow,
   Project,
@@ -59,11 +64,11 @@ import { SnowflakeService } from './snowflake.service';
  * Service for handling project business logic
  */
 export class ProjectService {
-  private accessCheckService: AccessCheckService;
-  private microserviceProxy: MicroserviceProxyService;
-  private natsService: NatsService;
-  private etagService: ETagService;
-  private snowflakeService: SnowflakeService;
+  private readonly accessCheckService: AccessCheckService;
+  private readonly microserviceProxy: MicroserviceProxyService;
+  private readonly natsService: NatsService;
+  private readonly etagService: ETagService;
+  private readonly snowflakeService: SnowflakeService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
@@ -867,53 +872,31 @@ export class ProjectService {
 
   /**
    * Get total projects count for a foundation from Snowflake
-   * Queries MEMBER_DASHBOARD_TOTAL_PROJECTS table with monthly cumulative aggregation
-   * Optimized single query including foundation metadata
+   * Queries FOUNDATION_TOTAL_PROJECTS_MONTHLY with pre-computed cumulative monthly counts
    * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
    * @returns Foundation total projects response with cumulative monthly data and metadata
    */
   public async getFoundationTotalProjects(foundationSlug: string): Promise<FoundationTotalProjectsResponse> {
     const query = `
-      WITH monthly_counts AS (
-        SELECT
-          FOUNDATION_SEGMENT_ID,
-          FOUNDATION_NAME,
-          FOUNDATION_SOURCE_ID,
-          FOUNDATION_SLUG,
-          DATE_TRUNC('MONTH', CHILD_START_DATE) AS MONTH_START,
-          COUNT(DISTINCT CHILD_SEGMENT_ID) AS MONTHLY_COUNT
-        FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_TOTAL_PROJECTS
-        WHERE FOUNDATION_SLUG = ?
-        GROUP BY FOUNDATION_SEGMENT_ID, FOUNDATION_NAME, FOUNDATION_SOURCE_ID, FOUNDATION_SLUG, DATE_TRUNC('MONTH', CHILD_START_DATE)
-      )
       SELECT
-        FOUNDATION_SEGMENT_ID,
-        FOUNDATION_NAME,
-        FOUNDATION_SOURCE_ID,
-        FOUNDATION_SLUG,
         MONTH_START,
-        SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS PROJECT_COUNT
-      FROM monthly_counts
+        PROJECT_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_MONTHLY
+      WHERE FOUNDATION_SLUG = ?
       ORDER BY MONTH_START ASC
     `;
 
-    const result = await this.snowflakeService.execute<MonthlyProjectCountWithFoundation>(query, [foundationSlug]);
+    const result = await this.snowflakeService.execute<FoundationTotalProjectsMonthlyRow>(query, [foundationSlug]);
 
-    // Convert monthly data to arrays of counts and labels
     const monthlyData = result.rows.map((row) => row.PROJECT_COUNT);
     const monthlyLabels = result.rows.map((row) => {
       const date = new Date(row.MONTH_START);
       return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
     });
 
-    // Total projects is the last cumulative count
     const totalProjects = result.rows.length > 0 ? result.rows[result.rows.length - 1].PROJECT_COUNT : 0;
 
-    return {
-      totalProjects,
-      monthlyData,
-      monthlyLabels,
-    };
+    return { totalProjects, monthlyData, monthlyLabels };
   }
 
   /**
@@ -1075,6 +1058,100 @@ export class ProjectService {
     });
 
     return distribution;
+  }
+
+  /**
+   * Get per-project detail rows for a foundation from Snowflake
+   * Queries ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL for the drill-down table
+   * @param foundationSlug - Foundation slug to filter by (e.g., 'cncf', 'tlf')
+   */
+  public async getFoundationProjectsDetail(foundationSlug: string): Promise<FoundationProjectsDetailResponse> {
+    logger.debug(undefined, 'get_foundation_projects_detail', 'Fetching project detail rows', { foundationSlug });
+
+    const query = `
+      SELECT
+        PROJECT_NAME,
+        PROJECT_SLUG,
+        LIFECYCLE_STAGE,
+        CONTRIBUTORS_90D_COUNT,
+        COMMITS_90D_COUNT,
+        MAINTAINERS_YTD_COUNT,
+        STARS_YTD_COUNT,
+        LAST_UPDATED_TS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY PROJECT_NAME ASC
+    `;
+
+    try {
+      const result = await this.snowflakeService.execute<FoundationProjectsDetailRow>(query, [foundationSlug]);
+
+      const projects = result.rows
+        .filter((row): row is typeof row & { LIFECYCLE_STAGE: string } => row.LIFECYCLE_STAGE != null)
+        .map((row) => ({
+          id: row.PROJECT_SLUG,
+          projectName: row.PROJECT_NAME,
+          projectSlug: row.PROJECT_SLUG,
+          lifecycleStage: row.LIFECYCLE_STAGE as LifecycleStage,
+          activeContributors: row.CONTRIBUTORS_90D_COUNT ?? 0,
+          commitsLast90Days: row.COMMITS_90D_COUNT ?? 0,
+          maintainers: row.MAINTAINERS_YTD_COUNT ?? 0,
+          stars: row.STARS_YTD_COUNT ?? 0,
+          lastUpdated: row.LAST_UPDATED_TS ? new Date(row.LAST_UPDATED_TS).toISOString().split('T')[0] : null,
+        }));
+
+      logger.debug(undefined, 'get_foundation_projects_detail', 'Fetched project detail rows', { count: projects.length });
+
+      return { projects, totalCount: projects.length };
+    } catch (error) {
+      logger.warning(undefined, 'get_foundation_projects_detail', 'Failed to fetch project detail rows', {
+        foundationSlug,
+        err: error,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get lifecycle stage distribution for a foundation from Snowflake
+   * Queries ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_LIFECYCLE_DISTRIBUTION
+   * @param foundationSlug - Foundation slug to filter by (e.g., 'cncf', 'tlf')
+   */
+  public async getFoundationProjectsLifecycleDistribution(foundationSlug: string): Promise<FoundationProjectsLifecycleDistributionResponse> {
+    logger.debug(undefined, 'get_foundation_projects_lifecycle_distribution', 'Fetching lifecycle distribution', { foundationSlug });
+
+    const query = `
+      SELECT
+        LIFECYCLE_STAGE,
+        PROJECT_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_LIFECYCLE_DISTRIBUTION
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY
+        CASE LIFECYCLE_STAGE
+          WHEN 'Sandbox' THEN 1
+          WHEN 'Incubating' THEN 2
+          WHEN 'Graduated' THEN 3
+          ELSE 4
+        END ASC
+    `;
+
+    try {
+      const result = await this.snowflakeService.execute<FoundationProjectsLifecycleDistributionRow>(query, [foundationSlug]);
+
+      logger.debug(undefined, 'get_foundation_projects_lifecycle_distribution', 'Fetched lifecycle distribution', { stage_count: result.rows.length });
+
+      return {
+        distribution: result.rows
+          .filter((row): row is typeof row & { LIFECYCLE_STAGE: string } => row.LIFECYCLE_STAGE != null)
+          .map((row) => ({ stage: row.LIFECYCLE_STAGE, count: row.PROJECT_COUNT })),
+      };
+    } catch (error) {
+      logger.warning(undefined, 'get_foundation_projects_lifecycle_distribution', 'Failed to fetch lifecycle distribution', {
+        foundationSlug,
+        err: error,
+      });
+      throw error;
+    }
   }
 
   /**

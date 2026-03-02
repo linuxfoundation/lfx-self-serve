@@ -6,13 +6,16 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
-import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
 import { BASE_BAR_CHART_OPTIONS, BASE_LINE_CHART_OPTIONS, lfxColors, PRIMARY_FOUNDATION_HEALTH_METRICS } from '@lfx-one/shared/constants';
 import { hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
 import { catchError, map, of, switchMap, tap } from 'rxjs';
 
+import { TotalProjectsDrawerComponent } from '../total-projects-drawer/total-projects-drawer.component';
+
+import { DashboardDrawerType } from '@lfx-one/shared/interfaces';
 import type {
   CompanyBusFactor,
   DashboardMetricCard,
@@ -24,7 +27,7 @@ import type {
 
 @Component({
   selector: 'lfx-foundation-health',
-  imports: [FilterPillsComponent, MetricCardComponent, DataCopilotComponent, ScrollShadowDirective],
+  imports: [FilterPillsComponent, MetricCardComponent, DataCopilotComponent, ScrollShadowDirective, TotalProjectsDrawerComponent],
   templateUrl: './foundation-health.component.html',
   styleUrl: './foundation-health.component.scss',
 })
@@ -37,7 +40,7 @@ export class FoundationHealthComponent {
   public readonly title = input<string>('Foundation Health');
 
   // Loading signals for each data source
-  private readonly totalProjectsLoading = signal(true);
+  protected readonly totalProjectsLoading = signal(true);
   private readonly totalMembersLoading = signal(true);
   private readonly softwareValueLoading = signal(true);
   private readonly companyBusFactorLoading = signal(true);
@@ -50,7 +53,7 @@ export class FoundationHealthComponent {
   public readonly hasFoundationSelected = computed<boolean>(() => !!this.projectContextService.selectedFoundation());
 
   // Data signals - each fetches its own data independently
-  private readonly totalProjectsData = this.initializeTotalProjectsData();
+  protected readonly totalProjectsData = this.initializeTotalProjectsData();
   private readonly totalMembersData = this.initializeTotalMembersData();
   private readonly softwareValueData = this.initializeSoftwareValueData();
   private readonly companyBusFactorData = this.initializeCompanyBusFactorData();
@@ -85,8 +88,19 @@ export class FoundationHealthComponent {
   public readonly metricCards = this.initializeMetricCards();
   public readonly healthScoreDistribution = this.initializeHealthScoreDistribution();
 
+  public readonly activeDrawer = signal<DashboardDrawerType | null>(null);
+  protected readonly DashboardDrawerType = DashboardDrawerType;
+
   public handleFilterChange(filter: string): void {
     this.selectedFilter.set(filter);
+  }
+
+  public handleCardClick(drawerType: DashboardDrawerType): void {
+    this.activeDrawer.set(drawerType);
+  }
+
+  public handleDrawerClose(): void {
+    this.activeDrawer.set(null);
   }
 
   private initializeTotalProjectsCard() {

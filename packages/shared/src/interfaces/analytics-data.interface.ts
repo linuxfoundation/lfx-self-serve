@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { ProjectItem } from './components.interface';
+import type { ProjectTableRow } from './dashboard-metric.interface';
 
 /**
  * Active Weeks Streak row from Snowflake ACTIVE_WEEKS_STREAK table
@@ -2008,4 +2009,80 @@ export interface TrainingEnrollmentsResponse {
    * Project URL slug
    */
   projectSlug: string;
+}
+
+// ============================================
+// Foundation Total Projects Detail
+// ============================================
+
+/**
+ * Raw Snowflake row from PLATINUM.FOUNDATION_TOTAL_PROJECTS_DETAIL
+ */
+export interface FoundationProjectsDetailRow {
+  FOUNDATION_SEGMENT_ID: string;
+  FOUNDATION_NAME: string;
+  FOUNDATION_SLUG: string;
+  PROJECT_SEGMENT_ID: string;
+  PROJECT_NAME: string;
+  PROJECT_SLUG: string;
+  PROJECT_SOURCE_ID: string;
+  PROJECT_ID: string;
+  LIFECYCLE_STAGE: string | null;
+  PROJECT_START_DATE: string | null;
+  COMMITS_90D_COUNT: number;
+  CONTRIBUTORS_90D_COUNT: number;
+  COMMITS_YTD_COUNT: number;
+  CONTRIBUTORS_YTD_COUNT: number;
+  COMMITS_12M_COUNT: number;
+  CONTRIBUTORS_12M_COUNT: number;
+  MAINTAINERS_YTD_COUNT: number;
+  MAINTAINERS_12M_COUNT: number;
+  STARS_YTD_COUNT: number;
+  STARS_12M_COUNT: number;
+  LAST_UPDATED_TS: Date | string | null;
+}
+
+/**
+ * API response for foundation projects detail endpoint
+ */
+export interface FoundationProjectsDetailResponse {
+  projects: ProjectTableRow[];
+  totalCount: number;
+}
+
+// ============================================
+// Foundation Total Projects Monthly
+// ============================================
+
+/**
+ * Raw Snowflake row from ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_MONTHLY
+ */
+export interface FoundationTotalProjectsMonthlyRow {
+  FOUNDATION_SEGMENT_ID: string;
+  FOUNDATION_NAME: string;
+  FOUNDATION_SLUG: string;
+  MONTH_START: string | Date;
+  PROJECT_COUNT: number;
+}
+
+// ============================================
+// Foundation Projects Lifecycle Distribution
+// ============================================
+
+/**
+ * Raw Snowflake row from ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_LIFECYCLE_DISTRIBUTION
+ */
+export interface FoundationProjectsLifecycleDistributionRow {
+  FOUNDATION_SEGMENT_ID: string;
+  FOUNDATION_NAME: string;
+  FOUNDATION_SLUG: string;
+  LIFECYCLE_STAGE: string | null;
+  PROJECT_COUNT: number;
+}
+
+/**
+ * API response for foundation projects lifecycle distribution endpoint
+ */
+export interface FoundationProjectsLifecycleDistributionResponse {
+  distribution: { stage: string; count: number }[];
 }

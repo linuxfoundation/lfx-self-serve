@@ -13,6 +13,8 @@ import {
   FoundationMaintainersResponse,
   FoundationSoftwareValueResponse,
   FoundationTotalMembersResponse,
+  FoundationProjectsDetailResponse,
+  FoundationProjectsLifecycleDistributionResponse,
   FoundationTotalProjectsResponse,
   HealthEventsMonthlyResponse,
   HealthMetricsDailyResponse,
@@ -251,10 +253,33 @@ export class AnalyticsService {
   }
 
   /**
-   * Get total projects count for a foundation from Snowflake
-   * @param foundationSlug - Required foundation slug to filter projects (e.g., 'tlf', 'cncf')
-   * @returns Observable of foundation total projects response with cumulative monthly data
+   * Get per-project detail rows for the total projects drill-down drawer
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
    */
+  public getFoundationProjectsDetail(foundationSlug: string): Observable<FoundationProjectsDetailResponse> {
+    return this.http.get<FoundationProjectsDetailResponse>('/api/analytics/foundation-projects-detail', { params: { foundationSlug } }).pipe(
+      catchError((error) => {
+        console.error('Failed to fetch foundation projects detail:', error);
+        return of({ projects: [], totalCount: 0 });
+      })
+    );
+  }
+
+  /**
+   * Get lifecycle stage distribution for the total projects drill-down drawer
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
+   */
+  public getFoundationProjectsLifecycleDistribution(foundationSlug: string): Observable<FoundationProjectsLifecycleDistributionResponse> {
+    return this.http
+      .get<FoundationProjectsLifecycleDistributionResponse>('/api/analytics/foundation-projects-lifecycle-distribution', { params: { foundationSlug } })
+      .pipe(
+        catchError((error) => {
+          console.error('Failed to fetch foundation projects lifecycle distribution:', error);
+          return of({ distribution: [] });
+        })
+      );
+  }
+
   public getFoundationTotalProjects(foundationSlug: string): Observable<FoundationTotalProjectsResponse> {
     return this.http.get<FoundationTotalProjectsResponse>('/api/analytics/foundation-total-projects', { params: { foundationSlug } }).pipe(
       catchError((error) => {

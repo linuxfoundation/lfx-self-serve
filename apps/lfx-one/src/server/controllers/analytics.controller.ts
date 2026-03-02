@@ -15,9 +15,9 @@ import { getUsernameFromAuth } from '../utils/auth-helper';
  * Routes requests to appropriate domain services
  */
 export class AnalyticsController {
-  private userService: UserService;
-  private organizationService: OrganizationService;
-  private projectService: ProjectService;
+  private readonly userService: UserService;
+  private readonly organizationService: OrganizationService;
+  private readonly projectService: ProjectService;
 
   public constructor() {
     this.userService = new UserService();
@@ -596,6 +596,68 @@ export class AnalyticsController {
       res.json(response);
     } catch (error) {
       logger.error(req, 'get_foundation_total_projects', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/foundation-projects-detail
+   * Get per-project detail rows for the total projects drill-down drawer
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationProjectsDetail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_foundation_projects_detail');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_projects_detail',
+        });
+      }
+
+      const response = await this.projectService.getFoundationProjectsDetail(foundationSlug);
+
+      logger.success(req, 'get_foundation_projects_detail', startTime, {
+        foundation_slug: foundationSlug,
+        total_count: response.totalCount,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_foundation_projects_detail', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/foundation-projects-lifecycle-distribution
+   * Get lifecycle stage distribution for the total projects drill-down drawer
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationProjectsLifecycleDistribution(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_foundation_projects_lifecycle_distribution');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_projects_lifecycle_distribution',
+        });
+      }
+
+      const response = await this.projectService.getFoundationProjectsLifecycleDistribution(foundationSlug);
+
+      logger.success(req, 'get_foundation_projects_lifecycle_distribution', startTime, {
+        foundation_slug: foundationSlug,
+        stage_count: response.distribution.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_foundation_projects_lifecycle_distribution', startTime, error);
       next(error);
     }
   }
