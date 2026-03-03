@@ -1,0 +1,84 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="total-members-drawer">
+  <!-- Header -->
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full" data-testid="total-members-drawer-header">
+      <!-- Title + Subtitle -->
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="total-members-drawer-title">Total Members</h2>
+        <p class="text-sm text-gray-500">Board Member · Organization view</p>
+      </div>
+
+      <!-- Time Range Filter (disabled for board member organization view) -->
+      <div class="flex items-end">
+        <lfx-select
+          [form]="headerForm"
+          control="timeRange"
+          [options]="timeRangeOptions"
+          optionLabel="label"
+          optionValue="value"
+          styleClass="w-[180px]"
+          data-testid="total-members-drawer-time-range"></lfx-select>
+      </div>
+
+      <!-- Close Button -->
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
+        aria-label="Close panel"
+        data-testid="total-members-drawer-close">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <!-- Content -->
+  <div class="flex flex-col gap-6 pb-2" data-testid="total-members-drawer-content">
+    <!-- Member Organizations Chart Section -->
+    <div class="flex flex-col gap-3" data-testid="total-members-drawer-chart-section">
+      <!-- Section Header -->
+      <div class="flex items-center gap-2">
+        <h3 class="text-sm font-medium text-gray-900">Member Organizations</h3>
+        <div class="group relative">
+          <svg class="w-3.5 h-3.5 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" stroke-width="2" />
+            <path stroke-width="2" stroke-linecap="round" d="M12 16v-4m0-4h.01" />
+          </svg>
+          <div
+            class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10"
+            role="tooltip">
+            Total # of member organizations across the foundation per month
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      @if (hasData()) {
+        <div class="h-[280px]" data-testid="total-members-drawer-chart">
+          <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
+        </div>
+      } @else {
+        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="total-members-drawer-chart-empty">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No member data available for this foundation.</p>
+        </div>
+      }
+    </div>
+
+    <!-- Insights Handoff -->
+    <lfx-insights-handoff-section
+      title="Looking for detailed membership information?"
+      description="Member organization details, membership tiers, and historical membership data are available in LFX Insights."
+      link="https://insights.linuxfoundation.org"
+      data-testid="total-members-drawer-insights-handoff"></lfx-insights-handoff-section>
+  </div>
+</p-drawer>

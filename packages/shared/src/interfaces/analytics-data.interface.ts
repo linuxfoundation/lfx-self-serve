@@ -747,6 +747,47 @@ export interface FoundationTotalProjectsResponse {
 }
 
 /**
+ * Row from FOUNDATION_UNIQUE_CONTRIBUTORS_DAILY aggregated by month
+ */
+export interface FoundationActiveContributorsMonthlyRow {
+  MONTH_START: string;
+  MONTHLY_AVG_CONTRIBUTORS: number;
+}
+
+/**
+ * API response for foundation active contributors monthly trend
+ */
+export interface FoundationActiveContributorsMonthlyResponse {
+  monthlyData: number[];
+  monthlyLabels: string[];
+}
+
+/**
+ * Single percentile band row from FOUNDATION_CONTRIBUTORS_DISTRIBUTION
+ */
+export interface FoundationContributorsDistributionRow {
+  PERCENTILE_BAND: string;
+  CONTRIBUTOR_COUNT: number;
+  CONTRIBUTION_SHARE_PERCENTAGE: number;
+}
+
+/**
+ * Single percentile band entry in the distribution response
+ */
+export interface ContributorsDistributionBand {
+  band: string;
+  contributionSharePercentage: number;
+  contributorCount: number;
+}
+
+/**
+ * API response for foundation contributor distribution by percentile band
+ */
+export interface FoundationContributorsDistributionResponse {
+  distribution: ContributorsDistributionBand[];
+}
+
+/**
  * API response for foundation total members query
  * Contains cumulative monthly trend data for member organizations
  * Optimized response with aggregated member counts over time
@@ -912,6 +953,88 @@ export interface FoundationMaintainersResponse {
    * Array of date strings matching trendData
    */
   trendLabels: string[];
+}
+
+/**
+ * Foundation maintainers repository monthly row from Snowflake
+ * Raw response from FOUNDATION_MAINTAINERS_REPOSITORY_MONTHLY table (all_repos scope)
+ */
+export interface FoundationMaintainersMonthlyRow {
+  /**
+   * Month for which maintainer count is calculated (first day of month)
+   */
+  METRIC_MONTH: string;
+
+  /**
+   * Count of distinct maintainers active during this month
+   */
+  ACTIVE_MAINTAINERS: number;
+}
+
+/**
+ * Processed monthly maintainers response for the trend chart
+ */
+export interface FoundationMaintainersMonthlyResponse {
+  /**
+   * Monthly active maintainer counts for chart Y-axis
+   */
+  monthlyData: number[];
+
+  /**
+   * Short month labels for chart X-axis (e.g. 'Jan', 'Feb')
+   */
+  monthlyLabels: string[];
+}
+
+/**
+ * Foundation maintainers distribution row from Snowflake
+ * Raw response from FOUNDATION_MAINTAINERS_DISTRIBUTION table (all_repos scope, last_12_months)
+ */
+export interface FoundationMaintainersDistributionRow {
+  /**
+   * Percentile band: 'Top 10%', 'Next 40%', or 'Bottom 50%'
+   */
+  PERCENTILE_BAND: string;
+
+  /**
+   * Number of distinct maintainers in this band
+   */
+  MAINTAINER_COUNT: number;
+
+  /**
+   * Percentage of total contributions made by this band
+   */
+  CONTRIBUTION_SHARE_PCT: number;
+}
+
+/**
+ * Processed distribution band for the maintainers distribution chart
+ */
+export interface MaintainersDistributionBand {
+  /**
+   * Band label: 'Top 10%', 'Next 40%', or 'Bottom 50%'
+   */
+  band: string;
+
+  /**
+   * Contribution share percentage for chart Y-axis
+   */
+  contributionSharePct: number;
+
+  /**
+   * Maintainer count shown in tooltip
+   */
+  maintainerCount: number;
+}
+
+/**
+ * Processed distribution response for the maintainers distribution chart
+ */
+export interface FoundationMaintainersDistributionResponse {
+  /**
+   * Ordered array of distribution bands
+   */
+  distribution: MaintainersDistributionBand[];
 }
 
 /**
@@ -1188,14 +1311,14 @@ export interface FoundationUniqueContributorsDailyRow {
   DAILY_UNIQUE_CONTRIBUTORS: number;
 
   /**
-   * Average contributors (calculated aggregate)
+   * Average contributors per day over the last 12 months (constant across all rows for a foundation)
    */
-  AVG_CONTRIBUTORS: number;
+  AVG_CONTRIBUTORS_LAST_12_MONTHS: number;
 
   /**
-   * Total days with data
+   * Total days with contributor activity in the last 12 months period
    */
-  TOTAL_DAYS: number;
+  TOTAL_DAYS_LAST_12_MONTHS: number;
 }
 
 /**
@@ -1229,14 +1352,14 @@ export interface ProjectUniqueContributorsDailyRow {
   DAILY_UNIQUE_CONTRIBUTORS: number;
 
   /**
-   * Average contributors (calculated aggregate)
+   * Average contributors per day over the last 12 months (constant across all rows for a project)
    */
-  AVG_CONTRIBUTORS: number;
+  AVG_CONTRIBUTORS_LAST_12_MONTHS: number;
 
   /**
-   * Total days with data
+   * Total days with contributor activity in the last 12 months period
    */
-  TOTAL_DAYS: number;
+  TOTAL_DAYS_LAST_12_MONTHS: number;
 }
 
 /**
@@ -1351,6 +1474,78 @@ export interface HealthEventsMonthlyResponse {
    * Number of months with data
    */
   totalMonths: number;
+}
+
+/**
+ * Foundation health events quarterly row from Snowflake
+ * Raw response from FOUNDATION_HEALTH_EVENTS_QUARTERLY table
+ */
+export interface FoundationEventsQuarterlyRow {
+  /**
+   * First day of the quarter
+   */
+  QUARTER_START_DATE: string;
+
+  /**
+   * Count of events in the quarter
+   */
+  EVENT_COUNT: number;
+}
+
+/**
+ * Processed quarterly events response for the trend bar chart
+ */
+export interface FoundationEventsQuarterlyResponse {
+  /**
+   * Event counts per quarter for chart Y-axis
+   */
+  quarterlyData: number[];
+
+  /**
+   * Quarter labels for chart X-axis (e.g. "Q1 '25")
+   */
+  quarterlyLabels: string[];
+}
+
+/**
+ * Foundation health events attendance distribution row from Snowflake
+ * Raw response from FOUNDATION_HEALTH_EVENTS_ATTENDANCE_DISTRIBUTION table
+ */
+export interface FoundationEventsAttendanceDistributionRow {
+  /**
+   * Attendance size bucket: 'Large', 'Medium', or 'Small'
+   */
+  ATTENDANCE_SIZE_BUCKET: string;
+
+  /**
+   * Count of events in this bucket over the last 12 months
+   */
+  EVENT_COUNT_LAST_12_MONTHS: number;
+}
+
+/**
+ * Processed attendance bucket for the distribution bar chart
+ */
+export interface EventsAttendanceBucket {
+  /**
+   * Bucket key as stored in Snowflake: 'Large', 'Medium', or 'Small'
+   */
+  bucket: string;
+
+  /**
+   * Event count for chart Y-axis and tooltip
+   */
+  eventCount: number;
+}
+
+/**
+ * Processed attendance distribution response
+ */
+export interface FoundationEventsAttendanceDistributionResponse {
+  /**
+   * Ordered array of attendance buckets (Large → Medium → Small)
+   */
+  distribution: EventsAttendanceBucket[];
 }
 
 /**

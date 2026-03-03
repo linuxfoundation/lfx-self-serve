@@ -7,6 +7,7 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { ChartComponent } from '@components/chart/chart.component';
+import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -44,6 +45,7 @@ import type {
     ReactiveFormsModule,
     DecimalPipe,
     NgClass,
+    InsightsHandoffSectionComponent,
   ],
   templateUrl: './total-projects-drawer.component.html',
 })

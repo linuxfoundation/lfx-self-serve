@@ -42,7 +42,7 @@
   </ng-template>
 
   <!-- Content -->
-  <div class="flex flex-col gap-6" data-testid="total-projects-drawer-content">
+  <div class="flex flex-col gap-6 pb-2" data-testid="total-projects-drawer-content">
     <!-- Primary Section -->
     <div class="flex flex-col gap-3" data-testid="total-projects-drawer-primary">
       <!-- Section Header -->
@@ -218,5 +218,12 @@
         </div>
       }
     </div>
+
+    <!-- Insights Handoff -->
+    <lfx-insights-handoff-section
+      title="Looking for detailed project metrics?"
+      description="Project-level activity history, contribution patterns, and individual project analytics are available in LFX Insights."
+      link="https://insights.linuxfoundation.org"
+      data-testid="total-projects-drawer-insights-handoff"></lfx-insights-handoff-section>
   </div>
 </p-drawer>

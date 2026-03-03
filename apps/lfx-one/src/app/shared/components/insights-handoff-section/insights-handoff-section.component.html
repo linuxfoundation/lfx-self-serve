@@ -1,0 +1,27 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex items-start gap-3 rounded-lg border border-gray-100 p-4" data-testid="insights-handoff-section">
+  <!-- Icon -->
+  <div class="flex-shrink-0 mt-0.5">
+    <i class="fa-light fa-chart-mixed text-blue-500 text-base"></i>
+  </div>
+
+  <!-- Content -->
+  <div class="flex flex-col gap-3 flex-1">
+    <div class="flex flex-col gap-1">
+      <p class="text-sm font-semibold text-gray-900">{{ title() }}</p>
+      <p class="text-sm text-gray-600">{{ description() }}</p>
+    </div>
+    <lfx-button
+      label="Open in LFX Insights"
+      severity="primary"
+      icon="fa-light fa-arrow-up-right-from-square"
+      iconPos="right"
+      [href]="link()"
+      target="_blank"
+      rel="noopener noreferrer"
+      size="small"
+      data-testid="insights-handoff-section-link"></lfx-button>
+  </div>
+</div>

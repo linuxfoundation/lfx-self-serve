@@ -695,6 +695,68 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/foundation-active-contributors-monthly
+   * Get monthly average active contributors for a foundation (last 12 months)
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationActiveContributorsMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_foundation_active_contributors_monthly');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_active_contributors_monthly',
+        });
+      }
+
+      const response = await this.projectService.getFoundationActiveContributorsMonthly(foundationSlug);
+
+      logger.success(req, 'get_foundation_active_contributors_monthly', startTime, {
+        foundation_slug: foundationSlug,
+        monthly_data_points: response.monthlyData.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_foundation_active_contributors_monthly', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/foundation-contributors-distribution
+   * Get contributor distribution by percentile band for a foundation
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationContributorsDistribution(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_foundation_contributors_distribution');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_contributors_distribution',
+        });
+      }
+
+      const response = await this.projectService.getFoundationContributorsDistribution(foundationSlug);
+
+      logger.success(req, 'get_foundation_contributors_distribution', startTime, {
+        foundation_slug: foundationSlug,
+        band_count: response.distribution.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_foundation_contributors_distribution', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/foundation-software-value
    * Get foundation software value and top projects from Snowflake
    * Query params: foundationSlug (required)
@@ -754,6 +816,130 @@ export class AnalyticsController {
       res.json(response);
     } catch (error) {
       logger.error(req, 'get_foundation_maintainers', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/foundation-maintainers-monthly
+   * Get monthly maintainer counts for a foundation (last 12 months, all repos)
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationMaintainersMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_foundation_maintainers_monthly');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_maintainers_monthly',
+        });
+      }
+
+      const response = await this.projectService.getFoundationMaintainersMonthly(foundationSlug);
+
+      logger.success(req, 'get_foundation_maintainers_monthly', startTime, {
+        foundation_slug: foundationSlug,
+        month_count: response.monthlyData.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_foundation_maintainers_monthly', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/foundation-maintainers-distribution
+   * Get maintainer contribution distribution by percentile band for a foundation
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationMaintainersDistribution(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_foundation_maintainers_distribution');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_maintainers_distribution',
+        });
+      }
+
+      const response = await this.projectService.getFoundationMaintainersDistribution(foundationSlug);
+
+      logger.success(req, 'get_foundation_maintainers_distribution', startTime, {
+        foundation_slug: foundationSlug,
+        band_count: response.distribution.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_foundation_maintainers_distribution', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/foundation-events-quarterly
+   * Get quarterly event counts for a foundation (last 8 quarters)
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationEventsQuarterly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_foundation_events_quarterly');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_events_quarterly',
+        });
+      }
+
+      const response = await this.projectService.getFoundationEventsQuarterly(foundationSlug);
+
+      logger.success(req, 'get_foundation_events_quarterly', startTime, {
+        foundation_slug: foundationSlug,
+        quarter_count: response.quarterlyData.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_foundation_events_quarterly', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/foundation-events-attendance-distribution
+   * Get event distribution by attendance size bucket for a foundation
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationEventsAttendanceDistribution(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_foundation_events_attendance_distribution');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_events_attendance_distribution',
+        });
+      }
+
+      const response = await this.projectService.getFoundationEventsAttendanceDistribution(foundationSlug);
+
+      logger.success(req, 'get_foundation_events_attendance_distribution', startTime, {
+        foundation_slug: foundationSlug,
+        bucket_count: response.distribution.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_foundation_events_attendance_distribution', startTime, error);
       next(error);
     }
   }

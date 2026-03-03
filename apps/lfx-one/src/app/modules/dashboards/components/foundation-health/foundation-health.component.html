@@ -211,3 +211,25 @@
   [visible]="activeDrawer() === DashboardDrawerType.TotalProjects"
   (visibleChange)="handleDrawerClose()"
   [data]="totalProjectsData()"></lfx-total-projects-drawer>
+
+<lfx-total-members-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.TotalMembers"
+  (visibleChange)="handleDrawerClose()"
+  [data]="totalMembersData()"></lfx-total-members-drawer>
+
+<lfx-active-contributors-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.ActiveContributors"
+  (visibleChange)="handleDrawerClose()"
+  [data]="activeContributorsData()"></lfx-active-contributors-drawer>
+
+<lfx-maintainers-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.Maintainers"
+  (visibleChange)="handleDrawerClose()"
+  [data]="maintainersData()"></lfx-maintainers-drawer>
+
+<lfx-events-drawer [visible]="activeDrawer() === DashboardDrawerType.Events" (visibleChange)="handleDrawerClose()" [data]="eventsData()"></lfx-events-drawer>
+
+<lfx-project-health-scores-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.ProjectHealthScores"
+  (visibleChange)="handleDrawerClose()"
+  [data]="healthScoresData()"></lfx-project-health-scores-drawer>

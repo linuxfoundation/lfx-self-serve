@@ -51,11 +51,29 @@ router.get('/foundation-total-projects', (req, res, next) => analyticsController
 // Foundation total members endpoint
 router.get('/foundation-total-members', (req, res, next) => analyticsController.getFoundationTotalMembers(req, res, next));
 
+// Foundation active contributors monthly endpoint (active contributors drill-down)
+router.get('/foundation-active-contributors-monthly', (req, res, next) => analyticsController.getFoundationActiveContributorsMonthly(req, res, next));
+
+// Foundation contributors distribution endpoint (active contributors drill-down)
+router.get('/foundation-contributors-distribution', (req, res, next) => analyticsController.getFoundationContributorsDistribution(req, res, next));
+
 // Foundation software value endpoint
 router.get('/foundation-software-value', (req, res, next) => analyticsController.getFoundationSoftwareValue(req, res, next));
 
 // Foundation maintainers endpoint
 router.get('/foundation-maintainers', (req, res, next) => analyticsController.getFoundationMaintainers(req, res, next));
+
+// Foundation maintainers monthly endpoint (maintainers drill-down trend chart)
+router.get('/foundation-maintainers-monthly', (req, res, next) => analyticsController.getFoundationMaintainersMonthly(req, res, next));
+
+// Foundation maintainers distribution endpoint (maintainers drill-down bar chart)
+router.get('/foundation-maintainers-distribution', (req, res, next) => analyticsController.getFoundationMaintainersDistribution(req, res, next));
+
+// Foundation events quarterly endpoint (events drill-down trend chart)
+router.get('/foundation-events-quarterly', (req, res, next) => analyticsController.getFoundationEventsQuarterly(req, res, next));
+
+// Foundation events attendance distribution endpoint (events drill-down bar chart)
+router.get('/foundation-events-attendance-distribution', (req, res, next) => analyticsController.getFoundationEventsAttendanceDistribution(req, res, next));
 
 // Foundation projects detail endpoint (total projects drill-down table)
 router.get('/foundation-projects-detail', (req, res, next) => analyticsController.getFoundationProjectsDetail(req, res, next));

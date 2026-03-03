@@ -179,6 +179,11 @@ export interface TopProjectByValue {
 /** Identifies which drill-down drawer to open from a metric card */
 export enum DashboardDrawerType {
   TotalProjects = 'total-projects',
+  TotalMembers = 'total-members',
+  ActiveContributors = 'active-contributors',
+  Maintainers = 'maintainers',
+  Events = 'events',
+  ProjectHealthScores = 'project-health-scores',
 }
 
 /** Lifecycle stage of a foundation project */
