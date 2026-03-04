@@ -10,7 +10,7 @@
         <lfx-input-text
           [form]="searchForm()"
           control="search"
-          placeholder="Search committees..."
+          [placeholder]="'Search ' + committeeLabel().toLowerCase() + 's...'"
           icon="fa-light fa-search"
           styleClass="w-full"
           size="small"
@@ -89,7 +89,13 @@
           <lfx-tag [value]="category" [severity]="category | committeeCategorySeverity"></lfx-tag>
         </td>
         <td class="min-w-[300px]">
-          <div class="max-w-[300px] line-clamp-2 text-xs">{{ committee.description || '-' }}</div>
+          <div class="max-w-[300px] line-clamp-2 text-xs">
+            @if (committee.description) {
+              {{ committee.description }}
+            } @else {
+              <span class="text-gray-400 italic">No description provided</span>
+            }
+          </div>
         </td>
         <td>
           <a [routerLink]="['/groups', committee.uid]">
@@ -98,7 +104,9 @@
         </td>
         <td>
           @if (committee.enable_voting) {
-            <i class="fa-light fa-check w-4 h-4 text-emerald-600"></i>
+            <i class="fa-light fa-check w-4 h-4 text-emerald-600" pTooltip="Voting enabled" tooltipPosition="top"></i>
+          } @else {
+            <span class="text-gray-400 text-xs">—</span>
           }
         </td>
         <td>{{ committee.updated_at | date: 'MMM d, y' }}</td>
