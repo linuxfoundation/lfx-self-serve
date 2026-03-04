@@ -100,7 +100,7 @@
               </lfx-metric-card>
             }
 
-            <!-- Company Bus Factor - Custom content -->
+            <!-- Organization Dependency - Custom content -->
             @case ('bus-factor') {
               <lfx-metric-card
                 [title]="card.title"
@@ -118,12 +118,12 @@
                       <div class="flex gap-0">
                         <div [style.width.%]="card.busFactor.topCompaniesPercentage" class="flex flex-col gap-1">
                           <div class="text-xs font-medium text-gray-700">
-                            {{ card.busFactor.topCompaniesCount }} Companies ({{ card.busFactor.topCompaniesPercentage }}%)
+                            {{ card.busFactor.topCompaniesCount }} Orgs ({{ card.busFactor.topCompaniesPercentage }}%)
                           </div>
                           <div class="h-4 rounded-l-sm bg-blue-500"></div>
                         </div>
                         <div [style.width.%]="card.busFactor.otherCompaniesPercentage" class="flex flex-col gap-1">
-                          <div class="text-xs text-gray-600 text-right">{{ card.busFactor.otherCompaniesCount }} Other Companies</div>
+                          <div class="text-xs text-gray-600 text-right">{{ card.busFactor.otherCompaniesCount }} Other Orgs</div>
                           <div class="h-4 bg-blue-200 rounded-r-sm"></div>
                         </div>
                       </div>
@@ -207,6 +207,11 @@
 </section>
 
 <!-- Drill-Down Drawers -->
+<lfx-total-value-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.TotalValueOfProjects"
+  (visibleChange)="handleDrawerClose()"
+  [summaryData]="softwareValueData()"></lfx-total-value-drawer>
+
 <lfx-total-projects-drawer
   [visible]="activeDrawer() === DashboardDrawerType.TotalProjects"
   (visibleChange)="handleDrawerClose()"
@@ -233,3 +238,8 @@
   [visible]="activeDrawer() === DashboardDrawerType.ProjectHealthScores"
   (visibleChange)="handleDrawerClose()"
   [data]="healthScoresData()"></lfx-project-health-scores-drawer>
+
+<lfx-org-dependency-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.OrganizationDependency"
+  (visibleChange)="handleDrawerClose()"
+  [summaryData]="companyBusFactorData()"></lfx-org-dependency-drawer>

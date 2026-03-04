@@ -12,7 +12,7 @@ import { hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, filter, forkJoin, of, switchMap, tap } from 'rxjs';
+import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
@@ -149,9 +149,13 @@ export class MaintainersDrawerComponent {
     const defaultValue = { monthly: DEFAULT_FOUNDATION_MAINTAINERS_MONTHLY, distribution: DEFAULT_FOUNDATION_MAINTAINERS_DISTRIBUTION };
     return toSignal(
       toObservable(this.visible).pipe(
-        filter(Boolean),
-        tap(() => this.drawerLoading.set(true)),
-        switchMap(() => {
+        skip(1),
+        switchMap((isVisible) => {
+          if (!isVisible) {
+            this.drawerLoading.set(false);
+            return of(defaultValue);
+          }
+          this.drawerLoading.set(true);
           const slug = this.projectContextService.selectedFoundation()?.slug ?? '';
           if (!slug) {
             this.drawerLoading.set(false);
@@ -205,7 +209,7 @@ export class MaintainersDrawerComponent {
             data: distribution.map((d) => d.contributionSharePct),
             backgroundColor: distribution.map((d) => bandColors[d.band] ?? lfxColors.gray[400]),
             borderRadius: 4,
-            borderSkipped: false,
+            borderSkipped: 'start',
           },
         ],
       };

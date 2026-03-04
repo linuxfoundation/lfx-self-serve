@@ -178,12 +178,20 @@ export interface TopProjectByValue {
 
 /** Identifies which drill-down drawer to open from a metric card */
 export enum DashboardDrawerType {
+  TotalValueOfProjects = 'total-value-of-projects',
   TotalProjects = 'total-projects',
   TotalMembers = 'total-members',
   ActiveContributors = 'active-contributors',
   Maintainers = 'maintainers',
   Events = 'events',
   ProjectHealthScores = 'project-health-scores',
+  OrganizationDependency = 'organization-dependency',
+  OrgActiveContributors = 'org-active-contributors',
+  OrgMaintainers = 'org-maintainers',
+  OrgEventAttendees = 'org-event-attendees',
+  OrgEventSpeakers = 'org-event-speakers',
+  OrgTrainingEnrollments = 'org-training-enrollments',
+  OrgCertifiedEmployees = 'org-certified-employees',
 }
 
 /** Lifecycle stage of a foundation project */

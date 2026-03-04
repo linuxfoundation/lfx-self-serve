@@ -27,6 +27,8 @@ import {
   FoundationProjectsLifecycleDistributionRow,
   LifecycleStage,
   FoundationSoftwareValueResponse,
+  FoundationValueConcentrationResponse,
+  FoundationValueConcentrationRow,
   FoundationTotalProjectsMonthlyRow,
   FoundationTopProjectBySoftwareValueRow,
   FoundationTotalMembersResponse,
@@ -1075,6 +1077,65 @@ export class ProjectService {
     return {
       totalValue,
       topProjects,
+    };
+  }
+
+  /**
+   * Get foundation value concentration data from Snowflake
+   * Queries FOUNDATION_VALUE_CONCENTRATION table
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Value concentration response with total value and per-bucket breakdowns in millions
+   */
+  public async getFoundationValueConcentration(foundationSlug: string): Promise<FoundationValueConcentrationResponse> {
+    logger.debug(undefined, 'get_foundation_value_concentration', 'Fetching foundation value concentration', { foundationSlug });
+
+    const query = `
+      SELECT
+        FOUNDATION_ID,
+        FOUNDATION_SLUG,
+        TOTAL_VALUE,
+        TOTAL_PROJECTS_COUNT,
+        LAST_METRIC_DATE,
+        TOP_1_VALUE,
+        TOP_3_VALUE,
+        TOP_5_VALUE,
+        ALL_OTHER_VALUE,
+        TOP_1_PROJECTS_COUNT,
+        TOP_3_PROJECTS_COUNT,
+        TOP_5_PROJECTS_COUNT,
+        ALL_OTHER_PROJECTS_COUNT,
+        TOP_1_PERCENTAGE,
+        TOP_3_PERCENTAGE,
+        TOP_5_PERCENTAGE,
+        ALL_OTHER_PERCENTAGE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_VALUE_CONCENTRATION
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY LAST_METRIC_DATE DESC
+      LIMIT 1
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationValueConcentrationRow>(query, [foundationSlug]);
+
+    if (result.rows.length === 0) {
+      throw new ResourceNotFoundError('Foundation value concentration data', foundationSlug, {
+        operation: 'get_foundation_value_concentration',
+      });
+    }
+
+    const row = result.rows[0];
+    const toMillions = (v: number): number => v / 1_000_000;
+
+    return {
+      totalValue: toMillions(row.TOTAL_VALUE),
+      top1Value: toMillions(row.TOP_1_VALUE),
+      top3Value: toMillions(row.TOP_3_VALUE),
+      top5Value: toMillions(row.TOP_5_VALUE),
+      allOtherValue: toMillions(row.ALL_OTHER_VALUE),
+      totalProjectsCount: row.TOTAL_PROJECTS_COUNT,
+      top1Percentage: row.TOP_1_PERCENTAGE,
+      top3Percentage: row.TOP_3_PERCENTAGE,
+      top5Percentage: row.TOP_5_PERCENTAGE,
+      allOtherPercentage: row.ALL_OTHER_PERCENTAGE,
     };
   }
 

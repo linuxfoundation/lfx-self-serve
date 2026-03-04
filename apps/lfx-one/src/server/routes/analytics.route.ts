@@ -60,6 +60,9 @@ router.get('/foundation-contributors-distribution', (req, res, next) => analytic
 // Foundation software value endpoint
 router.get('/foundation-software-value', (req, res, next) => analyticsController.getFoundationSoftwareValue(req, res, next));
 
+// Foundation value concentration endpoint
+router.get('/foundation-value-concentration', (req, res, next) => analyticsController.getFoundationValueConcentration(req, res, next));
+
 // Foundation maintainers endpoint
 router.get('/foundation-maintainers', (req, res, next) => analyticsController.getFoundationMaintainers(req, res, next));
 
@@ -98,5 +101,34 @@ router.get('/health-events-monthly', (req, res, next) => analyticsController.get
 
 // Code commits daily endpoint
 router.get('/code-commits-daily', (req, res, next) => analyticsController.getCodeCommitsDaily(req, res, next));
+
+// Org active contributors monthly trend endpoint (org involvement drawer)
+router.get('/org-contributors-monthly', (req, res, next) => analyticsController.getOrgContributorsMonthly(req, res, next));
+
+// Org active contributors project distribution endpoint (org involvement drawer)
+router.get('/org-contributors-project-distribution', (req, res, next) => analyticsController.getOrgContributorsProjectDistribution(req, res, next));
+
+// Org maintainers monthly trend endpoint (org maintainers drawer)
+router.get('/org-maintainers-monthly', (req, res, next) => analyticsController.getOrgMaintainersMonthly(req, res, next));
+
+// Org maintainers distribution endpoint (org maintainers drawer)
+router.get('/org-maintainers-distribution', (req, res, next) => analyticsController.getOrgMaintainersDistribution(req, res, next));
+
+// Org maintainers key members endpoint (org maintainers drawer)
+router.get('/org-maintainers-key-members', (req, res, next) => analyticsController.getOrgMaintainersKeyMembers(req, res, next));
+
+// Org event attendees monthly endpoint (org event attendees drawer)
+router.get('/org-event-attendees-monthly', (req, res, next) => analyticsController.getOrgEventAttendeesMonthly(req, res, next));
+
+// Org event speakers monthly endpoint (org event speakers drawer)
+router.get('/org-event-speakers-monthly', (req, res, next) => analyticsController.getOrgEventSpeakersMonthly(req, res, next));
+
+// Org training enrollments endpoints (org training enrollments drawer)
+router.get('/org-training-enrollments-monthly', (req, res, next) => analyticsController.getOrgTrainingEnrollmentsMonthly(req, res, next));
+router.get('/org-training-enrollments-distribution', (req, res, next) => analyticsController.getOrgTrainingEnrollmentsDistribution(req, res, next));
+
+// Org certified employees endpoints (org certified employees drawer)
+router.get('/org-certified-employees-monthly', (req, res, next) => analyticsController.getOrgCertifiedEmployeesMonthly(req, res, next));
+router.get('/org-certified-employees-distribution', (req, res, next) => analyticsController.getOrgCertifiedEmployeesDistribution(req, res, next));
 
 export default router;

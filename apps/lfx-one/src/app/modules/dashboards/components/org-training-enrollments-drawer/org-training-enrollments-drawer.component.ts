@@ -1,40 +1,42 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, model, signal, Signal } from '@angular/core';
+import { Component, computed, inject, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
 import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
-import { SelectComponent } from '@components/select/select.component';
-import { DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY, DEFAULT_FOUNDATION_CONTRIBUTORS_DISTRIBUTION, lfxColors } from '@lfx-one/shared/constants';
-import { hexToRgba } from '@lfx-one/shared/utils';
+import { lfxColors } from '@lfx-one/shared/constants';
+import { hexToRgba, wrapLabel } from '@lfx-one/shared/utils';
+import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type {
-  FoundationActiveContributorsMonthlyResponse,
-  FoundationContributorsDistributionResponse,
-  UniqueContributorsDailyResponse,
-} from '@lfx-one/shared/interfaces';
+import type { OrgTrainingEnrollmentsDistributionResponse, OrgTrainingEnrollmentsMonthlyResponse } from '@lfx-one/shared/interfaces';
+
+const DEFAULT_MONTHLY: OrgTrainingEnrollmentsMonthlyResponse = { monthlyData: [], monthlyLabels: [], totalEnrollments: 0 };
+const DEFAULT_DISTRIBUTION: OrgTrainingEnrollmentsDistributionResponse = { projects: [] };
 
 @Component({
-  selector: 'lfx-active-contributors-drawer',
-  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, InsightsHandoffSectionComponent],
-  templateUrl: './active-contributors-drawer.component.html',
+  selector: 'lfx-org-training-enrollments-drawer',
+  imports: [DrawerModule, ChartComponent, InsightsHandoffSectionComponent],
+  templateUrl: './org-training-enrollments-drawer.component.html',
 })
-export class ActiveContributorsDrawerComponent {
+export class OrgTrainingEnrollmentsDrawerComponent {
   // === Services ===
+  private readonly accountContextService = inject(AccountContextService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly analyticsService = inject(AnalyticsService);
-  private readonly fb = inject(FormBuilder);
 
-  // === Static Options ===
-  protected readonly timeRangeOptions = [{ label: 'Last 12 months', value: 'last-12-months' }];
+  // === Model Signals (two-way binding) ===
+  public readonly visible = model<boolean>(false);
 
+  // === WritableSignals ===
+  protected readonly drawerLoading = signal(false);
+
+  // === Chart Options ===
   protected readonly trendChartOptions: ChartOptions<'line'> = {
     responsive: true,
     maintainAspectRatio: false,
@@ -50,7 +52,7 @@ export class ActiveContributorsDrawerComponent {
         padding: 10,
         cornerRadius: 6,
         callbacks: {
-          label: (ctx) => ` ${(ctx.parsed.y as number).toLocaleString()} contributors`,
+          label: (ctx) => ` ${(ctx.parsed.y as number).toLocaleString()} enrollments`,
         },
       },
     },
@@ -58,13 +60,13 @@ export class ActiveContributorsDrawerComponent {
       x: {
         display: true,
         grid: { display: false },
-        border: { display: false },
+        border: { display: true, color: lfxColors.gray[400], width: 1 },
         ticks: { color: lfxColors.gray[500], font: { size: 12 }, maxRotation: 0 },
       },
       y: {
         display: true,
         grid: { color: lfxColors.gray[200], lineWidth: 1 },
-        border: { display: false, dash: [3, 3] },
+        border: { display: true, color: lfxColors.gray[400], width: 1, dash: [3, 3] },
         ticks: { color: lfxColors.gray[500], font: { size: 12 }, callback: (v) => (v as number).toLocaleString() },
         beginAtZero: true,
       },
@@ -86,11 +88,7 @@ export class ActiveContributorsDrawerComponent {
         padding: 10,
         cornerRadius: 6,
         callbacks: {
-          label: (ctx) => ` Share: ${(ctx.parsed.y as number).toFixed(1)}%`,
-          afterLabel: (ctx) => {
-            const band = this.distributionData().distribution[ctx.dataIndex];
-            return band ? ` ${band.contributorCount.toLocaleString()} contributors` : '';
-          },
+          label: (ctx) => ` ${(ctx.parsed.y as number).toLocaleString()} enrollments`,
         },
       },
     },
@@ -99,42 +97,25 @@ export class ActiveContributorsDrawerComponent {
         display: true,
         grid: { display: false },
         border: { display: true, color: lfxColors.gray[400], width: 1 },
-        ticks: { color: lfxColors.gray[500], font: { size: 12 }, padding: 4 },
+        ticks: { color: lfxColors.gray[500], font: { size: 12 }, padding: 4, maxRotation: 0, minRotation: 0 },
       },
       y: {
         display: true,
-        title: { display: true, text: 'Contribution Share', color: lfxColors.gray[500], font: { size: 11 } },
         grid: { color: lfxColors.gray[200], lineWidth: 1 },
         border: { display: true, color: lfxColors.gray[400], width: 1, dash: [3, 3] },
-        ticks: { color: lfxColors.gray[500], font: { size: 12 }, padding: 4, callback: (v) => `${v}%` },
+        ticks: { color: lfxColors.gray[500], font: { size: 12 }, padding: 4, callback: (v) => (v as number).toLocaleString() },
+        beginAtZero: true,
       },
     },
-    datasets: { bar: { barPercentage: 0.6, categoryPercentage: 0.7 } },
+    datasets: { bar: { barPercentage: 0.6, categoryPercentage: 0.7, borderRadius: 4, borderSkipped: 'start' } },
   };
 
-  // === Forms ===
-  protected readonly headerForm: FormGroup = this.fb.group({
-    timeRange: [{ value: 'last-12-months', disabled: true }],
-  });
-
-  // === Inputs ===
-  public readonly data = input<UniqueContributorsDailyResponse>({ data: [], avgContributors: 0, totalDays: 0 });
-
-  // === Model Signals (two-way binding) ===
-  public readonly visible = model<boolean>(false);
-
-  // === WritableSignals ===
-  protected readonly drawerLoading = signal(false);
-
   // === Computed Signals ===
-  protected readonly metricValue: Signal<string> = computed(() => this.data().avgContributors.toLocaleString());
-  protected readonly hasData: Signal<boolean> = computed(() => this.data().avgContributors > 0);
-
   private readonly drawerData = this.initDrawerData();
-  protected readonly monthlyTrendData: Signal<FoundationActiveContributorsMonthlyResponse> = computed(() => this.drawerData().monthly);
-  protected readonly distributionData: Signal<FoundationContributorsDistributionResponse> = computed(() => this.drawerData().distribution);
-  protected readonly hasTrendData: Signal<boolean> = computed(() => this.monthlyTrendData().monthlyData.length > 0);
-  protected readonly hasDistributionData: Signal<boolean> = computed(() => this.distributionData().distribution.length > 0);
+  protected readonly monthlyData: Signal<OrgTrainingEnrollmentsMonthlyResponse> = computed(() => this.drawerData().monthly);
+  protected readonly distributionData: Signal<OrgTrainingEnrollmentsDistributionResponse> = computed(() => this.drawerData().distribution);
+  protected readonly hasTrendData: Signal<boolean> = computed(() => this.monthlyData().monthlyData.length > 0);
+  protected readonly hasDistributionData: Signal<boolean> = computed(() => this.distributionData().projects.length > 0);
 
   protected readonly trendChartData: Signal<ChartData<'line'>> = this.initTrendChartData();
   protected readonly distributionChartData: Signal<ChartData<'bar'>> = this.initDistributionChartData();
@@ -145,8 +126,8 @@ export class ActiveContributorsDrawerComponent {
   }
 
   // === Private Initializers ===
-  private initDrawerData(): Signal<{ monthly: FoundationActiveContributorsMonthlyResponse; distribution: FoundationContributorsDistributionResponse }> {
-    const defaultValue = { monthly: DEFAULT_FOUNDATION_ACTIVE_CONTRIBUTORS_MONTHLY, distribution: DEFAULT_FOUNDATION_CONTRIBUTORS_DISTRIBUTION };
+  private initDrawerData(): Signal<{ monthly: OrgTrainingEnrollmentsMonthlyResponse; distribution: OrgTrainingEnrollmentsDistributionResponse }> {
+    const defaultValue = { monthly: DEFAULT_MONTHLY, distribution: DEFAULT_DISTRIBUTION };
     return toSignal(
       toObservable(this.visible).pipe(
         skip(1),
@@ -156,14 +137,17 @@ export class ActiveContributorsDrawerComponent {
             return of(defaultValue);
           }
           this.drawerLoading.set(true);
-          const slug = this.projectContextService.selectedFoundation()?.slug ?? '';
-          if (!slug) {
+          const accountId = this.accountContextService.selectedAccount().accountId;
+          const foundationSlug = this.projectContextService.selectedFoundation()?.slug ?? '';
+
+          if (!accountId || !foundationSlug) {
             this.drawerLoading.set(false);
             return of(defaultValue);
           }
+
           return forkJoin({
-            monthly: this.analyticsService.getFoundationActiveContributorsMonthly(slug),
-            distribution: this.analyticsService.getFoundationContributorsDistribution(slug),
+            monthly: this.analyticsService.getOrgTrainingEnrollmentsMonthly(accountId, foundationSlug),
+            distribution: this.analyticsService.getOrgTrainingEnrollmentsDistribution(accountId, foundationSlug),
           }).pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
@@ -179,7 +163,7 @@ export class ActiveContributorsDrawerComponent {
 
   private initTrendChartData(): Signal<ChartData<'line'>> {
     return computed(() => {
-      const { monthlyData, monthlyLabels } = this.monthlyTrendData();
+      const { monthlyData, monthlyLabels } = this.monthlyData();
       return {
         labels: monthlyLabels,
         datasets: [
@@ -196,20 +180,13 @@ export class ActiveContributorsDrawerComponent {
 
   private initDistributionChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
-      const { distribution } = this.distributionData();
-      const bandColors: Record<string, string> = {
-        'Top 10%': '#475569',
-        'Next 40%': '#64748b',
-        'Bottom 50%': '#94a3b8',
-      };
+      const { projects } = this.distributionData();
       return {
-        labels: distribution.map((d) => `${d.band} contributors`),
+        labels: projects.map((p) => wrapLabel(p.projectBucket, 14)),
         datasets: [
           {
-            data: distribution.map((d) => d.contributionSharePercentage),
-            backgroundColor: distribution.map((d) => bandColors[d.band] ?? lfxColors.gray[400]),
-            borderRadius: 4,
-            borderSkipped: 'start',
+            data: projects.map((p) => p.enrollmentCount),
+            backgroundColor: lfxColors.blue[500],
           },
         ],
       };

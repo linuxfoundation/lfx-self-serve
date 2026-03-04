@@ -11,7 +11,7 @@ import { DEFAULT_FOUNDATION_EVENTS_ATTENDANCE_DISTRIBUTION, DEFAULT_FOUNDATION_E
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
-import { catchError, filter, forkJoin, of, switchMap, tap } from 'rxjs';
+import { catchError, forkJoin, of, skip, switchMap, tap } from 'rxjs';
 
 import type { ChartData, ChartOptions } from 'chart.js';
 import type {
@@ -153,9 +153,13 @@ export class EventsDrawerComponent {
     const defaultValue = { quarterly: DEFAULT_FOUNDATION_EVENTS_QUARTERLY, attendance: DEFAULT_FOUNDATION_EVENTS_ATTENDANCE_DISTRIBUTION };
     return toSignal(
       toObservable(this.visible).pipe(
-        filter(Boolean),
-        tap(() => this.drawerLoading.set(true)),
-        switchMap(() => {
+        skip(1),
+        switchMap((isVisible) => {
+          if (!isVisible) {
+            this.drawerLoading.set(false);
+            return of(defaultValue);
+          }
+          this.drawerLoading.set(true);
           const slug = this.projectContextService.selectedFoundation()?.slug ?? '';
           if (!slug) {
             this.drawerLoading.set(false);
@@ -187,7 +191,7 @@ export class EventsDrawerComponent {
             data: quarterlyData,
             backgroundColor: lfxColors.blue[400],
             borderRadius: 3,
-            borderSkipped: false,
+            borderSkipped: 'start',
           },
         ],
       };
@@ -214,7 +218,7 @@ export class EventsDrawerComponent {
             data: distribution.map((d) => d.eventCount),
             backgroundColor: distribution.map((d) => bucketColors[d.bucket] ?? lfxColors.gray[400]),
             borderRadius: 3,
-            borderSkipped: false,
+            borderSkipped: 'start',
           },
         ],
       };

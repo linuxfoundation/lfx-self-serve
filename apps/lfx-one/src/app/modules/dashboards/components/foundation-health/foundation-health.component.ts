@@ -7,6 +7,7 @@ import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-c
 import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import { BASE_BAR_CHART_OPTIONS, BASE_LINE_CHART_OPTIONS, lfxColors, PRIMARY_FOUNDATION_HEALTH_METRICS } from '@lfx-one/shared/constants';
+import { DashboardDrawerType } from '@lfx-one/shared/interfaces';
 import { hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -16,17 +17,18 @@ import { catchError, map, of, switchMap, tap } from 'rxjs';
 import { ActiveContributorsDrawerComponent } from '../active-contributors-drawer/active-contributors-drawer.component';
 import { EventsDrawerComponent } from '../events-drawer/events-drawer.component';
 import { MaintainersDrawerComponent } from '../maintainers-drawer/maintainers-drawer.component';
+import { OrgDependencyDrawerComponent } from '../org-dependency-drawer/org-dependency-drawer.component';
 import { ProjectHealthScoresDrawerComponent } from '../project-health-scores-drawer/project-health-scores-drawer.component';
 import { TotalMembersDrawerComponent } from '../total-members-drawer/total-members-drawer.component';
 import { TotalProjectsDrawerComponent } from '../total-projects-drawer/total-projects-drawer.component';
+import { TotalValueDrawerComponent } from '../total-value-drawer/total-value-drawer.component';
 
-import { DashboardDrawerType } from '@lfx-one/shared/interfaces';
 import type {
   CompanyBusFactor,
   DashboardMetricCard,
   FoundationCompanyBusFactorResponse,
+  FoundationValueConcentrationResponse,
   HealthEventsMonthlyResponse,
-  TopProjectDisplay,
   UniqueContributorsDailyResponse,
 } from '@lfx-one/shared/interfaces';
 
@@ -37,12 +39,14 @@ import type {
     MetricCardComponent,
     DataCopilotComponent,
     ScrollShadowDirective,
+    TotalValueDrawerComponent,
     TotalProjectsDrawerComponent,
     TotalMembersDrawerComponent,
     ActiveContributorsDrawerComponent,
     MaintainersDrawerComponent,
     EventsDrawerComponent,
     ProjectHealthScoresDrawerComponent,
+    OrgDependencyDrawerComponent,
   ],
   templateUrl: './foundation-health.component.html',
   styleUrl: './foundation-health.component.scss',
@@ -71,8 +75,8 @@ export class FoundationHealthComponent {
   // Data signals - each fetches its own data independently
   protected readonly totalProjectsData = this.initializeTotalProjectsData();
   protected readonly totalMembersData = this.initializeTotalMembersData();
-  private readonly softwareValueData = this.initializeSoftwareValueData();
-  private readonly companyBusFactorData = this.initializeCompanyBusFactorData();
+  protected readonly softwareValueData = this.initializeSoftwareValueData();
+  protected readonly companyBusFactorData = this.initializeCompanyBusFactorData();
   protected readonly maintainersData = this.initializeMaintainersData();
   protected readonly healthScoresData = this.initializeHealthScoresData();
   protected readonly activeContributorsData = this.initializeActiveContributorsData();
@@ -128,11 +132,11 @@ export class FoundationHealthComponent {
   }
 
   private initializeSoftwareValueCard() {
-    return computed(() => this.transformSoftwareValue(this.getMetricConfig('Software Value')));
+    return computed(() => this.transformSoftwareValue(this.getMetricConfig('Total Value of Projects')));
   }
 
   private initializeCompanyBusFactorCard() {
-    return computed(() => this.transformCompanyBusFactor(this.getMetricConfig('Company Bus Factor')));
+    return computed(() => this.transformCompanyBusFactor(this.getMetricConfig('Organization Dependency')));
   }
 
   private initializeActiveContributorsCard() {
@@ -155,9 +159,9 @@ export class FoundationHealthComponent {
     return computed(() => {
       const filter = this.selectedFilter();
       const allCards = [
+        { card: this.softwareValueCard(), category: 'projects' },
         { card: this.totalProjectsCard(), category: 'projects' },
         { card: this.totalMembersCard(), category: 'projects' },
-        { card: this.softwareValueCard(), category: 'projects' },
         { card: this.companyBusFactorCard(), category: 'contributors' },
         { card: this.activeContributorsCard(), category: 'contributors' },
         { card: this.maintainersCard(), category: 'contributors' },
@@ -203,13 +207,6 @@ export class FoundationHealthComponent {
       return `${billions.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}B`;
     }
     return `${valueInMillions.toLocaleString('en-US', { minimumFractionDigits: 1, maximumFractionDigits: 1 })}M`;
-  }
-
-  private formatTopProjects(projects: { name: string; value: number }[]): TopProjectDisplay[] {
-    return projects.map((project) => ({
-      name: project.name,
-      formattedValue: this.formatSoftwareValue(project.value),
-    }));
   }
 
   private transformTotalProjects(metric: DashboardMetricCard): DashboardMetricCard {
@@ -297,12 +294,44 @@ export class FoundationHealthComponent {
   private transformSoftwareValue(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.softwareValueData();
 
+    // Incremental bucket values: top1, top2-3, top4-5, all others
+    const bucketValues = [data.top1Value, data.top3Value - data.top1Value, data.top5Value - data.top3Value, data.allOtherValue];
+
     return {
       ...metric,
       loading: this.softwareValueLoading(),
-      value: this.formatSoftwareValue(data.totalValue),
-      subtitle: 'Estimated total value of software managed',
-      topProjects: this.formatTopProjects(data.topProjects),
+      value: `$${this.formatSoftwareValue(data.totalValue)}`,
+      subtitle: "Estimated total value of all foundation's projects",
+      chartData: {
+        labels: ['Top 1', 'Top 2-3', 'Top 4-5', 'All Others'],
+        datasets: [
+          {
+            data: bucketValues,
+            borderColor: lfxColors.emerald[500],
+            backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
+            fill: true,
+            tension: 0.4,
+            borderWidth: 2,
+            pointRadius: 0,
+          },
+        ],
+      },
+      chartOptions: {
+        ...this.sparklineOptions,
+        plugins: {
+          ...this.sparklineOptions.plugins,
+          tooltip: {
+            ...(this.sparklineOptions.plugins?.tooltip ?? {}),
+            callbacks: {
+              title: (context) => context[0]?.label ?? '',
+              label: (context) => {
+                const value = context.parsed.y ?? 0;
+                return `Value: $${this.formatSoftwareValue(value)}`;
+              },
+            },
+          },
+        },
+      },
     };
   }
 
@@ -320,7 +349,7 @@ export class FoundationHealthComponent {
       ...metric,
       loading: this.companyBusFactorLoading(),
       value: data.topCompaniesCount.toString(),
-      subtitle: 'Companies account for >50% code contributions',
+      subtitle: 'Contribution concentration across organizations',
       busFactor,
     };
   }
@@ -522,16 +551,24 @@ export class FoundationHealthComponent {
   }
 
   private initializeSoftwareValueData() {
-    const defaultValue = {
+    const defaultValue: FoundationValueConcentrationResponse = {
       totalValue: 0,
-      topProjects: [] as { name: string; value: number }[],
+      top1Value: 0,
+      top3Value: 0,
+      top5Value: 0,
+      allOtherValue: 0,
+      totalProjectsCount: 0,
+      top1Percentage: 0,
+      top3Percentage: 0,
+      top5Percentage: 0,
+      allOtherPercentage: 0,
     };
 
     return toSignal(
       this.selectedFoundationSlug$.pipe(
         tap(() => this.softwareValueLoading.set(true)),
         switchMap((foundationSlug) =>
-          this.analyticsService.getFoundationSoftwareValue(foundationSlug).pipe(
+          this.analyticsService.getFoundationValueConcentration(foundationSlug).pipe(
             tap(() => this.softwareValueLoading.set(false)),
             catchError(() => {
               this.softwareValueLoading.set(false);

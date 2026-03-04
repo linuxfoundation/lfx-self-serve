@@ -87,7 +87,7 @@ export class TotalMembersDrawerComponent {
             data: monthlyData,
             backgroundColor: lfxColors.blue[400],
             borderRadius: 4,
-            borderSkipped: false,
+            borderSkipped: 'start',
           },
         ],
       };

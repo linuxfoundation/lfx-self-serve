@@ -789,6 +789,38 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/foundation-value-concentration
+   * Get foundation value concentration data from Snowflake
+   * Query params: foundationSlug (required)
+   */
+  public async getFoundationValueConcentration(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_foundation_value_concentration');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_foundation_value_concentration',
+        });
+      }
+
+      const response = await this.projectService.getFoundationValueConcentration(foundationSlug);
+
+      logger.success(req, 'get_foundation_value_concentration', startTime, {
+        foundation_slug: foundationSlug,
+        total_value_millions: response.totalValue,
+        total_projects: response.totalProjectsCount,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_foundation_value_concentration', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/foundation-maintainers
    * Get foundation maintainers data from Snowflake
    * Query params: foundationSlug (required)
@@ -1198,6 +1230,441 @@ export class AnalyticsController {
       res.json(response);
     } catch (error) {
       logger.error(req, 'get_code_commits_daily', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-contributors-monthly
+   * Get monthly unique contributor trend for an organization within a foundation
+   * Query params: accountId (required), foundationSlug (required)
+   */
+  public async getOrgContributorsMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_contributors_monthly');
+
+    try {
+      const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!accountId) {
+        throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
+          operation: 'get_org_contributors_monthly',
+        });
+      }
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_org_contributors_monthly',
+        });
+      }
+
+      const response = await this.organizationService.getOrgContributorsMonthly(accountId, foundationSlug);
+
+      logger.success(req, 'get_org_contributors_monthly', startTime, {
+        account_id: accountId,
+        foundation_slug: foundationSlug,
+        monthly_data_points: response.monthlyData.length,
+        total_contributors: response.totalContributors,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_org_contributors_monthly', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-contributors-project-distribution
+   * Get top 5 project contributor distribution for an organization within a foundation
+   * Query params: accountId (required), foundationSlug (required)
+   */
+  public async getOrgContributorsProjectDistribution(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_contributors_project_distribution');
+
+    try {
+      const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!accountId) {
+        throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
+          operation: 'get_org_contributors_project_distribution',
+        });
+      }
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_org_contributors_project_distribution',
+        });
+      }
+
+      const response = await this.organizationService.getOrgContributorsProjectDistribution(accountId, foundationSlug);
+
+      logger.success(req, 'get_org_contributors_project_distribution', startTime, {
+        account_id: accountId,
+        foundation_slug: foundationSlug,
+        project_count: response.projects.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_org_contributors_project_distribution', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-maintainers-monthly
+   * Get monthly active maintainer trend for an organization within a foundation
+   * Query params: accountId (required), foundationSlug (required)
+   */
+  public async getOrgMaintainersMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_maintainers_monthly');
+
+    try {
+      const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!accountId) {
+        throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
+          operation: 'get_org_maintainers_monthly',
+        });
+      }
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_org_maintainers_monthly',
+        });
+      }
+
+      const response = await this.organizationService.getOrgMaintainersMonthly(accountId, foundationSlug);
+
+      logger.success(req, 'get_org_maintainers_monthly', startTime, {
+        account_id: accountId,
+        foundation_slug: foundationSlug,
+        monthly_data_points: response.monthlyData.length,
+        total_maintainers: response.totalMaintainers,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_org_maintainers_monthly', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-maintainers-distribution
+   * Get top 5 project maintainer distribution for an organization within a foundation
+   * Query params: accountId (required), foundationSlug (required)
+   */
+  public async getOrgMaintainersDistribution(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_maintainers_distribution');
+
+    try {
+      const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!accountId) {
+        throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
+          operation: 'get_org_maintainers_distribution',
+        });
+      }
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_org_maintainers_distribution',
+        });
+      }
+
+      const response = await this.organizationService.getOrgMaintainersDistribution(accountId, foundationSlug);
+
+      logger.success(req, 'get_org_maintainers_distribution', startTime, {
+        account_id: accountId,
+        foundation_slug: foundationSlug,
+        project_count: response.projects.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_org_maintainers_distribution', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-maintainers-key-members
+   * Get key maintainer members for an organization within a foundation
+   * Query params: accountId (required), foundationSlug (required)
+   */
+  public async getOrgMaintainersKeyMembers(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_maintainers_key_members');
+
+    try {
+      const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!accountId) {
+        throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
+          operation: 'get_org_maintainers_key_members',
+        });
+      }
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_org_maintainers_key_members',
+        });
+      }
+
+      const response = await this.organizationService.getOrgMaintainersKeyMembers(accountId, foundationSlug);
+
+      logger.success(req, 'get_org_maintainers_key_members', startTime, {
+        account_id: accountId,
+        foundation_slug: foundationSlug,
+        member_count: response.members.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_org_maintainers_key_members', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-event-attendees-monthly
+   * Get monthly per-event-attendee counts for an organization within a foundation
+   * Query params: accountId (required), foundationSlug (required)
+   */
+  public async getOrgEventAttendeesMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_event_attendees_monthly');
+
+    try {
+      const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!accountId) {
+        throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
+          operation: 'get_org_event_attendees_monthly',
+        });
+      }
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_org_event_attendees_monthly',
+        });
+      }
+
+      const response = await this.organizationService.getOrgEventAttendeesMonthly(accountId, foundationSlug);
+
+      logger.success(req, 'get_org_event_attendees_monthly', startTime, {
+        account_id: accountId,
+        foundation_slug: foundationSlug,
+        monthly_data_points: response.monthlyData.length,
+        total_attendees: response.totalAttendees,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_org_event_attendees_monthly', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-event-speakers-monthly
+   * Get monthly per-event-speaker counts for an organization within a foundation
+   * Query params: accountId (required), foundationSlug (required)
+   */
+  public async getOrgEventSpeakersMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_event_speakers_monthly');
+
+    try {
+      const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!accountId) {
+        throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
+          operation: 'get_org_event_speakers_monthly',
+        });
+      }
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_org_event_speakers_monthly',
+        });
+      }
+
+      const response = await this.organizationService.getOrgEventSpeakersMonthly(accountId, foundationSlug);
+
+      logger.success(req, 'get_org_event_speakers_monthly', startTime, {
+        account_id: accountId,
+        foundation_slug: foundationSlug,
+        monthly_data_points: response.monthlyData.length,
+        total_speakers: response.totalSpeakers,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_org_event_speakers_monthly', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-training-enrollments-monthly
+   * Get monthly training enrollment counts for an organization within a foundation
+   * Query params: accountId (required), foundationSlug (required)
+   */
+  public async getOrgTrainingEnrollmentsMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_training_enrollments_monthly');
+
+    try {
+      const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!accountId) {
+        throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
+          operation: 'get_org_training_enrollments_monthly',
+        });
+      }
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_org_training_enrollments_monthly',
+        });
+      }
+
+      const response = await this.organizationService.getOrgTrainingEnrollmentsMonthly(accountId, foundationSlug);
+
+      logger.success(req, 'get_org_training_enrollments_monthly', startTime, {
+        account_id: accountId,
+        foundation_slug: foundationSlug,
+        monthly_data_points: response.monthlyData.length,
+        total_enrollments: response.totalEnrollments,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_org_training_enrollments_monthly', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-training-enrollments-distribution
+   * Get training enrollment distribution by project bucket for an organization within a foundation
+   * Query params: accountId (required), foundationSlug (required)
+   */
+  public async getOrgTrainingEnrollmentsDistribution(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_training_enrollments_distribution');
+
+    try {
+      const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!accountId) {
+        throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
+          operation: 'get_org_training_enrollments_distribution',
+        });
+      }
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_org_training_enrollments_distribution',
+        });
+      }
+
+      const response = await this.organizationService.getOrgTrainingEnrollmentsDistribution(accountId, foundationSlug);
+
+      logger.success(req, 'get_org_training_enrollments_distribution', startTime, {
+        account_id: accountId,
+        foundation_slug: foundationSlug,
+        project_count: response.projects.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_org_training_enrollments_distribution', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-certified-employees-monthly
+   * Get monthly cumulative certified employee counts for an organization within a foundation
+   * Query params: accountId (required), foundationSlug (required)
+   */
+  public async getOrgCertifiedEmployeesMonthly(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_certified_employees_monthly');
+
+    try {
+      const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!accountId) {
+        throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
+          operation: 'get_org_certified_employees_monthly',
+        });
+      }
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_org_certified_employees_monthly',
+        });
+      }
+
+      const response = await this.organizationService.getOrgCertifiedEmployeesMonthly(accountId, foundationSlug);
+
+      logger.success(req, 'get_org_certified_employees_monthly', startTime, {
+        account_id: accountId,
+        foundation_slug: foundationSlug,
+        monthly_data_points: response.monthlyData.length,
+        total_certified_employees: response.totalCertifiedEmployees,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_org_certified_employees_monthly', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/org-certified-employees-distribution
+   * Get certified employees distribution by certification program for an organization
+   * Query params: accountId (required), foundationSlug (required)
+   */
+  public async getOrgCertifiedEmployeesDistribution(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_org_certified_employees_distribution');
+
+    try {
+      const accountId = req.query['accountId'] as string | undefined;
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!accountId) {
+        throw ServiceValidationError.forField('accountId', 'accountId query parameter is required', {
+          operation: 'get_org_certified_employees_distribution',
+        });
+      }
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_org_certified_employees_distribution',
+        });
+      }
+
+      const response = await this.organizationService.getOrgCertifiedEmployeesDistribution(accountId, foundationSlug);
+
+      logger.success(req, 'get_org_certified_employees_distribution', startTime, {
+        account_id: accountId,
+        foundation_slug: foundationSlug,
+        program_count: response.programs.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      logger.error(req, 'get_org_certified_employees_distribution', startTime, error);
       next(error);
     }
   }

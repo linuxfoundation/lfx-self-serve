@@ -13,4 +13,5 @@ export class InsightsHandoffSectionComponent {
   public readonly title = input.required<string>();
   public readonly description = input.required<string>();
   public readonly link = input.required<string>();
+  public readonly buttonLabel = input<string>('Open in LFX Insights');
 }

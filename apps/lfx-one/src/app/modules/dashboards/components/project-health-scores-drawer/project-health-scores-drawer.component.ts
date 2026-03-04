@@ -106,7 +106,7 @@ export class ProjectHealthScoresDrawerComponent {
               this.legendColors.excellent,
             ],
             borderRadius: 4,
-            borderSkipped: false,
+            borderSkipped: 'start',
           },
         ],
       };
