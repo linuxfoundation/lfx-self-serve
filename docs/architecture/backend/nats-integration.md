@@ -192,7 +192,7 @@ try {
 } catch (error) {
   // Handle timeout and no responder errors gracefully
   if (error.message.includes('timeout') || error.message.includes('503')) {
-    serverLogger.info({ slug }, 'Project slug not found via NATS');
+    logger.warning(undefined, 'nats_request', 'Project slug not found via NATS', { slug });
     return { exists: false, uid: '', slug };
   }
 
@@ -206,13 +206,13 @@ try {
 ```typescript
 public async shutdown(): Promise<void> {
   if (this.connection && !this.connection.isClosed()) {
-    serverLogger.info('Shutting down NATS connection');
+    logger.info(undefined, 'nats_shutdown', 'Shutting down NATS connection');
 
     try {
       await this.connection.drain(); // Graceful shutdown
-      serverLogger.info('NATS connection closed successfully');
+      logger.info(undefined, 'nats_shutdown', 'NATS connection closed successfully');
     } catch (error) {
-      serverLogger.error({ error }, 'Error during NATS shutdown');
+      logger.error(undefined, 'nats_shutdown', 0, error);
     }
   }
   this.connection = null;
@@ -233,13 +233,13 @@ public isConnected(): boolean {
 
 ```typescript
 // Success logging
-serverLogger.info({ slug, project_id: uid }, 'Successfully resolved project slug to ID');
+logger.success(undefined, 'nats_resolve_slug', startTime, { slug, project_id: uid });
 
 // Error logging
-serverLogger.error({ error, slug }, 'Failed to resolve project slug via NATS');
+logger.error(undefined, 'nats_resolve_slug', startTime, error, { slug });
 
 // Connection logging
-serverLogger.info({ url: natsUrl }, 'Connecting to NATS server on demand');
+logger.info(undefined, 'nats_connect', 'Connecting to NATS server on demand', { url: natsUrl });
 ```
 
 ### Health Check Integration
@@ -354,36 +354,17 @@ kubectl run nats-test --rm -i --tty --image=natsio/nats-box -- nats pub test "he
 ### Request Performance Logging
 
 ```typescript
-// Request timing and metrics
-const startTime = Date.now();
+// Request timing and metrics using logger service
+const startTime = logger.startOperation(undefined, 'nats_request', { subject, slug });
+
 try {
   const response = await connection.request(subject, data, { timeout });
-  const duration = Date.now() - startTime;
 
-  serverLogger.info(
-    {
-      subject,
-      duration,
-      success: true,
-      slug,
-    },
-    'NATS request completed successfully'
-  );
+  logger.success(undefined, 'nats_request', startTime, { subject, slug });
 
   return response;
 } catch (error) {
-  const duration = Date.now() - startTime;
-
-  serverLogger.error(
-    {
-      subject,
-      duration,
-      success: false,
-      error: error.message,
-      slug,
-    },
-    'NATS request failed'
-  );
+  logger.error(undefined, 'nats_request', startTime, error, { subject, slug });
 
   throw error;
 }

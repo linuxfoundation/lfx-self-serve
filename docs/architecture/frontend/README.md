@@ -2,20 +2,20 @@
 
 ## 🎨 Overview
 
-The LFX One frontend is built with Angular 19 using experimental zoneless change detection, Angular Signals for state management, and a comprehensive design system based on PrimeNG and Tailwind CSS.
+The LFX One frontend is built with Angular 20 using stable zoneless change detection, Angular Signals for state management, and a comprehensive design system based on PrimeNG and Tailwind CSS.
 
 ## 🏗 Architecture Components
 
 ### Core Framework
 
-- **Angular 19** with experimental zoneless change detection
+- **Angular 20** with stable zoneless change detection
 - **Angular Signals** for reactive state management (preferred over RxJS)
 - **Server-Side Rendering (SSR)** with AngularNodeAppEngine
 - **Standalone Components** with explicit imports
 
 ### UI System
 
-- **PrimeNG 19** with custom LFX UI Core preset
+- **PrimeNG 20** with custom LFX UI Core preset
 - **Tailwind CSS v3** with PrimeUI plugin integration
 - **CSS Layers** architecture for optimal style cascade
 - **LFX Tools** web component for platform navigation
@@ -30,7 +30,7 @@ The LFX One frontend is built with Angular 19 using experimental zoneless change
 
 ### [Angular Patterns](./angular-patterns.md)
 
-Learn about Angular 19 features, zoneless change detection, and SSR configuration.
+Learn about Angular 20 features, zoneless change detection, and SSR configuration.
 
 ### [Component Architecture](./component-architecture.md)
 

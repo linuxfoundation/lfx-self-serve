@@ -1,6 +1,6 @@
 # Lazy Loading & Preloading Strategy
 
-**Overview**: Comprehensive guide to LFX One's intelligent lazy loading and preloading architecture for optimal performance in Angular 19.
+**Overview**: Comprehensive guide to LFX One's intelligent lazy loading and preloading architecture for optimal performance in Angular 20.
 
 ## Table of Contents
 
@@ -564,7 +564,7 @@ lighthouse http://localhost:4200 --chrome-flags="--headless"
 
 ## Related Documentation
 
-- [Angular 19 SSR Configuration](./angular-patterns.md)
+- [Angular 20 SSR Configuration](./angular-patterns.md)
 - [Performance Optimization Guide](./performance.md)
 - [Bundle Analysis](../testing/performance-testing.md)
 - [Code Analysis Report](../../code-analysis-report.md)

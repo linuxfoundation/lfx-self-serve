@@ -146,12 +146,12 @@ The application implements a sophisticated authentication system with multiple l
 6. **Auth Context Injection**: Server provides authentication state to Angular SSR
 7. **Client State Management**: Frontend maintains authentication state using Angular signals
 
-### Protected Routes Middleware
+### Auth Middleware
 
-A custom middleware (`apps/lfx-one/src/server/middleware/protected-routes.middleware.ts`) implements the selective authentication logic:
+The unified auth middleware (`apps/lfx-one/src/server/middleware/auth.middleware.ts`) implements selective authentication logic using a `DEFAULT_ROUTE_CONFIG` array for fine-grained route-based authentication decisions:
 
-- **Route Analysis**: Examines incoming requests to determine authentication requirements
-- **Public Route Bypass**: Allows specific routes to skip authentication
+- **Route Analysis**: Examines incoming requests against route config to determine authentication requirements
+- **Public Route Bypass**: Allows specific routes (e.g., `/meetings/`, `/public/api`) to use optional authentication
 - **Conditional Redirects**: GET requests redirect to login, API requests return 401
 - **Token Refresh**: Automatically handles expired tokens
 - **Error Handling**: Provides structured authentication errors

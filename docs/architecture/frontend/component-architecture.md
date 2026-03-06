@@ -7,31 +7,28 @@ The project follows a modular file organization pattern where components are org
 ### Module Structure
 
 ```text
-apps/lfx-one/src/app/modules/project/
-├── dashboard/                  # Project overview section
-│   └── project-dashboard/      # Main dashboard route component
-├── meetings/                   # Meetings management section
-│   ├── meeting-dashboard/      # Main meetings route component
-│   └── components/             # Meeting-specific components
-│       ├── meeting-card/
-│       ├── meeting-form/
-│       ├── meeting-modal/
-│       └── participant-list/
-├── committees/                 # Committee management section
+apps/lfx-one/src/app/modules/
+├── committees/                 # Committee management
 │   ├── committee-dashboard/    # Main committees route component
 │   ├── committee-view/         # Committee detail route component
 │   └── components/             # Committee-specific components
-│       ├── committee-form/
-│       ├── committee-members/
-│       ├── member-card/
-│       └── member-form/
+├── dashboards/                 # Role-based dashboards
+│   └── components/             # Dashboard-specific components (drawers, cards)
 ├── mailing-lists/              # Mailing lists section
 │   └── mailing-list-dashboard/ # Main mailing lists route component
-└── settings/                   # Settings section
-    ├── settings-dashboard/     # Main settings route component
-    └── components/             # Settings-specific components
-        └── user-permissions-table/
+├── meetings/                   # Meetings management section
+│   ├── meeting-dashboard/      # Main meetings route component
+│   └── components/             # Meeting-specific components
+├── my-activity/                # User activity tracking
+├── profile/                    # User profile management
+├── settings/                   # Application settings
+│   ├── settings-dashboard/     # Main settings route component
+│   └── components/             # Settings-specific components
+├── surveys/                    # Survey management
+└── votes/                      # Voting system
 ```
+
+> **Note**: Routes are FLAT under `MainLayoutComponent` — there is no `/project/:slug` nesting.
 
 ### Key Principles
 
@@ -303,58 +300,13 @@ public hide(): void
 
 ## 🏗 Layout Components
 
-### ProjectLayoutComponent
+### MainLayoutComponent
 
-Provides consistent layout wrapper for project-related pages:
+The primary layout component that wraps all authenticated routes. Routes are flat under this layout — there is no nested `/project/:slug` routing pattern.
 
-```typescript
-@Component({
-  selector: 'lfx-project-layout',
-  template: `
-    <div class="project-layout">
-      <div class="project-header">
-        <lfx-breadcrumb [model]="breadcrumbItems()"></lfx-breadcrumb>
-        <h1>{{ projectTitle() }}</h1>
-        <p>{{ projectDescription() }}</p>
-      </div>
+### DevToolbarComponent
 
-      <nav class="project-nav">
-        @for (item of menuItems(); track item.label) {
-          <a [routerLink]="item.routerLink" routerLinkActive="active">
-            {{ item.label }}
-          </a>
-        }
-      </nav>
-
-      <main class="project-content">
-        <ng-content></ng-content>
-      </main>
-    </div>
-  `,
-})
-export class ProjectLayoutComponent {
-  // Required inputs
-  public readonly projectTitle = input.required<string>();
-  public readonly projectDescription = input.required<string>();
-  public readonly projectSlug = input.required<string>();
-
-  // Computed navigation items
-  public readonly menuItems = computed(() => [
-    {
-      label: 'Meetings',
-      routerLink: `/project/${this.projectSlug()}/meetings`,
-    },
-    {
-      label: 'Committees',
-      routerLink: `/project/${this.projectSlug()}/committees`,
-    },
-    {
-      label: 'Mailing Lists',
-      routerLink: `/project/${this.projectSlug()}/mailing-lists`,
-    },
-  ]);
-}
-```
+Development-only toolbar for persona selection and project switching. Includes board member project override functionality.
 
 ## 🎨 Component Development Pattern
 
@@ -576,32 +528,21 @@ AppComponent
 │   ├── AvatarComponent (user profile picture)
 │   └── MenuComponent (user dropdown menu)
 └── RouterOutlet
-    ├── HomeComponent
-    │   └── ProjectCardComponent (multiple instances)
-    └── ProjectLayoutComponent
-        └── RouterOutlet (project sub-routes)
-            ├── project/dashboard/
-            │   └── ProjectDashboardComponent
-            ├── project/meetings/
-            │   ├── MeetingDashboardComponent
-            │   └── components/
-            │       ├── MeetingCardComponent
-            │       ├── MeetingFormComponent
-            │       └── ParticipantListComponent
-            ├── project/committees/
-            │   ├── CommitteeDashboardComponent
-            │   ├── CommitteeViewComponent
-            │   └── components/
-            │       ├── CommitteeFormComponent
-            │       ├── CommitteeMembersComponent
-            │       └── MemberCardComponent
-            ├── project/mailing-lists/
-            │   └── MailingListDashboardComponent
-            └── project/settings/
-                ├── SettingsDashboardComponent
-                └── components/
-                    └── UserPermissionsTableComponent
+    └── MainLayoutComponent (wraps all authenticated routes)
+        ├── DevToolbarComponent (dev-only toolbar)
+        └── RouterOutlet (flat feature routes)
+            ├── /dashboard → DashboardComponent
+            ├── /meetings → MeetingDashboardComponent
+            ├── /committees → CommitteeDashboardComponent
+            ├── /mailing-lists → MailingListDashboardComponent
+            ├── /surveys → SurveyDashboardComponent
+            ├── /votes → VoteDashboardComponent
+            ├── /settings → SettingsDashboardComponent
+            ├── /profile → ProfileComponent
+            └── /my-activity → MyActivityComponent
 ```
+
+> **Note**: All routes are flat under `MainLayoutComponent`. There is no `/project/:slug` nesting.
 
 ## 🎯 Usage Guidelines
 

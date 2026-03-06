@@ -50,10 +50,10 @@ export function app(): express.Express {
 // - Triggers change detection on every async operation
 // - Higher memory usage and slower startup
 
-// Angular 19 Zoneless
+// Angular 20 Zoneless (stable)
 export const appConfig: ApplicationConfig = {
   providers: [
-    provideExperimentalZonelessChangeDetection(),
+    provideZonelessChangeDetection(),
     // Signals-based change detection
     // Manual triggering when needed
     // Better tree-shaking and smaller bundles

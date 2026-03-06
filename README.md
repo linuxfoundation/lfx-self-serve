@@ -1,26 +1,26 @@
 # LFX One
 
 This is a monorepo for the LFX One application, built
-with Angular 19 and zoneless change detection.
+with Angular 20 and stable zoneless change detection.
 
 ## What's inside?
 
 ### Apps and Packages
 
-- `apps/lfx-one`: Angular 19 SSR application with stable zoneless change detection and
+- `apps/lfx-one`: Angular 20 SSR application with stable zoneless change detection and
   direct PrimeNG UI components
 
 The app is 100% [TypeScript](https://www.typescriptlang.org/).
 
 ### Architecture
 
-- **Frontend**: Angular 19 with stable zoneless change detection, Angular
+- **Frontend**: Angular 20 with stable zoneless change detection, Angular
   Signals, PrimeNG components, Tailwind CSS
-- **UI Framework**: PrimeNG 19 with custom LFX UI Core preset and Tailwind CSS integration
+- **UI Framework**: PrimeNG 20 with custom LFX UI Core preset and Tailwind CSS integration
 - **Styling**: Tailwind CSS v3 with PrimeUI plugin, CSS layers architecture,
-  Google Fonts (Open Sans + Roboto Slab)
+  Google Fonts (Inter + Roboto Slab)
 - **Icons**: Font Awesome Pro via kits (no npm packages)
-- **Backend**: Express.js server with Angular 19 SSR, Auth0 authentication, Pino logging
+- **Backend**: Express.js server with Angular 20 SSR, Auth0 authentication, Pino logging
 - **Infrastructure**: PM2 process management for production deployment
 
 ### Development Tools
@@ -28,7 +28,7 @@ The app is 100% [TypeScript](https://www.typescriptlang.org/).
 This has comprehensive development tooling:
 
 - **[TypeScript](https://www.typescriptlang.org/)** for static type checking with strict configuration
-- **[ESLint](https://eslint.org/)** for code linting with Angular 19 specific rules
+- **[ESLint](https://eslint.org/)** for code linting with Angular 20 specific rules
 - **[Prettier](https://prettier.io)** for code formatting with Tailwind class sorting
 - **[Turborepo](https://turborepo.com/)** for efficient monorepo builds and caching
 - **[PM2](https://pm2.keymetrics.io/)** for production process management
@@ -168,12 +168,12 @@ yarn lint --filter=lfx-one
 ```text
 lfx-one/
 ├── apps/
-│   └── lfx-one/              # Angular 19 SSR application
+│   └── lfx-one/              # Angular 20 SSR application
 │       ├── src/app/
 │       │   ├── layouts/      # Layout components
 │       │   ├── modules/      # Feature modules (see below)
 │       │   └── shared/       # Shared code
-│       │       ├── components/   # 45 UI components
+│       │       ├── components/   # 46 UI components
 │       │       ├── pipes/        # 34 custom pipes
 │       │       └── services/     # 20 services
 │       ├── eslint.config.mjs # Angular-specific ESLint rules
@@ -185,18 +185,17 @@ lfx-one/
 │       │   ├── interfaces/   # TypeScript interfaces
 │       │   ├── constants/    # Design tokens
 │       │   ├── enums/        # Shared enumerations
-│       │   ├── utils/        # 11 utility modules
+│       │   ├── utils/        # 12 utility modules
 │       │   └── validators/   # 3 form validators
 │       └── package.json
 ├── docs/                     # Architecture and deployment documentation
 ├── turbo.json               # Turborepo pipeline configuration
-├── ecosystem.config.js      # PM2 production configuration
 └── package.json             # Root workspace configuration
 ```
 
 ## Feature Modules
 
-The application is organized into 10 feature modules under `apps/lfx-one/src/app/modules/`:
+The application is organized into 9 feature modules under `apps/lfx-one/src/app/modules/`:
 
 | Module            | Description                                                                      |
 | ----------------- | -------------------------------------------------------------------------------- |
@@ -205,7 +204,6 @@ The application is organized into 10 feature modules under `apps/lfx-one/src/app
 | **mailing-lists** | Mailing list management - subscribe, unsubscribe, and manage lists               |
 | **meetings**      | Meeting scheduling - create, manage, and join meetings with calendar integration |
 | **my-activity**   | User activity tracking - personal activity history and notifications             |
-| **pages**         | Static pages - about, help, and informational content                            |
 | **profile**       | User profile - profile management and account settings                           |
 | **settings**      | Application settings - preferences and configuration                             |
 | **surveys**       | Survey management - create surveys, collect responses, view NPS analytics        |
@@ -213,7 +211,7 @@ The application is organized into 10 feature modules under `apps/lfx-one/src/app
 
 ## Key Features
 
-### Angular 19 with Zoneless Change Detection
+### Angular 20 with Zoneless Change Detection
 
 - **Stable zoneless change detection** for improved performance
 - **Angular Signals** for reactive state management (preferred over RxJS)
@@ -225,7 +223,7 @@ The application is organized into 10 feature modules under `apps/lfx-one/src/app
 - **CSS Layers**: Organized layer system (`tailwind-base, primeng, tailwind-utilities`)
 - **PrimeNG Integration**: Custom preset using LFX UI Core design system
 - **Tailwind CSS**: Utility-first styling with PrimeUI plugin integration
-- **Custom Fonts**: Google Fonts (Open Sans + Roboto Slab) with CSS variables
+- **Custom Fonts**: Google Fonts (Inter + Roboto Slab) with CSS variables
 
 ### Direct PrimeNG Usage
 
@@ -236,7 +234,7 @@ The application is organized into 10 feature modules under `apps/lfx-one/src/app
 
 ### Code Quality
 
-- **ESLint**: Angular 19 specific rules with import organization and naming conventions
+- **ESLint**: Angular 20 specific rules with import organization and naming conventions
 - **Prettier**: Automatic code formatting with Tailwind class sorting
 - **TypeScript**: Strict configuration with path mappings (`@app/*`, `@config/*`)
 - **Testing**: Angular testing framework with comprehensive coverage
@@ -258,7 +256,7 @@ Comprehensive documentation organized by domain:
 
 #### 🎨 [Frontend Architecture](docs/architecture/frontend/)
 
-- **[Angular Patterns](docs/architecture/frontend/angular-patterns.md)** - Zoneless change detection, SSR, and Angular 19 features
+- **[Angular Patterns](docs/architecture/frontend/angular-patterns.md)** - Zoneless change detection, SSR, and Angular 20 features
 - **[Component Architecture](docs/architecture/frontend/component-architecture.md)** - PrimeNG wrappers, layout patterns, and component hierarchy
 - **[Styling System](docs/architecture/frontend/styling-system.md)** - CSS layers, Tailwind configuration, and LFX UI Core
 - **[State Management](docs/architecture/frontend/state-management.md)** - Angular Signals patterns and service architecture
@@ -266,7 +264,7 @@ Comprehensive documentation organized by domain:
 
 #### 🖥 [Backend Architecture](docs/architecture/backend/)
 
-- **[SSR Server](docs/architecture/backend/ssr-server.md)** - Express.js configuration and Angular 19 SSR integration
+- **[SSR Server](docs/architecture/backend/ssr-server.md)** - Express.js configuration and Angular 20 SSR integration
 - **[Authentication](docs/architecture/backend/authentication.md)** - Auth0 integration with express-openid-connect
 - **[Logging & Monitoring](docs/architecture/backend/logging-monitoring.md)** - Pino logging, structured logs, and health monitoring
 - **[Deployment](docs/deployment.md)** - PM2 configuration and production deployment
@@ -348,17 +346,17 @@ export class ExampleComponent {}
 
 ### Frontend
 
-- **Angular 19** with stable zoneless change detection
+- **Angular 20** with stable zoneless change detection
 - **Angular Signals** for state management
-- **PrimeNG 19** UI component library with custom LFX preset
+- **PrimeNG 20** UI component library with custom LFX preset
 - **Tailwind CSS v3** with PrimeUI plugin
 - **LFX UI Core** design system integration
 - **Font Awesome Pro** icons (via kits)
-- **Google Fonts** (Open Sans + Roboto Slab)
+- **Google Fonts** (Inter + Roboto Slab)
 
 ### Backend & Infrastructure
 
-- **Express.js** server with Angular 19 SSR
+- **Express.js** server with Angular 20 SSR
 - **Auth0** authentication with express-openid-connect
 - **Pino** high-performance structured logging
 - **PM2** for production process management and clustering

@@ -38,11 +38,11 @@ module.exports = {
   apps: [
     {
       name: 'lfx-one',
-      script: 'apps/lfx-one/dist/lfx-one/server/server.mjs',
+      script: 'dist/lfx-one/server/server.mjs',
       env: {
         PM2: 'true',
         NODE_ENV: 'production',
-        PORT: 4200,
+        PORT: 4000,
       },
       max_restarts: 10, // Restart limit for unstable apps
       exp_backoff_restart_delay: 100, // Exponential backoff restart delay
@@ -122,7 +122,7 @@ export function startServer() {
 - **Build**: `yarn build`
 - **Start**: `yarn start:server` or `node dist/lfx-one/server/server.mjs`
 - **Features**: Includes Express server for API proxy and authentication
-- **Port**: Exposes port 4200
+- **Port**: Exposes port 4000
 
 ### 2. Docker Deployment
 
@@ -201,7 +201,7 @@ NODE_ENV=production
 
 # Environment Configuration
 ENV=development
-PCC_BASE_URL=http://localhost:4200
+PCC_BASE_URL=http://localhost:4000
 LOG_LEVEL=info
 
 # User Authentication Configuration (Auth0/Authelia)

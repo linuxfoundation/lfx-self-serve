@@ -79,31 +79,24 @@ const customPreset = definePreset(Aura, {
 ### LFX Brand Colors
 
 ```typescript
-// src/app/config/styles/colors.ts
-export const lfxColors = {
-  primary: {
-    50: '#eff6ff',
-    100: '#dbeafe',
-    // ... full color scale
-    900: '#1e3a8a',
-  },
-  secondary: {
-    // ... secondary color scale
-  },
-  // ... additional brand colors
-};
+// Colors imported from @lfx-one/shared package
+import { lfxColors } from '@lfx-one/shared/constants';
 ```
 
 ### Usage in Tailwind
 
-```typescript
+```javascript
 // tailwind.config.js
-module.exports = {
+import PrimeUI from 'tailwindcss-primeui';
+import { lfxColors } from '@lfx-one/shared/constants';
+
+export default {
   theme: {
     extend: {
       colors: lfxColors,
     },
   },
+  plugins: [PrimeUI],
 };
 ```
 
@@ -124,7 +117,8 @@ module.exports = {
 
 Fonts are loaded via Google Fonts for optimal performance:
 
-- **Open Sans**: Primary sans-serif font for body text
+- **Inter**: Primary visible sans-serif font (overrides Open Sans in styles.scss)
+- **Open Sans**: Fallback sans-serif font
 - **Roboto Slab**: Display font for headings and emphasis
 
 ### Custom Font Sizes
@@ -144,7 +138,11 @@ export const lfxFontSizes = {
 
 ```javascript
 // tailwind.config.js
-module.exports = {
+import PrimeUI from 'tailwindcss-primeui';
+import { lfxColors } from '@lfx-one/shared/constants';
+import { lfxFontSizes } from '@lfx-one/shared/constants';
+
+export default {
   content: ['./src/**/*.{html,ts}'],
   theme: {
     extend: {
@@ -152,17 +150,19 @@ module.exports = {
       fontSize: lfxFontSizes,
       fontFamily: {
         sans: ['Open Sans', 'sans-serif'],
+        inter: ['Inter', 'sans-serif'],
         display: ['Roboto Slab', 'serif'],
+        serif: ['Roboto Slab', 'serif'],
       },
     },
   },
-  plugins: [require('@primeuix/tailwind-plugin')],
+  plugins: [PrimeUI],
 };
 ```
 
 ### PrimeUI Plugin Integration
 
-The `@primeuix/tailwind-plugin` provides:
+The `tailwindcss-primeui` plugin provides:
 
 - Component utilities for PrimeNG components
 - Consistent spacing and sizing
@@ -277,7 +277,7 @@ Unused CSS is automatically removed in production builds:
 
 ```javascript
 // tailwind.config.js
-module.exports = {
+export default {
   content: ['./src/**/*.{html,ts}'],
   // Only CSS used in these files is included
 };

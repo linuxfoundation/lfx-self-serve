@@ -13,18 +13,18 @@
 
 ### Frontend Stack
 
-- **Angular 19**: Modern Angular with experimental zoneless change detection and SSR
+- **Angular 20**: Modern Angular with stable zoneless change detection and SSR
 - **Angular Signals**: Reactive state management (preferred over RxJS for simple data)
-- **PrimeNG 19**: UI components with custom LFX UI Core preset and Tailwind CSS integration
+- **PrimeNG 20**: UI components with custom LFX UI Core preset and Tailwind CSS integration
 - **Tailwind CSS v3**: Utility-first styling framework with PrimeUI plugin
 - **LFX UI Core**: Linux Foundation design system integration
 - **LFX Tools**: Web component for platform navigation integration
 - **Font Awesome Pro**: Icon library via kits (no npm packages)
-- **Google Fonts**: Open Sans (primary) and Roboto Slab (display) fonts
+- **Google Fonts**: Inter (primary, overrides Open Sans in styles.scss) and Roboto Slab (display) fonts
 
 ## ⚡ Zoneless Change Detection
 
-Angular 19 introduces experimental zoneless change detection, which this application uses for improved performance:
+Angular 20 provides stable zoneless change detection, which this application uses for improved performance:
 
 ### Configuration
 
@@ -32,7 +32,7 @@ Angular 19 introduces experimental zoneless change detection, which this applica
 // app.config.ts
 export const appConfig: ApplicationConfig = {
   providers: [
-    provideExperimentalZonelessChangeDetection(),
+    provideZonelessChangeDetection(),
     provideRouter(routes),
     provideClientHydration(withEventReplay()),
     provideHttpClient(withFetch()),
@@ -256,7 +256,7 @@ export class ExampleComponent {
 ```text
 lfx-one/
 ├── apps/
-│   └── lfx-one/                    # Angular 19 SSR application
+│   └── lfx-one/                    # Angular 20 SSR application
 │       ├── src/
 │       │   ├── app/
 │       │   │   ├── app.component.*        # Root component (lfx-root)
@@ -295,7 +295,7 @@ lfx-one/
 │       └── tsconfig.json                 # TypeScript configuration
 ├── docs/                                 # Architecture documentation
 ├── turbo.json                           # Turborepo configuration
-├── ecosystem.config.js                  # PM2 production configuration
+├── apps/lfx-one/ecosystem.config.js     # PM2 production configuration
 └── package.json                         # Root workspace configuration
 ```
 
@@ -310,8 +310,8 @@ The application uses Google Fonts with CSS custom properties:
 @import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Roboto+Slab:wght@100..900&display=swap');
 
 @theme {
-  /* Open Sans as the primary sans-serif font */
-  --font-sans: 'Open Sans', ui-sans-serif, system-ui, sans-serif;
+  /* Inter as the primary sans-serif font (overrides Open Sans in styles.scss) */
+  --font-sans: 'Inter', 'Open Sans', ui-sans-serif, system-ui, sans-serif;
 
   /* Roboto Slab for headings and display text */
   --font-display: 'Roboto Slab', ui-serif, Georgia, serif;
@@ -460,7 +460,7 @@ export const environment = {
 ```typescript
 // app.config.server.ts
 export const config = mergeApplicationConfig(appConfig, {
-  providers: [provideServerRendering(), provideServerRouting(serverRoutes)],
+  providers: [provideServerRendering(withRoutes(serverRoutes))],
 });
 ```
 
@@ -1043,7 +1043,7 @@ logger.logger.info(`Server listening on port ${port}`);
 
 ## 🚀 Server-Side Rendering (SSR) Engine
 
-### Angular 19 SSR Architecture
+### Angular 20 SSR Architecture
 
 The application uses Angular's new `AngularNodeAppEngine` for improved SSR performance:
 

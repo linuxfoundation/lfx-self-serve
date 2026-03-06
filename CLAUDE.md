@@ -6,16 +6,16 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 🏗 Architecture & Setup
 
-- [Project Overview](#project-overview) - Turborepo monorepo with Angular 19 SSR
+- [Project Overview](#project-overview) - Turborepo monorepo with Angular 20 SSR
 - [Monorepo Structure](#monorepo-structure) - Apps, packages, and organization
 - [Application Architecture](#application-architecture) - Directory structure and patterns
 - [Common Commands](#common-commands) - Development and production commands
 
 ### 🚀 Development Patterns
 
-- [Angular 19 Development Patterns](#angular-19-development-patterns) - Zoneless change detection, signals, components
+- [Angular Patterns](docs/architecture/frontend/angular-patterns.md) - Zoneless change detection, signals, components
 - [Component Organization Pattern](#component-organization-pattern) - Standardized component structure
-- [Feature Modules](#feature-modules) - 10 application feature modules
+- [Feature Modules](#feature-modules) - 9 application feature modules
 - [Shared Package (@lfx-one/shared)](#shared-package-lfx-oneshared) - Types, interfaces, constants
 - [Shared Package Utilities](#shared-package-utilities) - Generic utility modules
 - [Shared Package Validators](#shared-package-validators) - Form validators
@@ -28,7 +28,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ### 🔧 Technical Stack
 
-- [Frontend Technologies](#frontend-technologies) - Angular 19, PrimeNG, Tailwind
+- [Frontend Technologies](#frontend-technologies) - Angular 20, PrimeNG, Tailwind
 - [Backend Stack](#backend-stack) - Express.js server with SSR
 - [Development Tools](#development-tools) - ESLint, Prettier, Turborepo
 - [Code Quality](#code-quality) - Linting and formatting standards
@@ -37,7 +37,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 - [Authentication & Authorization](#authentication--authorization) - Auth0 integration
 - [Logging](#logging) - Pino structured logging
-- [Server-Side Rendering (SSR)](#server-side-rendering-ssr) - Angular 19 built-in SSR
+- [Server-Side Rendering (SSR)](#server-side-rendering-ssr) - Angular 20 built-in SSR
 - [Production Deployment](#production-deployment) - PM2, health checks
 - [Testing](#testing) - Test framework and commands
 - [Environment Configuration](#environment-configuration) - Dev/prod setup
@@ -45,7 +45,7 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 ### 📚 Documentation Links
 
 - [Component Architecture](docs/architecture/frontend/component-architecture.md) - Detailed wrapper patterns
-- [Angular Patterns](docs/architecture/frontend/angular-patterns.md) - Angular 19 development
+- [Angular Patterns](docs/architecture/frontend/angular-patterns.md) - Angular 20 development
 - [Styling System](docs/architecture/frontend/styling-system.md) - CSS and theming
 - [Authentication](docs/architecture/backend/authentication.md) - Auth0 setup
 - [SSR Server](docs/architecture/backend/ssr-server.md) - Server-side rendering
@@ -61,19 +61,19 @@ This file provides guidance to Claude Code (claude.ai/code) when working with co
 
 ## Project Overview
 
-LFX One is a Turborepo monorepo containing an Angular 19 SSR application with stable zoneless change detection and Express.js server.
+LFX One is a Turborepo monorepo containing an Angular 20 SSR application with stable zoneless change detection and Express.js server.
 
 ## Monorepo Structure
 
 ```text
 lfx-v2-ui/
 ├── apps/
-│   └── lfx-one/              # Angular 19 SSR application with stable zoneless change detection
+│   └── lfx-one/              # Angular 20 SSR application with stable zoneless change detection
 │       ├── src/app/
 │       │   ├── layouts/      # Layout components
-│       │   ├── modules/      # 10 Feature modules (see Feature Modules section)
+│       │   ├── modules/      # 9 Feature modules (see Feature Modules section)
 │       │   └── shared/       # Shared application code
-│       │       ├── components/   # 45 UI components
+│       │       ├── components/   # 46 UI components
 │       │       ├── pipes/        # 34 custom pipes
 │       │       └── services/     # 20 services
 │       ├── eslint.config.mjs # Angular-specific ESLint rules
@@ -85,13 +85,12 @@ lfx-v2-ui/
 │       │   ├── interfaces/   # TypeScript interfaces for components, auth, projects
 │       │   ├── constants/    # Design tokens (colors, font-sizes)
 │       │   ├── enums/        # Shared enumerations
-│       │   ├── utils/        # 11 utility modules (date, string, url, etc.)
+│       │   ├── utils/        # 12 utility modules (date, string, url, etc.)
 │       │   └── validators/   # 3 form validators (meeting, mailing-list, vote)
 │       ├── package.json      # Package configuration with proper exports
 │       └── tsconfig.json     # TypeScript configuration
 ├── docs/                     # Architecture and deployment documentation
 ├── turbo.json               # Turborepo pipeline configuration
-├── ecosystem.config.js      # PM2 production configuration
 └── package.json             # Root workspace configuration
 ```
 
@@ -209,7 +208,7 @@ import { RelativeDateInfo } from '@lfx-one/shared/interfaces';
 
 ## Feature Modules
 
-The application is organized into 10 feature modules under `apps/lfx-one/src/app/modules/`:
+The application is organized into 9 feature modules under `apps/lfx-one/src/app/modules/`:
 
 | Module            | Description                                                                      |
 | ----------------- | -------------------------------------------------------------------------------- |
@@ -218,7 +217,6 @@ The application is organized into 10 feature modules under `apps/lfx-one/src/app
 | **mailing-lists** | Mailing list management - subscribe, unsubscribe, and manage lists               |
 | **meetings**      | Meeting scheduling - create, manage, and join meetings with calendar integration |
 | **my-activity**   | User activity tracking - personal activity history and notifications             |
-| **pages**         | Static pages - about, help, and informational content                            |
 | **profile**       | User profile - profile management and account settings                           |
 | **settings**      | Application settings - preferences and configuration                             |
 | **surveys**       | Survey management - create surveys, collect responses, view NPS analytics        |
