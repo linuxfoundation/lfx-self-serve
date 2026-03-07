@@ -1,12 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { LINKEDIN_PROFILE_PATTERN } from '@lfx-one/shared/constants';
 import {
+  AttachmentDownloadUrlResponse,
   BatchRegistrantOperationResponse,
+  CreateMeetingAttachmentRequest,
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
   CreateMeetingRsvpRequest,
@@ -24,15 +26,18 @@ import {
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
+  PresignAttachmentRequest,
+  PresignAttachmentResponse,
   Project,
   QueryServiceCountResponse,
+  UpdateMeetingAttachmentRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
   UrlMetadata,
   UrlMetadataResponse,
 } from '@lfx-one/shared/interfaces';
-import { catchError, defer, map, Observable, of, switchMap, take, tap, throwError } from 'rxjs';
+import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -258,96 +263,63 @@ export class MeetingService {
     return this.http.delete<void>(`/api/meetings/${meetingId}/occurrences/${occurrenceId}`).pipe(take(1));
   }
 
+  // ─── Meeting Attachment Methods ───────────────────────────────────────────
+
   public getMeetingAttachments(meetingId: string): Observable<MeetingAttachment[]> {
     return this.http.get<MeetingAttachment[]>(`/api/meetings/${meetingId}/attachments`).pipe(
-      catchError((error) => {
-        console.error(`Failed to load attachments for meeting ${meetingId}:`, error);
-        return of([]);
-      })
-    );
-  }
-
-  public uploadAttachment(meetingId: string, file: File): Observable<{ message: string; attachment: MeetingAttachment }> {
-    return new Observable((observer) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64Data = (reader.result as string).split(',')[1];
-
-        const uploadData = {
-          fileName: file.name,
-          fileData: base64Data,
-          mimeType: file.type,
-          fileSize: file.size,
-        };
-
-        this.http
-          .post<{ message: string; attachment: MeetingAttachment }>(`/api/meetings/${meetingId}/attachments/upload`, uploadData)
-          .pipe(
-            take(1),
-            catchError((error) => {
-              console.error(`Failed to upload attachment to meeting ${meetingId}:`, error);
-              return throwError(() => error);
-            })
-          )
-          .subscribe(observer);
-      };
-
-      reader.onerror = () => {
-        observer.error(new Error('Failed to read file'));
-      };
-
-      reader.readAsDataURL(file);
-    });
-  }
-
-  public createFileAttachment(meetingId: string, file: File): Observable<MeetingAttachment> {
-    return defer(() => this.readFileAsBase64(file)).pipe(
-      switchMap((base64Data: string) => {
-        // Build attachment data for file upload to LFX V2 API
-        const attachmentData = {
-          type: 'file',
-          name: file.name,
-          file: base64Data,
-          file_content_type: file.type,
-        };
-
-        return this.http.post<MeetingAttachment>(`/api/meetings/${meetingId}/attachments`, attachmentData);
-      }),
       take(1),
-      catchError((error) => {
-        console.error(`Failed to create file attachment for meeting ${meetingId}:`, error);
-        return throwError(() => error);
-      })
+      catchError(() => of([]))
     );
   }
 
-  public createAttachmentFromUrl(meetingId: string, name: string, url: string): Observable<MeetingAttachment> {
-    // Build attachment data based on the API schema
-    // For link-type attachments: type, name, link (and optionally description)
-    // For file-type attachments: type, name, file, file_name, file_content_type
-    const attachmentData: any = {
-      type: 'link',
-      name: name,
-      link: url,
-    };
-
-    return this.http.post<MeetingAttachment>(`/api/meetings/${meetingId}/attachments`, attachmentData).pipe(
-      take(1),
-      catchError((error) => {
-        console.error(`Failed to create attachment for meeting ${meetingId}:`, error);
-        return throwError(() => error);
-      })
-    );
+  public createMeetingAttachment(meetingId: string, attachmentData: CreateMeetingAttachmentRequest): Observable<MeetingAttachment> {
+    return this.http.post<MeetingAttachment>(`/api/meetings/${meetingId}/attachments`, attachmentData).pipe(take(1));
   }
 
-  public deleteAttachment(meetingId: string, attachmentId: string): Observable<void> {
-    return this.http.delete<void>(`/api/meetings/${meetingId}/attachments/${attachmentId}`).pipe(
-      take(1),
-      catchError((error) => {
-        console.error(`Failed to delete attachment ${attachmentId} from meeting ${meetingId}:`, error);
-        return throwError(() => error);
+  public updateMeetingAttachment(meetingId: string, attachmentId: string, updateData: UpdateMeetingAttachmentRequest): Observable<void> {
+    return this.http.put<void>(`/api/meetings/${meetingId}/attachments/${attachmentId}`, updateData).pipe(take(1));
+  }
+
+  public deleteMeetingAttachment(meetingId: string, attachmentId: string): Observable<void> {
+    return this.http.delete<void>(`/api/meetings/${meetingId}/attachments/${attachmentId}`).pipe(take(1));
+  }
+
+  public presignMeetingAttachment(meetingId: string, presignData: PresignAttachmentRequest): Observable<PresignAttachmentResponse> {
+    return this.http.post<PresignAttachmentResponse>(`/api/meetings/${meetingId}/attachments/presign`, presignData).pipe(take(1));
+  }
+
+  public getMeetingAttachmentDownloadUrl(meetingId: string, attachmentId: string): Observable<AttachmentDownloadUrlResponse> {
+    return this.http.get<AttachmentDownloadUrlResponse>(`/api/meetings/${meetingId}/attachments/${attachmentId}/download`).pipe(take(1));
+  }
+
+  /**
+   * Uploads a file to a meeting via the server, which handles presigning and
+   * the S3 PUT internally. Avoids browser-side CORS requirements on S3.
+   * File metadata is passed as query params; the raw binary is the request body.
+   */
+  public uploadMeetingFile(meetingId: string, file: File, presignData: PresignAttachmentRequest): Observable<PresignAttachmentResponse> {
+    let params = new HttpParams().set('name', presignData.name).set('file_size', presignData.file_size.toString()).set('file_type', presignData.file_type);
+
+    if (presignData.category) {
+      params = params.set('category', presignData.category);
+    }
+
+    if (presignData.description) {
+      params = params.set('description', presignData.description);
+    }
+
+    return this.http
+      .post<PresignAttachmentResponse>(`/api/meetings/${meetingId}/attachments/upload`, file, {
+        headers: new HttpHeaders({ 'Content-Type': file.type || 'application/octet-stream' }),
+        params,
       })
-    );
+      .pipe(take(1));
+  }
+
+  // ─── Past Meeting Attachment Methods (read-only — no upload UX yet) ───────
+
+  public getPastMeetingAttachmentDownloadUrl(pastMeetingId: string, attachmentId: string): Observable<AttachmentDownloadUrlResponse> {
+    return this.http.get<AttachmentDownloadUrlResponse>(`/api/past-meetings/${pastMeetingId}/attachments/${attachmentId}/download`).pipe(take(1));
   }
 
   public generateAgenda(request: GenerateAgendaRequest): Observable<GenerateAgendaResponse> {
@@ -555,21 +527,6 @@ export class MeetingService {
       map((response) => response.results),
       catchError(() => of(urls.map((url) => ({ url, title: null, domain: this.extractDomain(url) }))))
     );
-  }
-
-  private readFileAsBase64(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        const base64Data = result.split(',')[1];
-        resolve(base64Data);
-      };
-      reader.onerror = () => {
-        reject(new Error('Failed to read file'));
-      };
-      reader.readAsDataURL(file);
-    });
   }
 
   private extractDomain(url: string): string {

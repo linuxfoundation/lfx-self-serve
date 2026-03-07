@@ -4,51 +4,137 @@
 <div class="pb-4">
   <!-- Step Title -->
   <div class="mb-6">
-    <div class="flex items-center gap-3">
-      <h2 class="font-normal">Resources & Links</h2>
-      <span class="inline-flex items-center gap-1 text-xs font-medium text-gray-400 bg-gray-100 border border-gray-200 px-2.5 py-1 rounded-full">
-        <i class="fa-light fa-clock text-[10px]"></i>
-        Coming Soon
-      </span>
-    </div>
+    <h2 class="font-normal">Resources & Links</h2>
     <p class="text-sm text-gray-500 mt-1">Share documents, agendas, and reference materials so participants come prepared</p>
   </div>
 
-  <!-- Disabled content overlay -->
-  <div class="relative">
-    <div class="opacity-40 pointer-events-none select-none" aria-disabled="true">
-      <!-- Two Column Layout -->
-      <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
-        <!-- Upload Files Section - Left Column -->
-        <div class="flex flex-col gap-4">
-          <h4 class="text-neutral-950">Upload Files</h4>
+  <!-- Two Column Layout -->
+  <div class="grid grid-cols-1 md:grid-cols-2 gap-8">
+    <!-- Upload Files Section - Left Column -->
+    <div class="flex flex-col gap-4">
+      <h4 class="text-neutral-950">Upload Files</h4>
 
-          <lfx-file-upload
-            [multiple]="true"
-            [accept]="acceptString"
-            [maxFileSize]="10485760"
-            (onSelect)="onFileSelect($event)"
-            [customUpload]="true"
-            dataTest="meeting-attachment-upload"
-            [showUploadButton]="false"
-            [showCancelButton]="false"
-            chooseLabel="Click to upload files or drag and drop">
-          </lfx-file-upload>
-        </div>
+      <lfx-file-upload
+        [multiple]="true"
+        [accept]="acceptString"
+        [maxFileSize]="10485760"
+        (onSelect)="onFileSelect($event)"
+        [customUpload]="true"
+        dataTest="meeting-attachment-upload"
+        [showUploadButton]="false"
+        [showCancelButton]="false"
+        chooseLabel="Click to upload files or drag and drop">
+      </lfx-file-upload>
 
-        <!-- Add Important Links Section - Right Column -->
-        <div class="flex flex-col gap-4">
-          <h4 class="text-neutral-950">Add Links</h4>
-
-          <div class="flex flex-col gap-3">
-            <input placeholder="Link title (e.g., Project Repository)" class="w-full h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg" disabled />
-            <div class="flex items-center gap-3">
-              <input placeholder="https://github.com/your-project/repo" class="flex-1 h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg" disabled />
-              <lfx-button [disabled]="true" icon="fa-light fa-plus" size="small" data-testid="add-link-btn"> </lfx-button>
+      <!-- Pending Uploads -->
+      @if (pendingAttachments().length > 0) {
+        <div class="flex flex-col gap-2" data-testid="pending-attachments-list">
+          @for (attachment of pendingAttachments(); track attachment.id) {
+            <div class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50" data-testid="pending-attachment-item">
+              <div class="flex items-center gap-2 min-w-0">
+                <i class="fa-light fa-file-lines text-gray-500 flex-shrink-0"></i>
+                <span class="text-sm text-gray-700 truncate">{{ attachment.fileName }}</span>
+              </div>
+              <button
+                type="button"
+                class="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+                (click)="removeAttachment(attachment.id)"
+                [attr.data-testid]="'remove-pending-attachment-' + attachment.id">
+                <i class="fa-light fa-xmark"></i>
+              </button>
             </div>
-          </div>
+          }
+        </div>
+      }
+
+      <!-- Existing File Attachments (Edit Mode) -->
+      @if (existingAttachments().length > 0) {
+        <div class="flex flex-col gap-2" data-testid="existing-attachments-list">
+          <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Existing Files</p>
+          @for (attachment of existingAttachments(); track attachment.uid) {
+            @if (attachment.type === 'file') {
+              <div
+                class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border transition-colors"
+                [class]="pendingDeletionSet().has(attachment.uid) ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'"
+                [attr.data-testid]="'existing-attachment-' + attachment.uid">
+                <div class="flex items-center gap-2 min-w-0">
+                  <i class="fa-light fa-file-lines flex-shrink-0" [class]="pendingDeletionSet().has(attachment.uid) ? 'text-red-400' : 'text-gray-500'"> </i>
+                  <span class="text-sm truncate" [class]="pendingDeletionSet().has(attachment.uid) ? 'text-red-600 line-through' : 'text-gray-700'">
+                    {{ attachment.name }}
+                  </span>
+                </div>
+                @if (pendingDeletionSet().has(attachment.uid)) {
+                  <button
+                    type="button"
+                    class="flex-shrink-0 text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                    (click)="undoDeleteAttachment.emit(attachment.uid)"
+                    [attr.data-testid]="'undo-delete-attachment-' + attachment.uid">
+                    Undo
+                  </button>
+                } @else {
+                  <button
+                    type="button"
+                    class="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+                    (click)="onDeleteExistingAttachment(attachment.uid)"
+                    [attr.data-testid]="'delete-attachment-' + attachment.uid">
+                    <i class="fa-light fa-trash"></i>
+                  </button>
+                }
+              </div>
+            }
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Add Links Section - Right Column -->
+    <div class="flex flex-col gap-4">
+      <h4 class="text-neutral-950">Add Links</h4>
+
+      <div class="flex flex-col gap-3">
+        <input
+          [value]="newLinkTitle()"
+          (input)="newLinkTitle.set($any($event.target).value)"
+          placeholder="Link title (e.g., Project Repository)"
+          class="w-full h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300"
+          data-testid="new-link-title-input" />
+        <div class="flex items-center gap-3">
+          <input
+            [value]="newLinkUrl()"
+            (input)="newLinkUrl.set($any($event.target).value)"
+            placeholder="https://github.com/your-project/repo"
+            class="flex-1 h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300"
+            data-testid="new-link-url-input" />
+          <lfx-button icon="fa-light fa-plus" size="small" [disabled]="!newLinkTitle() || !newLinkUrl()" (onClick)="addLink()" data-testid="add-link-btn">
+          </lfx-button>
         </div>
       </div>
+
+      <!-- Links List -->
+      @if (importantLinksFormArray().length > 0) {
+        <div class="flex flex-col gap-2" data-testid="links-list">
+          @for (link of importantLinksFormArray().controls; track link.get('id')?.value; let i = $index) {
+            @if (!pendingDeletionSet().has(link.get('uid')?.value)) {
+              <div class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-gray-200 bg-gray-50" data-testid="link-item">
+                <div class="flex items-center gap-2 min-w-0">
+                  <i class="fa-light fa-link text-gray-500 flex-shrink-0"></i>
+                  <div class="flex flex-col gap-0 min-w-0">
+                    <span class="text-sm text-gray-700 truncate">{{ link.get('title')?.value }}</span>
+                    <span class="text-xs text-gray-400 truncate">{{ link.get('url')?.value }}</span>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  class="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+                  (click)="removeLink(i)"
+                  [attr.data-testid]="'remove-link-' + i">
+                  <i class="fa-light fa-xmark"></i>
+                </button>
+              </div>
+            }
+          }
+        </div>
+      }
     </div>
   </div>
 </div>

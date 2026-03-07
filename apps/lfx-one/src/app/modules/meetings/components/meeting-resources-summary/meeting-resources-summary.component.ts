@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, input, OnInit, output, signal } from '@angular/core';
-import { FormArray, FormControl, FormGroup, FormsModule, ReactiveFormsModule } from '@angular/forms';
+import { FormArray, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { FileUploadComponent } from '@components/file-upload/file-upload.component';
 import { ALLOWED_FILE_TYPES, MAX_FILE_SIZE_BYTES, MAX_FILE_SIZE_MB } from '@lfx-one/shared/constants';
@@ -13,73 +13,56 @@ import { MessageService } from 'primeng/api';
 
 @Component({
   selector: 'lfx-meeting-resources-summary',
-  imports: [ReactiveFormsModule, FormsModule, FileUploadComponent, ButtonComponent],
+  imports: [ReactiveFormsModule, FileUploadComponent, ButtonComponent],
   templateUrl: './meeting-resources-summary.component.html',
 })
 export class MeetingResourcesSummaryComponent implements OnInit {
-  // Input from parent
+  // 1. Private injections
+  private readonly messageService = inject(MessageService);
+
+  // 2. Public fields (inputs, outputs, constants)
   public readonly form = input.required<FormGroup>();
   public readonly existingAttachments = input<MeetingAttachment[]>([]);
   public readonly isEditMode = input<boolean>(false);
   public readonly deletingAttachmentId = input<string | null>(null);
   public readonly meetingId = input<string | null>(null);
   public readonly pendingAttachmentDeletions = input<string[]>([]);
-
-  // File management
-  public pendingAttachments = signal<PendingAttachment[]>([]);
-
-  // New link for simple input approach (matching React code)
-  public newLink = { title: '', url: '' };
-
-  // Important links management
-  public get importantLinksFormArray(): FormArray {
-    return this.form().get('important_links') as FormArray;
-  }
-
-  // Summary computed values
-  public formattedDateTime = computed(() => this.formatDateTime());
-  public selectedFeatures = computed(() => this.getSelectedFeatures());
-  public meetingTypeLabel = computed(() => this.getMeetingTypeLabel());
-  public recurrenceLabel = computed(() => this.getRecurrenceLabel());
-
-  // Inject services
-  private readonly messageService = inject(MessageService);
-
-  // Navigation
   public readonly goToStep = output<number>();
   public readonly deleteAttachment = output<string>();
   public readonly undoDeleteAttachment = output<string>();
-  public readonly deleteLinkAttachment = output<string>(); // Output when a link with uid is removed
-
-  // File upload configuration
+  public readonly deleteLinkAttachment = output<string>();
   public readonly acceptString = generateAcceptString();
 
+  // 3. Simple WritableSignals
+  public pendingAttachments = signal<PendingAttachment[]>([]);
+  public newLinkTitle = signal('');
+  public newLinkUrl = signal('');
+
+  // 4. Complex computed/toSignal
+  public readonly importantLinksFormArray = computed(() => this.form().get('important_links') as FormArray);
+  public readonly pendingDeletionSet = computed(() => new Set(this.pendingAttachmentDeletions()));
+  public readonly formattedDateTime = computed(() => this.formatDateTime());
+  public readonly selectedFeatures = computed(() => this.getSelectedFeatures());
+  public readonly meetingTypeLabel = computed(() => this.getMeetingTypeLabel());
+  public readonly recurrenceLabel = computed(() => this.getRecurrenceLabel());
+
   public ngOnInit(): void {
-    // Initialize attachments from form
     const existingAttachments = this.form().get('attachments')?.value || [];
     this.pendingAttachments.set(existingAttachments);
   }
 
-  // Utility methods
   public getFileType(fileName: string): string {
     const extension = fileName.split('.').pop()?.toUpperCase();
     return extension || 'FILE';
   }
 
-  public isPendingDeletion(attachmentId: string): boolean {
-    return this.pendingAttachmentDeletions().includes(attachmentId);
-  }
-
-  // File handling methods
   public onFileSelect(event: any): void {
-    // Handle PrimeNG FileUpload event structure
     let files: File[] = [];
     if (event.files && Array.isArray(event.files)) {
       files = event.files;
     } else if (event.currentFiles && Array.isArray(event.currentFiles)) {
       files = event.currentFiles;
     } else {
-      console.error('Could not extract files from PrimeNG FileUpload event:', event);
       return;
     }
 
@@ -121,34 +104,35 @@ export class MeetingResourcesSummaryComponent implements OnInit {
     this.form().get('attachments')?.setValue(this.pendingAttachments());
   }
 
-  // Link management methods
   public addLink(): void {
-    if (this.newLink.title && this.newLink.url) {
+    const title = this.newLinkTitle().trim();
+    const url = this.newLinkUrl().trim();
+
+    if (title && url) {
       const linkFormGroup = new FormGroup({
         id: new FormControl(crypto.randomUUID()),
-        title: new FormControl(this.newLink.title),
-        url: new FormControl(this.newLink.url),
-        uid: new FormControl(null), // New links don't have a uid yet
+        title: new FormControl(title),
+        url: new FormControl(url),
+        uid: new FormControl(null),
       });
 
-      this.importantLinksFormArray.push(linkFormGroup);
-      this.newLink = { title: '', url: '' };
+      this.importantLinksFormArray().push(linkFormGroup);
+      this.newLinkTitle.set('');
+      this.newLinkUrl.set('');
     }
   }
 
   public removeLink(index: number): void {
-    const linkControl = this.importantLinksFormArray.at(index);
+    const linkControl = this.importantLinksFormArray().at(index);
     const uid = linkControl?.get('uid')?.value;
 
-    // If this link has a uid (exists as an attachment), emit for deletion tracking
     if (uid) {
       this.deleteLinkAttachment.emit(uid);
     }
 
-    this.importantLinksFormArray.removeAt(index);
+    this.importantLinksFormArray().removeAt(index);
   }
 
-  // Navigation methods
   public editStep(step: number): void {
     this.goToStep.emit(step);
   }
@@ -157,21 +141,17 @@ export class MeetingResourcesSummaryComponent implements OnInit {
     this.deleteAttachment.emit(attachmentId);
   }
 
-  // Private methods
   private validateFile(file: File): string | null {
-    // Check file size
     if (file.size > MAX_FILE_SIZE_BYTES) {
       return `File "${file.name}" is too large. Maximum size is ${MAX_FILE_SIZE_MB}MB.`;
     }
 
-    // Check file type (with fallback to extension-based validation for empty/generic MIME types)
     if (!isFileTypeAllowed(file.type, file.name, ALLOWED_FILE_TYPES)) {
       const fileTypeDisplay = getMimeTypeDisplayName(file.type, file.name);
       const allowedTypes = getAcceptedFileTypesDisplay();
       return `File type "${fileTypeDisplay}" is not supported. Allowed types: ${allowedTypes}.`;
     }
 
-    // Check for duplicate filenames in current session
     const currentFiles = this.pendingAttachments();
     const isDuplicate = currentFiles.some((attachment) => attachment.fileName === file.name && !attachment.uploadError);
 
@@ -179,15 +159,13 @@ export class MeetingResourcesSummaryComponent implements OnInit {
       return `A file named "${file.name}" has already been selected for upload.`;
     }
 
-    // Check filename safety
     if (file.name.includes('..') || file.name.startsWith('.')) {
       return `Invalid filename "${file.name}". Filename cannot contain path traversal characters or start with a dot.`;
     }
 
-    return null; // File is valid
+    return null;
   }
 
-  // Summary formatting methods
   private formatDateTime(): string {
     const startDate = this.form().get('startDate')?.value;
     const startTime = this.form().get('startTime')?.value;
@@ -225,7 +203,6 @@ export class MeetingResourcesSummaryComponent implements OnInit {
     const meetingType = this.form().get('meeting_type')?.value;
     if (!meetingType) return 'Not selected';
 
-    // Convert to title case
     return meetingType
       .split('_')
       .map((word: string) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
@@ -238,11 +215,9 @@ export class MeetingResourcesSummaryComponent implements OnInit {
       return 'One-time meeting';
     }
 
-    // Handle custom recurrence patterns with detailed summary
     if (recurrenceType === 'custom') {
       const recurrenceObject = this.form().get('recurrence')?.value;
       if (recurrenceObject && recurrenceObject.type) {
-        // Convert the API object to CustomRecurrencePattern for summary generation
         const customPattern = this.convertToCustomPattern(recurrenceObject);
         const summary = buildRecurrenceSummary(customPattern);
         return summary.fullSummary;
@@ -250,7 +225,6 @@ export class MeetingResourcesSummaryComponent implements OnInit {
       return 'Custom recurrence pattern';
     }
 
-    // Handle simple recurrence patterns
     const labels: Record<string, string> = {
       daily: 'Daily',
       weekly: 'Weekly',
@@ -263,7 +237,6 @@ export class MeetingResourcesSummaryComponent implements OnInit {
   }
 
   private convertToCustomPattern(recurrenceObject: any): CustomRecurrencePattern {
-    // Determine UI helper fields from API object
     let patternType: 'daily' | 'weekly' | 'monthly' = 'weekly';
     if (recurrenceObject.type === RecurrenceType.DAILY) patternType = 'daily';
     else if (recurrenceObject.type === RecurrenceType.WEEKLY) patternType = 'weekly';
@@ -277,7 +250,6 @@ export class MeetingResourcesSummaryComponent implements OnInit {
     if (recurrenceObject.end_date_time) endType = 'date';
     else if (recurrenceObject.end_times) endType = 'occurrences';
 
-    // Convert weekly_days string to array if present
     let weeklyDaysArray: number[] = [];
     if (recurrenceObject.weekly_days) {
       weeklyDaysArray = recurrenceObject.weekly_days.split(',').map((d: string) => parseInt(d.trim()) - 1);

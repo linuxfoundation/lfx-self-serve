@@ -23,7 +23,11 @@ router.get('/:uid/summary', (req, res, next) => pastMeetingController.getPastMee
 // Update past meeting summary
 router.put('/:uid/summary/:summaryUid', (req, res, next) => pastMeetingController.updatePastMeetingSummary(req, res, next));
 
-// Get past meeting attachments
+// Past meeting attachment routes (read-only — no upload UX yet)
 router.get('/:uid/attachments', (req, res, next) => pastMeetingController.getPastMeetingAttachments(req, res, next));
+
+router.get('/:uid/attachments/:attachmentId', (req, res, next) => pastMeetingController.getPastMeetingAttachment(req, res, next));
+
+router.get('/:uid/attachments/:attachmentId/download', (req, res, next) => pastMeetingController.getPastMeetingAttachmentDownloadUrl(req, res, next));
 
 export default router;
