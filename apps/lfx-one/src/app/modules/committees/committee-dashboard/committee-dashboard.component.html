@@ -93,12 +93,14 @@
         <lfx-committee-table
           [committees]="filteredCommittees()"
           [canManageCommittee]="canCreateGroup()"
-          [committeeLabel]="committeeLabel"
+          [myCommitteeUids]="myCommitteeUids()"
           [searchForm]="searchForm"
           [categoryOptions]="categories()"
           [votingStatusOptions]="votingStatusOptions()"
           (refresh)="refreshCommittees()"
-          (rowClick)="onCommitteeClick($event)">
+          (rowClick)="onCommitteeClick($event)"
+          (joinClick)="joinGroup($event)"
+          (inviteClick)="inviteToGroup($event)">
         </lfx-committee-table>
       }
     </div>

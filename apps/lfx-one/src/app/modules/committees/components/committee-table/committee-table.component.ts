@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
+import { DatePipe, DecimalPipe } from '@angular/common';
 import { Component, computed, inject, input, output, signal, Signal, WritableSignal } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
@@ -27,6 +27,7 @@ import { MemberFormComponent } from '../member-form/member-form.component';
   selector: 'lfx-committee-table',
   imports: [
     DatePipe,
+    DecimalPipe,
     ReactiveFormsModule,
     RouterLink,
     CardComponent,
@@ -55,7 +56,9 @@ export class CommitteeTableComponent {
   // Inputs
   public committees = input.required<Committee[]>();
   public canManageCommittee = input<boolean>(false);
-  public committeeLabel = input<string>(COMMITTEE_LABEL.singular);
+  public myCommitteeUids = input<Set<string>>(new Set());
+  public readonly committeeLabel = COMMITTEE_LABEL.singular;
+  public readonly committeeLabelPlural = COMMITTEE_LABEL.plural;
   public searchForm = input.required<FormGroup>();
   public categoryOptions = input.required<{ label: string; value: string | null }[]>();
   public votingStatusOptions = input.required<{ label: string; value: string | null }[]>();
@@ -67,6 +70,8 @@ export class CommitteeTableComponent {
   // Outputs
   public readonly refresh = output<void>();
   public readonly rowClick = output<Committee>();
+  public readonly joinClick = output<Committee>();
+  public readonly inviteClick = output<Committee>();
 
   // Event handlers
   public onAddMember(committee: Committee): void {
@@ -93,8 +98,8 @@ export class CommitteeTableComponent {
 
   public onDeleteCommittee(committee: Committee): void {
     this.confirmationService.confirm({
-      message: `Are you sure you want to delete the ${this.committeeLabel().toLowerCase()} "${committee.name}"? This action cannot be undone.`,
-      header: `Delete ${this.committeeLabel()}`,
+      message: `Are you sure you want to delete the ${this.committeeLabel.toLowerCase()} "${committee.name}"? This action cannot be undone.`,
+      header: `Delete ${this.committeeLabel}`,
       acceptLabel: 'Delete',
       rejectLabel: 'Cancel',
       acceptButtonStyleClass: 'p-button-danger p-button-sm',
@@ -116,7 +121,7 @@ export class CommitteeTableComponent {
         this.messageService.add({
           severity: 'success',
           summary: 'Success',
-          detail: `${this.committeeLabel()} deleted successfully`,
+          detail: `${this.committeeLabel} deleted successfully`,
         });
         this.refresh.emit();
       },
@@ -125,9 +130,9 @@ export class CommitteeTableComponent {
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
-          detail: `Failed to delete ${this.committeeLabel().toLowerCase()}`,
+          detail: `Failed to delete ${this.committeeLabel.toLowerCase()}`,
         });
-        console.error(`Failed to delete ${this.committeeLabel().toLowerCase()}:`, error);
+        console.error(`Failed to delete ${this.committeeLabel.toLowerCase()}:`, error);
       },
     });
   }
