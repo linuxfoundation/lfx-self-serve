@@ -103,7 +103,7 @@
         </td>
         <td>
           <a [routerLink]="['/groups', committee.uid]">
-            {{ committee.total_members || 0 | number }}
+            {{ (committee.total_members || 0) | number }}
           </a>
         </td>
         <td>
