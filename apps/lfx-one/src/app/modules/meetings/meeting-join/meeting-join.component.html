@@ -171,12 +171,7 @@
               <div class="w-full md:w-[296px] flex flex-col gap-2">
                 @if (canToggleRsvpView() && showMyRsvp()) {
                   <!-- Show RSVP Button Group when organizer toggles to set their own RSVP -->
-                  <lfx-rsvp-button-group
-                    [meeting]="meeting()"
-                    [occurrenceId]="currentOccurrence()?.occurrence_id"
-                    [disabled]="true"
-                    disabledMessage="Coming Soon">
-                  </lfx-rsvp-button-group>
+                  <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
                 } @else {
                   <!-- Show RSVP Details for organizers (default view) -->
                   <lfx-meeting-rsvp-details
@@ -204,16 +199,11 @@
                 }
               </div>
             } @else if (authenticated()) {
-              <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) - Coming Soon -->
+              <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) -->
               <div class="w-full md:w-[296px]">
                 @if (isInvited()) {
                   @defer (when meeting()) {
-                    <lfx-rsvp-button-group
-                      [meeting]="meeting()"
-                      [occurrenceId]="currentOccurrence()?.occurrence_id"
-                      [disabled]="true"
-                      disabledMessage="Coming Soon">
-                    </lfx-rsvp-button-group>
+                    <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
                   }
                 } @else if (canRegisterForMeeting()) {
                   <lfx-button

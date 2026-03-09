@@ -157,7 +157,7 @@ export class RsvpButtonGroupComponent {
     return toSignal(
       combineLatest([toObservable(this.meeting), toObservable(this.authenticated), toObservable(this.refreshTrigger)]).pipe(
         switchMap(([meeting, authenticated]) => {
-          // Skip fetch when component is disabled (e.g. "Coming Soon" state)
+          // Skip fetch when component is disabled
           if (this.disabled()) {
             return of(null);
           }

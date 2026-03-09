@@ -252,8 +252,7 @@
             <!-- Organizer view with optional toggle for invited organizers -->
             @if (canToggleRsvpView() && showMyRsvp()) {
               <!-- Show RSVP Button Group when organizer toggles to set their own RSVP -->
-              <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id" [disabled]="true" disabledMessage="Coming Soon">
-              </lfx-rsvp-button-group>
+              <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
             } @else {
               <!-- Show RSVP Details for organizers (default view) -->
               <lfx-meeting-rsvp-details
@@ -271,8 +270,7 @@
           <!-- Show RSVP Selection for authenticated invited non-organizers (upcoming meetings only) -->
           @if (isInvited()) {
             @defer (on idle) {
-              <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id" [disabled]="true" disabledMessage="Coming Soon">
-              </lfx-rsvp-button-group>
+              <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
             } @placeholder {
               <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60 animate-pulse min-h-[80px]"></div>
             }

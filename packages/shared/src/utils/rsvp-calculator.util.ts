@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MeetingOccurrence, MeetingRsvp, RsvpCounts } from '../interfaces/meeting.interface';
+import { ITXMeetingResponseResult, MeetingOccurrence, MeetingRsvp, RsvpCounts } from '../interfaces/meeting.interface';
 
 /**
  * Calculate RSVP counts for a specific occurrence
@@ -122,4 +122,25 @@ function getApplicableRsvp(occurrence: MeetingOccurrence | null, userRsvps: Meet
 
   // No applicable RSVP found
   return null;
+}
+
+/**
+ * Map an ITX meeting response result to the MeetingRsvp shape used throughout the UI
+ *
+ * @param result - The raw response from the ITX endpoint
+ * @returns A MeetingRsvp object compatible with the rest of the application
+ */
+export function mapITXResponseToMeetingRsvp(result: ITXMeetingResponseResult): MeetingRsvp {
+  return {
+    id: result.id,
+    meeting_id: result.meeting_id,
+    registrant_id: result.registrant_id,
+    username: result.username,
+    email: result.email,
+    response: result.response,
+    scope: result.scope,
+    occurrence_id: result.occurrence_id,
+    created_at: result.created_at,
+    updated_at: result.updated_at,
+  };
 }

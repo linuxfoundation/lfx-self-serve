@@ -905,6 +905,50 @@ export interface CreateMeetingRsvpRequest {
 }
 
 // ============================================================================
+// ITX Meeting Response Interfaces (Goa endpoint shape)
+// ============================================================================
+
+/**
+ * Request payload sent to the ITX meeting response endpoint
+ * @description POST /itx/meetings/{meeting_id}/responses
+ */
+export interface ITXCreateMeetingResponseRequest {
+  /** User's RSVP response */
+  response: RsvpResponse;
+  /** Scope of the RSVP */
+  scope: RsvpScope;
+  /** User's registrant ID */
+  registrant_id: string;
+}
+
+/**
+ * Response shape from the ITX meeting response endpoint
+ * @description Result returned by POST /itx/meetings/{meeting_id}/responses
+ */
+export interface ITXMeetingResponseResult {
+  /** Unique identifier for the response */
+  id: string;
+  /** Meeting ID this response belongs to */
+  meeting_id: string;
+  /** User's registrant ID */
+  registrant_id: string;
+  /** User's username */
+  username: string;
+  /** User's email address */
+  email: string;
+  /** User's RSVP response */
+  response: RsvpResponse;
+  /** Scope of the RSVP */
+  scope: RsvpScope;
+  /** Occurrence ID (for recurring meetings) */
+  occurrence_id?: string;
+  /** Creation timestamp */
+  created_at: string;
+  /** Last update timestamp */
+  updated_at: string;
+}
+
+// ============================================================================
 // URL Metadata Interfaces (for resource link resolution)
 // ============================================================================
 

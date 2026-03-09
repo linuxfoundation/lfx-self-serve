@@ -27,15 +27,16 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
+  ITXCreateMeetingResponseRequest,
+  ITXMeetingResponseResult,
 } from '@lfx-one/shared/interfaces';
-import { transformV1SummaryToV2 } from '@lfx-one/shared/utils';
+import { mapITXResponseToMeetingRsvp, transformV1SummaryToV2 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { getUsernameFromAuth } from '../utils/auth-helper';
-import { generateM2MToken } from '../utils/m2m-token.util';
+import { getUsernameFromAuth, stripAuthPrefix, usernameMatches } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
@@ -422,6 +423,36 @@ export class MeetingService {
   }
 
   /**
+   * Fetches all registrants for a meeting by username.
+   * Strips any auth provider prefix (e.g. "auth0|") since the query service stores plain usernames.
+   */
+  public async getMeetingRegistrantsByUsername(req: Request, meetingUid: string, username: string, m2mToken?: string): Promise<MeetingRegistrant[]> {
+    const plainUsername = stripAuthPrefix(username);
+    const params: Record<string, any> = {
+      type: 'v1_meeting_registrant',
+      parent: '',
+      tags_all: [`username:${plainUsername}`, `meeting_id:${meetingUid}`],
+      page_size: 100,
+    };
+
+    logger.debug(req, 'get_meeting_registrants_by_username', 'Fetching meeting registrants by username', { meeting_id: meetingUid, username: plainUsername });
+
+    const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
+
+    return fetchAllQueryResources<MeetingRegistrant>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        { ...params, ...(pageToken && { page_token: pageToken }) },
+        undefined,
+        headers
+      )
+    );
+  }
+
+  /**
    * Creates a new meeting registrant
    */
   public async addMeetingRegistrant(req: Request, registrantData: CreateMeetingRegistrantRequest): Promise<MeetingRegistrant> {
@@ -647,7 +678,7 @@ export class MeetingService {
   }
 
   /**
-   * Create or update a meeting RSVP
+   * Create or update a meeting RSVP via the ITX responses endpoint
    */
   public async createMeetingRsvp(req: Request, meetingUid: string, rsvpData: CreateMeetingRsvpRequest): Promise<MeetingRsvp> {
     logger.debug(req, 'create_meeting_rsvp', 'Creating meeting RSVP', {
@@ -656,22 +687,68 @@ export class MeetingService {
       scope: rsvpData.scope,
     });
 
-    // Backend derives user from bearer token, so we don't need to pass username/email/registrant_id
-    const requestData: CreateMeetingRsvpRequest = {
+    // Resolve registrant_id — try email first, fall back to username
+    const rawEmail = req.oidc?.user?.['email'] as string | undefined;
+    const email = rawEmail?.toLowerCase();
+    let registrants: MeetingRegistrant[] = [];
+
+    if (email) {
+      registrants = await this.getMeetingRegistrantsByEmail(req, meetingUid, email);
+    }
+
+    if (registrants.length === 0) {
+      const username = await getUsernameFromAuth(req);
+      if (username) {
+        registrants = await this.getMeetingRegistrantsByUsername(req, meetingUid, username);
+      }
+    }
+
+    if (registrants.length === 0) {
+      throw new ResourceNotFoundError('Registrant', email || 'unknown', {
+        operation: 'create_meeting_rsvp',
+      });
+    }
+
+    const registrantId = registrants[0].uid;
+
+    // Build effective meeting ID for occurrence-specific RSVPs
+    const effectiveMeetingId = rsvpData.occurrence_id ? `${meetingUid}-${rsvpData.occurrence_id}` : meetingUid;
+
+    const requestData: ITXCreateMeetingResponseRequest = {
       response: rsvpData.response,
       scope: rsvpData.scope,
-      occurrence_id: rsvpData.occurrence_id,
-      email: rsvpData.email,
-      username: rsvpData.username,
+      registrant_id: registrantId,
     };
 
-    const rsvp = await this.microserviceProxy.proxyRequest<MeetingRsvp>(req, 'LFX_V2_SERVICE', `/itx/meetings/${meetingUid}/rsvp`, 'POST', {}, requestData);
+    const result = await this.microserviceProxy.proxyRequest<ITXMeetingResponseResult>(
+      req,
+      'LFX_V2_SERVICE',
+      `/itx/meetings/${effectiveMeetingId}/responses`,
+      'POST',
+      {},
+      requestData
+    );
+
+    const rsvp = mapITXResponseToMeetingRsvp(result);
+
+    // Poll query service until the RSVP is propagated so the UI can fetch it immediately
+    await pollEndpoint({
+      req,
+      operation: 'create_meeting_rsvp_poll',
+      pollFn: async () => {
+        const allRsvps = await this.getMeetingRsvps(req, meetingUid);
+        return allRsvps.some((r) => r.id === rsvp.id && r.response === rsvp.response);
+      },
+      maxRetries: 5,
+      retryDelayMs: 1000,
+      metadata: { meeting_id: meetingUid, rsvp_id: rsvp.id },
+    });
 
     return rsvp;
   }
 
   /**
-   * Get current user's RSVP by calling meeting service directly with M2M token
+   * Get current user's RSVP via the query service
    * @param req Express request object
    * @param meetingUid Meeting UID to get RSVP for
    * @param occurrenceId Optional occurrence ID to filter RSVP for specific occurrence
@@ -694,27 +771,11 @@ export class MeetingService {
         return null;
       }
 
-      // Generate M2M token and set it on the request
-      const m2mToken = await generateM2MToken(req);
+      // Fetch all RSVPs for this meeting via query service
+      const allRsvps = await this.getMeetingRsvps(req, meetingUid);
 
-      // Call meeting service directly to get all RSVPs for this meeting
-      const response = await this.microserviceProxy.proxyRequest<{ rsvps: MeetingRsvp[] }>(
-        req,
-        'LFX_V2_SERVICE',
-        `/itx/meetings/${meetingUid}/rsvp`,
-        'GET',
-        undefined,
-        undefined,
-        {
-          Authorization: `Bearer ${m2mToken}`,
-        }
-      );
-
-      // Handle response - it might be wrapped in { data: [] } or be a direct array
-      const allRsvps = response.rsvps ?? [];
-
-      // Filter RSVPs for current user
-      const userRsvps = allRsvps.filter((rsvp) => rsvp.username === username);
+      // Filter RSVPs for current user (match with and without auth provider prefix)
+      const userRsvps = allRsvps.filter((rsvp) => usernameMatches(username, rsvp.username));
 
       if (occurrenceId) {
         // First try to find an occurrence-specific RSVP (takes precedence)

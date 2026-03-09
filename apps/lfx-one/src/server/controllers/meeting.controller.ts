@@ -30,6 +30,7 @@ import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
+import { getUsernameFromAuth, usernameMatches } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -53,6 +54,7 @@ export class MeetingController {
       const { data: meetings, page_token } = await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_meeting', true);
 
       const userEmail = (req.oidc.user?.['email'] as string)?.toLowerCase() || '';
+      const username = await getUsernameFromAuth(req);
       const registrantsByMeeting = await Promise.all(
         meetings.map(async (m) => {
           if (!m.organizer) {
@@ -78,7 +80,9 @@ export class MeetingController {
         if (registrants) {
           committeeCount = registrants.filter((r) => r.type === 'committee').length;
           individualCount = registrants.length - committeeCount;
-          invited = userEmail ? registrants.some((r) => r.email?.toLowerCase() === userEmail) : false;
+          invited = registrants.some(
+            (r) => (userEmail && r.email?.toLowerCase() === userEmail) || (username && r.username && usernameMatches(username, r.username))
+          );
           logger.debug(req, 'get_meetings', 'Registrant counts computed', {
             meeting_id: m.id,
             title: m.title,
@@ -98,7 +102,7 @@ export class MeetingController {
         }
         return { ...m, individual_registrants_count: individualCount, committee_members_count: committeeCount, invited };
       });
-      if (meetingsNeedingInviteCheck.length > 0 && userEmail) {
+      if (meetingsNeedingInviteCheck.length > 0 && (userEmail || username)) {
         const m2mToken = await generateM2MToken(req);
         await Promise.all(
           meetingsNeedingInviteCheck.map(async (idx) => {
@@ -910,7 +914,6 @@ export class MeetingController {
 
     const startTime = logger.startOperation(req, 'create_meeting_rsvp', {
       meeting_id: uid,
-      registrant_id: rsvpData.registrant_id,
       response: rsvpData.response,
       scope: rsvpData.scope,
     });
@@ -957,7 +960,7 @@ export class MeetingController {
 
   /**
    * GET /meetings/:uid/rsvp/me
-   * Gets current user's RSVP by calling meeting service directly with M2M token
+   * Gets current user's RSVP via the query service
    */
   public async getMeetingRsvpByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
