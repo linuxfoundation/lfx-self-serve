@@ -11,7 +11,6 @@
     styleClass="px-5 py-2.5 bg-white hover:bg-blue-50 text-blue-500 rounded-full font-medium flex items-center gap-2 border border-blue-500 transition-all">
     <span class="fa-stack" style="font-size: 0.6em; width: 2em; height: 2em; line-height: 2em">
       <i class="fa-light fa-comment fa-stack-2x"></i>
-      <!-- <i class="fa-solid fa-sparkle fa-stack-1x text-amber-400" style="top: -1em; left: 1.25em"></i> -->
     </span>
   </lfx-button>
 }
@@ -19,11 +18,156 @@
 <!-- Drawer -->
 <p-drawer
   [visible]="visible()"
-  header="Ask LFX Lens"
   position="right"
-  styleClass="xl:w-2/5 lg:w-2/3 w-full"
-  (onShow)="onShow()"
+  styleClass="xl:w-2/5 lg:w-2/3 w-full lens-drawer"
   (onHide)="onHide()"
+  (onShow)="onShow()"
   data-testid="data-copilot-drawer">
-  <div #iframeContainer class="iframe-container" data-testid="data-copilot-iframe-container"></div>
+  <!-- Custom header -->
+  <ng-template #header>
+    <div class="flex w-full items-center justify-between">
+      <div class="flex items-center gap-3">
+        <div class="flex h-8 w-8 items-center justify-center rounded-lg bg-gradient-to-br from-blue-500 to-blue-600">
+          <i class="fa-duotone fa-sparkles text-xs text-white"></i>
+        </div>
+        <div class="flex flex-col">
+          <span class="text-sm font-semibold text-gray-900">LFX Lens</span>
+          <span class="text-[10px] text-gray-400">AI-powered data assistant</span>
+        </div>
+      </div>
+    </div>
+  </ng-template>
+
+  <div class="flex h-full flex-col">
+    <!-- Messages area (scrollable) -->
+    <div
+      #messagesContainer
+      class="messages-area flex-1 overflow-y-auto px-5 py-5"
+      tabindex="0"
+      role="log"
+      aria-label="Chat messages"
+      (scroll)="onMessagesScroll()"
+      data-testid="data-copilot-messages">
+      @if (!hasMessages()) {
+        <!-- Empty state -->
+        <div class="flex h-full flex-col items-center justify-center gap-5">
+          <div class="flex h-20 w-20 items-center justify-center rounded-2xl bg-gradient-to-br from-blue-500 to-blue-600 shadow-lg shadow-blue-500/20">
+            <i class="fa-duotone fa-sparkles text-3xl text-white"></i>
+          </div>
+          <div class="flex flex-col items-center gap-1.5">
+            <h3 class="text-lg font-semibold text-gray-900">Ask LFX Lens</h3>
+            <p class="max-w-xs text-center text-sm text-gray-400">Explore your project data with natural language queries</p>
+          </div>
+          <div class="grid w-full grid-cols-2 gap-3 px-4">
+            @for (prompt of suggestedPrompts; track prompt) {
+              <button
+                (click)="sendPrompt(prompt)"
+                class="group flex items-center gap-3 rounded-xl border-l-[3px] border-l-blue-300 bg-blue-50/40 px-5 py-4 text-left text-sm text-blue-800 shadow-sm transition-all hover:translate-x-0.5 hover:border-l-blue-500 hover:bg-blue-100/60"
+                data-testid="data-copilot-suggested-prompt">
+                <i class="fa-solid fa-arrow-right text-[10px] text-blue-400 transition-colors group-hover:text-blue-500"></i>
+                {{ prompt }}
+              </button>
+            }
+          </div>
+        </div>
+      } @else {
+        <!-- Message list -->
+        <div class="flex flex-col gap-5" data-testid="data-copilot-message-list">
+          @for (msg of messages(); track $index) {
+            @if (msg.role === 'user') {
+              <!-- User message -->
+              <div class="message-fade-in flex w-full justify-end">
+                <div
+                  class="max-w-[80%] whitespace-pre-wrap rounded-xl bg-blue-600 px-4 py-3 text-sm leading-relaxed text-white shadow-sm"
+                  data-testid="data-copilot-user-message">
+                  {{ msg.content }}
+                </div>
+              </div>
+            } @else {
+              <!-- Assistant message -->
+              <div class="message-fade-in flex w-full flex-col gap-1.5">
+                @if (msg.loading && !msg.content && msg.blocks.length === 0) {
+                  <!-- Typing indicator -->
+                  <div class="inline-flex justify-start w-fit items-center gap-1.5 rounded-xl border border-gray-200 px-4 py-3">
+                    <div class="h-2 w-2 animate-bounce rounded-full bg-blue-400"></div>
+                    <div class="h-2 w-2 animate-bounce rounded-full bg-blue-400 [animation-delay:150ms]"></div>
+                    <div class="h-2 w-2 animate-bounce rounded-full bg-blue-400 [animation-delay:300ms]"></div>
+                  </div>
+                } @else {
+                  <div class="flex items-center gap-1.5 pb-0.5">
+                    <i class="fa-duotone fa-sparkles text-[10px] text-blue-400"></i>
+                    <span class="text-[10px] font-medium text-blue-400">Lens</span>
+                  </div>
+                  <div class="border-l-2 border-blue-100 pl-4" data-testid="data-copilot-assistant-message">
+                    <lfx-lens-response [content]="msg.content" [blocks]="msg.blocks" (suggestionClick)="sendPrompt($event)" />
+                  </div>
+                }
+              </div>
+            }
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Status bar -->
+    @if (currentStatus()) {
+      <div
+        class="flex items-center gap-2.5 border-t border-gray-100 bg-white/80 px-5 py-2 backdrop-blur-sm"
+        role="status"
+        aria-live="polite"
+        data-testid="data-copilot-status-bar">
+        <div class="h-1.5 w-1.5 animate-pulse rounded-full bg-blue-500"></div>
+        <span class="text-xs text-gray-500">{{ currentStatus() }}</span>
+      </div>
+    }
+
+    <!-- Error bar -->
+    @if (error()) {
+      <div class="flex items-center gap-2.5 border-l-[3px] border-l-red-400 bg-red-50/50 px-5 py-2" role="alert" data-testid="data-copilot-error-bar">
+        <i class="fa-duotone fa-circle-exclamation text-xs text-red-500"></i>
+        <span class="text-xs text-red-600">{{ error() }}</span>
+      </div>
+    }
+
+    <!-- Input area -->
+    <div class="border-t border-gray-100 px-5 py-3" data-testid="data-copilot-input-area">
+      <div class="gradient-separator mb-3"></div>
+      <div class="flex items-end gap-2">
+        <textarea
+          #chatTextarea
+          [formControl]="messageControl"
+          (keydown)="onKeydown($event)"
+          (input)="autoGrowTextarea()"
+          placeholder="Ask a question..."
+          aria-label="Ask a question"
+          rows="1"
+          class="chat-textarea min-w-0 flex-1 resize-none rounded-xl border border-gray-200 px-4 py-3 text-sm placeholder:text-gray-400 focus:border-blue-300 focus:outline-none focus:ring-2 focus:ring-blue-100"
+          data-testid="data-copilot-input"></textarea>
+        @if (streaming()) {
+          <button
+            (click)="abort()"
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-red-500 text-white transition-all hover:bg-red-600 hover:scale-105"
+            title="Stop generating"
+            aria-label="Stop generating"
+            data-testid="data-copilot-stop-button">
+            <i class="fa-solid fa-stop text-xs"></i>
+          </button>
+        } @else {
+          <button
+            (click)="send()"
+            [disabled]="!canSend()"
+            class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl bg-gradient-to-r from-blue-500 to-blue-600 text-white transition-all hover:shadow-md hover:scale-105 disabled:cursor-not-allowed disabled:opacity-30 disabled:hover:scale-100 disabled:hover:shadow-none"
+            title="Send message"
+            aria-label="Send message"
+            data-testid="data-copilot-send-button">
+            <i class="fa-solid fa-paper-plane-top text-sm"></i>
+          </button>
+        }
+      </div>
+      <p class="mt-2 flex items-center justify-center gap-1 text-[10px] text-gray-400">
+        <i class="fa-solid fa-lock text-[8px]"></i>
+        AI can make mistakes. Verify important information.
+      </p>
+    </div>
+  </div>
 </p-drawer>

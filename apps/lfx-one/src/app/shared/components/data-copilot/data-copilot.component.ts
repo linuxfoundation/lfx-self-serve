@@ -1,128 +1,191 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, ElementRef, inject, input, signal, viewChild } from '@angular/core';
+import { Component, computed, DestroyRef, ElementRef, inject, input, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
+import { LensResponseComponent } from '@app/shared/components/lens-response/lens-response.component';
 import { AccountContextService } from '@app/shared/services/account-context.service';
 import { FeatureFlagService } from '@app/shared/services/feature-flag.service';
+import { LensService } from '@app/shared/services/lens.service';
 import { ProjectContextService } from '@app/shared/services/project-context.service';
+import { LENS_SUGGESTED_PROMPTS } from '@lfx-one/shared/constants';
+import { LensContext } from '@lfx-one/shared/interfaces';
 import { DrawerModule } from 'primeng/drawer';
+import { map } from 'rxjs';
+
+import type { Signal } from '@angular/core';
 
 @Component({
   selector: 'lfx-data-copilot',
-  imports: [DrawerModule, ButtonComponent],
+  imports: [DrawerModule, ButtonComponent, ReactiveFormsModule, LensResponseComponent],
   templateUrl: './data-copilot.component.html',
   styleUrl: './data-copilot.component.scss',
 })
 export class DataCopilotComponent {
-  public readonly iframeContainer = viewChild<ElementRef<HTMLDivElement>>('iframeContainer');
+  private readonly accountContextService = inject(AccountContextService);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly lensService = inject(LensService);
+  private readonly destroyRef = inject(DestroyRef);
 
-  // Optional inputs to control which fields are included in the iframe URL
+  // Optional inputs to control which context fields are included
   public readonly includeOrganizationId = input<boolean>(true);
   public readonly includeOrganizationName = input<boolean>(true);
   public readonly includeProjectSlug = input<boolean>(true);
   public readonly includeProjectName = input<boolean>(true);
 
-  private readonly accountContextService = inject(AccountContextService);
-  private readonly projectContextService = inject(ProjectContextService);
-  private readonly featureFlagService = inject(FeatureFlagService);
+  // Form control
+  public readonly messageControl = new FormControl('');
 
-  // Feature flag for LFX Lens visibility
+  // Drawer visibility
+  public readonly visible = signal<boolean>(false);
+
+  // Feature flag
   protected readonly isLfxLensEnabled = this.featureFlagService.getBooleanFlag('lfx-lens', false);
 
-  // Computed values from context services with null safety
+  // Lens service signals
+  protected readonly messages = this.lensService.messages;
+  protected readonly streaming = this.lensService.streaming;
+  protected readonly currentStatus = this.lensService.currentStatus;
+  protected readonly error = this.lensService.error;
+
+  // Computed
+  protected readonly hasMessages = computed(() => this.messages().length > 0);
+  protected readonly canSend: Signal<boolean> = this.initCanSend();
+
+  // Suggested prompts for empty state
+  protected readonly suggestedPrompts = LENS_SUGGESTED_PROMPTS;
+
+  // Auto-scroll
+  private readonly messagesContainer = viewChild<ElementRef<HTMLDivElement>>('messagesContainer');
+  private readonly chatTextarea = viewChild<ElementRef<HTMLTextAreaElement>>('chatTextarea');
+  private autoScroll = true;
+  private needsJsAutoGrow = false;
+
+  // Context
   private readonly organizationId = computed(() => this.accountContextService.selectedAccount()?.accountId ?? '');
   private readonly organizationName = computed(() => this.accountContextService.selectedAccount()?.accountName ?? '');
   private readonly projectContext = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
   private readonly projectSlug = computed(() => this.projectContext()?.slug ?? '');
   private readonly projectName = computed(() => this.projectContext()?.name ?? '');
 
-  // Drawer visibility control
-  public readonly visible = signal<boolean>(false);
+  public constructor() {
+    this.initAutoScroll();
+    // Detect if field-sizing: content is unsupported (Firefox, older Safari)
+    if (typeof CSS !== 'undefined' && !CSS.supports('field-sizing', 'content')) {
+      this.needsJsAutoGrow = true;
+    }
+  }
 
-  private iframeCreated = false;
-
-  /**
-   * Open the drawer
-   */
   protected openDrawer(): void {
     this.visible.set(true);
   }
 
-  /**
-   * Handle drawer show event (after animation completes)
-   */
   protected onShow(): void {
-    this.visible.set(true);
-
-    // Create iframe when drawer is fully visible
-    if (!this.iframeCreated) {
-      this.createIframe();
+    const el = this.chatTextarea()?.nativeElement;
+    if (el) {
+      setTimeout(() => el.focus(), 100);
     }
   }
 
-  /**
-   * Handle drawer hide event
-   */
   protected onHide(): void {
     this.visible.set(false);
-
-    // Destroy iframe when drawer is closed
-    this.destroyIframe();
+    this.lensService.reset();
   }
 
-  /**
-   * Destroy the iframe and cleanup resources
-   */
-  private destroyIframe(): void {
-    const container = this.iframeContainer();
-    if (container?.nativeElement) {
-      // Remove all child nodes (iframe)
-      while (container.nativeElement.firstChild) {
-        container.nativeElement.removeChild(container.nativeElement.firstChild);
-      }
-    }
-    this.iframeCreated = false;
+  protected send(): void {
+    const message = this.messageControl.value?.trim();
+    if (!message || this.streaming()) return;
+
+    this.lensService.sendMessage(message, this.buildContext());
+    this.messageControl.setValue('');
+    this.resetTextareaHeight();
+    this.autoScroll = true;
   }
 
-  /**
-   * Create and append the iframe to the container
-   */
-  private createIframe(): void {
-    const container = this.iframeContainer();
-    if (this.iframeCreated || !container?.nativeElement) {
-      return;
+  protected sendPrompt(prompt: string): void {
+    if (this.streaming()) return;
+    this.lensService.sendMessage(prompt, this.buildContext());
+    this.autoScroll = true;
+  }
+
+  protected onKeydown(event: KeyboardEvent): void {
+    if (event.key === 'Enter' && !event.shiftKey && !event.isComposing) {
+      event.preventDefault();
+      this.send();
+    }
+  }
+
+  protected onMessagesScroll(): void {
+    this.autoScroll = this.isNearBottom();
+  }
+
+  protected abort(): void {
+    this.lensService.abort();
+  }
+
+  protected autoGrowTextarea(): void {
+    if (!this.needsJsAutoGrow) return;
+    const el = this.chatTextarea()?.nativeElement;
+    if (!el) return;
+    el.style.height = 'auto';
+    el.style.height = `${Math.min(el.scrollHeight, 120)}px`;
+  }
+
+  private resetTextareaHeight(): void {
+    if (!this.needsJsAutoGrow) return;
+    const el = this.chatTextarea()?.nativeElement;
+    if (el) {
+      el.style.height = 'auto';
+    }
+  }
+
+  private buildContext(): LensContext | undefined {
+    const ctx: LensContext = {};
+
+    if (this.includeOrganizationId() && this.organizationId()) {
+      ctx.company = {
+        id: this.organizationId(),
+        ...(this.includeOrganizationName() ? { name: this.organizationName() } : {}),
+      };
     }
 
-    const iframe = document.createElement('iframe');
-
-    // Construct the iframe src with query parameters conditionally
-    const params = new URLSearchParams();
-
-    if (this.includeOrganizationId()) {
-      params.append('organization_id', this.organizationId());
+    if (this.includeProjectSlug() && this.projectSlug()) {
+      ctx.project = {
+        slug: this.projectSlug(),
+        ...(this.includeProjectName() ? { name: this.projectName() } : {}),
+      };
     }
 
-    if (this.includeOrganizationName()) {
-      params.append('organization_name', this.organizationName());
+    return Object.keys(ctx).length > 0 ? ctx : undefined;
+  }
+
+  private initCanSend(): Signal<boolean> {
+    return toSignal(this.messageControl.valueChanges.pipe(map((v) => !!v?.trim())), { initialValue: false });
+  }
+
+  private initAutoScroll(): void {
+    toObservable(this.messages)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => {
+        if (this.autoScroll && typeof window !== 'undefined') {
+          setTimeout(() => this.scrollToBottom(), 0);
+        }
+      });
+  }
+
+  private isNearBottom(): boolean {
+    const el = this.messagesContainer()?.nativeElement;
+    if (!el) return true;
+    return el.scrollHeight - el.scrollTop - el.clientHeight < 100;
+  }
+
+  private scrollToBottom(): void {
+    const el = this.messagesContainer()?.nativeElement;
+    if (el) {
+      el.scrollTop = el.scrollHeight;
     }
-
-    if (this.includeProjectSlug()) {
-      params.append('project_slug', this.projectSlug());
-    }
-
-    if (this.includeProjectName()) {
-      params.append('project_name', this.projectName());
-    }
-
-    iframe.src = `https://lfx-data-copilot.onrender.com/embed?${params.toString()}`;
-    iframe.width = '100%';
-    iframe.height = '100%';
-    iframe.style.border = 'none';
-    iframe.title = 'LFX Data Copilot';
-
-    // Append the iframe to the container
-    container.nativeElement.appendChild(iframe);
-    this.iframeCreated = true;
   }
 }

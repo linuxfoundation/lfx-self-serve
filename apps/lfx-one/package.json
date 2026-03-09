@@ -50,6 +50,7 @@
     "express": "^4.18.2",
     "express-openid-connect": "^2.19.2",
     "launchdarkly-js-client-sdk": "^3.9.0",
+    "marked": "^17.0.4",
     "nats": "^2.29.3",
     "ngx-cookie-service-ssr": "20.0.0",
     "pino-http": "11.0.0",
