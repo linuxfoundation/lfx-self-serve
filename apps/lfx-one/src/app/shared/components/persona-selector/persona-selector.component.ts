@@ -41,8 +41,9 @@ export class PersonaSelectorComponent {
       .get('persona')
       ?.valueChanges.pipe(takeUntilDestroyed())
       .subscribe((value: PersonaType) => {
-        if (value === 'board-member') {
-          // TODO: DEMO - Remove when proper permissions are implemented
+        // TODO: DEMO - Remove when proper permissions are implemented
+        // Set foundation before persona so navigation in setPersona() has correct context
+        if (value === 'board-member' || value === 'executive-director') {
           const tlfProject = this.projectContextService.availableProjects.find((p) => p.slug === 'tlf');
           if (tlfProject) {
             this.projectContextService.setFoundation({

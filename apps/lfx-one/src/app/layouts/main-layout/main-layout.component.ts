@@ -61,7 +61,7 @@ export class MainLayoutComponent {
   // Order: Overview, Meetings, Mailing Lists, Groups, Projects, My Activity, Insights, Governance
   protected readonly sidebarItems = computed(() => {
     const items: SidebarMenuItem[] = [];
-    const isBoardMember = this.personaService.currentPersona() === 'board-member';
+    const isTlfOnlyPersona = this.personaService.isTlfOnlyPersona();
 
     // Overview (Dashboard)
     items.push({
@@ -117,7 +117,7 @@ export class MainLayoutComponent {
     });
 
     // Governance section (Votes, Surveys, Permissions) - only for non-board-members
-    if (!isBoardMember) {
+    if (!isTlfOnlyPersona) {
       items.push({
         label: 'Governance',
         isSection: true,

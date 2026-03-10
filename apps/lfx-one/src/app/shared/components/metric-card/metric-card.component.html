@@ -42,13 +42,24 @@
       @if (value() || subtitle()) {
         <div class="flex flex-col gap-1">
           @if (value()) {
-            @if (valueTooltip()) {
-              <div class="text-xl font-medium cursor-help" [pTooltip]="valueTooltip()!" [escape]="false" tooltipPosition="top">
-                {{ value() }}
-              </div>
-            } @else {
-              <div class="text-xl font-medium">{{ value() }}</div>
-            }
+            <div class="flex items-center gap-2">
+              @if (valueTooltip()) {
+                <div class="text-xl font-medium cursor-help" [pTooltip]="valueTooltip()!" [escape]="false" tooltipPosition="top">
+                  {{ value() }}
+                </div>
+              } @else {
+                <div class="text-xl font-medium">{{ value() }}</div>
+              }
+              @if (changePercentage()) {
+                <span
+                  class="text-xs font-medium"
+                  [class.text-emerald-600]="trend() === 'up'"
+                  [class.text-red-600]="trend() === 'down'"
+                  data-testid="metric-card-change-percentage">
+                  {{ changePercentage() }}
+                </span>
+              }
+            </div>
           }
           @if (subtitle()) {
             <div class="text-xs text-gray-500">{{ subtitle() }}</div>

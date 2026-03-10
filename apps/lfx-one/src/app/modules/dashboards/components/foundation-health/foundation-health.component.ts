@@ -4,15 +4,15 @@
 import { Component, computed, inject, input, signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
-import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
+import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import { BASE_BAR_CHART_OPTIONS, BASE_LINE_CHART_OPTIONS, lfxColors, PRIMARY_FOUNDATION_HEALTH_METRICS } from '@lfx-one/shared/constants';
-import { DashboardDrawerType } from '@lfx-one/shared/interfaces';
+import { DashboardDrawerType, FilterPillOption } from '@lfx-one/shared/interfaces';
 import { hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
-import { catchError, map, of, switchMap, tap } from 'rxjs';
+import { catchError, filter, map, of, switchMap, tap } from 'rxjs';
 
 import { ActiveContributorsDrawerComponent } from '../active-contributors-drawer/active-contributors-drawer.component';
 import { EventsDrawerComponent } from '../events-drawer/events-drawer.component';
@@ -69,7 +69,10 @@ export class FoundationHealthComponent {
   private readonly activeContributorsLoading = signal(true);
   private readonly eventsLoading = signal(true);
 
-  private readonly selectedFoundationSlug$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((foundation) => foundation?.slug || ''));
+  private readonly selectedFoundationSlug$ = toObservable(this.projectContextService.selectedFoundation).pipe(
+    map((foundation) => foundation?.slug || ''),
+    filter((slug) => !!slug)
+  );
   public readonly hasFoundationSelected = computed<boolean>(() => !!this.projectContextService.selectedFoundation());
 
   // Data signals - each fetches its own data independently
@@ -84,7 +87,7 @@ export class FoundationHealthComponent {
 
   public readonly selectedFilter = signal<string>('all');
 
-  public readonly filterOptions: FilterOption[] = [
+  public readonly filterOptions: FilterPillOption[] = [
     { id: 'all', label: 'All' },
     { id: 'contributors', label: 'Contribution' },
     { id: 'projects', label: 'Project' },

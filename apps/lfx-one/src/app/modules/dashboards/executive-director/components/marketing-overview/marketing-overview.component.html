@@ -1,0 +1,63 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section data-testid="marketing-overview-section">
+  <div class="flex flex-wrap gap-3 items-end justify-between mb-4">
+    <h2 class="mb-0">Marketing Overview</h2>
+
+    <!-- Carousel Controls -->
+    <div class="flex items-center gap-2">
+      <button
+        type="button"
+        (click)="scrollShadowDirective.scrollLeft()"
+        class="h-8 w-8 p-0 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 hover:border-gray-400 transition-colors"
+        data-testid="marketing-overview-carousel-prev"
+        aria-label="Scroll left">
+        <i class="fa-light fa-chevron-left"></i>
+      </button>
+      <button
+        type="button"
+        (click)="scrollShadowDirective.scrollRight()"
+        class="h-8 w-8 p-0 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 hover:border-gray-400 transition-colors"
+        data-testid="marketing-overview-carousel-next"
+        aria-label="Scroll right">
+        <i class="fa-light fa-chevron-right"></i>
+      </button>
+    </div>
+  </div>
+
+  <!-- Carousel Container -->
+  <div class="relative overflow-hidden">
+    <div lfxScrollShadow [scrollDistance]="320" class="flex gap-4 overflow-x-auto hide-scrollbar scroll-smooth" data-testid="marketing-overview-carousel">
+      @for (card of marketingCards; track card.testId) {
+        <lfx-metric-card
+          [title]="card.title"
+          [icon]="card.icon"
+          [testId]="card.testId"
+          [chartType]="card.chartType"
+          [chartData]="card.chartData"
+          [chartOptions]="card.chartOptions"
+          [value]="card.value"
+          [subtitle]="card.subtitle"
+          [trend]="card.trend"
+          [changePercentage]="card.changePercentage"></lfx-metric-card>
+      }
+    </div>
+
+    <!-- Right shadow fade -->
+    @if (scrollShadowDirective && scrollShadowDirective.showRightShadow()) {
+      <div
+        class="absolute top-0 bottom-0 right-0 w-32 z-10 pointer-events-none bg-[linear-gradient(to_right,transparent,#f9fafb)]"
+        data-testid="marketing-overview-shadow-right"
+        aria-hidden="true"></div>
+    }
+
+    <!-- Left shadow fade -->
+    @if (scrollShadowDirective && scrollShadowDirective.showLeftShadow()) {
+      <div
+        class="absolute top-0 bottom-0 left-0 w-32 z-10 pointer-events-none bg-[linear-gradient(to_left,transparent,#f9fafb)]"
+        data-testid="marketing-overview-shadow-left"
+        aria-hidden="true"></div>
+    }
+  </div>
+</section>

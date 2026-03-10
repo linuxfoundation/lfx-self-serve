@@ -13,7 +13,17 @@ export type FoundationHealthScore = 'excellent' | 'healthy' | 'stable' | 'unstea
  * Metric category type for dashboard filtering
  * @description Used to categorize and filter dashboard metrics
  */
-export type MetricCategory = 'contributors' | 'projects' | 'events' | 'code' | 'projectHealth';
+export type MetricCategory =
+  | 'contributors'
+  | 'projects'
+  | 'events'
+  | 'code'
+  | 'projectHealth'
+  | 'marketing'
+  // Reserved for future ED dashboard categories
+  | 'memberships'
+  | 'education'
+  | 'projectOperations';
 
 /**
  * Custom content type for specialized metric cards
@@ -45,6 +55,9 @@ export interface DashboardMetricCard {
 
   /** Trend direction indicator */
   trend?: 'up' | 'down';
+
+  /** Percentage change value (e.g., '+12.4%') */
+  changePercentage?: string;
 
   // ============================================
   // Chart Configuration
@@ -215,4 +228,26 @@ export interface ProjectTableRow {
   maintainers: number;
   stars: number;
   lastUpdated: string | null;
+}
+
+/**
+ * Filter pill option for dashboard filter controls
+ * @description Used by filter-pills component for category filtering
+ */
+export interface FilterPillOption {
+  /** Unique filter identifier used for category filtering */
+  id: string;
+  /** Display label for the filter pill */
+  label: string;
+}
+
+/**
+ * Metric card with category for filtering
+ * @description Wraps a DashboardMetricCard with its category for filter logic
+ */
+export interface CategorizedMetricCard {
+  /** The metric card data */
+  card: DashboardMetricCard;
+  /** Category used for filtering */
+  category: string;
 }

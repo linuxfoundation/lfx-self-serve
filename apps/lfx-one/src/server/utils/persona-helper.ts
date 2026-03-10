@@ -30,7 +30,8 @@ const COMMITTEE_CATEGORY_TO_PERSONA: Record<string, PersonaType> = {
 
 /**
  * Priority order for personas when user belongs to multiple committee categories
- * Higher index = higher priority (board-member is highest, core-developer is fallback)
+ * Higher index = higher priority (board-member is highest, core-developer is lowest)
+ * Only includes personas that can be resolved from COMMITTEE_CATEGORY_TO_PERSONA
  */
 const PERSONA_PRIORITY: PersonaType[] = ['core-developer', 'maintainer', 'board-member'];
 
