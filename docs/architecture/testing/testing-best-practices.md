@@ -489,22 +489,9 @@ test('should meet performance thresholds', async ({ page }) => {
 
 ## 📊 Test Maintenance Guidelines
 
-### Regular Review Checklist
+### Per-Feature Checklist
 
-**Weekly**:
-
-- [ ] Run full test suite on all browsers
-- [ ] Check for flaky tests and investigate
-- [ ] Review test execution times
-
-**Monthly**:
-
-- [ ] Update test documentation
-- [ ] Review data-testid naming consistency
-- [ ] Evaluate new testing patterns
-- [ ] Clean up obsolete tests
-
-**Per Feature**:
+**Per Feature:**
 
 - [ ] Add both content-based and structural tests
 - [ ] Include responsive design validation
@@ -550,6 +537,6 @@ test('should meet performance thresholds', async ({ page }) => {
 4. **Validate and Document**
    - Run tests across all browsers
    - Update relevant documentation
-   - Add to maintenance schedule
+   - Update relevant documentation
 
 This comprehensive testing approach ensures reliable, maintainable tests that provide confidence in both user experience and technical implementation while supporting long-term project sustainability.

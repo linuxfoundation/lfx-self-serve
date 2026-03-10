@@ -54,18 +54,7 @@ providePrimeNG({
 
 ## 🎯 LFX UI Core Integration
 
-### Custom PrimeNG Preset
-
-The application uses a custom PrimeNG preset based on LFX UI Core design tokens:
-
-```typescript
-// Custom preset configuration
-const customPreset = definePreset(Aura, {
-  primitive: lfxPreset.primitive, // Base design tokens
-  semantic: lfxPreset.semantic, // Semantic color mappings
-  components: lfxPreset.component, // Component-specific styles
-});
-```
+The `customPreset` shown above is built from LFX UI Core design tokens via `definePreset(Aura, lfxPreset)`, configuring primitive tokens, semantic color mappings, and component-specific styles.
 
 ### Design System Benefits
 
@@ -290,38 +279,3 @@ Critical CSS is inlined for faster initial renders:
 - Above-the-fold styles are prioritized
 - Non-critical styles are loaded asynchronously
 - Font loading is optimized with preload hints
-
-## 📏 Design Tokens
-
-### Spacing Scale
-
-```typescript
-// Consistent spacing throughout the application
-const spacing = {
-  0: '0px',
-  1: '0.25rem',
-  2: '0.5rem',
-  3: '0.75rem',
-  4: '1rem',
-  // ... standard Tailwind scale
-};
-```
-
-### Component Tokens
-
-```typescript
-// Component-specific design tokens
-const tokens = {
-  borderRadius: {
-    sm: '0.125rem',
-    DEFAULT: '0.25rem',
-    md: '0.375rem',
-    lg: '0.5rem',
-  },
-  boxShadow: {
-    sm: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
-    DEFAULT: '0 1px 3px 0 rgb(0 0 0 / 0.1)',
-    // ... elevation scale
-  },
-};
-```

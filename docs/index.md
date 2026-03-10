@@ -46,8 +46,7 @@ of conduct, development process, and how to submit pull requests.
 
 - **Node.js** v22+ (specified in package.json)
 - **Yarn** v4.9.2+ package manager
-- **Auth0 Account** for authentication setup
-- **Supabase Project** for user profile email management
+- **1Password access** for environment variables (contact a code owner on Slack if you don't have access)
 
 #### Environment Setup
 
@@ -57,46 +56,20 @@ of conduct, development process, and how to submit pull requests.
    cp apps/lfx-one/.env.example apps/lfx-one/.env
    ```
 
-2. **Configure required environment variables:**
+2. **Get environment variables from 1Password:**
 
-   **Auth0 Configuration:**
-   - Set `PCC_AUTH0_CLIENT_ID` and `PCC_AUTH0_CLIENT_SECRET`
-     - Local Development: The default client ID is `lfx` and you can get the client secret from the k8s via `k get secrets authelia-clients -n lfx -o jsonpath='{.data.lfx}' | base64 --decode`
-   - Update `PCC_AUTH0_ISSUER_BASE_URL` with your Auth0 domain
-     - Local Development: `https://auth.k8s.orb.local`
-   - Configure `PCC_AUTH0_AUDIENCE` for your API
-     - Local Development: `http://lfx-api.k8s.orb.local/`
-   - Set `PCC_AUTH0_SECRET` to a sufficiently long random string (32+ characters)
-     - Generate a random 32 characters long string
+   All required environment variables are stored in the **LFX One Dev Environment** vault in
+   1Password. Copy the values into your `apps/lfx-one/.env` file.
 
-   **M2M (Machine-to-Machine) Authentication:**
-   - Set `M2M_AUTH_CLIENT_ID` and `M2M_AUTH_CLIENT_SECRET` for server-side API calls
-   - Configure `M2M_AUTH_ISSUER_BASE_URL` (typically same as Auth0 base URL)
-   - Set `M2M_AUTH_AUDIENCE` to match your API audience
+   If you don't have 1Password access, reach out to a code owner on Slack for help getting set up.
 
-   **Supabase Configuration:**
-   - Create a project in [Supabase](https://supabase.com)
-   - Get your project URL and anon key from Project Settings → API
-   - Set `SUPABASE_URL` and `POSTGRES_API_KEY`
-   - Used exclusively for user profile email management
+   The `.env.example` file documents all available variables and their purpose. The dev environment
+   is pre-configured — all services point to the shared development backend, so no local
+   infrastructure is required.
 
-   **Microservice Configuration:**
-   - Set `LFX_V2_SERVICE` to your query service endpoint
-     - Local Development: `http://lfx-api.k8s.orb.local`
-
-   **AI Service Configuration (Optional):**
-   - Set `AI_PROXY_URL` to your LiteLLM proxy endpoint for meeting agenda generation
-   - Provide a valid API key in `AI_API_KEY`
-
-   **NATS Configuration:**
-   - Set `NATS_URL` for internal messaging system (typically in Kubernetes environments)
-     - Local Development: `nats://lfx-platform-nats.lfx.svc.cluster.local:4222`
-
-   **Testing Configuration (Optional):**
-   - Set `TEST_USERNAME` and `TEST_PASSWORD` for automated E2E testing
-
-   **Local Development:**
-   - Set `NODE_TLS_REJECT_UNAUTHORIZED=0` when using Authelia for local authentication
+   **Optional variables** (not needed for basic development):
+   - `AI_PROXY_URL` / `AI_API_KEY` — For AI-powered features (meeting agenda generation)
+   - `TEST_USERNAME` / `TEST_PASSWORD` — For automated E2E testing
 
 #### Install and Run
 

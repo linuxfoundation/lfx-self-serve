@@ -268,15 +268,6 @@ Since NATS runs in the local Kubernetes cluster, the application connects direct
 NATS_URL=nats://lfx-platform-nats.lfx.svc.cluster.local:4222
 ```
 
-### Kubernetes Service Discovery
-
-The application leverages Kubernetes service discovery:
-
-- **Service Name**: `lfx-platform-nats`
-- **Namespace**: `lfx`
-- **Port**: `4222`
-- **Full DNS**: `lfx-platform-nats.lfx.svc.cluster.local:4222`
-
 ### Common Issues and Solutions
 
 #### 1. DNS Resolution Issues
@@ -303,22 +294,6 @@ Cause: No service responding to the subject or high latency
 Solution: Verify target microservice deployment and health
 ```
 
-### Debugging Commands
-
-```bash
-# Check NATS pod status
-kubectl get pods -n lfx -l app=nats
-
-# Check NATS service
-kubectl get svc -n lfx lfx-platform-nats
-
-# Check NATS logs
-kubectl logs -n lfx deployment/lfx-platform-nats
-
-# Test NATS connectivity from within cluster
-kubectl run nats-test --rm -i --tty --image=natsio/nats-box -- nats pub test "hello"
-```
-
 ## 🎯 Best Practices
 
 ### Performance Optimization
@@ -341,34 +316,6 @@ kubectl run nats-test --rm -i --tty --image=natsio/nats-box -- nats pub test "he
 2. **Subject Constants**: Define subjects as enums to prevent typos
 3. **Error Logging**: Log all NATS operations with appropriate context
 4. **Unit Testing**: Mock NATS connections for comprehensive testing
-
-## 📈 Performance Metrics
-
-### Key Metrics to Monitor
-
-- **Connection Status**: Track connection health and reconnections
-- **Request Latency**: Monitor request-reply response times
-- **Error Rate**: Track timeout and connection failures
-- **Message Volume**: Monitor message throughput and patterns
-
-### Request Performance Logging
-
-```typescript
-// Request timing and metrics using logger service
-const startTime = logger.startOperation(undefined, 'nats_request', { subject, slug });
-
-try {
-  const response = await connection.request(subject, data, { timeout });
-
-  logger.success(undefined, 'nats_request', startTime, { subject, slug });
-
-  return response;
-} catch (error) {
-  logger.error(undefined, 'nats_request', startTime, error, { subject, slug });
-
-  throw error;
-}
-```
 
 ## 🔗 Related Documentation
 

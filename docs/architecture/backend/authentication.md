@@ -264,26 +264,11 @@ Public endpoints use M2M tokens for backend API calls:
 });
 ```
 
-## 📊 Current Implementation Status
+## 📊 What's Implemented
 
-### ✅ Implemented Features
-
-- **Dual Authentication System**: User authentication + M2M token system
-- **Selective Route Protection**: Public routes bypass authentication
-- **Enhanced Auth0/Authelia Integration**: Support for multiple auth providers
-- **Custom Login Flow**: Secure URL validation and redirect handling
-- **M2M Token Management**: Automatic server-side authentication for API calls
-- **Public Meeting Access**: Unauthenticated access to meeting pages with optional passcode
-- **Bearer Token Middleware**: API route authentication handling
-- **Comprehensive Error Handling**: Structured authentication error responses
-- **Server-side Auth Context**: Enhanced user info injection into Angular SSR
-
-### 🔲 Not Yet Implemented
-
-- **Frontend Auth Initialization**: Client-side auth state sync with server context
-- **Authentication UI Components**: Login/logout interface elements
-- **User Profile Management**: Profile editing and management features
-- **Client-side Navigation Guards**: Route-level authentication checks
-- **User Interface Elements**: Authentication status indicators and user menus
-
-This documentation describes the current comprehensive authentication architecture supporting both user authentication and machine-to-machine patterns with selective route protection.
+- Dual authentication: user auth (Auth0/Authelia) + M2M tokens for server-side API calls
+- Selective route protection with public route bypass (`/meeting`, `/public/api`)
+- Custom login flow with URL validation and secure redirects
+- Server-side auth context injection into Angular SSR
+- Bearer token middleware for API routes
+- Public meeting access with optional passcode

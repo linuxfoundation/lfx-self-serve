@@ -807,31 +807,8 @@ app.get('/health', (req, res) => {
 For local development, ensure you have:
 
 1. **Private Key File**: Store securely outside repository
-2. **Environment Variables**: Configure in `.env` file
+2. **Environment Variables**: Configure in `.env` file (see [Environment Variables](#environment-variables) above)
 3. **Snowflake Access**: Verify role has SELECT permissions
-
-```bash
-# .env (development example)
-SNOWFLAKE_ACCOUNT=
-SNOWFLAKE_USER=
-SNOWFLAKE_WAREHOUSE=
-SNOWFLAKE_DATABASE=
-SNOWFLAKE_ROLE=
-
-# Authentication Method 1: Direct API Key (recommended for containers)
-SNOWFLAKE_API_KEY=your-private-key-here
-
-# Authentication Method 2: Private Key File (recommended for local development)
-# Place rsa_key.p8 file in app root directory (same location as .env)
-# The service will automatically detect and use it
-# SNOWFLAKE_PRIVATE_KEY_PASSPHRASE=your_passphrase
-
-# Optional: Override default pool settings
-# SNOWFLAKE_MIN_CONNECTIONS=2
-# SNOWFLAKE_MAX_CONNECTIONS=5
-```
-
-**Note**: The example values above are for the development environment. Copy `.env.example` to `.env` and update with your actual credentials.
 
 ### Common Issues and Solutions
 
@@ -879,31 +856,6 @@ Solution:
   1. Verify query is a SELECT statement
   2. Check for CTEs or subqueries with writes
   3. Review application logic for query construction
-```
-
-### Debugging Commands
-
-```bash
-# Test Snowflake connection
-snowsql -a your_account \
-  -u lfx_one_service_user \
-  --private-key-path /path/to/key.p8 \
-  -w compute_wh \
-  -d analytics_db \
-  -s dbt
-
-# Check user permissions
-SHOW GRANTS TO ROLE lfx_one_reader;
-
-# Monitor warehouse usage
-SELECT *
-FROM SNOWFLAKE.ACCOUNT_USAGE.QUERY_HISTORY
-WHERE USER_NAME = 'LFX_ONE_SERVICE_USER'
-  AND START_TIME >= DATEADD(hour, -1, CURRENT_TIMESTAMP())
-ORDER BY START_TIME DESC;
-
-# Check connection pool stats
-curl http://localhost:4000/health | jq '.snowflake.pool'
 ```
 
 ## 🎯 Best Practices
@@ -1055,27 +1007,6 @@ async execute<T>(sql: string, binds?: (Bind | Date)[]): Promise<T> {
   return result;
 }
 ```
-
-## 📈 Performance Metrics
-
-### Benchmark Results
-
-Expected performance characteristics (varies by query complexity):
-
-- **Simple queries** (<1000 rows): 100-500ms
-- **Complex aggregations**: 1-5 seconds
-- **Large result sets** (>10K rows): 5-30 seconds
-- **Pool acquisition**: <10ms (when connections available)
-- **Deduplication overhead**: <1ms (hash computation)
-
-### Resource Utilization
-
-Typical resource usage per service instance:
-
-- **Memory**: 50-100MB baseline + ~1MB per 1000 active locks
-- **CPU**: Minimal (<5%) for query management, dependent on Snowflake for execution
-- **Network**: Dependent on result set size, typically <10MB/s
-- **Connections**: 2-10 concurrent connections to Snowflake
 
 ## 🔗 Related Documentation
 

@@ -1555,8 +1555,3 @@ console.log('Flag value:', value);
 - **[LaunchDarkly JavaScript SDK](https://docs.launchdarkly.com/sdk/client-side/javascript)** - LaunchDarkly client SDK
 - **[Angular Signals Guide](https://angular.dev/guide/signals)** - Official Angular signals documentation
 - **[LaunchDarkly Targeting](https://docs.launchdarkly.com/home/flags/targeting)** - Targeting rules and strategies
-
----
-
-**Last Updated:** 2026-01-08
-**Version:** 2.0.0
