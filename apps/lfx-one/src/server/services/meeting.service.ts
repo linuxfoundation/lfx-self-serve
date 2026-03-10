@@ -834,8 +834,8 @@ export class MeetingService {
    */
   public async getMeetingAttachments(req: Request, meetingUid: string): Promise<MeetingAttachment[]> {
     const params = {
-      type: 'meeting_attachment',
-      tags: `meeting_id:${meetingUid}`,
+      type: 'v1_meeting_attachment',
+      parent: `meeting:${meetingUid}`,
     };
 
     logger.debug(req, 'get_meeting_attachments', 'Fetching meeting attachments', { meeting_id: meetingUid, query_params: params });
@@ -982,8 +982,8 @@ export class MeetingService {
    */
   public async getPastMeetingAttachments(req: Request, pastMeetingUid: string): Promise<PastMeetingAttachment[]> {
     const params = {
-      type: 'past_meeting_attachment',
-      tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
+      type: 'v1_past_meeting_attachment',
+      parent: `past_meeting:${pastMeetingUid}`,
     };
 
     logger.debug(req, 'get_past_meeting_attachments', 'Fetching past meeting attachments', { past_meeting_id: pastMeetingUid });

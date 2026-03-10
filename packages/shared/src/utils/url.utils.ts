@@ -88,35 +88,6 @@ export function extractUrls(text: string): string[] {
 }
 
 /**
- * Extracts unique valid URLs with their domain names from text
- * @param text - The text to extract URLs from
- * @returns Array of objects containing validated URL and domain
- */
-export function extractUrlsWithDomains(text: string): { url: string; domain: string }[] {
-  if (!text) {
-    return [];
-  }
-
-  const urls = extractUrls(text);
-  const uniqueUrls = new Map<string, { url: string; domain: string }>();
-
-  urls.forEach((url) => {
-    if (!uniqueUrls.has(url)) {
-      try {
-        const urlObj = new URL(url);
-        const domain = urlObj.hostname.replace(/^www\./, '');
-        uniqueUrls.set(url, { url, domain });
-      } catch (error) {
-        // This should not happen after isValidUrl check, but log it for debugging
-        console.warn(`Unexpected error parsing validated URL: ${url}`, error);
-      }
-    }
-  });
-
-  return Array.from(uniqueUrls.values());
-}
-
-/**
  * Checks if a string is a valid domain by attempting to create a URL
  * @param domain - The domain string to validate
  * @returns true if the domain is valid

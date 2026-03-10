@@ -34,8 +34,6 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
-  UrlMetadata,
-  UrlMetadataResponse,
 } from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
 
@@ -520,20 +518,5 @@ export class MeetingService {
         return throwError(() => error);
       })
     );
-  }
-
-  public resolveUrlMetadata(urls: string[]): Observable<UrlMetadata[]> {
-    return this.http.post<UrlMetadataResponse>('/api/url-metadata', { urls }).pipe(
-      map((response) => response.results),
-      catchError(() => of(urls.map((url) => ({ url, title: null, domain: this.extractDomain(url) }))))
-    );
-  }
-
-  private extractDomain(url: string): string {
-    try {
-      return new URL(url).hostname.replace(/^www\./, '');
-    } catch {
-      return url;
-    }
   }
 }

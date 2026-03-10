@@ -24,7 +24,6 @@ import {
   buildJoinUrlWithParams,
   canJoinMeeting,
   COMMITTEE_LABEL,
-  extractUrls,
   getCurrentOrNextOccurrence,
   Meeting,
   MeetingAttachment,
@@ -35,7 +34,6 @@ import {
   PastMeetingRecording,
   PastMeetingSummary,
   TagSeverity,
-  UrlMetadata,
 } from '@lfx-one/shared';
 import { RecordingModalComponent } from '@modules/meetings/components/recording-modal/recording-modal.component';
 import { SummaryModalComponent } from '@modules/meetings/components/summary-modal/summary-modal.component';
@@ -144,7 +142,6 @@ export class MeetingCardComponent implements OnInit {
 
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
   public readonly meetingDescription: Signal<string> = this.initMeetingDescription();
-  public readonly resolvedResources: Signal<UrlMetadata[]> = this.initResolvedResources();
   public readonly hasAiCompanion: Signal<boolean> = this.initHasAiCompanion();
   public readonly joinQueryParams: Signal<Record<string, string>> = this.initJoinQueryParams();
 
@@ -267,6 +264,28 @@ export class MeetingCardComponent implements OnInit {
         this.additionalRegistrantsCount.set(this.additionalRegistrantsCount() + 1);
         this.refreshMeeting();
       }
+    });
+  }
+
+  public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {
+    const meetingId = this.meeting().id;
+    const download$ = this.pastMeeting()
+      ? this.meetingService.getPastMeetingAttachmentDownloadUrl(meetingId, attachment.uid)
+      : this.meetingService.getMeetingAttachmentDownloadUrl(meetingId, attachment.uid);
+
+    download$.pipe(take(1)).subscribe({
+      next: (res) => {
+        const newWindow = window.open(res.download_url, '_blank', 'noopener');
+        if (newWindow) {
+          newWindow.opener = null;
+        }
+      },
+      error: () =>
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Download Failed',
+          detail: 'Unable to download the attachment. Please try again.',
+        }),
     });
   }
 
@@ -530,7 +549,7 @@ export class MeetingCardComponent implements OnInit {
 
   private initTotalResourcesCount(): Signal<number> {
     return computed(() => {
-      return this.resolvedResources().length;
+      return this.attachments().length;
     });
   }
 
@@ -721,22 +740,6 @@ export class MeetingCardComponent implements OnInit {
       const meeting = this.meeting();
       return occurrence?.description || meeting.description || '';
     });
-  }
-
-  private initResolvedResources(): Signal<UrlMetadata[]> {
-    return toSignal(
-      toObservable(this.meetingDescription).pipe(
-        map((description) => extractUrls(description)),
-        switchMap((urls) => {
-          if (urls.length === 0) {
-            return of([]);
-          }
-          return this.meetingService.resolveUrlMetadata(urls);
-        }),
-        catchError(() => of([] as UrlMetadata[]))
-      ),
-      { initialValue: [] }
-    );
   }
 
   private initHasAiCompanion(): Signal<boolean> {

@@ -17,13 +17,12 @@ import { environment } from '@environments/environment';
 import {
   buildJoinUrlWithParams,
   canJoinMeeting,
-  extractUrls,
   getCurrentOrNextOccurrence,
   Meeting,
+  MeetingAttachment,
   MeetingOccurrence,
   Project,
   TagSeverity,
-  UrlMetadata,
   User,
 } from '@lfx-one/shared';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
@@ -96,7 +95,7 @@ export class MeetingJoinComponent {
   public fetchedJoinUrl: Signal<string | undefined>;
   public isLoadingJoinUrl: WritableSignal<boolean> = signal<boolean>(false);
   public joinUrlError: WritableSignal<string | null> = signal<string | null>(null);
-  public resolvedResources: Signal<UrlMetadata[]>;
+  public attachments: Signal<MeetingAttachment[]>;
   public messageSeverity: Signal<'success' | 'info' | 'warn'>;
   public messageIcon: Signal<string>;
   public alertMessage: Signal<string>;
@@ -139,7 +138,7 @@ export class MeetingJoinComponent {
     this.returnTo = this.initializeReturnTo();
     this.canJoinMeeting = this.initializeCanJoinMeeting();
     this.fetchedJoinUrl = this.initializeFetchedJoinUrl();
-    this.resolvedResources = this.initializeResolvedResources();
+    this.attachments = this.initializeAttachments();
     this.messageSeverity = this.initializeMessageSeverity();
     this.messageIcon = this.initializeMessageIcon();
     this.alertMessage = this.initializeAlertMessage();
@@ -187,6 +186,26 @@ export class MeetingJoinComponent {
 
   public onRsvpViewToggle(): void {
     this.showMyRsvp.set(!this.showMyRsvp());
+  }
+
+  public downloadAttachment(attachment: MeetingAttachment): void {
+    this.meetingService
+      .getMeetingAttachmentDownloadUrl(this.meeting().id, attachment.uid)
+      .pipe(take(1))
+      .subscribe({
+        next: (res) => {
+          const newWindow = window.open(res.download_url, '_blank', 'noopener,noreferrer');
+          if (newWindow) {
+            newWindow.opener = null;
+          }
+        },
+        error: () =>
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Download Failed',
+            detail: 'Unable to download the attachment. Please try again.',
+          }),
+      });
   }
 
   public registerForMeeting(): void {
@@ -478,17 +497,12 @@ export class MeetingJoinComponent {
     );
   }
 
-  private initializeResolvedResources(): Signal<UrlMetadata[]> {
+  private initializeAttachments(): Signal<MeetingAttachment[]> {
     return toSignal(
-      toObservable(this.meetingDescription).pipe(
-        map((description) => extractUrls(description)),
-        switchMap((urls) => {
-          if (urls.length === 0) {
-            return of([]);
-          }
-          return this.meetingService.resolveUrlMetadata(urls);
-        }),
-        catchError(() => of([] as UrlMetadata[]))
+      toObservable(this.meeting).pipe(
+        filter((meeting) => !!meeting?.id),
+        switchMap((meeting) => this.meetingService.getMeetingAttachments(meeting.id)),
+        catchError(() => of([] as MeetingAttachment[]))
       ),
       { initialValue: [] }
     );

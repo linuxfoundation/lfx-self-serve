@@ -10,19 +10,19 @@ import {
   buildJoinUrlWithParams,
   canJoinMeeting,
   DEFAULT_MEETING_TYPE_CONFIG,
-  extractUrls,
   Meeting,
+  MeetingAttachment,
   MEETING_TYPE_CONFIGS,
   MeetingOccurrence,
   MeetingTypeBadge,
   TagSeverity,
-  UrlMetadata,
 } from '@lfx-one/shared';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
+import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, map, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, map, of, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-dashboard-meeting-card',
@@ -32,11 +32,12 @@ import { catchError, combineLatest, map, of, switchMap } from 'rxjs';
 export class DashboardMeetingCardComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
+  private readonly messageService = inject(MessageService);
 
   public readonly meeting = input.required<Meeting>();
   public readonly occurrence = input<MeetingOccurrence | null>(null);
 
-  public readonly resolvedResources: Signal<UrlMetadata[]> = this.initResolvedResources();
+  public readonly attachments: Signal<MeetingAttachment[]> = this.initAttachments();
   public readonly joinUrl: Signal<string | null>;
 
   // Computed values
@@ -84,6 +85,27 @@ export class DashboardMeetingCardComponent {
     );
 
     this.joinUrl = toSignal(joinUrl$, { initialValue: null });
+  }
+
+  public downloadAttachment(attachment: MeetingAttachment): void {
+    const meetingId = this.meeting().id;
+    this.meetingService
+      .getMeetingAttachmentDownloadUrl(meetingId, attachment.uid)
+      .pipe(take(1))
+      .subscribe({
+        next: (res) => {
+          const newWindow = window.open(res.download_url, '_blank', 'noopener,noreferrer');
+          if (newWindow) {
+            newWindow.opener = null;
+          }
+        },
+        error: () =>
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Download Failed',
+            detail: 'Unable to download the attachment. Please try again.',
+          }),
+      });
   }
 
   private initMeetingTypeInfo(): Signal<MeetingTypeBadge> {
@@ -250,19 +272,11 @@ export class DashboardMeetingCardComponent {
     });
   }
 
-  private initResolvedResources(): Signal<UrlMetadata[]> {
-    const description$ = toObservable(this.meeting).pipe(map((meeting) => this.occurrence()?.description || meeting.description || ''));
-
+  private initAttachments(): Signal<MeetingAttachment[]> {
     return toSignal(
-      description$.pipe(
-        map((description) => extractUrls(description)),
-        switchMap((urls) => {
-          if (urls.length === 0) {
-            return of([]);
-          }
-          return this.meetingService.resolveUrlMetadata(urls);
-        }),
-        catchError(() => of([] as UrlMetadata[]))
+      toObservable(this.meeting).pipe(
+        switchMap((meeting) => (meeting?.id ? this.meetingService.getMeetingAttachments(meeting.id) : of([]))),
+        catchError(() => of([] as MeetingAttachment[]))
       ),
       { initialValue: [] }
     );
