@@ -33,7 +33,7 @@ logger.success(req, 'fetch_projects', startTime, { count: projects.length });
 ### Logging Architecture Layers
 
 ```text
-server-logger.ts (NEW - breaks circular dependency)
+server-logger.ts (breaks circular dependency)
   └─ Creates and exports serverLogger (base Pino instance)
       └─ Configuration: levels, serializers, formatters, redaction
 
@@ -87,7 +87,7 @@ const startTime = logger.startOperation(undefined, 'nats_connect', {
 
 **Returns:** `number` - startTime for use with success/error calls
 
-**Log Level:** INFO (unless `silent: true`)
+**Log Level:** DEBUG for request-scoped, INFO for infrastructure (unless `silent: true`)
 
 #### `success(req | undefined, operation, startTime, metadata)`
 
@@ -112,9 +112,9 @@ logger.success(undefined, 'nats_connect', startTime, {
 - `startTime`: Value returned from startOperation
 - `metadata`: Success-specific data (results, counts, IDs)
 
-**Log Level:** INFO
+**Log Level:** Method-aware — DEBUG for reads (GET/HEAD/OPTIONS), INFO for writes (POST/PUT/DELETE/PATCH), INFO for infrastructure
 
-**Output Example:**
+**Output Example (write operation):**
 
 ```json
 {
@@ -231,72 +231,69 @@ logger.warning(undefined, 'nats_connect', 'NATS connection slow', {
 
 **Log Level:** WARN
 
-#### `validation(req | undefined, operation, errors, metadata)`
+## 🎯 Log Level Guidelines (ADR 0002)
 
-Logs validation failures with detailed error context.
+The logger service automatically selects correct log levels based on HTTP method. See [ADR 0002](https://github.com/linuxfoundation/lfx-architecture-decisions/blob/main/decisions/0002-structured-json-logging.md) for the full decision.
 
-```typescript
-logger.validation(req, 'create_meeting', ['Missing required field: title'], {
-  provided_fields: Object.keys(req.body),
-});
-```
+### Method-Aware Log Levels
 
-**When to Use:**
+The `startOperation` and `success` methods automatically choose the correct log level:
 
-- Request validation failures
-- Missing required fields
-- Invalid field formats
-- Business rule violations
+| Scenario                          | `startOperation` | `success` | `error` |
+| --------------------------------- | ---------------- | --------- | ------- |
+| **Read** (GET/HEAD/OPTIONS)       | DEBUG            | DEBUG     | ERROR   |
+| **Write** (POST/PUT/DELETE/PATCH) | DEBUG            | INFO      | ERROR   |
+| **Infrastructure** (no `req`)     | INFO             | INFO      | ERROR   |
 
-**Log Level:** WARN
-
-## 🎯 Log Level Guidelines
+This means: 0 INFO lines for read endpoints, 1 INFO line for write endpoints, always ERROR for failures.
 
 ### ERROR
 
-**When:** System failures requiring immediate attention
-**Examples:**
+**When:** Critical failures requiring immediate attention
 
-- Database connection failures
-- External service unavailable
-- Unhandled exceptions
-- Data corruption
+- **In Controllers**: HTTP operation failures (via `logger.error()` with startTime)
+- System failures, unhandled exceptions
+- Operations that cannot continue
+- **NOT** for validation errors (handled at WARN by `apiErrorHandler`)
 
 ### WARN
 
-**When:** Concerning issues that don't break functionality
-**Examples:**
+**When:** Recoverable issues and invalid user input
 
-- Validation failures
-- Token refresh failures
-- User not found
-- Fallback behaviors
-- Data quality issues
+- Validation errors from user input (logged by `apiErrorHandler` via `getSeverity()`)
+- Error conditions with graceful degradation (returning null/empty arrays)
+- Data quality issues, user not found
+- Fallback behaviors, NATS failures with graceful handling
+- Service errors that don't propagate to controller
 
 ### INFO
 
-**When:** Business operation completions
-**Examples:**
+**When:** Write completions and significant business operations
 
-- Resource created/updated/deleted
-- Successful data retrieval
-- Operation start (via startOperation)
-- Operation success
+- **In Controllers**: Automatically emitted by `logger.success()` for write requests only
+- **In Services**: Significant business operations visible in production (via `logger.info()`):
+  - Data transformations (V1 to V2 conversions)
+  - Data enrichment (project names, committee data)
+  - Complex orchestrations
+  - Operations with notable business impact
 
 ### DEBUG
 
-**When:** Internal operations and development info
-**Examples:**
+**When:** Internal operations, tracing, and read endpoints
 
-- Intermediate processing steps
-- Loop iterations
-- Intent statements ("fetching", "resolving")
-- Authentication checks
-- Route classification
+- **In Controllers**: Read endpoint start/success (automatically via `startOperation` / `success`)
+- **In Services**: Step-by-step operation tracing
+- Method entry/exit with key parameters
+- Preparation steps (sanitizing, creating payload)
+- Internal lookups (NATS, database queries)
+- Simple data fetches
+- Infrastructure operations (connections, pool state)
 
 ## 🔄 Operation Lifecycle Patterns
 
 ### Standard Controller Pattern
+
+Controllers own HTTP lifecycle logging (`startOperation` → `success`/`error`). Validation errors are handled by throwing structured errors — the `apiErrorHandler` middleware logs them at the appropriate level (WARN for validation, ERROR for system failures).
 
 ```typescript
 export class MeetingController {
@@ -307,19 +304,10 @@ export class MeetingController {
     });
 
     try {
-      // Validate request
-      const validationErrors = validateMeetingInput(req.body);
-      if (validationErrors.length > 0) {
-        logger.validation(req, 'create_meeting', validationErrors, {
-          provided_fields: Object.keys(req.body),
-        });
-        return res.status(400).json({ errors: validationErrors });
-      }
-
-      // Perform operation
+      // Perform operation (validation handled by helpers that throw on failure)
       const meeting = await meetingService.createMeeting(req, req.body);
 
-      // Log success
+      // Log success — automatically INFO for writes, DEBUG for reads
       logger.success(req, 'create_meeting', startTime, {
         meeting_uid: meeting.uid,
         attendee_count: meeting.attendees?.length || 0,
@@ -327,7 +315,7 @@ export class MeetingController {
 
       res.status(201).json(meeting);
     } catch (error) {
-      // Log error (error middleware will see skipIfLogged)
+      // Log error — apiErrorHandler will skip if already logged here
       logger.error(req, 'create_meeting', startTime, error, {
         project_uid: req.body.project_uid,
       });
@@ -339,31 +327,59 @@ export class MeetingController {
 
 ### Service Layer Pattern
 
+Services use `debug()` for step-by-step tracing, `info()` for significant business operations, and `warning()` for graceful error handling. Services should **not** use `startOperation()`/`success()` — controllers own the HTTP lifecycle and duration tracking.
+
 ```typescript
 export class MeetingService {
   public async getMeetingById(req: Request, meetingId: string): Promise<Meeting> {
-    // Silent operation tracking for service-level operations
-    const startTime = logger.startOperation(req, 'get_meeting_by_id', { meeting_id: meetingId }, { silent: true });
+    logger.debug(req, 'get_meeting_by_id', 'Fetching meeting from upstream', { meeting_id: meetingId });
+
+    const meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingId}`, 'GET');
+
+    if (!meeting) {
+      throw new ResourceNotFoundError('Meeting', meetingId, {
+        operation: 'get_meeting_by_id',
+      });
+    }
+
+    return meeting;
+  }
+
+  public async getMeetings(req: Request, query: QueryParams): Promise<Meeting[]> {
+    logger.debug(req, 'get_meetings', 'Starting meeting fetch', { query });
+
+    const { resources } = await this.microserviceProxy.proxyRequest(...);
+
+    // Significant transformation — use INFO for production visibility
+    if (isV1) {
+      logger.info(req, 'transform_v1_meetings', 'Transforming V1 meetings to V2 format', {
+        count: resources.length,
+      });
+      meetings = meetings.map(transformV1MeetingToV2);
+    }
+
+    logger.debug(req, 'get_meetings', 'Completed meeting fetch', { final_count: meetings.length });
+    return meetings;
+  }
+
+  public async getRecording(req: Request, meetingUid: string): Promise<Recording | null> {
+    logger.debug(req, 'get_recording', 'Fetching recording', { meeting_uid: meetingUid });
 
     try {
-      const meeting = await this.microserviceProxy.proxyRequest<Meeting>(req, 'LFX_V2_SERVICE', `/meetings/${meetingId}`, 'GET');
-
-      if (!meeting) {
-        throw new ResourceNotFoundError('Meeting', meetingId, {
-          operation: 'get_meeting_by_id',
-        });
+      const { resources } = await this.microserviceProxy.proxyRequest(...);
+      if (!resources?.length) {
+        // Graceful error — use warning, return null
+        logger.warning(req, 'get_recording', 'No recording found', { meeting_uid: meetingUid });
+        return null;
       }
-
-      logger.success(req, 'get_meeting_by_id', startTime, {
-        meeting_uid: meetingId,
-      });
-
-      return meeting;
+      return resources[0].data;
     } catch (error) {
-      logger.error(req, 'get_meeting_by_id', startTime, error, {
-        meeting_id: meetingId,
+      logger.warning(req, 'get_recording', 'Failed to fetch recording, returning null', {
+        meeting_uid: meetingUid,
+        err: error,
+        error_message: error instanceof Error ? error.message : 'Unknown error',
       });
-      throw error;
+      return null;
     }
   }
 }
@@ -400,9 +416,9 @@ try {
 }
 ```
 
-### Error Middleware with Duplicate Prevention
+### Error Middleware with Severity-Based Logging
 
-The error middleware uses `skipIfLogged` to prevent duplicate logs:
+The error middleware uses `getSeverity()` to log at the correct level per ADR 0002 — validation errors log at WARN, system errors at ERROR:
 
 ```typescript
 export function apiErrorHandler(error: Error, req: Request, res: Response, next: NextFunction): void {
@@ -412,16 +428,47 @@ export function apiErrorHandler(error: Error, req: Request, res: Response, next:
   }
 
   const operation = getOperationFromPath(req.path);
+  const startTime = logger.getOperationStartTime(req, operation) || Date.now();
 
   if (isBaseApiError(error)) {
     const logLevel = error.getSeverity();
+    const logContext = {
+      error_type: error.code,
+      status_code: error.statusCode,
+      ...error.getLogContext(),
+      request_id: req.id,
+      path: req.path,
+      method: req.method,
+    };
 
     if (logLevel === 'error') {
       // Skip if already logged by controller
-      logger.error(req, operation, Date.now(), error, logContext, { skipIfLogged: true });
+      logger.error(req, operation, startTime, error, logContext, { skipIfLogged: true });
+    } else if (logLevel === 'warn') {
+      // Validation errors log at WARN, not ERROR (ADR 0002)
+      logger.warning(req, operation, `API error: ${error.message}`, { ...logContext, err: error });
+    } else {
+      logger.debug(req, operation, `API error: ${error.message}`, { ...logContext, err: error });
     }
-    // ... send response
+
+    res.status(error.statusCode).json({ ...error.toResponse(), path: req.path });
+    return;
   }
+
+  // Unhandled errors always log at ERROR
+  logger.error(
+    req,
+    operation,
+    startTime,
+    error,
+    {
+      error_type: 'unhandled',
+      path: req.path,
+      method: req.method,
+    },
+    { skipIfLogged: true }
+  );
+  res.status(500).json({ error: 'Internal server error', code: 'INTERNAL_ERROR', path: req.path });
 }
 ```
 
@@ -478,40 +525,61 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
 
 ### Server Logger (Base Logger)
 
+Defined in `server-logger.ts` with whitelist-based serializers to prevent sensitive data leakage:
+
 ```typescript
-// apps/lfx-one/src/server/server.ts
-const serverLogger = pino({
-  level: process.env['LOG_LEVEL'] || 'info',
-  base: {
-    service: 'lfx-one-ssr',
-    environment: process.env['NODE_ENV'] || 'development',
+// apps/lfx-one/src/server/server-logger.ts
+export const serverLogger = pino(
+  {
+    level: process.env['LOG_LEVEL'] || 'info',
+    base: {
+      service: 'lfx-one-ssr',
+      environment: process.env['NODE_ENV'] || 'development',
+      version: process.env['APP_VERSION'] || '1.0.0',
+    },
+    mixin: () => {
+      // Capture AWS X-Ray trace ID if available
+      const traceHeader = process.env['_X_AMZN_TRACE_ID'];
+      if (traceHeader) {
+        const traceId = traceHeader.split(';')[0]?.replace('Root=', '');
+        return { aws_trace_id: traceId };
+      }
+      return {};
+    },
+    serializers: {
+      err: customErrorSerializer,
+      error: customErrorSerializer,
+      req: reqSerializer, // Whitelist-based — only safe fields
+      res: resSerializer, // Whitelist-based — statusCode only
+    },
+    redact: {
+      paths: ['access_token', 'refresh_token', 'authorization', 'cookie'],
+      remove: true,
+    },
+    formatters: {
+      level: (label) => ({ level: label.toUpperCase() }),
+    },
+    timestamp: pino.stdTimeFunctions.isoTime,
   },
-  serializers: {
-    err: customErrorSerializer, // Clean dev logs, detailed prod logs
-    error: customErrorSerializer,
-  },
-  redact: {
-    paths: ['access_token', 'refresh_token', 'authorization', 'cookie'],
-    remove: true,
-  },
-  formatters: {
-    level: (label) => ({ level: label.toUpperCase() }),
-  },
-  timestamp: pino.stdTimeFunctions.isoTime,
-});
+  prettyStream // Pretty-printed in dev, raw JSON in production
+);
 ```
 
 ### HTTP Logger Middleware
 
+The pinoHttp middleware inherits serializers from the base `serverLogger`:
+
 ```typescript
+// apps/lfx-one/src/server/server.ts
 const httpLogger = pinoHttp({
-  logger: serverLogger,
-  autoLogging: false, // LoggerService handles operation logging
+  logger: serverLogger, // Inherits serializers, formatters, redaction from base
   serializers: {
     err: customErrorSerializer,
     error: customErrorSerializer,
+    req: reqSerializer,
+    res: resSerializer,
   },
-  level: process.env['LOG_LEVEL'] || 'info',
+  autoLogging: false, // LoggerService handles operation logging
 });
 
 app.use(httpLogger);
@@ -519,17 +587,35 @@ app.use(httpLogger);
 
 ### Custom Error Serializer
 
+Includes stack traces in development and when DEBUG logging is enabled. Production logs omit stacks for cleaner CloudWatch output:
+
 ```typescript
 // apps/lfx-one/src/server/helpers/error-serializer.ts
-export const customErrorSerializer = (err: Error): Record<string, unknown> => {
-  const isDev = process.env['NODE_ENV'] !== 'production';
+export const customErrorSerializer = (err: any) => {
+  if (!err) return err;
 
-  return {
-    type: err.constructor.name,
-    message: err.message,
-    ...(err.stack && !isDev && { stack: err.stack }), // Stack in prod/debug only
-    ...(err.cause && { cause: err.cause }),
+  const serialized: any = {
+    type: err.constructor?.name || err.name || 'Error',
+    message: err.message || String(err),
   };
+
+  if (err.code) serialized.code = err.code;
+  if (err.statusCode) serialized.statusCode = err.statusCode;
+  if (err.status) serialized.status = err.status;
+
+  // Stack traces in dev or when debug logging is enabled
+  if (process.env['NODE_ENV'] !== 'production' || process.env['LOG_LEVEL'] === 'debug') {
+    serialized.stack = err.stack;
+  }
+
+  // Preserve custom error properties
+  Object.keys(err).forEach((key) => {
+    if (!['message', 'stack', 'name', 'constructor'].includes(key)) {
+      serialized[key] = err[key];
+    }
+  });
+
+  return serialized;
 };
 ```
 
@@ -572,14 +658,17 @@ logger.startOperation(req, 'fetch-user-profile'); // kebab-case
 
 ### Automatic Redaction
 
-The following fields are automatically redacted:
+The following fields are automatically redacted via Pino's `redact` config:
 
 - `access_token`
 - `refresh_token`
 - `authorization`
 - `cookie`
-- Request headers: `authorization`, `cookie`
-- Response headers: `set-cookie`
+
+Additionally, whitelist-based serializers prevent sensitive data leakage:
+
+- **Request serializer** (`reqSerializer`): Only emits `id`, `method`, `url`, `remoteAddress`, `userAgent` — no headers, cookies, or auth data
+- **Response serializer** (`resSerializer`): Only emits `statusCode` — no `set-cookie` or other response headers
 
 ### Safe Metadata Practices
 
@@ -633,16 +722,19 @@ URLs excluded from logging:
 
 1. **Don't use startTime=0**: This causes incorrect duration calculations
 2. **Don't use startOperation in loops**: Use `debug()` for repeated informational logs
-3. **Don't log sensitive data**: Never log passwords, tokens, or PII
-4. **Don't nest ternaries in logs**: Keep log statements simple and readable
-5. **Don't skip error handling**: Always log errors before throwing/passing to middleware
+3. **Don't use startOperation/success in services**: Services use `debug()`/`info()`/`warning()` — controllers own the lifecycle
+4. **Don't log validation errors at ERROR**: They're WARN (handled by `apiErrorHandler` via `getSeverity()`)
+5. **Don't log sensitive data**: Never log passwords, tokens, or PII
+6. **Don't skip error handling**: Always log errors before throwing/passing to middleware
 
 ### Code Review Checklist
 
 - [ ] All `startOperation()` calls are paired with `success()` or `error()`
+- [ ] `startOperation()`/`success()` only used in controllers, not services
 - [ ] startTime is captured and used correctly (not 0)
-- [ ] Informational logs use `debug()` instead of `startOperation()`
+- [ ] Services use `debug()` for tracing, `info()` for significant operations
 - [ ] Error middleware uses `{ skipIfLogged: true }`
+- [ ] Validation errors handled at WARN, not ERROR
 - [ ] No sensitive data in log metadata
 - [ ] Operation names use snake_case
 - [ ] Errors use `err` parameter, not metadata fields
@@ -663,7 +755,9 @@ _X_AMZN_TRACE_ID=Root=1-67890-abc123
 ## 📊 What's Implemented
 
 - LoggerService singleton with operation lifecycle tracking (startOperation → success/error)
+- Method-aware log levels per ADR 0002 (reads at DEBUG, writes at INFO)
 - Duplicate log prevention via WeakMap-based tracking
 - CloudWatch-optimized structured logging with automatic duration calculation
-- Custom error serializer, security redaction, and health check filtering
-- Validation logging for request input errors
+- Whitelist-based req/res serializers to prevent sensitive data leakage
+- Custom error serializer with environment-aware stack traces
+- Validation errors logged at WARN by `apiErrorHandler` via `getSeverity()`
