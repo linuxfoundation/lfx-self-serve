@@ -4,6 +4,113 @@
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
 
+// ── v2.0 Taxonomy Types ─────────────────────────────────────────────────────
+
+/**
+ * Sub-type for oversight committees to distinguish governance-track (TOC, TSC)
+ * from advisory-track (TAC, Legal, Finance) bodies.
+ * Drives subtle dashboard differences: governance sub-type shows binding vote UI,
+ * advisory sub-type shows recommendation/report UI.
+ */
+export type OversightSubType = 'governance' | 'advisory';
+
+// ── Join & Invite Types (Phase 1) ───────────────────────────────────────────
+
+/**
+ * How users can join this group.
+ *  - open:        Anyone can self-join; no approval required.
+ *  - invite-only: Members / admins send invite links; invitee clicks to accept.
+ *  - apply:       User submits application; admin reviews and approves/rejects.
+ *  - closed:      Only admins can add members (legacy behaviour).
+ */
+export type JoinMode = 'open' | 'invite-only' | 'apply' | 'closed';
+
+/** Status of a member invite */
+export type InviteStatus = 'pending' | 'accepted' | 'declined' | 'expired';
+
+/**
+ * A colleague-to-colleague or admin-to-user invitation to join a group.
+ */
+export interface GroupInvite {
+  /** Unique invite ID */
+  uid: string;
+  /** Committee this invite is for */
+  committee_uid: string;
+  /** Email address of the invitee */
+  invitee_email: string;
+  /** Display name of the invitee (optional) */
+  invitee_name?: string;
+  /** UID of the user who sent the invite */
+  invited_by_uid: string;
+  /** Name of the person who sent the invite */
+  invited_by_name?: string;
+  /** Current status */
+  status: InviteStatus;
+  /** Optional personal message from inviter */
+  message?: string;
+  /** Role to assign on acceptance (default: 'Member') */
+  suggested_role?: string;
+  /** When the invite was created */
+  created_at: string;
+  /** When the invite expires (default: 14 days) */
+  expires_at: string;
+  /** When the invite was accepted / declined */
+  responded_at?: string;
+}
+
+/**
+ * Payload to create one or more invites.
+ */
+export interface CreateGroupInviteRequest {
+  /** Email addresses to invite */
+  emails: string[];
+  /** Optional personal message included in the invite email */
+  message?: string;
+  /** Role to assign on acceptance */
+  suggested_role?: string;
+}
+
+/**
+ * Payload for a user to apply to join a group (join_mode = 'apply').
+ */
+export interface GroupJoinApplicationRequest {
+  /** Why the user wants to join (shown to admin reviewers) */
+  reason?: string;
+}
+
+/** Status of a join application */
+export type JoinApplicationStatus = 'pending' | 'approved' | 'rejected';
+
+/**
+ * A join application record.
+ */
+export interface GroupJoinApplication {
+  uid: string;
+  committee_uid: string;
+  applicant_email: string;
+  applicant_name?: string;
+  applicant_uid: string;
+  status: JoinApplicationStatus;
+  reason?: string;
+  reviewed_by_uid?: string;
+  reviewed_at?: string;
+  created_at: string;
+}
+
+/**
+ * Membership-tier eligibility thresholds for group participation.
+ * Replaces the former "Membership Class" behavioral type — tier is now
+ * an attribute on any group rather than a top-level type.
+ */
+export interface GroupEligibility {
+  /** Minimum tier to join the group (default: 'any') */
+  joinTier?: 'platinum' | 'gold' | 'silver' | 'any';
+  /** Minimum tier to serve as chair */
+  chairTier?: 'platinum' | 'gold';
+  /** Minimum tier to hold voting rights */
+  votingTier?: 'platinum' | 'gold';
+}
+
 /**
  * Lightweight committee reference for cross-module use
  * @description Minimal committee data with voting status eligibility
@@ -15,6 +122,57 @@ export interface CommitteeReference {
   name?: string;
   /** Allowed voting statuses: Voting Rep, Alternate Voting Rep, Observer, Emeritus, None */
   allowed_voting_statuses?: CommitteeMemberVotingStatus[];
+}
+
+// ── Communication Channel Types ─────────────────────────────────────────────
+
+/** Platform type for chat channels */
+export type ChatPlatform = 'slack' | 'discord';
+
+/**
+ * A mailing list associated with a group (e.g., Groups.io, Google Groups).
+ */
+export interface GroupMailingList {
+  /** Display name of the list (e.g., "tac-general") */
+  name: string;
+  /** Full URL to the mailing list archive or subscription page */
+  url?: string;
+  /** Number of subscribers (optional, for display) */
+  subscriber_count?: number;
+}
+
+/**
+ * A chat channel (Slack or Discord) associated with a group.
+ */
+export interface GroupChatChannel {
+  /** Platform type */
+  platform: ChatPlatform;
+  /** Channel name (e.g., "#tac-general") */
+  name: string;
+  /** Direct link to the channel */
+  url?: string;
+}
+
+/**
+ * Committee leadership position (Chair, Co-Chair, etc.)
+ * @description Represents a member in a leadership position within a committee
+ */
+/** Leadership role type for chair/co-chair assignment */
+export type LeadershipRole = 'chair' | 'co_chair';
+
+export interface CommitteeLeadership {
+  /** Unique identifier for the leader (member UID) */
+  uid: string;
+  /** Leader's first name */
+  first_name: string;
+  /** Leader's last name */
+  last_name: string;
+  /** Leader's email address */
+  email: string;
+  /** Date when the leader was elected/appointed (ISO 8601 date string) */
+  elected_date?: string;
+  /** Organization the leader belongs to (may not be returned by all API versions) */
+  organization?: string;
 }
 
 /**
@@ -60,6 +218,8 @@ export interface Committee {
   project_uid: string;
   /** Associated project name (populated from project data) */
   project_name?: string;
+  /** Foundation name this committee belongs to (populated from project hierarchy) */
+  foundation_name?: string;
   /** Calendar visibility settings */
   calendar?: {
     /** Whether committee calendar is public */
@@ -73,6 +233,39 @@ export interface Committee {
   member_visibility?: CommitteeMemberVisibility;
   /** Whether to show meeting attendees by default */
   show_meeting_attendees?: boolean;
+
+  // ── v2.0 Taxonomy fields ──
+  /** Sub-type for oversight committees: governance (binding) vs advisory */
+  oversight_sub_type?: OversightSubType;
+  /** Membership-tier eligibility thresholds for participation */
+  eligibility?: GroupEligibility;
+
+  // ── Join & Invite fields ──
+  /** How users can join this group (default: 'closed') */
+  join_mode?: JoinMode;
+
+  // ── Communication Channels ──
+  /** Mailing list associated with the group (e.g., Groups.io list) */
+  mailing_list?: GroupMailingList;
+  /** Chat channel associated with the group (Slack, Discord, etc.) */
+  chat_channel?: GroupChatChannel;
+
+  // ── Leadership ──
+  /** Chair of the committee */
+  chair?: CommitteeLeadership | null;
+  /** Co-Chair of the committee */
+  co_chair?: CommitteeLeadership | null;
+}
+
+/**
+ * Committee with the current user's membership info
+ * @description Extends Committee with the user's role and member UID for join/leave actions
+ */
+export interface MyCommittee extends Committee {
+  /** User's role in this committee (e.g., "Chair", "Member", "Observer") */
+  myRole: string;
+  /** User's member UID in this committee (needed for leave action) */
+  myMemberUid?: string;
 }
 
 /**
@@ -106,8 +299,10 @@ export interface CommitteeCreateData {
   website?: string;
   /** Associated project UID */
   project_uid?: string;
-  /** Whether committee is open for self-joining */
+  /** @deprecated Use join_mode instead */
   joinable?: boolean;
+  /** How users can join this group */
+  join_mode?: JoinMode;
   /** Member profile visibility setting */
   member_visibility?: CommitteeMemberVisibility;
   /** Whether to show meeting attendees by default */
@@ -118,7 +313,16 @@ export interface CommitteeCreateData {
  * Data for updating existing committee
  * @description Partial update payload allowing any field from create data to be modified
  */
-export interface CommitteeUpdateData extends Partial<CommitteeCreateData> {}
+export interface CommitteeUpdateData extends Partial<CommitteeCreateData> {
+  /** Assign or remove chair */
+  chair?: CommitteeLeadership | null;
+  /** Assign or remove co-chair */
+  co_chair?: CommitteeLeadership | null;
+  /** Update mailing list (sent via PATCH, not PUT) */
+  mailing_list?: GroupMailingList;
+  /** Update chat channel (sent via PATCH, not PUT) */
+  chat_channel?: GroupChatChannel;
+}
 
 /**
  * Committee settings update data
@@ -133,4 +337,189 @@ export interface CommitteeSettingsData {
   member_visibility?: CommitteeMemberVisibility;
   /** Update show meeting attendees setting */
   show_meeting_attendees?: boolean;
+}
+
+// ── Committee Dashboard Data Types ──────────────────────────────────────────
+// These interfaces describe data shapes for per-group-type dashboard cards.
+// Fields reflect the current mock data; will align to real API shapes when
+// the corresponding V2 endpoints are available.
+
+/** Status of an open vote */
+export type CommitteeVoteStatus = 'open' | 'closed' | 'cancelled';
+
+/**
+ * An open or recent vote in a governing board or oversight committee.
+ */
+export interface CommitteeVote {
+  uid: string;
+  title: string;
+  status: CommitteeVoteStatus;
+  /** ISO date string for when voting closes */
+  deadline: string;
+  votesFor: number;
+  votesAgainst: number;
+  votesAbstain: number;
+  totalEligible: number;
+  created_by: string;
+}
+
+/** A single budget category line item */
+export interface CommitteeBudgetCategory {
+  name: string;
+  allocated: number;
+  spent: number;
+}
+
+/**
+ * Budget summary for a governing board's fiscal year.
+ */
+export interface CommitteeBudgetSummary {
+  fiscal_year: string;
+  total_budget: number;
+  spent: number;
+  committed: number;
+  remaining: number;
+  categories: CommitteeBudgetCategory[];
+}
+
+/**
+ * A passed/failed resolution from a governing or oversight committee.
+ */
+export interface CommitteeResolution {
+  uid: string;
+  title: string;
+  /** ISO date string */
+  date: string;
+  result: string;
+  votesFor: number;
+  votesAgainst: number;
+}
+
+/** Activity type for collaboration-class groups */
+export type CommitteeActivityType = 'pr_merged' | 'issue_opened' | 'release' | 'discussion' | 'comment' | 'review';
+
+/**
+ * A recent activity event shown in working-group / oversight-committee dashboards.
+ */
+export interface CommitteeActivity {
+  uid: string;
+  type: CommitteeActivityType;
+  title: string;
+  author: string;
+  repo: string;
+  /** ISO date string */
+  timestamp: string;
+  /** FontAwesome icon class e.g. "fa-light fa-code-pull-request" */
+  icon: string;
+  /** Tailwind text-color class e.g. "text-emerald-600" */
+  color: string;
+}
+
+/**
+ * A top contributor shown in working-group / oversight-committee dashboards.
+ */
+export interface CommitteeContributor {
+  name: string;
+  commits: number;
+  prs: number;
+  reviews: number;
+  org: string;
+}
+
+/** Status of a working-group deliverable */
+export type CommitteeDeliverableStatus = 'not-started' | 'in-progress' | 'completed' | 'blocked';
+
+/**
+ * A deliverable / milestone tracked by a working group.
+ */
+export interface CommitteeDeliverable {
+  uid: string;
+  title: string;
+  status: CommitteeDeliverableStatus;
+  /** Completion percentage 0–100 */
+  progress: number;
+  owner: string;
+  /** ISO date string */
+  dueDate: string;
+}
+
+/**
+ * A discussion thread in a special-interest-group dashboard.
+ */
+export interface CommitteeDiscussionThread {
+  uid: string;
+  title: string;
+  author: string;
+  replies: number;
+  /** ISO date string of most recent reply */
+  lastActivity: string;
+  tags: string[];
+}
+
+/** Format of a committee-hosted event */
+export type CommitteeEventType = 'Webinar' | 'In-Person' | 'Virtual' | 'Hybrid';
+
+/**
+ * An upcoming event shown in a special-interest-group dashboard.
+ */
+export interface CommitteeEvent {
+  uid: string;
+  title: string;
+  type: CommitteeEventType;
+  /** ISO date string */
+  date: string;
+  speaker: string;
+  attendees: number;
+}
+
+/** Status of an ambassador outreach campaign */
+export type CommitteeCampaignStatus = 'active' | 'upcoming' | 'ended' | 'paused';
+
+/**
+ * An outreach campaign shown in an ambassador-program dashboard.
+ */
+export interface CommitteeOutreachCampaign {
+  uid: string;
+  title: string;
+  status: CommitteeCampaignStatus;
+  reach: number;
+  conversions: number;
+  conversionRate: number;
+  /** FontAwesome icon class */
+  icon: string;
+  /** Tailwind text-color class */
+  color: string;
+}
+
+/**
+ * Aggregate engagement metrics for an ambassador-program dashboard.
+ */
+export interface CommitteeEngagementMetrics {
+  totalReach: number;
+  newMembers30d: number;
+  eventAttendance: number;
+  newsletterOpenRate: number;
+  socialImpressions: number;
+  ambassadorCount: number;
+}
+
+/** Type of a committee document entry */
+export type CommitteeDocumentType = 'file' | 'link';
+
+/**
+ * A document or resource link associated with a committee.
+ */
+export interface CommitteeDocument {
+  uid: string;
+  type: CommitteeDocumentType;
+  name: string;
+  /** URL for links; download URL for files */
+  url?: string;
+  /** MIME type or file extension (files only) */
+  mime_type?: string;
+  /** File size in bytes (files only) */
+  file_size?: number;
+  /** ISO date string of last update */
+  updated_at?: string;
+  uploaded_by?: string;
 }
