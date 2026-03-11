@@ -2,7 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { GroupBehavioralClass } from '../interfaces/committee.interface';
 import { lfxColors } from './colors.constants';
+
+// Re-export helper functions from utils for backward compatibility
+export {
+  getGroupBehavioralClass,
+  isGoverningBoard,
+  isOversightCommittee,
+  isWorkingGroup,
+  isSpecialInterestGroup,
+  isAmbassadorProgram,
+  isOtherClass,
+  isGovernanceClass,
+  isCollaborationClass,
+} from '../utils/committee.utils';
 
 /**
  * Configurable labels for committees displayed throughout the UI
@@ -474,20 +488,6 @@ export const JOIN_MODE_OPTIONS = [
 // ============================================================================
 
 /**
- * Behavioral class for group types — drives personalized dashboard layouts.
- *
- * @see LFX-One-Groups-Type-Taxonomy-Spec.docx (v1.1)
- *
- * - governing-board:        Voting, budgets, resolutions, fiduciary oversight, delegation
- * - oversight-committee:    Technical governance + collaboration (TSC, TOC, TAC, Legal, Finance, CoC)
- * - working-group:          Task-oriented collaboration, deliverables, milestones
- * - special-interest-group: Community discussions, events, knowledge sharing
- * - ambassador-program:     Outreach, evangelism, referral campaigns, ambassador engagement
- * - other:                  Catch-all for uncategorized groups; minimal generic dashboard
- */
-export type GroupBehavioralClass = 'governing-board' | 'oversight-committee' | 'working-group' | 'special-interest-group' | 'ambassador-program' | 'other';
-
-/**
  * Maps PCC committee categories (20 raw types) to the 6 behavioral classes.
  * This is the single source of truth for classification.
  *
@@ -530,116 +530,3 @@ export const CATEGORY_BEHAVIORAL_CLASS: Record<string, GroupBehavioralClass> = {
   Committee: 'other',
 };
 
-/**
- * Determine the behavioral class for a given committee category.
- * Falls back to partial string matching if exact match not found.
- */
-export function getGroupBehavioralClass(category: string | undefined): GroupBehavioralClass {
-  if (!category) return 'other';
-
-  // Exact match first
-  if (CATEGORY_BEHAVIORAL_CLASS[category]) {
-    return CATEGORY_BEHAVIORAL_CLASS[category];
-  }
-
-  // Partial match fallback (handles custom/variant PCC categories)
-  const lower = category.toLowerCase();
-
-  // Governing board
-  if (lower.includes('board') || lower.includes('government')) {
-    return 'governing-board';
-  }
-
-  // Oversight committee
-  if (
-    lower === 'tsc' ||
-    lower === 'toc' ||
-    lower === 'tac' ||
-    lower.includes('technical steering') ||
-    lower.includes('technical advisory') ||
-    lower.includes('technical oversight') ||
-    lower.includes('legal') ||
-    lower.includes('finance') ||
-    lower.includes('code of conduct') ||
-    lower.includes('product security')
-  ) {
-    return 'oversight-committee';
-  }
-
-  // Working group
-  if (lower.includes('working group') || lower.includes('expert') || lower.includes('maintainer') || lower.includes('committer')) {
-    return 'working-group';
-  }
-
-  // Special interest group (includes marketing outreach)
-  if (lower.includes('special interest') || lower.includes('sig') || lower.includes('technical mailing') || lower.includes('marketing')) {
-    return 'special-interest-group';
-  }
-
-  // Ambassador program
-  if (lower.includes('ambassador')) {
-    return 'ambassador-program';
-  }
-
-  return 'other';
-}
-
-// ── Per-type query helpers ──────────────────────────────────────────────────
-
-/** True for governing-board type */
-export function isGoverningBoard(category: string | undefined): boolean {
-  return getGroupBehavioralClass(category) === 'governing-board';
-}
-
-/** True for oversight-committee type */
-export function isOversightCommittee(category: string | undefined): boolean {
-  return getGroupBehavioralClass(category) === 'oversight-committee';
-}
-
-/** True for working-group type */
-export function isWorkingGroup(category: string | undefined): boolean {
-  return getGroupBehavioralClass(category) === 'working-group';
-}
-
-/** True for special-interest-group type */
-export function isSpecialInterestGroup(category: string | undefined): boolean {
-  return getGroupBehavioralClass(category) === 'special-interest-group';
-}
-
-/** True for ambassador-program type */
-export function isAmbassadorProgram(category: string | undefined): boolean {
-  return getGroupBehavioralClass(category) === 'ambassador-program';
-}
-
-/**
- * @deprecated Use isAmbassadorProgram() — membership-class was removed in v2.0 taxonomy.
- * Kept temporarily for backward compatibility during migration.
- */
-export function isMembershipClass(category: string | undefined): boolean {
-  return isAmbassadorProgram(category);
-}
-
-/** True for other (catch-all) type */
-export function isOtherClass(category: string | undefined): boolean {
-  return getGroupBehavioralClass(category) === 'other';
-}
-
-// ── Backward-compatible aggregate helpers ───────────────────────────────────
-
-/**
- * Check if a category shows governance-style dashboard cards (votes, budgets, resolutions).
- * True for: governing-board and oversight-committee.
- */
-export function isGovernanceClass(category: string | undefined): boolean {
-  const cls = getGroupBehavioralClass(category);
-  return cls === 'governing-board' || cls === 'oversight-committee';
-}
-
-/**
- * Check if a category shows collaboration-style dashboard cards (activity, contributors).
- * True for: working-group, special-interest-group, oversight-committee, ambassador-program, and other.
- */
-export function isCollaborationClass(category: string | undefined): boolean {
-  const cls = getGroupBehavioralClass(category);
-  return cls === 'working-group' || cls === 'special-interest-group' || cls === 'oversight-committee' || cls === 'ambassador-program' || cls === 'other';
-}

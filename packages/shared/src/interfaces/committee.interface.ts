@@ -14,6 +14,20 @@ import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
  */
 export type OversightSubType = 'governance' | 'advisory';
 
+/**
+ * Behavioral class for group types — drives personalized dashboard layouts.
+ *
+ * @see LFX-One-Groups-Type-Taxonomy-Spec.docx (v1.1)
+ *
+ * - governing-board:        Voting, budgets, resolutions, fiduciary oversight, delegation
+ * - oversight-committee:    Technical governance + collaboration (TSC, TOC, TAC, Legal, Finance, CoC)
+ * - working-group:          Task-oriented collaboration, deliverables, milestones
+ * - special-interest-group: Community discussions, events, knowledge sharing
+ * - ambassador-program:     Outreach, evangelism, referral campaigns, ambassador engagement
+ * - other:                  Catch-all for uncategorized groups; minimal generic dashboard
+ */
+export type GroupBehavioralClass = 'governing-board' | 'oversight-committee' | 'working-group' | 'special-interest-group' | 'ambassador-program' | 'other';
+
 // ── Join & Invite Types (Phase 1) ───────────────────────────────────────────
 
 /**
@@ -71,44 +85,17 @@ export interface CreateGroupInviteRequest {
 }
 
 /**
- * Payload for a user to apply to join a group (join_mode = 'apply').
- */
-export interface GroupJoinApplicationRequest {
-  /** Why the user wants to join (shown to admin reviewers) */
-  reason?: string;
-}
-
-/** Status of a join application */
-export type JoinApplicationStatus = 'pending' | 'approved' | 'rejected';
-
-/**
- * A join application record.
- */
-export interface GroupJoinApplication {
-  uid: string;
-  committee_uid: string;
-  applicant_email: string;
-  applicant_name?: string;
-  applicant_uid: string;
-  status: JoinApplicationStatus;
-  reason?: string;
-  reviewed_by_uid?: string;
-  reviewed_at?: string;
-  created_at: string;
-}
-
-/**
  * Membership-tier eligibility thresholds for group participation.
  * Replaces the former "Membership Class" behavioral type — tier is now
  * an attribute on any group rather than a top-level type.
  */
 export interface GroupEligibility {
   /** Minimum tier to join the group (default: 'any') */
-  joinTier?: 'platinum' | 'gold' | 'silver' | 'any';
+  join_tier?: 'platinum' | 'gold' | 'silver' | 'any';
   /** Minimum tier to serve as chair */
-  chairTier?: 'platinum' | 'gold';
+  chair_tier?: 'platinum' | 'gold';
   /** Minimum tier to hold voting rights */
-  votingTier?: 'platinum' | 'gold';
+  voting_tier?: 'platinum' | 'gold';
 }
 
 /**
@@ -263,9 +250,9 @@ export interface Committee {
  */
 export interface MyCommittee extends Committee {
   /** User's role in this committee (e.g., "Chair", "Member", "Observer") */
-  myRole: string;
+  my_role: string;
   /** User's member UID in this committee (needed for leave action) */
-  myMemberUid?: string;
+  my_member_uid?: string;
 }
 
 /**
@@ -318,9 +305,9 @@ export interface CommitteeUpdateData extends Partial<CommitteeCreateData> {
   chair?: CommitteeLeadership | null;
   /** Assign or remove co-chair */
   co_chair?: CommitteeLeadership | null;
-  /** Update mailing list (sent via PATCH, not PUT) */
+  /** Update mailing list */
   mailing_list?: GroupMailingList;
-  /** Update chat channel (sent via PATCH, not PUT) */
+  /** Update chat channel */
   chat_channel?: GroupChatChannel;
 }
 
@@ -356,10 +343,10 @@ export interface CommitteeVote {
   status: CommitteeVoteStatus;
   /** ISO date string for when voting closes */
   deadline: string;
-  votesFor: number;
-  votesAgainst: number;
-  votesAbstain: number;
-  totalEligible: number;
+  votes_for: number;
+  votes_against: number;
+  votes_abstain: number;
+  total_eligible: number;
   created_by: string;
 }
 
@@ -391,8 +378,8 @@ export interface CommitteeResolution {
   /** ISO date string */
   date: string;
   result: string;
-  votesFor: number;
-  votesAgainst: number;
+  votes_for: number;
+  votes_against: number;
 }
 
 /** Activity type for collaboration-class groups */
@@ -440,7 +427,7 @@ export interface CommitteeDeliverable {
   progress: number;
   owner: string;
   /** ISO date string */
-  dueDate: string;
+  due_date: string;
 }
 
 /**
@@ -452,7 +439,7 @@ export interface CommitteeDiscussionThread {
   author: string;
   replies: number;
   /** ISO date string of most recent reply */
-  lastActivity: string;
+  last_activity: string;
   tags: string[];
 }
 
@@ -484,7 +471,7 @@ export interface CommitteeOutreachCampaign {
   status: CommitteeCampaignStatus;
   reach: number;
   conversions: number;
-  conversionRate: number;
+  conversion_rate: number;
   /** FontAwesome icon class */
   icon: string;
   /** Tailwind text-color class */
@@ -495,12 +482,12 @@ export interface CommitteeOutreachCampaign {
  * Aggregate engagement metrics for an ambassador-program dashboard.
  */
 export interface CommitteeEngagementMetrics {
-  totalReach: number;
-  newMembers30d: number;
-  eventAttendance: number;
-  newsletterOpenRate: number;
-  socialImpressions: number;
-  ambassadorCount: number;
+  total_reach: number;
+  new_members_30d: number;
+  event_attendance: number;
+  newsletter_open_rate: number;
+  social_impressions: number;
+  ambassador_count: number;
 }
 
 /** Type of a committee document entry */
