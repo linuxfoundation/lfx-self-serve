@@ -37,7 +37,7 @@ export class PublicMeetingController {
 
     try {
       // Check if the meeting UID is provided
-      if (!this.validateMeetingId(id, 'get_public_meeting_by_id', req, next, startTime)) {
+      if (!this.validateMeetingId(id, 'get_public_meeting_by_id', req, next)) {
         return;
       }
 
@@ -166,7 +166,7 @@ export class PublicMeetingController {
 
     try {
       // Check if the meeting UID is provided
-      if (!this.validateMeetingId(id, 'post_meeting_link', req, next, startTime)) {
+      if (!this.validateMeetingId(id, 'post_meeting_link', req, next)) {
         return;
       }
 
@@ -341,11 +341,10 @@ export class PublicMeetingController {
   /**
    * Validates meeting ID parameter
    */
-  private validateMeetingId(id: string, operation: string, req: Request, next: NextFunction, startTime: number): boolean {
+  private validateMeetingId(id: string, operation: string, req: Request, next: NextFunction): boolean {
     return validateUidParameter(id, req, next, {
       operation,
       service: 'public_meeting_controller',
-      logStartTime: startTime,
     });
   }
 

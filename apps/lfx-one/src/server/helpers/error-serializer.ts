@@ -3,10 +3,10 @@
 
 /**
  * Custom error serializer for Pino logging
- * Provides cleaner error output in development while maintaining full context in production
+ * Provides full stack traces in development for debugging while keeping production logs clean
  *
- * Development: Excludes verbose stack traces for readability
- * Production: Includes full stack traces for debugging
+ * Development: Includes stack traces for local debugging
+ * Production: Excludes stack traces unless LOG_LEVEL=debug (cleaner CloudWatch logs)
  */
 export const customErrorSerializer = (err: any) => {
   if (!err) return err;
@@ -21,8 +21,8 @@ export const customErrorSerializer = (err: any) => {
   if (err.statusCode) serialized.statusCode = err.statusCode;
   if (err.status) serialized.status = err.status;
 
-  // Include stack trace only in production or debug mode
-  if (process.env['NODE_ENV'] === 'production' || process.env['LOG_LEVEL'] === 'debug') {
+  // Include stack trace in development or when debug logging is enabled
+  if (process.env['NODE_ENV'] !== 'production' || process.env['LOG_LEVEL'] === 'debug') {
     serialized.stack = err.stack;
   }
 

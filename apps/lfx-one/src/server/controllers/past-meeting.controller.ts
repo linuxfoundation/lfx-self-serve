@@ -78,7 +78,6 @@ export class PastMeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_past_meeting_participants',
           service: 'past_meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -121,7 +120,6 @@ export class PastMeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_past_meeting_recording',
           service: 'past_meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -175,7 +173,6 @@ export class PastMeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_past_meeting_summary',
           service: 'past_meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -229,7 +226,6 @@ export class PastMeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_past_meeting_attachments',
           service: 'past_meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -273,12 +269,10 @@ export class PastMeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'update_past_meeting_summary',
           service: 'past_meeting_controller',
-          logStartTime: startTime,
         }) ||
         !validateUidParameter(summaryUid, req, next, {
           operation: 'update_past_meeting_summary',
           service: 'past_meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -333,12 +327,10 @@ export class PastMeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_past_meeting_attachment',
           service: 'past_meeting_controller',
-          logStartTime: startTime,
         }) ||
         !validateUidParameter(attachmentId, req, next, {
           operation: 'get_past_meeting_attachment',
           service: 'past_meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -376,12 +368,10 @@ export class PastMeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_past_meeting_attachment_download_url',
           service: 'past_meeting_controller',
-          logStartTime: startTime,
         }) ||
         !validateUidParameter(attachmentId, req, next, {
           operation: 'get_past_meeting_attachment_download_url',
           service: 'past_meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;

@@ -88,9 +88,9 @@ export class SnowflakeService {
     // Execute with lock to prevent duplicate queries
     return this.lockManager.executeLocked(queryHash, async () => {
       const startTime = Date.now();
-      logger.startOperation(undefined, 'snowflake_query', {
+      logger.debug(undefined, 'snowflake_query', 'Executing query', {
         query_hash: queryHash,
-        sql_preview: sqlText.substring(0, 100),
+        sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
         bind_count: binds?.length || 0,
       });
 
@@ -121,9 +121,10 @@ export class SnowflakeService {
 
         const poolStats = this.getPoolStats();
 
-        logger.success(undefined, 'snowflake_query', startTime, {
+        logger.debug(undefined, 'snowflake_query', 'Query completed', {
           query_hash: queryHash,
           row_count: result.rows.length,
+          duration_ms: Date.now() - startTime,
           pool_active: poolStats.activeConnections,
           pool_idle: poolStats.idleConnections,
         });
@@ -132,7 +133,7 @@ export class SnowflakeService {
       } catch (error) {
         logger.error(undefined, 'snowflake_query', startTime, error instanceof Error ? error : new Error(String(error)), {
           query_hash: queryHash,
-          sql_preview: sqlText.substring(0, 100),
+          sql_preview: sqlText.substring(0, 100).replace(/\s+/g, ' ').trim(),
         });
 
         // Wrap Snowflake SDK errors in MicroserviceError for proper error handling

@@ -62,7 +62,8 @@ export class LoggerService {
   }
 
   /**
-   * Starts tracking an operation and logs at INFO level
+   * Starts tracking an operation
+   * Logs at DEBUG for request-scoped calls, INFO for infrastructure (ADR 0002)
    * Returns startTime for duration calculation
    * @param req - Request object (optional - use undefined for infrastructure operations)
    */
@@ -110,9 +111,9 @@ export class LoggerService {
       logged: false,
     });
 
-    // Log start unless silent mode
+    // Log start at DEBUG level (ADR 0002: startOperation never emits INFO for request-scoped calls)
     if (!options.silent) {
-      req.log.info(
+      req.log.debug(
         {
           operation,
           status: 'started',
@@ -130,6 +131,7 @@ export class LoggerService {
 
   /**
    * Logs successful completion of an operation
+   * Reads (GET/HEAD/OPTIONS) log at DEBUG, writes (POST/PUT/DELETE/PATCH) log at INFO (ADR 0002)
    * @param req - Request object (optional - use undefined for infrastructure operations)
    */
   public success(req: Request | undefined, operation: string, startTime: number, metadata: Record<string, unknown> = {}): void {
@@ -163,17 +165,22 @@ export class LoggerService {
     // Extract status_code from metadata if present, rest goes to data
     const { status_code, ...restMetadata } = metadata as { status_code?: number; [key: string]: unknown };
 
-    req.log.info(
-      {
-        operation,
-        status: 'success',
-        duration_ms: duration,
-        status_code: status_code || 200,
-        request_id: req.id,
-        ...(Object.keys(restMetadata).length > 0 && { data: restMetadata }),
-      },
-      `Successfully completed ${this.formatOperation(operation)}`
-    );
+    const logData = {
+      operation,
+      status: 'success',
+      duration_ms: duration,
+      status_code: status_code || 200,
+      request_id: req.id,
+      ...(Object.keys(restMetadata).length > 0 && { data: restMetadata }),
+    };
+    const logMessage = `Successfully completed ${this.formatOperation(operation)}`;
+
+    // ADR 0002: reads (GET/HEAD/OPTIONS) log at DEBUG, writes (POST/PUT/DELETE/PATCH) log at INFO
+    if (this.isReadMethod(req)) {
+      req.log.debug(logData, logMessage);
+    } else {
+      req.log.info(logData, logMessage);
+    }
 
     // Clean up completed operation
     stack.delete(operation);
@@ -245,42 +252,6 @@ export class LoggerService {
 
     // Clean up failed operation
     stack.delete(operation);
-  }
-
-  /**
-   * Logs validation errors
-   * @param req - Request object (optional - use undefined for infrastructure operations)
-   */
-  public validation(req: Request | undefined, operation: string, validationErrors: unknown[], metadata: Record<string, unknown> = {}): void {
-    // Infrastructure logging (no request context)
-    if (!req) {
-      serverLogger.error(
-        {
-          operation,
-          status: 'failed',
-          error_type: 'validation',
-          validation_errors: validationErrors,
-          status_code: 400,
-          ...(Object.keys(metadata).length > 0 && { data: metadata }),
-        },
-        `Validation failed for ${this.formatOperation(operation)}`
-      );
-      return;
-    }
-
-    // Request-scoped logging
-    req.log.error(
-      {
-        operation,
-        status: 'failed',
-        error_type: 'validation',
-        validation_errors: validationErrors,
-        status_code: 400,
-        request_id: req.id,
-        ...(Object.keys(metadata).length > 0 && { data: metadata }),
-      },
-      `Validation failed for ${this.formatOperation(operation)}`
-    );
   }
 
   /**
@@ -472,6 +443,15 @@ export class LoggerService {
       this.operationStacks.set(req, new Map());
     }
     return this.operationStacks.get(req)!;
+  }
+
+  /**
+   * Checks if the HTTP method is a read operation (GET, HEAD, OPTIONS)
+   * Used to determine log levels per ADR 0002: reads log at DEBUG, writes at INFO
+   */
+  private isReadMethod(req: Request): boolean {
+    const method = req.method?.toUpperCase();
+    return method === 'GET' || method === 'HEAD' || method === 'OPTIONS';
   }
 
   /**

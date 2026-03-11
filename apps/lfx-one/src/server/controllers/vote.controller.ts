@@ -71,7 +71,6 @@ export class VoteController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_vote_by_id',
           service: 'vote_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -134,7 +133,6 @@ export class VoteController {
         !validateUidParameter(uid, req, next, {
           operation: 'update_vote',
           service: 'vote_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -168,7 +166,6 @@ export class VoteController {
         !validateUidParameter(uid, req, next, {
           operation: 'delete_vote',
           service: 'vote_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -201,7 +198,6 @@ export class VoteController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_vote_results',
           service: 'vote_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -235,7 +231,6 @@ export class VoteController {
         !validateUidParameter(uid, req, next, {
           operation: 'enable_vote',
           service: 'vote_controller',
-          logStartTime: startTime,
         })
       ) {
         return;

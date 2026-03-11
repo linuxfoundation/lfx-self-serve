@@ -10,7 +10,6 @@ import express, { NextFunction, Request, Response } from 'express';
 import { attemptSilentLogin, auth, ConfigParams } from 'express-openid-connect';
 import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import pino from 'pino';
 import pinoHttp from 'pino-http';
 
 import { customErrorSerializer } from './helpers/error-serializer';
@@ -31,7 +30,7 @@ import searchRouter from './routes/search.route';
 import surveysRouter from './routes/surveys.route';
 import userRouter from './routes/user.route';
 import votesRouter from './routes/votes.route';
-import { serverLogger } from './server-logger';
+import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
 import { matchOrganizationNamesToAccounts } from './utils/organization-matcher';
 import { fetchUserPersonaAndOrganizations } from './utils/persona-helper';
@@ -100,29 +99,11 @@ const httpLogger = pinoHttp({
   serializers: {
     err: customErrorSerializer,
     error: customErrorSerializer,
-    req: pino.stdSerializers.req,
-    res: pino.stdSerializers.res,
+    req: reqSerializer,
+    res: resSerializer,
   },
   // Disable automatic request/response logging - our LoggerService handles operation logging
   autoLogging: false,
-  redact: {
-    paths:
-      process.env['NODE_ENV'] !== 'production'
-        ? ['req.headers.*', 'res.headers.*', 'access_token', 'refresh_token', 'authorization', 'cookie']
-        : ['access_token', 'refresh_token', 'authorization', 'cookie', 'req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
-    remove: true,
-  },
-  level: process.env['LOG_LEVEL'] || 'info',
-  formatters: {
-    level: (label) => {
-      return { level: label.toUpperCase() };
-    },
-    bindings: (bindings) => ({
-      pid: bindings['pid'],
-      hostname: bindings['hostname'],
-    }),
-  },
-  timestamp: pino.stdTimeFunctions.isoTime,
 });
 
 // Add HTTP logger middleware after health endpoint to avoid logging health check

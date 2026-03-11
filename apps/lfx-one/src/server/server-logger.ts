@@ -1,10 +1,37 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { IncomingMessage, ServerResponse } from 'node:http';
+
 import pino from 'pino';
 import pinoPretty from 'pino-pretty';
 
 import { customErrorSerializer } from './helpers/error-serializer';
+
+/**
+ * Whitelist-based request serializer.
+ * Only emits known-safe fields — prevents accidental leakage of
+ * authorization headers, cookies, API keys, or other sensitive data.
+ */
+export function reqSerializer(req: IncomingMessage & { id?: string; originalUrl?: string; ip?: string }) {
+  return {
+    id: req.id,
+    method: req.method,
+    url: req.originalUrl || req.url,
+    remoteAddress: req.ip || req.socket?.remoteAddress,
+    userAgent: req.headers['user-agent'],
+  };
+}
+
+/**
+ * Whitelist-based response serializer.
+ * Only emits statusCode — prevents leakage of set-cookie or other sensitive response headers.
+ */
+export function resSerializer(res: ServerResponse) {
+  return {
+    statusCode: res.statusCode,
+  };
+}
 
 /**
  * Base Pino logger instance for server-level operations.
@@ -45,14 +72,11 @@ export const serverLogger = pino(
     serializers: {
       err: customErrorSerializer,
       error: customErrorSerializer,
-      req: pino.stdSerializers.req,
-      res: pino.stdSerializers.res,
+      req: reqSerializer,
+      res: resSerializer,
     },
     redact: {
-      paths:
-        process.env['NODE_ENV'] !== 'production'
-          ? ['req.headers.*', 'res.headers.*', 'access_token', 'refresh_token', 'authorization', 'cookie']
-          : ['access_token', 'refresh_token', 'authorization', 'cookie', 'req.headers.authorization', 'req.headers.cookie', 'res.headers["set-cookie"]'],
+      paths: ['access_token', 'refresh_token', 'authorization', 'cookie'],
       remove: true,
     },
     formatters: {

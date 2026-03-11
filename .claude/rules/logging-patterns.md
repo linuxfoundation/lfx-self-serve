@@ -30,12 +30,11 @@ logger.success(undefined, 'nats_connect', startTime, metadata);
 
 **Available Methods:**
 
-- `logger.startOperation(req|undefined, 'operation', metadata, options?)` — Returns startTime, logs at INFO (silent option available)
-- `logger.success(req|undefined, 'operation', startTime, metadata)` — Logs at INFO with duration
+- `logger.startOperation(req|undefined, 'operation', metadata, options?)` — Returns startTime; DEBUG for request-scoped, INFO for infrastructure (silent option available)
+- `logger.success(req|undefined, 'operation', startTime, metadata)` — DEBUG for reads (GET/HEAD/OPTIONS), INFO for writes (POST/PUT/DELETE/PATCH), INFO for infrastructure
 - `logger.error(req|undefined, 'operation', startTime, error, metadata, options?)` — Logs at ERROR with 'err' field
 - `logger.info(req|undefined, 'operation', message, metadata)` — Logs at INFO for significant operations
-- `logger.warning(req|undefined, 'operation', message, metadata)` — Logs at WARN
-- `logger.validation(req|undefined, 'operation', errors[], metadata)` — Logs at ERROR with validation details
+- `logger.warning(req|undefined, 'operation', message, metadata)` — Logs at WARN (also used for validation errors per ADR 0002)
 - `logger.debug(req|undefined, 'operation', message, metadata)` — Logs at DEBUG
 - `logger.etag(req|undefined, 'operation', resourceType, resourceId, etag?, metadata)` — Logs ETag operations
 
@@ -96,26 +95,41 @@ req.log.error({ error: error }, 'message'); // Should use logger service
 - Proper AWS CloudWatch format
 - Custom serializer: `/server/helpers/error-serializer.ts`
 
-## Log Level Guidelines
+## Log Level Guidelines (ADR 0002)
 
-**INFO** — Business operation completions and significant operations:
+The logger service automatically selects correct log levels based on HTTP method.
+See [ADR 0002](https://github.com/linuxfoundation/lfx-architecture-decisions/blob/main/decisions/0002-structured-json-logging.md) for the full decision.
 
-- **In Controllers**: HTTP operation success with duration (via `startOperation` / `success`)
+**Method-aware log levels in `startOperation` / `success`:**
+
+| Scenario                          | `startOperation` | `success` | `error` |
+| --------------------------------- | ---------------- | --------- | ------- |
+| **Read** (GET/HEAD/OPTIONS)       | DEBUG            | DEBUG     | ERROR   |
+| **Write** (POST/PUT/DELETE/PATCH) | DEBUG            | INFO      | ERROR   |
+| **Infrastructure** (no `req`)     | INFO             | INFO      | ERROR   |
+
+This means: 0 INFO lines for read endpoints, 1 INFO line for write endpoints, always ERROR for failures.
+
+**INFO** — Write completions and significant business operations:
+
+- **In Controllers**: Automatically emitted by `logger.success()` for write requests only
 - **In Services**: Significant business operations visible in production (via `logger.info()`):
   - Data transformations (V1 to V2 conversions)
   - Data enrichment (project names, committee data)
   - Complex orchestrations
   - Operations with notable business impact
 
-**WARN** — Recoverable issues:
+**WARN** — Recoverable issues and invalid user input:
 
+- Validation errors from user input (logged by `apiErrorHandler` via `getSeverity()`)
 - Error conditions with graceful degradation (returning null/empty arrays)
 - Data quality issues, user not found
 - Fallback behaviors, NATS failures with graceful handling
 - Service errors that don't propagate to controller
 
-**DEBUG** — Internal operations and tracing:
+**DEBUG** — Internal operations, tracing, and read endpoints:
 
+- **In Controllers**: Read endpoint start/success (automatically via `startOperation` / `success`)
 - **In Services**: Step-by-step operation tracing
 - Method entry/exit with key parameters
 - Preparation steps (sanitizing, creating payload)
@@ -129,6 +143,7 @@ req.log.error({ error: error }, 'message'); // Should use logger service
 - System failures, unhandled exceptions
 - Critical errors requiring immediate attention
 - Operations that cannot continue
+- **NOT** for validation errors (handled at WARN by `apiErrorHandler`)
 
 ## Features
 

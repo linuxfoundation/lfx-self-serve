@@ -160,7 +160,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_meeting_by_id',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -259,7 +258,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'update_meeting',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -298,7 +296,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'delete_meeting',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -337,7 +334,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'cancel_occurrence',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -390,7 +386,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_meeting_registrants',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -434,7 +429,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_my_meeting_registrants',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -1048,7 +1042,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_meeting_attachments',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -1085,7 +1078,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'create_meeting_attachment',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -1135,7 +1127,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'update_meeting_attachment',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -1194,7 +1185,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'delete_meeting_attachment',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -1240,7 +1230,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_meeting_attachment',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -1286,7 +1275,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_meeting_attachment_download_url',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -1334,7 +1322,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'presign_meeting_attachment',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -1400,7 +1387,6 @@ export class MeetingController {
         !validateUidParameter(uid, req, next, {
           operation: 'upload_meeting_attachment',
           service: 'meeting_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
