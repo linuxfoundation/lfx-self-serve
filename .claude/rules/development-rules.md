@@ -5,6 +5,18 @@ globs: '*'
 
 # Development Rules
 
+## Starting New Work
+
+Before starting any new feature or task, always start from the latest `main`:
+
+```bash
+git checkout main
+git pull
+git checkout -b <type>/LFXV2-<ticket-number>
+```
+
+If you already have a working branch, ensure it's rebased on the latest `main` before proceeding.
+
 ## Shared Package
 
 - All shared types, interfaces, and constants are centralized in `@lfx-one/shared` package
