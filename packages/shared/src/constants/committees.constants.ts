@@ -437,8 +437,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     description: `Track and log all ${COMMITTEE_LABEL.singular.toLowerCase()} activity for compliance`,
     color: lfxColors.emerald[500],
   },
-  // NOTE: The legacy 'joinable' boolean toggle has been replaced by the
-  // join_mode dropdown in the settings UI.  See JOIN_MODE_OPTIONS below.
+  // TODO(LFXV2-XXXX): Remove joinable once join_mode is fully wired backend-side.
   {
     key: 'public',
     icon: 'fa-light fa-eye',
