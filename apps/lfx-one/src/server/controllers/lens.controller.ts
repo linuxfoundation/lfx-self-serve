@@ -62,7 +62,7 @@ export class LensController {
     };
 
     try {
-      sendEvent('status', 'Analyzing your question...');
+      sendEvent('status', 'Understanding your question...');
 
       let blockCount = 0;
       let resolvedSessionId: string | undefined;

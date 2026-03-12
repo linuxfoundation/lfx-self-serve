@@ -1,16 +1,6 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-/* Auto-grow textarea — field-sizing: content for Chromium, JS fallback for others */
-.chat-textarea {
-  max-height: 120px;
-  field-sizing: content;
-  overflow-y: auto;
-  transition:
-    box-shadow 200ms ease,
-    border-color 200ms ease;
-}
-
 /* Message fade-in animation */
 .message-fade-in {
   animation: fade-in 300ms ease-out;
@@ -28,10 +18,39 @@
   }
 }
 
-/* Gradient separator above input */
-.gradient-separator {
-  height: 1px;
-  background: linear-gradient(90deg, transparent, #dbeafe, transparent);
+/* Pulsing dot for active stage */
+.dot-pulse {
+  animation: dot-pulse-anim 1.5s ease-in-out infinite;
+}
+
+@keyframes dot-pulse-anim {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.5;
+    transform: scale(0.75);
+  }
+}
+
+/* Fade + slide in for loading indicator */
+.fade-slide-in {
+  animation: fade-slide 400ms ease-out;
+}
+
+@keyframes fade-slide {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
 }
 
 /* Custom scrollbar for messages area */

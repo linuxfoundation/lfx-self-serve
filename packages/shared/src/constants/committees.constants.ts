@@ -528,4 +528,3 @@ export const CATEGORY_BEHAVIORAL_CLASS: Record<string, GroupBehavioralClass> = {
   Other: 'other',
   Committee: 'other',
 };
-

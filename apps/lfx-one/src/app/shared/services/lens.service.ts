@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { Injectable, inject, signal } from '@angular/core';
-import { LensBlock, LensChatRequest, LensContext, LensMessage, LensSSEEventType } from '@lfx-one/shared/interfaces';
+import { LENS_STAGE_CONFIGS, LENS_STAGE_ORDER, LENS_STATUS_TO_STAGE } from '@lfx-one/shared/constants';
+import { LensBlock, LensChatRequest, LensContext, LensMessage, LensSSEEventType, LensStageStatus, LensStreamStage } from '@lfx-one/shared/interfaces';
 import { Subscription } from 'rxjs';
 
 import { SseService } from './sse.service';
@@ -16,6 +17,8 @@ export class LensService {
   public readonly sessionId = signal<string | null>(null);
   public readonly error = signal('');
   public readonly currentStatus = signal('');
+  public readonly currentStage = signal<LensStreamStage | null>(null);
+  public readonly stageHistory = signal<LensStageStatus[]>([]);
 
   private subscription: Subscription | null = null;
   private charBuffer = '';
@@ -30,6 +33,8 @@ export class LensService {
 
     this.error.set('');
     this.currentStatus.set('');
+    this.currentStage.set(null);
+    this.stageHistory.set([]);
 
     // Add user message
     this.messages.update((msgs) => [...msgs, { role: 'user', content: message, blocks: [], loading: false }]);
@@ -53,6 +58,7 @@ export class LensService {
         this.error.set('Connection failed. Please try again.');
         this.streaming.set(false);
         this.currentStatus.set('');
+        this.resetStages();
         this.clearEmptyAssistantPlaceholder();
         this.markLastAssistantDone();
       },
@@ -60,6 +66,7 @@ export class LensService {
         this.flushCharBuffer();
         this.streaming.set(false);
         this.currentStatus.set('');
+        this.resetStages();
         this.clearEmptyAssistantPlaceholder();
         this.markLastAssistantDone();
       },
@@ -72,6 +79,7 @@ export class LensService {
     this.subscription = null;
     this.streaming.set(false);
     this.currentStatus.set('');
+    this.resetStages();
     this.clearEmptyAssistantPlaceholder();
     this.markLastAssistantDone();
   }
@@ -82,13 +90,20 @@ export class LensService {
     this.sessionId.set(null);
     this.error.set('');
     this.currentStatus.set('');
+    this.resetStages();
   }
 
   private handleSSEEvent(event: { type: LensSSEEventType; data: unknown }): void {
     switch (event.type) {
-      case 'status':
-        this.currentStatus.set(event.data as string);
+      case 'status': {
+        const statusText = event.data as string;
+        this.currentStatus.set(statusText);
+        const stage = LENS_STATUS_TO_STAGE[statusText] as LensStreamStage | undefined;
+        if (stage) {
+          this.advanceToStage(stage);
+        }
         break;
+      }
       case 'session_id':
         this.sessionId.set(event.data as string);
         break;
@@ -105,6 +120,7 @@ export class LensService {
         this.flushCharBuffer();
         this.streaming.set(false);
         this.currentStatus.set('');
+        this.resetStages();
         this.markLastAssistantDone();
         break;
       case 'error':
@@ -112,6 +128,7 @@ export class LensService {
         this.error.set(event.data as string);
         this.streaming.set(false);
         this.currentStatus.set('');
+        this.resetStages();
         // Remove empty assistant message on error
         this.messages.update((msgs) => {
           const last = msgs[msgs.length - 1];
@@ -196,6 +213,31 @@ export class LensService {
       const last = msgs[msgs.length - 1];
       return last && last.role === 'assistant' && !last.content && last.blocks.length === 0 ? msgs.slice(0, -1) : msgs;
     });
+  }
+
+  private advanceToStage(stage: LensStreamStage): void {
+    this.currentStage.set(stage);
+    const stageIndex = LENS_STAGE_ORDER.indexOf(stage);
+    this.stageHistory.set(
+      LENS_STAGE_ORDER.map((s, i) => {
+        const key = s as Exclude<LensStreamStage, 'complete'>;
+        const config = LENS_STAGE_CONFIGS[key];
+        let status: 'pending' | 'active' | 'completed';
+        if (i < stageIndex) {
+          status = 'completed';
+        } else if (i === stageIndex) {
+          status = 'active';
+        } else {
+          status = 'pending';
+        }
+        return { stage: s, label: config.label, dotColor: config.dotColor, status };
+      })
+    );
+  }
+
+  private resetStages(): void {
+    this.currentStage.set(null);
+    this.stageHistory.set([]);
   }
 
   private markLastAssistantDone(): void {

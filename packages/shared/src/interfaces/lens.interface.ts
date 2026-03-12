@@ -4,6 +4,9 @@
 // SSE event types from our Express server to the client
 export type LensSSEEventType = 'status' | 'block' | 'content' | 'session_id' | 'done' | 'error';
 
+// Frontend loading stages derived from upstream stream events
+export type LensStreamStage = 'starting' | 'analyzing' | 'querying' | 'preparing' | 'complete';
+
 // Block types from LFX Lens API response
 export type LensBlockType = 'message' | 'sql' | 'suggestions';
 
@@ -14,10 +17,7 @@ export interface LensMessageBlock {
 
 export interface LensSqlBlock {
   type: 'sql';
-  title: string;
-  description: string;
   sql: string;
-  explanation: string | null;
   result: {
     data: Record<string, unknown>[];
     columns: string[];
@@ -42,8 +42,8 @@ export interface LensMessage {
 
 // Context passed from dashboards (maps to API's additional_data)
 export interface LensContext {
+  foundation: { slug: string; name: string };
   company?: { id: string; name?: string };
-  project?: { slug: string; name?: string };
 }
 
 // Request body from Angular to Express
@@ -95,4 +95,16 @@ export interface SSEConnectOptions {
   method?: string;
   body?: unknown;
   headers?: Record<string, string>;
+}
+
+// Visual config for a loading stage
+export interface LensStageConfig {
+  stage: LensStreamStage;
+  label: string;
+  dotColor: string;
+}
+
+// Stage config extended with runtime status
+export interface LensStageStatus extends LensStageConfig {
+  status: 'pending' | 'active' | 'completed';
 }
