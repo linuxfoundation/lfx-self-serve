@@ -26,8 +26,38 @@
             </lfx-button>
           }
         </div>
-        <p class="mt-2 text-gray-500" data-testid="dashboard-hero-description">Organize people and governance for your project.</p>
+        <p class="mt-2 text-gray-500" data-testid="dashboard-hero-description">Manage {{ committeeLabelPlural.toLowerCase() }} and governance for your project.</p>
       </div>
+
+      <!-- Statistics Bar -->
+      @if (committees().length > 0) {
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-4 mb-6" data-testid="dashboard-stats-bar">
+          <lfx-card>
+            <div class="text-center py-2">
+              <p class="text-2xl font-semibold text-gray-900">{{ totalCommittees() }}</p>
+              <p class="text-xs text-gray-500 mt-1">Total {{ committeeLabelPlural }}</p>
+            </div>
+          </lfx-card>
+          <lfx-card>
+            <div class="text-center py-2">
+              <p class="text-2xl font-semibold text-gray-900">{{ publicCommittees() }}</p>
+              <p class="text-xs text-gray-500 mt-1">Public</p>
+            </div>
+          </lfx-card>
+          <lfx-card>
+            <div class="text-center py-2">
+              <p class="text-2xl font-semibold text-emerald-600">{{ activeVoting() }}</p>
+              <p class="text-xs text-gray-500 mt-1">Active Voting</p>
+            </div>
+          </lfx-card>
+          <lfx-card>
+            <div class="text-center py-2">
+              <p class="text-2xl font-semibold text-gray-900">{{ totalMembers() }}</p>
+              <p class="text-xs text-gray-500 mt-1">Total Members</p>
+            </div>
+          </lfx-card>
+        </div>
+      }
     </div>
 
     <!-- Content Area - Table or Cards -->

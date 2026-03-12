@@ -14,6 +14,8 @@ export interface CommitteeMember {
   committee_uid: string;
   /** Committee name for display purposes */
   committee_name: string;
+  /** Committee category (e.g. "Board", "Working Group") — returned by query service */
+  committee_category?: string;
   /** Member's username/handle */
   username?: string;
   /** Member's email address */

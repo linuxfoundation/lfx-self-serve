@@ -1,8 +1,22 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { GroupBehavioralClass } from '../interfaces/committee.interface';
 import { lfxColors } from './colors.constants';
+
+// Re-export helper functions from utils for backward compatibility
+export {
+  getGroupBehavioralClass,
+  isGoverningBoard,
+  isOversightCommittee,
+  isWorkingGroup,
+  isSpecialInterestGroup,
+  isAmbassadorProgram,
+  isOtherClass,
+  isGovernanceClass,
+  isCollaborationClass,
+} from '../utils/committee.utils';
 
 /**
  * Configurable labels for committees displayed throughout the UI
@@ -237,6 +251,30 @@ export const VOTING_STATUSES = [
 ];
 
 /**
+ * Available appointment sources for committee members
+ * @description Defines how a member was appointed to the committee
+ * @readonly
+ */
+export const APPOINTED_BY_OPTIONS = [
+  { label: 'Community', value: CommitteeMemberAppointedBy.COMMUNITY },
+  { label: 'Membership Entitlement', value: CommitteeMemberAppointedBy.MEMBERSHIP_ENTITLEMENT },
+  { label: 'Vote of Academic Member Class', value: CommitteeMemberAppointedBy.VOTE_OF_ACADEMIC_MEMBER_CLASS },
+  { label: 'Vote of End User Committee', value: CommitteeMemberAppointedBy.VOTE_OF_END_USER_COMMITTEE },
+  { label: 'Vote of End User Member Class', value: CommitteeMemberAppointedBy.VOTE_OF_END_USER_MEMBER_CLASS },
+  { label: 'Vote of General Member Class', value: CommitteeMemberAppointedBy.VOTE_OF_GENERAL_MEMBER_CLASS },
+  { label: 'Vote of Gold Member Class', value: CommitteeMemberAppointedBy.VOTE_OF_GOLD_MEMBER_CLASS },
+  { label: 'Vote of Governing Board', value: CommitteeMemberAppointedBy.VOTE_OF_GOVERNING_BOARD },
+  { label: 'Vote of Lab Member Class', value: CommitteeMemberAppointedBy.VOTE_OF_LAB_MEMBER_CLASS },
+  { label: 'Vote of Marketing Committee', value: CommitteeMemberAppointedBy.VOTE_OF_MARKETING_COMMITTEE },
+  { label: 'Vote of Silver Member Class', value: CommitteeMemberAppointedBy.VOTE_OF_SILVER_MEMBER_CLASS },
+  { label: 'Vote of Strategic Membership Class', value: CommitteeMemberAppointedBy.VOTE_OF_STRATEGIC_MEMBERSHIP_CLASS },
+  { label: 'Vote of TAC Committee', value: CommitteeMemberAppointedBy.VOTE_OF_TAC_COMMITTEE },
+  { label: 'Vote of TOC Committee', value: CommitteeMemberAppointedBy.VOTE_OF_TOC_COMMITTEE },
+  { label: 'Vote of TSC Committee', value: CommitteeMemberAppointedBy.VOTE_OF_TSC_COMMITTEE },
+  { label: 'None', value: CommitteeMemberAppointedBy.NONE },
+];
+
+/**
  * Internal committee type color mappings for exact match fallback
  * @private - Use getCommitteeTypeColor() function instead
  * @description Uses LFX semantic color tokens from the design system
@@ -399,13 +437,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     description: `Track and log all ${COMMITTEE_LABEL.singular.toLowerCase()} activity for compliance`,
     color: lfxColors.emerald[500],
   },
-  {
-    key: 'joinable',
-    icon: 'fa-light fa-users',
-    title: 'Joinable',
-    description: `Allow users to join the ${COMMITTEE_LABEL.singular.toLowerCase()} without invitation`,
-    color: lfxColors.amber[500],
-  },
+  // TODO(LFXV2-1255): Remove joinable once join_mode is fully wired backend-side.
   {
     key: 'public',
     icon: 'fa-light fa-eye',
@@ -438,3 +470,62 @@ export const MEMBER_VISIBILITY_OPTIONS = [
   { label: 'Hidden', value: 'hidden' },
   { label: 'Basic Profile', value: 'basic_profile' },
 ];
+
+/**
+ * Join-mode options for the Group settings form (Step 3).
+ * Maps to the JoinMode type in committee.interface.ts.
+ */
+export const JOIN_MODE_OPTIONS = [
+  { label: 'Open — anyone can join', value: 'open' },
+  { label: 'Invite Only — members send invites', value: 'invite-only' },
+  { label: 'Apply & Review — admin approves', value: 'apply' },
+  { label: 'Closed — admin adds members', value: 'closed' },
+];
+
+// ============================================================================
+// Group-Type Behavioral Classification (6-Type Taxonomy v1.1)
+// ============================================================================
+
+/**
+ * Maps PCC committee categories (20 raw types) to the 6 behavioral classes.
+ * This is the single source of truth for classification.
+ *
+ * v2.0 taxonomy: membership-class removed → ambassador-program added.
+ * Marketing types moved to special-interest-group (community/outreach).
+ */
+export const CATEGORY_BEHAVIORAL_CLASS: Record<string, GroupBehavioralClass> = {
+  // ── governing-board ──
+  Board: 'governing-board',
+  'Government Advisory Council': 'governing-board',
+
+  // ── oversight-committee (governance + technical hybrid) ──
+  TSC: 'oversight-committee',
+  'Technical Steering Committee': 'oversight-committee',
+  'Technical Advisory Committee': 'oversight-committee',
+  'Technical Oversight Committee': 'oversight-committee',
+  'Legal Committee': 'oversight-committee',
+  'Finance Committee': 'oversight-committee',
+  'Code of Conduct': 'oversight-committee',
+  'Product Security': 'oversight-committee',
+
+  // ── working-group (task-oriented collaboration) ──
+  'Working Group': 'working-group',
+  'Expert Group': 'working-group',
+  Committers: 'working-group',
+  Maintainers: 'working-group',
+
+  // ── special-interest-group (community / discussion / marketing outreach) ──
+  'Special Interest Group': 'special-interest-group',
+  'Technical Mailing List': 'special-interest-group',
+  'Marketing Committee/Sub Committee': 'special-interest-group',
+  'Marketing Mailing List': 'special-interest-group',
+  'Marketing Oversight Committee/Marketing Advisory Committee': 'special-interest-group',
+
+  // ── ambassador-program (evangelism / referral / outreach campaigns) ──
+  Ambassador: 'ambassador-program',
+
+  // ── other (catch-all) ──
+  Other: 'other',
+  Committee: 'other',
+};
+
