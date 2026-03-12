@@ -437,7 +437,7 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     description: `Track and log all ${COMMITTEE_LABEL.singular.toLowerCase()} activity for compliance`,
     color: lfxColors.emerald[500],
   },
-  // TODO(LFXV2-XXXX): Remove joinable once join_mode is fully wired backend-side.
+  // TODO(LFXV2-1255): Remove joinable once join_mode is fully wired backend-side.
   {
     key: 'public',
     icon: 'fa-light fa-eye',
