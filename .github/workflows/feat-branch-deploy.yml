@@ -16,6 +16,7 @@ concurrency:
 permissions:
   contents: read
   packages: write
+  deployments: write
 
 env:
   REGISTRY: ghcr.io
@@ -84,3 +85,36 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             BUILD_ENV=development
+
+      - name: Post preview URL to step summary
+        env:
+          SLUG: ${{ steps.slug.outputs.value }}
+        run: |
+          PREVIEW_URL="https://ui-feat-${SLUG}.dev.v2.cluster.linuxfound.info"
+          echo "### Branch Preview" >> "$GITHUB_STEP_SUMMARY"
+          echo "**URL:** ${PREVIEW_URL}" >> "$GITHUB_STEP_SUMMARY"
+          echo "_Deployment may take 2–3 minutes to become healthy._" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Create GitHub Deployment
+        uses: actions/github-script@v7
+        env:
+          SLUG: ${{ steps.slug.outputs.value }}
+          REF_NAME: ${{ github.ref_name }}
+        with:
+          script: |
+            const slug = process.env.SLUG;
+            const refName = process.env.REF_NAME;
+            const environmentUrl = `https://ui-feat-${slug}.dev.v2.cluster.linuxfound.info`;
+
+            await github.rest.repos.createDeployment({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              ref: refName,
+              environment: 'branch-preview',
+              environment_url: environmentUrl,
+              description: `Branch preview for ${slug}`,
+              transient_environment: true,
+              auto_merge: false,
+              required_contexts: [],
+            });
+            core.info(`Created deployment for ${refName} at ${environmentUrl}`);
