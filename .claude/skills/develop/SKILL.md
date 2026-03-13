@@ -1,18 +1,31 @@
 ---
 name: develop
-description: Guided development workflow — create components, services, backend endpoints, shared types, or full features following project patterns
+description: >
+  Guided development workflow for building, fixing, updating, or refactoring
+  code — components, services, backend endpoints, shared types, or full features.
+  Use whenever someone wants to add a feature, fix a bug, modify existing code,
+  create something new, refactor, or implement any code change.
 allowed-tools: Bash, Read, Write, Edit, Glob, Grep, AskUserQuestion
 ---
 
 # LFX One Development Guide
 
-You are helping a contributor build within the LFX One codebase. This skill handles all development work: components, services, backend endpoints, shared types, and full end-to-end features.
+You are helping a contributor build within the LFX One codebase. This skill handles all development work: creating new features, fixing bugs, modifying existing code, refactoring, and full end-to-end feature builds.
 
 **Important:** You are integrating features within existing architecture — not making architectural decisions. If the work requires changes to routing, auth, middleware, or infrastructure, flag it for a code owner.
 
-## Step 1: Start from Latest Main
+## Step 1: Start from Latest Main & Track Work
 
 Follow the "Starting New Work" rule in `development-rules.md` — checkout `main`, pull latest, and create a feature branch before writing any code.
+
+### JIRA Ticket
+
+Before writing code, ensure the work is tracked:
+
+1. **Check for an existing JIRA ticket** in the `LFXV2` project
+2. **Create one if needed** — assign to the current user and current sprint
+3. **Branch name must include the ticket:** `feat/LFXV2-<number>`, `fix/LFXV2-<number>`, etc.
+4. Reference `.claude/rules/commit-workflow.md` for naming conventions
 
 ## Step 2: Plan the Feature (Ideation)
 
@@ -21,7 +34,7 @@ Ask the contributor what they're building. Before writing any code, create a pla
 1. **What is the feature?** — Describe the user-facing behavior
 2. **What data does it need?** — Identify the API endpoints, request/response shapes, and data flow
 3. **What upstream APIs are required?** — List which microservice endpoints the feature depends on
-4. **Do the upstream microservices (not just this repo's proxy endpoints) already support this?** — This is critical (see Step 3)
+4. **Do the upstream microservices already support this?** — This is critical (see Step 3)
 5. **What frontend components are needed?** — Pages, shared components, services
 
 Based on the plan, determine which workflow(s) apply:
@@ -35,6 +48,15 @@ Based on the plan, determine which workflow(s) apply:
 | **Full Feature**       | End-to-end integration (combines multiple workflows above)                |
 
 **Build order is strict:** Shared Types → Backend → Frontend Service → Frontend Component. Never skip ahead.
+
+### Modifying Existing Features
+
+If the work is a bug fix, enhancement, or refactoring of existing code:
+
+1. **Read existing code first** — understand what's there before changing it
+2. **Trace the data flow end-to-end** — from API call through service to component template
+3. **Identify the minimal change** with the smallest blast radius
+4. **Follow the same build order** for any new files needed (types → backend → frontend)
 
 ## Step 3: Validate Backend Support (Backend First)
 
@@ -145,7 +167,7 @@ Read a representative file in the target area to match the team's current patter
 
 ## Step 7: Build
 
-Follow the workflow(s) identified in Step 2. The sections below provide the key conventions for each.
+Follow the workflow(s) identified in Step 2. The sections below provide key conventions for each — **read the linked reference file** for full details, examples, and checklists.
 
 > **Reminder:** Build in strict order — Shared Types → Backend → Frontend Service → Frontend Component. Never build frontend code against APIs that don't exist yet. No mock data, no placeholder services, no hardcoded responses.
 
@@ -155,12 +177,9 @@ Follow the workflow(s) identified in Step 2. The sections below provide the key 
 
 **Location:** `packages/shared/src/interfaces/`, `enums/`, or `constants/`
 
-- License header on all new files
-- Use TypeScript interfaces (not union types) for better maintainability
-- File suffixes: `.interface.ts`, `.enum.ts`, `.constants.ts`
-- Use `as const` for constant objects to get literal types
-- Export from the barrel file (`index.ts`) in the same directory
-- NEVER define interfaces locally in component or service files
+Key rules: License headers, TypeScript interfaces (not union types), correct file suffixes, barrel exports, never define interfaces locally.
+
+**Read `references/shared-types.md`** for full conventions and checklist.
 
 ---
 
@@ -168,35 +187,9 @@ Follow the workflow(s) identified in Step 2. The sections below provide the key 
 
 Creates three files: **service** → **controller** → **route**.
 
-The upstream API contract should already be validated in Step 3. Use the confirmed endpoint paths, request/response schemas, and query parameters when building the proxy layer below.
+Key rules: `MicroserviceProxyService` for API calls, `logger` service for logging, `next(error)` for errors, snake_case operation names, `server.ts` registration requires code owner.
 
-#### Service (`src/server/services/<name>.service.ts`)
-
-- Uses `MicroserviceProxyService` for ALL external API calls
-- API reads: `/query/resources`, writes: `/itx/...`
-- **Authentication: Default to the user's bearer token** (passed via `req.bearerToken` from the OIDC session) for all authenticated routes. Only use M2M tokens when the upstream service requires service credentials **and** the route has already enforced authorization using the user token (for example, privileged upstream reads that temporarily swap `req.bearerToken` to an M2M token and then restore it). For public endpoints (`/public/api/...`) with no user session, use M2M tokens. See the "Authentication: User Tokens vs M2M Tokens" section in development rules.
-- `logger.debug()` for step-by-step tracing, `logger.info()` for significant operations
-- `logger.warning()` for recoverable errors (returning null/empty)
-- NEVER use `serverLogger` directly — always use `logger` from `./services/logger.service`
-
-#### Controller (`src/server/controllers/<name>.controller.ts`)
-
-- `logger.startOperation()` → `try/catch` → `logger.success()` or `next(error)`
-- Pass errors to `next(error)` — NEVER use `res.status(500).json()`
-- Operation names in snake_case (e.g., `get_items`, `create_item`)
-- Use `validateUidParameter` from helpers for parameter validation
-
-#### Route (`src/server/routes/<name>.route.ts`)
-
-- Express Router with controller method bindings
-- Follow the pattern from an existing route file
-
-#### Route Registration
-
-**IMPORTANT:** The route must be registered in `server.ts`, which is a protected file.
-Tell the contributor:
-
-> "The route file is created, but it needs to be registered in `server.ts`. Since that's a protected infrastructure file, please ask a code owner to add the route registration."
+**Read `references/backend-endpoint.md`** for full patterns, examples, and checklist.
 
 ---
 
@@ -204,61 +197,17 @@ Tell the contributor:
 
 **Location:** `apps/lfx-one/src/app/shared/services/<name>.service.ts`
 
-> **Prerequisite:** The backend endpoint must already exist (validated in Step 3, built in Step 7 if needed). Do not create a frontend service that calls an API endpoint that doesn't exist — no mock data, no placeholder URLs.
+Key rules: `providedIn: 'root'`, `inject(HttpClient)`, `catchError` for GETs, `take(1)` for writes, signals can't use rxjs pipes.
 
-- `@Injectable({ providedIn: 'root' })` — always tree-shakeable
-- `inject(HttpClient)` — never constructor-based DI
-- **GET requests:** `catchError(() => of(defaultValue))` for graceful error handling
-- **POST/PUT/DELETE requests:** `take(1)` and let errors propagate to the component
-- **Shared state:** Use `signal()` for data consumed by multiple components
-- **Signals can't use rxjs pipes** — use `computed()` or `toSignal()` for reactive transforms
-- **Interfaces:** Import from `@lfx-one/shared/interfaces`, never define locally
-- **API paths:** Use relative paths (e.g., `/api/items`) — the proxy handles routing
+**Read `references/frontend-service.md`** for full patterns, examples, and checklist.
 
 ---
 
 ### Frontend Component
 
-#### Placement
+Key rules: Standalone with direct imports, correct placement per category, 11-section class structure, `@if`/`@for` templates, `data-testid` attributes, `flex + gap` not `space-y`.
 
-Determine the component category and place it accordingly:
-
-| Category                        | Location                                        |
-| ------------------------------- | ----------------------------------------------- |
-| Route/page component            | `modules/<module>/<component-name>/`            |
-| Module-specific component       | `modules/<module>/components/<component-name>/` |
-| Shared component (cross-module) | `shared/components/<component-name>/`           |
-| PrimeNG wrapper component       | `shared/components/<component-name>/`           |
-
-Check `docs/architecture/frontend/component-architecture.md` for detailed placement guidelines.
-
-A new module can be created if the feature represents a distinct domain, but prefer existing modules when the feature fits.
-
-#### Files
-
-Generate three files (`.component.ts`, `.component.html`, `.component.scss`), each with the license header.
-
-#### Class Structure (from CLAUDE.md)
-
-1. Private injections (`inject()`, `readonly`)
-2. Public fields from inputs/dialog data
-3. Forms
-4. Model signals (`model()`)
-5. WritableSignals (`signal()`)
-6. Computed/toSignal signals (via private init functions)
-7. Constructor
-8. Public methods
-9. Protected methods
-10. Private initializer functions
-11. Private helper methods
-
-#### Key Rules
-
-- Standalone components with direct imports (no barrel exports)
-- Signals: `signal()`, `input()`, `output()`, `computed()`, `model()` — never constructor DI
-- Templates: `@if`/`@for` syntax, `data-testid` attributes, `flex + flex-col + gap-*` (never `space-y-*`)
-- Do not nest ternary expressions
-- For PrimeNG wrappers, follow the wrapper strategy in the component architecture doc
+**Read `references/frontend-component.md`** for full placement table, examples, and checklist.
 
 ---
 
@@ -274,7 +223,7 @@ yarn build         # Verify build succeeds
 
 Fix any issues before finishing.
 
-## Step 9: Summary
+## Step 9: Summary & Next Steps
 
 Provide a clear summary:
 
@@ -282,4 +231,5 @@ Provide a clear summary:
 - Any new shared types and their import paths
 - Any actions needed from code owners (route registration, routing changes, etc.)
 - How to use the new code (inject services, import components, etc.)
-- Remind them to run `/preflight` before submitting a PR
+
+**Next step:** Run `/preflight` to validate everything before submitting a PR.

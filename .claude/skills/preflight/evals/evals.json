@@ -1,0 +1,14 @@
+[
+  {
+    "prompt": "I'm done with my changes, check my code before I submit a PR",
+    "expected_behavior": "Should run the full preflight sequence: working tree status, license headers, format, lint, build, protected files check, commit verification, and provide a clear results report."
+  },
+  {
+    "prompt": "Is my branch ready for a pull request?",
+    "expected_behavior": "Should trigger preflight validation. Should check git status, run all checks in order, and report readiness with a clear pass/fail summary."
+  },
+  {
+    "prompt": "Validate my changes before review",
+    "expected_behavior": "Should run preflight checks. Should detect any uncommitted changes first, then proceed through headers, format, lint, build, and protected file checks."
+  }
+]

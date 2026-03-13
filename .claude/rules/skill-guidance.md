@@ -7,11 +7,35 @@ globs: '*'
 
 This project has guided skills for common workflows. **Proactively suggest the relevant skill** when a user's request matches one of these:
 
-| Skill        | When to Suggest                                                                                       |
-| ------------ | ----------------------------------------------------------------------------------------------------- |
-| `/setup`     | User is new to the project, needs environment setup, mentions 1Password, or asks how to run the app   |
-| `/develop`   | User wants to create or modify components, services, endpoints, shared types, or build a full feature |
-| `/preflight` | User is about to submit a PR, wants to validate changes, or has finished development work             |
+| Skill        | When to Suggest                                                                                                               |
+| ------------ | ----------------------------------------------------------------------------------------------------------------------------- |
+| `/setup`     | Getting started, first-time setup, broken environments, install failures, missing env vars, 1Password, how to run the app     |
+| `/develop`   | Add a feature, fix a bug, modify code, create components/services/endpoints/types, refactor, build, implement any code change |
+| `/preflight` | Before submitting a PR, check if code is ready, validate changes, verify a branch, finished development, review readiness     |
+
+## Trigger Phrases
+
+**`/setup`** — match any of these intents:
+
+- "How do I set up?", "Getting started", "First time here"
+- "yarn install fails", "corepack error", "node version"
+- "env vars", "1Password", "app won't start"
+- "broken environment", "fresh install", "missing dependencies"
+
+**`/develop`** — match any of these intents:
+
+- "Add a feature", "Create a component", "Build an endpoint"
+- "Fix this bug", "Modify the service", "Update the page"
+- "Refactor", "Implement", "Change the behavior"
+- "New interface", "Add a filter", "Create a form"
+- Describes any code change, feature request, or bug fix
+
+**`/preflight`** — match any of these intents:
+
+- "Ready for PR", "Check my code", "Validate changes"
+- "Before I submit", "Is my branch ready?", "Review my work"
+- "Run checks", "Lint and build", "Pre-PR validation"
+- Any indication that development work is finished
 
 ## For Cowork Sessions
 

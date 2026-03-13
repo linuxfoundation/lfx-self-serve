@@ -1,0 +1,14 @@
+[
+  {
+    "prompt": "I just joined the team, how do I set up?",
+    "expected_behavior": "Should walk through the full setup: prerequisites (Node, Yarn, Git), clone, env vars via 1Password with validation, install, start dev server, and verify. Should mention Docker is not required and suggest /develop when done."
+  },
+  {
+    "prompt": "yarn install is failing with a corepack error",
+    "expected_behavior": "Should trigger setup skill, diagnose the corepack issue (likely needs corepack enable), check Node version, and guide through resolution."
+  },
+  {
+    "prompt": "The app won't start — I think my env vars are wrong",
+    "expected_behavior": "Should trigger setup skill, validate env vars are populated (especially auth vars), check against 1Password, and help fix missing or incorrect values."
+  }
+]
