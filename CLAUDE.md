@@ -95,7 +95,7 @@ Detailed patterns are in `.claude/rules/` and loaded contextually based on file 
 | `component-organization.md` | `**/*.component.ts` | Signal initialization, component structure order, model signals, interfaces |
 | `logging-patterns.md`       | `**/server/**`      | Logger service API, layer responsibilities, log levels, code examples       |
 | `development-rules.md`      | `*`                 | Shared package, license headers, testing, formatting, doc maintenance       |
-| `commit-workflow.md`        | `*`                 | Commit conventions, branch naming, PR format, JIRA tracking                 |
+| `commit-workflow.md`        | `*`                 | Commit conventions, branch naming, PR format, PR sizing, JIRA tracking      |
 | `skill-guidance.md`         | `*`                 | Guides Claude to suggest `/setup`, `/develop`, `/preflight` skills          |
 
 ## Architecture Documentation
