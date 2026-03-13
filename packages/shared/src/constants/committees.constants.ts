@@ -437,7 +437,6 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     description: `Track and log all ${COMMITTEE_LABEL.singular.toLowerCase()} activity for compliance`,
     color: lfxColors.emerald[500],
   },
-  // TODO(LFXV2-1255): Remove joinable once join_mode is fully wired backend-side.
   {
     key: 'public',
     icon: 'fa-light fa-eye',
@@ -477,8 +476,8 @@ export const MEMBER_VISIBILITY_OPTIONS = [
  */
 export const JOIN_MODE_OPTIONS = [
   { label: 'Open — anyone can join', value: 'open' },
-  { label: 'Invite Only — members send invites', value: 'invite-only' },
-  { label: 'Apply & Review — admin approves', value: 'apply' },
+  { label: 'Invite Only — members send invites', value: 'invite_only' },
+  { label: 'Apply & Review — admin approves', value: 'application' },
   { label: 'Closed — admin adds members', value: 'closed' },
 ];
 

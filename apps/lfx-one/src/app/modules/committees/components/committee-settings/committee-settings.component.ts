@@ -6,7 +6,7 @@ import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
-import { COMMITTEE_LABEL, COMMITTEE_SETTINGS_FEATURES, MEMBER_VISIBILITY_OPTIONS } from '@lfx-one/shared/constants';
+import { COMMITTEE_LABEL, COMMITTEE_SETTINGS_FEATURES, JOIN_MODE_OPTIONS, MEMBER_VISIBILITY_OPTIONS } from '@lfx-one/shared/constants';
 
 @Component({
   selector: 'lfx-committee-settings',
@@ -20,5 +20,6 @@ export class CommitteeSettingsComponent {
   // Constants from shared package
   public readonly features = COMMITTEE_SETTINGS_FEATURES;
   public readonly committeeLabel = COMMITTEE_LABEL.singular;
+  public readonly joinModeOptions = JOIN_MODE_OPTIONS;
   public readonly memberVisibilityOptions = MEMBER_VISIBILITY_OPTIONS;
 }
