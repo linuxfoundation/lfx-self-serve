@@ -51,7 +51,8 @@
 <!-- Survey Results Drawer -->
 <lfx-survey-results-drawer
   [(visible)]="resultsDrawerVisible"
-  [survey]="selectedSurvey()"
+  [surveyId]="selectedSurveyId()"
+  [listSurvey]="selectedListSurvey()"
   [hasPMOAccess]="hasPMOAccess()"
   (duplicate)="onDuplicateSurvey($event)"
   (closeSurvey)="onCloseSurvey($event)"

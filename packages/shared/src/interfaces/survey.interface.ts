@@ -62,7 +62,7 @@ export interface SurveyCommittee {
  */
 export interface Survey {
   /** Unique survey identifier */
-  id: string;
+  uid: string;
   /** Display title of the survey */
   survey_title: string;
   /** Current status of the survey */
@@ -87,6 +87,16 @@ export interface Survey {
   last_modified_at: string;
   /** Name of the creator */
   creator_name: string;
+  /** Response collection status (e.g., 'closed' when responses are no longer accepted) */
+  response_status?: string;
+  /** Top-level NPS score from detail API (-100 to +100) */
+  nps_value?: number;
+  /** Number of promoters from detail API */
+  num_promoters?: number;
+  /** Number of passives from detail API */
+  num_passives?: number;
+  /** Number of detractors from detail API */
+  num_detractors?: number;
 }
 
 /**

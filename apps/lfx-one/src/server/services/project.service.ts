@@ -1668,7 +1668,41 @@ export class ProjectService {
    * Get project UID by slug using NATS request-reply pattern
    * @private
    */
-  private async getProjectIdBySlug(req: Request, slug: string): Promise<ProjectSlugToIdResponse> {
+  public async getProjectSfidByUid(req: Request, projectUid: string): Promise<string | null> {
+    const codec = this.natsService.getCodec();
+
+    try {
+      const lookupKey = `project.uid.${projectUid}`;
+      const response = await this.natsService.request(NatsSubjects.LOOKUP_V1_MAPPING, codec.encode(lookupKey), {
+        timeout: NATS_CONFIG.REQUEST_TIMEOUT,
+      });
+
+      const sfid = codec.decode(response.data);
+
+      if (!sfid || sfid.startsWith('error:')) {
+        logger.warning(req, 'get_project_sfid_by_uid', 'Could not resolve project UUID to SFID', {
+          project_uid: projectUid,
+          response: sfid || '(empty)',
+        });
+        return null;
+      }
+
+      logger.debug(req, 'get_project_sfid_by_uid', 'Resolved project UUID to SFID', {
+        project_uid: projectUid,
+        sfid,
+      });
+
+      return sfid;
+    } catch (error) {
+      logger.warning(req, 'get_project_sfid_by_uid', 'NATS lookup failed for project SFID', {
+        project_uid: projectUid,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return null;
+    }
+  }
+
+  public async getProjectIdBySlug(req: Request, slug: string): Promise<ProjectSlugToIdResponse> {
     const codec = this.natsService.getCodec();
 
     try {

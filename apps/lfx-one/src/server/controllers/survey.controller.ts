@@ -53,7 +53,8 @@ export class SurveyController {
         return;
       }
 
-      const survey = await this.surveyService.getSurveyById(req, uid);
+      const projectId = req.query['project_id'] as string | undefined;
+      const survey = await this.surveyService.getSurveyById(req, uid, projectId);
 
       logger.success(req, 'get_survey_by_id', startTime, {
         survey_uid: uid,

@@ -8,7 +8,7 @@ import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { SURVEY_LABEL } from '@lfx-one/shared';
-import { ProjectContext, Survey, SurveyResultsDetail } from '@lfx-one/shared/interfaces';
+import { ProjectContext, Survey } from '@lfx-one/shared/interfaces';
 import { ProjectContextService } from '@services/project-context.service';
 import { SurveyService } from '@services/survey.service';
 import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
@@ -43,7 +43,7 @@ export class SurveysDashboardComponent {
   // === Computed Signals ===
   protected readonly project: Signal<ProjectContext | null> = this.initProject();
   protected readonly surveys: Signal<Survey[]> = this.initSurveys();
-  protected readonly selectedSurvey: Signal<SurveyResultsDetail | null> = this.initSelectedSurvey();
+  protected readonly selectedListSurvey: Signal<Survey | null> = this.initSelectedListSurvey();
 
   protected onViewResults(surveyId: string): void {
     this.selectedSurveyId.set(surveyId);
@@ -51,7 +51,7 @@ export class SurveysDashboardComponent {
   }
 
   protected onRowClick(survey: Survey): void {
-    this.onViewResults(survey.id);
+    this.onViewResults(survey.uid);
   }
 
   protected refreshSurveys(): void {
@@ -101,72 +101,11 @@ export class SurveysDashboardComponent {
     );
   }
 
-  private initSelectedSurvey(): Signal<SurveyResultsDetail | null> {
+  private initSelectedListSurvey(): Signal<Survey | null> {
     return computed(() => {
       const surveyId = this.selectedSurveyId();
       if (!surveyId) return null;
-
-      const survey = this.surveys().find((s) => s.id === surveyId);
-      if (!survey) return null;
-
-      // Convert Survey to SurveyResultsDetail with mock NPS data and comments
-      const surveyDetail: SurveyResultsDetail = {
-        ...survey,
-        // Calculate NPS score from committees if available
-        nps_score: this.calculateNpsScore(survey),
-        // Calculate NPS breakdown from committees
-        nps_breakdown: this.calculateNpsBreakdown(survey),
-        // Mock comments for demonstration
-        additional_comments: this.getMockComments(survey),
-      };
-
-      return surveyDetail;
+      return this.surveys().find((s) => s.uid === surveyId) ?? null;
     });
-  }
-
-  // === Private Helpers ===
-  private calculateNpsScore(survey: Survey): number | undefined {
-    if (!survey.is_nps_survey || !survey.committees?.length) return undefined;
-
-    const totalResponses = survey.committees.reduce((sum, c) => sum + c.total_responses, 0);
-    if (totalResponses === 0) return 0;
-
-    const weightedNps = survey.committees.reduce((sum, c) => sum + c.nps_value * c.total_responses, 0);
-    return Math.round(weightedNps / totalResponses);
-  }
-
-  private calculateNpsBreakdown(survey: Survey): { promoters: number; passives: number; detractors: number; nonResponses: number } | undefined {
-    if (!survey.is_nps_survey || !survey.committees?.length) return undefined;
-
-    return {
-      promoters: survey.committees.reduce((sum, c) => sum + c.num_promoters, 0),
-      passives: survey.committees.reduce((sum, c) => sum + c.num_passives, 0),
-      detractors: survey.committees.reduce((sum, c) => sum + c.num_detractors, 0),
-      nonResponses: Math.max(0, survey.total_recipients - survey.total_responses),
-    };
-  }
-
-  private getMockComments(survey: Survey): { id: string; comment: string; submitted_at: string }[] {
-    // Return mock comments for demonstration purposes
-    // In production, this would come from an API call
-    if (survey.total_responses === 0) return [];
-
-    return [
-      {
-        id: '1',
-        comment: 'The project has been incredibly valuable for our organization. The community support is excellent.',
-        submitted_at: new Date().toISOString(),
-      },
-      {
-        id: '2',
-        comment: 'Documentation could be improved, but overall the project meets our needs well.',
-        submitted_at: new Date().toISOString(),
-      },
-      {
-        id: '3',
-        comment: 'Great initiative! Looking forward to seeing continued development and new features.',
-        submitted_at: new Date().toISOString(),
-      },
-    ];
   }
 }

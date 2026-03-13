@@ -8,6 +8,7 @@ import { ResourceNotFoundError } from '../errors';
 import { ETagService } from './etag.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { ProjectService } from './project.service';
 
 /**
  * Service for handling survey business logic with microservice proxy
@@ -15,10 +16,12 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 export class SurveyService {
   private etagService: ETagService;
   private microserviceProxy: MicroserviceProxyService;
+  private projectService: ProjectService;
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
     this.etagService = new ETagService();
+    this.projectService = new ProjectService();
   }
 
   /**
@@ -52,15 +55,26 @@ export class SurveyService {
 
   /**
    * Fetches a single survey by UID
+   * Resolves project UUID to v1 SFID via NATS before passing as project_id
    */
-  public async getSurveyById(req: Request, surveyUid: string): Promise<Survey> {
+  public async getSurveyById(req: Request, surveyUid: string, projectId?: string): Promise<Survey> {
     logger.debug(req, 'get_survey_by_id', 'Fetching survey by ID', {
       survey_uid: surveyUid,
+      project_id: projectId,
     });
 
-    const survey = await this.microserviceProxy.proxyRequest<Survey>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}`, 'GET');
+    const params: Record<string, string> = {};
 
-    if (!survey || !survey.id) {
+    if (projectId) {
+      const sfid = await this.projectService.getProjectSfidByUid(req, projectId);
+      if (sfid) {
+        params['project_id'] = sfid;
+      }
+    }
+
+    const survey = await this.microserviceProxy.proxyRequest<Survey>(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}`, 'GET', params);
+
+    if (!survey || !survey.uid) {
       throw new ResourceNotFoundError('Survey', surveyUid, {
         operation: 'get_survey_by_id',
         service: 'survey_service',
