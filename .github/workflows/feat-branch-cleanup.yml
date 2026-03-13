@@ -7,6 +7,7 @@ on:
   delete:
 
 permissions:
+  contents: read
   packages: write
 
 jobs:
@@ -32,9 +33,11 @@ jobs:
 
       - name: Delete container image from GHCR
         uses: actions/github-script@v7
+        env:
+          SLUG: ${{ steps.slug.outputs.value }}
         with:
           script: |
-            const tag = `feat-${{ steps.slug.outputs.value }}`;
+            const tag = `feat-${process.env.SLUG}`;
             const packageName = context.repo.repo;
             const org = context.repo.owner;
 
