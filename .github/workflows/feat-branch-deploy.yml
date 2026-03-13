@@ -7,6 +7,11 @@ on:
   push:
     branches:
       - 'feat/**'
+  workflow_dispatch:
+
+concurrency:
+  group: feat-deploy-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: read
@@ -26,12 +31,16 @@ jobs:
 
       - name: Compute branch slug
         id: slug
+        env:
+          REF_NAME: ${{ github.ref_name }}
         run: |
           # Strip feat/ prefix, lowercase, replace non-alphanumeric with -, truncate to 40
-          SLUG=$(echo "${{ github.ref_name }}" \
+          # Strip leading/trailing dashes after sanitization
+          SLUG=$(echo "$REF_NAME" \
             | sed 's|^feat/||' \
             | tr '[:upper:]' '[:lower:]' \
             | sed 's/[^a-z0-9]/-/g' \
+            | sed 's/^-\+//;s/-\+$//' \
             | cut -c1-40)
           echo "value=${SLUG}" >> "$GITHUB_OUTPUT"
 
