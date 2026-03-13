@@ -106,15 +106,24 @@ jobs:
             const refName = process.env.REF_NAME;
             const environmentUrl = `https://ui-feat-${slug}.dev.v2.cluster.linuxfound.info`;
 
-            await github.rest.repos.createDeployment({
+            const deployment = await github.rest.repos.createDeployment({
               owner: context.repo.owner,
               repo: context.repo.repo,
               ref: refName,
               environment: 'branch-preview',
-              environment_url: environmentUrl,
               description: `Branch preview for ${slug}`,
               transient_environment: true,
               auto_merge: false,
               required_contexts: [],
+            });
+
+            await github.rest.repos.createDeploymentStatus({
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              deployment_id: deployment.data.id,
+              state: 'in_progress',
+              environment_url: environmentUrl,
+              description: 'Image built, awaiting ArgoCD sync',
+              log_url: `https://github.com/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId}`,
             });
             core.info(`Created deployment for ${refName} at ${environmentUrl}`);
