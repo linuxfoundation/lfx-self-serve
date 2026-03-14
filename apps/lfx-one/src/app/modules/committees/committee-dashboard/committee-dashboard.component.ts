@@ -145,15 +145,14 @@ export class CommitteeDashboardComponent {
     this.router.navigate(['/groups', committee.uid]);
   }
 
-  // No-op handlers for join/invite (wired in future PR)
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public joinGroup(committee: Committee): void {
-    // Will be implemented when My Groups functionality is added
+  public joinGroup(_committee: Committee): void {
+    // No-op stub — wired in future PR
   }
 
   // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public inviteToGroup(committee: Committee): void {
-    // Will be implemented when invite dialog is wired
+  public inviteToGroup(_committee: Committee): void {
+    // No-op stub — wired in future PR
   }
 
   private initializeSearchForm(): FormGroup {

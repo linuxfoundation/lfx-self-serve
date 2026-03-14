@@ -112,6 +112,16 @@ export class CommitteeTableComponent {
     this.rowClick.emit(event.data);
   }
 
+  protected sanitizeUrl(url: string | undefined): string | null {
+    if (!url) return null;
+    try {
+      const parsed = new URL(url);
+      return ['http:', 'https:', 'mailto:'].includes(parsed.protocol) ? url : null;
+    } catch {
+      return null;
+    }
+  }
+
   private performDelete(committee: Committee): void {
     this.isDeleting.set(true);
 
@@ -125,14 +135,13 @@ export class CommitteeTableComponent {
         });
         this.refresh.emit();
       },
-      error: (error) => {
+      error: () => {
         this.isDeleting.set(false);
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
           detail: `Failed to delete ${this.committeeLabel.toLowerCase()}`,
         });
-        console.error(`Failed to delete ${this.committeeLabel.toLowerCase()}:`, error);
       },
     });
   }
