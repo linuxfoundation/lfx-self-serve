@@ -33,11 +33,11 @@ export type GroupBehavioralClass = 'governing-board' | 'oversight-committee' | '
 /**
  * How users can join this group.
  *  - open:        Anyone can self-join; no approval required.
- *  - invite-only: Members / admins send invite links; invitee clicks to accept.
- *  - apply:       User submits application; admin reviews and approves/rejects.
- *  - closed:      Only admins can add members (legacy behaviour).
+ *  - invite_only: Members / admins send invite links; invitee clicks to accept.
+ *  - application: User submits application; admin reviews and approves/rejects.
+ *  - closed:      Only admins can add members directly.
  */
-export type JoinMode = 'open' | 'invite-only' | 'apply' | 'closed';
+export type JoinMode = 'open' | 'invite_only' | 'application' | 'closed';
 
 /** Status of a member invite */
 export type InviteStatus = 'pending' | 'accepted' | 'declined' | 'expired';
@@ -228,7 +228,7 @@ export interface Committee {
   eligibility?: GroupEligibility;
 
   // ── Join & Invite fields ──
-  /** How users can join this group (default: 'closed') */
+  /** How users can join this group (default: 'invite_only') */
   join_mode?: JoinMode;
 
   // ── Communication Channels ──
@@ -286,8 +286,6 @@ export interface CommitteeCreateData {
   website?: string;
   /** Associated project UID */
   project_uid?: string;
-  /** @deprecated Use join_mode instead */
-  joinable?: boolean;
   /** How users can join this group */
   join_mode?: JoinMode;
   /** Member profile visibility setting */
