@@ -57,6 +57,9 @@ export class CommitteeDashboardComponent {
   public foundationCreateCommitteeFlag: Signal<boolean>;
   public canCreateGroup: Signal<boolean>;
 
+  // My committees stub (wired in future PR)
+  public myCommitteeUids: Signal<Set<string>> = computed(() => new Set<string>());
+
   // Statistics calculations
   public totalCommittees: Signal<number>;
   public publicCommittees: Signal<number>;
@@ -140,6 +143,16 @@ export class CommitteeDashboardComponent {
 
   public onCommitteeClick(committee: Committee): void {
     this.router.navigate(['/groups', committee.uid]);
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  public joinGroup(_committee: Committee): void {
+    // No-op stub — wired in future PR
+  }
+
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
+  public inviteToGroup(_committee: Committee): void {
+    // No-op stub — wired in future PR
   }
 
   private initializeSearchForm(): FormGroup {
