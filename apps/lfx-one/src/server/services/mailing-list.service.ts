@@ -16,8 +16,8 @@ import {
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { pollEndpoint, pollUntilIndexed } from '../helpers/poll-endpoint.helper';
 import { AccessCheckService } from './access-check.service';
-import { ETagService } from './etag.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -27,12 +27,10 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
  */
 export class MailingListService {
   private accessCheckService: AccessCheckService;
-  private etagService: ETagService;
   private microserviceProxy: MicroserviceProxyService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
-    this.etagService = new ETagService();
     this.microserviceProxy = new MicroserviceProxyService();
   }
 
@@ -112,51 +110,61 @@ export class MailingListService {
    * Creates a new Groups.io service
    */
   public async createService(req: Request, data: CreateGroupsIOServiceRequest): Promise<GroupsIOService> {
-    const newService = await this.microserviceProxy.proxyRequest<GroupsIOService>(req, 'LFX_V2_SERVICE', '/groupsio/services', 'POST', { v: '1' }, data);
+    const newService = await this.microserviceProxy.proxyRequest<GroupsIOService>(req, 'LFX_V2_SERVICE', '/groupsio/services', 'POST', undefined, data);
 
     logger.debug(req, 'create_groupsio_service', 'Groups.io service created successfully', {
       service_uid: newService.uid,
       project_uid: newService.project_uid,
     });
 
-    return newService;
+    // Poll the query service until the service is indexed
+    const indexed = await this.pollUntilResourceIndexed<GroupsIOService>(req, 'create_groupsio_service', 'groupsio_service', 'service_uid', newService.uid, {
+      service_uid: newService.uid,
+    });
+
+    if (!indexed) {
+      logger.warning(req, 'create_groupsio_service', 'Service not yet indexed in query service, returning POST response', { service_uid: newService.uid });
+    }
+    return await this.accessCheckService.addAccessToResource(req, indexed ?? newService, 'groupsio_service');
   }
 
   /**
-   * Updates an existing Groups.io service using ETag for concurrency control
+   * Updates an existing Groups.io service
    */
   public async updateService(req: Request, serviceId: string, data: UpdateGroupsIOServiceRequest): Promise<GroupsIOService> {
-    // Step 1: Fetch service with ETag
-    const { etag } = await this.etagService.fetchWithETag<GroupsIOService>(req, 'LFX_V2_SERVICE', `/groupsio/services/${serviceId}`, 'update_groupsio_service');
-
-    // Step 2: Update service with ETag
-    const updatedService = await this.etagService.updateWithETag<GroupsIOService>(
+    const updatedService = await this.microserviceProxy.proxyRequest<GroupsIOService>(
       req,
       'LFX_V2_SERVICE',
       `/groupsio/services/${serviceId}`,
-      etag,
-      data,
-      'update_groupsio_service'
+      'PUT',
+      undefined,
+      data
     );
 
     logger.debug(req, 'update_groupsio_service', 'Groups.io service updated successfully', {
       service_uid: serviceId,
     });
 
-    return updatedService;
+    // Poll the query service until the updated service is indexed
+    const indexed = await this.pollUntilResourceIndexed<GroupsIOService>(req, 'update_groupsio_service', 'groupsio_service', 'service_uid', serviceId, {
+      service_uid: serviceId,
+    });
+
+    return indexed ?? updatedService;
   }
 
   /**
-   * Deletes a Groups.io service using ETag for concurrency control
+   * Deletes a Groups.io service
    */
   public async deleteService(req: Request, serviceId: string): Promise<void> {
-    // Step 1: Fetch service with ETag
-    const { etag } = await this.etagService.fetchWithETag<GroupsIOService>(req, 'LFX_V2_SERVICE', `/groupsio/services/${serviceId}`, 'delete_groupsio_service');
-
-    // Step 2: Delete service with ETag
-    await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/groupsio/services/${serviceId}`, etag, 'delete_groupsio_service');
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/groupsio/services/${serviceId}`, 'DELETE');
 
     logger.debug(req, 'delete_groupsio_service', 'Groups.io service deleted successfully', {
+      service_uid: serviceId,
+    });
+
+    // Poll the query service until the service is removed from the index
+    await this.pollUntilResourceRemoved(req, 'delete_groupsio_service', 'groupsio_service', 'service_uid', serviceId, {
       service_uid: serviceId,
     });
   }
@@ -247,7 +255,7 @@ export class MailingListService {
       'LFX_V2_SERVICE',
       '/groupsio/mailing-lists',
       'POST',
-      { v: '1' },
+      undefined,
       data
     );
 
@@ -256,54 +264,66 @@ export class MailingListService {
       service_uid: newMailingList.service_uid,
     });
 
-    return newMailingList;
+    // Poll the query service until the mailing list is indexed
+    const indexed = await this.pollUntilResourceIndexed<GroupsIOMailingList>(
+      req,
+      'create_mailing_list',
+      'groupsio_mailing_list',
+      'groupsio_mailing_list_uid',
+      newMailingList.uid,
+      { mailing_list_uid: newMailingList.uid }
+    );
+
+    if (!indexed) {
+      logger.warning(req, 'create_mailing_list', 'Mailing list not yet indexed in query service, returning POST response', {
+        mailing_list_uid: newMailingList.uid,
+      });
+    }
+    return await this.accessCheckService.addAccessToResource(req, indexed ?? newMailingList, 'groupsio_mailing_list');
   }
 
   /**
-   * Updates an existing mailing list using ETag for concurrency control
+   * Updates an existing mailing list
    */
   public async updateMailingList(req: Request, mailingListId: string, data: Partial<CreateMailingListRequest>): Promise<GroupsIOMailingList> {
-    // Step 1: Fetch mailing list with ETag
-    const { etag } = await this.etagService.fetchWithETag<GroupsIOMailingList>(
+    const updatedMailingList = await this.microserviceProxy.proxyRequest<GroupsIOMailingList>(
       req,
       'LFX_V2_SERVICE',
       `/groupsio/mailing-lists/${mailingListId}`,
-      'update_mailing_list'
-    );
-
-    // Step 2: Update mailing list with ETag
-    const updatedMailingList = await this.etagService.updateWithETag<GroupsIOMailingList>(
-      req,
-      'LFX_V2_SERVICE',
-      `/groupsio/mailing-lists/${mailingListId}`,
-      etag,
-      data,
-      'update_mailing_list'
+      'PUT',
+      undefined,
+      data
     );
 
     logger.debug(req, 'update_mailing_list', 'Mailing list updated successfully', {
       mailing_list_uid: mailingListId,
     });
 
-    return updatedMailingList;
+    // Poll the query service until the updated mailing list is indexed
+    const indexed = await this.pollUntilResourceIndexed<GroupsIOMailingList>(
+      req,
+      'update_mailing_list',
+      'groupsio_mailing_list',
+      'groupsio_mailing_list_uid',
+      mailingListId,
+      { mailing_list_uid: mailingListId }
+    );
+
+    return indexed ?? updatedMailingList;
   }
 
   /**
-   * Deletes a mailing list using ETag for concurrency control
+   * Deletes a mailing list
    */
   public async deleteMailingList(req: Request, mailingListId: string): Promise<void> {
-    // Step 1: Fetch mailing list with ETag
-    const { etag } = await this.etagService.fetchWithETag<GroupsIOMailingList>(
-      req,
-      'LFX_V2_SERVICE',
-      `/groupsio/mailing-lists/${mailingListId}`,
-      'delete_mailing_list'
-    );
-
-    // Step 2: Delete mailing list with ETag
-    await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/groupsio/mailing-lists/${mailingListId}`, etag, 'delete_mailing_list');
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/groupsio/mailing-lists/${mailingListId}`, 'DELETE');
 
     logger.debug(req, 'delete_mailing_list', 'Mailing list deleted successfully', {
+      mailing_list_uid: mailingListId,
+    });
+
+    // Poll the query service until the mailing list is removed from the index
+    await this.pollUntilResourceRemoved(req, 'delete_mailing_list', 'groupsio_mailing_list', 'groupsio_mailing_list_uid', mailingListId, {
       mailing_list_uid: mailingListId,
     });
   }
@@ -362,14 +382,6 @@ export class MailingListService {
       'GET'
     );
 
-    if (!member) {
-      throw new ResourceNotFoundError('Mailing List Member', memberId, {
-        operation: 'get_member_by_id',
-        service: 'mailing_list_service',
-        path: `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
-      });
-    }
-
     // Add writer access field to the member
     return await this.accessCheckService.addAccessToResource(req, member, 'groupsio_member');
   }
@@ -383,7 +395,7 @@ export class MailingListService {
       'LFX_V2_SERVICE',
       `/groupsio/mailing-lists/${mailingListId}/members`,
       'POST',
-      { v: '1' },
+      undefined,
       data
     );
 
@@ -392,29 +404,29 @@ export class MailingListService {
       member_uid: newMember.uid,
     });
 
-    return newMember;
+    // Poll the query service until the member is indexed
+    const indexed = await this.pollUntilResourceIndexed<MailingListMember>(req, 'create_mailing_list_member', 'groupsio_member', 'member_uid', newMember.uid, {
+      mailing_list_uid: mailingListId,
+      member_uid: newMember.uid,
+    });
+
+    if (!indexed) {
+      logger.warning(req, 'create_mailing_list_member', 'Member not yet indexed in query service, returning POST response', { member_uid: newMember.uid });
+    }
+    return await this.accessCheckService.addAccessToResource(req, indexed ?? newMember, 'groupsio_member');
   }
 
   /**
-   * Updates an existing member using ETag for concurrency control
+   * Updates an existing member
    */
   public async updateMember(req: Request, mailingListId: string, memberId: string, data: UpdateMailingListMemberRequest): Promise<MailingListMember> {
-    // Step 1: Fetch member with ETag
-    const { etag } = await this.etagService.fetchWithETag<MailingListMember>(
+    const updatedMember = await this.microserviceProxy.proxyRequest<MailingListMember>(
       req,
       'LFX_V2_SERVICE',
       `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
-      'update_mailing_list_member'
-    );
-
-    // Step 2: Update member with ETag
-    const updatedMember = await this.etagService.updateWithETag<MailingListMember>(
-      req,
-      'LFX_V2_SERVICE',
-      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
-      etag,
-      data,
-      'update_mailing_list_member'
+      'PUT',
+      undefined,
+      data
     );
 
     logger.debug(req, 'update_mailing_list_member', 'Mailing list member updated successfully', {
@@ -422,34 +434,83 @@ export class MailingListService {
       member_uid: memberId,
     });
 
-    return updatedMember;
+    // Poll the query service until the updated member is indexed
+    const indexed = await this.pollUntilResourceIndexed<MailingListMember>(req, 'update_mailing_list_member', 'groupsio_member', 'member_uid', memberId, {
+      mailing_list_uid: mailingListId,
+      member_uid: memberId,
+    });
+
+    return indexed ?? updatedMember;
   }
 
   /**
-   * Deletes a member using ETag for concurrency control
+   * Deletes a member
    */
   public async deleteMember(req: Request, mailingListId: string, memberId: string): Promise<void> {
-    // Step 1: Fetch member with ETag
-    const { etag } = await this.etagService.fetchWithETag<MailingListMember>(
-      req,
-      'LFX_V2_SERVICE',
-      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
-      'delete_mailing_list_member'
-    );
-
-    // Step 2: Delete member with ETag
-    await this.etagService.deleteWithETag(
-      req,
-      'LFX_V2_SERVICE',
-      `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`,
-      etag,
-      'delete_mailing_list_member'
-    );
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/groupsio/mailing-lists/${mailingListId}/members/${memberId}`, 'DELETE');
 
     logger.debug(req, 'delete_mailing_list_member', 'Mailing list member deleted successfully', {
       mailing_list_uid: mailingListId,
       member_uid: memberId,
     });
+
+    // Poll the query service until the member is removed from the index
+    await this.pollUntilResourceRemoved(req, 'delete_mailing_list_member', 'groupsio_member', 'member_uid', memberId, {
+      mailing_list_uid: mailingListId,
+      member_uid: memberId,
+    });
+  }
+
+  // ============================================
+  // Private Polling Helpers
+  // ============================================
+
+  private async pollUntilResourceIndexed<T>(
+    req: Request,
+    operation: string,
+    type: string,
+    tagKey: string,
+    tagValue: string,
+    metadata: Record<string, unknown>
+  ): Promise<T | null> {
+    return pollUntilIndexed<T>({
+      req,
+      operation,
+      pollFn: async () => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<T>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type,
+          tags: `${tagKey}:${tagValue}`,
+        });
+        return resources.length > 0 ? resources[0].data : null;
+      },
+      metadata,
+    });
+  }
+
+  private async pollUntilResourceRemoved(
+    req: Request,
+    operation: string,
+    type: string,
+    tagKey: string,
+    tagValue: string,
+    metadata: Record<string, unknown>
+  ): Promise<void> {
+    const removed = await pollEndpoint({
+      req,
+      operation,
+      pollFn: async () => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<unknown>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type,
+          tags: `${tagKey}:${tagValue}`,
+        });
+        return resources.length === 0;
+      },
+      metadata,
+    });
+
+    if (!removed) {
+      logger.warning(req, operation, 'Resource not yet removed from query index', metadata);
+    }
   }
 
   // ============================================
