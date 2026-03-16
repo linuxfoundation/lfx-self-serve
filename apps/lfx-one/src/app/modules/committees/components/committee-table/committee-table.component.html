@@ -10,7 +10,7 @@
         <lfx-input-text
           [form]="searchForm()"
           control="search"
-          [placeholder]="'Search ' + committeeLabel().toLowerCase() + 's...'"
+          [placeholder]="'Search ' + committeeLabelPlural.toLowerCase() + '...'"
           icon="fa-light fa-search"
           styleClass="w-full"
           size="small"
@@ -59,10 +59,14 @@
       <tr>
         <th>Name</th>
         <th>Type</th>
-        <th class="min-w-[300px]">Description</th>
+        <th class="min-w-[200px]">Description</th>
         <th>Members</th>
+        <th>Channels</th>
         <th>Voting</th>
         <th>Last Updated</th>
+        @if (!canManageCommittee()) {
+          <th class="min-w-[120px]">Status</th>
+        }
         @if (canManageCommittee()) {
           <th></th>
         }
@@ -88,7 +92,7 @@
           @let category = committee.category || 'Other';
           <lfx-tag [value]="category" [severity]="category | committeeCategorySeverity"></lfx-tag>
         </td>
-        <td class="min-w-[300px]">
+        <td class="min-w-[200px]">
           <div class="max-w-[300px] line-clamp-2 text-xs">
             @if (committee.description) {
               {{ committee.description }}
@@ -99,19 +103,98 @@
         </td>
         <td>
           <a [routerLink]="['/groups', committee.uid]">
-            {{ committee.total_members || 0 }}
+            {{ committee.total_members ?? 0 | number }}
           </a>
         </td>
         <td>
+          <!-- Channels: always show both icons. Gray/dimmed when data not yet available from API. -->
+          <div class="flex items-center gap-2">
+            @if (sanitizeUrl(committee.mailing_list?.url); as safeMailUrl) {
+              <!-- Mailing list configured — active link -->
+              <a
+                [href]="safeMailUrl"
+                target="_blank"
+                rel="noopener"
+                class="inline-flex items-center text-gray-500 hover:text-blue-600 no-underline"
+                [pTooltip]="committee.mailing_list!.name"
+                tooltipPosition="top"
+                (click)="$event.stopPropagation()">
+                <i class="fa-light fa-envelope w-4 h-4"></i>
+              </a>
+            } @else {
+              <!-- Mailing list not yet available from API — grayed-out placeholder -->
+              <span class="inline-flex items-center text-gray-300 cursor-default" pTooltip="Mailing list not yet available" tooltipPosition="top">
+                <i class="fa-light fa-envelope w-4 h-4"></i>
+              </span>
+            }
+            @if (sanitizeUrl(committee.chat_channel?.url); as safeChatUrl) {
+              <!-- Chat channel configured — active link -->
+              <a
+                [href]="safeChatUrl"
+                target="_blank"
+                rel="noopener"
+                class="inline-flex items-center text-gray-500 hover:text-blue-600 no-underline"
+                [pTooltip]="committee.chat_channel!.name + ' (' + committee.chat_channel!.platform + ')'"
+                tooltipPosition="top"
+                (click)="$event.stopPropagation()">
+                <i
+                  class="fa-brands w-4 h-4"
+                  [class.fa-slack]="committee.chat_channel!.platform === 'slack'"
+                  [class.fa-discord]="committee.chat_channel!.platform === 'discord'"></i>
+              </a>
+            } @else {
+              <!-- Chat channel not yet available from API — grayed-out placeholder -->
+              <span class="inline-flex items-center text-gray-300 cursor-default" pTooltip="Chat channel not yet available" tooltipPosition="top">
+                <i class="fa-light fa-comment w-4 h-4"></i>
+              </span>
+            }
+          </div>
+        </td>
+        <td>
           @if (committee.enable_voting) {
-            <i class="fa-light fa-check w-4 h-4 text-emerald-600" pTooltip="Voting enabled" tooltipPosition="top" aria-hidden="true"></i>
-            <span class="sr-only">Voting enabled</span>
+            <span class="inline-flex items-center" pTooltip="Voting enabled" tooltipPosition="top" tabindex="0" aria-label="Voting enabled">
+              <i class="fa-light fa-check w-4 h-4 text-emerald-600" aria-hidden="true"></i>
+            </span>
           } @else {
-            <span class="text-gray-400 text-xs" aria-hidden="true">—</span>
-            <span class="sr-only">Voting not enabled</span>
+            <span class="text-gray-400 text-xs" aria-label="Voting disabled">—</span>
           }
         </td>
         <td>{{ committee.updated_at | date: 'MMM d, y' }}</td>
+        @if (!canManageCommittee()) {
+          <td class="whitespace-nowrap">
+            @if (myCommitteeUids().has(committee.uid)) {
+              <div class="flex items-center gap-2">
+                <lfx-tag value="Joined" severity="success"></lfx-tag>
+                @if (committee.join_mode === 'open' || committee.join_mode === 'invite_only') {
+                  <lfx-button
+                    icon="fa-light fa-paper-plane"
+                    severity="secondary"
+                    size="small"
+                    [outlined]="true"
+                    [text]="true"
+                    pTooltip="Invite someone"
+                    tooltipPosition="top"
+                    (onClick)="inviteClick.emit(committee); $event.stopPropagation()"
+                    [attr.data-testid]="'committee-invite-' + committee.uid">
+                  </lfx-button>
+                }
+              </div>
+            } @else if (committee.public && (committee.join_mode === 'open' || committee.join_mode === 'application')) {
+              <lfx-button
+                [label]="committee.join_mode === 'application' ? 'Request' : 'Join'"
+                severity="info"
+                size="small"
+                [outlined]="true"
+                (onClick)="joinClick.emit(committee); $event.stopPropagation()"
+                [attr.data-testid]="'committee-join-' + committee.uid">
+              </lfx-button>
+            } @else if (committee.public && committee.join_mode === 'invite_only') {
+              <span class="text-xs text-gray-500 italic">Invite only</span>
+            } @else {
+              <span class="text-xs text-gray-400 italic">{{ committee.public ? 'Closed' : 'Private' }}</span>
+            }
+          </td>
+        }
         @if (canManageCommittee()) {
           <td>
             <div class="flex items-center justify-end gap-1">
@@ -135,7 +218,7 @@
                   [text]="true"
                   styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                   [attr.data-testid]="'committee-edit-' + committee.uid"
-                  [pTooltip]="'Edit ' + committeeLabel()"
+                  [pTooltip]="'Edit ' + committeeLabel"
                   tooltipPosition="top">
                 </lfx-button>
               </a>
@@ -148,7 +231,7 @@
                 (onClick)="onDeleteCommittee(committee)"
                 [disabled]="isDeleting()"
                 [attr.data-testid]="'committee-delete-' + committee.uid"
-                [pTooltip]="'Delete ' + committeeLabel()"
+                [pTooltip]="'Delete ' + committeeLabel"
                 tooltipPosition="top">
               </lfx-button>
             </div>
@@ -158,9 +241,9 @@
     </ng-template>
     <ng-template #emptymessage>
       <tr>
-        <td [attr.colspan]="canManageCommittee() ? 7 : 6">
+        <td colspan="8">
           <i class="fa-light fa-folder-open text-3xl text-gray-400 mb-2"></i>
-          <p class="text-sm text-gray-500">No {{ committeeLabel().toLowerCase() }}s found</p>
+          <p class="text-sm text-gray-500">No {{ committeeLabelPlural.toLowerCase() }} found</p>
         </td>
       </tr>
     </ng-template>
