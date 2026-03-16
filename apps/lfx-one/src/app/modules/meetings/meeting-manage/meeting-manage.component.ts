@@ -243,6 +243,16 @@ export class MeetingManageComponent {
     this.submitting.set(true);
     const meetingData = this.prepareMeetingData();
 
+    if (!meetingData.project_uid) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Project is required. Please select a project before saving.',
+      });
+      this.submitting.set(false);
+      return;
+    }
+
     if (this.isEditMode()) {
       this.meetingService.updateMeeting(this.meetingId()!, meetingData as UpdateMeetingRequest, 'single').subscribe({
         next: () => this.handleMeetingSuccess(),
