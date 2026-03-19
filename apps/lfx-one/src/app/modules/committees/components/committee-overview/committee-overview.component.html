@@ -1,0 +1,208 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6 pt-4">
+  <!-- Stats Row -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="committee-view-stats">
+    <!-- Total Members -->
+    <lfx-card>
+      <div class="flex items-center gap-3 py-1">
+        <div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
+          <i class="fa-light fa-users text-blue-600"></i>
+        </div>
+        <div>
+          <p class="text-2xl font-semibold text-gray-900">{{ committee().total_members || 0 }}</p>
+          <p class="text-xs text-gray-500">Members</p>
+        </div>
+      </div>
+    </lfx-card>
+
+    <!-- Voting Reps -->
+    @if (committee().enable_voting) {
+      <lfx-card>
+        <div class="flex items-center gap-3 py-1">
+          <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
+            <i class="fa-light fa-check-to-slot text-emerald-600"></i>
+          </div>
+          <div>
+            <p class="text-2xl font-semibold text-emerald-600">{{ committee().total_voting_repos || 0 }}</p>
+            <p class="text-xs text-gray-500">Voting Reps</p>
+          </div>
+        </div>
+      </lfx-card>
+    }
+
+    <!-- Visibility -->
+    <lfx-card>
+      <div class="flex items-center gap-3 py-1">
+        <div class="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
+          <i class="fa-light fa-eye text-purple-600"></i>
+        </div>
+        <div>
+          <p class="text-2xl font-semibold text-gray-900">{{ committee().public ? 'Public' : 'Private' }}</p>
+          <p class="text-xs text-gray-500">Visibility</p>
+        </div>
+      </div>
+    </lfx-card>
+
+    <!-- Join Mode -->
+    <lfx-card>
+      <div class="flex items-center gap-3 py-1">
+        <div class="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
+          <i class="fa-light fa-door-open text-amber-600"></i>
+        </div>
+        <div>
+          <p class="text-2xl font-semibold text-gray-900">{{ committee().join_mode | joinModeLabel }}</p>
+          <p class="text-xs text-gray-500">Join Mode</p>
+        </div>
+      </div>
+    </lfx-card>
+  </div>
+
+  <!-- Two-Column Layout -->
+  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
+    <!-- Left Column: Channels & Configurations -->
+    <div class="lg:col-span-2 flex flex-col gap-6">
+      <!-- Channels Card -->
+      <lfx-card data-testid="committee-view-channels">
+        <div class="flex flex-col gap-4">
+          <h3 class="text-sm font-medium"><i class="fa-light fa-comments text-gray-400 mr-2"></i>Channels</h3>
+          <div class="flex flex-col gap-4">
+            <!-- Mailing List -->
+            @if (committee().mailing_list; as mailingList) {
+              <div class="flex flex-col gap-2">
+                <p class="text-xs text-gray-400 uppercase tracking-wider">Mailing List</p>
+                <div class="flex items-center gap-3">
+                  <div class="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-light fa-envelope text-blue-600 text-sm"></i>
+                  </div>
+                  <div class="min-w-0">
+                    <a [href]="'mailto:' + mailingList" class="text-sm font-medium text-blue-600 hover:text-blue-700 truncate block">
+                      {{ mailingList }}
+                    </a>
+                  </div>
+                </div>
+              </div>
+            } @else {
+              <div class="flex flex-col gap-2 opacity-40">
+                <p class="text-xs text-gray-400 uppercase tracking-wider">Mailing List</p>
+                <div class="flex items-center gap-3">
+                  <div class="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-light fa-envelope text-gray-400 text-sm"></i>
+                  </div>
+                  <p class="text-sm text-gray-400">No mailing list connected</p>
+                </div>
+              </div>
+            }
+
+            <!-- Chat Channel -->
+            @if (committee().chat_channel; as chatChannel) {
+              <div class="flex flex-col gap-2">
+                <p class="text-xs text-gray-400 uppercase tracking-wider">Chat Channel</p>
+                <div class="flex items-center gap-3">
+                  <div class="w-9 h-9 rounded-full bg-purple-50 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-light fa-comment text-purple-600 text-sm"></i>
+                  </div>
+                  <div class="min-w-0">
+                    <a
+                      [href]="chatChannel"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-sm font-medium text-blue-600 hover:text-blue-700 truncate block">
+                      {{ chatChannel }}
+                      <i class="fa-light fa-arrow-up-right-from-square text-[10px] ml-1"></i>
+                    </a>
+                  </div>
+                </div>
+              </div>
+            } @else {
+              <div class="flex flex-col gap-2 opacity-40">
+                <p class="text-xs text-gray-400 uppercase tracking-wider">Chat Channel</p>
+                <div class="flex items-center gap-3">
+                  <div class="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-light fa-comment text-gray-400 text-sm"></i>
+                  </div>
+                  <p class="text-sm text-gray-400">No chat channel connected</p>
+                </div>
+              </div>
+            }
+
+            <!-- Website -->
+            @if (committee().website) {
+              <div class="flex flex-col gap-2">
+                <p class="text-xs text-gray-400 uppercase tracking-wider">Website</p>
+                <div class="flex items-center gap-3">
+                  <div class="w-9 h-9 rounded-full bg-gray-50 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-light fa-globe text-gray-600 text-sm"></i>
+                  </div>
+                  <a
+                    [href]="committee().website"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    class="text-sm font-medium text-blue-600 hover:text-blue-700 truncate">
+                    {{ committee().website }}
+                    <i class="fa-light fa-arrow-up-right-from-square text-[10px] ml-1"></i>
+                  </a>
+                </div>
+              </div>
+            } @else {
+              <div class="flex flex-col gap-2">
+                <p class="text-xs text-gray-400 uppercase tracking-wider">Website</p>
+                <div class="flex items-center gap-3">
+                  <div class="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
+                    <i class="fa-light fa-globe text-gray-400 text-sm"></i>
+                  </div>
+                  <p class="text-sm text-gray-400">No website configured</p>
+                </div>
+              </div>
+            }
+          </div>
+        </div>
+      </lfx-card>
+
+      <!-- Configurations Card (admin only) -->
+      @if (canEdit()) {
+        <lfx-card data-testid="committee-view-configurations">
+          <div class="flex flex-col gap-4">
+            <h3 class="text-sm font-medium"><i class="fa-light fa-gear text-gray-400 mr-2"></i>Configurations</h3>
+            <div class="flex flex-col gap-3">
+              <div class="flex items-center justify-between" data-testid="committee-view-config-public">
+                <span class="text-sm text-gray-600">Public</span>
+                <lfx-tag [value]="committee().public ? 'Yes' : 'No'" [severity]="committee().public ? 'success' : 'danger'"></lfx-tag>
+              </div>
+              <div class="flex items-center justify-between" data-testid="committee-view-config-voting">
+                <span class="text-sm text-gray-600">Voting</span>
+                <lfx-tag [value]="committee().enable_voting ? 'Enabled' : 'Disabled'" [severity]="committee().enable_voting ? 'success' : 'danger'"></lfx-tag>
+              </div>
+              <div class="flex items-center justify-between" data-testid="committee-view-config-business-email">
+                <span class="text-sm text-gray-600">Business Email</span>
+                <lfx-tag
+                  [value]="committee().business_email_required ? 'Required' : 'Optional'"
+                  [severity]="committee().business_email_required ? 'info' : 'secondary'"></lfx-tag>
+              </div>
+              <div class="flex items-center justify-between" data-testid="committee-view-config-audit">
+                <span class="text-sm text-gray-600">Audit</span>
+                <lfx-tag
+                  [value]="committee().is_audit_enabled ? 'Enabled' : 'Disabled'"
+                  [severity]="committee().is_audit_enabled ? 'success' : 'danger'"></lfx-tag>
+              </div>
+              <div class="flex items-center justify-between" data-testid="committee-view-config-join-mode">
+                <span class="text-sm text-gray-600">Join Mode</span>
+                <lfx-tag [value]="committee().join_mode | joinModeLabel" [severity]="committee().join_mode === 'open' ? 'success' : 'secondary'"></lfx-tag>
+              </div>
+              <div class="flex items-center justify-between" data-testid="committee-view-config-sso">
+                <span class="text-sm text-gray-600">SSO Group</span>
+                <lfx-tag
+                  [value]="committee().sso_group_enabled ? 'Enabled' : 'Disabled'"
+                  [severity]="committee().sso_group_enabled ? 'success' : 'danger'"></lfx-tag>
+              </div>
+            </div>
+          </div>
+        </lfx-card>
+      }
+    </div>
+
+    <!-- Leadership card removed: chair/co_chair are not returned by GET /committees/{uid}.
+             Member-role-based derivation will be added in a follow-up PR. -->
+  </div>
+</div>

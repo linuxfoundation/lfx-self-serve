@@ -111,57 +111,6 @@ export interface CommitteeReference {
   allowed_voting_statuses?: CommitteeMemberVotingStatus[];
 }
 
-// ── Communication Channel Types ─────────────────────────────────────────────
-
-/** Platform type for chat channels */
-export type ChatPlatform = 'slack' | 'discord';
-
-/**
- * A mailing list associated with a group (e.g., Groups.io, Google Groups).
- */
-export interface GroupMailingList {
-  /** Display name of the list (e.g., "tac-general") */
-  name: string;
-  /** Full URL to the mailing list archive or subscription page */
-  url?: string;
-  /** Number of subscribers (optional, for display) */
-  subscriber_count?: number;
-}
-
-/**
- * A chat channel (Slack or Discord) associated with a group.
- */
-export interface GroupChatChannel {
-  /** Platform type */
-  platform: ChatPlatform;
-  /** Channel name (e.g., "#tac-general") */
-  name: string;
-  /** Direct link to the channel */
-  url?: string;
-}
-
-/**
- * Committee leadership position (Chair, Co-Chair, etc.)
- * @description Represents a member in a leadership position within a committee
- */
-/** Leadership role type for chair/co-chair assignment */
-export type LeadershipRole = 'chair' | 'co_chair';
-
-export interface CommitteeLeadership {
-  /** Unique identifier for the leader (member UID) */
-  uid: string;
-  /** Leader's first name */
-  first_name: string;
-  /** Leader's last name */
-  last_name: string;
-  /** Leader's email address */
-  email: string;
-  /** Date when the leader was elected/appointed (ISO 8601 date string) */
-  elected_date?: string;
-  /** Organization the leader belongs to (may not be returned by all API versions) */
-  organization?: string;
-}
-
 /**
  * Committee entity with complete details
  * @description Represents a committee/working group within a project with full metadata
@@ -199,8 +148,8 @@ export interface Committee {
   updated_at: string;
   /** Total number of committee members */
   total_members: number;
-  /** Total number of voting representatives */
-  total_voting_reps: number;
+  /** Total number of voting representatives (upstream field name is total_voting_repos) */
+  total_voting_repos: number;
   /** Associated project UID */
   project_uid: string;
   /** Associated project name (populated from project data) */
@@ -232,16 +181,14 @@ export interface Committee {
   join_mode?: JoinMode;
 
   // ── Communication Channels ──
-  /** Mailing list associated with the group (e.g., Groups.io list) */
-  mailing_list?: GroupMailingList;
-  /** Chat channel associated with the group (Slack, Discord, etc.) */
-  chat_channel?: GroupChatChannel;
+  /** Mailing list email address associated with the group (plain string from upstream) */
+  mailing_list?: string;
+  /** Chat channel URL or identifier associated with the group (plain string from upstream) */
+  chat_channel?: string;
 
-  // ── Leadership ──
-  /** Chair of the committee */
-  chair?: CommitteeLeadership | null;
-  /** Co-Chair of the committee */
-  co_chair?: CommitteeLeadership | null;
+  // NOTE: chair/co_chair are NOT returned by GET /committees/{uid}.
+  // Leadership is derived from committee members with role.name === "Chair" / "Vice Chair".
+  // Server-side enrichment will be added in a follow-up PR.
 }
 
 /**
@@ -299,14 +246,10 @@ export interface CommitteeCreateData {
  * @description Partial update payload allowing any field from create data to be modified
  */
 export interface CommitteeUpdateData extends Partial<CommitteeCreateData> {
-  /** Assign or remove chair */
-  chair?: CommitteeLeadership | null;
-  /** Assign or remove co-chair */
-  co_chair?: CommitteeLeadership | null;
-  /** Update or clear mailing list */
-  mailing_list?: GroupMailingList | null;
+  /** Update or clear mailing list email */
+  mailing_list?: string | null;
   /** Update or clear chat channel */
-  chat_channel?: GroupChatChannel | null;
+  chat_channel?: string | null;
 }
 
 /**

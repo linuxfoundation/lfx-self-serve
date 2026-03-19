@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { GroupBehavioralClass } from '../interfaces/committee.interface';
+import { GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
 import { lfxColors } from './colors.constants';
 
 // Re-export helper functions from utils for backward compatibility
@@ -469,6 +469,17 @@ export const MEMBER_VISIBILITY_OPTIONS = [
   { label: 'Hidden', value: 'hidden' },
   { label: 'Basic Profile', value: 'basic_profile' },
 ];
+
+/**
+ * Human-readable labels for JoinMode enum values.
+ * Used by JoinModeLabelPipe for template display.
+ */
+export const JOIN_MODE_LABELS: Record<JoinMode, string> = {
+  open: 'Open',
+  invite_only: 'Invite Only',
+  application: 'Apply to Join',
+  closed: 'Closed',
+};
 
 /**
  * Join-mode options for the Group settings form (Step 3).

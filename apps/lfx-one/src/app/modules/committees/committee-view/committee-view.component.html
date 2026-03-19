@@ -4,96 +4,185 @@
 <div class="container mx-auto py-6 px-8">
   <!-- Loading State -->
   @if (loading()) {
+    <lfx-route-loading />
+  } @else if (error()) {
+    <!-- Error State -->
     <div class="flex justify-center items-center min-h-96">
-      <div class="text-center">
-        <i class="fa-light fa-spinner-third fa-spin text-3xl text-blue-600 mb-4"></i>
-        <p class="text-gray-600">Loading group details...</p>
+      <div class="text-center max-w-md">
+        @if (errorType() === 'not-found') {
+          <div class="w-16 h-16 rounded-full bg-red-50 flex items-center justify-center mx-auto mb-4">
+            <i class="fa-light fa-exclamation-triangle text-2xl text-red-500"></i>
+          </div>
+          <h2 class="text-lg font-semibold text-gray-900 mb-2">Group Not Found</h2>
+          <p class="text-sm text-gray-500 mb-6">The group you're looking for doesn't exist, has been removed, or you may not have permission to view it.</p>
+          <lfx-button label="Back to Groups" severity="secondary" [outlined]="true" icon="fa-light fa-arrow-left" (onClick)="goBack()"></lfx-button>
+        } @else {
+          <div class="w-16 h-16 rounded-full bg-amber-50 flex items-center justify-center mx-auto mb-4">
+            <i class="fa-light fa-cloud-exclamation text-2xl text-amber-500"></i>
+          </div>
+          <h2 class="text-lg font-semibold text-gray-900 mb-2">Something Went Wrong</h2>
+          <p class="text-sm text-gray-500 mb-6">We couldn't load this group right now. Please try again.</p>
+          <div class="flex items-center justify-center gap-3">
+            <lfx-button label="Try Again" severity="info" [outlined]="true" icon="fa-light fa-rotate-right" (onClick)="refreshCommittee()"></lfx-button>
+            <lfx-button label="Back to Groups" severity="secondary" [outlined]="true" icon="fa-light fa-arrow-left" (onClick)="goBack()"></lfx-button>
+          </div>
+        }
       </div>
     </div>
-  }
-
-  <!-- Error State -->
-  @if (error()) {
-    <div class="flex justify-center items-center min-h-96">
-      <div class="text-center">
-        <i class="fa-light fa-exclamation-triangle text-3xl text-red-500 mb-4"></i>
-        <h2 class="mb-2">Group Not Found</h2>
-        <p class="text-gray-600 mb-4">The group you're looking for doesn't exist or has been removed.</p>
-        <lfx-button label="Back to Groups" styleClass="p-button-outlined" (onClick)="goBack()"> </lfx-button>
-      </div>
-    </div>
-  }
-
-  <!-- Committee Content -->
-  @if (committee()?.uid && !loading() && !error()) {
+  } @else if (committee()?.uid) {
+    <!-- Committee Dashboard Content -->
     <div class="flex flex-col gap-6">
       <!-- Header Section -->
       <div class="flex justify-between items-start">
-        <div class="flex flex-col gap-4" data-testid="committee-view-header">
+        <div class="flex flex-col gap-3" data-testid="committee-view-header">
           <lfx-breadcrumb [model]="breadcrumbItems()" data-testid="committee-view-breadcrumb"></lfx-breadcrumb>
-          <div class="flex flex-col gap-1">
+          <div class="flex items-center gap-3">
             <h1 data-testid="committee-view-name">{{ committee()?.name }}</h1>
-            <p class="text-gray-500" data-testid="committee-view-description">{{ committee()?.description }}</p>
+            @if (!committee()?.public) {
+              <i class="fa-light fa-lock w-4 h-4 text-gray-400"></i>
+            }
           </div>
-          <div class="flex items-center gap-4 text-sm text-gray-500">
+          @if (committee()?.description) {
+            <p class="text-gray-500 max-w-2xl" data-testid="committee-view-description">{{ committee()?.description }}</p>
+          }
+          <div class="flex items-center gap-3 flex-wrap">
             @if (committee()?.category) {
               <lfx-tag [value]="committee()!.category" [severity]="categorySeverity()"></lfx-tag>
             }
-            <span class="text-gray-600">Created {{ formattedCreatedDate() }}</span>
+            @if (committee()?.enable_voting) {
+              <lfx-tag value="Voting Enabled" severity="success"></lfx-tag>
+            }
+            <span class="text-xs text-gray-400">Created {{ committee()?.created_at | date: 'MMM d, y' }}</span>
             @if (committee()?.updated_at) {
-              <span class="text-gray-600">Last updated {{ formattedUpdatedDate() }}</span>
+              <span class="text-xs text-gray-400">· Updated {{ committee()?.updated_at | date: 'MMM d, y' }}</span>
             }
           </div>
         </div>
 
-        <!-- Action Menu -->
-        @if (!isBoardMember()) {
-          <div class="flex items-center gap-3">
-            <lfx-button icon="fa-light fa-file-lines" label="Edit Group" size="small" [routerLink]="['/groups', committee()?.uid || '', 'edit']"> </lfx-button>
+        <!-- Action Buttons -->
+        @if (canEdit()) {
+          <div class="flex items-center gap-2 flex-shrink-0">
+            <lfx-button icon="fa-light fa-pen-to-square" label="Edit" size="small" [routerLink]="['/groups', committee()?.uid || '', 'edit']"></lfx-button>
           </div>
         }
       </div>
 
-      <!-- Configurations Section -->
-      <lfx-card data-testid="committee-view-configurations">
-        <h3 class="text-sm font-medium mb-4" data-testid="committee-view-configurations-title">Configurations</h3>
-        <div class="grid grid-cols-1 md:grid-cols-2 gap-x-12 gap-y-3">
-          <div class="flex items-center justify-between" data-testid="committee-view-config-public">
-            <span class="text-sm">Public</span>
-            <lfx-tag [value]="committee()?.public ? 'Enabled' : 'Disabled'" [severity]="committee()?.public ? 'success' : 'danger'"></lfx-tag>
-          </div>
-          <div class="flex items-center justify-between" data-testid="committee-view-config-voting">
-            <span class="text-sm">Voting</span>
-            <lfx-tag [value]="committee()?.enable_voting ? 'Enabled' : 'Disabled'" [severity]="committee()?.enable_voting ? 'success' : 'danger'"></lfx-tag>
-          </div>
-          <div class="flex items-center justify-between" data-testid="committee-view-config-business-email">
-            <span class="text-sm">Business Email Required</span>
-            <lfx-tag
-              [value]="committee()?.business_email_required ? 'Enabled' : 'Disabled'"
-              [severity]="committee()?.business_email_required ? 'success' : 'danger'"></lfx-tag>
-          </div>
-          <div class="flex items-center justify-between" data-testid="committee-view-config-sso-group">
-            <span class="text-sm">SSO Group</span>
-            <lfx-tag
-              [value]="committee()?.sso_group_enabled ? 'Enabled' : 'Disabled'"
-              [severity]="committee()?.sso_group_enabled ? 'success' : 'danger'"></lfx-tag>
-          </div>
-          <div class="flex items-center justify-between" data-testid="committee-view-config-audit">
-            <span class="text-sm">Audit</span>
-            <lfx-tag
-              [value]="committee()?.is_audit_enabled ? 'Enabled' : 'Disabled'"
-              [severity]="committee()?.is_audit_enabled ? 'success' : 'danger'"></lfx-tag>
-          </div>
-        </div>
-      </lfx-card>
+      <!-- Tabs -->
+      <div class="flex gap-1 border-b" data-testid="committee-view-tabs">
+        <button
+          (click)="activeTab.set('overview')"
+          class="px-4 py-2 text-sm font-medium transition-colors"
+          [ngClass]="{
+            'border-b-2 border-blue-600 text-blue-600': activeTab() === 'overview',
+            'text-gray-500': activeTab() !== 'overview',
+          }">
+          <i class="fa-light fa-gauge mr-2"></i>Overview
+        </button>
+        @if (isMembersTabVisible()) {
+          <button
+            (click)="activeTab.set('members')"
+            class="px-4 py-2 text-sm font-medium transition-colors"
+            [ngClass]="{
+              'border-b-2 border-blue-600 text-blue-600': activeTab() === 'members',
+              'text-gray-500': activeTab() !== 'members',
+            }">
+            <i class="fa-light fa-users mr-2"></i>Members
+          </button>
+        }
+        @if (isVotesTabVisible()) {
+          <button
+            (click)="activeTab.set('votes')"
+            class="px-4 py-2 text-sm font-medium transition-colors"
+            [ngClass]="{
+              'border-b-2 border-blue-600 text-blue-600': activeTab() === 'votes',
+              'text-gray-500': activeTab() !== 'votes',
+            }">
+            <i class="fa-light fa-check-to-slot mr-2"></i>Votes
+          </button>
+        }
+        <button
+          (click)="activeTab.set('meetings')"
+          class="px-4 py-2 text-sm font-medium transition-colors"
+          [ngClass]="{
+            'border-b-2 border-blue-600 text-blue-600': activeTab() === 'meetings',
+            'text-gray-500': activeTab() !== 'meetings',
+          }">
+          <i class="fa-light fa-calendar mr-2"></i>Meetings
+        </button>
+        <button
+          (click)="activeTab.set('surveys')"
+          class="px-4 py-2 text-sm font-medium transition-colors"
+          [ngClass]="{
+            'border-b-2 border-blue-600 text-blue-600': activeTab() === 'surveys',
+            'text-gray-500': activeTab() !== 'surveys',
+          }">
+          <i class="fa-light fa-chart-simple mr-2"></i>Surveys
+        </button>
+        <button
+          (click)="activeTab.set('documents')"
+          class="px-4 py-2 text-sm font-medium transition-colors"
+          [ngClass]="{
+            'border-b-2 border-blue-600 text-blue-600': activeTab() === 'documents',
+            'text-gray-500': activeTab() !== 'documents',
+          }">
+          <i class="fa-light fa-folder-open mr-2"></i>Documents
+        </button>
+      </div>
 
-      <!-- Members Section -->
-      @if (committee()?.uid) {
-        <lfx-committee-members
-          [committee]="committee()"
-          [members]="members()"
-          [membersLoading]="membersLoading()"
-          (refresh)="refreshMembers()"></lfx-committee-members>
+      <!-- Tab Panels -->
+      @switch (activeTab()) {
+        @case ('overview') {
+          <lfx-committee-overview [committee]="committee()!" [canEdit]="canEdit()" />
+        }
+        @case ('members') {
+          @if (isMembersTabVisible()) {
+            <div class="flex items-center justify-center py-16">
+              <div class="text-center">
+                <i class="fa-light fa-users text-3xl text-gray-300 mb-3"></i>
+                <p class="text-sm font-medium text-gray-600">Members</p>
+                <p class="text-xs text-gray-400 mt-1">Coming in a future PR</p>
+              </div>
+            </div>
+          }
+        }
+        @case ('votes') {
+          @if (isVotesTabVisible()) {
+            <div class="flex items-center justify-center py-16">
+              <div class="text-center">
+                <i class="fa-light fa-check-to-slot text-3xl text-gray-300 mb-3"></i>
+                <p class="text-sm font-medium text-gray-600">Votes</p>
+                <p class="text-xs text-gray-400 mt-1">Coming in a future PR</p>
+              </div>
+            </div>
+          }
+        }
+        @case ('meetings') {
+          <div class="flex items-center justify-center py-16">
+            <div class="text-center">
+              <i class="fa-light fa-calendar text-3xl text-gray-300 mb-3"></i>
+              <p class="text-sm font-medium text-gray-600">Meetings</p>
+              <p class="text-xs text-gray-400 mt-1">Coming in a future PR</p>
+            </div>
+          </div>
+        }
+        @case ('surveys') {
+          <div class="flex items-center justify-center py-16">
+            <div class="text-center">
+              <i class="fa-light fa-chart-simple text-3xl text-gray-300 mb-3"></i>
+              <p class="text-sm font-medium text-gray-600">Surveys</p>
+              <p class="text-xs text-gray-400 mt-1">Coming in a future PR</p>
+            </div>
+          </div>
+        }
+        @case ('documents') {
+          <div class="flex items-center justify-center py-16">
+            <div class="text-center">
+              <i class="fa-light fa-folder-open text-3xl text-gray-300 mb-3"></i>
+              <p class="text-sm font-medium text-gray-600">Documents</p>
+              <p class="text-xs text-gray-400 mt-1">Coming in a future PR</p>
+            </div>
+          </div>
+        }
       }
     </div>
   }

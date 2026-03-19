@@ -102,7 +102,7 @@
         <tr>
           <td>
             <span class="text-sm font-sans text-gray-900 font-medium">
-              {{ (member.first_name || '') + ' ' + (member.last_name || '') | titlecase }}
+              {{ member | fullName | titlecase }}
             </span>
           </td>
           <td>

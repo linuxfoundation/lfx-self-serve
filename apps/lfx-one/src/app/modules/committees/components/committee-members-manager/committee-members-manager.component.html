@@ -88,17 +88,10 @@
             <!-- Member Info -->
             <div class="flex items-center gap-4">
               <!-- Avatar -->
-              <div class="w-10 h-10 rounded-full bg-blue-100 flex items-center justify-center text-blue-600 font-semibold">
-                {{ (member.first_name.charAt(0) || '') + (member.last_name.charAt(0) || '') || member.email.charAt(0).toUpperCase() || 'M' }}
-              </div>
+              <lfx-avatar [label]="member | fullName" shape="circle"></lfx-avatar>
               <!-- Details -->
               <div>
-                <div class="font-medium text-gray-900">
-                  {{ member.first_name || '' }} {{ member.last_name || '' }}
-                  @if (!member.first_name && !member.last_name) {
-                    {{ member.email }}
-                  }
-                </div>
+                <div class="font-medium text-gray-900">{{ member | fullName }}</div>
                 <div class="text-sm text-gray-500">{{ member.email }}</div>
                 @if (member.organization?.name) {
                   <div class="text-xs text-gray-400">{{ member.organization?.name }}</div>
