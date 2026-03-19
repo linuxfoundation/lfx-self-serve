@@ -8,10 +8,13 @@ import {
   CommitteeSettingsData,
   CommitteeUpdateData,
   CreateCommitteeMemberRequest,
+  MyCommittee,
   QueryServiceCountResponse,
   QueryServiceResponse,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
+
+import { getUsernameFromAuth } from '../utils/auth-helper';
 
 import { ResourceNotFoundError } from '../errors';
 import { logger } from '../services/logger.service';
@@ -46,13 +49,12 @@ export class CommitteeService {
 
     let committees = resources.map((resource) => resource.data);
 
-    // Get member count and settings for each committee in parallel
+    // Get member count for each committee in parallel
     committees = await Promise.all(
       committees.map(async (committee) => {
-        const [memberCount, settings] = await Promise.all([this.getCommitteeMembersCount(req, committee.uid), this.getCommitteeSettings(req, committee.uid)]);
+        const memberCount = await this.getCommitteeMembersCount(req, committee.uid);
         return {
           ...committee,
-          ...settings,
           total_members: memberCount,
         };
       })
@@ -90,15 +92,16 @@ export class CommitteeService {
       });
     }
 
-    // Fetch committee settings and merge
+    // Fetch committee settings for enrichment
     const settings = await this.getCommitteeSettings(req, committeeId);
-    const committeeWithSettings = {
+
+    const committeeWithEnrichment = {
       ...committee,
       ...settings,
     };
 
     // Add writer access field to the committee
-    return await this.accessCheckService.addAccessToResource(req, committeeWithSettings, 'committee');
+    return await this.accessCheckService.addAccessToResource(req, committeeWithEnrichment, 'committee');
   }
 
   /**
@@ -135,24 +138,59 @@ export class CommitteeService {
    * Updates an existing committee using ETag for concurrency control
    */
   public async updateCommittee(req: Request, committeeId: string, data: CommitteeUpdateData): Promise<Committee> {
-    // Extract settings fields
-    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, ...committeeData } = data;
+    // Extract settings and channel fields from core committee data
+    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, mailing_list, chat_channel, ...committeeData } = data;
 
-    // Step 1: Fetch committee with ETag
-    const { etag } = await this.etagService.fetchWithETag<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'update_committee');
+    const hasSettingsUpdate =
+      business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined;
+    const hasChannelsUpdate = mailing_list !== undefined || chat_channel !== undefined;
+    const hasCoreUpdate = Object.keys(committeeData).length > 0;
 
-    // Step 2: Update committee with ETag
-    const updatedCommittee = await this.etagService.updateWithETag<Committee>(
-      req,
-      'LFX_V2_SERVICE',
-      `/committees/${committeeId}`,
-      etag,
-      committeeData,
-      'update_committee'
-    );
+    let updatedCommittee: Committee;
 
-    // Step 3: Update settings if provided
-    if (business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined) {
+    if (hasCoreUpdate) {
+      // Step 1: Fetch committee with ETag
+      const { etag } = await this.etagService.fetchWithETag<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'update_committee');
+
+      // Step 2: Update core committee fields with ETag (PUT)
+      updatedCommittee = await this.etagService.updateWithETag<Committee>(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${committeeId}`,
+        etag,
+        committeeData,
+        'update_committee'
+      );
+    } else {
+      // No core fields to update — fetch current committee for the response
+      updatedCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
+    }
+
+    // Step 3: Update channels via PATCH (mailing_list/chat_channel are not accepted by PUT)
+    if (hasChannelsUpdate) {
+      try {
+        const channelsPayload: Record<string, any> = {};
+        if (mailing_list !== undefined) channelsPayload['mailing_list'] = mailing_list;
+        if (chat_channel !== undefined) channelsPayload['chat_channel'] = chat_channel;
+
+        logger.debug(req, 'update_committee_channels', 'Updating committee channels via PATCH', {
+          committee_uid: committeeId,
+          fields: Object.keys(channelsPayload),
+        });
+
+        const patched = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'PATCH', {}, channelsPayload);
+
+        updatedCommittee = { ...updatedCommittee, ...patched };
+      } catch (error) {
+        logger.warning(req, 'update_committee_channels', 'PATCH failed for channels, returning current committee data', {
+          committee_uid: committeeId,
+          error: error instanceof Error ? error.message : 'Unknown error',
+        });
+      }
+    }
+
+    // Step 5: Update settings if provided
+    if (hasSettingsUpdate) {
       try {
         await this.updateCommitteeSettings(req, committeeId, {
           business_email_required,
@@ -271,21 +309,24 @@ export class CommitteeService {
     // Validate committee exists first
     await this.getCommitteeById(req, committeeId);
 
-    // Step 1: Fetch member with ETag
-    const { etag } = await this.etagService.fetchWithETag<CommitteeMember>(
+    // Step 1: Fetch current member with ETag
+    const { data: currentMember, etag } = await this.etagService.fetchWithETag<CommitteeMember>(
       req,
       'LFX_V2_SERVICE',
       `/committees/${committeeId}/members/${memberId}`,
       'update_committee_member'
     );
 
-    // Step 2: Update member with ETag
+    // Step 2: Merge partial update with current data (PUT requires full resource)
+    const mergedData = { ...currentMember, ...data };
+
+    // Step 3: Update member with ETag
     const updatedMember = await this.etagService.updateWithETag<CommitteeMember>(
       req,
       'LFX_V2_SERVICE',
       `/committees/${committeeId}/members/${memberId}`,
       etag,
-      data,
+      mergedData,
       'update_committee_member'
     );
 
@@ -321,14 +362,8 @@ export class CommitteeService {
     });
   }
 
-  /**
-   * Fetches committee memberships for a specific user filtered by committee category
-   * Used to determine user persona based on committee membership
-   * @param req - Express request object
-   * @param username - Username to filter by
-   * @param userEmail - User email to filter by (as fallback)
-   * @param category - Committee category to filter (currently supports: 'Board', 'Maintainers')
-   */
+  // ── Persona Helper ──────────────────────────────────────────────────────
+
   public async getCommitteeMembersByCategory(req: Request, username: string, userEmail: string, category: string): Promise<CommitteeMember[]> {
     const params = {
       v: '1',
@@ -353,6 +388,85 @@ export class CommitteeService {
     });
 
     return userMemberships;
+  }
+
+  // ── My Committees ─────────────────────────────────────────────────────────
+
+  public async getMyCommittees(req: Request, projectUid?: string): Promise<MyCommittee[]> {
+    const username = await getUsernameFromAuth(req);
+    if (!username) {
+      return [];
+    }
+
+    // Fetch all committee_member records for the current user
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      v: '1',
+      type: 'committee_member',
+      tags_all: [`username:${username}`],
+    });
+
+    const memberships = resources.map((r) => r.data);
+
+    if (memberships.length === 0) {
+      return [];
+    }
+
+    logger.debug(req, 'get_my_committees', 'Found user memberships', {
+      username,
+      membership_count: memberships.length,
+    });
+
+    // Build a map of committee_uid → role for quick lookup
+    const membershipMap = new Map<string, { role: string; member_uid: string }>();
+    for (const m of memberships) {
+      membershipMap.set(m.committee_uid, {
+        role: m.role?.name || 'Member',
+        member_uid: m.uid,
+      });
+    }
+
+    // Fetch committee details for each membership in parallel
+    const committeeUids = Array.from(membershipMap.keys());
+    const committees = await Promise.all(
+      committeeUids.map(async (uid) => {
+        try {
+          const committee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${uid}`, 'GET');
+          const memberCount = await this.getCommitteeMembersCount(req, uid);
+          const membership = membershipMap.get(uid)!;
+          return {
+            ...committee,
+            total_members: memberCount,
+            my_role: membership.role,
+            my_member_uid: membership.member_uid,
+          } as MyCommittee;
+        } catch (error) {
+          logger.warning(req, 'get_my_committees', 'Failed to enrich committee membership, skipping committee', {
+            committee_uid: uid,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+          return null;
+        }
+      })
+    );
+
+    const result = committees.filter((c): c is MyCommittee => c !== null);
+
+    // Filter by project_uid server-side if provided
+    if (projectUid) {
+      return result.filter((c) => c.project_uid === projectUid);
+    }
+
+    return result;
+  }
+
+  // ── Join / Leave Methods ────────────────────────────────────────────────────
+
+  public async joinCommittee(req: Request, committeeId: string): Promise<CommitteeMember> {
+    return this.microserviceProxy.proxyRequest<CommitteeMember>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/join`, 'POST');
+  }
+
+  public async leaveCommittee(req: Request, committeeId: string): Promise<void> {
+    await this.microserviceProxy.proxyRequest(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/leave`, 'DELETE');
   }
 
   /**

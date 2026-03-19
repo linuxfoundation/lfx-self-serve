@@ -1,26 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
+import { DecimalPipe, NgClass } from '@angular/common';
+import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
-import { Committee, ProjectContext } from '@lfx-one/shared/interfaces';
+import { Committee, MyCommittee, ProjectContext } from '@lfx-one/shared/interfaces';
+import { RoleBadgeClassPipe } from '@pipes/role-badge-class.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap } from 'rxjs';
+
+import { TooltipModule } from 'primeng/tooltip';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap } from 'rxjs';
 
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
 
 @Component({
   selector: 'lfx-committee-dashboard',
-  imports: [ButtonComponent, CardComponent, CommitteeTableComponent],
+  imports: [DecimalPipe, NgClass, ButtonComponent, CardComponent, CommitteeTableComponent, RoleBadgeClassPipe, TooltipModule],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
 })
@@ -34,21 +38,26 @@ export class CommitteeDashboardComponent {
   private readonly messageService = inject(MessageService);
 
   // Use the configurable label constants
-  protected readonly committeeLabel = COMMITTEE_LABEL.singular;
-  protected readonly committeeLabelPlural = COMMITTEE_LABEL.plural;
+  protected readonly committeeLabel = COMMITTEE_LABEL;
 
-  // State signals
-  public project: Signal<ProjectContext | null>;
+  // ── Writable Signals ──────────────────────────────────────────────────────
+  public committeesLoading = signal<boolean>(true);
+  public myCommitteesLoading = signal<boolean>(true);
+  public refresh = signal(0);
+
+  // ── Forms ─────────────────────────────────────────────────────────────────
   public searchForm: FormGroup;
-  public categoryFilter: WritableSignal<string | null>;
-  public votingStatusFilter: WritableSignal<string | null>;
-  public committeesLoading: WritableSignal<boolean>;
+
+  // ── Computed / Read-only Signals ──────────────────────────────────────────
+  public project: Signal<ProjectContext | null>;
   public committees: Signal<Committee[]>;
+  public myCommittees: Signal<MyCommittee[]>;
+  public myCommitteeUids: Signal<Set<string>>;
   public categories: Signal<{ label: string; value: string | null }[]>;
   public votingStatusOptions: Signal<{ label: string; value: string | null }[]>;
   public filteredCommittees: Signal<Committee[]>;
-  public refresh: BehaviorSubject<void>;
-  private searchTerm: Signal<string>;
+  public categoryFilter: Signal<string | null>;
+  public votingStatusFilter: Signal<string | null>;
 
   // Permission signals
   public isMaintainer: Signal<boolean>;
@@ -57,14 +66,13 @@ export class CommitteeDashboardComponent {
   public foundationCreateCommitteeFlag: Signal<boolean>;
   public canCreateGroup: Signal<boolean>;
 
-  // My committees stub (wired in future PR)
-  public myCommitteeUids: Signal<Set<string>> = computed(() => new Set<string>());
-
-  // Statistics calculations
+  // Statistics
   public totalCommittees: Signal<number>;
   public publicCommittees: Signal<number>;
   public activeVoting: Signal<number>;
   public totalMembers: Signal<number>;
+
+  private searchTerm: Signal<string>;
 
   public constructor() {
     // Initialize project context
@@ -85,18 +93,16 @@ export class CommitteeDashboardComponent {
       return isMaintainerAndNotFoundation || hasFeatureFlag;
     });
 
-    // Initialize state
-    this.committeesLoading = signal<boolean>(true);
-    this.refresh = new BehaviorSubject<void>(undefined);
-
     // Initialize data
     this.committees = this.initializeCommittees();
+    this.myCommittees = this.initializeMyCommittees();
+    this.myCommitteeUids = computed(() => new Set(this.myCommittees().map((c) => c.uid)));
 
     // Initialize search form
     this.searchForm = this.initializeSearchForm();
-    this.categoryFilter = signal<string | null>(null);
-    this.votingStatusFilter = signal<string | null>(null);
     this.searchTerm = this.initializeSearchTerm();
+    this.categoryFilter = this.initializeCategoryFilter();
+    this.votingStatusFilter = this.initializeVotingStatusFilter();
 
     // Initialize filters
     this.categories = this.initializeCategories();
@@ -108,18 +114,6 @@ export class CommitteeDashboardComponent {
     this.publicCommittees = computed(() => this.committees().filter((c) => c.public).length);
     this.activeVoting = computed(() => this.committees().filter((c) => c.enable_voting).length);
     this.totalMembers = computed(() => this.committees().reduce((sum, c) => sum + (c.total_members || 0), 0));
-  }
-
-  public onCategoryChange(value: string | null): void {
-    this.categoryFilter.set(value);
-  }
-
-  public onVotingStatusChange(value: string | null): void {
-    this.votingStatusFilter.set(value);
-  }
-
-  public onSearch(): void {
-    // Trigger search through form control value changes
   }
 
   public openCreateDialog(): void {
@@ -138,21 +132,33 @@ export class CommitteeDashboardComponent {
 
   public refreshCommittees(): void {
     this.committeesLoading.set(true);
-    this.refresh.next();
+    this.refresh.update((v) => v + 1);
   }
 
   public onCommitteeClick(committee: Committee): void {
     this.router.navigate(['/groups', committee.uid]);
   }
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public joinGroup(_committee: Committee): void {
-    // No-op stub — wired in future PR
-  }
+  private initializeMyCommittees(): Signal<MyCommittee[]> {
+    const project$ = toObservable(this.project);
+    const refresh$ = toObservable(this.refresh);
 
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  public inviteToGroup(_committee: Committee): void {
-    // No-op stub — wired in future PR
+    return toSignal(
+      combineLatest([project$, refresh$]).pipe(
+        switchMap(([project]) => {
+          this.myCommitteesLoading.set(true);
+          return this.committeeService.getMyCommittees(project?.uid).pipe(
+            catchError((error) => {
+              console.error('Failed to load my committees:', error);
+              this.myCommitteesLoading.set(false);
+              return of([] as MyCommittee[]);
+            }),
+            finalize(() => this.myCommitteesLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] }
+    );
   }
 
   private initializeSearchForm(): FormGroup {
@@ -167,12 +173,21 @@ export class CommitteeDashboardComponent {
     return toSignal(this.searchForm.get('search')!.valueChanges.pipe(startWith(''), debounceTime(300), distinctUntilChanged()), { initialValue: '' });
   }
 
+  private initializeCategoryFilter(): Signal<string | null> {
+    return toSignal(this.searchForm.get('category')!.valueChanges.pipe(startWith(null), distinctUntilChanged()), { initialValue: null });
+  }
+
+  private initializeVotingStatusFilter(): Signal<string | null> {
+    return toSignal(this.searchForm.get('votingStatus')!.valueChanges.pipe(startWith(null), distinctUntilChanged()), { initialValue: null });
+  }
+
   private initializeCommittees(): Signal<Committee[]> {
     // Convert project signal to observable to react to project changes
     const project$ = toObservable(this.project);
+    const refresh$ = toObservable(this.refresh);
 
     return toSignal(
-      combineLatest([project$, this.refresh]).pipe(
+      combineLatest([project$, refresh$]).pipe(
         switchMap(([project]) => {
           if (!project?.uid) {
             this.committeesLoading.set(false);

@@ -10,7 +10,7 @@
         <lfx-input-text
           [form]="searchForm()"
           control="search"
-          [placeholder]="'Search ' + committeeLabelPlural.toLowerCase() + '...'"
+          [placeholder]="'Search ' + committeeLabel.plural.toLowerCase() + '...'"
           icon="fa-light fa-search"
           styleClass="w-full"
           size="small"
@@ -103,48 +103,40 @@
         </td>
         <td>
           <a [routerLink]="['/groups', committee.uid]">
-            {{ committee.total_members ?? 0 | number }}
+            <!-- prettier-ignore -->
+            {{ (committee.total_members ?? 0) | number }}
           </a>
         </td>
         <td>
-          <!-- Channels: always show both icons. Gray/dimmed when data not yet available from API. -->
+          <!-- Channels: mailing_list and chat_channel are plain strings from upstream -->
           <div class="flex items-center gap-2">
-            @if (sanitizeUrl(committee.mailing_list?.url); as safeMailUrl) {
-              <!-- Mailing list configured — active link -->
+            @if (committee.mailing_list) {
               <a
-                [href]="safeMailUrl"
-                target="_blank"
-                rel="noopener"
+                [href]="'mailto:' + committee.mailing_list"
                 class="inline-flex items-center text-gray-500 hover:text-blue-600 no-underline"
-                [pTooltip]="committee.mailing_list!.name"
+                [pTooltip]="committee.mailing_list"
                 tooltipPosition="top"
-                (click)="$event.stopPropagation()">
-                <i class="fa-light fa-envelope w-4 h-4"></i>
+                aria-label="Mailing list">
+                <i class="fa-light fa-envelope w-4 h-4" aria-hidden="true"></i>
               </a>
             } @else {
-              <!-- Mailing list not yet available from API — grayed-out placeholder -->
-              <span class="inline-flex items-center text-gray-300 cursor-default" pTooltip="Mailing list not yet available" tooltipPosition="top">
+              <span class="inline-flex items-center text-gray-300 cursor-default" pTooltip="No mailing list" tooltipPosition="top">
                 <i class="fa-light fa-envelope w-4 h-4"></i>
               </span>
             }
-            @if (sanitizeUrl(committee.chat_channel?.url); as safeChatUrl) {
-              <!-- Chat channel configured — active link -->
+            @if (committee.chat_channel) {
               <a
-                [href]="safeChatUrl"
+                [href]="committee.chat_channel"
                 target="_blank"
                 rel="noopener"
                 class="inline-flex items-center text-gray-500 hover:text-blue-600 no-underline"
-                [pTooltip]="committee.chat_channel!.name + ' (' + committee.chat_channel!.platform + ')'"
+                pTooltip="Chat channel"
                 tooltipPosition="top"
-                (click)="$event.stopPropagation()">
-                <i
-                  class="fa-brands w-4 h-4"
-                  [class.fa-slack]="committee.chat_channel!.platform === 'slack'"
-                  [class.fa-discord]="committee.chat_channel!.platform === 'discord'"></i>
+                aria-label="Chat channel">
+                <i class="fa-light fa-comment w-4 h-4" aria-hidden="true"></i>
               </a>
             } @else {
-              <!-- Chat channel not yet available from API — grayed-out placeholder -->
-              <span class="inline-flex items-center text-gray-300 cursor-default" pTooltip="Chat channel not yet available" tooltipPosition="top">
+              <span class="inline-flex items-center text-gray-300 cursor-default" pTooltip="No chat channel" tooltipPosition="top">
                 <i class="fa-light fa-comment w-4 h-4"></i>
               </span>
             }
@@ -172,9 +164,9 @@
                     size="small"
                     [outlined]="true"
                     [text]="true"
-                    pTooltip="Invite someone"
+                    pTooltip="Invite — coming soon"
                     tooltipPosition="top"
-                    (onClick)="inviteClick.emit(committee); $event.stopPropagation()"
+                    [disabled]="true"
                     [attr.data-testid]="'committee-invite-' + committee.uid">
                   </lfx-button>
                 }
@@ -185,7 +177,7 @@
                 severity="info"
                 size="small"
                 [outlined]="true"
-                (onClick)="joinClick.emit(committee); $event.stopPropagation()"
+                (onClick)="joinGroup(committee)"
                 [attr.data-testid]="'committee-join-' + committee.uid">
               </lfx-button>
             } @else if (committee.public && committee.join_mode === 'invite_only') {
@@ -204,9 +196,9 @@
                 size="small"
                 [text]="true"
                 styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                (onClick)="onAddMember(committee)"
+                [disabled]="true"
                 [attr.data-testid]="'committee-add-member-' + committee.uid"
-                [pTooltip]="'Add Member'"
+                [pTooltip]="'Add Member — coming soon'"
                 tooltipPosition="top">
               </lfx-button>
               <a [routerLink]="['/groups', committee.uid, 'edit']">
@@ -218,22 +210,10 @@
                   [text]="true"
                   styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
                   [attr.data-testid]="'committee-edit-' + committee.uid"
-                  [pTooltip]="'Edit ' + committeeLabel"
+                  [pTooltip]="'Edit ' + committeeLabel.singular"
                   tooltipPosition="top">
                 </lfx-button>
               </a>
-              <lfx-button
-                icon="fa-light fa-trash-can"
-                severity="secondary"
-                size="small"
-                [text]="true"
-                styleClass="h-8 w-8 text-gray-500 hover:text-gray-700 hover:bg-gray-100"
-                (onClick)="onDeleteCommittee(committee)"
-                [disabled]="isDeleting()"
-                [attr.data-testid]="'committee-delete-' + committee.uid"
-                [pTooltip]="'Delete ' + committeeLabel"
-                tooltipPosition="top">
-              </lfx-button>
             </div>
           </td>
         }
@@ -243,12 +223,9 @@
       <tr>
         <td colspan="8">
           <i class="fa-light fa-folder-open text-3xl text-gray-400 mb-2"></i>
-          <p class="text-sm text-gray-500">No {{ committeeLabelPlural.toLowerCase() }} found</p>
+          <p class="text-sm text-gray-500">No {{ committeeLabel.plural.toLowerCase() }} found</p>
         </td>
       </tr>
     </ng-template>
   </lfx-table>
 </lfx-card>
-
-<!-- Confirmation Dialog -->
-<p-confirmDialog></p-confirmDialog>
