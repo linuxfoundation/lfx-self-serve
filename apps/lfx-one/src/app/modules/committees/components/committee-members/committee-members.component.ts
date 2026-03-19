@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { TitleCasePipe } from '@angular/common';
-import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, OnInit, output, signal, Signal } from '@angular/core';
 import { FullNamePipe } from '@pipes/full-name.pipe';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -14,9 +13,8 @@ import { MenuComponent } from '@components/menu/menu.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
-import { Committee, CommitteeMember, GroupBehavioralClass } from '@lfx-one/shared/interfaces';
+import { Committee, CommitteeMember } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
-import { PersonaService } from '@services/persona.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
@@ -51,13 +49,11 @@ export class CommitteeMembersComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
-  private readonly personaService = inject(PersonaService);
 
   // Input signals
   public committee = input.required<Committee | null>();
   public members = input.required<CommitteeMember[]>();
   public membersLoading = input<boolean>(true);
-  public groupBehavioralClass = input<GroupBehavioralClass>('other');
 
   public readonly refresh = output<void>();
 
@@ -68,9 +64,8 @@ export class CommitteeMembersComponent implements OnInit {
   public committeeLabel = COMMITTEE_LABEL;
 
   // Computed signals — inline per component-organization.md
-  public readonly isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
-  public readonly isMaintainer = computed(() => this.personaService.currentPersona() === 'maintainer');
-  public readonly canManageMembers = computed(() => !this.isBoardMember() && (!!this.committee()?.writer || this.isMaintainer()));
+  // Permission is solely driven by the API's writer flag
+  public readonly canManageMembers = computed(() => !!this.committee()?.writer);
   // Default to hidden while committee is loading (fail closed for privacy)
   public readonly isMembersVisible = computed(() => {
     const committee = this.committee();
@@ -206,9 +201,8 @@ export class CommitteeMembersComponent implements OnInit {
         // Refresh members list by re-fetching
         this.refreshMembers();
       },
-      error: (err: HttpErrorResponse) => {
+      error: () => {
         this.isDeleting.set(false);
-        console.error('Failed to delete member:', err);
 
         this.messageService.add({
           severity: 'error',

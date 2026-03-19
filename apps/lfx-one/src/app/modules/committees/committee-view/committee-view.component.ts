@@ -8,11 +8,10 @@ import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { Committee, CommitteeMemberVisibility, getCommitteeCategorySeverity, TagSeverity } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
-import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { MenuItem, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
 import { CommitteeOverviewComponent } from '../components/committee-overview/committee-overview.component';
@@ -21,17 +20,7 @@ type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 
 
 @Component({
   selector: 'lfx-committee-view',
-  imports: [
-    BreadcrumbComponent,
-    ButtonComponent,
-    TagComponent,
-    ConfirmDialogModule,
-    RouterLink,
-    RouteLoadingComponent,
-    DatePipe,
-    NgClass,
-    CommitteeOverviewComponent,
-  ],
+  imports: [BreadcrumbComponent, ButtonComponent, TagComponent, RouterLink, RouteLoadingComponent, DatePipe, NgClass, CommitteeOverviewComponent],
   templateUrl: './committee-view.component.html',
   styleUrl: './committee-view.component.scss',
 })

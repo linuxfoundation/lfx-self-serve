@@ -54,7 +54,7 @@
             }
             <span class="text-xs text-gray-400">Created {{ committee()?.created_at | date: 'MMM d, y' }}</span>
             @if (committee()?.updated_at) {
-              <span class="text-xs text-gray-400">· Updated {{ committee()?.updated_at | date: 'MMM d, y' }}</span>
+              <span class="text-xs text-gray-400">&middot; Updated {{ committee()?.updated_at | date: 'MMM d, y' }}</span>
             }
           </div>
         </div>
@@ -187,6 +187,4 @@
     </div>
   }
 
-  <!-- Confirmation Dialog -->
-  <p-confirmDialog></p-confirmDialog>
 </div>

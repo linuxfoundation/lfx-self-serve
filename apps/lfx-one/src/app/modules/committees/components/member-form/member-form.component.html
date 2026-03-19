@@ -141,7 +141,6 @@
               placeholder="Start date"
               [showButtonBar]="true"
               appendTo="body"
-
               data-testid="member-form-role-start"></lfx-calendar>
             <lfx-calendar
               [form]="form()"
@@ -149,7 +148,6 @@
               placeholder="End date"
               [showButtonBar]="true"
               appendTo="body"
-
               data-testid="member-form-role-end"></lfx-calendar>
           </div>
           @if (form().errors?.['role_start_after_role_end']) {
@@ -192,7 +190,6 @@
               placeholder="Start date"
               [showButtonBar]="true"
               appendTo="body"
-
               data-testid="member-form-voting-start"></lfx-calendar>
             <lfx-calendar
               [form]="form()"
@@ -200,7 +197,6 @@
               placeholder="End date"
               [showButtonBar]="true"
               appendTo="body"
-
               data-testid="member-form-voting-end"></lfx-calendar>
           </div>
           @if (form().errors?.['voting_status_start_after_voting_status_end']) {
