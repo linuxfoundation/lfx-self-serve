@@ -120,6 +120,27 @@ export interface CreateCommitteeMemberRequest {
 }
 
 /**
+ * Raw form values from the member form dialog
+ * @description Typed shape of the FormGroup.getRawValue() output in MemberFormComponent
+ */
+export interface MemberFormValue {
+  first_name: string;
+  last_name: string;
+  email: string;
+  job_title: string;
+  linkedin_profile: string;
+  organization: string;
+  organization_url: string;
+  role: CommitteeMemberRole | '';
+  voting_status: CommitteeMemberVotingStatus | '';
+  appointed_by: CommitteeMemberAppointedBy | '';
+  role_start: Date | null;
+  role_end: Date | null;
+  voting_status_start: Date | null;
+  voting_status_end: Date | null;
+}
+
+/**
  * State types for tracking member changes
  * @description Tracks the lifecycle state of a committee member during editing
  */
