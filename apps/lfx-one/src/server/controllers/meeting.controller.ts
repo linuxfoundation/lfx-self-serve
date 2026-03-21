@@ -51,7 +51,20 @@ export class MeetingController {
     });
 
     try {
-      const { data: meetings, page_token } = await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_meeting', true);
+      const skipRegistrants = req.query['skip_registrants'] === 'true';
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { skip_registrants: _skipReg, ...queryParams } = req.query as Record<string, any>;
+      const { data: meetings, page_token } = await this.meetingService.getMeetings(req, queryParams, 'v1_meeting', true);
+
+      if (skipRegistrants) {
+        logger.success(req, 'get_meetings', startTime, {
+          meeting_count: meetings.length,
+          has_more_pages: !!page_token,
+          skip_registrants: true,
+        });
+        res.json({ data: meetings, page_token });
+        return;
+      }
 
       const userEmail = (req.oidc.user?.['email'] as string)?.toLowerCase() || '';
       const username = await getUsernameFromAuth(req);

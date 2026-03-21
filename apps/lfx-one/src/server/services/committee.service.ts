@@ -60,8 +60,31 @@ export class CommitteeService {
       })
     );
 
-    // Add writer access field to all committees
-    return await this.accessCheckService.addAccessToResources(req, committees, 'committee');
+    // Verify access for all committees by checking the committee service directly.
+    // The query service returns ALL committees but the committee service enforces per-committee access control.
+    const inaccessibleUids = new Set<string>();
+
+    await Promise.all(
+      committees.map(async (committee) => {
+        try {
+          await this.microserviceProxy.proxyRequest(req, 'LFX_V2_SERVICE', `/committees/${committee.uid}`, 'GET');
+        } catch {
+          inaccessibleUids.add(committee.uid);
+        }
+      })
+    );
+
+    if (inaccessibleUids.size > 0) {
+      logger.debug(req, 'get_committees', 'Filtered inaccessible committees', {
+        filtered_count: inaccessibleUids.size,
+        total: committees.length,
+      });
+    }
+
+    const accessibleCommittees = committees.filter((c) => !inaccessibleUids.has(c.uid));
+
+    // Add writer access field to accessible committees
+    return await this.accessCheckService.addAccessToResources(req, accessibleCommittees, 'committee');
   }
 
   /**
@@ -138,27 +161,34 @@ export class CommitteeService {
    * Updates an existing committee using ETag for concurrency control
    */
   public async updateCommittee(req: Request, committeeId: string, data: CommitteeUpdateData): Promise<Committee> {
-    // Extract settings and channel fields from core committee data
-    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, mailing_list, chat_channel, ...committeeData } = data;
+    // Extract settings fields — everything else goes through PUT
+    const { business_email_required, is_audit_enabled, show_meeting_attendees, member_visibility, ...committeeData } = data;
 
     const hasSettingsUpdate =
       business_email_required !== undefined || is_audit_enabled !== undefined || show_meeting_attendees !== undefined || member_visibility !== undefined;
-    const hasChannelsUpdate = mailing_list !== undefined || chat_channel !== undefined;
     const hasCoreUpdate = Object.keys(committeeData).length > 0;
 
     let updatedCommittee: Committee;
 
     if (hasCoreUpdate) {
       // Step 1: Fetch committee with ETag
-      const { etag } = await this.etagService.fetchWithETag<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'update_committee');
+      const { data: currentCommittee, etag } = await this.etagService.fetchWithETag<Committee>(
+        req,
+        'LFX_V2_SERVICE',
+        `/committees/${committeeId}`,
+        'update_committee'
+      );
 
-      // Step 2: Update core committee fields with ETag (PUT)
+      // Step 2: Merge partial update with current data (PUT requires name, category, project_uid)
+      const mergedData = { ...currentCommittee, ...committeeData };
+
+      // Step 3: Update committee with ETag (PUT)
       updatedCommittee = await this.etagService.updateWithETag<Committee>(
         req,
         'LFX_V2_SERVICE',
         `/committees/${committeeId}`,
         etag,
-        committeeData,
+        mergedData,
         'update_committee'
       );
     } else {
@@ -166,30 +196,7 @@ export class CommitteeService {
       updatedCommittee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'GET');
     }
 
-    // Step 3: Update channels via PATCH (mailing_list/chat_channel are not accepted by PUT)
-    if (hasChannelsUpdate) {
-      try {
-        const channelsPayload: Record<string, any> = {};
-        if (mailing_list !== undefined) channelsPayload['mailing_list'] = mailing_list;
-        if (chat_channel !== undefined) channelsPayload['chat_channel'] = chat_channel;
-
-        logger.debug(req, 'update_committee_channels', 'Updating committee channels via PATCH', {
-          committee_uid: committeeId,
-          fields: Object.keys(channelsPayload),
-        });
-
-        const patched = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}`, 'PATCH', {}, channelsPayload);
-
-        updatedCommittee = { ...updatedCommittee, ...patched };
-      } catch (error) {
-        logger.warning(req, 'update_committee_channels', 'PATCH failed for channels, returning current committee data', {
-          committee_uid: committeeId,
-          error: error instanceof Error ? error.message : 'Unknown error',
-        });
-      }
-    }
-
-    // Step 5: Update settings if provided
+    // Step 3: Update settings if provided
     if (hasSettingsUpdate) {
       try {
         await this.updateCommitteeSettings(req, committeeId, {
