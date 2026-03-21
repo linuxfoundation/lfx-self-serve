@@ -77,6 +77,46 @@ export class MeetingService {
     return this.getMeetings(params).pipe(map((response) => response.data));
   }
 
+  public getMeetingsByCommittee(committeeId: string, limit?: number, orderBy?: string): Observable<Meeting[]> {
+    let params = new HttpParams().set('parent', `committee:${committeeId}`);
+
+    if (limit) {
+      params = params.set('limit', limit.toString());
+    }
+
+    if (orderBy) {
+      params = params.set('order', orderBy);
+    }
+
+    return this.getMeetings(params).pipe(map((response) => response.data));
+  }
+
+  public getMeetingsCountByCommittee(committeeId: string): Observable<number> {
+    const params = new HttpParams().set('parent', `committee:${committeeId}`);
+    return this.http.get<QueryServiceCountResponse>('/api/meetings/count', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to load meetings count:', error);
+        return of({ count: 0 });
+      }),
+      map((response) => response.count)
+    );
+  }
+
+  public getUpcomingMeetingsByCommittee(committeeId: string, limit: number = 5): Observable<Meeting[]> {
+    const params = new HttpParams().set('parent', `committee:${committeeId}`).set('limit', limit.toString()).set('skip_registrants', 'true');
+    return this.getMeetings(params).pipe(map((response) => response.data));
+  }
+
+  public getPastMeetingsByCommittee(committeeId: string, limit?: number): Observable<PastMeeting[]> {
+    let params = new HttpParams().set('parent', `committee:${committeeId}`);
+
+    if (limit) {
+      params = params.set('limit', limit.toString());
+    }
+
+    return this.getPastMeetings(params).pipe(map((response) => response.data));
+  }
+
   public getMeetingsCountByProject(uid: string): Observable<number> {
     const params = new HttpParams().set('tags', `project_uid:${uid}`);
     return this.http
