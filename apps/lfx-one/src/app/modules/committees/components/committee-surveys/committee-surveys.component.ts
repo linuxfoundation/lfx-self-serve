@@ -9,7 +9,7 @@ import { Committee, Survey } from '@lfx-one/shared/interfaces';
 import { SurveysTableComponent } from '@app/modules/surveys/components/surveys-table/surveys-table.component';
 import { SurveyResultsDrawerComponent } from '@app/modules/surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { SurveyService } from '@services/survey.service';
-import { catchError, filter, of, switchMap, tap } from 'rxjs';
+import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-surveys',
@@ -45,14 +45,14 @@ export class CommitteeSurveysComponent {
     return toSignal(
       toObservable(this.committee).pipe(
         filter((c) => !!c?.uid),
+        tap(() => this.loading.set(true)),
         switchMap((c) =>
           this.surveyService.getSurveysByCommittee(c.uid, undefined, 'last_modified_at.desc').pipe(
-            tap(() => this.loading.set(false)),
             catchError((error) => {
               console.error('Failed to load committee surveys:', error);
-              this.loading.set(false);
               return of([]);
-            })
+            }),
+            finalize(() => this.loading.set(false))
           )
         )
       ),
