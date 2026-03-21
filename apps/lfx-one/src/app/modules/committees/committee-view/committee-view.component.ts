@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { Component, computed, effect, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, NgClass } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -78,6 +78,18 @@ export class CommitteeViewComponent {
   ];
 
   public visibleTabs: Signal<typeof this.tabConfig> = computed(() => this.tabConfig.filter((tab) => tab.visible()));
+
+  // Reset activeTab to overview if current tab becomes hidden
+  private readonly syncActiveTab = effect(
+    () => {
+      const visible = this.visibleTabs();
+      const current = this.activeTab();
+      if (visible.length > 0 && !visible.some((t) => t.key === current)) {
+        this.activeTab.set('overview');
+      }
+    },
+    { allowSignalWrites: true }
+  );
 
   // -- Public methods --
   public goBack(): void {
