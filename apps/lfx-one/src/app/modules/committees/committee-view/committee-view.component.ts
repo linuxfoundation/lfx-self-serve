@@ -68,7 +68,7 @@ export class CommitteeViewComponent {
       label: 'Members',
       icon: 'fa-users',
       visible: () => this.isMemberOrAdmin() && this.isMembersTabVisible(),
-      badge: () => this.committee()?.total_members || null,
+      badge: () => this.committee()?.total_members ?? null,
     },
     { key: 'votes', label: 'Votes', icon: 'fa-check-to-slot', visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible() },
     { key: 'meetings', label: 'Meetings', icon: 'fa-calendar', visible: () => this.isMemberOrAdmin() },
