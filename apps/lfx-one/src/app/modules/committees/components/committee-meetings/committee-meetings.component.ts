@@ -42,9 +42,12 @@ export class CommitteeMeetingsComponent {
   ];
 
   // Sync timeFilter with initialTimeFilter input changes
-  private readonly syncTimeFilter = effect(() => {
-    this.timeFilter.set(this.initialTimeFilter());
-  });
+  private readonly syncTimeFilter = effect(
+    () => {
+      this.timeFilter.set(this.initialTimeFilter());
+    },
+    { allowSignalWrites: true }
+  );
 
   // Loading state
   public meetingsLoading = signal(true);
@@ -72,7 +75,10 @@ export class CommitteeMeetingsComponent {
         tap(() => this.meetingsLoading.set(true)),
         switchMap((c) =>
           this.meetingService.getMeetingsByCommittee(c.uid, undefined, 'start_time.asc').pipe(
-            catchError(() => of([])),
+            catchError((error) => {
+              console.error('Failed to load committee meetings:', error);
+              return of([]);
+            }),
             finalize(() => this.meetingsLoading.set(false))
           )
         )
@@ -88,7 +94,10 @@ export class CommitteeMeetingsComponent {
         tap(() => this.pastMeetingsLoading.set(true)),
         switchMap((c) =>
           this.meetingService.getPastMeetingsByCommittee(c.uid).pipe(
-            catchError(() => of([])),
+            catchError((error) => {
+              console.error('Failed to load past committee meetings:', error);
+              return of([]);
+            }),
             finalize(() => this.pastMeetingsLoading.set(false))
           )
         )
