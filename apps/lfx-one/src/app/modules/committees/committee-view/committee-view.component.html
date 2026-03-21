@@ -69,64 +69,27 @@
 
       <!-- Tabs -->
       <div class="flex gap-1 border-b" data-testid="committee-view-tabs">
-        <button
-          (click)="activeTab.set('overview')"
-          class="px-4 py-2 text-sm font-medium transition-colors"
-          [ngClass]="{
-            'border-b-2 border-blue-600 text-blue-600': activeTab() === 'overview',
-            'text-gray-500': activeTab() !== 'overview',
-          }">
-          <i class="fa-light fa-gauge mr-2"></i>Overview
-        </button>
-        @if (isMembersTabVisible()) {
+        @for (tab of visibleTabs(); track tab.key) {
           <button
-            (click)="activeTab.set('members')"
+            (click)="activeTab.set(tab.key)"
             class="px-4 py-2 text-sm font-medium transition-colors"
             [ngClass]="{
-              'border-b-2 border-blue-600 text-blue-600': activeTab() === 'members',
-              'text-gray-500': activeTab() !== 'members',
+              'border-b-2 border-blue-600 text-blue-600': activeTab() === tab.key,
+              'text-gray-500': activeTab() !== tab.key,
             }">
-            <i class="fa-light fa-users mr-2"></i>Members
+            <i class="fa-light {{ tab.icon }} mr-2"></i>{{ tab.label }}
+            @if (tab.badge) {
+              <span
+                class="ml-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
+                [ngClass]="{
+                  'bg-blue-50 text-blue-700': activeTab() === tab.key,
+                  'bg-gray-100 text-gray-600': activeTab() !== tab.key,
+                }">
+                {{ tab.badge() }}
+              </span>
+            }
           </button>
         }
-        @if (isVotesTabVisible()) {
-          <button
-            (click)="activeTab.set('votes')"
-            class="px-4 py-2 text-sm font-medium transition-colors"
-            [ngClass]="{
-              'border-b-2 border-blue-600 text-blue-600': activeTab() === 'votes',
-              'text-gray-500': activeTab() !== 'votes',
-            }">
-            <i class="fa-light fa-check-to-slot mr-2"></i>Votes
-          </button>
-        }
-        <button
-          (click)="activeTab.set('meetings')"
-          class="px-4 py-2 text-sm font-medium transition-colors"
-          [ngClass]="{
-            'border-b-2 border-blue-600 text-blue-600': activeTab() === 'meetings',
-            'text-gray-500': activeTab() !== 'meetings',
-          }">
-          <i class="fa-light fa-calendar mr-2"></i>Meetings
-        </button>
-        <button
-          (click)="activeTab.set('surveys')"
-          class="px-4 py-2 text-sm font-medium transition-colors"
-          [ngClass]="{
-            'border-b-2 border-blue-600 text-blue-600': activeTab() === 'surveys',
-            'text-gray-500': activeTab() !== 'surveys',
-          }">
-          <i class="fa-light fa-chart-simple mr-2"></i>Surveys
-        </button>
-        <button
-          (click)="activeTab.set('documents')"
-          class="px-4 py-2 text-sm font-medium transition-colors"
-          [ngClass]="{
-            'border-b-2 border-blue-600 text-blue-600': activeTab() === 'documents',
-            'text-gray-500': activeTab() !== 'documents',
-          }">
-          <i class="fa-light fa-folder-open mr-2"></i>Documents
-        </button>
       </div>
 
       <!-- Tab Panels -->
@@ -186,5 +149,4 @@
       }
     </div>
   }
-
 </div>
