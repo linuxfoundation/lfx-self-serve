@@ -2,207 +2,451 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-6 pt-4">
-  <!-- Stats Row -->
-  <div class="grid grid-cols-2 md:grid-cols-4 gap-4" data-testid="committee-view-stats">
-    <!-- Total Members -->
-    <lfx-card>
-      <div class="flex items-center gap-3 py-1">
-        <div class="w-10 h-10 rounded-lg bg-blue-50 flex items-center justify-center flex-shrink-0">
-          <i class="fa-light fa-users text-blue-600"></i>
-        </div>
-        <div>
-          <p class="text-2xl font-semibold text-gray-900">{{ committee().total_members || 0 }}</p>
-          <p class="text-xs text-gray-500">Members</p>
-        </div>
-      </div>
-    </lfx-card>
-
-    <!-- Voting Reps -->
-    @if (committee().enable_voting) {
-      <lfx-card>
-        <div class="flex items-center gap-3 py-1">
-          <div class="w-10 h-10 rounded-lg bg-emerald-50 flex items-center justify-center flex-shrink-0">
-            <i class="fa-light fa-check-to-slot text-emerald-600"></i>
+  <!-- Role Banner -->
+  @if (!myRoleLoading()) {
+    @switch (bannerType()) {
+      @case ('visitor') {
+        @if (canJoin()) {
+          <div class="rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-6" data-testid="committee-overview-visitor-banner">
+            <div class="flex items-center justify-between">
+              <div class="flex flex-col gap-1">
+                <h3 class="text-base font-semibold text-gray-900">Interested in this {{ categoryLabel() }}?</h3>
+                <p class="text-sm text-gray-600">Join to participate in meetings, votes, and surveys.</p>
+              </div>
+              <lfx-button [label]="joinButtonLabel()" severity="info" size="small" icon="fa-light fa-right-to-bracket" (onClick)="onJoinClick()"></lfx-button>
+            </div>
           </div>
-          <div>
-            <p class="text-2xl font-semibold text-emerald-600">{{ committee().total_voting_repos || 0 }}</p>
-            <p class="text-xs text-gray-500">Voting Reps</p>
-          </div>
+        }
+      }
+      @case ('member') {
+        <div class="rounded-xl bg-green-50 border border-green-100 px-5 py-3 flex items-center gap-3" data-testid="committee-overview-member-banner">
+          <i class="fa-light fa-circle-check text-green-600"></i>
+          <span class="text-sm text-green-800">You are a member of this {{ categoryLabel() }}.</span>
         </div>
-      </lfx-card>
+      }
+      @case ('chair') {
+        <div class="rounded-xl bg-blue-50 border border-blue-100 px-5 py-3 flex items-center gap-3" data-testid="committee-overview-chair-banner">
+          <i class="fa-light fa-user-crown text-blue-600"></i>
+          <span class="text-sm text-blue-800">You are a {{ myRole() }} of this {{ categoryLabel() }}.</span>
+        </div>
+      }
     }
+  }
 
-    <!-- Visibility -->
-    <lfx-card>
-      <div class="flex items-center gap-3 py-1">
-        <div class="w-10 h-10 rounded-lg bg-purple-50 flex items-center justify-center flex-shrink-0">
-          <i class="fa-light fa-eye text-purple-600"></i>
-        </div>
-        <div>
-          <p class="text-2xl font-semibold text-gray-900">{{ committee().public ? 'Public' : 'Private' }}</p>
-          <p class="text-xs text-gray-500">Visibility</p>
-        </div>
+  <!-- Stats Strip: 5 stat cards + Chairs card inline -->
+  <div class="grid grid-cols-2 md:grid-cols-[repeat(5,1fr)_1.5fr] gap-4 items-stretch" data-testid="committee-overview-stats">
+    <!-- Members -->
+    <lfx-card [style]="{ height: '100%' }">
+      <div class="flex flex-col items-center justify-center gap-1 h-full">
+        <p class="text-2xl font-bold text-gray-900">{{ committee().total_members || 0 }}</p>
+        <p class="text-xs text-gray-500">Members</p>
       </div>
     </lfx-card>
 
-    <!-- Join Mode -->
-    <lfx-card>
-      <div class="flex items-center gap-3 py-1">
-        <div class="w-10 h-10 rounded-lg bg-amber-50 flex items-center justify-center flex-shrink-0">
-          <i class="fa-light fa-door-open text-amber-600"></i>
-        </div>
-        <div>
-          <p class="text-2xl font-semibold text-gray-900">{{ committee().join_mode | joinModeLabel }}</p>
-          <p class="text-xs text-gray-500">Join Mode</p>
-        </div>
+    <!-- Organizations -->
+    <lfx-card [style]="{ height: '100%' }">
+      <div class="flex flex-col items-center justify-center gap-1 h-full">
+        @if (membersLoading()) {
+          <p class="text-2xl font-bold text-gray-400">&mdash;</p>
+        } @else {
+          <p class="text-2xl font-bold text-gray-900">{{ orgCount() }}</p>
+        }
+        <p class="text-xs text-gray-500">Organizations</p>
+      </div>
+    </lfx-card>
+
+    <!-- Meetings YTD -->
+    <lfx-card [style]="{ height: '100%' }">
+      <div class="flex flex-col items-center justify-center gap-1 h-full">
+        @if (meetingsLoading()) {
+          <p class="text-2xl font-bold text-gray-400">&mdash;</p>
+        } @else {
+          <p class="text-2xl font-bold text-gray-900">{{ meetingsCount() }}</p>
+        }
+        <p class="text-xs text-gray-500">Meetings (YTD)</p>
+      </div>
+    </lfx-card>
+
+    <!-- Active Votes -->
+    <lfx-card [style]="{ height: '100%' }">
+      <div class="flex flex-col items-center justify-center gap-1 h-full">
+        @if (votesLoading()) {
+          <p class="text-2xl font-bold text-gray-400">&mdash;</p>
+        } @else {
+          <p class="text-2xl font-bold text-gray-900">{{ activeVotesCount() }}</p>
+        }
+        <p class="text-xs text-gray-500">Active Votes</p>
+      </div>
+    </lfx-card>
+
+    <!-- Open Surveys -->
+    <lfx-card [style]="{ height: '100%' }">
+      <div class="flex flex-col items-center justify-center gap-1 h-full">
+        @if (surveysLoading()) {
+          <p class="text-2xl font-bold text-gray-400">&mdash;</p>
+        } @else {
+          <p class="text-2xl font-bold text-gray-900">{{ openSurveysCount() }}</p>
+        }
+        <p class="text-xs text-gray-500">Open Surveys</p>
+      </div>
+    </lfx-card>
+
+    <!-- Chairs Card (inline in stats row) -->
+    <lfx-card [style]="{ height: '100%' }" data-testid="committee-overview-chairs">
+      <div class="relative flex flex-col justify-center gap-1.5 h-full">
+        @if (canEdit() && !membersLoading()) {
+          <button
+            class="absolute top-0 right-0 w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+            title="Edit chairs"
+            aria-label="Edit chairs"
+            data-testid="committee-overview-edit-chairs-btn"
+            (click)="startEditChairs()">
+            <i class="fa-light fa-pen-to-square text-[10px]"></i>
+          </button>
+        }
+        <p class="text-[11px] text-gray-500 uppercase tracking-wide font-semibold">Chairs</p>
+        @if (membersLoading()) {
+          <div class="flex flex-col gap-1.5">
+            <p-skeleton width="100%" height="1.75rem" />
+            <p-skeleton width="100%" height="1.75rem" />
+          </div>
+        } @else if (chairs().length > 0) {
+          <div class="flex flex-col gap-1.5">
+            @for (chair of chairs(); track chair.uid) {
+              <div class="flex items-center gap-2">
+                <div
+                  class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
+                  [style.background-color]="chair.role?.name === 'Chair' ? '#6366f1' : '#f59e0b'">
+                  {{ (chair.first_name[0] || '') + (chair.last_name[0] || '') }}
+                </div>
+                <div class="min-w-0">
+                  <p class="text-[13px] font-medium text-gray-900 truncate">{{ chair.first_name }} {{ chair.last_name }}</p>
+                  <p class="text-[10.5px] text-gray-500">{{ chair.role?.name ?? 'Member' }}</p>
+                </div>
+              </div>
+            }
+          </div>
+        } @else {
+          <div class="flex items-center gap-2 py-1">
+            <i class="fa-light fa-user-crown text-gray-300"></i>
+            <p class="text-xs text-gray-400">No chairs assigned</p>
+          </div>
+        }
       </div>
     </lfx-card>
   </div>
 
-  <!-- Two-Column Layout -->
-  <div class="grid grid-cols-1 lg:grid-cols-3 gap-6">
-    <!-- Left Column: Channels & Configurations -->
-    <div class="lg:col-span-2 flex flex-col gap-6">
-      <!-- Channels Card -->
-      <lfx-card data-testid="committee-view-channels">
-        <div class="flex flex-col gap-4">
-          <h3 class="text-sm font-medium"><i class="fa-light fa-comments text-gray-400 mr-2"></i>Channels</h3>
-          <div class="flex flex-col gap-4">
-            <!-- Mailing List -->
-            @if (committee().mailing_list; as mailingList) {
-              <div class="flex flex-col gap-2">
-                <p class="text-xs text-gray-400 uppercase tracking-wider">Mailing List</p>
-                <div class="flex items-center gap-3">
-                  <div class="w-9 h-9 rounded-full bg-blue-50 flex items-center justify-center flex-shrink-0">
-                    <i class="fa-light fa-envelope text-blue-600 text-sm"></i>
-                  </div>
-                  <div class="min-w-0">
-                    <a [href]="'mailto:' + mailingList" class="text-sm font-medium text-blue-600 hover:text-blue-700 truncate block">
-                      {{ mailingList }}
-                    </a>
-                  </div>
-                </div>
-              </div>
-            } @else {
-              <div class="flex flex-col gap-2 opacity-40">
-                <p class="text-xs text-gray-400 uppercase tracking-wider">Mailing List</p>
-                <div class="flex items-center gap-3">
-                  <div class="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <i class="fa-light fa-envelope text-gray-400 text-sm"></i>
-                  </div>
-                  <p class="text-sm text-gray-400">No mailing list connected</p>
-                </div>
-              </div>
-            }
-
-            <!-- Chat Channel -->
-            @if (committee().chat_channel; as chatChannel) {
-              <div class="flex flex-col gap-2">
-                <p class="text-xs text-gray-400 uppercase tracking-wider">Chat Channel</p>
-                <div class="flex items-center gap-3">
-                  <div class="w-9 h-9 rounded-full bg-purple-50 flex items-center justify-center flex-shrink-0">
-                    <i class="fa-light fa-comment text-purple-600 text-sm"></i>
-                  </div>
-                  <div class="min-w-0">
-                    <a
-                      [href]="chatChannel"
-                      target="_blank"
-                      rel="noopener noreferrer"
-                      class="text-sm font-medium text-blue-600 hover:text-blue-700 truncate block">
-                      {{ chatChannel }}
-                      <i class="fa-light fa-arrow-up-right-from-square text-[10px] ml-1"></i>
-                    </a>
-                  </div>
-                </div>
-              </div>
-            } @else {
-              <div class="flex flex-col gap-2 opacity-40">
-                <p class="text-xs text-gray-400 uppercase tracking-wider">Chat Channel</p>
-                <div class="flex items-center gap-3">
-                  <div class="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <i class="fa-light fa-comment text-gray-400 text-sm"></i>
-                  </div>
-                  <p class="text-sm text-gray-400">No chat channel connected</p>
-                </div>
-              </div>
-            }
-
-            <!-- Website -->
-            @if (committee().website) {
-              <div class="flex flex-col gap-2">
-                <p class="text-xs text-gray-400 uppercase tracking-wider">Website</p>
-                <div class="flex items-center gap-3">
-                  <div class="w-9 h-9 rounded-full bg-gray-50 flex items-center justify-center flex-shrink-0">
-                    <i class="fa-light fa-globe text-gray-600 text-sm"></i>
-                  </div>
-                  <a
-                    [href]="committee().website"
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    class="text-sm font-medium text-blue-600 hover:text-blue-700 truncate">
-                    {{ committee().website }}
-                    <i class="fa-light fa-arrow-up-right-from-square text-[10px] ml-1"></i>
-                  </a>
-                </div>
-              </div>
-            } @else {
-              <div class="flex flex-col gap-2">
-                <p class="text-xs text-gray-400 uppercase tracking-wider">Website</p>
-                <div class="flex items-center gap-3">
-                  <div class="w-9 h-9 rounded-full bg-gray-100 flex items-center justify-center flex-shrink-0">
-                    <i class="fa-light fa-globe text-gray-400 text-sm"></i>
-                  </div>
-                  <p class="text-sm text-gray-400">No website configured</p>
-                </div>
-              </div>
-            }
-          </div>
+  <!-- About Card (merged from About tab) -->
+  <lfx-card data-testid="committee-overview-about">
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <h3 class="text-sm font-semibold text-gray-900">About</h3>
+        @if (canEdit() && !editingDescription() && !isVisitor()) {
+          <button
+            class="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
+            title="Edit description"
+            aria-label="Edit description"
+            data-testid="committee-overview-edit-description-btn"
+            (click)="startEditDescription()">
+            <i class="fa-light fa-pen-to-square text-xs"></i>
+          </button>
+        }
+      </div>
+      @if (editingDescription()) {
+        <lfx-textarea
+          [form]="descriptionForm"
+          control="description"
+          [rows]="8"
+          [maxlength]="2000"
+          placeholder="Enter a description for this group..."
+          [autoResize]="true"
+          styleClass="!min-h-[160px] !w-full"
+          dataTest="committee-overview-description-textarea"></lfx-textarea>
+        <div class="flex justify-end gap-2">
+          <lfx-button
+            label="Cancel"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            (onClick)="cancelEditDescription()"
+            [disabled]="savingDescription()"></lfx-button>
+          <lfx-button label="Save" severity="info" size="small" (onClick)="saveDescription()" [loading]="savingDescription()"></lfx-button>
         </div>
-      </lfx-card>
+      } @else {
+        @if (committee().description) {
+          <div class="text-sm text-gray-600 leading-relaxed whitespace-pre-line" [innerHTML]="committee().description | linkify"></div>
+        } @else {
+          <p class="text-sm text-gray-400 italic">No description provided.</p>
+        }
+      }
+    </div>
+  </lfx-card>
 
-      <!-- Configurations Card (admin only) -->
-      @if (canEdit()) {
-        <lfx-card data-testid="committee-view-configurations">
-          <div class="flex flex-col gap-4">
-            <h3 class="text-sm font-medium"><i class="fa-light fa-gear text-gray-400 mr-2"></i>Configurations</h3>
+  <!-- Conditional Layout: Member/Chair Dashboard vs Visitor View -->
+  @if (!isVisitor()) {
+    <!-- Meetings Row: Last Meeting + Next Meeting -->
+    <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
+      <!-- Left Column: Last Meeting -->
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-normal text-gray-900 flex items-center gap-2">
+            <i class="fa-light fa-clock-rotate-left text-gray-400"></i>
+            Last Meeting
+          </h2>
+          <button class="text-xs text-blue-600 hover:text-blue-800 font-medium" (click)="navigateToTab('meetings:past')">View All</button>
+        </div>
+        @if (pastMeetingsLoading()) {
+          <lfx-card>
             <div class="flex flex-col gap-3">
-              <div class="flex items-center justify-between" data-testid="committee-view-config-public">
-                <span class="text-sm text-gray-600">Public</span>
-                <lfx-tag [value]="committee().public ? 'Yes' : 'No'" [severity]="committee().public ? 'success' : 'danger'"></lfx-tag>
-              </div>
-              <div class="flex items-center justify-between" data-testid="committee-view-config-voting">
-                <span class="text-sm text-gray-600">Voting</span>
-                <lfx-tag [value]="committee().enable_voting ? 'Enabled' : 'Disabled'" [severity]="committee().enable_voting ? 'success' : 'danger'"></lfx-tag>
-              </div>
-              <div class="flex items-center justify-between" data-testid="committee-view-config-business-email">
-                <span class="text-sm text-gray-600">Business Email</span>
-                <lfx-tag
-                  [value]="committee().business_email_required ? 'Required' : 'Optional'"
-                  [severity]="committee().business_email_required ? 'info' : 'secondary'"></lfx-tag>
-              </div>
-              <div class="flex items-center justify-between" data-testid="committee-view-config-audit">
-                <span class="text-sm text-gray-600">Audit</span>
-                <lfx-tag
-                  [value]="committee().is_audit_enabled ? 'Enabled' : 'Disabled'"
-                  [severity]="committee().is_audit_enabled ? 'success' : 'danger'"></lfx-tag>
-              </div>
-              <div class="flex items-center justify-between" data-testid="committee-view-config-join-mode">
-                <span class="text-sm text-gray-600">Join Mode</span>
-                <lfx-tag [value]="committee().join_mode | joinModeLabel" [severity]="committee().join_mode === 'open' ? 'success' : 'secondary'"></lfx-tag>
-              </div>
-              <div class="flex items-center justify-between" data-testid="committee-view-config-sso">
-                <span class="text-sm text-gray-600">SSO Group</span>
-                <lfx-tag
-                  [value]="committee().sso_group_enabled ? 'Enabled' : 'Disabled'"
-                  [severity]="committee().sso_group_enabled ? 'success' : 'danger'"></lfx-tag>
+              <p-skeleton width="60%" height="1rem" />
+              <p-skeleton width="40%" height="0.75rem" />
+            </div>
+          </lfx-card>
+        } @else if (lastMeeting(); as meeting) {
+          <lfx-card>
+            <div class="flex flex-col gap-3">
+              <div class="flex items-start justify-between">
+                <div class="flex flex-col gap-1 min-w-0">
+                  <p class="text-sm font-medium text-gray-900 truncate">{{ meeting.title }}</p>
+                  <p class="text-xs text-gray-500">{{ meeting.scheduled_start_time | date: "MMM d, y 'at' h:mm a" }}</p>
+                </div>
               </div>
             </div>
+          </lfx-card>
+        } @else {
+          <lfx-card>
+            <div class="flex flex-col items-center py-6">
+              <i class="fa-light fa-clock-rotate-left text-2xl text-gray-300 mb-2"></i>
+              <p class="text-sm font-medium text-gray-500">No past meetings</p>
+              <p class="text-xs text-gray-400 mt-1">Past meetings for this group will appear here.</p>
+            </div>
+          </lfx-card>
+        }
+      </div>
+
+      <!-- Right Column: Next Meeting -->
+      <div class="flex flex-col gap-2">
+        <div class="flex items-center justify-between">
+          <h2 class="text-base font-normal text-gray-900 flex items-center gap-2">
+            <i class="fa-light fa-calendar text-gray-400"></i>
+            Next Meeting
+          </h2>
+          <button class="text-xs text-blue-600 hover:text-blue-800 font-medium" (click)="navigateToTab('meetings:upcoming')">View All</button>
+        </div>
+        @if (upcomingMeetingsLoading()) {
+          <lfx-card>
+            <div class="flex flex-col gap-3">
+              <p-skeleton width="60%" height="1rem" />
+              <p-skeleton width="40%" height="0.75rem" />
+            </div>
+          </lfx-card>
+        } @else if (nextMeeting(); as meeting) {
+          <lfx-dashboard-meeting-card [meeting]="meeting" />
+        } @else {
+          <lfx-card>
+            <div class="flex flex-col items-center py-6">
+              <i class="fa-light fa-calendar-check text-2xl text-gray-300 mb-2"></i>
+              <p class="text-sm font-medium text-gray-500">No upcoming meetings</p>
+              <p class="text-xs text-gray-400 mt-1">Scheduled meetings for this group will appear here.</p>
+            </div>
+          </lfx-card>
+        }
+      </div>
+    </div>
+
+    <!-- My Pending Actions -->
+    <div class="flex flex-col gap-2">
+      <h2 class="text-base font-normal text-gray-900 flex items-center gap-2">
+        <i class="fa-light fa-list-check text-gray-400"></i>
+        My Pending Actions
+      </h2>
+      @if (votesLoading() || surveysLoading()) {
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          <lfx-card>
+            <div class="flex flex-col gap-3">
+              <p-skeleton width="30%" height="1.25rem" borderRadius="1rem" />
+              <p-skeleton width="70%" height="1rem" />
+              <p-skeleton width="100%" height="2rem" borderRadius="0.5rem" />
+            </div>
+          </lfx-card>
+          <lfx-card>
+            <div class="flex flex-col gap-3">
+              <p-skeleton width="30%" height="1.25rem" borderRadius="1rem" />
+              <p-skeleton width="70%" height="1rem" />
+              <p-skeleton width="100%" height="2rem" borderRadius="0.5rem" />
+            </div>
+          </lfx-card>
+        </div>
+      } @else if (pendingActionItems().length > 0) {
+        <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
+          @for (item of pendingActionItems(); track $index) {
+            <div
+              class="p-4 flex flex-col gap-3 border rounded-xl shadow-md transition-all cursor-pointer"
+              [ngClass]="{
+                'bg-amber-50 hover:border-amber-300': item.severity === 'warn',
+                'bg-blue-200 hover:border-blue-300': item.severity === 'info',
+                'bg-emerald-200 hover:border-emerald-300': item.severity === 'success',
+                'bg-violet-200 hover:border-violet-300': item.severity === 'secondary',
+              }"
+              (click)="handlePendingActionClick(item)">
+              <div class="flex items-center gap-2 flex-wrap">
+                <lfx-tag [value]="item.type" [severity]="item.severity" [icon]="item.icon" />
+              </div>
+              <div class="flex items-start justify-between gap-2">
+                <div class="flex flex-col gap-1 truncate max-w-full">
+                  <h4 class="line-clamp-2 text-sm leading-tight font-medium text-gray-900 truncate">{{ item.text }}</h4>
+                  @if (item.date) {
+                    <span class="text-xs text-gray-600 whitespace-nowrap">{{ item.date }}</span>
+                  }
+                </div>
+              </div>
+              <div class="flex gap-2">
+                <lfx-button size="small" class="w-full text-sm" styleClass="w-full text-sm h-8" severity="secondary" [label]="item.buttonText"> </lfx-button>
+              </div>
+            </div>
+          }
+        </div>
+      } @else {
+        <lfx-card>
+          <div class="flex flex-col items-center py-6">
+            <i class="fa-light fa-circle-check text-2xl text-gray-300 mb-2"></i>
+            <p class="text-sm font-medium text-gray-500">You're all caught up!</p>
+            <p class="text-xs text-gray-400 mt-1">Active votes and open surveys will appear here.</p>
           </div>
         </lfx-card>
       }
     </div>
 
-    <!-- Leadership card removed: chair/co_chair are not returned by GET /committees/{uid}.
-             Member-role-based derivation will be added in a follow-up PR. -->
-  </div>
+    <!-- Key Information Strip -->
+    <lfx-card data-testid="committee-overview-key-info">
+      <div class="flex items-center gap-4 flex-wrap text-sm">
+        @if (committee().project_name || committee().foundation_name) {
+          <div class="flex items-center gap-2">
+            <span class="text-gray-500">Parent Project</span>
+            <span class="text-xs font-medium text-blue-600">{{ committee().project_name || committee().foundation_name }}</span>
+          </div>
+          <span class="text-gray-300">|</span>
+        }
+        @if (committee().join_mode) {
+          <div class="flex items-center gap-2">
+            <span class="text-gray-500">Membership</span>
+            <lfx-tag [value]="committee().join_mode! | joinModeLabel" severity="secondary"></lfx-tag>
+          </div>
+          <span class="text-gray-300">|</span>
+        }
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">Voting</span>
+          <lfx-tag [value]="committee().enable_voting ? 'Enabled' : 'Disabled'" [severity]="committee().enable_voting ? 'success' : 'danger'"></lfx-tag>
+        </div>
+        <span class="text-gray-300">|</span>
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">Cadence</span>
+          <span class="text-xs text-gray-400 italic">Not configured</span>
+        </div>
+        <span class="text-gray-300">|</span>
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">Created</span>
+          <span class="text-xs text-gray-600">{{ committee().created_at | date: 'MMM d, y' }}</span>
+        </div>
+      </div>
+    </lfx-card>
+  } @else {
+    <!-- Visitor View: Key Info + CTA -->
+
+    <!-- Key Information Strip (read-only) -->
+    <lfx-card data-testid="committee-overview-key-info">
+      <div class="flex items-center gap-4 flex-wrap text-sm">
+        @if (committee().project_name || committee().foundation_name) {
+          <div class="flex items-center gap-2">
+            <span class="text-gray-500">Parent Project</span>
+            <span class="text-xs font-medium text-blue-600">{{ committee().project_name || committee().foundation_name }}</span>
+          </div>
+          <span class="text-gray-300">|</span>
+        }
+        @if (committee().join_mode) {
+          <div class="flex items-center gap-2">
+            <span class="text-gray-500">Membership</span>
+            <lfx-tag [value]="committee().join_mode! | joinModeLabel" severity="secondary"></lfx-tag>
+          </div>
+          <span class="text-gray-300">|</span>
+        }
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">Voting</span>
+          <lfx-tag [value]="committee().enable_voting ? 'Enabled' : 'Disabled'" [severity]="committee().enable_voting ? 'success' : 'danger'"></lfx-tag>
+        </div>
+        <span class="text-gray-300">|</span>
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">Cadence</span>
+          <span class="text-xs text-gray-400 italic">Not configured</span>
+        </div>
+        <span class="text-gray-300">|</span>
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">Created</span>
+          <span class="text-xs text-gray-600">{{ committee().created_at | date: 'MMM d, y' }}</span>
+        </div>
+      </div>
+    </lfx-card>
+
+    <!-- Visitor CTA -->
+    @if (canJoin()) {
+      <div class="rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-6 text-center" data-testid="committee-overview-visitor-cta">
+        <div class="flex flex-col gap-3 items-center">
+          <i class="fa-light fa-users text-2xl text-blue-500"></i>
+          <h3 class="text-base font-semibold text-gray-900">Join this {{ categoryLabel() }}</h3>
+          <p class="text-sm text-gray-600 max-w-md">Become a member to participate in meetings, votes, surveys, and collaborate with the group.</p>
+          <lfx-button [label]="joinButtonLabel()" severity="info" size="small" icon="fa-light fa-right-to-bracket" (onClick)="onJoinClick()"></lfx-button>
+        </div>
+      </div>
+    }
+  }
 </div>
+
+<!-- Edit Chairs Modal -->
+<p-dialog
+  header="Edit Chairs"
+  [(visible)]="showChairsModal"
+  [modal]="true"
+  [closable]="true"
+  [style]="{ width: '480px' }"
+  [draggable]="false"
+  data-testid="committee-overview-chairs-modal">
+  <div class="flex flex-col gap-4">
+    <div class="flex flex-col gap-1">
+      <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Chair</label>
+      <lfx-select
+        [form]="chairsForm"
+        control="chairUid"
+        [options]="memberOptions()"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="— None —"
+        [showClear]="true"
+        [filter]="true"
+        filterBy="label"
+        filterPlaceholder="Search members..."></lfx-select>
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Vice Chair</label>
+      <lfx-select
+        [form]="chairsForm"
+        control="viceChairUid"
+        [options]="memberOptions()"
+        optionLabel="label"
+        optionValue="value"
+        placeholder="— None —"
+        [showClear]="true"
+        [filter]="true"
+        filterBy="label"
+        filterPlaceholder="Search members..."></lfx-select>
+    </div>
+  </div>
+  <ng-template #footer>
+    <div class="flex justify-end gap-2">
+      <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancelEditChairs()" [disabled]="savingChairs()"></lfx-button>
+      <lfx-button label="Save" severity="info" size="small" (onClick)="saveChairs()" [loading]="savingChairs()"></lfx-button>
+    </div>
+  </ng-template>
+</p-dialog>
+
+<!-- Vote Results Drawer -->
+<lfx-vote-results-drawer [(visible)]="voteDrawerVisible" [voteId]="selectedVoteId()" [listVote]="selectedVote()"></lfx-vote-results-drawer>
