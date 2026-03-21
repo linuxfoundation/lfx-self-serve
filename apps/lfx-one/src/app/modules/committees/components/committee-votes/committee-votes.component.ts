@@ -9,7 +9,7 @@ import { Committee, Vote } from '@lfx-one/shared/interfaces';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
 import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
 import { VoteService } from '@services/vote.service';
-import { catchError, filter, of, switchMap, tap } from 'rxjs';
+import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-votes',
@@ -45,14 +45,14 @@ export class CommitteeVotesComponent {
     return toSignal(
       toObservable(this.committee).pipe(
         filter((c) => !!c?.uid),
+        tap(() => this.loading.set(true)),
         switchMap((c) =>
           this.voteService.getVotesByCommittee(c.uid, undefined, 'last_modified_time.desc').pipe(
-            tap(() => this.loading.set(false)),
             catchError((error) => {
               console.error('Failed to load committee votes:', error);
-              this.loading.set(false);
               return of([]);
-            })
+            }),
+            finalize(() => this.loading.set(false))
           )
         )
       ),
