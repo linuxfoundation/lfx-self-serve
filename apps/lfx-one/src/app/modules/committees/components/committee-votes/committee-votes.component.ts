@@ -47,7 +47,7 @@ export class CommitteeVotesComponent {
         filter((c) => !!c?.uid),
         tap(() => this.loading.set(true)),
         switchMap((c) =>
-          this.voteService.getVotesByCommittee(c.uid, undefined, 'last_modified_time.desc').pipe(
+          this.voteService.getVotesByCommittee(c.uid, undefined, 'updated_at.desc').pipe(
             catchError((error) => {
               console.error('Failed to load committee votes:', error);
               return of([]);

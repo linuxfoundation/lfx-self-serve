@@ -85,8 +85,8 @@ export class VoteService {
     );
   }
 
-  public getVotesByCommittee(committeeId: string, pageSize?: number, orderBy?: string): Observable<Vote[]> {
-    let params = new HttpParams().set('parent', `committee:${committeeId}`);
+  public getVotesByCommittee(committeeUid: string, pageSize?: number, orderBy?: string): Observable<Vote[]> {
+    let params = new HttpParams().set('parent', `committee:${committeeUid}`);
 
     if (pageSize) {
       params = params.set('page_size', pageSize.toString());
@@ -96,7 +96,7 @@ export class VoteService {
       params = params.set('order', orderBy);
     }
 
-    return this.getVotes(params).pipe(map((response) => response.data));
+    return this.http.get<PaginatedResponse<Vote>>('/api/votes', { params }).pipe(map((response) => response.data));
   }
 
   public getRecentVotesByProject(projectUid: string, pageSize: number = 3): Observable<Vote[]> {
