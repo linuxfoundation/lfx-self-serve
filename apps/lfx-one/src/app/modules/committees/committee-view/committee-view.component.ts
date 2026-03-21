@@ -184,11 +184,11 @@ export class CommitteeViewComponent {
   }
 
   public saveChannels(): void {
-    this.savingChannels.set(true);
     const committee = this.committee();
     if (!committee?.uid) {
       return;
     }
+    this.savingChannels.set(true);
 
     this.committeeService
       .updateCommittee(committee.uid, {
@@ -323,11 +323,11 @@ export class CommitteeViewComponent {
       const url = this.committee()?.chat_channel?.toLowerCase() || '';
       if (url.includes('slack')) return 'Slack';
       if (url.includes('discord')) return 'Discord';
-      if (url.includes('teams.microsoft') || url.includes('teams.live')) return 'Teams';
+      if (url.includes('teams.microsoft') || url.includes('teams.live')) return 'Microsoft Teams';
       if (url.includes('chat.google')) return 'Google Chat';
       if (url.includes('zulip')) return 'Zulip';
-      if (url.includes('matrix') || url.includes('element')) return 'Matrix';
-      return 'Slack';
+      if (url.includes('matrix') || url.includes('element')) return 'Matrix / Element';
+      return 'Other';
     });
   }
 
