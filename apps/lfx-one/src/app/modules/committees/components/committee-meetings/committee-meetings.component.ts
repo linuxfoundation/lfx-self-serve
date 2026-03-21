@@ -10,7 +10,7 @@ import { Committee, Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
 import { MeetingService } from '@services/meeting.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, debounceTime, distinctUntilChanged, filter, finalize, of, startWith, switchMap, tap } from 'rxjs';
+import { debounceTime, distinctUntilChanged, filter, finalize, startWith, switchMap, tap } from 'rxjs';
 
 type TimeFilter = 'upcoming' | 'past';
 
@@ -73,15 +73,7 @@ export class CommitteeMeetingsComponent {
       toObservable(this.committee).pipe(
         filter((c) => !!c?.uid),
         tap(() => this.meetingsLoading.set(true)),
-        switchMap((c) =>
-          this.meetingService.getMeetingsByCommittee(c.uid, undefined, 'start_time.asc').pipe(
-            catchError((error) => {
-              console.error('Failed to load committee meetings:', error);
-              return of([]);
-            }),
-            finalize(() => this.meetingsLoading.set(false))
-          )
-        )
+        switchMap((c) => this.meetingService.getMeetingsByCommittee(c.uid, undefined, 'start_time.asc').pipe(finalize(() => this.meetingsLoading.set(false))))
       ),
       { initialValue: [] }
     );
@@ -92,15 +84,7 @@ export class CommitteeMeetingsComponent {
       toObservable(this.committee).pipe(
         filter((c) => !!c?.uid),
         tap(() => this.pastMeetingsLoading.set(true)),
-        switchMap((c) =>
-          this.meetingService.getPastMeetingsByCommittee(c.uid).pipe(
-            catchError((error) => {
-              console.error('Failed to load past committee meetings:', error);
-              return of([]);
-            }),
-            finalize(() => this.pastMeetingsLoading.set(false))
-          )
-        )
+        switchMap((c) => this.meetingService.getPastMeetingsByCommittee(c.uid).pipe(finalize(() => this.pastMeetingsLoading.set(false))))
       ),
       { initialValue: [] }
     );
