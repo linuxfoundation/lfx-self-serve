@@ -5,10 +5,12 @@ import { Component, computed, inject, linkedSignal, model, signal, Signal } from
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, NgClass } from '@angular/common';
 import { ActivatedRoute, Router } from '@angular/router';
-import { FormsModule } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Dialog } from 'primeng/dialog';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@components/button/button.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { Committee, CommitteeMember, CommitteeMemberVisibility, getCommitteeCategorySeverity, TagSeverity } from '@lfx-one/shared';
@@ -34,7 +36,9 @@ type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 
     RouteLoadingComponent,
     DatePipe,
     NgClass,
-    FormsModule,
+    ReactiveFormsModule,
+    InputTextComponent,
+    SelectComponent,
     Dialog,
     JoinModeLabelPipe,
     CommitteeMeetingsComponent,
@@ -64,13 +68,24 @@ export class CommitteeViewComponent {
 
   // -- Channels edit state --
   public showChannelsModal = model(false);
-  public editMailingList = signal('');
-  public editChatChannel = signal('');
-  public editChatPlatform = signal('Slack');
+  public channelsForm = new FormGroup({
+    mailingList: new FormControl(''),
+    chatPlatform: new FormControl('Slack'),
+    chatChannel: new FormControl(''),
+  });
   public savingChannels = signal(false);
 
   // -- Platform options --
-  public readonly chatPlatformOptions = ['Slack', 'Discord', 'Microsoft Teams', 'Google Chat', 'Zulip', 'Matrix / Element', 'IRC', 'Other'] as const;
+  public readonly chatPlatformOptions = [
+    { label: 'Slack', value: 'Slack' },
+    { label: 'Discord', value: 'Discord' },
+    { label: 'Microsoft Teams', value: 'Microsoft Teams' },
+    { label: 'Google Chat', value: 'Google Chat' },
+    { label: 'Zulip', value: 'Zulip' },
+    { label: 'Matrix / Element', value: 'Matrix / Element' },
+    { label: 'IRC', value: 'IRC' },
+    { label: 'Other', value: 'Other' },
+  ];
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
@@ -156,9 +171,11 @@ export class CommitteeViewComponent {
   }
 
   public openEditChannels(): void {
-    this.editMailingList.set(this.committee()?.mailing_list || '');
-    this.editChatChannel.set(this.committee()?.chat_channel || '');
-    this.editChatPlatform.set(this.chatPlatformLabel());
+    this.channelsForm.patchValue({
+      mailingList: this.committee()?.mailing_list || '',
+      chatChannel: this.committee()?.chat_channel || '',
+      chatPlatform: this.chatPlatformLabel(),
+    });
     this.showChannelsModal.set(true);
   }
 
@@ -175,8 +192,8 @@ export class CommitteeViewComponent {
 
     this.committeeService
       .updateCommittee(committee.uid, {
-        mailing_list: this.editMailingList() || undefined,
-        chat_channel: this.editChatChannel() || undefined,
+        mailing_list: this.channelsForm.get('mailingList')?.value || undefined,
+        chat_channel: this.channelsForm.get('chatChannel')?.value || undefined,
       })
       .pipe(take(1))
       .subscribe({

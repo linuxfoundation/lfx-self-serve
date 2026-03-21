@@ -144,17 +144,7 @@
       <!-- Tab Panels -->
       @switch (activeTab()) {
         @case ('overview') {
-          <lfx-committee-overview
-            [committee]="committee()!"
-            [members]="members()"
-            [membersLoading]="membersLoading()"
-            [canEdit]="canEdit()"
-            [myRole]="myRole()"
-            [myMemberUid]="myMemberUid()"
-            [myRoleLoading]="myRoleLoading()"
-            (committeeUpdated)="refreshCommittee()"
-            (joinRequested)="handleJoinRequest()"
-            (tabNavigated)="handleTabNavigation($event)" />
+          <lfx-committee-overview [committee]="committee()!" [canEdit]="canEdit()" />
         }
         @case ('members') {
           @if (isMembersTabVisible()) {
@@ -215,31 +205,32 @@
   <div class="flex flex-col gap-4">
     <div class="flex flex-col gap-1">
       <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Mailing List</label>
-      <input
-        type="text"
-        class="w-full border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-        [ngModel]="editMailingList()"
-        (ngModelChange)="editMailingList.set($event)"
-        placeholder="Email address" />
+      <lfx-input-text
+        [form]="channelsForm"
+        control="mailingList"
+        placeholder="Email address"
+        size="small"
+        styleClass="w-full"
+        dataTest="committee-view-channels-mailing-list"></lfx-input-text>
     </div>
     <div class="flex flex-col gap-1">
       <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Chat Platform</label>
       <div class="flex gap-2">
-        <select
-          class="border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-          style="width: 160px"
-          [ngModel]="editChatPlatform()"
-          (ngModelChange)="editChatPlatform.set($event)">
-          @for (opt of chatPlatformOptions; track opt) {
-            <option [value]="opt">{{ opt }}</option>
-          }
-        </select>
-        <input
-          type="text"
-          class="flex-1 border border-gray-300 rounded-md px-3 py-2 text-sm text-gray-900 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
-          [ngModel]="editChatChannel()"
-          (ngModelChange)="editChatChannel.set($event)"
-          placeholder="Channel name, invite link, or URL" />
+        <lfx-select
+          [form]="channelsForm"
+          control="chatPlatform"
+          [options]="chatPlatformOptions"
+          optionLabel="label"
+          optionValue="value"
+          size="small"
+          styleClass="w-[160px]"></lfx-select>
+        <lfx-input-text
+          [form]="channelsForm"
+          control="chatChannel"
+          placeholder="Channel name, invite link, or URL"
+          size="small"
+          styleClass="flex-1"
+          dataTest="committee-view-channels-chat-url"></lfx-input-text>
       </div>
       <p class="text-[11px] text-gray-400 mt-0.5">Each group uses one chat platform. Select the platform your group communicates on.</p>
     </div>
