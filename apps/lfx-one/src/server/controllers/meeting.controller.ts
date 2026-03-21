@@ -57,12 +57,18 @@ export class MeetingController {
       const { data: meetings, page_token } = await this.meetingService.getMeetings(req, queryParams, 'v1_meeting', true);
 
       if (skipRegistrants) {
+        const normalizedMeetings = meetings.map((m: any) => ({
+          ...m,
+          invited: m.invited ?? false,
+          individual_registrants_count: m.individual_registrants_count ?? 0,
+          committee_members_count: m.committee_members_count ?? 0,
+        }));
         logger.success(req, 'get_meetings', startTime, {
-          meeting_count: meetings.length,
+          meeting_count: normalizedMeetings.length,
           has_more_pages: !!page_token,
           skip_registrants: true,
         });
-        res.json({ data: meetings, page_token });
+        res.json({ data: normalizedMeetings, page_token });
         return;
       }
 
