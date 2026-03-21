@@ -16,6 +16,7 @@ import { COMMITTEE_LABEL, COMMITTEE_SETTINGS_FEATURES, JOIN_MODE_OPTIONS, MEMBER
 export class CommitteeSettingsComponent {
   // Form group input from parent
   public readonly form = input.required<FormGroup>();
+  public readonly showHeader = input<boolean>(true);
 
   // Constants from shared package
   public readonly features = COMMITTEE_SETTINGS_FEATURES;

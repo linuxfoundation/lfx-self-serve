@@ -127,6 +127,17 @@
           }">
           <i class="fa-light fa-folder-open mr-2"></i>Documents
         </button>
+        @if (canEdit()) {
+          <button
+            (click)="activeTab.set('settings')"
+            class="px-4 py-2 text-sm font-medium transition-colors"
+            [ngClass]="{
+              'border-b-2 border-blue-600 text-blue-600': activeTab() === 'settings',
+              'text-gray-500': activeTab() !== 'settings',
+            }">
+            <i class="fa-light fa-gear mr-2"></i>Settings
+          </button>
+        }
       </div>
 
       <!-- Tab Panels -->
@@ -183,8 +194,12 @@
             </div>
           </div>
         }
+        @case ('settings') {
+          @if (canEdit()) {
+            <lfx-committee-settings-tab [committee]="committee()!" (committeeUpdated)="refreshCommittee()" />
+          }
+        }
       }
     </div>
   }
-
 </div>

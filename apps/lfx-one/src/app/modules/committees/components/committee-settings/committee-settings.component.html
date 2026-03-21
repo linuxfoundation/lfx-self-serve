@@ -3,10 +3,12 @@
 
 <div class="flex flex-col gap-6">
   <!-- Header -->
-  <div class="text-center mb-8">
-    <h2 class="mb-2">{{ committeeLabel }} Settings</h2>
-    <p class="text-gray-500 text-base">Configure permissions and features for your {{ committeeLabel.toLowerCase() }}</p>
-  </div>
+  @if (showHeader()) {
+    <div class="mb-6">
+      <h2 class="mb-1 text-[17.5px] font-semibold text-gray-900">{{ committeeLabel }} Settings</h2>
+      <p class="text-[13px] text-gray-500">Configure permissions and features for your {{ committeeLabel.toLowerCase() }}.</p>
+    </div>
+  }
 
   <!-- Info Section -->
   <lfx-message severity="info" icon="fa-light fa-info-circle">
@@ -90,7 +92,7 @@
               <div class="flex items-center gap-2">
                 <label [for]="feature.key" class="text-sm font-semibold text-gray-900 cursor-pointer">{{ feature.title }}</label>
                 @if (feature.recommended) {
-                  <span class="bg-blue-100 text-primary text-xs px-2 py-1 rounded-full font-medium">Recommended</span>
+                  <span class="bg-green-100 text-green-700 text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide">Recommended</span>
                 }
               </div>
               <p class="text-xs text-gray-600">{{ feature.description }}</p>
