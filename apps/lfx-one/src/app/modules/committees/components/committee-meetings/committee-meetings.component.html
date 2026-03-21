@@ -26,6 +26,7 @@
           [class.text-gray-500]="timeFilter() !== option.value"
           [class.border-gray-200]="timeFilter() !== option.value"
           [class.bg-white]="timeFilter() !== option.value"
+          [attr.aria-pressed]="timeFilter() === option.value"
           [attr.data-testid]="'committee-meetings-filter-' + option.value"
           (click)="setTimeFilter(option.value)">
           {{ option.label }}
