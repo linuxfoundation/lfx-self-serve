@@ -5,7 +5,13 @@
   @if (loading()) {
     <lfx-route-loading />
   } @else if (votes().length > 0) {
-    <lfx-votes-table [votes]="votes()" [hasPMOAccess]="canEdit()" [loading]="loading()" [totalRecords]="votes().length" (viewResults)="viewVoteResults($event)">
+    <lfx-votes-table
+      [votes]="votes()"
+      [hasPMOAccess]="canEdit()"
+      [loading]="loading()"
+      [totalRecords]="votes().length"
+      (viewResults)="viewVoteResults($event)"
+      (viewVote)="viewVoteResults($event)">
     </lfx-votes-table>
   } @else {
     <lfx-card>
