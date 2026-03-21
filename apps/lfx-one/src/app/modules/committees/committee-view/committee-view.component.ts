@@ -15,12 +15,23 @@ import { MenuItem, MessageService } from 'primeng/api';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
 import { CommitteeOverviewComponent } from '../components/committee-overview/committee-overview.component';
+import { CommitteeSurveysComponent } from '../components/committee-surveys/committee-surveys.component';
 
 type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents';
 
 @Component({
   selector: 'lfx-committee-view',
-  imports: [BreadcrumbComponent, ButtonComponent, TagComponent, RouterLink, RouteLoadingComponent, DatePipe, NgClass, CommitteeOverviewComponent],
+  imports: [
+    BreadcrumbComponent,
+    ButtonComponent,
+    TagComponent,
+    RouterLink,
+    RouteLoadingComponent,
+    DatePipe,
+    NgClass,
+    CommitteeOverviewComponent,
+    CommitteeSurveysComponent,
+  ],
   templateUrl: './committee-view.component.html',
   styleUrl: './committee-view.component.scss',
 })
