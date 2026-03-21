@@ -50,11 +50,27 @@ export class CommitteeMeetingsComponent {
 
   // Loading state
   public meetingsLoading = signal(true);
-  public pastMeetingsLoading = signal(true);
+  public pastMeetingsLoading = signal(false);
 
-  // Data
+  // Data — upcoming fetched immediately, past lazy-loaded on first filter switch
   public meetings: Signal<Meeting[]> = this.initMeetings();
-  public pastMeetings: Signal<PastMeeting[]> = this.initPastMeetings();
+  public pastMeetings = signal<PastMeeting[]>([]);
+  private pastMeetingsInitialized = false;
+
+  // Lazy-load past meetings when the time filter switches to 'past'
+  private readonly lazyLoadPastMeetings = effect(
+    () => {
+      if (this.timeFilter() === 'past' && !this.pastMeetingsInitialized && this.committee()?.uid) {
+        this.pastMeetingsInitialized = true;
+        this.pastMeetingsLoading.set(true);
+        this.meetingService
+          .getPastMeetingsByCommittee(this.committee().uid)
+          .pipe(finalize(() => this.pastMeetingsLoading.set(false)))
+          .subscribe((data) => this.pastMeetings.set(data));
+      }
+    },
+    { allowSignalWrites: true }
+  );
 
   // Loading computed: true when active tab's data is loading
   public loading: Signal<boolean> = computed(() => (this.timeFilter() === 'upcoming' ? this.meetingsLoading() : this.pastMeetingsLoading()));
@@ -73,17 +89,6 @@ export class CommitteeMeetingsComponent {
         filter((c) => !!c?.uid),
         tap(() => this.meetingsLoading.set(true)),
         switchMap((c) => this.meetingService.getMeetingsByCommittee(c.uid, undefined, 'start_time.asc').pipe(finalize(() => this.meetingsLoading.set(false))))
-      ),
-      { initialValue: [] }
-    );
-  }
-
-  private initPastMeetings(): Signal<PastMeeting[]> {
-    return toSignal(
-      toObservable(this.committee).pipe(
-        filter((c) => !!c?.uid),
-        tap(() => this.pastMeetingsLoading.set(true)),
-        switchMap((c) => this.meetingService.getPastMeetingsByCommittee(c.uid).pipe(finalize(() => this.pastMeetingsLoading.set(false))))
       ),
       { initialValue: [] }
     );
