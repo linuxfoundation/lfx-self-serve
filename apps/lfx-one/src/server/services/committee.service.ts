@@ -68,8 +68,17 @@ export class CommitteeService {
       committees.map(async (committee) => {
         try {
           await this.microserviceProxy.proxyRequest(req, 'LFX_V2_SERVICE', `/committees/${committee.uid}`, 'GET');
-        } catch {
-          inaccessibleUids.add(committee.uid);
+        } catch (error: any) {
+          const statusCode = error?.statusCode ?? error?.status;
+          if (statusCode === 401 || statusCode === 403 || statusCode === 404) {
+            inaccessibleUids.add(committee.uid);
+          } else {
+            logger.warning(req, 'get_committees', 'Unexpected error checking committee access', {
+              committee_uid: committee.uid,
+              error: error instanceof Error ? error.message : 'Unknown error',
+            });
+            throw error;
+          }
         }
       })
     );
@@ -180,7 +189,12 @@ export class CommitteeService {
       );
 
       // Step 2: Merge partial update with current data (PUT requires name, category, project_uid)
-      const mergedData = { ...currentCommittee, ...committeeData };
+      const mergedData = {
+        name: committeeData.name ?? currentCommittee.name,
+        category: committeeData.category ?? currentCommittee.category,
+        project_uid: committeeData.project_uid ?? currentCommittee.project_uid,
+        ...committeeData,
+      };
 
       // Step 3: Update committee with ETag (PUT)
       updatedCommittee = await this.etagService.updateWithETag<Committee>(
