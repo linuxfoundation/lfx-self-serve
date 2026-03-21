@@ -183,7 +183,43 @@
   </lfx-card>
 
   <!-- Conditional Layout: Member/Chair Dashboard vs Visitor View -->
-  @if (!isVisitor()) {
+  <!-- Key Information Strip (shared between member and visitor views) -->
+  <ng-template #keyInfoStrip>
+    <lfx-card data-testid="committee-overview-key-info">
+      <div class="flex items-center gap-4 flex-wrap text-sm">
+        @if (committee().project_name || committee().foundation_name) {
+          <div class="flex items-center gap-2">
+            <span class="text-gray-500">Parent Project</span>
+            <span class="text-xs font-medium text-blue-600">{{ committee().project_name || committee().foundation_name }}</span>
+          </div>
+          <span class="text-gray-300">|</span>
+        }
+        @if (committee().join_mode) {
+          <div class="flex items-center gap-2">
+            <span class="text-gray-500">Membership</span>
+            <lfx-tag [value]="committee().join_mode! | joinModeLabel" severity="secondary"></lfx-tag>
+          </div>
+          <span class="text-gray-300">|</span>
+        }
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">Voting</span>
+          <lfx-tag [value]="committee().enable_voting ? 'Enabled' : 'Disabled'" [severity]="committee().enable_voting ? 'success' : 'danger'"></lfx-tag>
+        </div>
+        <span class="text-gray-300">|</span>
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">Cadence</span>
+          <span class="text-xs text-gray-400 italic">Not configured</span>
+        </div>
+        <span class="text-gray-300">|</span>
+        <div class="flex items-center gap-2">
+          <span class="text-gray-500">Created</span>
+          <span class="text-xs text-gray-600">{{ committee().created_at | date: 'MMM d, y' }}</span>
+        </div>
+      </div>
+    </lfx-card>
+  </ng-template>
+
+  @if (!myRoleLoading() && !isVisitor()) {
     <!-- Meetings Row: Last Meeting + Next Meeting -->
     <div class="grid grid-cols-1 lg:grid-cols-2 gap-6 items-start">
       <!-- Left Column: Last Meeting -->
@@ -318,74 +354,12 @@
     </div>
 
     <!-- Key Information Strip -->
-    <lfx-card data-testid="committee-overview-key-info">
-      <div class="flex items-center gap-4 flex-wrap text-sm">
-        @if (committee().project_name || committee().foundation_name) {
-          <div class="flex items-center gap-2">
-            <span class="text-gray-500">Parent Project</span>
-            <span class="text-xs font-medium text-blue-600">{{ committee().project_name || committee().foundation_name }}</span>
-          </div>
-          <span class="text-gray-300">|</span>
-        }
-        @if (committee().join_mode) {
-          <div class="flex items-center gap-2">
-            <span class="text-gray-500">Membership</span>
-            <lfx-tag [value]="committee().join_mode! | joinModeLabel" severity="secondary"></lfx-tag>
-          </div>
-          <span class="text-gray-300">|</span>
-        }
-        <div class="flex items-center gap-2">
-          <span class="text-gray-500">Voting</span>
-          <lfx-tag [value]="committee().enable_voting ? 'Enabled' : 'Disabled'" [severity]="committee().enable_voting ? 'success' : 'danger'"></lfx-tag>
-        </div>
-        <span class="text-gray-300">|</span>
-        <div class="flex items-center gap-2">
-          <span class="text-gray-500">Cadence</span>
-          <span class="text-xs text-gray-400 italic">Not configured</span>
-        </div>
-        <span class="text-gray-300">|</span>
-        <div class="flex items-center gap-2">
-          <span class="text-gray-500">Created</span>
-          <span class="text-xs text-gray-600">{{ committee().created_at | date: 'MMM d, y' }}</span>
-        </div>
-      </div>
-    </lfx-card>
-  } @else {
+    <ng-container *ngTemplateOutlet="keyInfoStrip"></ng-container>
+  } @else if (!myRoleLoading()) {
     <!-- Visitor View: Key Info + CTA -->
 
     <!-- Key Information Strip (read-only) -->
-    <lfx-card data-testid="committee-overview-key-info">
-      <div class="flex items-center gap-4 flex-wrap text-sm">
-        @if (committee().project_name || committee().foundation_name) {
-          <div class="flex items-center gap-2">
-            <span class="text-gray-500">Parent Project</span>
-            <span class="text-xs font-medium text-blue-600">{{ committee().project_name || committee().foundation_name }}</span>
-          </div>
-          <span class="text-gray-300">|</span>
-        }
-        @if (committee().join_mode) {
-          <div class="flex items-center gap-2">
-            <span class="text-gray-500">Membership</span>
-            <lfx-tag [value]="committee().join_mode! | joinModeLabel" severity="secondary"></lfx-tag>
-          </div>
-          <span class="text-gray-300">|</span>
-        }
-        <div class="flex items-center gap-2">
-          <span class="text-gray-500">Voting</span>
-          <lfx-tag [value]="committee().enable_voting ? 'Enabled' : 'Disabled'" [severity]="committee().enable_voting ? 'success' : 'danger'"></lfx-tag>
-        </div>
-        <span class="text-gray-300">|</span>
-        <div class="flex items-center gap-2">
-          <span class="text-gray-500">Cadence</span>
-          <span class="text-xs text-gray-400 italic">Not configured</span>
-        </div>
-        <span class="text-gray-300">|</span>
-        <div class="flex items-center gap-2">
-          <span class="text-gray-500">Created</span>
-          <span class="text-xs text-gray-600">{{ committee().created_at | date: 'MMM d, y' }}</span>
-        </div>
-      </div>
-    </lfx-card>
+    <ng-container *ngTemplateOutlet="keyInfoStrip"></ng-container>
 
     <!-- Visitor CTA -->
     @if (canJoin()) {

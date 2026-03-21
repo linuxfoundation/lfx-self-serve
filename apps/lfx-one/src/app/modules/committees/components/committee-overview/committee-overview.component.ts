@@ -3,7 +3,7 @@
 
 import { Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { DatePipe, NgClass } from '@angular/common';
+import { DatePipe, NgClass, NgTemplateOutlet } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Dialog } from 'primeng/dialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -35,6 +35,7 @@ import { catchError, filter, forkJoin, of, switchMap, take, tap } from 'rxjs';
     Dialog,
     DashboardMeetingCardComponent,
     NgClass,
+    NgTemplateOutlet,
     DatePipe,
     SkeletonModule,
     SelectComponent,
@@ -167,6 +168,7 @@ export class CommitteeOverviewComponent {
       icon: 'fa-light fa-check-to-slot',
       severity: 'warn' as const,
       buttonText: 'Review and Vote',
+      buttonLink: vote.uid,
       date: vote.end_time ? `Deadline: ${new Date(vote.end_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : undefined,
     }));
     const surveyItems: PendingActionItem[] = this.pendingSurveys().map((survey) => ({
@@ -208,7 +210,7 @@ export class CommitteeOverviewComponent {
 
   public handlePendingActionClick(item: PendingActionItem): void {
     if (item.type === 'Cast Vote') {
-      const vote = this.pendingVotes().find((v) => v.name === item.text);
+      const vote = this.pendingVotes().find((v) => v.uid === item.buttonLink);
       if (vote) {
         // Reset first to ensure toObservable emits on re-set
         this.selectedVoteId.set(null);
@@ -279,6 +281,12 @@ export class CommitteeOverviewComponent {
     const currentViceChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.VICE_CHAIR);
     const newChairUid = this.chairsForm.get('chairUid')?.value;
     const newViceChairUid = this.chairsForm.get('viceChairUid')?.value;
+
+    if (newChairUid && newChairUid === newViceChairUid) {
+      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Chair and Vice Chair must be different members' });
+      this.savingChairs.set(false);
+      return;
+    }
 
     // Serialize: removals first, then assignments to avoid race conditions
     const removals: ReturnType<typeof this.committeeService.updateCommitteeMember>[] = [];
