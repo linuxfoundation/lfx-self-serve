@@ -74,13 +74,13 @@
               <div>
                 @if (committee()?.mailing_list; as mailingList) {
                   <div class="whitespace-nowrap overflow-hidden text-ellipsis">
-                    <span class="font-medium text-gray-500">Mailing List :</span>
+                    <span class="font-medium text-gray-500">Mailing List:</span>
                     <a [href]="'mailto:' + mailingList" class="text-gray-900 no-underline" [title]="mailingList">{{ mailingList }}</a>
                   </div>
                 }
                 @if (committee()?.chat_channel; as chatChannel) {
                   <div class="whitespace-nowrap overflow-hidden text-ellipsis">
-                    <span class="font-medium text-gray-500">{{ chatPlatformLabel() }} :</span>
+                    <span class="font-medium text-gray-500">{{ chatPlatformLabel() }}:</span>
                     <a [href]="chatChannel" target="_blank" rel="noopener noreferrer" class="text-gray-900 no-underline" [title]="chatChannel">{{
                       chatChannel
                     }}</a>
@@ -88,7 +88,7 @@
                 }
                 @if (committee()?.website; as website) {
                   <div class="whitespace-nowrap overflow-hidden text-ellipsis">
-                    <span class="font-medium text-gray-500">{{ repoPlatformLabel() }} :</span>
+                    <span class="font-medium text-gray-500">{{ repoPlatformLabel() }}:</span>
                     <a [href]="website" target="_blank" rel="noopener noreferrer" class="text-gray-900 no-underline" [title]="website">{{ website }}</a>
                   </div>
                 }
