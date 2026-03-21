@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { NgClass } from '@angular/common';
 import { Component, computed, effect, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -16,7 +17,7 @@ type TimeFilter = 'upcoming' | 'past';
 
 @Component({
   selector: 'lfx-committee-meetings',
-  imports: [ReactiveFormsModule, CardComponent, InputTextComponent, MeetingCardComponent, SkeletonModule],
+  imports: [NgClass, ReactiveFormsModule, CardComponent, InputTextComponent, MeetingCardComponent, SkeletonModule],
   templateUrl: './committee-meetings.component.html',
   styleUrl: './committee-meetings.component.scss',
 })
@@ -26,8 +27,6 @@ export class CommitteeMeetingsComponent {
   // Inputs
   public committee = input.required<Committee>();
   public canEdit = input<boolean>(false);
-
-  // Inputs
   public initialTimeFilter = input<TimeFilter>('upcoming');
 
   // Filter state
