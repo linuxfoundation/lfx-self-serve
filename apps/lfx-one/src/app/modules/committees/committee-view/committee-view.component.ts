@@ -4,7 +4,7 @@
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, NgClass } from '@angular/common';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -25,7 +25,6 @@ type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 
     BreadcrumbComponent,
     ButtonComponent,
     TagComponent,
-    RouterLink,
     RouteLoadingComponent,
     DatePipe,
     NgClass,

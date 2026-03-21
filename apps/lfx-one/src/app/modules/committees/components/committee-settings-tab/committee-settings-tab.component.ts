@@ -11,11 +11,13 @@ import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { take } from 'rxjs';
 
+import { ConfirmDialogModule } from 'primeng/confirmdialog';
+
 import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
 
 @Component({
   selector: 'lfx-committee-settings-tab',
-  imports: [CommitteeSettingsComponent, ButtonComponent],
+  imports: [CommitteeSettingsComponent, ButtonComponent, ConfirmDialogModule],
   templateUrl: './committee-settings-tab.component.html',
   styleUrl: './committee-settings-tab.component.scss',
 })
