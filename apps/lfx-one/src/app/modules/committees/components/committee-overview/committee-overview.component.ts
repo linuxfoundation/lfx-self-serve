@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, NgClass, NgTemplateOutlet } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -71,7 +71,7 @@ export class CommitteeOverviewComponent {
   public readonly tabNavigated = output<string>();
 
   // Chairs modal state
-  public showChairsModal = model(false);
+  public showChairsModal = signal(false);
   public savingChairs = signal(false);
   public chairsForm = new FormGroup({
     chairUid: new FormControl<string | null>(null),
@@ -86,7 +86,7 @@ export class CommitteeOverviewComponent {
   });
 
   // Vote drawer state
-  public voteDrawerVisible = model(false);
+  public voteDrawerVisible = signal(false);
   public selectedVoteId = signal<string | null>(null);
   public selectedVote = signal<Vote | null>(null);
 
@@ -195,7 +195,7 @@ export class CommitteeOverviewComponent {
   });
 
   public lastMeeting: Signal<PastMeeting | null> = computed(() => {
-    const past = this.pastMeetings();
+    const past = [...this.pastMeetings()].sort((a, b) => (b.scheduled_start_time ?? '').localeCompare(a.scheduled_start_time ?? ''));
     return past[0] ?? null;
   });
 
@@ -389,7 +389,7 @@ export class CommitteeOverviewComponent {
         filter((c) => !!c?.uid),
         tap(() => this.pastMeetingsLoading.set(true)),
         switchMap((c) =>
-          this.meetingService.getPastMeetingsByCommittee(c.uid, 1).pipe(
+          this.meetingService.getPastMeetingsByCommittee(c.uid, 5).pipe(
             tap(() => this.pastMeetingsLoading.set(false)),
             catchError(() => {
               this.pastMeetingsLoading.set(false);
@@ -408,7 +408,7 @@ export class CommitteeOverviewComponent {
         filter((c) => !!c?.uid),
         tap(() => this.votesLoading.set(true)),
         switchMap((c) =>
-          this.voteService.getVotesByCommittee(c.uid).pipe(
+          this.voteService.getVotesByCommittee(c.uid, 50).pipe(
             tap(() => this.votesLoading.set(false)),
             catchError(() => {
               this.votesLoading.set(false);
@@ -427,7 +427,7 @@ export class CommitteeOverviewComponent {
         filter((c) => !!c?.uid),
         tap(() => this.surveysLoading.set(true)),
         switchMap((c) =>
-          this.surveyService.getSurveysByCommittee(c.uid).pipe(
+          this.surveyService.getSurveysByCommittee(c.uid, 50).pipe(
             tap(() => this.surveysLoading.set(false)),
             catchError(() => {
               this.surveysLoading.set(false);

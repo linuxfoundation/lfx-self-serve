@@ -63,7 +63,7 @@
         } @else {
           <p class="text-2xl font-bold text-gray-900">{{ meetingsCount() }}</p>
         }
-        <p class="text-xs text-gray-500">Meetings (YTD)</p>
+        <p class="text-xs text-gray-500">Meetings</p>
       </div>
     </lfx-card>
 
@@ -315,7 +315,7 @@
         </div>
       } @else if (pendingActionItems().length > 0) {
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          @for (item of pendingActionItems(); track $index) {
+          @for (item of pendingActionItems(); track item.type + item.text) {
             <div
               class="p-4 flex flex-col gap-3 border rounded-xl shadow-md transition-all cursor-pointer"
               [ngClass]="{
@@ -378,7 +378,8 @@
 <!-- Edit Chairs Modal -->
 <p-dialog
   header="Edit Chairs"
-  [(visible)]="showChairsModal"
+  [visible]="showChairsModal()"
+  (visibleChange)="showChairsModal.set($event)"
   [modal]="true"
   [closable]="true"
   [style]="{ width: '480px' }"
@@ -423,4 +424,8 @@
 </p-dialog>
 
 <!-- Vote Results Drawer -->
-<lfx-vote-results-drawer [(visible)]="voteDrawerVisible" [voteId]="selectedVoteId()" [listVote]="selectedVote()"></lfx-vote-results-drawer>
+<lfx-vote-results-drawer
+  [visible]="voteDrawerVisible()"
+  (visibleChange)="voteDrawerVisible.set($event)"
+  [voteId]="selectedVoteId()"
+  [listVote]="selectedVote()"></lfx-vote-results-drawer>
