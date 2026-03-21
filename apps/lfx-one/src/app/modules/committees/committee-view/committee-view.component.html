@@ -71,7 +71,7 @@
               class="relative bg-gray-50 border border-gray-200 hover:border-blue-500 transition-colors rounded-lg py-2.5 px-3.5 pr-9 text-left text-[12.5px] leading-[1.7] text-gray-600 max-w-[360px] overflow-hidden flex-shrink-0"
               data-testid="committee-view-channels-card">
               <!-- Channel values -->
-              <div>
+              <div [attr.inert]="isVisitor() || null">
                 @if (committee()?.mailing_list; as mailingList) {
                   <div class="whitespace-nowrap overflow-hidden text-ellipsis">
                     <span class="font-medium text-gray-500">Mailing List:</span>
@@ -214,25 +214,15 @@
         dataTest="committee-view-channels-mailing-list"></lfx-input-text>
     </div>
     <div class="flex flex-col gap-1">
-      <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Chat Platform</label>
-      <div class="flex gap-2">
-        <lfx-select
-          [form]="channelsForm"
-          control="chatPlatform"
-          [options]="chatPlatformOptions"
-          optionLabel="label"
-          optionValue="value"
-          size="small"
-          styleClass="w-[160px]"></lfx-select>
-        <lfx-input-text
-          [form]="channelsForm"
-          control="chatChannel"
-          placeholder="Channel name, invite link, or URL"
-          size="small"
-          styleClass="flex-1"
-          dataTest="committee-view-channels-chat-url"></lfx-input-text>
-      </div>
-      <p class="text-[11px] text-gray-400 mt-0.5">Each group uses one chat platform. Select the platform your group communicates on.</p>
+      <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Chat Channel</label>
+      <lfx-input-text
+        [form]="channelsForm"
+        control="chatChannel"
+        placeholder="Slack, Discord, or other chat URL"
+        size="small"
+        styleClass="w-full"
+        dataTest="committee-view-channels-chat-url"></lfx-input-text>
+      <p class="text-[11px] text-gray-400 mt-0.5">The platform is auto-detected from the URL.</p>
     </div>
   </div>
   <ng-template #footer>
