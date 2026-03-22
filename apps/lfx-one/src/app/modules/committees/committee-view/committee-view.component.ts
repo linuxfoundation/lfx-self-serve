@@ -20,6 +20,7 @@ import { MenuItem, MessageService } from 'primeng/api';
 import { catchError, combineLatest, finalize, map, of, switchMap, take } from 'rxjs';
 
 import { CommitteeMeetingsComponent } from '../components/committee-meetings/committee-meetings.component';
+import { CommitteeMembersComponent } from '../components/committee-members/committee-members.component';
 import { CommitteeOverviewComponent } from '../components/committee-overview/committee-overview.component';
 import { CommitteeSettingsTabComponent } from '../components/committee-settings-tab/committee-settings-tab.component';
 import { CommitteeSurveysComponent } from '../components/committee-surveys/committee-surveys.component';
@@ -40,6 +41,7 @@ type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 
     Dialog,
     JoinModeLabelPipe,
     CommitteeMeetingsComponent,
+    CommitteeMembersComponent,
     CommitteeOverviewComponent,
     CommitteeSettingsTabComponent,
     CommitteeSurveysComponent,
