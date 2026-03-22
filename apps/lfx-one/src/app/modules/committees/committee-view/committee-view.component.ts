@@ -193,7 +193,8 @@ export class CommitteeViewComponent {
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Channels updated' });
           this.showChannelsModal.set(false);
           this.savingChannels.set(false);
-          this.refreshCommittee();
+          // Delay refresh to allow backend to persist the write before re-fetching
+          setTimeout(() => this.refreshCommittee(), 500);
         },
         error: () => {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update channels' });
