@@ -151,7 +151,14 @@
       <!-- Tab Panels -->
       @switch (activeTab()) {
         @case ('overview') {
-          <lfx-committee-overview [committee]="committee()!" [canEdit]="canEdit()" />
+          <lfx-committee-overview
+            [committee]="committee()!"
+            [members]="members()"
+            [membersLoading]="membersLoading()"
+            [canEdit]="canEdit()"
+            [myRole]="myRole()"
+            [myMemberUid]="myMemberUid()"
+            [myRoleLoading]="myRoleLoading()" />
         }
         @case ('members') {
           @if (isMembersTabVisible()) {
