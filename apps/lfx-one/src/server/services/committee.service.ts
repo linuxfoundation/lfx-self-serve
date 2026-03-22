@@ -188,11 +188,9 @@ export class CommitteeService {
         'update_committee'
       );
 
-      // Step 2: Merge partial update with current data (PUT requires name, category, project_uid)
+      // Step 2: Merge partial update with current data (PUT replaces the entire resource)
       const mergedData = {
-        name: committeeData.name ?? currentCommittee.name,
-        category: committeeData.category ?? currentCommittee.category,
-        project_uid: committeeData.project_uid ?? currentCommittee.project_uid,
+        ...currentCommittee,
         ...committeeData,
       };
 
