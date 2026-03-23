@@ -60,8 +60,9 @@ export class CommitteeService {
       })
     );
 
-    // Batch access check: filter inaccessible committees and add writer field in one step.
-    // The query service returns ALL committees but not all are accessible to the current user.
+    // Batch access check: the query service returns ALL committees but not all are accessible
+    // to the current user. Use viewer access to filter out committees the user cannot see,
+    // then addAccessToResources adds the writer field for edit permissions.
     const accessMap = await this.accessCheckService.checkAccess(
       req,
       committees.map((c) => ({ resource: 'committee' as const, id: c.uid, access: 'viewer' as const }))
@@ -332,8 +333,18 @@ export class CommitteeService {
       'update_committee_member'
     );
 
-    // Step 2: Merge partial update with current data (PUT requires full resource)
-    const mergedData = { ...currentMember, ...data };
+    // Step 2: Strip read-only fields, then merge with update data (PUT requires full resource)
+    const {
+      uid: _uid,
+      created_at: _createdAt,
+      updated_at: _updatedAt,
+      committee_uid: _committeeUid,
+      committee_name: _committeeName,
+      committee_category: _committeeCategory,
+      ...mutableMemberFields
+    } = currentMember;
+
+    const mergedData = { ...mutableMemberFields, ...data };
 
     // Step 3: Update member with ETag
     const updatedMember = await this.etagService.updateWithETag<CommitteeMember>(
