@@ -13,11 +13,11 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { TagComponent } from '@components/tag/tag.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { Committee, CommitteeMember, CommitteeMemberVisibility, getCommitteeCategorySeverity, TagSeverity } from '@lfx-one/shared';
-import { MyCommittee } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
+import { UserService } from '@services/user.service';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { MenuItem, MessageService } from 'primeng/api';
-import { catchError, combineLatest, finalize, map, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
 import { CommitteeMeetingsComponent } from '../components/committee-meetings/committee-meetings.component';
 import { CommitteeMembersComponent } from '../components/committee-members/committee-members.component';
@@ -55,6 +55,7 @@ export class CommitteeViewComponent {
   private readonly router = inject(Router);
   private readonly committeeService = inject(CommitteeService);
   private readonly messageService = inject(MessageService);
+  private readonly userService = inject(UserService);
 
   public meetingsTimeFilter = signal<'upcoming' | 'past'>('upcoming');
 
@@ -75,14 +76,20 @@ export class CommitteeViewComponent {
   });
   public savingChannels = signal(false);
 
-
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
   public members: Signal<CommitteeMember[]> = this.initializeMembers();
-  public myMembership: Signal<MyCommittee | null> = this.initMyMembership();
-  public myRole: Signal<string | null> = computed(() => this.myMembership()?.my_role ?? null);
-  public myMemberUid: Signal<string | null> = computed(() => this.myMembership()?.my_member_uid ?? null);
-  public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
+
+  // Derive membership from already-fetched members list + current user email
+  public myMember: Signal<CommitteeMember | null> = computed(() => {
+    const members = this.members();
+    const email = this.userService.user()?.email?.toLowerCase();
+    if (!email || !members.length) return null;
+    return members.find((m) => m.email?.toLowerCase() === email) ?? null;
+  });
+  public myRole: Signal<string | null> = computed(() => this.myMember()?.role?.name ?? null);
+  public myMemberUid: Signal<string | null> = computed(() => this.myMember()?.uid ?? null);
+  public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.membersLoading());
 
   public categorySeverity: Signal<TagSeverity> = computed(() => {
     const category = this.committee()?.category;
@@ -187,18 +194,15 @@ export class CommitteeViewComponent {
         mailing_list: this.channelsForm.get('mailingList')?.value || null,
         chat_channel: this.channelsForm.get('chatChannel')?.value || null,
       })
-      .pipe(take(1))
+      .pipe(finalize(() => this.savingChannels.set(false)))
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Channels updated' });
           this.showChannelsModal.set(false);
-          this.savingChannels.set(false);
-          // Delay refresh to allow backend to persist the write before re-fetching
-          setTimeout(() => this.refreshCommittee(), 500);
+          this.refreshCommittee();
         },
         error: () => {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update channels' });
-          this.savingChannels.set(false);
         },
       });
   }
@@ -209,21 +213,19 @@ export class CommitteeViewComponent {
       return;
     }
     if (committee.join_mode === 'open') {
-      this.committeeService
-        .joinCommittee(committee.uid)
-        .pipe(take(1))
-        .subscribe({
-          next: () => {
-            this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You have joined "${committee.name}"` });
-            this.refreshCommittee();
-            this.membersRefresh.update((v) => v + 1);
-          },
-          error: () => {
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: `Failed to join "${committee.name}"` });
-          },
-        });
+      this.committeeService.joinCommittee(committee.uid).subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You have joined "${committee.name}"` });
+          this.refreshCommittee();
+          this.membersRefresh.update((v) => v + 1);
+        },
+        error: () => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: `Failed to join "${committee.name}"` });
+        },
+      });
     } else {
-      this.messageService.add({ severity: 'info', summary: 'Request Required', detail: 'Contact a group admin to request membership.' });
+      // Backend does not yet support application-based join requests — show guidance instead
+      this.messageService.add({ severity: 'info', summary: 'Contact Admin', detail: 'Contact a group admin to request membership.' });
     }
   }
 
@@ -232,10 +234,7 @@ export class CommitteeViewComponent {
     if (!committee) {
       return;
     }
-    this.committeeService
-      .leaveCommittee(committee.uid)
-      .pipe(take(1))
-      .subscribe({
+    this.committeeService.leaveCommittee(committee.uid).subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Left', detail: `You have left "${committee.name}"` });
           this.refreshCommittee();
@@ -336,23 +335,4 @@ export class CommitteeViewComponent {
     });
   }
 
-  private initMyMembership(): Signal<MyCommittee | null> {
-    return toSignal(
-      combineLatest([toObservable(this.committee), toObservable(this.membersRefresh)]).pipe(
-        switchMap(([committee]) => {
-          if (!committee?.uid) {
-            this.myRoleLoading.set(false);
-            return of(null);
-          }
-          this.myRoleLoading.set(true);
-          return this.committeeService.getMyCommittees().pipe(
-            map((list) => list.find((c) => c.uid === committee.uid) ?? null),
-            catchError(() => of(null)),
-            finalize(() => this.myRoleLoading.set(false))
-          );
-        })
-      ),
-      { initialValue: null }
-    );
-  }
 }

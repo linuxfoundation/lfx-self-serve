@@ -81,9 +81,11 @@
                 @if (committee()?.chat_channel; as chatChannel) {
                   <div class="whitespace-nowrap overflow-hidden text-ellipsis">
                     <span class="font-medium text-gray-500">{{ chatPlatformLabel() }}:</span>
-                    <a [href]="chatChannel" target="_blank" rel="noopener noreferrer" class="text-gray-900 no-underline" [title]="chatChannel">{{
-                      chatChannel
-                    }}</a>
+                    @if (chatChannel.startsWith('http')) {
+                      <a [href]="chatChannel" target="_blank" rel="noopener noreferrer" class="text-gray-900 no-underline" [title]="chatChannel">{{ chatChannel }}</a>
+                    } @else {
+                      <span class="text-gray-900">{{ chatChannel }}</span>
+                    }
                   </div>
                 }
                 @if (committee()?.website; as website) {
@@ -107,12 +109,15 @@
               }
               <!-- Edit button (admin only) -->
               @if (canEdit()) {
-                <button
-                  class="absolute top-1.5 right-1.5 z-[6] w-[22px] h-[22px] flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-200 hover:text-gray-600 transition-colors border-0 bg-transparent cursor-pointer"
+                <lfx-button
+                  icon="fa-light fa-pen-to-square"
+                  [text]="true"
+                  [rounded]="true"
+                  size="small"
+                  severity="secondary"
+                  styleClass="!absolute !top-1.5 !right-1.5 !z-[6] !w-[22px] !h-[22px] !p-0"
                   title="Edit Channels"
-                  (click)="openEditChannels()">
-                  <i class="fa-light fa-pen-to-square text-[11px]"></i>
-                </button>
+                  (onClick)="openEditChannels()" />
               }
             </div>
           }
