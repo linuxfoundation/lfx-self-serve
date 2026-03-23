@@ -86,7 +86,7 @@ export class VoteService {
   }
 
   /** Fetches votes scoped to a committee via `tags=committee_uid:{uid}` query parameter. */
-  public getVotesByCommittee(committeeUid: string, pageSize: number = 1000, orderBy?: string): Observable<Vote[]> {
+  public getVotesByCommittee(committeeUid: string, orderBy?: string, pageSize: number = 1000): Observable<Vote[]> {
     let params = new HttpParams().set('tags', `committee_uid:${committeeUid}`).set('page_size', pageSize.toString());
 
     if (orderBy) {

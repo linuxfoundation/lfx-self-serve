@@ -49,7 +49,7 @@ export class CommitteeVotesComponent {
         filter((c) => !!c?.uid),
         switchMap((c) => {
           this.loading.set(true);
-          return this.voteService.getVotesByCommittee(c.uid, undefined, 'updated_at.desc').pipe(
+          return this.voteService.getVotesByCommittee(c.uid, 'updated_at.desc').pipe(
             catchError((error) => {
               console.error('Failed to load committee votes:', error);
               this.messageService.add({
