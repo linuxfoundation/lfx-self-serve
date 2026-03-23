@@ -4,21 +4,23 @@
 import { Component, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { CardComponent } from '@components/card/card.component';
-import { RouteLoadingComponent } from '@components/loading/route-loading.component';
+import { MessageComponent } from '@components/message/message.component';
 import { Committee, Survey } from '@lfx-one/shared/interfaces';
 import { SurveysTableComponent } from '@app/modules/surveys/components/surveys-table/surveys-table.component';
 import { SurveyResultsDrawerComponent } from '@app/modules/surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { SurveyService } from '@services/survey.service';
+import { MessageService } from 'primeng/api';
 import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-surveys',
-  imports: [CardComponent, RouteLoadingComponent, SurveysTableComponent, SurveyResultsDrawerComponent],
+  imports: [CardComponent, MessageComponent, SurveysTableComponent, SurveyResultsDrawerComponent],
   templateUrl: './committee-surveys.component.html',
   styleUrl: './committee-surveys.component.scss',
 })
 export class CommitteeSurveysComponent {
   private readonly surveyService = inject(SurveyService);
+  private readonly messageService = inject(MessageService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -50,6 +52,11 @@ export class CommitteeSurveysComponent {
           this.surveyService.getSurveysByCommittee(c.uid, undefined, 'last_modified_at.desc').pipe(
             catchError((error) => {
               console.error('Failed to load committee surveys:', error);
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'Failed to load surveys. Please try again.',
+              });
               return of([]);
             }),
             finalize(() => this.loading.set(false))

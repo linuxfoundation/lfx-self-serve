@@ -2,14 +2,8 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4 pt-4" data-testid="committee-surveys-tab">
-  <!-- Info banner: committee-scoped surveys pending upstream confirmation -->
-  <div class="rounded-lg bg-blue-50 border border-blue-100 px-4 py-2.5 flex items-center gap-2 text-sm text-blue-700">
-    <i class="fa-light fa-circle-info"></i>
-    <span>Committee-scoped surveys are being set up. Data may be incomplete.</span>
-  </div>
-  @if (loading()) {
-    <lfx-route-loading />
-  } @else if (surveys().length > 0) {
+  <lfx-message severity="info" text="Committee-scoped surveys are being set up. Data may be incomplete." />
+  @if (loading() || surveys().length > 0) {
     <lfx-surveys-table
       [surveys]="surveys()"
       [hasPMOAccess]="canEdit()"

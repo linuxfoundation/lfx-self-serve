@@ -4,7 +4,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { Survey } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, take, throwError } from 'rxjs';
+import { catchError, Observable, take, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -13,16 +13,12 @@ export class SurveyService {
   private readonly http = inject(HttpClient);
 
   public getSurveys(params?: HttpParams): Observable<Survey[]> {
-    return this.http.get<Survey[]>('/api/surveys', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to load surveys:', error);
-        return of([]);
-      })
-    );
+    return this.http.get<Survey[]>('/api/surveys', { params });
   }
 
-  public getSurveysByCommittee(committeeId: string, limit?: number, orderBy?: string): Observable<Survey[]> {
-    let params = new HttpParams().set('parent', `committee:${committeeId}`);
+  /** Fetches surveys scoped to a committee via `tags=committee_uid:{uid}` query parameter. */
+  public getSurveysByCommittee(committeeUid: string, limit?: number, orderBy?: string): Observable<Survey[]> {
+    let params = new HttpParams().set('tags', `committee_uid:${committeeUid}`);
 
     if (limit !== undefined) {
       params = params.set('page_size', limit.toString());
@@ -32,7 +28,7 @@ export class SurveyService {
       params = params.set('order', orderBy);
     }
 
-    return this.http.get<Survey[]>('/api/surveys', { params });
+    return this.getSurveys(params);
   }
 
   public getSurveysByProject(projectUid: string, limit?: number, orderBy?: string): Observable<Survey[]> {
