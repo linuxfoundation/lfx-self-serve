@@ -79,14 +79,11 @@
             }">
             <i class="fa-light {{ tab.icon }} mr-2"></i>{{ tab.label }}
             @if (tab.badge && tab.badge() !== null) {
-              <span
-                class="ml-1 text-[10px] font-semibold px-1.5 py-0.5 rounded-full"
-                [ngClass]="{
-                  'bg-blue-50 text-blue-700': activeTab() === tab.key,
-                  'bg-gray-100 text-gray-600': activeTab() !== tab.key,
-                }">
-                {{ tab.badge() }}
-              </span>
+              <lfx-tag
+                [value]="'' + tab.badge()"
+                [rounded]="true"
+                [severity]="activeTab() === tab.key ? 'info' : 'secondary'"
+                styleClass="ml-1 !text-[10px] !px-1.5 !py-0.5" />
             }
           </button>
         }

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, effect, inject, signal, Signal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, NgClass } from '@angular/common';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
@@ -31,9 +31,6 @@ export class CommitteeViewComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly messageService = inject(MessageService);
 
-  // -- Tab state --
-  public activeTab = signal<CommitteeTab>('overview');
-
   // -- Writable signals --
   public loading = signal<boolean>(true);
   public error = signal<boolean>(false);
@@ -60,6 +57,7 @@ export class CommitteeViewComponent {
 
   // -- Visitor gating --
   public isVisitor: Signal<boolean> = computed(() => this.myRole() === null && !this.myRoleLoading());
+  public isMemberOrAdmin: Signal<boolean> = computed(() => !this.isVisitor() || this.canEdit());
 
   public readonly tabConfig: { key: CommitteeTab; label: string; icon: string; visible: () => boolean; badge?: () => number | null }[] = [
     { key: 'overview', label: 'Overview', icon: 'fa-gauge', visible: () => true },
@@ -79,17 +77,16 @@ export class CommitteeViewComponent {
 
   public visibleTabs: Signal<typeof this.tabConfig> = computed(() => this.tabConfig.filter((tab) => tab.visible()));
 
-  // Reset activeTab to overview if current tab becomes hidden
-  private readonly syncActiveTab = effect(
-    () => {
-      const visible = this.visibleTabs();
-      const current = this.activeTab();
-      if (visible.length > 0 && !visible.some((t) => t.key === current)) {
-        this.activeTab.set('overview');
+  // -- Tab state: linkedSignal keeps user selection unless it becomes invalid --
+  public activeTab = linkedSignal<typeof this.tabConfig, CommitteeTab>({
+    source: this.visibleTabs,
+    computation: (visible, previous) => {
+      if (previous && visible.some((t) => t.key === previous.value)) {
+        return previous.value;
       }
+      return 'overview';
     },
-    { allowSignalWrites: true }
-  );
+  });
 
   // -- Public methods --
   public goBack(): void {
@@ -99,11 +96,6 @@ export class CommitteeViewComponent {
   public refreshCommittee(): void {
     this.loading.set(true);
     this.refresh.update((v) => v + 1);
-  }
-
-  // -- Private helpers --
-  private isMemberOrAdmin(): boolean {
-    return !this.isVisitor() || this.canEdit();
   }
 
   // -- Private initializer functions --
