@@ -4,7 +4,7 @@
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, NgClass } from '@angular/common';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -15,9 +15,10 @@ import { MenuItem, MessageService } from 'primeng/api';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
 import { CommitteeOverviewComponent } from '../components/committee-overview/committee-overview.component';
+import { CommitteeSettingsTabComponent } from '../components/committee-settings-tab/committee-settings-tab.component';
 import { CommitteeSurveysComponent } from '../components/committee-surveys/committee-surveys.component';
 
-type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents';
+type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';
 
 @Component({
   selector: 'lfx-committee-view',
@@ -25,11 +26,11 @@ type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 
     BreadcrumbComponent,
     ButtonComponent,
     TagComponent,
-    RouterLink,
     RouteLoadingComponent,
     DatePipe,
     NgClass,
     CommitteeOverviewComponent,
+    CommitteeSettingsTabComponent,
     CommitteeSurveysComponent,
   ],
   templateUrl: './committee-view.component.html',

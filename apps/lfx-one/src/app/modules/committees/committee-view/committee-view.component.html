@@ -58,13 +58,6 @@
             }
           </div>
         </div>
-
-        <!-- Action Buttons -->
-        @if (canEdit()) {
-          <div class="flex items-center gap-2 flex-shrink-0">
-            <lfx-button icon="fa-light fa-pen-to-square" label="Edit" size="small" [routerLink]="['/groups', committee()?.uid || '', 'edit']"></lfx-button>
-          </div>
-        }
       </div>
 
       <!-- Tabs -->
@@ -127,6 +120,17 @@
           }">
           <i class="fa-light fa-folder-open mr-2"></i>Documents
         </button>
+        @if (canEdit()) {
+          <button
+            (click)="activeTab.set('settings')"
+            class="px-4 py-2 text-sm font-medium transition-colors"
+            [ngClass]="{
+              'border-b-2 border-blue-600 text-blue-600': activeTab() === 'settings',
+              'text-gray-500': activeTab() !== 'settings',
+            }">
+            <i class="fa-light fa-gear mr-2"></i>Settings
+          </button>
+        }
       </div>
 
       <!-- Tab Panels -->
@@ -176,6 +180,11 @@
               <p class="text-xs text-gray-400 mt-1">Coming in a future PR</p>
             </div>
           </div>
+        }
+        @case ('settings') {
+          @if (canEdit()) {
+            <lfx-committee-settings-tab [committee]="committee()!" (committeeUpdated)="refreshCommittee()" />
+          }
         }
       }
     </div>
