@@ -77,6 +77,32 @@ export class MeetingService {
     return this.getMeetings(params).pipe(map((response) => response.data));
   }
 
+  /** Fetches upcoming meetings scoped to a committee via `tags=committee_uid:{id}` query parameter. */
+  public getMeetingsByCommittee(committeeId: string, limit?: number, orderBy?: string): Observable<Meeting[]> {
+    let params = new HttpParams().set('tags', `committee_uid:${committeeId}`);
+
+    if (limit) {
+      params = params.set('limit', limit.toString());
+    }
+
+    if (orderBy) {
+      params = params.set('order', orderBy);
+    }
+
+    return this.getMeetings(params).pipe(map((response) => response.data));
+  }
+
+  /** Fetches past meetings scoped to a committee via `tags=committee_uid:{id}` query parameter. */
+  public getPastMeetingsByCommittee(committeeId: string, limit?: number): Observable<PastMeeting[]> {
+    let params = new HttpParams().set('tags', `committee_uid:${committeeId}`);
+
+    if (limit) {
+      params = params.set('limit', limit.toString());
+    }
+
+    return this.getPastMeetings(params).pipe(map((response) => response.data));
+  }
+
   public getMeetingsCountByProject(uid: string): Observable<number> {
     const params = new HttpParams().set('tags', `project_uid:${uid}`);
     return this.http

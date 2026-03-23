@@ -14,6 +14,7 @@ import { CommitteeService } from '@services/committee.service';
 import { MenuItem, MessageService } from 'primeng/api';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
+import { CommitteeMeetingsComponent } from '../components/committee-meetings/committee-meetings.component';
 import { CommitteeOverviewComponent } from '../components/committee-overview/committee-overview.component';
 import { CommitteeSettingsTabComponent } from '../components/committee-settings-tab/committee-settings-tab.component';
 
@@ -28,6 +29,7 @@ type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 
     RouteLoadingComponent,
     DatePipe,
     NgClass,
+    CommitteeMeetingsComponent,
     CommitteeOverviewComponent,
     CommitteeSettingsTabComponent,
   ],
@@ -40,6 +42,8 @@ export class CommitteeViewComponent {
   private readonly router = inject(Router);
   private readonly committeeService = inject(CommitteeService);
   private readonly messageService = inject(MessageService);
+
+  public meetingsTimeFilter = signal<'upcoming' | 'past'>('upcoming');
 
   // -- Writable signals --
   public loading = signal<boolean>(true);
@@ -106,6 +110,14 @@ export class CommitteeViewComponent {
   public refreshCommittee(): void {
     this.loading.set(true);
     this.refresh.update((v) => v + 1);
+  }
+
+  public handleTabNavigation(tabWithContext: string): void {
+    const [tab, context] = tabWithContext.split(':');
+    this.activeTab.set(tab as CommitteeTab);
+    if (tab === 'meetings' && (context === 'past' || context === 'upcoming')) {
+      this.meetingsTimeFilter.set(context);
+    }
   }
 
   // -- Private initializer functions --
