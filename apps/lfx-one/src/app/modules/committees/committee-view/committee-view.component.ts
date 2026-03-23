@@ -67,6 +67,7 @@ export class CommitteeViewComponent {
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
   public myRoleLoading = signal(true);
+  public joiningOrLeaving = signal(false);
 
   // -- Channels edit state --
   public showChannelsModal = model(false);
@@ -209,18 +210,21 @@ export class CommitteeViewComponent {
 
   public handleJoinRequest(): void {
     const committee = this.committee();
-    if (!committee) {
+    if (!committee || this.joiningOrLeaving()) {
       return;
     }
     if (committee.join_mode === 'open') {
+      this.joiningOrLeaving.set(true);
       this.committeeService.joinCommittee(committee.uid).subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You have joined "${committee.name}"` });
+          this.joiningOrLeaving.set(false);
           this.refreshCommittee();
           this.membersRefresh.update((v) => v + 1);
         },
         error: () => {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: `Failed to join "${committee.name}"` });
+          this.joiningOrLeaving.set(false);
         },
       });
     } else {
@@ -231,17 +235,20 @@ export class CommitteeViewComponent {
 
   public handleLeaveRequest(): void {
     const committee = this.committee();
-    if (!committee) {
+    if (!committee || this.joiningOrLeaving()) {
       return;
     }
+    this.joiningOrLeaving.set(true);
     this.committeeService.leaveCommittee(committee.uid).subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Left', detail: `You have left "${committee.name}"` });
+          this.joiningOrLeaving.set(false);
           this.refreshCommittee();
           this.membersRefresh.update((v) => v + 1);
         },
         error: () => {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: `Failed to leave "${committee.name}"` });
+          this.joiningOrLeaving.set(false);
         },
       });
   }
