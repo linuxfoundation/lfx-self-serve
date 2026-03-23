@@ -60,37 +60,21 @@ export class CommitteeService {
       })
     );
 
-    // Verify access for all committees by checking the committee service directly.
-    // The query service returns ALL committees but the committee service enforces per-committee access control.
-    const inaccessibleUids = new Set<string>();
-
-    await Promise.all(
-      committees.map(async (committee) => {
-        try {
-          await this.microserviceProxy.proxyRequest(req, 'LFX_V2_SERVICE', `/committees/${committee.uid}`, 'GET');
-        } catch (error: any) {
-          const statusCode = error?.statusCode ?? error?.status;
-          if (statusCode === 401 || statusCode === 403 || statusCode === 404) {
-            inaccessibleUids.add(committee.uid);
-          } else {
-            logger.warning(req, 'get_committees', 'Unexpected error checking committee access', {
-              committee_uid: committee.uid,
-              error: error instanceof Error ? error.message : 'Unknown error',
-            });
-            throw error;
-          }
-        }
-      })
+    // Batch access check: filter inaccessible committees and add writer field in one step.
+    // The query service returns ALL committees but not all are accessible to the current user.
+    const accessMap = await this.accessCheckService.checkAccess(
+      req,
+      committees.map((c) => ({ resource: 'committee' as const, id: c.uid, access: 'viewer' as const }))
     );
 
-    if (inaccessibleUids.size > 0) {
+    const accessibleCommittees = committees.filter((c) => accessMap.get(c.uid));
+
+    if (accessibleCommittees.length < committees.length) {
       logger.debug(req, 'get_committees', 'Filtered inaccessible committees', {
-        filtered_count: inaccessibleUids.size,
+        filtered_count: committees.length - accessibleCommittees.length,
         total: committees.length,
       });
     }
-
-    const accessibleCommittees = committees.filter((c) => !inaccessibleUids.has(c.uid));
 
     // Add writer access field to accessible committees
     return await this.accessCheckService.addAccessToResources(req, accessibleCommittees, 'committee');
@@ -188,9 +172,21 @@ export class CommitteeService {
         'update_committee'
       );
 
-      // Step 2: Merge partial update with current data (PUT replaces the entire resource)
+      // Step 2: Strip read-only and computed fields, then merge with update data (PUT replaces the entire resource)
+      const {
+        uid: _uid,
+        created_at: _createdAt,
+        updated_at: _updatedAt,
+        total_members: _totalMembers,
+        total_voting_repos: _totalVotingRepos,
+        writer: _writer,
+        project_name: _projectName,
+        foundation_name: _foundationName,
+        ...mutableFields
+      } = currentCommittee;
+
       const mergedData = {
-        ...currentCommittee,
+        ...mutableFields,
         ...committeeData,
       };
 

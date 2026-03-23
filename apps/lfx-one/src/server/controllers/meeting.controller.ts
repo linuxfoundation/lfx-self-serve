@@ -52,12 +52,11 @@ export class MeetingController {
 
     try {
       const skipRegistrants = req.query['skip_registrants'] === 'true';
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars
-      const { skip_registrants: _skipReg, ...queryParams } = req.query as Record<string, any>;
+      const { skip_registrants: _, ...queryParams } = req.query as Record<string, any>;
       const { data: meetings, page_token } = await this.meetingService.getMeetings(req, queryParams, 'v1_meeting', true);
 
       if (skipRegistrants) {
-        const normalizedMeetings = meetings.map((m: any) => ({
+        const normalizedMeetings = meetings.map((m: Meeting) => ({
           ...m,
           invited: m.invited ?? false,
           individual_registrants_count: m.individual_registrants_count ?? 0,
