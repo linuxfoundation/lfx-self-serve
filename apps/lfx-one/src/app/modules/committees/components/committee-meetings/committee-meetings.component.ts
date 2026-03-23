@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
-import { Component, computed, effect, inject, input, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, linkedSignal, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { MessageComponent } from '@components/message/message.component';
 import { Committee, Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
 import { MeetingService } from '@services/meeting.service';
@@ -17,7 +18,7 @@ type TimeFilter = 'upcoming' | 'past';
 
 @Component({
   selector: 'lfx-committee-meetings',
-  imports: [NgClass, ReactiveFormsModule, CardComponent, InputTextComponent, MeetingCardComponent, SkeletonModule],
+  imports: [ReactiveFormsModule, ButtonComponent, CardComponent, InputTextComponent, MessageComponent, MeetingCardComponent, SkeletonModule],
   templateUrl: './committee-meetings.component.html',
   styleUrl: './committee-meetings.component.scss',
 })
@@ -29,10 +30,10 @@ export class CommitteeMeetingsComponent {
   public canEdit = input<boolean>(false);
   public initialTimeFilter = input<TimeFilter>('upcoming');
 
-  // Filter state
+  // Filter state — linkedSignal tracks initialTimeFilter but allows local overrides
   public searchForm = new FormGroup({ search: new FormControl('') });
   public searchControl = this.searchForm.get('search') as FormControl;
-  public timeFilter = signal<TimeFilter>('upcoming');
+  public timeFilter = linkedSignal(() => this.initialTimeFilter());
 
   // Time filter options
   public timeOptions: { label: string; value: TimeFilter }[] = [
@@ -40,36 +41,24 @@ export class CommitteeMeetingsComponent {
     { label: 'Past', value: 'past' },
   ];
 
-  // Sync timeFilter with initialTimeFilter input changes
-  private readonly syncTimeFilter = effect(
-    () => {
-      this.timeFilter.set(this.initialTimeFilter());
-    },
-    { allowSignalWrites: true }
-  );
-
   // Loading state
   public meetingsLoading = signal(true);
   public pastMeetingsLoading = signal(false);
 
-  // Data — upcoming fetched immediately, past lazy-loaded on first filter switch
+  // Data — upcoming meetings
   public meetings: Signal<Meeting[]> = this.initMeetings();
-  public pastMeetings = signal<PastMeeting[]>([]);
-  private pastMeetingsInitialized = false;
 
-  // Lazy-load past meetings when the time filter switches to 'past'
-  private readonly lazyLoadPastMeetings = effect(
-    () => {
-      if (this.timeFilter() === 'past' && !this.pastMeetingsInitialized && this.committee()?.uid) {
-        this.pastMeetingsInitialized = true;
-        this.pastMeetingsLoading.set(true);
-        this.meetingService
-          .getPastMeetingsByCommittee(this.committee().uid)
-          .pipe(finalize(() => this.pastMeetingsLoading.set(false)))
-          .subscribe((data) => this.pastMeetings.set(data));
-      }
-    },
-    { allowSignalWrites: true }
+  // Data — past meetings, lazy-loaded reactively when filter switches to 'past'
+  public pastMeetings: Signal<PastMeeting[]> = toSignal(
+    toObservable(computed(() => ({ time: this.timeFilter(), uid: this.committee()?.uid }))).pipe(
+      filter(({ time, uid }) => time === 'past' && !!uid),
+      distinctUntilChanged((a, b) => a.uid === b.uid),
+      tap(() => this.pastMeetingsLoading.set(true)),
+      switchMap(({ uid }) =>
+        this.meetingService.getPastMeetingsByCommittee(uid!).pipe(finalize(() => this.pastMeetingsLoading.set(false)))
+      )
+    ),
+    { initialValue: [] }
   );
 
   // Loading computed: true when active tab's data is loading

@@ -3,10 +3,7 @@
 
 <div class="flex flex-col gap-4 pt-4" data-testid="committee-meetings-tab">
   <!-- Info banner: committee-scoped meetings pending upstream confirmation -->
-  <div class="rounded-lg bg-blue-50 border border-blue-100 px-4 py-2.5 flex items-center gap-2 text-sm text-blue-700">
-    <i class="fa-light fa-circle-info"></i>
-    <span>Committee-scoped meetings are being set up. Data may be incomplete.</span>
-  </div>
+  <lfx-message severity="info" text="Committee-scoped meetings are being set up. Data may be incomplete." />
   <!-- Toolbar -->
   <div class="flex items-center gap-3">
     <lfx-input-text
@@ -18,14 +15,14 @@
       dataTest="committee-meetings-search"></lfx-input-text>
     <div class="flex gap-1">
       @for (option of timeOptions; track option.value) {
-        <button
-          class="px-3 py-1.5 text-xs font-medium rounded-md border transition-colors"
-          [ngClass]="timeFilter() === option.value ? 'bg-gray-100 text-gray-900 border-gray-300' : 'bg-white text-gray-500 border-gray-200'"
-          [attr.aria-pressed]="timeFilter() === option.value"
+        <lfx-button
+          [label]="option.label"
+          [severity]="timeFilter() === option.value ? 'secondary' : 'contrast'"
+          size="small"
+          [outlined]="timeFilter() !== option.value"
+          [ariaLabel]="option.label"
           [attr.data-testid]="'committee-meetings-filter-' + option.value"
-          (click)="setTimeFilter(option.value)">
-          {{ option.label }}
-        </button>
+          (onClick)="setTimeFilter(option.value)" />
       }
     </div>
   </div>
