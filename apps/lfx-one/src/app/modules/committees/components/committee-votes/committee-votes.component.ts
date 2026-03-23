@@ -9,7 +9,7 @@ import { VotesTableComponent } from '@app/modules/votes/components/votes-table/v
 import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
-import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
+import { catchError, filter, finalize, of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-votes',
@@ -34,6 +34,7 @@ export class CommitteeVotesComponent {
   // Data
   public votes: Signal<Vote[]> = this.initVotes();
 
+  /** Opens the vote results drawer for the selected vote. */
   public viewVoteResults(voteUid: string): void {
     const vote = this.votes().find((v) => v.uid === voteUid) || null;
     this.selectedVoteId.set(voteUid);
@@ -46,9 +47,9 @@ export class CommitteeVotesComponent {
     return toSignal(
       toObservable(this.committee).pipe(
         filter((c) => !!c?.uid),
-        tap(() => this.loading.set(true)),
-        switchMap((c) =>
-          this.voteService.getVotesByCommittee(c.uid, undefined, 'updated_at.desc').pipe(
+        switchMap((c) => {
+          this.loading.set(true);
+          return this.voteService.getVotesByCommittee(c.uid, undefined, 'updated_at.desc').pipe(
             catchError((error) => {
               console.error('Failed to load committee votes:', error);
               this.messageService.add({
@@ -59,8 +60,8 @@ export class CommitteeVotesComponent {
               return of([]);
             }),
             finalize(() => this.loading.set(false))
-          )
-        )
+          );
+        })
       ),
       { initialValue: [] }
     );
