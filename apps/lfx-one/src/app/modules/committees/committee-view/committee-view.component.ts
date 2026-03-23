@@ -4,7 +4,7 @@
 import { Component, computed, inject, linkedSignal, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, NgClass } from '@angular/common';
-import { ActivatedRoute, Router, RouterLink } from '@angular/router';
+import { ActivatedRoute, Router } from '@angular/router';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -15,12 +15,22 @@ import { MenuItem, MessageService } from 'primeng/api';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
 import { CommitteeOverviewComponent } from '../components/committee-overview/committee-overview.component';
+import { CommitteeSettingsTabComponent } from '../components/committee-settings-tab/committee-settings-tab.component';
 
 type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';
 
 @Component({
   selector: 'lfx-committee-view',
-  imports: [BreadcrumbComponent, ButtonComponent, TagComponent, RouterLink, RouteLoadingComponent, DatePipe, NgClass, CommitteeOverviewComponent],
+  imports: [
+    BreadcrumbComponent,
+    ButtonComponent,
+    TagComponent,
+    RouteLoadingComponent,
+    DatePipe,
+    NgClass,
+    CommitteeOverviewComponent,
+    CommitteeSettingsTabComponent,
+  ],
   templateUrl: './committee-view.component.html',
   styleUrl: './committee-view.component.scss',
 })
