@@ -92,7 +92,7 @@
               <div class="flex items-center gap-2">
                 <label [for]="feature.key" class="text-sm font-semibold text-gray-900 cursor-pointer">{{ feature.title }}</label>
                 @if (feature.recommended) {
-                  <span class="bg-green-100 text-green-700 text-[10px] font-semibold px-1.5 py-0.5 rounded uppercase tracking-wide">Recommended</span>
+                  <lfx-tag value="Recommended" severity="success" [rounded]="true" />
                 }
               </div>
               <p class="text-xs text-gray-600">{{ feature.description }}</p>

@@ -5,12 +5,13 @@ import { Component, input } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { ToggleComponent } from '@components/toggle/toggle.component';
 import { COMMITTEE_LABEL, COMMITTEE_SETTINGS_FEATURES, JOIN_MODE_OPTIONS, MEMBER_VISIBILITY_OPTIONS } from '@lfx-one/shared/constants';
 
 @Component({
   selector: 'lfx-committee-settings',
-  imports: [ReactiveFormsModule, MessageComponent, SelectComponent, ToggleComponent],
+  imports: [ReactiveFormsModule, MessageComponent, SelectComponent, TagComponent, ToggleComponent],
   templateUrl: './committee-settings.component.html',
 })
 export class CommitteeSettingsComponent {

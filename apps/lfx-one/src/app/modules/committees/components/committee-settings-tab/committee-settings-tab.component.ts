@@ -9,7 +9,7 @@ import { Committee, JoinMode } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import { CommitteeService } from '@services/committee.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { take } from 'rxjs';
+import { finalize } from 'rxjs';
 
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 
@@ -50,24 +50,21 @@ export class CommitteeSettingsTabComponent {
   });
 
   public constructor() {
-    effect(
-      () => {
-        const c = this.committee();
-        if (c) {
-          this.form.patchValue({
-            member_visibility: c.member_visibility || 'hidden',
-            join_mode: c.join_mode || 'invite_only',
-            business_email_required: c.business_email_required || false,
-            enable_voting: c.enable_voting || false,
-            is_audit_enabled: c.is_audit_enabled || false,
-            public: c.public || false,
-            sso_group_enabled: c.sso_group_enabled || false,
-            show_meeting_attendees: c.show_meeting_attendees || false,
-          });
-        }
-      },
-      { allowSignalWrites: true }
-    );
+    effect(() => {
+      const c = this.committee();
+      if (c) {
+        this.form.patchValue({
+          member_visibility: c.member_visibility || 'hidden',
+          join_mode: c.join_mode || 'invite_only',
+          business_email_required: c.business_email_required || false,
+          enable_voting: c.enable_voting || false,
+          is_audit_enabled: c.is_audit_enabled || false,
+          public: c.public || false,
+          sso_group_enabled: c.sso_group_enabled || false,
+          show_meeting_attendees: c.show_meeting_attendees || false,
+        });
+      }
+    });
   }
 
   public confirmDelete(): void {
@@ -83,16 +80,14 @@ export class CommitteeSettingsTabComponent {
         this.deleting.set(true);
         this.committeeService
           .deleteCommittee(this.committee().uid)
-          .pipe(take(1))
+          .pipe(finalize(() => this.deleting.set(false)))
           .subscribe({
             next: () => {
               this.messageService.add({ severity: 'success', summary: 'Deleted', detail: `"${this.committee().name}" has been deleted` });
-              this.deleting.set(false);
               this.router.navigate(['/groups']);
             },
             error: () => {
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to delete group' });
-              this.deleting.set(false);
             },
           });
       },
@@ -113,16 +108,14 @@ export class CommitteeSettingsTabComponent {
         sso_group_enabled: values.sso_group_enabled ?? false,
         show_meeting_attendees: values.show_meeting_attendees ?? false,
       })
-      .pipe(take(1))
+      .pipe(finalize(() => this.saving.set(false)))
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Settings saved' });
-          this.saving.set(false);
           this.committeeUpdated.emit();
         },
         error: () => {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to save settings' });
-          this.saving.set(false);
         },
       });
   }
