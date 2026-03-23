@@ -26,7 +26,6 @@ type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 
     BreadcrumbComponent,
     ButtonComponent,
     TagComponent,
-    RouterLink,
     RouteLoadingComponent,
     DatePipe,
     NgClass,
@@ -44,8 +43,6 @@ export class CommitteeViewComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly messageService = inject(MessageService);
 
-  // -- Tab state --
-  public activeTab = signal<CommitteeTab>('overview');
   public meetingsTimeFilter = signal<'upcoming' | 'past'>('upcoming');
 
   // -- Writable signals --
