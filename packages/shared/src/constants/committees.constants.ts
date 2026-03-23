@@ -437,15 +437,6 @@ export const COMMITTEE_SETTINGS_FEATURES = [
     description: `Track and log all ${COMMITTEE_LABEL.singular.toLowerCase()} activity for compliance`,
     color: lfxColors.emerald[500],
   },
-  // TODO(LFXV2-1255): Remove joinable once join_mode is fully wired backend-side.
-  // TODO(LFXV2-1255): wire join_mode dropdown in settings form
-  {
-    key: 'join_mode',
-    icon: 'fa-light fa-door-open',
-    title: `${COMMITTEE_LABEL.singular} Join Mode`,
-    description: `Controls how members join this ${COMMITTEE_LABEL.singular.toLowerCase()}.`,
-    color: lfxColors.amber[500],
-  },
   {
     key: 'public',
     icon: 'fa-light fa-eye',
