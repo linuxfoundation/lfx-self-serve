@@ -46,9 +46,7 @@ export class CommitteeDocumentsComponent {
     const query = this.searchQuery().toLowerCase().trim();
     const all = this.allAttachments();
     if (!query) return all;
-    return all.filter(
-      (item) => item.attachment.name.toLowerCase().includes(query) || item.meetingTitle.toLowerCase().includes(query)
-    );
+    return all.filter((item) => item.attachment.name.toLowerCase().includes(query) || item.meetingTitle.toLowerCase().includes(query));
   });
 
   /** Opens attachment — link in new tab, file via download URL. */

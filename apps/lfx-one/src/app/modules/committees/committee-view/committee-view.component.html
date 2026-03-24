@@ -82,7 +82,9 @@
                   <div class="whitespace-nowrap overflow-hidden text-ellipsis">
                     <span class="font-medium text-gray-500">{{ chatPlatformLabel() }}:</span>
                     @if (chatChannel.startsWith('http')) {
-                      <a [href]="chatChannel" target="_blank" rel="noopener noreferrer" class="text-gray-900 no-underline" [title]="chatChannel">{{ chatChannel }}</a>
+                      <a [href]="chatChannel" target="_blank" rel="noopener noreferrer" class="text-gray-900 no-underline" [title]="chatChannel">{{
+                        chatChannel
+                      }}</a>
                     } @else {
                       <span class="text-gray-900">{{ chatChannel }}</span>
                     }
