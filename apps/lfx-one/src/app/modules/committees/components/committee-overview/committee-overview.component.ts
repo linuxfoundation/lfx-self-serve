@@ -9,6 +9,7 @@ import { Dialog } from 'primeng/dialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
@@ -34,6 +35,7 @@ import { catchError, EMPTY, filter, finalize, forkJoin, of, switchMap } from 'rx
     ButtonComponent,
     Dialog,
     DashboardMeetingCardComponent,
+    MessageComponent,
     NgClass,
     NgTemplateOutlet,
     DatePipe,

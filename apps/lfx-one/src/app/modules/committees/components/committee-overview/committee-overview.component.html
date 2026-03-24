@@ -7,28 +7,22 @@
     @switch (bannerType()) {
       @case ('visitor') {
         @if (canJoin()) {
-          <div class="rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-6" data-testid="committee-overview-visitor-banner">
-            <div class="flex items-center justify-between">
+          <lfx-message severity="info" icon="fa-light fa-right-to-bracket" data-testid="committee-overview-visitor-banner">
+            <div class="flex items-center justify-between w-full">
               <div class="flex flex-col gap-1">
-                <h3 class="text-base font-semibold text-gray-900">Interested in this {{ categoryLabel() }}?</h3>
-                <p class="text-sm text-gray-600">Join to participate in meetings, votes, and surveys.</p>
+                <h4 class="text-sm font-semibold">Interested in this {{ categoryLabel() }}?</h4>
+                <p class="text-sm">Join to participate in meetings, votes, and surveys.</p>
               </div>
               <lfx-button [label]="joinButtonLabel()" severity="info" size="small" icon="fa-light fa-right-to-bracket" (onClick)="onJoinClick()"></lfx-button>
             </div>
-          </div>
+          </lfx-message>
         }
       }
       @case ('member') {
-        <div class="rounded-xl bg-green-50 border border-green-100 px-5 py-3 flex items-center gap-3" data-testid="committee-overview-member-banner">
-          <i class="fa-light fa-circle-check text-green-600"></i>
-          <span class="text-sm text-green-800">You are a member of this {{ categoryLabel() }}.</span>
-        </div>
+        <lfx-message severity="success" icon="fa-light fa-circle-check" text="You are a member of this {{ categoryLabel() }}." data-testid="committee-overview-member-banner"></lfx-message>
       }
       @case ('chair') {
-        <div class="rounded-xl bg-blue-50 border border-blue-100 px-5 py-3 flex items-center gap-3" data-testid="committee-overview-chair-banner">
-          <i class="fa-light fa-user-crown text-blue-600"></i>
-          <span class="text-sm text-blue-800">You are a {{ myRole() }} of this {{ categoryLabel() }}.</span>
-        </div>
+        <lfx-message severity="info" icon="fa-light fa-user-crown" text="You are a {{ myRole() }} of this {{ categoryLabel() }}." data-testid="committee-overview-chair-banner"></lfx-message>
       }
     }
   }
@@ -95,14 +89,16 @@
     <lfx-card [style]="{ height: '100%' }" data-testid="committee-overview-chairs">
       <div class="relative flex flex-col justify-center gap-1.5 h-full">
         @if (canEdit() && !membersLoading()) {
-          <button
-            class="absolute top-0 right-0 w-6 h-6 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-            title="Edit chairs"
-            aria-label="Edit chairs"
+          <lfx-button
+            class="absolute top-0 right-0"
+            icon="fa-light fa-pen-to-square"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            tooltip="Edit chairs"
             data-testid="committee-overview-edit-chairs-btn"
-            (click)="startEditChairs()">
-            <i class="fa-light fa-pen-to-square text-[10px]"></i>
-          </button>
+            (onClick)="startEditChairs()"></lfx-button>
         }
         <p class="text-[11px] text-gray-500 uppercase tracking-wide font-semibold">Chairs</p>
         @if (membersLoading()) {
@@ -142,14 +138,15 @@
       <div class="flex items-center justify-between">
         <h3 class="text-sm font-semibold text-gray-900">About</h3>
         @if (canEdit() && !editingDescription() && !isVisitor()) {
-          <button
-            class="w-7 h-7 flex items-center justify-center rounded-md text-gray-400 hover:bg-gray-100 hover:text-gray-600 transition-colors"
-            title="Edit description"
-            aria-label="Edit description"
+          <lfx-button
+            icon="fa-light fa-pen-to-square"
+            [text]="true"
+            [rounded]="true"
+            size="small"
+            severity="secondary"
+            tooltip="Edit description"
             data-testid="committee-overview-edit-description-btn"
-            (click)="startEditDescription()">
-            <i class="fa-light fa-pen-to-square text-xs"></i>
-          </button>
+            (onClick)="startEditDescription()"></lfx-button>
         }
       </div>
       @if (editingDescription()) {
@@ -229,7 +226,7 @@
             <i class="fa-light fa-clock-rotate-left text-gray-400"></i>
             Last Meeting
           </h2>
-          <button class="text-xs text-blue-600 hover:text-blue-800 font-medium" (click)="navigateToTab('meetings:past')">View All</button>
+          <lfx-button label="View All" [text]="true" size="small" severity="info" styleClass="!text-xs" (onClick)="navigateToTab('meetings:past')"></lfx-button>
         </div>
         @if (pastMeetingsLoading()) {
           <lfx-card>
@@ -267,7 +264,7 @@
             <i class="fa-light fa-calendar text-gray-400"></i>
             Next Meeting
           </h2>
-          <button class="text-xs text-blue-600 hover:text-blue-800 font-medium" (click)="navigateToTab('meetings:upcoming')">View All</button>
+          <lfx-button label="View All" [text]="true" size="small" severity="info" styleClass="!text-xs" (onClick)="navigateToTab('meetings:upcoming')"></lfx-button>
         </div>
         @if (upcomingMeetingsLoading()) {
           <lfx-card>
