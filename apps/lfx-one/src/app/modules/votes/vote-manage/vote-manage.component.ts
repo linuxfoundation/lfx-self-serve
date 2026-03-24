@@ -126,7 +126,7 @@ export class VoteManageComponent {
   private navigateBack(): void {
     const ctx = this.committeeContext();
     if (ctx) {
-      this.router.navigate(['/groups', ctx.uid], { fragment: 'votes' });
+      this.router.navigate(['/groups', ctx.uid], { queryParams: { tab: 'votes' } });
     } else {
       this.router.navigate(['/votes']);
     }

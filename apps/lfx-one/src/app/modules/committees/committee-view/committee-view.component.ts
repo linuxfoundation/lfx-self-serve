@@ -67,6 +67,9 @@ export class CommitteeViewComponent {
 
   public meetingsTimeFilter = signal<'upcoming' | 'past'>('upcoming');
 
+  // Initial tab from queryParams (e.g., ?tab=votes after create flow redirect)
+  private readonly initialTab = this.route.snapshot.queryParamMap.get('tab') as CommitteeTab | null;
+
   // -- Writable signals --
   public loading = signal<boolean>(true);
   public error = signal<boolean>(false);
@@ -154,6 +157,10 @@ export class CommitteeViewComponent {
   public activeTab = linkedSignal<typeof this.tabConfig, CommitteeTab>({
     source: this.visibleTabs,
     computation: (visible, previous) => {
+      // On first computation, use queryParam tab if provided and visible
+      if (!previous && this.initialTab && visible.some((t) => t.key === this.initialTab)) {
+        return this.initialTab!;
+      }
       if (previous && visible.some((t) => t.key === previous.value)) {
         return previous.value;
       }
@@ -386,4 +393,5 @@ export class CommitteeViewComponent {
       return 'Website';
     });
   }
+
 }
