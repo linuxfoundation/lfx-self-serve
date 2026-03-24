@@ -119,7 +119,17 @@ export class VoteManageComponent {
   }
 
   public onCancel(): void {
-    this.router.navigate(['/votes']);
+    this.navigateBack();
+  }
+
+  /** Navigates back to the committee votes tab or the main votes page. */
+  private navigateBack(): void {
+    const ctx = this.committeeContext();
+    if (ctx) {
+      this.router.navigate(['/groups', ctx.uid], { fragment: 'votes' });
+    } else {
+      this.router.navigate(['/votes']);
+    }
   }
 
   public onSaveAsDraft(): void {
@@ -152,7 +162,7 @@ export class VoteManageComponent {
             detail: `${this.voteLabel.singular} updated successfully`,
           });
           this.submitting.set(false);
-          this.router.navigate(['/votes']);
+          this.navigateBack();
         },
         error: (error) => {
           this.messageService.add({
@@ -173,7 +183,7 @@ export class VoteManageComponent {
             detail: `${this.voteLabel.singular} saved as draft`,
           });
           this.submitting.set(false);
-          this.router.navigate(['/votes']);
+          this.navigateBack();
         },
         error: (error) => {
           this.messageService.add({
@@ -261,7 +271,7 @@ export class VoteManageComponent {
                 detail: `${this.voteLabel.singular} opened successfully`,
               });
               this.submitting.set(false);
-              this.router.navigate(['/votes']);
+              this.navigateBack();
             },
             error: (error) => {
               this.messageService.add({
@@ -270,7 +280,7 @@ export class VoteManageComponent {
                 detail: `${this.voteLabel.singular} updated but failed to enable: ${error.message || 'Unknown error'}`,
               });
               this.submitting.set(false);
-              this.router.navigate(['/votes']);
+              this.navigateBack();
             },
           });
         },
@@ -297,7 +307,7 @@ export class VoteManageComponent {
                 detail: `${this.voteLabel.singular} opened successfully`,
               });
               this.submitting.set(false);
-              this.router.navigate(['/votes']);
+              this.navigateBack();
             },
             error: (error) => {
               this.messageService.add({
@@ -306,7 +316,7 @@ export class VoteManageComponent {
                 detail: `${this.voteLabel.singular} created but failed to enable: ${error.message || 'Unknown error'}`,
               });
               this.submitting.set(false);
-              this.router.navigate(['/votes']);
+              this.navigateBack();
             },
           });
         },
@@ -401,7 +411,7 @@ export class VoteManageComponent {
                   summary: 'Error',
                   detail: 'Failed to load vote details',
                 });
-                this.router.navigate(['/votes']);
+                this.navigateBack();
                 return of(null);
               })
             );
