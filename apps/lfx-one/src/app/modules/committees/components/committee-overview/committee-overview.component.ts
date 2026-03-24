@@ -347,7 +347,7 @@ export class CommitteeOverviewComponent {
         filter((c) => !!c?.uid),
         switchMap((c) => {
           this.votesLoading.set(true);
-          return this.voteService.getVotesByCommittee(c.uid, 50).pipe(
+          return this.voteService.getVotesByCommittee(c.uid, undefined, 50).pipe(
             catchError(() => of([])),
             finalize(() => this.votesLoading.set(false))
           );
