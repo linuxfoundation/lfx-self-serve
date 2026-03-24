@@ -497,7 +497,9 @@ export class VoteManageComponent {
         //             eligible_participants (required)
         //             close_date (required)
         const titleValid = !!form.get('title')?.valid;
-        const committeeValid = !!form.get('committee')?.valid;
+        // Disabled controls (locked committee from group context) are always valid
+        const committeeControl = form.get('committee');
+        const committeeValid = committeeControl?.disabled || !!committeeControl?.valid;
         const eligibleParticipantsValid = !!form.get('eligible_participants')?.valid;
         const closeDateValid = !!form.get('close_date')?.valid;
         return titleValid && committeeValid && eligibleParticipantsValid && closeDateValid;
