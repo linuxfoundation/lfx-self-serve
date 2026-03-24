@@ -92,7 +92,7 @@
         <div class="p-6 md:p-8 min-h-[680px]">
           <p-step-panel [value]="1" data-testid="vote-manage-panel-1">
             <ng-template #content>
-              <lfx-vote-basics [form]="form()" [formValue]="formValue" [isEditMode]="isEditMode()"> </lfx-vote-basics>
+              <lfx-vote-basics [form]="form()" [formValue]="formValue" [isEditMode]="isEditMode()" [committeeContext]="committeeContext()"> </lfx-vote-basics>
             </ng-template>
           </p-step-panel>
 
