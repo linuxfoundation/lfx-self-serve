@@ -215,18 +215,19 @@ export class CommitteeViewComponent {
     }
     if (committee.join_mode === 'open') {
       this.joiningOrLeaving.set(true);
-      this.committeeService.joinCommittee(committee.uid).subscribe({
-        next: () => {
-          this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You have joined "${committee.name}"` });
-          this.joiningOrLeaving.set(false);
-          this.refreshCommittee();
-          this.membersRefresh.update((v) => v + 1);
-        },
-        error: () => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: `Failed to join "${committee.name}"` });
-          this.joiningOrLeaving.set(false);
-        },
-      });
+      this.committeeService
+        .joinCommittee(committee.uid)
+        .pipe(finalize(() => this.joiningOrLeaving.set(false)))
+        .subscribe({
+          next: () => {
+            this.messageService.add({ severity: 'success', summary: 'Joined', detail: `You have joined "${committee.name}"` });
+            this.refreshCommittee();
+            this.membersRefresh.update((v) => v + 1);
+          },
+          error: () => {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: `Failed to join "${committee.name}"` });
+          },
+        });
     } else {
       // Backend does not yet support application-based join requests — show guidance instead
       this.messageService.add({ severity: 'info', summary: 'Contact Admin', detail: 'Contact a group admin to request membership.' });
@@ -239,16 +240,17 @@ export class CommitteeViewComponent {
       return;
     }
     this.joiningOrLeaving.set(true);
-    this.committeeService.leaveCommittee(committee.uid).subscribe({
+    this.committeeService
+      .leaveCommittee(committee.uid)
+      .pipe(finalize(() => this.joiningOrLeaving.set(false)))
+      .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Left', detail: `You have left "${committee.name}"` });
-          this.joiningOrLeaving.set(false);
           this.refreshCommittee();
           this.membersRefresh.update((v) => v + 1);
         },
         error: () => {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: `Failed to leave "${committee.name}"` });
-          this.joiningOrLeaving.set(false);
         },
       });
   }
