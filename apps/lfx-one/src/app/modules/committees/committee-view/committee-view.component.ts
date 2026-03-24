@@ -19,6 +19,7 @@ import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { MenuItem, MessageService } from 'primeng/api';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
+import { CommitteeDocumentsComponent } from '../components/committee-documents/committee-documents.component';
 import { CommitteeMeetingsComponent } from '../components/committee-meetings/committee-meetings.component';
 import { CommitteeMembersComponent } from '../components/committee-members/committee-members.component';
 import { CommitteeOverviewComponent } from '../components/committee-overview/committee-overview.component';
@@ -40,6 +41,7 @@ type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 
     InputTextComponent,
     Dialog,
     JoinModeLabelPipe,
+    CommitteeDocumentsComponent,
     CommitteeMeetingsComponent,
     CommitteeMembersComponent,
     CommitteeOverviewComponent,
@@ -343,5 +345,4 @@ export class CommitteeViewComponent {
       return 'Website';
     });
   }
-
 }
