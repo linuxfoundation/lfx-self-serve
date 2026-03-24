@@ -6,6 +6,7 @@ import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CommitteeCheckboxListComponent } from '@components/committee-checkbox-list/committee-checkbox-list.component';
 import { SelectComponent } from '@components/select/select.component';
 import { COMMITTEE_LABEL, SURVEY_TEMPLATE_OPTIONS } from '@lfx-one/shared/constants';
+import { Committee } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-survey-audience-type',
@@ -17,6 +18,7 @@ export class SurveyAudienceTypeComponent {
   public readonly form = input.required<FormGroup>();
   public readonly formValue = input.required<Signal<Record<string, unknown>>>();
   public readonly isEditMode = input<boolean>(false);
+  public readonly committeeContext = input<Committee | null>(null);
 
   // Constants
   public readonly committeeLabel = COMMITTEE_LABEL;

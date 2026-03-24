@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, input, model, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input, model, signal, Signal } from '@angular/core';
+import { RouterLink } from '@angular/router';
+import { ButtonComponent } from '@components/button/button.component';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { CardComponent } from '@components/card/card.component';
 import { MessageComponent } from '@components/message/message.component';
@@ -14,9 +16,10 @@ import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-surveys',
-  imports: [CardComponent, MessageComponent, SurveysTableComponent, SurveyResultsDrawerComponent],
+  imports: [RouterLink, ButtonComponent, CardComponent, MessageComponent, SurveysTableComponent, SurveyResultsDrawerComponent],
   templateUrl: './committee-surveys.component.html',
   styleUrl: './committee-surveys.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CommitteeSurveysComponent {
   private readonly surveyService = inject(SurveyService);

@@ -2,7 +2,19 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4 pt-4" data-testid="committee-surveys-tab">
-  <lfx-message severity="info" text="Committee-scoped surveys are being set up. Data may be incomplete." />
+  <!-- Header with Create button -->
+  @if (canEdit()) {
+    <div class="flex items-center justify-end">
+      <lfx-button
+        label="Create Survey"
+        icon="fa-light fa-chart-simple"
+        severity="info"
+        size="small"
+        [routerLink]="['/surveys', 'create']"
+        [queryParams]="{ committee_uid: committee().uid }"
+        data-testid="committee-surveys-create-btn"></lfx-button>
+    </div>
+  }
   @if (loading() || surveys().length > 0) {
     <lfx-surveys-table
       [surveys]="surveys()"

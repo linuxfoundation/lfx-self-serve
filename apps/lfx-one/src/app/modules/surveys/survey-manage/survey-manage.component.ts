@@ -13,13 +13,15 @@ import {
   SURVEY_LABEL,
   SURVEY_MANAGE_TOTAL_STEPS,
 } from '@lfx-one/shared/constants';
-import { CommitteeReference, SurveyDistributionMethod, SurveyReminderType } from '@lfx-one/shared/interfaces';
+import { Committee, CommitteeReference, SurveyDistributionMethod, SurveyReminderType } from '@lfx-one/shared/interfaces';
+import { CommitteeService } from '@services/committee.service';
+import { MessageComponent } from '@components/message/message.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { trimmedRequired } from '@lfx-one/shared/validators';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { combineLatest, distinctUntilChanged, of, switchMap } from 'rxjs';
+import { combineLatest, distinctUntilChanged, of, switchMap, take } from 'rxjs';
 
 import { SurveyAudienceTypeComponent } from '../components/survey-audience-type/survey-audience-type.component';
 import { SurveyEmailDraftComponent } from '../components/survey-email-draft/survey-email-draft.component';
@@ -32,6 +34,7 @@ import { SurveyTimingRemindersComponent } from '../components/survey-timing-remi
     ReactiveFormsModule,
     RouterLink,
     ButtonComponent,
+    MessageComponent,
     ConfirmDialogModule,
     StepperModule,
     SurveyAudienceTypeComponent,
@@ -48,6 +51,11 @@ export class SurveyManageComponent {
   private readonly route = inject(ActivatedRoute);
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
+  private readonly committeeService = inject(CommitteeService);
+
+  // Committee context — when navigated from a committee tab with ?committee_uid=
+  public readonly committeeContext = signal<Committee | null>(null);
+  private readonly _committeeInit = this.initCommitteeContext();
 
   // Protected constants
   public readonly totalSteps = SURVEY_MANAGE_TOTAL_STEPS;
@@ -107,7 +115,7 @@ export class SurveyManageComponent {
   }
 
   public onCancel(): void {
-    this.router.navigate(['/surveys']);
+    this.navigateBack();
   }
 
   public onSaveAsDraft(): void {
@@ -234,7 +242,7 @@ export class SurveyManageComponent {
         detail: `${this.surveyLabel.singular} ${action} successfully`,
       });
       this.submitting.set(false);
-      this.router.navigate(['/surveys']);
+      this.navigateBack();
     }, 1000);
   }
 
@@ -350,8 +358,9 @@ Thank you,
 
     switch (step) {
       case 1: {
-        // Committees must have at least one selection
-        const committeesValue = form.get('committees')?.value as CommitteeReference[] | null;
+        // Committees must have at least one selection (disabled controls excluded from .value, so check raw)
+        const committeesControl = form.get('committees');
+        const committeesValue = (committeesControl?.disabled ? committeesControl.value : committeesControl?.value) as CommitteeReference[] | null;
         const committeesValid = Array.isArray(committeesValue) && committeesValue.length > 0;
         const surveyTemplateValid = !!form.get('surveyTemplate')?.valid && !!form.get('surveyTemplate')?.value;
         return committeesValid && surveyTemplateValid;
@@ -386,5 +395,36 @@ Thank you,
 
   private markAllFormControlsAsTouched(): void {
     markFormControlsAsTouched(this.form());
+  }
+
+  /** Navigates back to the committee surveys tab or the main surveys page. */
+  private navigateBack(): void {
+    const ctx = this.committeeContext();
+    if (ctx) {
+      this.router.navigate(['/groups', ctx.uid], { queryParams: { tab: 'surveys' } });
+    } else {
+      this.router.navigate(['/surveys']);
+    }
+  }
+
+  /** Reads committee_uid from queryParams and pre-populates the committees field (locked). */
+  private initCommitteeContext(): void {
+    this.route.queryParamMap.pipe(take(1)).subscribe((params) => {
+      const committeeUid = params.get('committee_uid');
+      if (!committeeUid) return;
+
+      this.committeeService
+        .getCommittee(committeeUid)
+        .pipe(take(1))
+        .subscribe({
+          next: (committee) => {
+            this.committeeContext.set(committee);
+            const ref: CommitteeReference = { uid: committee.uid, name: committee.name };
+            const committeesControl = this.form().get('committees');
+            committeesControl?.setValue([ref]);
+            committeesControl?.disable();
+          },
+        });
+    });
   }
 }
