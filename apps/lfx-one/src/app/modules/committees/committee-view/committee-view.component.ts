@@ -393,5 +393,4 @@ export class CommitteeViewComponent {
       return 'Website';
     });
   }
-
 }

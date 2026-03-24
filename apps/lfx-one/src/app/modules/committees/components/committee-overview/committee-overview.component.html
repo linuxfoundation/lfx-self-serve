@@ -19,10 +19,18 @@
         }
       }
       @case ('member') {
-        <lfx-message severity="success" icon="fa-light fa-circle-check" text="You are a member of this {{ categoryLabel() }}." data-testid="committee-overview-member-banner"></lfx-message>
+        <lfx-message
+          severity="success"
+          icon="fa-light fa-circle-check"
+          text="You are a member of this {{ categoryLabel() }}."
+          data-testid="committee-overview-member-banner"></lfx-message>
       }
       @case ('chair') {
-        <lfx-message severity="info" icon="fa-light fa-user-crown" text="You are a {{ myRole() }} of this {{ categoryLabel() }}." data-testid="committee-overview-chair-banner"></lfx-message>
+        <lfx-message
+          severity="info"
+          icon="fa-light fa-user-crown"
+          text="You are a {{ myRole() }} of this {{ categoryLabel() }}."
+          data-testid="committee-overview-chair-banner"></lfx-message>
       }
     }
   }
@@ -217,7 +225,13 @@
             <i class="fa-light fa-calendar text-gray-400"></i>
             Next Meeting
           </h2>
-          <lfx-button label="View All" [text]="true" size="small" severity="info" styleClass="!text-xs" (onClick)="navigateToTab('meetings:upcoming')"></lfx-button>
+          <lfx-button
+            label="View All"
+            [text]="true"
+            size="small"
+            severity="info"
+            styleClass="!text-xs"
+            (onClick)="navigateToTab('meetings:upcoming')"></lfx-button>
         </div>
         @if (upcomingMeetingsLoading()) {
           <lfx-card>
