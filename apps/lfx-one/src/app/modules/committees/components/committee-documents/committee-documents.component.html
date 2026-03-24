@@ -1,0 +1,130 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4 pt-4" data-testid="committee-documents-tab">
+  <!-- Header -->
+  <div class="flex items-start justify-between">
+    <div>
+      <h2 class="text-base font-semibold text-gray-900">Documents</h2>
+      <p class="text-xs text-gray-500 mt-0.5">Links and meeting attachments shared with this group</p>
+    </div>
+  </div>
+
+  <!-- Search -->
+  @if (!loading() && allAttachments().length > 0) {
+    <div class="flex items-center gap-3">
+      <input
+        type="text"
+        class="w-64 border border-gray-200 rounded-lg px-3 py-2 text-sm text-gray-900 placeholder:text-gray-400 focus:outline-none focus:border-blue-500 focus:ring-1 focus:ring-blue-500"
+        placeholder="Search documents..."
+        [value]="searchQuery()"
+        (input)="searchQuery.set($any($event.target).value)"
+        data-testid="committee-documents-search" />
+    </div>
+  }
+
+  <!-- Loading -->
+  @if (loading()) {
+    <lfx-card>
+      <div class="flex flex-col gap-4">
+        @for (_ of [1, 2, 3]; track $index) {
+          <div class="flex items-center gap-4">
+            <p-skeleton width="20px" height="20px" />
+            <div class="flex-1">
+              <p-skeleton width="60%" height="0.875rem" />
+              <p-skeleton width="40%" height="0.625rem" styleClass="mt-1" />
+            </div>
+            <p-skeleton width="60px" height="1.25rem" borderRadius="0.25rem" />
+            <p-skeleton width="80px" height="0.75rem" />
+          </div>
+        }
+      </div>
+    </lfx-card>
+  } @else if (filteredAttachments().length > 0) {
+    <!-- Documents Table -->
+    <lfx-card styleClass="!p-0 overflow-hidden">
+      <table class="w-full text-sm" data-testid="committee-documents-table">
+        <thead>
+          <tr class="border-b border-gray-200 text-left">
+            <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Name</th>
+            <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Source</th>
+            <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Added By</th>
+            <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
+            <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Size</th>
+            <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide text-right w-20">Actions</th>
+          </tr>
+        </thead>
+        <tbody>
+          @for (item of filteredAttachments(); track item.attachment.uid) {
+            <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
+              <!-- Name -->
+              <td class="px-4 py-3">
+                <div class="flex items-center gap-2">
+                  @if (item.attachment.type === 'link') {
+                    <i class="fa-light fa-link text-blue-500 flex-shrink-0"></i>
+                  } @else {
+                    <i class="fa-light fa-file text-red-400 flex-shrink-0"></i>
+                  }
+                  <div class="min-w-0">
+                    <button
+                      class="text-sm font-medium text-blue-600 hover:text-blue-800 truncate block max-w-xs text-left bg-transparent border-0 cursor-pointer p-0"
+                      (click)="openAttachment(item)">
+                      {{ item.attachment.name }}
+                    </button>
+                    <p class="text-[11px] text-gray-400 truncate">From: {{ item.meetingTitle }} · {{ item.meetingDate | date: 'MMM d, y' }}</p>
+                  </div>
+                </div>
+              </td>
+              <!-- Source -->
+              <td class="px-4 py-3">
+                <lfx-tag
+                  [value]="item.attachment.type === 'link' ? 'Link' : 'Meeting'"
+                  [severity]="item.attachment.type === 'link' ? 'success' : 'warn'"
+                  [icon]="item.attachment.type === 'link' ? 'fa-light fa-link' : 'fa-light fa-video'"></lfx-tag>
+              </td>
+              <!-- Added By -->
+              <td class="px-4 py-3 text-gray-600">
+                {{ item.attachment.created_by?.name || '—' }}
+              </td>
+              <!-- Date -->
+              <td class="px-4 py-3 text-gray-500">
+                {{ item.attachment.created_at | date: 'MMM d, y' }}
+              </td>
+              <!-- Size -->
+              <td class="px-4 py-3 text-gray-500">
+                {{ formatFileSize(item.attachment.file_size) }}
+              </td>
+              <!-- Actions -->
+              <td class="px-4 py-3 text-right">
+                <div class="flex gap-1 justify-end">
+                  <lfx-button
+                    icon="fa-light fa-download"
+                    [text]="true"
+                    [rounded]="true"
+                    size="small"
+                    severity="secondary"
+                    tooltip="Download"
+                    (onClick)="openAttachment(item)"></lfx-button>
+                </div>
+              </td>
+            </tr>
+          }
+        </tbody>
+      </table>
+    </lfx-card>
+
+    <!-- Count -->
+    <p class="text-xs text-gray-400 px-1">
+      Showing {{ filteredAttachments().length }} meeting attachment{{ filteredAttachments().length !== 1 ? 's' : '' }}
+    </p>
+  } @else {
+    <!-- Empty state -->
+    <lfx-card>
+      <div class="flex flex-col items-center py-12">
+        <i class="fa-light fa-folder-open text-3xl text-gray-300 mb-3" aria-hidden="true"></i>
+        <p class="text-sm font-medium text-gray-500">No documents yet</p>
+        <p class="text-xs text-gray-400 mt-1">Meeting attachments for this group will appear here.</p>
+      </div>
+    </lfx-card>
+  }
+</div>
