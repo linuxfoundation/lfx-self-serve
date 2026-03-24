@@ -91,7 +91,9 @@ export class CommitteeDocumentsComponent {
     }
   }
 
-  // Private initializer — uses mergeMap with bounded concurrency instead of forkJoin
+  // Private initializer — uses mergeMap with bounded concurrency instead of forkJoin.
+  // Note: getMeetingsByCommittee returns up to 100 meetings without pagination.
+  // Committee meetings are typically < 20; full pagination (page_token loop) deferred to Phase 2.
   private initAttachments(): Signal<MeetingAttachmentWithContext[]> {
     return toSignal(
       toObservable(this.committee).pipe(

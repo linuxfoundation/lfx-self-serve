@@ -60,9 +60,11 @@
               }
               <div class="min-w-0">
                 <a
+                  role="button"
                   class="text-sm font-medium text-blue-600 hover:text-blue-800 truncate block max-w-xs cursor-pointer"
                   (click)="openAttachment(item)"
                   (keydown.enter)="openAttachment(item)"
+                  (keydown.space)="openAttachment(item); $event.preventDefault()"
                   tabindex="0">
                   {{ item.attachment.name }}
                 </a>
