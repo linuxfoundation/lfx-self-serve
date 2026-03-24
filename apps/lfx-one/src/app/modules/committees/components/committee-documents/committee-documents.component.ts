@@ -7,10 +7,11 @@ import { DatePipe } from '@angular/common';
 import { CardComponent } from '@components/card/card.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
+import { InputTextModule } from 'primeng/inputtext';
 import { Committee, MeetingAttachment } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
-import { catchError, filter, finalize, forkJoin, of, switchMap } from 'rxjs';
+import { MessageService } from 'primeng/api';
+import { catchError, filter, finalize, forkJoin, map, of, switchMap } from 'rxjs';
 import { SkeletonModule } from 'primeng/skeleton';
 
 /** Attachment enriched with meeting context for display. */
@@ -23,12 +24,13 @@ interface MeetingAttachmentWithContext {
 
 @Component({
   selector: 'lfx-committee-documents',
-  imports: [CardComponent, ButtonComponent, TagComponent, InputTextComponent, DatePipe, SkeletonModule],
+  imports: [CardComponent, ButtonComponent, TagComponent, InputTextModule, DatePipe, SkeletonModule],
   templateUrl: './committee-documents.component.html',
   styleUrl: './committee-documents.component.scss',
 })
 export class CommitteeDocumentsComponent {
   private readonly meetingService = inject(MeetingService);
+  private readonly messageService = inject(MessageService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -38,7 +40,8 @@ export class CommitteeDocumentsComponent {
   public loading = signal<boolean>(true);
   public searchQuery = signal('');
 
-  // Data
+  // Data — fetches attachments from all committee meetings (N+1 pattern, acceptable for Phase 1
+  // since committee meetings are typically < 20; consider a bulk endpoint for Phase 2)
   public allAttachments: Signal<MeetingAttachmentWithContext[]> = this.initAttachments();
 
   // Filtered by search
@@ -85,25 +88,26 @@ export class CommitteeDocumentsComponent {
 
               const attachmentRequests = meetings.map((meeting) =>
                 this.meetingService.getMeetingAttachments(meeting.id).pipe(
-                  catchError(() => of([])),
-                  switchMap((attachments: MeetingAttachment[]) =>
-                    of(
-                      attachments.map((att) => ({
-                        attachment: att,
-                        meetingTitle: meeting.title,
-                        meetingDate: meeting.start_time,
-                        meetingId: meeting.id,
-                      }))
-                    )
+                  catchError(() => of([] as MeetingAttachment[])),
+                  map((attachments) =>
+                    attachments.map((att) => ({
+                      attachment: att,
+                      meetingTitle: meeting.title,
+                      meetingDate: meeting.start_time,
+                      meetingId: meeting.id,
+                    }))
                   )
                 )
               );
 
               return forkJoin(attachmentRequests).pipe(
-                switchMap((results) => of(results.flat().sort((a, b) => (b.attachment.created_at ?? '').localeCompare(a.attachment.created_at ?? ''))))
+                map((results) => results.flat().sort((a, b) => (b.attachment.created_at ?? '').localeCompare(a.attachment.created_at ?? '')))
               );
             }),
-            catchError(() => of([])),
+            catchError(() => {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load documents. Please try again.' });
+              return of([]);
+            }),
             finalize(() => this.loading.set(false))
           );
         })
