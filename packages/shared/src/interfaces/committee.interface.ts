@@ -181,10 +181,10 @@ export interface Committee {
   join_mode?: JoinMode;
 
   // ── Communication Channels ──
-  /** Mailing list email address associated with the group (plain string from upstream) */
-  mailing_list?: string;
-  /** Chat channel URL or identifier associated with the group (plain string from upstream) */
-  chat_channel?: string;
+  /** Mailing list email address associated with the group (plain string from upstream). Set to null to clear. */
+  mailing_list?: string | null;
+  /** Chat channel URL or identifier associated with the group (plain string from upstream). Set to null to clear. */
+  chat_channel?: string | null;
 
   // NOTE: chair/co_chair are NOT returned by GET /committees/{uid}.
   // Leadership is derived from committee members with role.name === "Chair" / "Vice Chair".
