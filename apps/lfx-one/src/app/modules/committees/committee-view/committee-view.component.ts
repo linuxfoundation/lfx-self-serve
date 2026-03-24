@@ -25,6 +25,7 @@ import { CommitteeMembersComponent } from '../components/committee-members/commi
 import { CommitteeOverviewComponent } from '../components/committee-overview/committee-overview.component';
 import { CommitteeSettingsTabComponent } from '../components/committee-settings-tab/committee-settings-tab.component';
 import { CommitteeSurveysComponent } from '../components/committee-surveys/committee-surveys.component';
+import { CommitteeVotesComponent } from '../components/committee-votes/committee-votes.component';
 
 type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';
 
@@ -47,6 +48,7 @@ type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 
     CommitteeOverviewComponent,
     CommitteeSettingsTabComponent,
     CommitteeSurveysComponent,
+    CommitteeVotesComponent,
   ],
   templateUrl: './committee-view.component.html',
   styleUrl: './committee-view.component.scss',
