@@ -4,6 +4,7 @@
 import { Component, computed, inject, input, linkedSignal, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -18,7 +19,7 @@ type TimeFilter = 'upcoming' | 'past';
 
 @Component({
   selector: 'lfx-committee-meetings',
-  imports: [ReactiveFormsModule, ButtonComponent, CardComponent, InputTextComponent, MessageComponent, MeetingCardComponent, SkeletonModule],
+  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, CardComponent, InputTextComponent, MessageComponent, MeetingCardComponent, SkeletonModule],
   templateUrl: './committee-meetings.component.html',
   styleUrl: './committee-meetings.component.scss',
 })

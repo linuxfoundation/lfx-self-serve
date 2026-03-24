@@ -6,6 +6,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { MessageComponent } from '@components/message/message.component';
 import {
   DEFAULT_ARTIFACT_VISIBILITY,
   DEFAULT_DURATION,
@@ -30,7 +31,9 @@ import {
   PresignAttachmentResponse,
   RegistrantPendingChanges,
   UpdateMeetingRequest,
+  Committee,
 } from '@lfx-one/shared/interfaces';
+import { CommitteeService } from '@services/committee.service';
 import {
   combineDateTime,
   formatTo12HourInTimezone,
@@ -60,6 +63,7 @@ import { MeetingTypeSelectionComponent } from '../components/meeting-type-select
   imports: [
     StepperModule,
     ButtonComponent,
+    MessageComponent,
     ReactiveFormsModule,
     ConfirmDialogModule,
     MeetingTypeSelectionComponent,
@@ -81,6 +85,12 @@ export class MeetingManageComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly committeeService = inject(CommitteeService);
+
+  // Committee context — when navigated from a committee tab with ?committee_uid=
+  public readonly committeeContext = signal<Committee | null>(null);
+  private readonly _committeeInit = this.initCommitteeContext();
+
   // Mode and state signals
   public mode = signal<'create' | 'edit'>('create');
   public meetingId = signal<string | null>(null);
@@ -430,7 +440,8 @@ export class MeetingManageComponent {
 
   // Private methods
   private prepareMeetingData(): CreateMeetingRequest | UpdateMeetingRequest {
-    const formValue = this.form().value;
+    // Use getRawValue() to include disabled controls (e.g., locked committees from group context)
+    const formValue = this.form().getRawValue();
     const duration = formValue.duration === 'custom' ? Number(formValue.customDuration) : Number(formValue.duration);
     const startDateTime = combineDateTime(formValue.startDate, formValue.startTime, formValue.timezone);
 
@@ -1256,5 +1267,35 @@ export class MeetingManageComponent {
 
     // Update form validity
     currentForm.updateValueAndValidity();
+  }
+
+  /** Navigates back to the committee meetings tab or the main meetings page. */
+  private navigateBack(): void {
+    const ctx = this.committeeContext();
+    if (ctx) {
+      this.router.navigate(['/groups', ctx.uid], { queryParams: { tab: 'meetings' } });
+    } else {
+      this.router.navigate(['/', 'meetings']);
+    }
+  }
+
+  /** Reads committee_uid from queryParams and pre-populates the committees field (locked). */
+  private initCommitteeContext(): void {
+    this.route.queryParamMap.pipe(take(1)).subscribe((params) => {
+      const committeeUid = params.get('committee_uid');
+      if (!committeeUid) return;
+
+      this.committeeService
+        .getCommittee(committeeUid)
+        .pipe(take(1))
+        .subscribe({
+          next: (committee) => {
+            this.committeeContext.set(committee);
+            const committeesControl = this.form().get('committees');
+            committeesControl?.setValue([{ uid: committee.uid, name: committee.name }]);
+            committeesControl?.disable();
+          },
+        });
+    });
   }
 }
