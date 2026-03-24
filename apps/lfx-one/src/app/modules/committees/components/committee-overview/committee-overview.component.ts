@@ -12,7 +12,6 @@ import { CardComponent } from '@components/card/card.component';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { TextareaComponent } from '@components/textarea/textarea.component';
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
 
@@ -23,7 +22,6 @@ import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
 import { SurveyService } from '@services/survey.service';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
-import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MessageService } from 'primeng/api';
 import { catchError, EMPTY, filter, finalize, forkJoin, of, switchMap } from 'rxjs';
 
@@ -42,9 +40,7 @@ import { catchError, EMPTY, filter, finalize, forkJoin, of, switchMap } from 'rx
     SkeletonModule,
     SelectComponent,
     TagComponent,
-    TextareaComponent,
     JoinModeLabelPipe,
-    LinkifyPipe,
     VoteResultsDrawerComponent,
   ],
   templateUrl: './committee-overview.component.html',
@@ -78,13 +74,6 @@ export class CommitteeOverviewComponent {
   public chairsForm = new FormGroup({
     chairUid: new FormControl<string | null>(null),
     viceChairUid: new FormControl<string | null>(null),
-  });
-
-  // Description edit state (merged from about component)
-  public editingDescription = signal(false);
-  public savingDescription = signal(false);
-  public descriptionForm = new FormGroup({
-    description: new FormControl(''),
   });
 
   // Vote drawer state
@@ -218,34 +207,6 @@ export class CommitteeOverviewComponent {
     } else {
       this.tabNavigated.emit('surveys');
     }
-  }
-
-  // Description edit methods (merged from about component)
-  public startEditDescription(): void {
-    this.descriptionForm.patchValue({ description: this.committee().description || '' });
-    this.editingDescription.set(true);
-  }
-
-  public cancelEditDescription(): void {
-    this.editingDescription.set(false);
-  }
-
-  public saveDescription(): void {
-    this.savingDescription.set(true);
-    const description = this.descriptionForm.get('description')?.value || '';
-    this.committeeService
-      .updateCommittee(this.committee().uid, { description })
-      .pipe(finalize(() => this.savingDescription.set(false)))
-      .subscribe({
-        next: () => {
-          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Description updated' });
-          this.editingDescription.set(false);
-          this.committeeUpdated.emit();
-        },
-        error: () => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update description' });
-        },
-      });
   }
 
   // Chairs edit methods

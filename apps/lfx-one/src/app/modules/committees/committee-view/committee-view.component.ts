@@ -11,11 +11,13 @@ import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { TextareaComponent } from '@components/textarea/textarea.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { Committee, CommitteeMember, CommitteeMemberVisibility, getCommitteeCategorySeverity, TagSeverity } from '@lfx-one/shared';
 import { CommitteeService } from '@services/committee.service';
 import { UserService } from '@services/user.service';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
+import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MenuItem, MessageService } from 'primeng/api';
 import { catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
@@ -42,6 +44,8 @@ type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 
     InputTextComponent,
     Dialog,
     JoinModeLabelPipe,
+    LinkifyPipe,
+    TextareaComponent,
     CommitteeDocumentsComponent,
     CommitteeMeetingsComponent,
     CommitteeMembersComponent,
@@ -72,6 +76,14 @@ export class CommitteeViewComponent {
   public membersLoading = signal<boolean>(true);
   public myRoleLoading: Signal<boolean> = computed(() => this.membersLoading());
   public joiningOrLeaving = signal(false);
+
+  // -- Description state --
+  public showDescriptionDialog = signal(false);
+  public editingDescription = signal(false);
+  public savingDescription = signal(false);
+  public descriptionForm = new FormGroup({
+    description: new FormControl(''),
+  });
 
   // -- Channels edit state --
   public showChannelsModal = model(false);
@@ -173,6 +185,33 @@ export class CommitteeViewComponent {
     if (tab === 'meetings' && (context === 'past' || context === 'upcoming')) {
       this.meetingsTimeFilter.set(context);
     }
+  }
+
+  public openEditDescription(): void {
+    this.descriptionForm.patchValue({ description: this.committee()?.description || '' });
+    this.editingDescription.set(true);
+  }
+
+  public cancelEditDescription(): void {
+    this.editingDescription.set(false);
+  }
+
+  public saveDescription(): void {
+    this.savingDescription.set(true);
+    const description = this.descriptionForm.get('description')?.value || '';
+    this.committeeService
+      .updateCommittee(this.committee()!.uid, { description })
+      .pipe(finalize(() => this.savingDescription.set(false)))
+      .subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Description updated' });
+          this.editingDescription.set(false);
+          this.refreshCommittee();
+        },
+        error: () => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update description' });
+        },
+      });
   }
 
   public openEditChannels(): void {

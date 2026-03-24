@@ -42,7 +42,26 @@
           }
         </div>
         @if (committee()?.description) {
-          <p class="text-gray-500 max-w-2xl" data-testid="committee-view-description">{{ committee()?.description }}</p>
+          <div class="flex items-start gap-2 max-w-2xl" data-testid="committee-view-description">
+            <p class="text-gray-500 line-clamp-2 flex-1">{{ committee()?.description }}</p>
+            <lfx-button
+              label="more"
+              [text]="true"
+              size="small"
+              severity="info"
+              styleClass="!text-xs !p-0 whitespace-nowrap"
+              (onClick)="showDescriptionDialog.set(true)"></lfx-button>
+            @if (canEdit()) {
+              <lfx-button
+                icon="fa-light fa-pen-to-square"
+                [text]="true"
+                [rounded]="true"
+                size="small"
+                severity="secondary"
+                tooltip="Edit description"
+                (onClick)="openEditDescription()"></lfx-button>
+            }
+          </div>
         }
         <!-- Tags + Channels row -->
         <div class="flex justify-between items-start">
@@ -231,6 +250,52 @@
         (onClick)="cancelEditChannels()"
         [disabled]="savingChannels()"></lfx-button>
       <lfx-button label="Save Changes" severity="info" size="small" (onClick)="saveChannels()" [loading]="savingChannels()"></lfx-button>
+    </div>
+  </ng-template>
+</p-dialog>
+
+<!-- Description View Dialog -->
+<p-dialog
+  header="About"
+  [visible]="showDescriptionDialog()"
+  (visibleChange)="showDescriptionDialog.set($event)"
+  [modal]="true"
+  [closable]="true"
+  [style]="{ width: '560px' }"
+  [draggable]="false"
+  data-testid="committee-view-description-dialog">
+  <div class="text-sm text-gray-600 leading-relaxed whitespace-pre-line" [innerHTML]="committee()?.description | linkify"></div>
+</p-dialog>
+
+<!-- Description Edit Dialog -->
+<p-dialog
+  header="Edit Description"
+  [visible]="editingDescription()"
+  (visibleChange)="editingDescription.set($event)"
+  [modal]="true"
+  [closable]="true"
+  [style]="{ width: '560px' }"
+  [draggable]="false"
+  data-testid="committee-view-description-edit-dialog">
+  <lfx-textarea
+    [form]="descriptionForm"
+    control="description"
+    [rows]="8"
+    [maxlength]="2000"
+    placeholder="Enter a description for this group..."
+    [autoResize]="true"
+    styleClass="!min-h-[160px] !w-full"
+    dataTest="committee-view-description-textarea"></lfx-textarea>
+  <ng-template #footer>
+    <div class="flex justify-end gap-2">
+      <lfx-button
+        label="Cancel"
+        severity="secondary"
+        [outlined]="true"
+        size="small"
+        (onClick)="cancelEditDescription()"
+        [disabled]="savingDescription()"></lfx-button>
+      <lfx-button label="Save" severity="info" size="small" (onClick)="saveDescription()" [loading]="savingDescription()"></lfx-button>
     </div>
   </ng-template>
 </p-dialog>
