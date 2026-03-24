@@ -24,7 +24,7 @@ import { SurveyService } from '@services/survey.service';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MessageService } from 'primeng/api';
-import { catchError, filter, forkJoin, of, switchMap, take, tap } from 'rxjs';
+import { catchError, EMPTY, filter, finalize, forkJoin, of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-overview',
@@ -187,10 +187,7 @@ export class CommitteeOverviewComponent {
   public categoryLabel: Signal<string> = computed(() => (this.committee().category || 'Group').toLowerCase());
 
   public nextMeeting: Signal<Meeting | null> = computed(() => {
-    const now = new Date().toISOString();
-    const upcoming = this.meetings()
-      .filter((m) => m.start_time > now)
-      .sort((a, b) => a.start_time.localeCompare(b.start_time));
+    const upcoming = [...this.meetings()].sort((a, b) => a.start_time.localeCompare(b.start_time));
     return upcoming[0] ?? null;
   });
 
@@ -212,17 +209,9 @@ export class CommitteeOverviewComponent {
     if (item.type === 'Cast Vote') {
       const vote = this.pendingVotes().find((v) => v.uid === item.buttonLink);
       if (vote) {
-        // Reset first to ensure toObservable emits on re-set
-        this.selectedVoteId.set(null);
-        this.selectedVote.set(null);
-        this.voteDrawerVisible.set(false);
-
-        // Set on next tick so the signal change is detected
-        setTimeout(() => {
-          this.selectedVoteId.set(vote.uid);
-          this.selectedVote.set(vote);
-          this.voteDrawerVisible.set(true);
-        });
+        this.selectedVoteId.set(vote.uid);
+        this.selectedVote.set(vote);
+        this.voteDrawerVisible.set(true);
       }
     } else {
       this.tabNavigated.emit('surveys');
@@ -244,17 +233,15 @@ export class CommitteeOverviewComponent {
     const description = this.descriptionForm.get('description')?.value || '';
     this.committeeService
       .updateCommittee(this.committee().uid, { description })
-      .pipe(take(1))
+      .pipe(finalize(() => this.savingDescription.set(false)))
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Description updated' });
           this.editingDescription.set(false);
-          this.savingDescription.set(false);
           this.committeeUpdated.emit();
         },
         error: () => {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update description' });
-          this.savingDescription.set(false);
         },
       });
   }
@@ -316,21 +303,19 @@ export class CommitteeOverviewComponent {
     }
 
     // Execute removals first, then assignments
-    (removals.length > 0 ? forkJoin(removals) : of(null as unknown))
+    (removals.length > 0 ? forkJoin(removals) : of([]))
       .pipe(
-        switchMap(() => (assignments.length > 0 ? forkJoin(assignments) : of(null as unknown))),
-        take(1)
+        switchMap(() => (assignments.length > 0 ? forkJoin(assignments) : of([]))),
+        finalize(() => this.savingChairs.set(false))
       )
       .subscribe({
         next: () => {
           this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Chairs updated' });
           this.showChairsModal.set(false);
-          this.savingChairs.set(false);
           this.committeeUpdated.emit();
         },
         error: () => {
           this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update chairs' });
-          this.savingChairs.set(false);
         },
       });
   }
@@ -349,16 +334,13 @@ export class CommitteeOverviewComponent {
     return toSignal(
       toObservable(this.committee).pipe(
         filter((c) => !!c?.uid),
-        tap(() => this.meetingsLoading.set(true)),
-        switchMap((c) =>
-          this.meetingService.getMeetingsCountByCommittee(c.uid).pipe(
-            tap(() => this.meetingsLoading.set(false)),
-            catchError(() => {
-              this.meetingsLoading.set(false);
-              return of(0);
-            })
-          )
-        )
+        switchMap((c) => {
+          this.meetingsLoading.set(true);
+          return this.meetingService.getMeetingsCountByCommittee(c.uid).pipe(
+            catchError(() => of(0)),
+            finalize(() => this.meetingsLoading.set(false))
+          );
+        })
       ),
       { initialValue: 0 }
     );
@@ -368,16 +350,13 @@ export class CommitteeOverviewComponent {
     return toSignal(
       toObservable(this.committee).pipe(
         filter((c) => !!c?.uid),
-        tap(() => this.upcomingMeetingsLoading.set(true)),
-        switchMap((c) =>
-          this.meetingService.getUpcomingMeetingsByCommittee(c.uid).pipe(
-            tap(() => this.upcomingMeetingsLoading.set(false)),
-            catchError(() => {
-              this.upcomingMeetingsLoading.set(false);
-              return of([]);
-            })
-          )
-        )
+        switchMap((c) => {
+          this.upcomingMeetingsLoading.set(true);
+          return this.meetingService.getUpcomingMeetingsByCommittee(c.uid).pipe(
+            catchError(() => of([])),
+            finalize(() => this.upcomingMeetingsLoading.set(false))
+          );
+        })
       ),
       { initialValue: [] }
     );
@@ -387,16 +366,13 @@ export class CommitteeOverviewComponent {
     return toSignal(
       toObservable(this.committee).pipe(
         filter((c) => !!c?.uid),
-        tap(() => this.pastMeetingsLoading.set(true)),
-        switchMap((c) =>
-          this.meetingService.getPastMeetingsByCommittee(c.uid, 5).pipe(
-            tap(() => this.pastMeetingsLoading.set(false)),
-            catchError(() => {
-              this.pastMeetingsLoading.set(false);
-              return of([]);
-            })
-          )
-        )
+        switchMap((c) => {
+          this.pastMeetingsLoading.set(true);
+          return this.meetingService.getPastMeetingsByCommittee(c.uid, 5).pipe(
+            catchError(() => of([])),
+            finalize(() => this.pastMeetingsLoading.set(false))
+          );
+        })
       ),
       { initialValue: [] }
     );
@@ -406,16 +382,13 @@ export class CommitteeOverviewComponent {
     return toSignal(
       toObservable(this.committee).pipe(
         filter((c) => !!c?.uid),
-        tap(() => this.votesLoading.set(true)),
-        switchMap((c) =>
-          this.voteService.getVotesByCommittee(c.uid, 50).pipe(
-            tap(() => this.votesLoading.set(false)),
-            catchError(() => {
-              this.votesLoading.set(false);
-              return of([]);
-            })
-          )
-        )
+        switchMap((c) => {
+          this.votesLoading.set(true);
+          return this.voteService.getVotesByCommittee(c.uid, 50).pipe(
+            catchError(() => of([])),
+            finalize(() => this.votesLoading.set(false))
+          );
+        })
       ),
       { initialValue: [] }
     );
@@ -425,16 +398,13 @@ export class CommitteeOverviewComponent {
     return toSignal(
       toObservable(this.committee).pipe(
         filter((c) => !!c?.uid),
-        tap(() => this.surveysLoading.set(true)),
-        switchMap((c) =>
-          this.surveyService.getSurveysByCommittee(c.uid, 50).pipe(
-            tap(() => this.surveysLoading.set(false)),
-            catchError(() => {
-              this.surveysLoading.set(false);
-              return of([]);
-            })
-          )
-        )
+        switchMap((c) => {
+          this.surveysLoading.set(true);
+          return this.surveyService.getSurveysByCommittee(c.uid, 50).pipe(
+            catchError(() => of([])),
+            finalize(() => this.surveysLoading.set(false))
+          );
+        })
       ),
       { initialValue: [] }
     );

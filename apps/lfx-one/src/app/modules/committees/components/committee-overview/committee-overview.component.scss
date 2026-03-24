@@ -1,17 +1,2 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
-
-// Ensure p-card inner elements stretch to fill card height in stats grid
-:host ::ng-deep [data-testid='committee-overview-stats'] {
-  .p-card {
-    height: 100%;
-  }
-
-  .p-card-body {
-    height: 100%;
-  }
-
-  .p-card-content {
-    height: 100%;
-  }
-}

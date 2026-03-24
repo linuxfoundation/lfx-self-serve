@@ -31,20 +31,6 @@ export class SurveyService {
     return this.getSurveys(params);
   }
 
-  public getSurveysByCommittee(committeeId: string, limit?: number, orderBy?: string): Observable<Survey[]> {
-    let params = new HttpParams().set('parent', `committee:${committeeId}`);
-
-    if (limit) {
-      params = params.set('page_size', limit.toString());
-    }
-
-    if (orderBy) {
-      params = params.set('order', orderBy);
-    }
-
-    return this.getSurveys(params);
-  }
-
   public getSurveysByProject(projectUid: string, limit?: number, orderBy?: string): Observable<Survey[]> {
     let params = new HttpParams().set('parent', `project:${projectUid}`);
 
