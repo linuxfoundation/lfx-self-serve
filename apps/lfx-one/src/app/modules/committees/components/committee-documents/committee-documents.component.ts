@@ -34,7 +34,6 @@ export class CommitteeDocumentsComponent {
 
   // Inputs
   public committee = input.required<Committee>();
-  public canEdit = input<boolean>(false);
 
   // State
   public loading = signal<boolean>(true);
@@ -52,16 +51,19 @@ export class CommitteeDocumentsComponent {
     return all.filter((item) => item.attachment.name.toLowerCase().includes(query) || item.meetingTitle.toLowerCase().includes(query));
   });
 
-  /** Opens attachment — link in new tab, file via download URL. */
+  /** Opens attachment — link in new tab, file via download URL. Validates URL protocol to prevent XSS. */
   public openAttachment(item: MeetingAttachmentWithContext): void {
     if (item.attachment.type === 'link' && item.attachment.link) {
-      window.open(item.attachment.link, '_blank', 'noopener,noreferrer');
+      this.openSafeUrl(item.attachment.link);
     } else {
       this.meetingService.getMeetingAttachmentDownloadUrl(item.meetingId, item.attachment.uid).subscribe({
         next: (response) => {
           if (response?.download_url) {
-            window.open(response.download_url, '_blank', 'noopener,noreferrer');
+            this.openSafeUrl(response.download_url);
           }
+        },
+        error: () => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to get download link.' });
         },
       });
     }
@@ -69,10 +71,22 @@ export class CommitteeDocumentsComponent {
 
   /** Formats file size for display. */
   public formatFileSize(bytes?: number): string {
-    if (!bytes) return '—';
+    if (bytes == null) return '—';
     if (bytes < 1024) return `${bytes} B`;
     if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
     return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+  }
+
+  /** Opens a URL only if it uses http: or https: protocol. */
+  private openSafeUrl(rawUrl: string): void {
+    try {
+      const url = new URL(rawUrl);
+      if (['http:', 'https:'].includes(url.protocol)) {
+        window.open(rawUrl, '_blank', 'noopener,noreferrer');
+      }
+    } catch {
+      // Invalid URL — silently ignore
+    }
   }
 
   // Private initializer

@@ -176,7 +176,7 @@
           <lfx-committee-surveys [committee]="committee()!" [canEdit]="canEdit()" />
         }
         @case ('documents') {
-          <lfx-committee-documents [committee]="committee()!" [canEdit]="canEdit()" />
+          <lfx-committee-documents [committee]="committee()!" />
         }
         @case ('settings') {
           @if (canEdit()) {
