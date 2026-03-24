@@ -70,7 +70,7 @@ export class CommitteeViewComponent {
   public refresh = signal(0);
   public membersRefresh = signal(0);
   public membersLoading = signal<boolean>(true);
-  public myRoleLoading = signal(true);
+  public myRoleLoading: Signal<boolean> = computed(() => this.membersLoading());
   public joiningOrLeaving = signal(false);
 
   // -- Channels edit state --
