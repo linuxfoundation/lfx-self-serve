@@ -22,105 +22,94 @@
           class="p-inputtext-sm w-64"
           placeholder="Search documents..."
           [value]="searchQuery()"
-          (input)="searchQuery.set($any($event.target).value)"
+          (input)="onSearchInput($event)"
           data-testid="committee-documents-search" />
       </span>
     </div>
   }
 
-  <!-- Loading -->
-  @if (loading()) {
-    <lfx-card>
-      <div class="flex flex-col gap-4">
-        @for (_ of [1, 2, 3]; track $index) {
-          <div class="flex items-center gap-4">
-            <p-skeleton width="20px" height="20px" />
-            <div class="flex-1">
-              <p-skeleton width="60%" height="0.875rem" />
-              <p-skeleton width="40%" height="0.625rem" styleClass="mt-1" />
+  <!-- Table -->
+  @if (loading() || filteredAttachments().length > 0) {
+    <lfx-table
+      [value]="filteredAttachments()"
+      [loading]="loading()"
+      [skeletonColumns]="6"
+      [skeletonRows]="3"
+      [rowHover]="true"
+      dataKey="attachment.uid"
+      data-testid="committee-documents-table">
+      <ng-template #header>
+        <tr>
+          <th>Name</th>
+          <th>Source</th>
+          <th>Added By</th>
+          <th>Date</th>
+          <th>Size</th>
+          <th class="text-right w-20">Actions</th>
+        </tr>
+      </ng-template>
+      <ng-template #body let-item>
+        <tr>
+          <!-- Name -->
+          <td>
+            <div class="flex items-center gap-2">
+              @if (item.attachment.type === 'link') {
+                <i class="fa-light fa-link text-blue-500 flex-shrink-0" aria-hidden="true"></i>
+              } @else {
+                <i class="fa-light fa-file text-red-400 flex-shrink-0" aria-hidden="true"></i>
+              }
+              <div class="min-w-0">
+                <a
+                  class="text-sm font-medium text-blue-600 hover:text-blue-800 truncate block max-w-xs cursor-pointer"
+                  (click)="openAttachment(item)"
+                  (keydown.enter)="openAttachment(item)"
+                  tabindex="0">
+                  {{ item.attachment.name }}
+                </a>
+                <p class="text-[11px] text-gray-400 truncate">From: {{ item.meetingTitle }} · {{ item.meetingDate | date: 'MMM d, y' }}</p>
+              </div>
             </div>
-            <p-skeleton width="60px" height="1.25rem" borderRadius="0.25rem" />
-            <p-skeleton width="80px" height="0.75rem" />
-          </div>
-        }
-      </div>
-    </lfx-card>
-  } @else if (filteredAttachments().length > 0) {
-    <!-- Documents Table -->
-    <lfx-card styleClass="!p-0 overflow-hidden">
-      <table class="w-full text-sm" data-testid="committee-documents-table">
-        <thead>
-          <tr class="border-b border-gray-200 text-left">
-            <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Name</th>
-            <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Source</th>
-            <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Added By</th>
-            <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Date</th>
-            <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide">Size</th>
-            <th class="px-4 py-3 text-xs font-medium text-gray-500 uppercase tracking-wide text-right w-20">Actions</th>
-          </tr>
-        </thead>
-        <tbody>
-          @for (item of filteredAttachments(); track item.attachment.uid) {
-            <tr class="border-b border-gray-100 hover:bg-gray-50 transition-colors">
-              <!-- Name -->
-              <td class="px-4 py-3">
-                <div class="flex items-center gap-2">
-                  @if (item.attachment.type === 'link') {
-                    <i class="fa-light fa-link text-blue-500 flex-shrink-0" aria-hidden="true"></i>
-                  } @else {
-                    <i class="fa-light fa-file text-red-400 flex-shrink-0" aria-hidden="true"></i>
-                  }
-                  <div class="min-w-0">
-                    <button
-                      type="button"
-                      class="text-sm font-medium text-blue-600 hover:text-blue-800 truncate block max-w-xs text-left bg-transparent border-0 cursor-pointer p-0"
-                      (click)="openAttachment(item)">
-                      {{ item.attachment.name }}
-                    </button>
-                    <p class="text-[11px] text-gray-400 truncate">From: {{ item.meetingTitle }} · {{ item.meetingDate | date: 'MMM d, y' }}</p>
-                  </div>
-                </div>
-              </td>
-              <!-- Source -->
-              <td class="px-4 py-3">
-                <lfx-tag
-                  [value]="item.attachment.type === 'link' ? 'Link' : 'Meeting'"
-                  [severity]="item.attachment.type === 'link' ? 'success' : 'warn'"
-                  [icon]="item.attachment.type === 'link' ? 'fa-light fa-link' : 'fa-light fa-video'"></lfx-tag>
-              </td>
-              <!-- Added By -->
-              <td class="px-4 py-3 text-gray-600">
-                {{ item.attachment.created_by?.name || '—' }}
-              </td>
-              <!-- Date -->
-              <td class="px-4 py-3 text-gray-500">
-                {{ item.attachment.created_at | date: 'MMM d, y' }}
-              </td>
-              <!-- Size -->
-              <td class="px-4 py-3 text-gray-500">
-                {{ formatFileSize(item.attachment.file_size) }}
-              </td>
-              <!-- Actions -->
-              <td class="px-4 py-3 text-right">
-                <div class="flex gap-1 justify-end">
-                  <lfx-button
-                    icon="fa-light fa-download"
-                    [text]="true"
-                    [rounded]="true"
-                    size="small"
-                    severity="secondary"
-                    tooltip="Download"
-                    (onClick)="openAttachment(item)"></lfx-button>
-                </div>
-              </td>
-            </tr>
-          }
-        </tbody>
-      </table>
-    </lfx-card>
+          </td>
+          <!-- Source -->
+          <td>
+            <lfx-tag
+              [value]="item.attachment.type === 'link' ? 'Link' : 'Meeting'"
+              [severity]="item.attachment.type === 'link' ? 'success' : 'warn'"
+              [icon]="item.attachment.type === 'link' ? 'fa-light fa-link' : 'fa-light fa-video'"></lfx-tag>
+          </td>
+          <!-- Added By -->
+          <td class="text-gray-600">
+            {{ item.attachment.created_by?.name || '—' }}
+          </td>
+          <!-- Date -->
+          <td class="text-gray-500">
+            {{ item.attachment.created_at | date: 'MMM d, y' }}
+          </td>
+          <!-- Size -->
+          <td class="text-gray-500">
+            {{ item.attachment.file_size | fileSize }}
+          </td>
+          <!-- Actions -->
+          <td class="text-right">
+            <div class="flex gap-1 justify-end">
+              <lfx-button
+                icon="fa-light fa-download"
+                [text]="true"
+                [rounded]="true"
+                size="small"
+                severity="secondary"
+                tooltip="Download"
+                (onClick)="openAttachment(item)"></lfx-button>
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
 
     <!-- Count -->
-    <p class="text-xs text-gray-400 px-1">Showing {{ filteredAttachments().length }} meeting attachment{{ filteredAttachments().length !== 1 ? 's' : '' }}</p>
+    @if (!loading()) {
+      <p class="text-xs text-gray-400 px-1">Showing {{ filteredAttachments().length }} meeting attachment{{ filteredAttachments().length !== 1 ? 's' : '' }}</p>
+    }
   } @else if (allAttachments().length > 0) {
     <!-- No search results -->
     <lfx-card>

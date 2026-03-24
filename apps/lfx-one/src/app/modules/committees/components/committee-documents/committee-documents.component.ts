@@ -1,18 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe } from '@angular/common';
 import { CardComponent } from '@components/card/card.component';
 import { ButtonComponent } from '@components/button/button.component';
+import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { FileSizePipe } from '@pipes/file-size.pipe';
 import { InputTextModule } from 'primeng/inputtext';
 import { Committee, MeetingAttachment } from '@lfx-one/shared/interfaces';
 import { MeetingService } from '@services/meeting.service';
 import { MessageService } from 'primeng/api';
-import { catchError, filter, finalize, forkJoin, map, of, switchMap } from 'rxjs';
-import { SkeletonModule } from 'primeng/skeleton';
+import { catchError, filter, finalize, from, map, mergeMap, of, switchMap, toArray } from 'rxjs';
 
 /** Attachment enriched with meeting context for display. */
 interface MeetingAttachmentWithContext {
@@ -22,11 +23,15 @@ interface MeetingAttachmentWithContext {
   meetingId: string;
 }
 
+/** Max concurrent attachment fetches to avoid overwhelming the backend. */
+const ATTACHMENT_FETCH_CONCURRENCY = 4;
+
 @Component({
   selector: 'lfx-committee-documents',
-  imports: [CardComponent, ButtonComponent, TagComponent, InputTextModule, DatePipe, SkeletonModule],
+  imports: [CardComponent, ButtonComponent, TableComponent, TagComponent, FileSizePipe, InputTextModule, DatePipe],
   templateUrl: './committee-documents.component.html',
   styleUrl: './committee-documents.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CommitteeDocumentsComponent {
   private readonly meetingService = inject(MeetingService);
@@ -39,8 +44,7 @@ export class CommitteeDocumentsComponent {
   public loading = signal<boolean>(true);
   public searchQuery = signal('');
 
-  // Data — fetches attachments from all committee meetings (N+1 pattern, acceptable for Phase 1
-  // since committee meetings are typically < 20; consider a bulk endpoint for Phase 2)
+  // Data — fetches attachments from all committee meetings with bounded concurrency
   public allAttachments: Signal<MeetingAttachmentWithContext[]> = this.initAttachments();
 
   // Filtered by search
@@ -50,6 +54,12 @@ export class CommitteeDocumentsComponent {
     if (!query) return all;
     return all.filter((item) => item.attachment.name.toLowerCase().includes(query) || item.meetingTitle.toLowerCase().includes(query));
   });
+
+  /** Typed search input handler — avoids $any() cast in template. */
+  public onSearchInput(event: Event): void {
+    const input = event.target as HTMLInputElement;
+    this.searchQuery.set(input.value);
+  }
 
   /** Opens attachment — link in new tab, file via download URL. Validates URL protocol to prevent XSS. */
   public openAttachment(item: MeetingAttachmentWithContext): void {
@@ -69,14 +79,6 @@ export class CommitteeDocumentsComponent {
     }
   }
 
-  /** Formats file size for display. */
-  public formatFileSize(bytes?: number): string {
-    if (bytes == null) return '—';
-    if (bytes < 1024) return `${bytes} B`;
-    if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(0)} KB`;
-    return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-  }
-
   /** Opens a URL only if it uses http: or https: protocol. */
   private openSafeUrl(rawUrl: string): void {
     try {
@@ -89,7 +91,7 @@ export class CommitteeDocumentsComponent {
     }
   }
 
-  // Private initializer
+  // Private initializer — uses mergeMap with bounded concurrency instead of forkJoin
   private initAttachments(): Signal<MeetingAttachmentWithContext[]> {
     return toSignal(
       toObservable(this.committee).pipe(
@@ -100,21 +102,23 @@ export class CommitteeDocumentsComponent {
             switchMap((meetings) => {
               if (meetings.length === 0) return of([]);
 
-              const attachmentRequests = meetings.map((meeting) =>
-                this.meetingService.getMeetingAttachments(meeting.id).pipe(
-                  catchError(() => of([] as MeetingAttachment[])),
-                  map((attachments) =>
-                    attachments.map((att) => ({
-                      attachment: att,
-                      meetingTitle: meeting.title,
-                      meetingDate: meeting.start_time,
-                      meetingId: meeting.id,
-                    }))
-                  )
-                )
-              );
-
-              return forkJoin(attachmentRequests).pipe(
+              return from(meetings).pipe(
+                mergeMap(
+                  (meeting) =>
+                    this.meetingService.getMeetingAttachments(meeting.id).pipe(
+                      catchError(() => of([] as MeetingAttachment[])),
+                      map((attachments) =>
+                        attachments.map((att) => ({
+                          attachment: att,
+                          meetingTitle: meeting.title,
+                          meetingDate: meeting.start_time,
+                          meetingId: meeting.id,
+                        }))
+                      )
+                    ),
+                  ATTACHMENT_FETCH_CONCURRENCY
+                ),
+                toArray(),
                 map((results) => results.flat().sort((a, b) => (b.attachment.created_at ?? '').localeCompare(a.attachment.created_at ?? '')))
               );
             }),
