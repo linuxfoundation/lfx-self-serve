@@ -1,8 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, input, model, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, input, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { RouterLink } from '@angular/router';
+import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { Committee, Vote } from '@lfx-one/shared/interfaces';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
@@ -13,9 +15,10 @@ import { catchError, filter, finalize, of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-votes',
-  imports: [CardComponent, VotesTableComponent, VoteResultsDrawerComponent],
+  imports: [RouterLink, ButtonComponent, CardComponent, VotesTableComponent, VoteResultsDrawerComponent],
   templateUrl: './committee-votes.component.html',
   styleUrl: './committee-votes.component.scss',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CommitteeVotesComponent {
   private readonly voteService = inject(VoteService);

@@ -18,6 +18,16 @@
     {{ isEditMode() ? 'Edit ' + voteLabel.singular : 'Create ' + voteLabel.singular }}
   </h1>
 
+  <!-- Committee context message -->
+  @if (committeeContext()) {
+    <lfx-message
+      severity="info"
+      icon="fa-light fa-users"
+      [text]="'This vote will be created for ' + committeeContext()!.name + '.'"
+      styleClass="mb-4"
+      data-testid="vote-manage-committee-context"></lfx-message>
+  }
+
   <!-- Stepper -->
   <p-stepper
     [value]="currentStep()"

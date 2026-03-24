@@ -6,8 +6,10 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { MessageComponent } from '@components/message/message.component';
 import { COMMITTEE_LABEL, OPEN_VOTE_CONFIRMATION, VOTE_LABEL, VOTE_TOTAL_STEPS } from '@lfx-one/shared/constants';
-import { CommitteeReference, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
+import { Committee, CommitteeReference, Vote, VoteFormValue } from '@lfx-one/shared/interfaces';
+import { CommitteeService } from '@services/committee.service';
 import { buildCreateVoteRequest, buildUpdateVoteRequest, mapVoteToFormValue, markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { trimmedMinLength, trimmedRequired, validCommitteeReference } from '@lfx-one/shared/validators';
 import { ProjectContextService } from '@services/project-context.service';
@@ -15,7 +17,7 @@ import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { catchError, combineLatest, distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, map, of, switchMap, take, tap } from 'rxjs';
 
 import { VoteBasicsComponent } from '../components/vote-basics/vote-basics.component';
 import { VoteQuestionComponent } from '../components/vote-question/vote-question.component';
@@ -27,6 +29,7 @@ import { VoteReviewComponent } from '../components/vote-review/vote-review.compo
     ReactiveFormsModule,
     RouterLink,
     ButtonComponent,
+    MessageComponent,
     ConfirmDialogModule,
     StepperModule,
     VoteBasicsComponent,
@@ -44,6 +47,10 @@ export class VoteManageComponent {
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly voteService = inject(VoteService);
+  private readonly committeeService = inject(CommitteeService);
+
+  // Committee context — when navigated from a committee tab with ?committee_uid=
+  public readonly committeeContext = signal<Committee | null>(null);
 
   // Protected constants
   public readonly totalSteps = VOTE_TOTAL_STEPS;
@@ -70,6 +77,9 @@ export class VoteManageComponent {
   public readonly isFirstStep: Signal<boolean> = this.initIsFirstStep();
   public readonly isLastStep: Signal<boolean> = this.initIsLastStep();
   public currentStep: Signal<number> = this.initCurrentStep();
+
+  // Initialize committee context from queryParams (runs once)
+  private readonly _committeeInit = this.initCommitteeContext();
 
   public nextStep(): void {
     const next = this.currentStep() + 1;
@@ -130,7 +140,7 @@ export class VoteManageComponent {
 
     this.submitting.set(true);
 
-    const formValue = this.form().value as VoteFormValue;
+    const formValue = this.form().getRawValue() as VoteFormValue;
 
     if (this.isEditMode() && this.voteId()) {
       const updateRequest = buildUpdateVoteRequest(formValue, project.uid);
@@ -236,7 +246,7 @@ export class VoteManageComponent {
 
     this.submitting.set(true);
 
-    const formValue = this.form().value as VoteFormValue;
+    const formValue = this.form().getRawValue() as VoteFormValue;
 
     if (this.isEditMode() && this.voteId()) {
       const updateRequest = buildUpdateVoteRequest(formValue, project.uid);
@@ -520,5 +530,26 @@ export class VoteManageComponent {
 
   private markAllFormControlsAsTouched(): void {
     markFormControlsAsTouched(this.form());
+  }
+
+  /** Reads committee_uid from queryParams and pre-populates the committee field (locked). */
+  private initCommitteeContext(): void {
+    this.route.queryParamMap.pipe(take(1)).subscribe((params) => {
+      const committeeUid = params.get('committee_uid');
+      if (!committeeUid) return;
+
+      this.committeeService
+        .getCommittee(committeeUid)
+        .pipe(take(1))
+        .subscribe({
+          next: (committee) => {
+            this.committeeContext.set(committee);
+            const ref: CommitteeReference = { uid: committee.uid, name: committee.name };
+            const committeeControl = this.form().get('committee');
+            committeeControl?.setValue(ref);
+            committeeControl?.disable();
+          },
+        });
+    });
   }
 }
