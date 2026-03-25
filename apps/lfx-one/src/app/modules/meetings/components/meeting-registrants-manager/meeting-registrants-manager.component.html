@@ -35,27 +35,18 @@
 
       <!-- Committee Selection -->
       @if (committeeContext()) {
-        <!-- Read-only committee display (locked from group context) -->
-        <div class="flex flex-col gap-1">
-          <label class="text-sm font-medium text-gray-700 block">Group</label>
-          <div class="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg" data-testid="meeting-committee-locked">
-            <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
-              <i class="fa-light fa-users text-sm text-blue-600" aria-hidden="true"></i>
-            </div>
-            <div class="flex-1">
-              <p class="text-sm font-medium text-gray-900">{{ committeeContext()!.name }}</p>
-              <p class="text-xs text-gray-500">{{ committeeContext()!.category }}</p>
-            </div>
-            <i class="fa-light fa-lock text-gray-400" aria-hidden="true"></i>
-          </div>
+        <!-- Locked primary group badge (from group context) -->
+        <div class="flex items-center gap-2 px-3 py-2 bg-blue-50 border border-blue-200 rounded-lg mb-2" data-testid="meeting-committee-locked">
+          <i class="fa-light fa-users text-sm text-blue-600" aria-hidden="true"></i>
+          <span class="text-sm font-medium text-blue-800">{{ committeeContext()!.name }}</span>
+          <i class="fa-light fa-lock text-xs text-blue-400" aria-hidden="true"></i>
         </div>
-      } @else {
-        <lfx-meeting-committee-manager
-          [selectedCommittees]="form().get('committees')?.value || []"
-          [form]="form()"
-          (committeeMembersChange)="onCommitteeMembersChange($event)">
-        </lfx-meeting-committee-manager>
       }
+      <lfx-meeting-committee-manager
+        [selectedCommittees]="form().get('committees')?.value || []"
+        [form]="form()"
+        (committeeMembersChange)="onCommitteeMembersChange($event)">
+      </lfx-meeting-committee-manager>
 
       <!-- Show Meeting Attendees Toggle (Coming Soon) -->
       <div class="mt-2">
