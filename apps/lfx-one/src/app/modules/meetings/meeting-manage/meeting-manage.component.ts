@@ -89,7 +89,6 @@ export class MeetingManageComponent {
 
   // Committee context — when navigated from a committee tab with ?committee_uid=
   public readonly committeeContext = signal<Committee | null>(null);
-  private readonly _committeeInit = this.initCommitteeContext();
 
   // Mode and state signals
   public mode = signal<'create' | 'edit'>('create');
@@ -138,6 +137,8 @@ export class MeetingManageComponent {
   );
 
   public constructor() {
+    this.initCommitteeContext();
+
     // Initialize step based on mode
     // In edit mode, read from query parameters
     // In create mode, use internal step tracking
@@ -1286,24 +1287,22 @@ export class MeetingManageComponent {
 
   /** Reads committee_uid from queryParams and pre-populates the committees field (locked). */
   private initCommitteeContext(): void {
-    this.route.queryParamMap.pipe(take(1)).subscribe((params) => {
-      const committeeUid = params.get('committee_uid');
-      if (!committeeUid) return;
-
-      this.committeeService
-        .getCommittee(committeeUid)
-        .pipe(take(1))
-        .subscribe({
-          next: (committee) => {
-            this.committeeContext.set(committee);
-            const committeesControl = this.form().get('committees');
-            committeesControl?.setValue([{ uid: committee.uid, name: committee.name }]);
-            committeesControl?.disable();
-          },
-          error: () => {
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
-          },
-        });
-    });
+    this.route.queryParamMap
+      .pipe(
+        take(1),
+        filter((params) => !!params.get('committee_uid') && !this.route.snapshot.paramMap.has('id')),
+        switchMap((params) => this.committeeService.getCommittee(params.get('committee_uid')!)),
+        catchError(() => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
+          return of(null);
+        })
+      )
+      .subscribe((committee) => {
+        if (!committee) return;
+        this.committeeContext.set(committee);
+        const committeesControl = this.form().get('committees');
+        committeesControl?.setValue([{ uid: committee.uid, name: committee.name }]);
+        committeesControl?.disable();
+      });
   }
 }

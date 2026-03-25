@@ -30,6 +30,7 @@ import { CommitteeSurveysComponent } from '../components/committee-surveys/commi
 import { CommitteeVotesComponent } from '../components/committee-votes/committee-votes.component';
 
 type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';
+const VALID_TABS: CommitteeTab[] = ['overview', 'members', 'votes', 'meetings', 'surveys', 'documents', 'settings'];
 
 @Component({
   selector: 'lfx-committee-view',
@@ -68,7 +69,10 @@ export class CommitteeViewComponent {
   public meetingsTimeFilter = signal<'upcoming' | 'past'>('upcoming');
 
   // Initial tab from queryParams (e.g., ?tab=meetings after create flow redirect)
-  private readonly initialTab = this.route.snapshot.queryParamMap.get('tab') as CommitteeTab | null;
+  private readonly initialTab: CommitteeTab | null = (() => {
+    const tab = this.route.snapshot.queryParamMap.get('tab');
+    return tab && VALID_TABS.includes(tab as CommitteeTab) ? (tab as CommitteeTab) : null;
+  })();
 
   // -- Writable signals --
   public loading = signal<boolean>(true);
@@ -184,8 +188,7 @@ export class CommitteeViewComponent {
 
   public handleTabNavigation(tabWithContext: string): void {
     const [tab, context] = tabWithContext.split(':');
-    const validTabs: CommitteeTab[] = ['overview', 'members', 'votes', 'meetings', 'surveys', 'documents', 'settings'];
-    if (!validTabs.includes(tab as CommitteeTab)) {
+    if (!VALID_TABS.includes(tab as CommitteeTab)) {
       return;
     }
     this.activeTab.set(tab as CommitteeTab);

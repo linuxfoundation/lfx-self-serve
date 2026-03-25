@@ -13,13 +13,14 @@ import { Committee, Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
 import { MeetingService } from '@services/meeting.service';
+import { SkeletonModule } from 'primeng/skeleton';
 import { debounceTime, distinctUntilChanged, filter, finalize, startWith, switchMap, tap } from 'rxjs';
 
 type TimeFilter = 'upcoming' | 'past';
 
 @Component({
   selector: 'lfx-committee-meetings',
-  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, CardComponent, InputTextComponent, SelectComponent, MeetingCardComponent],
+  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, CardComponent, InputTextComponent, SelectComponent, SkeletonModule, MeetingCardComponent],
   templateUrl: './committee-meetings.component.html',
   styleUrl: './committee-meetings.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -36,7 +37,7 @@ export class CommitteeMeetingsComponent {
   public timeFilter = linkedSignal(() => this.initialTimeFilter());
   public meetingTypeFilter = signal<string | null>(null);
 
-  // Form for search + filters — timeFilter synced with initialTimeFilter
+  // Form for search + filter controls (bound in template)
   public searchForm = new FormGroup({
     search: new FormControl(''),
     meetingType: new FormControl<string | null>(null),
@@ -50,9 +51,9 @@ export class CommitteeMeetingsComponent {
   ];
 
   public meetingTypeOptions: Signal<{ label: string; value: string | null }[]> = computed(() => {
-    const types = Object.entries(MEETING_TYPE_CONFIGS).map(([, config]) => ({
+    const types = Object.entries(MEETING_TYPE_CONFIGS).map(([key, config]) => ({
       label: config.label,
-      value: config.label,
+      value: key,
     }));
     return [{ label: 'All Types', value: null }, ...types];
   });
@@ -81,10 +82,9 @@ export class CommitteeMeetingsComponent {
   // Filtered data
   public filteredMeetings: Signal<(Meeting | PastMeeting)[]> = this.initFilteredMeetings();
 
-  /** Handles time filter change from dropdown — syncs signal and form control. */
+  /** Handles time filter change from dropdown. */
   public onTimeFilterChange(value: TimeFilter): void {
     this.timeFilter.set(value);
-    this.searchForm.get('timeFilter')?.setValue(value, { emitEvent: false });
   }
 
   /** Handles meeting type filter change from dropdown. */
@@ -120,7 +120,7 @@ export class CommitteeMeetingsComponent {
         const meetingType = 'meeting_type' in m ? m.meeting_type : '';
 
         const matchesSearch = !term || title.toLowerCase().includes(term);
-        const matchesType = !typeFilter || meetingType?.toLowerCase() === typeFilter.toLowerCase();
+        const matchesType = !typeFilter || meetingType === typeFilter;
 
         return matchesSearch && matchesType;
       });
