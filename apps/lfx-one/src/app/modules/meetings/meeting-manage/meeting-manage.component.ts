@@ -89,6 +89,7 @@ export class MeetingManageComponent {
 
   // Committee context — when navigated from a committee tab with ?committee_uid=
   public readonly committeeContext = signal<Committee | null>(null);
+  private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
 
   // Mode and state signals
   public mode = signal<'create' | 'edit'>('create');
@@ -1277,9 +1278,9 @@ export class MeetingManageComponent {
 
   /** Navigates back to the committee meetings tab or the main meetings page. */
   private navigateBack(): void {
-    const ctx = this.committeeContext();
-    if (ctx) {
-      this.router.navigate(['/groups', ctx.uid], { queryParams: { tab: 'meetings' } });
+    const uid = this.committeeContext()?.uid ?? this.committeeUidFromUrl;
+    if (uid) {
+      this.router.navigate(['/groups', uid], { queryParams: { tab: 'meetings' } });
     } else {
       this.router.navigate(['/', 'meetings']);
     }

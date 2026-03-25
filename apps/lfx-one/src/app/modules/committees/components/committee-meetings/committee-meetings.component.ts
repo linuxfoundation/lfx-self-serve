@@ -50,13 +50,10 @@ export class CommitteeMeetingsComponent {
     { label: 'Past', value: 'past' },
   ];
 
-  public meetingTypeOptions: Signal<{ label: string; value: string | null }[]> = computed(() => {
-    const types = Object.entries(MEETING_TYPE_CONFIGS).map(([key, config]) => ({
-      label: config.label,
-      value: key,
-    }));
-    return [{ label: 'All Types', value: null }, ...types];
-  });
+  public meetingTypeOptions: { label: string; value: string | null }[] = [
+    { label: 'All Types', value: null },
+    ...Object.entries(MEETING_TYPE_CONFIGS).map(([key, config]) => ({ label: config.label, value: key })),
+  ];
 
   // Loading state
   public meetingsLoading = signal(true);
@@ -82,14 +79,16 @@ export class CommitteeMeetingsComponent {
   // Filtered data
   public filteredMeetings: Signal<(Meeting | PastMeeting)[]> = this.initFilteredMeetings();
 
-  /** Handles time filter change from dropdown. */
+  /** Handles time filter change from dropdown — syncs signal and form control. */
   public onTimeFilterChange(value: TimeFilter): void {
     this.timeFilter.set(value);
+    this.searchForm.get('timeFilter')?.setValue(value, { emitEvent: false });
   }
 
-  /** Handles meeting type filter change from dropdown. */
+  /** Handles meeting type filter change from dropdown — syncs signal and form control. */
   public onMeetingTypeChange(value: string | null): void {
     this.meetingTypeFilter.set(value);
+    this.searchForm.get('meetingType')?.setValue(value, { emitEvent: false });
   }
 
   // Private initializer functions
