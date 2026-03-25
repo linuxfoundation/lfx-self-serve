@@ -235,7 +235,7 @@ export class MeetingManageComponent {
   }
 
   public onCancel(): void {
-    this.router.navigate(['/', 'meetings']);
+    this.navigateBack();
   }
 
   public onSubmit(): void {
@@ -374,8 +374,8 @@ export class MeetingManageComponent {
           // Show appropriate success message
           this.showSubmitAllOperationToast(totalRegistrantSuccess, totalRegistrantFailed, totalAttachmentSuccess, totalAttachmentFailed);
 
-          // Navigate back to meetings list
-          this.router.navigate(['/meetings']);
+          // Navigate back to meetings list or group
+          this.navigateBack();
         },
         error: (error: any) => {
           console.error('Error saving meeting and registrants:', error);
@@ -422,7 +422,7 @@ export class MeetingManageComponent {
           this.showRegistrantOperationToast(totalSuccess, totalFailed, totalOperations);
 
           if (!this.isEditMode()) {
-            this.router.navigate(['/', 'meetings']);
+            this.navigateBack();
           } else {
             this.registrantUpdatesRefresh$.next();
             // Reset registrant updates only if there were some successes
@@ -691,7 +691,7 @@ export class MeetingManageComponent {
                   summary: 'Error',
                   detail: 'Meeting not found or you do not have permission to access it',
                 });
-                this.router.navigate(['/meetings']);
+                this.navigateBack();
                 return of(null);
               })
             );
