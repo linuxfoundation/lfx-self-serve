@@ -281,7 +281,8 @@ Thank you,
   }
 
   private initFormValue(): Signal<Record<string, unknown>> {
-    return toSignal(this.form().valueChanges, { initialValue: this.form().value });
+    // Use getRawValue() to include disabled controls (e.g., locked committees from group context)
+    return toSignal(this.form().valueChanges, { initialValue: this.form().getRawValue() });
   }
 
   private initCanGoPrevious(): Signal<boolean> {
