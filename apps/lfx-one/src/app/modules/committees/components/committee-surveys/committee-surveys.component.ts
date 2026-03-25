@@ -12,7 +12,7 @@ import { SurveysTableComponent } from '@app/modules/surveys/components/surveys-t
 import { SurveyResultsDrawerComponent } from '@app/modules/surveys/components/survey-results-drawer/survey-results-drawer.component';
 import { SurveyService } from '@services/survey.service';
 import { MessageService } from 'primeng/api';
-import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
+import { catchError, filter, finalize, map, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-surveys',
@@ -52,7 +52,9 @@ export class CommitteeSurveysComponent {
         filter((c) => !!c?.uid),
         tap(() => this.loading.set(true)),
         switchMap((c) =>
-          this.surveyService.getSurveysByCommittee(c.uid, undefined, 'last_modified_at.desc').pipe(
+          // Use project-scoped query + client-side committee filter (same approach as votes tab)
+          this.surveyService.getSurveysByProject(c.project_uid, 1000, 'last_modified_at.desc').pipe(
+            map((surveys) => surveys.filter((s) => s.committees?.some((sc) => sc.committee_uid === c.uid))),
             catchError((error) => {
               console.error('Failed to load committee surveys:', error);
               this.messageService.add({
