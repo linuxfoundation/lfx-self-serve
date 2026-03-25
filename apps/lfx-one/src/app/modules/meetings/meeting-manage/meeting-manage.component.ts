@@ -1300,6 +1300,9 @@ export class MeetingManageComponent {
             committeesControl?.setValue([{ uid: committee.uid, name: committee.name }]);
             committeesControl?.disable();
           },
+          error: () => {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
+          },
         });
     });
   }
