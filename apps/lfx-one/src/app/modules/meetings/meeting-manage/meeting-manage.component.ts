@@ -6,6 +6,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { MessageComponent } from '@components/message/message.component';
 import {
   DEFAULT_ARTIFACT_VISIBILITY,
   DEFAULT_DURATION,
@@ -30,7 +31,9 @@ import {
   PresignAttachmentResponse,
   RegistrantPendingChanges,
   UpdateMeetingRequest,
+  Committee,
 } from '@lfx-one/shared/interfaces';
+import { CommitteeService } from '@services/committee.service';
 import {
   combineDateTime,
   formatTo12HourInTimezone,
@@ -60,6 +63,7 @@ import { MeetingTypeSelectionComponent } from '../components/meeting-type-select
   imports: [
     StepperModule,
     ButtonComponent,
+    MessageComponent,
     ReactiveFormsModule,
     ConfirmDialogModule,
     MeetingTypeSelectionComponent,
@@ -81,6 +85,12 @@ export class MeetingManageComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly committeeService = inject(CommitteeService);
+
+  // Committee context — when navigated from a committee tab with ?committee_uid=
+  public readonly committeeContext = signal<Committee | null>(null);
+  private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
+
   // Mode and state signals
   public mode = signal<'create' | 'edit'>('create');
   public meetingId = signal<string | null>(null);
@@ -128,6 +138,8 @@ export class MeetingManageComponent {
   );
 
   public constructor() {
+    this.initCommitteeContext();
+
     // Initialize step based on mode
     // In edit mode, read from query parameters
     // In create mode, use internal step tracking
@@ -225,7 +237,7 @@ export class MeetingManageComponent {
   }
 
   public onCancel(): void {
-    this.router.navigate(['/', 'meetings']);
+    this.navigateBack();
   }
 
   public onSubmit(): void {
@@ -364,8 +376,8 @@ export class MeetingManageComponent {
           // Show appropriate success message
           this.showSubmitAllOperationToast(totalRegistrantSuccess, totalRegistrantFailed, totalAttachmentSuccess, totalAttachmentFailed);
 
-          // Navigate back to meetings list
-          this.router.navigate(['/meetings']);
+          // Navigate back to meetings list or group
+          this.navigateBack();
         },
         error: (error: any) => {
           console.error('Error saving meeting and registrants:', error);
@@ -412,7 +424,7 @@ export class MeetingManageComponent {
           this.showRegistrantOperationToast(totalSuccess, totalFailed, totalOperations);
 
           if (!this.isEditMode()) {
-            this.router.navigate(['/', 'meetings']);
+            this.navigateBack();
           } else {
             this.registrantUpdatesRefresh$.next();
             // Reset registrant updates only if there were some successes
@@ -430,7 +442,8 @@ export class MeetingManageComponent {
 
   // Private methods
   private prepareMeetingData(): CreateMeetingRequest | UpdateMeetingRequest {
-    const formValue = this.form().value;
+    // Use getRawValue() to include disabled controls (e.g., locked committees from group context)
+    const formValue = this.form().getRawValue();
     const duration = formValue.duration === 'custom' ? Number(formValue.customDuration) : Number(formValue.duration);
     const startDateTime = combineDateTime(formValue.startDate, formValue.startTime, formValue.timezone);
 
@@ -551,10 +564,15 @@ export class MeetingManageComponent {
       // After creating a meeting, navigate to edit mode on step 5 to manage guests
       const meetingId = this.meetingId();
       if (meetingId) {
-        this.router.navigate(['/meetings', meetingId, 'edit'], { queryParams: { step: '5' } });
+        const editQueryParams: Record<string, string> = { step: '5' };
+        const ctx = this.committeeContext();
+        if (ctx) {
+          editQueryParams['committee_uid'] = ctx.uid;
+        }
+        this.router.navigate(['/meetings', meetingId, 'edit'], { queryParams: editQueryParams });
       } else {
         // Fallback to meetings list if no meeting ID
-        this.router.navigate(['/meetings']);
+        this.navigateBack();
       }
     }
   }
@@ -675,7 +693,7 @@ export class MeetingManageComponent {
                   summary: 'Error',
                   detail: 'Meeting not found or you do not have permission to access it',
                 });
-                this.router.navigate(['/meetings']);
+                this.navigateBack();
                 return of(null);
               })
             );
@@ -1256,5 +1274,36 @@ export class MeetingManageComponent {
 
     // Update form validity
     currentForm.updateValueAndValidity();
+  }
+
+  /** Navigates back to the committee meetings tab or the main meetings page. */
+  private navigateBack(): void {
+    const uid = this.committeeContext()?.uid ?? this.committeeUidFromUrl;
+    if (uid) {
+      this.router.navigate(['/groups', uid], { queryParams: { tab: 'meetings' } });
+    } else {
+      this.router.navigate(['/', 'meetings']);
+    }
+  }
+
+  /** Reads committee_uid from queryParams and pre-populates the committees field (locked). */
+  private initCommitteeContext(): void {
+    this.route.queryParamMap
+      .pipe(
+        take(1),
+        filter((params) => !!params.get('committee_uid') && !this.route.snapshot.paramMap.has('id')),
+        switchMap((params) => this.committeeService.getCommittee(params.get('committee_uid')!)),
+        catchError(() => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
+          return of(null);
+        })
+      )
+      .subscribe((committee) => {
+        if (!committee) return;
+        this.committeeContext.set(committee);
+        const committeesControl = this.form().get('committees');
+        committeesControl?.setValue([{ uid: committee.uid, name: committee.name }]);
+        committeesControl?.disable();
+      });
   }
 }

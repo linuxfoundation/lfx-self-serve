@@ -37,6 +37,7 @@
       <lfx-meeting-committee-manager
         [selectedCommittees]="form().get('committees')?.value || []"
         [form]="form()"
+        [committeeContext]="committeeContext()"
         (committeeMembersChange)="onCommitteeMembersChange($event)">
       </lfx-meeting-committee-manager>
 
