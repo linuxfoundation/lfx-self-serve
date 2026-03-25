@@ -13,6 +13,8 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
 import { CommitteeCategorySeverityPipe } from '@pipes/committee-category-severity.pipe';
+import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
+import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
@@ -34,6 +36,8 @@ import { TooltipModule } from 'primeng/tooltip';
     SelectComponent,
     TooltipModule,
     CommitteeCategorySeverityPipe,
+    PlatformIconPipe,
+    PlatformLabelPipe,
   ],
   templateUrl: './committee-table.component.html',
   styleUrl: './committee-table.component.scss',
@@ -109,24 +113,6 @@ export class CommitteeTableComponent {
         });
         break;
     }
-  }
-
-  public getChatIcon(url: string | undefined): string {
-    const lower = (url || '').toLowerCase();
-    if (lower.includes('slack')) return 'fa-brands fa-slack';
-    if (lower.includes('discord')) return 'fa-brands fa-discord';
-    if (lower.includes('teams.microsoft') || lower.includes('teams.live')) return 'fa-brands fa-microsoft';
-    if (lower.includes('chat.google')) return 'fa-brands fa-google';
-    return 'fa-light fa-comment';
-  }
-
-  public getChatLabel(url: string | undefined): string {
-    const lower = (url || '').toLowerCase();
-    if (lower.includes('slack')) return 'Slack';
-    if (lower.includes('discord')) return 'Discord';
-    if (lower.includes('teams.microsoft') || lower.includes('teams.live')) return 'Microsoft Teams';
-    if (lower.includes('chat.google')) return 'Google Chat';
-    return 'Chat channel';
   }
 
   protected onRowSelect(event: { data: Committee }): void {

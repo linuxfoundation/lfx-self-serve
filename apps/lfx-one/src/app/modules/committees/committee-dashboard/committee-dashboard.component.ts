@@ -20,11 +20,23 @@ import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap } from 'rxjs';
 
+import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
+import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
 
 @Component({
   selector: 'lfx-committee-dashboard',
-  imports: [DecimalPipe, NgClass, ButtonComponent, CardComponent, CommitteeTableComponent, RoleBadgeClassPipe, TooltipModule],
+  imports: [
+    DecimalPipe,
+    NgClass,
+    ButtonComponent,
+    CardComponent,
+    CommitteeTableComponent,
+    RoleBadgeClassPipe,
+    PlatformIconPipe,
+    PlatformLabelPipe,
+    TooltipModule,
+  ],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
 })
@@ -137,15 +149,6 @@ export class CommitteeDashboardComponent {
 
   public onCommitteeClick(committee: Committee): void {
     this.router.navigate(['/groups', committee.uid]);
-  }
-
-  public getChatIcon(url: string | undefined): string {
-    const lower = (url || '').toLowerCase();
-    if (lower.includes('slack')) return 'fa-brands fa-slack';
-    if (lower.includes('discord')) return 'fa-brands fa-discord';
-    if (lower.includes('teams.microsoft') || lower.includes('teams.live')) return 'fa-brands fa-microsoft';
-    if (lower.includes('chat.google')) return 'fa-brands fa-google';
-    return 'fa-light fa-comment';
   }
 
   private initializeMyCommittees(): Signal<MyCommittee[]> {

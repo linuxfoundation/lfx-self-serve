@@ -14,3 +14,4 @@ export * from './poll.utils';
 export * from './survey.utils';
 export * from './vote.utils';
 export * from './committee.utils';
+export * from './platform.utils';
