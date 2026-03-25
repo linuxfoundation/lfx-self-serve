@@ -425,6 +425,9 @@ Thank you,
             committeesControl?.setValue([ref]);
             committeesControl?.disable();
           },
+          error: () => {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
+          },
         });
     });
   }
