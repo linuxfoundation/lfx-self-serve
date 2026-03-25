@@ -67,7 +67,7 @@ export class CommitteeViewComponent {
 
   public meetingsTimeFilter = signal<'upcoming' | 'past'>('upcoming');
 
-  // Initial tab from queryParams (e.g., ?tab=votes after create flow redirect)
+  // Initial tab from queryParams (e.g., ?tab=meetings after create flow redirect)
   private readonly initialTab = this.route.snapshot.queryParamMap.get('tab') as CommitteeTab | null;
 
   // -- Writable signals --
