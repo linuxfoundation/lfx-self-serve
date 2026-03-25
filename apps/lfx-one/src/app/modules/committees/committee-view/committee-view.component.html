@@ -77,6 +77,12 @@
                 <lfx-tag [value]="committee()!.join_mode! | joinModeLabel" severity="secondary"></lfx-tag>
               }
             </div>
+            @if (committee()?.project_name || committee()?.foundation_name) {
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-medium text-gray-500">Parent Project:</span>
+                <span class="text-xs text-gray-700">{{ committee()?.project_name || committee()?.foundation_name }}</span>
+              </div>
+            }
             <div class="flex items-center gap-1">
               <span class="text-xs text-gray-400">Created {{ committee()?.created_at | date: 'MMM d, y' }}</span>
               @if (committee()?.updated_at) {
