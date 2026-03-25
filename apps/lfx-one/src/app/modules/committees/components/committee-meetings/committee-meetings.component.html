@@ -2,38 +2,58 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4 pt-4" data-testid="committee-meetings-tab">
-  <!-- Header with Create button -->
-  @if (canEdit()) {
-    <div class="flex items-center justify-end">
-      <lfx-button
-        label="Create Meeting"
-        icon="fa-light fa-calendar"
-        severity="info"
-        size="small"
-        [routerLink]="['/meetings', 'create']"
-        [queryParams]="{ committee_uid: committee().uid }"
-        data-testid="committee-meetings-create-btn"></lfx-button>
-    </div>
-  }
-  <!-- Toolbar -->
-  <div class="flex items-center gap-3">
-    <lfx-input-text
-      [form]="searchForm"
-      control="search"
-      placeholder="Search meetings..."
-      icon="fa-light fa-magnifying-glass"
-      styleClass="flex-1"
-      dataTest="committee-meetings-search"></lfx-input-text>
-    <div class="flex gap-1">
-      @for (option of timeOptions; track option.value) {
-        <lfx-button
-          [label]="option.label"
-          [severity]="timeFilter() === option.value ? 'secondary' : 'contrast'"
+  <!-- Sticky Top Bar -->
+  <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg shadow-md p-4">
+    <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+      <!-- Search Input -->
+      <div class="flex-1">
+        <lfx-input-text
+          [form]="searchForm"
+          control="search"
+          placeholder="Search meetings..."
+          icon="fa-light fa-search"
+          styleClass="w-full"
           size="small"
-          [outlined]="timeFilter() !== option.value"
-          [ariaLabel]="option.label"
-          [attr.data-testid]="'committee-meetings-filter-' + option.value"
-          (onClick)="setTimeFilter(option.value)" />
+          data-testid="committee-meetings-search"></lfx-input-text>
+      </div>
+
+      <!-- Meeting Type Filter -->
+      <div class="w-full sm:w-64">
+        <lfx-select
+          [form]="searchForm"
+          control="meetingType"
+          size="small"
+          [options]="meetingTypeOptions()"
+          placeholder="All Types"
+          [showClear]="true"
+          styleClass="w-full"
+          (onChange)="onMeetingTypeChange($event.value)"
+          data-testid="committee-meetings-type-filter"></lfx-select>
+      </div>
+
+      <!-- Time Filter -->
+      <div class="w-full sm:w-40">
+        <lfx-select
+          [form]="searchForm"
+          control="timeFilter"
+          size="small"
+          [options]="timeFilterOptions"
+          placeholder="Upcoming"
+          styleClass="w-full"
+          (onChange)="onTimeFilterChange($event.value)"
+          data-testid="committee-meetings-time-filter"></lfx-select>
+      </div>
+
+      <!-- Create Meeting button (inline in top bar) -->
+      @if (canEdit()) {
+        <lfx-button
+          label="Create Meeting"
+          icon="fa-light fa-calendar"
+          severity="info"
+          size="small"
+          [routerLink]="['/meetings', 'create']"
+          [queryParams]="{ committee_uid: committee().uid }"
+          data-testid="committee-meetings-create-btn"></lfx-button>
       }
     </div>
   </div>
@@ -42,10 +62,14 @@
   @if (loading()) {
     <div class="flex flex-col gap-4">
       @for (i of [1, 2, 3]; track i) {
-        <div class="border border-gray-200 rounded-xl p-4 flex flex-col gap-3">
-          <p-skeleton width="6rem" height="1.25rem" />
-          <p-skeleton width="75%" height="1rem" />
-          <p-skeleton width="50%" height="0.75rem" />
+        <div class="rounded-lg shadow-md p-6 animate-pulse">
+          <div class="h-6 bg-gray-200 rounded mb-4 w-4/5"></div>
+          <div class="h-5 bg-gray-200 rounded mb-3"></div>
+          <div class="h-4 bg-gray-200 rounded mb-4 w-3/5"></div>
+          <div class="grid grid-cols-2 gap-4 mt-4">
+            <div class="h-24 bg-gray-200 rounded"></div>
+            <div class="h-24 bg-gray-200 rounded"></div>
+          </div>
         </div>
       }
     </div>
@@ -58,8 +82,8 @@
   } @else {
     <lfx-card>
       <div class="flex flex-col items-center py-12">
-        <i class="fa-light fa-calendar text-3xl text-gray-300 mb-3"></i>
-        <p class="text-sm font-medium text-gray-600">No {{ timeFilter() === 'upcoming' ? 'upcoming' : 'past' }} meetings</p>
+        <i class="fa-light fa-calendar text-3xl text-gray-300 mb-3" aria-hidden="true"></i>
+        <p class="text-sm font-medium text-gray-500">No {{ timeFilter() === 'upcoming' ? 'upcoming' : 'past' }} meetings</p>
         <p class="text-xs text-gray-400 mt-1">
           {{ timeFilter() === 'upcoming' ? 'Meetings for this group will appear here when scheduled.' : 'No past meetings found for this group.' }}
         </p>
