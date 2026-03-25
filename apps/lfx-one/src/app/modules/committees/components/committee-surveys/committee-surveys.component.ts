@@ -6,7 +6,6 @@ import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { CardComponent } from '@components/card/card.component';
-import { MessageComponent } from '@components/message/message.component';
 import { Committee, Survey } from '@lfx-one/shared/interfaces';
 import { SurveysTableComponent } from '@app/modules/surveys/components/surveys-table/surveys-table.component';
 import { SurveyResultsDrawerComponent } from '@app/modules/surveys/components/survey-results-drawer/survey-results-drawer.component';
@@ -16,7 +15,7 @@ import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-surveys',
-  imports: [RouterLink, ButtonComponent, CardComponent, MessageComponent, SurveysTableComponent, SurveyResultsDrawerComponent],
+  imports: [RouterLink, ButtonComponent, CardComponent, SurveysTableComponent, SurveyResultsDrawerComponent],
   templateUrl: './committee-surveys.component.html',
   styleUrl: './committee-surveys.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
