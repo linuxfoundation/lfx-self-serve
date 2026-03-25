@@ -18,18 +18,33 @@
           The survey will be distributed to members of the selected groups. For Board groups, surveys are sent only to voting representatives.
         </p>
 
-        <lfx-committee-checkbox-list
-          [form]="form()"
-          control="committees"
-          label="Select Groups"
-          [required]="true"
-          searchPlaceholder="Search groups..."
-          maxHeight="280px"
-          testIdPrefix="survey-committees">
-        </lfx-committee-checkbox-list>
+        @if (committeeContext(); as ctx) {
+          <!-- Read-only committee display (locked from group context) -->
+          <label class="text-sm font-medium text-gray-700 block mb-2"> Target Group <span class="text-red-500">*</span> </label>
+          <div class="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg" data-testid="survey-committee-locked">
+            <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+              <i class="fa-light fa-users text-sm text-blue-600" aria-hidden="true"></i>
+            </div>
+            <div class="flex-1">
+              <p class="text-sm font-medium text-gray-900">{{ ctx.name }}</p>
+              <p class="text-xs text-gray-500">{{ ctx.category }}</p>
+            </div>
+            <i class="fa-light fa-lock text-gray-400" aria-hidden="true"></i>
+          </div>
+        } @else {
+          <lfx-committee-checkbox-list
+            [form]="form()"
+            control="committees"
+            label="Select Groups"
+            [required]="true"
+            searchPlaceholder="Search groups..."
+            maxHeight="280px"
+            testIdPrefix="survey-committees">
+          </lfx-committee-checkbox-list>
 
-        @if (form().get('committees')?.touched && form().get('committees')?.errors) {
-          <p class="text-red-500 text-xs mt-1">Please select at least one group.</p>
+          @if (form().get('committees')?.touched && form().get('committees')?.errors) {
+            <p class="text-red-500 text-xs mt-1">Please select at least one group.</p>
+          }
         }
       </div>
     </div>
