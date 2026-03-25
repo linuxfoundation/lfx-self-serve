@@ -562,10 +562,15 @@ export class MeetingManageComponent {
       // After creating a meeting, navigate to edit mode on step 5 to manage guests
       const meetingId = this.meetingId();
       if (meetingId) {
-        this.router.navigate(['/meetings', meetingId, 'edit'], { queryParams: { step: '5' } });
+        const editQueryParams: Record<string, string> = { step: '5' };
+        const ctx = this.committeeContext();
+        if (ctx) {
+          editQueryParams['committee_uid'] = ctx.uid;
+        }
+        this.router.navigate(['/meetings', meetingId, 'edit'], { queryParams: editQueryParams });
       } else {
         // Fallback to meetings list if no meeting ID
-        this.router.navigate(['/meetings']);
+        this.navigateBack();
       }
     }
   }
