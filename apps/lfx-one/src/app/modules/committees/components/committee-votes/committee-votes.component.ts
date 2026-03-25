@@ -52,8 +52,8 @@ export class CommitteeVotesComponent {
         filter((c) => !!c?.uid),
         switchMap((c) => {
           this.loading.set(true);
-          // Use project-scoped query with committee_name filter (same approach as main votes page)
-          return this.voteService.getVotesByProjectPaginated(c.project_uid, 1000, undefined, undefined, [`committee_name:${c.name}`]).pipe(
+          // Use project-scoped query with committee_uid filter (immutable identity, not display name)
+          return this.voteService.getVotesByProjectPaginated(c.project_uid, 1000, undefined, undefined, [`committee_uid:${c.uid}`]).pipe(
             map((response) => response.data),
             catchError((error) => {
               console.error('Failed to load committee votes:', error);

@@ -561,6 +561,9 @@ export class VoteManageComponent {
             committeeControl?.setValue(ref);
             committeeControl?.disable();
           },
+          error: () => {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
+          },
         });
     });
   }
