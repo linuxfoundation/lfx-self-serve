@@ -211,7 +211,8 @@
                     [meetingUid]="meetingId()!"
                     [form]="form()"
                     [(registrantUpdates)]="registrantUpdates"
-                    [refresh]="registrantUpdatesRefresh$">
+                    [refresh]="registrantUpdatesRefresh$"
+                    [committeeContext]="committeeContext()">
                   </lfx-meeting-registrants-manager>
                 } @else {
                   <div class="text-center py-8 text-gray-500">

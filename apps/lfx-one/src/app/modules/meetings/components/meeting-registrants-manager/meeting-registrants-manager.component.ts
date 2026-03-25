@@ -9,7 +9,7 @@ import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggl
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { COMMITTEE_LABEL, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
-import { CommitteeMember, MeetingRegistrant, MeetingRegistrantWithState, RegistrantPendingChanges, RegistrantState } from '@lfx-one/shared/interfaces';
+import { Committee, CommitteeMember, MeetingRegistrant, MeetingRegistrantWithState, RegistrantPendingChanges, RegistrantState } from '@lfx-one/shared/interfaces';
 import { generateTempId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { ConfirmationService } from 'primeng/api';
@@ -47,6 +47,7 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   public form = input.required<FormGroup>();
   public registrantUpdates = input.required<RegistrantPendingChanges>();
   public refresh = input.required<BehaviorSubject<void>>();
+  public committeeContext = input<Committee | null>(null);
 
   // Show meeting attendees feature from shared constants
   public readonly showMeetingAttendeesFeature = SHOW_MEETING_ATTENDEES_FEATURE;
