@@ -105,10 +105,9 @@ export class CommitteeMeetingsComponent {
   }
 
   private initFilteredMeetings(): Signal<(Meeting | PastMeeting)[]> {
-    const searchTerm = toSignal(
-      (this.searchForm.get('search') as FormControl).valueChanges.pipe(startWith(''), debounceTime(300), distinctUntilChanged()),
-      { initialValue: '' }
-    );
+    const searchTerm = toSignal((this.searchForm.get('search') as FormControl).valueChanges.pipe(startWith(''), debounceTime(300), distinctUntilChanged()), {
+      initialValue: '',
+    });
 
     return computed(() => {
       const time = this.timeFilter();
