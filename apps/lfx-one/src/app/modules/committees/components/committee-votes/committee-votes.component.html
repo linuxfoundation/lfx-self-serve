@@ -17,6 +17,20 @@
           dataTest="committee-votes-search"></lfx-input-text>
       </div>
 
+      <!-- Status Filter -->
+      <div class="w-full sm:w-48">
+        <lfx-select
+          [form]="searchForm"
+          control="statusFilter"
+          size="small"
+          [options]="statusFilterOptions"
+          placeholder="All Statuses"
+          [showClear]="true"
+          styleClass="w-full"
+          (onChange)="onStatusFilterChange($event.value)"
+          data-testid="committee-votes-status-filter"></lfx-select>
+      </div>
+
       <!-- Create Vote button -->
       @if (canEdit()) {
         <lfx-button

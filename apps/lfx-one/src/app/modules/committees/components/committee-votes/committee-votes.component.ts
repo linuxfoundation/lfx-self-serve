@@ -8,6 +8,7 @@ import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
 import { Committee, PaginatedResponse, Vote } from '@lfx-one/shared/interfaces';
 import { VotesTableComponent } from '@app/modules/votes/components/votes-table/votes-table.component';
 import { VoteResultsDrawerComponent } from '@app/modules/votes/components/vote-results-drawer/vote-results-drawer.component';
@@ -17,7 +18,7 @@ import { catchError, debounceTime, distinctUntilChanged, filter, finalize, map, 
 
 @Component({
   selector: 'lfx-committee-votes',
-  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, CardComponent, InputTextComponent, VotesTableComponent, VoteResultsDrawerComponent],
+  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, CardComponent, InputTextComponent, SelectComponent, VotesTableComponent, VoteResultsDrawerComponent],
   templateUrl: './committee-votes.component.html',
   styleUrl: './committee-votes.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -36,14 +37,28 @@ export class CommitteeVotesComponent {
   public selectedVoteId = signal<string | null>(null);
   public selectedVote = signal<Vote | null>(null);
 
-  // Search
-  public searchForm = new FormGroup({ search: new FormControl('') });
+  // Search + filters
+  public searchForm = new FormGroup({
+    search: new FormControl(''),
+    statusFilter: new FormControl<string | null>(null),
+  });
+  public statusFilter = signal<string | null>(null);
+  public statusFilterOptions = [
+    { label: 'Active', value: 'active' },
+    { label: 'Draft', value: 'draft' },
+    { label: 'Ended', value: 'ended' },
+  ];
 
   // Data
   public votes: Signal<Vote[]> = this.initVotes();
 
   // Filtered by search
   public filteredVotes: Signal<Vote[]> = this.initFilteredVotes();
+
+  /** Handles status filter change from dropdown. */
+  public onStatusFilterChange(value: string | null): void {
+    this.statusFilter.set(value);
+  }
 
   /** Opens the vote results drawer for the selected vote. */
   public viewVoteResults(voteUid: string): void {
@@ -83,9 +98,14 @@ export class CommitteeVotesComponent {
 
     return computed(() => {
       const term = (searchTerm() || '').toLowerCase();
+      const status = this.statusFilter();
       const all = this.votes();
-      if (!term) return all;
-      return all.filter((v) => v.name?.toLowerCase().includes(term));
+
+      return all.filter((v) => {
+        const matchesSearch = !term || v.name?.toLowerCase().includes(term);
+        const matchesStatus = !status || v.status?.toLowerCase() === status;
+        return matchesSearch && matchesStatus;
+      });
     });
   }
 }
