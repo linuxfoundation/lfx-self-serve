@@ -139,6 +139,15 @@ export class CommitteeDashboardComponent {
     this.router.navigate(['/groups', committee.uid]);
   }
 
+  public getChatIcon(url: string | undefined): string {
+    const lower = (url || '').toLowerCase();
+    if (lower.includes('slack')) return 'fa-brands fa-slack';
+    if (lower.includes('discord')) return 'fa-brands fa-discord';
+    if (lower.includes('teams.microsoft') || lower.includes('teams.live')) return 'fa-brands fa-microsoft';
+    if (lower.includes('chat.google')) return 'fa-brands fa-google';
+    return 'fa-light fa-comment';
+  }
+
   private initializeMyCommittees(): Signal<MyCommittee[]> {
     const project$ = toObservable(this.project);
     const refresh$ = toObservable(this.refresh);

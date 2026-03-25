@@ -130,7 +130,9 @@ export class CommitteeViewComponent {
   });
 
   public chatPlatformLabel: Signal<string> = this.initChatPlatformLabel();
+  public chatPlatformIcon: Signal<string> = this.initChatPlatformIcon();
   public repoPlatformLabel: Signal<string> = this.initRepoPlatformLabel();
+  public repoPlatformIcon: Signal<string> = this.initRepoPlatformIcon();
 
   // -- Tab visibility signals --
   public isMembersTabVisible: Signal<boolean> = computed(() => this.committee()?.member_visibility !== CommitteeMemberVisibility.HIDDEN || this.canEdit());
@@ -387,6 +389,17 @@ export class CommitteeViewComponent {
     });
   }
 
+  private initChatPlatformIcon(): Signal<string> {
+    return computed(() => {
+      const url = this.committee()?.chat_channel?.toLowerCase() || '';
+      if (url.includes('slack')) return 'fa-brands fa-slack';
+      if (url.includes('discord')) return 'fa-brands fa-discord';
+      if (url.includes('teams.microsoft') || url.includes('teams.live')) return 'fa-brands fa-microsoft';
+      if (url.includes('chat.google')) return 'fa-brands fa-google';
+      return 'fa-light fa-comment';
+    });
+  }
+
   private initRepoPlatformLabel(): Signal<string> {
     return computed(() => {
       const url = this.committee()?.website?.toLowerCase() || '';
@@ -394,6 +407,16 @@ export class CommitteeViewComponent {
       if (url.includes('gitlab')) return 'GitLab';
       if (url.includes('bitbucket')) return 'Bitbucket';
       return 'Website';
+    });
+  }
+
+  private initRepoPlatformIcon(): Signal<string> {
+    return computed(() => {
+      const url = this.committee()?.website?.toLowerCase() || '';
+      if (url.includes('github')) return 'fa-brands fa-github';
+      if (url.includes('gitlab')) return 'fa-brands fa-gitlab';
+      if (url.includes('bitbucket')) return 'fa-brands fa-bitbucket';
+      return 'fa-light fa-globe';
     });
   }
 }

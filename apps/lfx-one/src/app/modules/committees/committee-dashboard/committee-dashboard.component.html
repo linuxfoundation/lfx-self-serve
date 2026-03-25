@@ -10,26 +10,24 @@
       </div>
     </div>
   } @else {
-    <div class="flex flex-col gap-8">
-      <div class="flex flex-col gap-6">
-        <!-- Page Title with Create Group Button -->
-        <div class="flex justify-between items-center w-full gap-4">
-          <h1>{{ committeeLabel.plural }}</h1>
-          @if (canCreateGroup()) {
-            <lfx-button
-              [label]="'Create ' + committeeLabel.singular"
-              icon="fa-light fa-users mr-1"
-              severity="info"
-              size="small"
-              (onClick)="openCreateDialog()"
-              data-testid="committee-new-cta">
-            </lfx-button>
-          }
-        </div>
-        <p class="mt-2 text-gray-500" data-testid="dashboard-hero-description">
-          Manage {{ committeeLabel.plural.toLowerCase() }} and governance for your project.
-        </p>
+    <div class="flex flex-col gap-6">
+      <!-- Page Title with Create Group Button -->
+      <div class="flex justify-between items-center w-full gap-4">
+        <h1>{{ committeeLabel.plural }}</h1>
+        @if (canCreateGroup()) {
+          <lfx-button
+            [label]="'Create ' + committeeLabel.singular"
+            icon="fa-light fa-users mr-1"
+            severity="info"
+            size="small"
+            (onClick)="openCreateDialog()"
+            data-testid="committee-new-cta">
+          </lfx-button>
+        }
       </div>
+      <p class="text-gray-500" data-testid="dashboard-hero-description">
+        Manage {{ committeeLabel.plural.toLowerCase() }} and governance for your project.
+      </p>
 
       <!-- Statistics Bar -->
       @if (committees().length > 0) {
@@ -60,7 +58,6 @@
           </lfx-card>
         </div>
       }
-    </div>
 
     <!-- My Groups Section -->
     @if (myCommittees().length > 0) {
@@ -135,7 +132,7 @@
                         pTooltip="Chat channel"
                         tooltipPosition="top"
                         aria-label="Chat channel">
-                        <i class="fa-light fa-comment w-3.5 h-3.5" aria-hidden="true"></i>
+                        <i [class]="getChatIcon(committee.chat_channel) + ' w-3.5 h-3.5'" aria-hidden="true"></i>
                       </a>
                     } @else {
                       <span class="flex items-center gap-1 text-gray-300 cursor-default" pTooltip="No chat channel" tooltipPosition="top">
@@ -208,6 +205,7 @@
           (rowClick)="onCommitteeClick($event)">
         </lfx-committee-table>
       }
+    </div>
     </div>
   }
 </div>

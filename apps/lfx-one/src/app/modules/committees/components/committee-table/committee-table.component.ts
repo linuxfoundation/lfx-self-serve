@@ -111,6 +111,24 @@ export class CommitteeTableComponent {
     }
   }
 
+  public getChatIcon(url: string | undefined): string {
+    const lower = (url || '').toLowerCase();
+    if (lower.includes('slack')) return 'fa-brands fa-slack';
+    if (lower.includes('discord')) return 'fa-brands fa-discord';
+    if (lower.includes('teams.microsoft') || lower.includes('teams.live')) return 'fa-brands fa-microsoft';
+    if (lower.includes('chat.google')) return 'fa-brands fa-google';
+    return 'fa-light fa-comment';
+  }
+
+  public getChatLabel(url: string | undefined): string {
+    const lower = (url || '').toLowerCase();
+    if (lower.includes('slack')) return 'Slack';
+    if (lower.includes('discord')) return 'Discord';
+    if (lower.includes('teams.microsoft') || lower.includes('teams.live')) return 'Microsoft Teams';
+    if (lower.includes('chat.google')) return 'Google Chat';
+    return 'Chat channel';
+  }
+
   protected onRowSelect(event: { data: Committee }): void {
     this.rowClick.emit(event.data);
   }
