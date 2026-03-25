@@ -14,6 +14,7 @@ import { TagComponent } from '@components/tag/tag.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import { Committee, CommitteeMember, CommitteeMemberVisibility, getCommitteeCategorySeverity, TagSeverity } from '@lfx-one/shared';
+import { getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepoPlatformLabel } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { UserService } from '@services/user.service';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
@@ -130,7 +131,9 @@ export class CommitteeViewComponent {
   });
 
   public chatPlatformLabel: Signal<string> = this.initChatPlatformLabel();
+  public chatPlatformIcon: Signal<string> = this.initChatPlatformIcon();
   public repoPlatformLabel: Signal<string> = this.initRepoPlatformLabel();
+  public repoPlatformIcon: Signal<string> = this.initRepoPlatformIcon();
 
   // -- Tab visibility signals --
   public isMembersTabVisible: Signal<boolean> = computed(() => this.committee()?.member_visibility !== CommitteeMemberVisibility.HIDDEN || this.canEdit());
@@ -375,25 +378,18 @@ export class CommitteeViewComponent {
   }
 
   private initChatPlatformLabel(): Signal<string> {
-    return computed(() => {
-      const url = this.committee()?.chat_channel?.toLowerCase() || '';
-      if (url.includes('slack')) return 'Slack';
-      if (url.includes('discord')) return 'Discord';
-      if (url.includes('teams.microsoft') || url.includes('teams.live')) return 'Microsoft Teams';
-      if (url.includes('chat.google')) return 'Google Chat';
-      if (url.includes('zulip')) return 'Zulip';
-      if (url.includes('matrix') || url.includes('element')) return 'Matrix / Element';
-      return 'Other';
-    });
+    return computed(() => getChatPlatformLabel(this.committee()?.chat_channel));
+  }
+
+  private initChatPlatformIcon(): Signal<string> {
+    return computed(() => getChatPlatformIcon(this.committee()?.chat_channel));
   }
 
   private initRepoPlatformLabel(): Signal<string> {
-    return computed(() => {
-      const url = this.committee()?.website?.toLowerCase() || '';
-      if (url.includes('github')) return 'GitHub';
-      if (url.includes('gitlab')) return 'GitLab';
-      if (url.includes('bitbucket')) return 'Bitbucket';
-      return 'Website';
-    });
+    return computed(() => getRepoPlatformLabel(this.committee()?.website));
+  }
+
+  private initRepoPlatformIcon(): Signal<string> {
+    return computed(() => getRepoPlatformIcon(this.committee()?.website));
   }
 }

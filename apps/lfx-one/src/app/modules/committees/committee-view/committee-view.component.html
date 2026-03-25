@@ -77,6 +77,12 @@
                 <lfx-tag [value]="committee()!.join_mode! | joinModeLabel" severity="secondary"></lfx-tag>
               }
             </div>
+            @if (committee()?.project_name || committee()?.foundation_name) {
+              <div class="flex items-center gap-1.5">
+                <span class="text-xs font-medium text-gray-500">Parent Project:</span>
+                <span class="text-xs text-gray-700">{{ committee()?.project_name || committee()?.foundation_name }}</span>
+              </div>
+            }
             <div class="flex items-center gap-1">
               <span class="text-xs text-gray-400">Created {{ committee()?.created_at | date: 'MMM d, y' }}</span>
               @if (committee()?.updated_at) {
@@ -90,29 +96,33 @@
               class="relative bg-gray-50 border border-gray-200 hover:border-blue-500 transition-colors rounded-lg py-2.5 px-3.5 pr-9 text-left text-[12.5px] leading-[1.7] text-gray-600 max-w-[360px] overflow-hidden flex-shrink-0"
               data-testid="committee-view-channels-card">
               <!-- Channel values -->
-              <div [attr.inert]="isVisitor() || null">
+              <div class="flex flex-col gap-2" [attr.inert]="isVisitor() || null">
                 @if (committee()?.mailing_list; as mailingList) {
-                  <div class="whitespace-nowrap overflow-hidden text-ellipsis">
-                    <span class="font-medium text-gray-500">Mailing List:</span>
-                    <a [href]="'mailto:' + mailingList" class="text-gray-900 no-underline" [title]="mailingList">{{ mailingList }}</a>
+                  <div class="overflow-hidden">
+                    <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1">
+                      <i class="fa-light fa-envelope w-3" aria-hidden="true"></i> Mailing List
+                    </p>
+                    <a [href]="'mailto:' + mailingList" class="text-xs text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block" [title]="mailingList">{{ mailingList }}</a>
                   </div>
                 }
                 @if (committee()?.chat_channel; as chatChannel) {
-                  <div class="whitespace-nowrap overflow-hidden text-ellipsis">
-                    <span class="font-medium text-gray-500">{{ chatPlatformLabel() }}:</span>
+                  <div class="overflow-hidden">
+                    <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1">
+                      <i [class]="chatPlatformIcon() + ' w-3'" aria-hidden="true"></i> {{ chatPlatformLabel() }}
+                    </p>
                     @if (chatChannel.startsWith('http')) {
-                      <a [href]="chatChannel" target="_blank" rel="noopener noreferrer" class="text-gray-900 no-underline" [title]="chatChannel">{{
-                        chatChannel
-                      }}</a>
+                      <a [href]="chatChannel" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block" [title]="chatChannel">{{ chatChannel }}</a>
                     } @else {
-                      <span class="text-gray-900">{{ chatChannel }}</span>
+                      <span class="text-xs text-gray-900 truncate block">{{ chatChannel }}</span>
                     }
                   </div>
                 }
                 @if (committee()?.website; as website) {
-                  <div class="whitespace-nowrap overflow-hidden text-ellipsis">
-                    <span class="font-medium text-gray-500">{{ repoPlatformLabel() }}:</span>
-                    <a [href]="website" target="_blank" rel="noopener noreferrer" class="text-gray-900 no-underline" [title]="website">{{ website }}</a>
+                  <div class="overflow-hidden">
+                    <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1">
+                      <i [class]="repoPlatformIcon() + ' w-3'" aria-hidden="true"></i> {{ repoPlatformLabel() }}
+                    </p>
+                    <a [href]="website" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block" [title]="website">{{ website }}</a>
                   </div>
                 }
                 @if (!committee()?.mailing_list && !committee()?.chat_channel && !committee()?.website) {
@@ -177,7 +187,8 @@
             [canEdit]="canEdit()"
             [myRole]="myRole()"
             [myMemberUid]="myMemberUid()"
-            [myRoleLoading]="myRoleLoading()" />
+            [myRoleLoading]="myRoleLoading()"
+            (tabNavigated)="handleTabNavigation($event)" />
         }
         @case ('members') {
           @if (isMembersTabVisible()) {
@@ -256,7 +267,7 @@
 
 <!-- Description View Dialog -->
 <p-dialog
-  header="About"
+  header="Description"
   [visible]="showDescriptionDialog()"
   (visibleChange)="showDescriptionDialog.set($event)"
   [modal]="true"

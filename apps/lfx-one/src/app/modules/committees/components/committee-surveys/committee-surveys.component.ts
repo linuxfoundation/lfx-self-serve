@@ -2,9 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, inject, input, model, signal, Signal } from '@angular/core';
-import { RouterLink } from '@angular/router';
-import { ButtonComponent } from '@components/button/button.component';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { Committee, Survey } from '@lfx-one/shared/interfaces';
 import { SurveysTableComponent } from '@app/modules/surveys/components/surveys-table/surveys-table.component';
@@ -15,7 +14,7 @@ import { catchError, filter, finalize, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-surveys',
-  imports: [RouterLink, ButtonComponent, CardComponent, SurveysTableComponent, SurveyResultsDrawerComponent],
+  imports: [ButtonComponent, CardComponent, SurveysTableComponent, SurveyResultsDrawerComponent],
   templateUrl: './committee-surveys.component.html',
   styleUrl: './committee-surveys.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

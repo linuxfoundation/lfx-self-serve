@@ -20,11 +20,23 @@ import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap } from 'rxjs';
 
+import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
+import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
 
 @Component({
   selector: 'lfx-committee-dashboard',
-  imports: [DecimalPipe, NgClass, ButtonComponent, CardComponent, CommitteeTableComponent, RoleBadgeClassPipe, TooltipModule],
+  imports: [
+    DecimalPipe,
+    NgClass,
+    ButtonComponent,
+    CardComponent,
+    CommitteeTableComponent,
+    RoleBadgeClassPipe,
+    PlatformIconPipe,
+    PlatformLabelPipe,
+    TooltipModule,
+  ],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
 })

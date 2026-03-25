@@ -13,6 +13,8 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
 import { CommitteeCategorySeverityPipe } from '@pipes/committee-category-severity.pipe';
+import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
+import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
 import { MessageService } from 'primeng/api';
@@ -34,6 +36,8 @@ import { TooltipModule } from 'primeng/tooltip';
     SelectComponent,
     TooltipModule,
     CommitteeCategorySeverityPipe,
+    PlatformIconPipe,
+    PlatformLabelPipe,
   ],
   templateUrl: './committee-table.component.html',
   styleUrl: './committee-table.component.scss',

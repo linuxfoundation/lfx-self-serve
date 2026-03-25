@@ -1,32 +1,14 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6">
+<div class="flex flex-col gap-4 pt-2">
   <!-- Committee Members Section -->
   <lfx-card>
-    <div class="flex justify-between gap-4 mb-8">
-      <h3 class="text-lg font-medium text-gray-900">{{ committeeLabel.singular }} Members</h3>
-      <!-- Member Actions -->
-      <div class="flex gap-2">
-        @if (canManageMembers()) {
-          <lfx-button
-            icon="fa-light fa-user-plus"
-            label="Add Member"
-            size="small"
-            severity="secondary"
-            styleClass="p-button-outlined"
-            (onClick)="openAddMemberDialog()"
-            data-testid="add-member-btn">
-          </lfx-button>
-        }
-      </div>
-    </div>
-
     @if (!isMembersVisible()) {
       <div class="text-sm text-gray-500 text-center py-6" data-testid="members-hidden-placeholder">Member list is not publicly visible for this group.</div>
     } @else {
-      <!-- Search and Filter Controls -->
-      <div class="flex flex-col md:flex-row md:flex-wrap gap-4 mb-6">
+      <!-- Search, Filter Controls, and Add Member -->
+      <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 mb-6">
         <!-- Search Input -->
         <div class="flex-1">
           <lfx-input-text [form]="filterForm" control="search" placeholder="Search members..." icon="fa-light fa-search" styleClass="w-full" size="small">
@@ -34,43 +16,54 @@
         </div>
 
         <!-- Role Filter -->
-        <div class="w-full flex-1 sm:flex-none md:w-48">
+        <div class="w-full sm:w-auto sm:shrink-0">
           <lfx-select
             [form]="filterForm"
             control="role"
             size="small"
             [options]="roleOptions()"
-            placeholder="Filter by Role"
+            placeholder="All Roles"
             [showClear]="true"
             styleClass="w-full">
           </lfx-select>
         </div>
 
         <!-- Voting Status Filter -->
-        <div class="w-full flex-1 sm:flex-none md:w-48">
+        <div class="w-full sm:w-auto sm:shrink-0">
           <lfx-select
             [form]="filterForm"
             control="votingStatus"
             size="small"
             [options]="votingStatusOptions()"
-            placeholder="Filter by Voting Status"
+            placeholder="All Voting Status"
             [showClear]="true"
             styleClass="w-full">
           </lfx-select>
         </div>
 
         <!-- Organization Filter -->
-        <div class="w-full flex-1 sm:flex-none md:w-48">
+        <div class="w-full sm:w-auto sm:shrink-0">
           <lfx-select
             [form]="filterForm"
             control="organization"
             size="small"
             [options]="organizationOptions()"
-            placeholder="Filter by Organization"
+            placeholder="All Organizations"
             [showClear]="true"
             styleClass="w-full">
           </lfx-select>
         </div>
+
+        @if (canManageMembers()) {
+          <lfx-button
+            icon="fa-light fa-user-plus"
+            label="Add Member"
+            size="small"
+            severity="info"
+            (onClick)="openAddMemberDialog()"
+            data-testid="add-member-btn">
+          </lfx-button>
+        }
       </div>
 
       <!-- Table View -->

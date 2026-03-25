@@ -1,13 +1,8 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-6 pt-4 max-w-3xl mx-auto" data-testid="committee-settings-tab">
-  <!-- Header -->
-  <div class="flex justify-between items-start">
-    <div>
-      <h2 class="text-[17.5px] font-semibold text-gray-900">Group Settings</h2>
-      <p class="text-[13px] text-gray-500 leading-relaxed">Configure permissions and features for your group.</p>
-    </div>
+<div class="flex flex-col gap-6 pt-2 max-w-3xl mx-auto" data-testid="committee-settings-tab">
+  <div class="flex justify-end">
     <lfx-button label="Save Changes" severity="info" size="small" icon="fa-light fa-floppy-disk" (onClick)="saveSettings()" [loading]="saving()"></lfx-button>
   </div>
 
