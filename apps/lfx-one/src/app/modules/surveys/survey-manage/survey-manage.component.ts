@@ -21,7 +21,7 @@ import { trimmedRequired } from '@lfx-one/shared/validators';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
-import { combineLatest, distinctUntilChanged, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, distinctUntilChanged, filter, map, of, switchMap, take } from 'rxjs';
 
 import { SurveyAudienceTypeComponent } from '../components/survey-audience-type/survey-audience-type.component';
 import { SurveyEmailDraftComponent } from '../components/survey-email-draft/survey-email-draft.component';
@@ -55,7 +55,6 @@ export class SurveyManageComponent {
 
   // Committee context — when navigated from a committee tab with ?committee_uid=
   public readonly committeeContext = signal<Committee | null>(null);
-  private readonly _committeeInit = this.initCommitteeContext();
 
   // Protected constants
   public readonly totalSteps = SURVEY_MANAGE_TOTAL_STEPS;
@@ -79,6 +78,10 @@ export class SurveyManageComponent {
   public readonly isLastStep: Signal<boolean> = this.initIsLastStep();
   public currentStep: Signal<number> = this.initCurrentStep();
   public readonly submitButtonLabel: Signal<string> = this.initSubmitButtonLabel();
+
+  constructor() {
+    this.initCommitteeContext();
+  }
 
   public nextStep(): void {
     const next = this.currentStep() + 1;
@@ -281,8 +284,9 @@ Thank you,
   }
 
   private initFormValue(): Signal<Record<string, unknown>> {
-    // Use getRawValue() to include disabled controls (e.g., locked committees from group context)
-    return toSignal(this.form().valueChanges, { initialValue: this.form().getRawValue() });
+    // Use getRawValue() on every emission to include disabled controls (e.g., locked committees)
+    const form = this.form();
+    return toSignal(form.valueChanges.pipe(map(() => form.getRawValue())), { initialValue: form.getRawValue() });
   }
 
   private initCanGoPrevious(): Signal<boolean> {
@@ -359,9 +363,8 @@ Thank you,
 
     switch (step) {
       case 1: {
-        // Committees must have at least one selection (disabled controls excluded from .value, so check raw)
-        const committeesControl = form.get('committees');
-        const committeesValue = (committeesControl?.disabled ? committeesControl.value : committeesControl?.value) as CommitteeReference[] | null;
+        // Committee is valid if locked via group context, or if the form control has selections
+        const committeesValue = !!this.committeeContext() ? [this.committeeContext()] : (form.get('committees')?.value as CommitteeReference[] | null);
         const committeesValid = Array.isArray(committeesValue) && committeesValue.length > 0;
         const surveyTemplateValid = !!form.get('surveyTemplate')?.valid && !!form.get('surveyTemplate')?.value;
         return committeesValid && surveyTemplateValid;
@@ -410,25 +413,24 @@ Thank you,
 
   /** Reads committee_uid from queryParams and pre-populates the committees field (locked). */
   private initCommitteeContext(): void {
-    this.route.queryParamMap.pipe(take(1)).subscribe((params) => {
-      const committeeUid = params.get('committee_uid');
-      if (!committeeUid) return;
-
-      this.committeeService
-        .getCommittee(committeeUid)
-        .pipe(take(1))
-        .subscribe({
-          next: (committee) => {
-            this.committeeContext.set(committee);
-            const ref: CommitteeReference = { uid: committee.uid, name: committee.name };
-            const committeesControl = this.form().get('committees');
-            committeesControl?.setValue([ref]);
-            committeesControl?.disable();
-          },
-          error: () => {
-            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
-          },
-        });
-    });
+    this.route.queryParamMap
+      .pipe(
+        take(1),
+        map((params) => params.get('committee_uid')),
+        filter((uid): uid is string => !!uid && !this.route.snapshot.paramMap.has('id')),
+        switchMap((uid) => this.committeeService.getCommittee(uid)),
+        catchError(() => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
+          return of(null);
+        })
+      )
+      .subscribe((committee) => {
+        if (!committee) return;
+        this.committeeContext.set(committee);
+        const ref: CommitteeReference = { uid: committee.uid, name: committee.name };
+        const committeesControl = this.form().get('committees');
+        committeesControl?.setValue([ref]);
+        committeesControl?.disable();
+      });
   }
 }
