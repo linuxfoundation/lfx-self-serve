@@ -1,10 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { QueryServiceResponse, Survey } from '@lfx-one/shared/interfaces';
+import { CreateSurveyRequest, QueryServiceResponse, Survey } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { ETagService } from './etag.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -87,6 +88,56 @@ export class SurveyService {
     });
 
     return survey;
+  }
+
+  /**
+   * Creates a new survey
+   */
+  public async createSurvey(req: Request, surveyData: CreateSurveyRequest): Promise<Survey> {
+    // Enrich creator fields from the OIDC session (not expected from the frontend)
+    const user = req.oidc?.user;
+    const enrichedData: CreateSurveyRequest = {
+      ...surveyData,
+      creator_id: (user?.['sub'] as string) || '',
+      creator_username: (user?.['nickname'] as string) || (user?.['name'] as string) || '',
+      creator_name: (user?.['name'] as string) || '',
+    };
+
+    const sanitizedPayload = logger.sanitize({ surveyData: enrichedData });
+    logger.debug(req, 'create_survey', 'Creating survey payload', sanitizedPayload);
+
+    const newSurvey = await this.microserviceProxy.proxyRequest<Survey>(req, 'LFX_V2_SERVICE', '/surveys', 'POST', undefined, enrichedData, {
+      ['X-Sync']: 'true',
+    });
+
+    // After creating, poll the query service until the survey is indexed.
+    // The query service uses eventual consistency, so the survey may not appear immediately.
+    const surveyUid = newSurvey.uid;
+    let fetchedSurvey: Survey | undefined;
+
+    const resolved = await pollEndpoint({
+      req,
+      operation: 'create_survey',
+      pollFn: async () => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Survey>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'survey',
+          tags: surveyUid,
+        });
+        if (resources.length > 0) {
+          fetchedSurvey = resources[0].data;
+          return true;
+        }
+        return false;
+      },
+      metadata: { survey_uid: surveyUid },
+    });
+
+    if (resolved && fetchedSurvey) {
+      return fetchedSurvey;
+    }
+
+    logger.warning(req, 'create_survey', 'Survey not yet indexed in query service, returning POST response', { survey_uid: surveyUid });
+    return newSurvey;
   }
 
   /**
