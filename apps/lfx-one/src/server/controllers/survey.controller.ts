@@ -4,7 +4,7 @@
 import { CreateSurveyRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { validateUidParameter } from '../helpers/validation.helper';
+import { validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { SurveyService } from '../services/survey.service';
 
@@ -26,6 +26,12 @@ export class SurveyController {
     });
 
     try {
+      const validationContext = { operation: 'create_survey', service: 'survey_controller' };
+
+      if (!validateRequiredParameter(surveyData?.survey_monkey_id, 'survey_monkey_id', req, next, validationContext)) return;
+      if (!validateRequiredParameter(surveyData?.committee_uid, 'committee_uid', req, next, validationContext)) return;
+      if (!validateRequiredParameter(surveyData?.survey_title, 'survey_title', req, next, validationContext)) return;
+
       const survey = await this.surveyService.createSurvey(req, surveyData);
 
       logger.success(req, 'create_survey', startTime, {

@@ -191,6 +191,10 @@ export interface CreateSurveyRequest {
   committee_uid: string;
   /** Whether committee voting members are eligible (required) */
   committee_voting_enabled: boolean;
+  /** Whether this is a project-level survey (false for committee-level surveys) */
+  is_project_survey?: boolean;
+  /** Stage filter for survey audience (optional) */
+  stage_filter?: string;
   /** Username of the creator (enriched server-side from OIDC session) */
   creator_username?: string;
   /** Display name of the creator (enriched server-side from OIDC session) */

@@ -256,7 +256,8 @@ export class SurveyManageComponent {
       email_body: `<!DOCTYPE html><html><body>${formData.emailBody}</body></html>`,
       email_body_text: formData.emailBody,
       committee_uid: committees[0]?.uid || '',
-      committee_voting_enabled: true,
+      committee_voting_enabled: this.committeeContext()?.enable_voting ?? false,
+      is_project_survey: false,
       // creator_username, creator_name, creator_id are enriched server-side from OIDC session
     };
 
@@ -278,7 +279,6 @@ export class SurveyManageComponent {
           detail: `Failed to create ${this.surveyLabel.singular.toLowerCase()}. Please try again.`,
         });
         this.submitting.set(false);
-        console.error('Failed to create survey:', error);
       },
     });
   }
