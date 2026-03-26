@@ -1852,6 +1852,7 @@ export class ProjectService {
     `;
 
     // Block 5: Impressions by channel (horizontal bar chart, last 6 months)
+    // Note: BY_PROJECT_CHANNEL_MONTH only has IMPRESSIONS — SPEND/REVENUE are on BY_PROJECT_MONTH
     const channelQuery = `
       SELECT CHANNEL, SUM(IMPRESSIONS) AS IMPRESSIONS
       FROM ANALYTICS.PLATINUM.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
@@ -2009,10 +2010,11 @@ export class ProjectService {
     logger.debug(undefined, 'get_social_media', 'Fetching social media data from Snowflake Platinum tables', { foundation_name: foundationName });
 
     // Query 1: KPI cards — total followers, platforms, growth (aggregated)
+    // Use MAX for PLATFORMS_ACTIVE to avoid double-counting across sub-project rows
     const overviewQuery = `
       SELECT
         SUM(TOTAL_FOLLOWERS) AS TOTAL_FOLLOWERS,
-        SUM(PLATFORMS_ACTIVE) AS PLATFORMS_ACTIVE,
+        MAX(PLATFORMS_ACTIVE) AS PLATFORMS_ACTIVE,
         CASE
           WHEN SUM(PRIOR_TOTAL_FOLLOWERS) > 0
             THEN ROUND(
