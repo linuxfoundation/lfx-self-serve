@@ -195,7 +195,7 @@ export class CdpService {
    */
   public async rejectIdentity(req: Request | undefined, memberId: string, identityId: string, verifiedBy: string): Promise<void> {
     const token = await this.generateToken(req);
-    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.MEMBER_IDENTITIES(memberId)}/${identityId}`;
+    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.MEMBER_IDENTITIES(memberId)}/${encodeURIComponent(identityId)}`;
     const requestId = randomUUID();
 
     logger.debug(req, 'reject_cdp_identity', 'Rejecting CDP identity', { member_id: memberId, identity_id: identityId });
@@ -234,7 +234,7 @@ export class CdpService {
    */
   public async verifyIdentity(req: Request | undefined, memberId: string, identityId: string, verifiedBy = 'lfxOne'): Promise<void> {
     const token = await this.generateToken(req);
-    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.MEMBER_IDENTITIES(memberId)}/${identityId}`;
+    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.MEMBER_IDENTITIES(memberId)}/${encodeURIComponent(identityId)}`;
     const requestId = randomUUID();
 
     logger.debug(req, 'verify_cdp_identity', 'Verifying CDP identity', { member_id: memberId, identity_id: identityId, verified_by: verifiedBy });
@@ -443,7 +443,7 @@ export class CdpService {
    */
   public async confirmWorkExperience(req: Request | undefined, memberId: string, workExperienceId: string, verifiedBy: string): Promise<void> {
     const token = await this.generateToken(req);
-    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.MEMBER_WORK_EXPERIENCES(memberId)}/${workExperienceId}`;
+    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.MEMBER_WORK_EXPERIENCES(memberId)}/${encodeURIComponent(workExperienceId)}`;
     const requestId = randomUUID();
 
     logger.debug(req, 'confirm_cdp_work_experience', 'Confirming CDP work experience', {
@@ -486,7 +486,7 @@ export class CdpService {
    */
   public async deleteWorkExperience(req: Request | undefined, memberId: string, workExperienceId: string): Promise<void> {
     const token = await this.generateToken(req);
-    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.MEMBER_WORK_EXPERIENCES(memberId)}/${workExperienceId}`;
+    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.MEMBER_WORK_EXPERIENCES(memberId)}/${encodeURIComponent(workExperienceId)}`;
     const requestId = randomUUID();
 
     logger.debug(req, 'delete_cdp_work_experience', 'Deleting CDP work experience', {
@@ -526,7 +526,7 @@ export class CdpService {
    */
   public async updateWorkExperience(req: Request | undefined, memberId: string, workExperienceId: string, body: CdpWorkExperienceRequest): Promise<void> {
     const token = await this.generateToken(req);
-    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.MEMBER_WORK_EXPERIENCES(memberId)}/${workExperienceId}`;
+    const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.MEMBER_WORK_EXPERIENCES(memberId)}/${encodeURIComponent(workExperienceId)}`;
     const requestId = randomUUID();
 
     logger.debug(req, 'update_cdp_work_experience', 'Updating CDP work experience', {

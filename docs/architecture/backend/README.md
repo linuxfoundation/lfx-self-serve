@@ -26,13 +26,13 @@ Request → Controller → Service → Microservice/Data Layer
         next(error)   Error Handling
 ```
 
-#### Core Services
+### Core Services
 
 - **Logger Service**: Singleton service (`logger.service.ts`) providing unified logging interface for all application logging
 - **ETag Service**: Concurrency control for safe data operations
 - **Error Classes**: Custom error hierarchy (BaseError, AuthenticationError, AuthorizationError, MicroserviceError, ServiceValidationError)
 
-#### Architecture Roles
+### Architecture Roles
 
 - **Controllers** handle HTTP boundary: validation, logging lifecycle, response
 - **Services** handle business logic: API calls via `MicroserviceProxyService`, data transformation
@@ -53,52 +53,52 @@ Request → Controller → Service → Microservice/Data Layer
 | [Snowflake Integration](./snowflake-integration.md) | Analytics queries, connection pooling, query deduplication                      |
 | [Public Meetings](./public-meetings.md)             | Unauthenticated meeting access, M2M token flow                                  |
 
-#### Committee Management
+### Committee Management
 
 - **CommitteeController**: HTTP request handling and validation
 - **CommitteeService**: Business logic and microservice integration
 - **CRUD Operations**: Create, Read, Update, Delete with ETag concurrency control
 
-#### Meeting Management
+### Meeting Management
 
 - **MeetingController**: Meeting CRUD, scheduling, and calendar integration
 - **PastMeetingController**: Past meeting recordings and attendance
 - **PublicMeetingController**: Public meeting join page (unauthenticated)
 
-#### Survey & Vote Management
+### Survey & Vote Management
 
 - **SurveyController/Service**: Survey CRUD, response collection, NPS analytics
 - **VoteController/Service**: Poll creation, vote casting, results tabulation
 
-#### User & Organization
+### User & Organization
 
 - **UserController/Service**: User management and preferences
 - **ProfileController/Service**: User profile management
 - **OrganizationController/Service**: Organization data and membership
 
-#### Search & Analytics
+### Search & Analytics
 
 - **SearchController/Service**: Cross-entity search functionality
 - **AnalyticsController**: Snowflake-powered analytics queries
 
-#### Mailing List Management
+### Mailing List Management
 
 - **MailingListController/Service**: Mailing list CRUD, subscription management
 
-#### AI Integration Service
+### AI Integration Service
 
 - **AI Service**: Claude Sonnet integration for meeting agenda generation
 - **LiteLLM Proxy**: OpenAI-compatible API proxy for AI model access
 - **JSON Schema Validation**: Strict response validation with fallback parsing
 
-#### NATS Messaging Service
+### NATS Messaging Service
 
 - **NATS Service**: High-performance inter-service messaging (generic infrastructure)
 - **Project Service**: Business logic consuming NATS for project slug resolution, user lookup
 - **Lazy Connection Management**: On-demand connection with automatic reconnection
 - **Kubernetes Service Discovery**: Native cluster DNS integration for NATS access
 
-#### Authentication & Session Management
+### Authentication & Session Management
 
 - **Auth Middleware**: Unified authentication middleware with route classification (public/optional/required)
 - **M2M Token Utility**: Machine-to-machine token management for server-side API calls
@@ -129,6 +129,7 @@ Request → Controller → Service → Microservice/Data Layer
 - **Validation**: Comprehensive input validation with detailed error responses
 - **Error Handling**: Custom error class hierarchy with centralized error handler middleware
 - **Testing**: E2E testing with Playwright
+
 ## Directory Structure
 
 ```text

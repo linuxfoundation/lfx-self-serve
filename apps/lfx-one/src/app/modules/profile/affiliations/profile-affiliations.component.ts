@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, effect, inject, input, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, input, output, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -20,6 +20,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { LFX_ONE_WORK_EXPERIENCE_SOURCE } from '@lfx-one/shared/constants';
 import { abbreviatedMonthYearToIsoDate, isoDateToMonthYear } from '@lfx-one/shared/utils';
+import { Router } from '@angular/router';
 import { MenuItem } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
@@ -40,6 +41,7 @@ import { MaintainerConfirmationDialogComponent } from '../components/maintainer-
 })
 export class ProfileAffiliationsComponent {
   private readonly dialogService = inject(DialogService);
+  private readonly router = inject(Router);
   private readonly userService = inject(UserService);
   private readonly projectService = inject(ProjectService);
 
@@ -49,6 +51,7 @@ export class ProfileAffiliationsComponent {
   public readonly loading = signal(true);
   public readonly isAffiliationHistoryConfirmed = signal(false);
   public readonly workExperience = signal<WorkExperienceEntry[]>([]);
+  public readonly addWorkExperience = output();
 
   private readonly cdpAffiliations = signal<CdpProjectAffiliation[]>([]);
   private readonly lfxSlugs = signal<Set<string>>(new Set());
@@ -148,6 +151,10 @@ export class ProfileAffiliationsComponent {
       closable: true,
       dismissableMask: false,
     });
+  }
+
+  public navigateToIdentities(): void {
+    void this.router.navigate(['/profile', 'identities']);
   }
 
   public getRoleMenuItems(project: ProjectGroup): MenuItem[] {

@@ -28,7 +28,7 @@
       <p class="text-[13px] leading-normal text-slate-500">
         Your contributions are automatically attributed based on your verified identities and work history.
       </p>
-      <lfx-profile-affiliations [hideHeader]="true" [compact]="true" />
+      <lfx-profile-affiliations [hideHeader]="true" [compact]="true" (addWorkExperience)="onAddWorkExperience()" />
     </div>
   </div>
 </div>

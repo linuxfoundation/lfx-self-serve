@@ -379,7 +379,7 @@ export class ProfileController {
       }
 
       // Basic email validation
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const emailRegex = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
         const validationError = ServiceValidationError.forField('email', 'Invalid email format', {
           operation: 'add_user_email',
@@ -1568,7 +1568,7 @@ export class ProfileController {
         return next(validationError);
       }
 
-      const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+      const emailRegex = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
       if (!emailRegex.test(email)) {
         const validationError = ServiceValidationError.forField('email', 'Invalid email format', {
           operation: 'send_email_verification',

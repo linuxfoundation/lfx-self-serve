@@ -74,6 +74,7 @@
             severity="secondary"
             [outlined]="true"
             size="small"
+            (onClick)="navigateToIdentities()"
             data-testid="verify-identities-btn" />
           <lfx-button
             label="Add work experience"
@@ -81,6 +82,7 @@
             severity="secondary"
             [outlined]="true"
             size="small"
+            (onClick)="addWorkExperience.emit()"
             data-testid="add-work-exp-from-affiliations-btn" />
         </div>
       </div>
