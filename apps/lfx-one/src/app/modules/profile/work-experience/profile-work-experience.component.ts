@@ -17,7 +17,7 @@ import {
   WorkExperienceUpdate,
 } from '@lfx-one/shared/interfaces';
 import { monthYearToIsoDate } from '@lfx-one/shared/utils';
-import { MenuItem } from 'primeng/api';
+import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { catchError, forkJoin, Observable, of, startWith, Subject, switchMap, take } from 'rxjs';
 
@@ -36,6 +36,7 @@ import { WorkExperienceFormDialogComponent } from '../components/work-experience
 })
 export class ProfileWorkExperienceComponent {
   private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
   private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
 
@@ -75,9 +76,14 @@ export class ProfileWorkExperienceComponent {
         this.userService
           .createWorkExperience(body)
           .pipe(take(1))
-          .subscribe(() => {
-            this.refreshTrigger$.next();
-            this.workExperienceChanged.emit();
+          .subscribe({
+            next: () => {
+              this.refreshTrigger$.next();
+              this.workExperienceChanged.emit();
+            },
+            error: () => {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to add work experience.' });
+            },
           });
       }
     });
@@ -119,9 +125,14 @@ export class ProfileWorkExperienceComponent {
         this.userService
           .updateWorkExperience(item.id, body)
           .pipe(take(1))
-          .subscribe(() => {
-            this.refreshTrigger$.next();
-            this.workExperienceChanged.emit();
+          .subscribe({
+            next: () => {
+              this.refreshTrigger$.next();
+              this.workExperienceChanged.emit();
+            },
+            error: () => {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update work experience.' });
+            },
           });
       }
     });
@@ -215,7 +226,11 @@ export class ProfileWorkExperienceComponent {
 
             forkJoin(ops)
               .pipe(take(1))
-              .subscribe(() => {
+              .subscribe((results) => {
+                const failures = results.filter((r) => !r.success).length;
+                if (failures > 0) {
+                  this.messageService.add({ severity: 'warn', summary: 'Warning', detail: `${failures} affiliation update(s) failed.` });
+                }
                 this.refreshTrigger$.next();
                 this.workExperienceChanged.emit();
               });
@@ -223,9 +238,14 @@ export class ProfileWorkExperienceComponent {
             this.userService
               .deleteWorkExperience(item.id)
               .pipe(take(1))
-              .subscribe(() => {
-                this.refreshTrigger$.next();
-                this.workExperienceChanged.emit();
+              .subscribe({
+                next: () => {
+                  this.refreshTrigger$.next();
+                  this.workExperienceChanged.emit();
+                },
+                error: () => {
+                  this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to remove work experience.' });
+                },
               });
           }
         });
@@ -256,9 +276,14 @@ export class ProfileWorkExperienceComponent {
         this.userService
           .deleteWorkExperience(item.id)
           .pipe(take(1))
-          .subscribe(() => {
-            this.refreshTrigger$.next();
-            this.workExperienceChanged.emit();
+          .subscribe({
+            next: () => {
+              this.refreshTrigger$.next();
+              this.workExperienceChanged.emit();
+            },
+            error: () => {
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to delete work experience.' });
+            },
           });
       }
     });

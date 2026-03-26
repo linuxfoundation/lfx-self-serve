@@ -4,7 +4,7 @@
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
+import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { SelectComponent } from '@components/select/select.component';
 import { PROFILE_TABS, TSHIRT_SIZES } from '@lfx-one/shared/constants';
 import { CombinedProfile, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
@@ -108,6 +108,19 @@ export class ProfileLayoutComponent {
       }
     });
 
+    // Sync mobile dropdown when route changes (back/forward, direct URL)
+    this.router.events
+      .pipe(
+        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
+        takeUntilDestroyed()
+      )
+      .subscribe((event) => {
+        const match = event.urlAfterRedirects.match(/\/profile\/([^?/]+)/);
+        if (match) {
+          this.tabForm.controls.selectedTab.setValue(match[1], { emitEvent: false });
+        }
+      });
+
     // Handle Flow C return — restore saved form state and auto-save
     this.route.queryParams.pipe(takeUntilDestroyed()).subscribe((params) => {
       if (params['success'] === 'profile_token_obtained') {
@@ -157,7 +170,12 @@ export class ProfileLayoutComponent {
 
     sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
 
-    const formData = JSON.parse(savedState);
+    let formData: Partial<UserMetadata>;
+    try {
+      formData = JSON.parse(savedState);
+    } catch {
+      return;
+    }
     const userMetadata: Partial<UserMetadata> = {
       given_name: formData.given_name || undefined,
       family_name: formData.family_name || undefined,

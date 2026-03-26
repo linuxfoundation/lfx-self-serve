@@ -174,14 +174,14 @@
 
         <!-- State/Province -->
         <div>
-          <label for="edit-state" class="block text-sm text-slate-900 mb-2">State/Province</label>
+          <label class="block text-sm text-slate-900 mb-2">State/Province</label>
           @if (isUSA()) {
             <lfx-select
               size="small"
               [form]="profileForm"
               control="state_province"
               [options]="stateOptions"
-              id="edit-state"
+              id="edit-state-select"
               placeholder="Select your state"
               styleClass="w-full"
               [filter]="true"
@@ -192,7 +192,7 @@
               size="small"
               [form]="profileForm"
               control="state_province"
-              id="edit-state"
+              id="edit-state-input"
               placeholder="Enter your state or province"
               styleClass="w-full"
               data-testid="profile-edit-dialog-state-input">

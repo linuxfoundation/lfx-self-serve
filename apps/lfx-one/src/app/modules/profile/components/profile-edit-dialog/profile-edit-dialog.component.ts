@@ -112,6 +112,13 @@ export class ProfileEditDialogComponent {
             this.selectedPrimaryEmailId.set(primary.id);
           }
         },
+        error: () => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Failed to load email addresses.',
+          });
+        },
       });
   }
 

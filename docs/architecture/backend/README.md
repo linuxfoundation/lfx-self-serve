@@ -30,7 +30,7 @@ Request → Controller → Service → Microservice/Data Layer
 
 - **Logger Service**: Singleton service (`logger.service.ts`) providing unified logging interface for all application logging
 - **ETag Service**: Concurrency control for safe data operations
-- **Error Classes**: Custom error hierarchy (BaseError, AuthenticationError, AuthorizationError, MicroserviceError, ServiceValidationError)
+- **Error Classes**: Custom error hierarchy (BaseApiError, AuthenticationError, AuthorizationError, MicroserviceError, ServiceValidationError)
 
 ### Architecture Roles
 
@@ -149,7 +149,7 @@ apps/lfx-one/src/server/
 │   ├── user.controller.ts
 │   └── vote.controller.ts
 ├── errors/                   # Custom error class hierarchy
-│   ├── base.error.ts         # BaseError with status code and error code
+│   ├── base.error.ts         # BaseApiError with status code and error code
 │   ├── authentication.error.ts # AuthenticationError (401) and AuthorizationError (403)
 │   ├── microservice.error.ts # MicroserviceError for upstream failures
 │   ├── service-validation.error.ts # ServiceValidationError for input validation
