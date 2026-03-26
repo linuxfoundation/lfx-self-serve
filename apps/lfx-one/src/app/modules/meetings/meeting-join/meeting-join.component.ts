@@ -25,7 +25,6 @@ import {
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
@@ -60,7 +59,6 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     MeetingTimePipe,
     RecurrenceSummaryPipe,
     LinkifyPipe,
-    FileTypeIconPipe,
     ExpandableTextComponent,
     HeaderComponent,
     DynamicDialogModule,
@@ -110,11 +108,11 @@ export class MeetingJoinComponent {
   public meetingTitle: Signal<string>;
   public meetingDescription: Signal<string>;
   public hasAiCompanion: Signal<boolean>;
-  public isLegacyMeeting: Signal<boolean>;
-
   // Computed signals for invited/registration status
   public isInvited: Signal<boolean>;
   public canRegisterForMeeting: Signal<boolean>;
+  public canToggleRsvpView: Signal<boolean>;
+  public showMyRsvp: WritableSignal<boolean> = signal<boolean>(false);
 
   // Form value signals for reactivity
   public formValues: Signal<{ name: string; email: string; organization: string }>;
@@ -131,11 +129,11 @@ export class MeetingJoinComponent {
     this.meetingTitle = this.initializeMeetingTitle();
     this.meetingDescription = this.initializeMeetingDescription();
     this.hasAiCompanion = this.initializeHasAiCompanion();
-    this.isLegacyMeeting = this.initializeIsLegacyMeeting();
 
     // Initialize invited/registration signals
     this.isInvited = this.initializeIsInvited();
     this.canRegisterForMeeting = this.initializeCanRegisterForMeeting();
+    this.canToggleRsvpView = this.initializeCanToggleRsvpView();
 
     this.returnTo = this.initializeReturnTo();
     this.canJoinMeeting = this.initializeCanJoinMeeting();
@@ -150,15 +148,11 @@ export class MeetingJoinComponent {
 
   public handleCopyLink(): void {
     const meeting = this.meeting();
-    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + meeting.uid);
+    const meetingUrl: URL = new URL(environment.urls.home + '/meetings/' + meeting.id);
 
     if (meeting.password) {
       meetingUrl.searchParams.set('password', meeting.password);
     }
-    if (this.isLegacyMeeting()) {
-      meetingUrl.searchParams.set('v1', 'true');
-    }
-
     this.clipboard.copy(meetingUrl.toString());
     this.messageService.add({
       severity: 'success',
@@ -168,6 +162,16 @@ export class MeetingJoinComponent {
   }
 
   public onRegistrantsToggle(): void {
+    const meeting = this.meeting();
+    if (!meeting.organizer && !meeting.invited) {
+      this.messageService.add({
+        severity: 'warn',
+        summary: 'Show Members is not enabled',
+        detail: 'Please contact the meeting organizer to enable show members',
+      });
+      return;
+    }
+
     this.showRegistrants.set(!this.showRegistrants());
   }
 
@@ -178,6 +182,30 @@ export class MeetingJoinComponent {
   public onEmailErrorClick(): void {
     this.joinUrlError.set(null);
     this.showGuestForm.set(true);
+  }
+
+  public onRsvpViewToggle(): void {
+    this.showMyRsvp.set(!this.showMyRsvp());
+  }
+
+  public downloadAttachment(attachment: MeetingAttachment): void {
+    this.meetingService
+      .getMeetingAttachmentDownloadUrl(this.meeting().id, attachment.uid)
+      .pipe(take(1))
+      .subscribe({
+        next: (res) => {
+          const newWindow = window.open(res.download_url, '_blank', 'noopener,noreferrer');
+          if (newWindow) {
+            newWindow.opener = null;
+          }
+        },
+        error: () =>
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Download Failed',
+            detail: 'Unable to download the attachment. Please try again.',
+          }),
+      });
   }
 
   public registerForMeeting(): void {
@@ -191,7 +219,7 @@ export class MeetingJoinComponent {
       closable: true,
       dismissableMask: true,
       data: {
-        meetingId: meeting.uid,
+        meetingId: meeting.id,
         meetingTitle: this.meetingTitle(),
         user: user,
       },
@@ -359,12 +387,8 @@ export class MeetingJoinComponent {
       if (meeting.password) {
         params.set('password', meeting.password);
       }
-      if (this.isLegacyMeeting()) {
-        params.set('v1', 'true');
-      }
-
       const queryString = params.toString();
-      return queryString ? `${environment.urls.home}/meetings/${meeting.uid}?${queryString}` : `${environment.urls.home}/meetings/${meeting.uid}`;
+      return queryString ? `${environment.urls.home}/meetings/${meeting.id}?${queryString}` : `${environment.urls.home}/meetings/${meeting.id}`;
     });
   }
 
@@ -408,7 +432,7 @@ export class MeetingJoinComponent {
           this.joinUrlError.set(null);
 
           // Only fetch when meeting is joinable and we have necessary user info
-          if (!canJoin || !meeting?.uid) {
+          if (!canJoin || !meeting?.id) {
             this.isLoadingJoinUrl.set(false);
             return of(undefined);
           }
@@ -448,17 +472,17 @@ export class MeetingJoinComponent {
   private fetchJoinUrl(meeting: Meeting, email: string): Observable<string | undefined> {
     this.isLoadingJoinUrl.set(true);
 
-    return this.meetingService.getPublicMeetingJoinUrl(meeting.uid, meeting.password, { email }).pipe(
+    return this.meetingService.getPublicMeetingJoinUrl(meeting.id, meeting.password, { email }).pipe(
       map((res) => {
         this.isLoadingJoinUrl.set(false);
-        if (res.join_url) {
+        if (res.link) {
           // For authenticated users, use the user object
           // For guests, pass name and organization from form
           if (this.authenticated()) {
-            return buildJoinUrlWithParams(res.join_url, this.user());
+            return buildJoinUrlWithParams(res.link, this.user());
           }
 
-          return buildJoinUrlWithParams(res.join_url, null, {
+          return buildJoinUrlWithParams(res.link, null, {
             name: this.joinForm.get('name')?.value,
             organization: this.joinForm.get('organization')?.value,
           });
@@ -474,20 +498,11 @@ export class MeetingJoinComponent {
   }
 
   private initializeAttachments(): Signal<MeetingAttachment[]> {
-    // Convert meeting signal to observable to react to changes
     return toSignal(
       toObservable(this.meeting).pipe(
-        switchMap((meeting) => {
-          if (meeting?.uid) {
-            return this.meetingService.getMeetingAttachments(meeting.uid).pipe(
-              catchError((error) => {
-                console.error(`Failed to load attachments for meeting ${meeting.uid}:`, error);
-                return of([]);
-              })
-            );
-          }
-          return of([]);
-        })
+        filter((meeting) => !!meeting?.id),
+        switchMap((meeting) => this.meetingService.getMeetingAttachments(meeting.id)),
+        catchError(() => of([] as MeetingAttachment[]))
       ),
       { initialValue: [] }
     );
@@ -526,10 +541,6 @@ export class MeetingJoinComponent {
     return computed(() => this.meeting()?.zoom_config?.ai_companion_enabled || false);
   }
 
-  private initializeIsLegacyMeeting(): Signal<boolean> {
-    return computed(() => this.meeting()?.version === 'v1');
-  }
-
   private initializeIsInvited(): Signal<boolean> {
     return computed(() => this.meeting()?.invited ?? false);
   }
@@ -539,6 +550,10 @@ export class MeetingJoinComponent {
       const meeting = this.meeting();
       return !this.isInvited() && !meeting?.restricted && meeting?.visibility === 'public';
     });
+  }
+
+  private initializeCanToggleRsvpView(): Signal<boolean> {
+    return computed(() => !!this.meeting()?.organizer && this.isInvited());
   }
 
   private initializeEmailError(): Signal<boolean> {

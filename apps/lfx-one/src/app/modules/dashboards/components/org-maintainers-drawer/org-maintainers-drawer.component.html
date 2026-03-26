@@ -1,0 +1,147 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="org-maintainers-drawer">
+  <!-- Header -->
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full" data-testid="org-maintainers-drawer-header">
+      <!-- Title + Subtitle -->
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="org-maintainers-drawer-title">Maintainers</h2>
+        <p class="text-sm text-gray-500">Board Member · Organization view</p>
+      </div>
+
+      <!-- Close Button -->
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
+        aria-label="Close panel"
+        data-testid="org-maintainers-drawer-close">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <!-- Content -->
+  <div class="flex flex-col gap-6 pb-2" data-testid="org-maintainers-drawer-content">
+    <!-- Monthly Trend Section -->
+    <div class="flex flex-col gap-3" data-testid="org-maintainers-drawer-trend-section">
+      <!-- Section Header -->
+      <div class="flex items-center gap-2">
+        <h3 class="text-sm font-medium text-gray-900">Active Maintainers</h3>
+        <div class="group relative">
+          <svg class="w-3.5 h-3.5 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" stroke-width="2" />
+            <path stroke-width="2" stroke-linecap="round" d="M12 16v-4m0-4h.01" />
+          </svg>
+          <div
+            class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10"
+            role="tooltip">
+            Monthly active maintainers from your organization across the foundation
+          </div>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      @if (drawerLoading()) {
+        <div class="flex items-center justify-center py-12" data-testid="org-maintainers-drawer-trend-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+        </div>
+      } @else if (hasTrendData()) {
+        <div class="h-[240px]" data-testid="org-maintainers-drawer-trend-chart">
+          <lfx-chart type="line" [data]="trendChartData()" [options]="trendChartOptions" height="100%"></lfx-chart>
+        </div>
+      } @else {
+        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="org-maintainers-drawer-trend-empty">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No maintainer trend data available for this foundation.</p>
+        </div>
+      }
+    </div>
+
+    <!-- Top Projects Distribution Section -->
+    <div class="flex flex-col gap-3" data-testid="org-maintainers-drawer-distribution-section">
+      <h3 class="text-sm font-medium text-gray-900">Our Organization's Top 5 Projects by Maintainer Representation</h3>
+
+      @if (drawerLoading()) {
+        <div class="flex items-center justify-center py-8" data-testid="org-maintainers-drawer-distribution-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+        </div>
+      } @else if (hasDistributionData()) {
+        <div class="h-[220px]" data-testid="org-maintainers-drawer-distribution-chart">
+          <lfx-chart type="bar" [data]="distributionChartData()" [options]="distributionChartOptions" height="100%"></lfx-chart>
+        </div>
+      } @else {
+        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="org-maintainers-drawer-distribution-empty">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No project distribution data available for this foundation.</p>
+        </div>
+      }
+    </div>
+
+    <!-- Key Maintainers Section -->
+    <div class="flex flex-col gap-3" data-testid="org-maintainers-drawer-key-members-section">
+      <h3 class="text-sm font-medium text-gray-900">Key Maintainers Representing Our Organization</h3>
+
+      @if (drawerLoading()) {
+        <div class="flex items-center justify-center py-8" data-testid="org-maintainers-drawer-key-members-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+        </div>
+      } @else if (hasKeyMembersData()) {
+        <div class="border border-slate-200 rounded-lg overflow-hidden" data-testid="org-maintainers-drawer-key-members-list">
+          @for (member of keyMembersData().members; track member.userId; let last = $last) {
+            <div
+              class="flex items-center justify-between gap-3 px-4 py-3"
+              [class.border-b]="!last"
+              [class.border-slate-200]="!last"
+              [attr.data-testid]="'org-maintainers-drawer-member-' + member.userId">
+              <!-- Avatar + Name + Title -->
+              <div class="flex items-center gap-3 min-w-0">
+                <i class="fa-light fa-circle-user text-2xl text-gray-400 flex-shrink-0"></i>
+                <div class="flex flex-col gap-0.5 min-w-0">
+                  <span class="text-sm font-medium text-gray-900 truncate">{{ member.fullName }}</span>
+                  @if (member.title) {
+                    <span class="text-xs text-gray-500 truncate">{{ member.title }}</span>
+                  }
+                </div>
+              </div>
+
+              <!-- Project info -->
+              <div class="flex items-center gap-2 flex-shrink-0">
+                <span
+                  class="text-xs text-gray-500 max-w-[160px] truncate text-right"
+                  [title]="member.projectList"
+                  data-testid="org-maintainers-drawer-member-projects">
+                  {{ member.projectList }}
+                </span>
+                <span class="inline-flex items-center justify-center min-w-[1.5rem] h-6 px-1.5 bg-blue-100 text-blue-700 text-xs font-semibold rounded-full">
+                  {{ member.projectCount }}
+                </span>
+              </div>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="org-maintainers-drawer-key-members-empty">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No key maintainer data available for this foundation.</p>
+        </div>
+      }
+    </div>
+
+    <!-- Insights Handoff -->
+    <lfx-insights-handoff-section
+      title="Looking for maintainer details and activity?"
+      description="Individual maintainer activity and project-level contribution details are available in the Organization Dashboard."
+      link="https://insights.linuxfoundation.org"
+      buttonLabel="View Organization Dashboard"
+      data-testid="org-maintainers-drawer-insights-handoff"></lfx-insights-handoff-section>
+  </div>
+</p-drawer>

@@ -1,12 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { HttpClient, HttpParams } from '@angular/common/http';
+import { HttpClient, HttpHeaders, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
 import { FormControl, FormGroup, Validators } from '@angular/forms';
 import { LINKEDIN_PROFILE_PATTERN } from '@lfx-one/shared/constants';
 import {
+  AttachmentDownloadUrlResponse,
   BatchRegistrantOperationResponse,
+  CreateMeetingAttachmentRequest,
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
   CreateMeetingRsvpRequest,
@@ -18,18 +20,22 @@ import {
   MeetingRegistrant,
   MeetingRegistrantWithState,
   MeetingRsvp,
+  PaginatedResponse,
   PastMeeting,
   PastMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
   PastMeetingSummary,
+  PresignAttachmentRequest,
+  PresignAttachmentResponse,
   Project,
   QueryServiceCountResponse,
+  UpdateMeetingAttachmentRequest,
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
 } from '@lfx-one/shared/interfaces';
-import { catchError, defer, map, Observable, of, switchMap, take, tap, throwError } from 'rxjs';
+import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -39,20 +45,20 @@ export class MeetingService {
 
   private readonly http = inject(HttpClient);
 
-  public getMeetings(params?: HttpParams): Observable<Meeting[]> {
-    return this.http.get<Meeting[]>('/api/meetings', { params }).pipe(
+  public getMeetings(params?: HttpParams): Observable<PaginatedResponse<Meeting>> {
+    return this.http.get<PaginatedResponse<Meeting>>('/api/meetings', { params }).pipe(
       catchError((error) => {
         console.error('Failed to load meetings:', error);
-        return of([]);
+        return of({ data: [] as Meeting[], page_token: undefined });
       })
     );
   }
 
-  public getPastMeetings(params?: HttpParams): Observable<PastMeeting[]> {
-    return this.http.get<PastMeeting[]>('/api/past-meetings', { params }).pipe(
+  public getPastMeetings(params?: HttpParams): Observable<PaginatedResponse<PastMeeting>> {
+    return this.http.get<PaginatedResponse<PastMeeting>>('/api/past-meetings', { params }).pipe(
       catchError((error) => {
         console.error('Failed to load past meetings:', error);
-        return of([]);
+        return of({ data: [] as PastMeeting[], page_token: undefined });
       })
     );
   }
@@ -68,7 +74,51 @@ export class MeetingService {
       params = params.set('order', orderBy);
     }
 
-    return this.getMeetings(params);
+    return this.getMeetings(params).pipe(map((response) => response.data));
+  }
+
+  /** Fetches upcoming meetings scoped to a committee via `tags=committee_uid:{id}` query parameter. */
+  public getMeetingsByCommittee(committeeId: string, limit?: number, orderBy?: string): Observable<Meeting[]> {
+    let params = new HttpParams().set('tags', `committee_uid:${committeeId}`);
+
+    if (limit) {
+      params = params.set('limit', limit.toString());
+    }
+
+    if (orderBy) {
+      params = params.set('order', orderBy);
+    }
+
+    return this.getMeetings(params).pipe(map((response) => response.data));
+  }
+
+  /** Fetches meeting count scoped to a committee. */
+  public getMeetingsCountByCommittee(committeeId: string): Observable<number> {
+    const params = new HttpParams().set('tags', `committee_uid:${committeeId}`);
+    return this.http.get<QueryServiceCountResponse>('/api/meetings/count', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to load meetings count:', error);
+        return of({ count: 0 });
+      }),
+      map((response) => response.count)
+    );
+  }
+
+  /** Fetches upcoming meetings scoped to a committee. */
+  public getUpcomingMeetingsByCommittee(committeeId: string, limit: number = 5): Observable<Meeting[]> {
+    const params = new HttpParams().set('tags', `committee_uid:${committeeId}`).set('limit', limit.toString()).set('skip_registrants', 'true');
+    return this.getMeetings(params).pipe(map((response) => response.data));
+  }
+
+  /** Fetches past meetings scoped to a committee via `tags=committee_uid:{id}` query parameter. */
+  public getPastMeetingsByCommittee(committeeId: string, limit?: number): Observable<PastMeeting[]> {
+    let params = new HttpParams().set('tags', `committee_uid:${committeeId}`);
+
+    if (limit) {
+      params = params.set('limit', limit.toString());
+    }
+
+    return this.getPastMeetings(params).pipe(map((response) => response.data));
   }
 
   public getMeetingsCountByProject(uid: string): Observable<number> {
@@ -99,7 +149,7 @@ export class MeetingService {
       params = params.set('limit', limit.toString());
     }
 
-    return this.getMeetings(params);
+    return this.getMeetings(params).pipe(map((response) => response.data));
   }
 
   public getPastMeetingsByProject(uid: string, limit: number = 3): Observable<PastMeeting[]> {
@@ -113,6 +163,60 @@ export class MeetingService {
     // When implemented, add: params = params.set('sort', 'scheduled_start_time_desc');
     // This will enable backend sorting instead of client-side sorting in the component
 
+    return this.getPastMeetings(params).pipe(map((response) => response.data));
+  }
+
+  public getMeetingsByProjectPaginated(
+    uid: string,
+    limit?: number,
+    orderBy?: string,
+    pageToken?: string,
+    searchName?: string,
+    filters?: string[]
+  ): Observable<PaginatedResponse<Meeting>> {
+    let params = new HttpParams().set('tags', `project_uid:${uid}`);
+    if (limit) {
+      params = params.set('limit', limit.toString());
+    }
+    if (orderBy) {
+      params = params.set('order', orderBy);
+    }
+    if (pageToken) {
+      params = params.set('page_token', pageToken);
+    }
+    if (searchName) {
+      params = params.set('name', searchName);
+    }
+    if (filters?.length) {
+      for (const filter of filters) {
+        params = params.append('filters', filter);
+      }
+    }
+    return this.getMeetings(params);
+  }
+
+  public getPastMeetingsByProjectPaginated(
+    uid: string,
+    limit?: number,
+    pageToken?: string,
+    searchName?: string,
+    filters?: string[]
+  ): Observable<PaginatedResponse<PastMeeting>> {
+    let params = new HttpParams().set('tags', `project_uid:${uid}`);
+    if (limit) {
+      params = params.set('limit', limit.toString());
+    }
+    if (pageToken) {
+      params = params.set('page_token', pageToken);
+    }
+    if (searchName) {
+      params = params.set('name', searchName);
+    }
+    if (filters?.length) {
+      for (const filter of filters) {
+        params = params.append('filters', filter);
+      }
+    }
     return this.getPastMeetings(params);
   }
 
@@ -169,12 +273,12 @@ export class MeetingService {
     );
   }
 
-  public updateMeeting(id: string, meeting: UpdateMeetingRequest, editType?: 'single' | 'future'): Observable<Meeting> {
+  public updateMeeting(id: string, meeting: UpdateMeetingRequest, editType?: 'single' | 'future'): Observable<void> {
     let params = new HttpParams();
     if (editType) {
       params = params.set('editType', editType);
     }
-    return this.http.put<Meeting>(`/api/meetings/${id}`, meeting, { params }).pipe(
+    return this.http.put<void>(`/api/meetings/${id}`, meeting, { params }).pipe(
       take(1),
       catchError((error) => {
         console.error(`Failed to update meeting ${id}:`, error);
@@ -201,96 +305,63 @@ export class MeetingService {
     return this.http.delete<void>(`/api/meetings/${meetingId}/occurrences/${occurrenceId}`).pipe(take(1));
   }
 
+  // ─── Meeting Attachment Methods ───────────────────────────────────────────
+
   public getMeetingAttachments(meetingId: string): Observable<MeetingAttachment[]> {
     return this.http.get<MeetingAttachment[]>(`/api/meetings/${meetingId}/attachments`).pipe(
-      catchError((error) => {
-        console.error(`Failed to load attachments for meeting ${meetingId}:`, error);
-        return of([]);
-      })
-    );
-  }
-
-  public uploadAttachment(meetingId: string, file: File): Observable<{ message: string; attachment: MeetingAttachment }> {
-    return new Observable((observer) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const base64Data = (reader.result as string).split(',')[1];
-
-        const uploadData = {
-          fileName: file.name,
-          fileData: base64Data,
-          mimeType: file.type,
-          fileSize: file.size,
-        };
-
-        this.http
-          .post<{ message: string; attachment: MeetingAttachment }>(`/api/meetings/${meetingId}/attachments/upload`, uploadData)
-          .pipe(
-            take(1),
-            catchError((error) => {
-              console.error(`Failed to upload attachment to meeting ${meetingId}:`, error);
-              return throwError(() => error);
-            })
-          )
-          .subscribe(observer);
-      };
-
-      reader.onerror = () => {
-        observer.error(new Error('Failed to read file'));
-      };
-
-      reader.readAsDataURL(file);
-    });
-  }
-
-  public createFileAttachment(meetingId: string, file: File): Observable<MeetingAttachment> {
-    return defer(() => this.readFileAsBase64(file)).pipe(
-      switchMap((base64Data: string) => {
-        // Build attachment data for file upload to LFX V2 API
-        const attachmentData = {
-          type: 'file',
-          name: file.name,
-          file: base64Data,
-          file_content_type: file.type,
-        };
-
-        return this.http.post<MeetingAttachment>(`/api/meetings/${meetingId}/attachments`, attachmentData);
-      }),
       take(1),
-      catchError((error) => {
-        console.error(`Failed to create file attachment for meeting ${meetingId}:`, error);
-        return throwError(() => error);
-      })
+      catchError(() => of([]))
     );
   }
 
-  public createAttachmentFromUrl(meetingId: string, name: string, url: string): Observable<MeetingAttachment> {
-    // Build attachment data based on the API schema
-    // For link-type attachments: type, name, link (and optionally description)
-    // For file-type attachments: type, name, file, file_name, file_content_type
-    const attachmentData: any = {
-      type: 'link',
-      name: name,
-      link: url,
-    };
-
-    return this.http.post<MeetingAttachment>(`/api/meetings/${meetingId}/attachments`, attachmentData).pipe(
-      take(1),
-      catchError((error) => {
-        console.error(`Failed to create attachment for meeting ${meetingId}:`, error);
-        return throwError(() => error);
-      })
-    );
+  public createMeetingAttachment(meetingId: string, attachmentData: CreateMeetingAttachmentRequest): Observable<MeetingAttachment> {
+    return this.http.post<MeetingAttachment>(`/api/meetings/${meetingId}/attachments`, attachmentData).pipe(take(1));
   }
 
-  public deleteAttachment(meetingId: string, attachmentId: string): Observable<void> {
-    return this.http.delete<void>(`/api/meetings/${meetingId}/attachments/${attachmentId}`).pipe(
-      take(1),
-      catchError((error) => {
-        console.error(`Failed to delete attachment ${attachmentId} from meeting ${meetingId}:`, error);
-        return throwError(() => error);
+  public updateMeetingAttachment(meetingId: string, attachmentId: string, updateData: UpdateMeetingAttachmentRequest): Observable<void> {
+    return this.http.put<void>(`/api/meetings/${meetingId}/attachments/${attachmentId}`, updateData).pipe(take(1));
+  }
+
+  public deleteMeetingAttachment(meetingId: string, attachmentId: string): Observable<void> {
+    return this.http.delete<void>(`/api/meetings/${meetingId}/attachments/${attachmentId}`).pipe(take(1));
+  }
+
+  public presignMeetingAttachment(meetingId: string, presignData: PresignAttachmentRequest): Observable<PresignAttachmentResponse> {
+    return this.http.post<PresignAttachmentResponse>(`/api/meetings/${meetingId}/attachments/presign`, presignData).pipe(take(1));
+  }
+
+  public getMeetingAttachmentDownloadUrl(meetingId: string, attachmentId: string): Observable<AttachmentDownloadUrlResponse> {
+    return this.http.get<AttachmentDownloadUrlResponse>(`/api/meetings/${meetingId}/attachments/${attachmentId}/download`).pipe(take(1));
+  }
+
+  /**
+   * Uploads a file to a meeting via the server, which handles presigning and
+   * the S3 PUT internally. Avoids browser-side CORS requirements on S3.
+   * File metadata is passed as query params; the raw binary is the request body.
+   */
+  public uploadMeetingFile(meetingId: string, file: File, presignData: PresignAttachmentRequest): Observable<PresignAttachmentResponse> {
+    let params = new HttpParams().set('name', presignData.name).set('file_size', presignData.file_size.toString()).set('file_type', presignData.file_type);
+
+    if (presignData.category) {
+      params = params.set('category', presignData.category);
+    }
+
+    if (presignData.description) {
+      params = params.set('description', presignData.description);
+    }
+
+    return this.http
+      .post<PresignAttachmentResponse>(`/api/meetings/${meetingId}/attachments/upload`, file, {
+        headers: new HttpHeaders({ 'Content-Type': file.type || 'application/octet-stream' }),
+        params,
       })
-    );
+      .pipe(take(1));
+  }
+
+  // ─── Past Meeting Attachment Methods (read-only — no upload UX yet) ───────
+
+  public getPastMeetingAttachmentDownloadUrl(pastMeetingId: string, attachmentId: string): Observable<AttachmentDownloadUrlResponse> {
+    return this.http.get<AttachmentDownloadUrlResponse>(`/api/past-meetings/${pastMeetingId}/attachments/${attachmentId}/download`).pipe(take(1));
   }
 
   public generateAgenda(request: GenerateAgendaRequest): Observable<GenerateAgendaResponse> {
@@ -393,7 +464,7 @@ export class MeetingService {
    */
   public stripMetadata(meetingUid: string, registrant: MeetingRegistrantWithState): CreateMeetingRegistrantRequest {
     return {
-      meeting_uid: meetingUid,
+      meeting_id: meetingUid,
       email: registrant.email,
       first_name: registrant.first_name,
       last_name: registrant.last_name,
@@ -408,7 +479,7 @@ export class MeetingService {
    */
   public getChangedFields(registrant: MeetingRegistrantWithState): UpdateMeetingRegistrantRequest {
     return {
-      meeting_uid: registrant.meeting_uid,
+      meeting_id: registrant.meeting_id,
       email: registrant.email,
       first_name: registrant.first_name,
       last_name: registrant.last_name,
@@ -487,26 +558,9 @@ export class MeetingService {
     return this.http.post<MeetingRegistrant>('/public/api/meetings/register', registrantData).pipe(
       take(1),
       catchError((error) => {
-        console.error(`Failed to register for public meeting ${registrantData.meeting_uid}:`, error);
+        console.error(`Failed to register for public meeting ${registrantData.meeting_id}:`, error);
         return throwError(() => error);
       })
     );
   }
-
-  private readFileAsBase64(file: File): Promise<string> {
-    return new Promise((resolve, reject) => {
-      const reader = new FileReader();
-      reader.onload = () => {
-        const result = reader.result as string;
-        const base64Data = result.split(',')[1];
-        resolve(base64Data);
-      };
-      reader.onerror = () => {
-        reject(new Error('Failed to read file'));
-      };
-      reader.readAsDataURL(file);
-    });
-  }
-
-  // Meeting-specific utility functions for registrant data handling
 }

@@ -5,6 +5,7 @@ import { Component, computed, inject, signal } from '@angular/core';
 import { CORE_DEVELOPER_ACTION_ITEMS } from '@lfx-one/shared/constants';
 import { HiddenActionsService } from '@services/hidden-actions.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject } from 'rxjs';
 
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
@@ -14,7 +15,7 @@ import { RecentProgressComponent } from '../components/recent-progress/recent-pr
 
 @Component({
   selector: 'lfx-core-developer-dashboard',
-  imports: [RecentProgressComponent, PendingActionsComponent, MyMeetingsComponent, MyProjectsComponent],
+  imports: [RecentProgressComponent, PendingActionsComponent, MyMeetingsComponent, MyProjectsComponent, SkeletonModule],
   templateUrl: './core-developer-dashboard.component.html',
   styleUrl: './core-developer-dashboard.component.scss',
 })

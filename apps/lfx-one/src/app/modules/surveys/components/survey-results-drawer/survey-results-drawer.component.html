@@ -259,7 +259,7 @@
 
               <!-- Scrollable comments container -->
               <div class="max-h-[400px] overflow-y-auto flex flex-col gap-3 pr-2 border border-slate-200 rounded-lg p-4 bg-white survey-comments-container">
-                @for (comment of survey()?.additional_comments; track comment.id) {
+                @for (comment of comments(); track comment.id) {
                   <div class="bg-slate-50 border border-slate-200 rounded-lg p-4" [attr.data-testid]="'survey-comment-' + comment.id">
                     <p class="text-sm text-slate-700 leading-relaxed">"{{ comment.comment }}"</p>
                   </div>
@@ -402,7 +402,7 @@
 
               <!-- Scrollable comments container -->
               <div class="max-h-[400px] overflow-y-auto flex flex-col gap-3 pr-2 border border-slate-200 rounded-lg p-4 bg-white survey-comments-container">
-                @for (comment of survey()?.additional_comments; track comment.id) {
+                @for (comment of comments(); track comment.id) {
                   <div class="bg-slate-50 border border-slate-200 rounded-lg p-4" [attr.data-testid]="'survey-comment-' + comment.id">
                     <p class="text-sm text-slate-700 leading-relaxed">"{{ comment.comment }}"</p>
                   </div>

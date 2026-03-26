@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgTemplateOutlet } from '@angular/common';
-import { Component, ContentChild, input, TemplateRef } from '@angular/core';
+import { Component, ContentChild, input, output, TemplateRef } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -31,7 +31,19 @@ export class MetricCardComponent {
   public readonly value = input<string>();
   public readonly subtitle = input<string>();
   public readonly valueTooltip = input<string>();
+  public readonly trend = input<'up' | 'down'>();
+  public readonly changePercentage = input<string>();
 
   // Loading state
   public readonly loading = input<boolean | undefined>(undefined);
+
+  // Interaction
+  public readonly clickable = input<boolean>(false);
+  public readonly cardClick = output<void>();
+
+  protected handleClick(): void {
+    if (this.clickable()) {
+      this.cardClick.emit();
+    }
+  }
 }

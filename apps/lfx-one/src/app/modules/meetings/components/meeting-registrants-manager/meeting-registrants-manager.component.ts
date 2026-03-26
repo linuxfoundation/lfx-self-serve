@@ -9,7 +9,14 @@ import { FeatureToggleComponent } from '@components/feature-toggle/feature-toggl
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { COMMITTEE_LABEL, SHOW_MEETING_ATTENDEES_FEATURE } from '@lfx-one/shared/constants';
-import { CommitteeMember, MeetingRegistrant, MeetingRegistrantWithState, RegistrantPendingChanges, RegistrantState } from '@lfx-one/shared/interfaces';
+import {
+  Committee,
+  CommitteeMember,
+  MeetingRegistrant,
+  MeetingRegistrantWithState,
+  RegistrantPendingChanges,
+  RegistrantState,
+} from '@lfx-one/shared/interfaces';
 import { generateTempId } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
 import { ConfirmationService } from 'primeng/api';
@@ -47,6 +54,7 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
   public form = input.required<FormGroup>();
   public registrantUpdates = input.required<RegistrantPendingChanges>();
   public refresh = input.required<BehaviorSubject<void>>();
+  public committeeContext = input<Committee | null>(null);
 
   // Show meeting attendees feature from shared constants
   public readonly showMeetingAttendeesFeature = SHOW_MEETING_ATTENDEES_FEATURE;
@@ -201,7 +209,7 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
       // Convert committee members to MeetingRegistrantWithState
       const committeeRegistrants: MeetingRegistrantWithState[] = members.map((member) => ({
         uid: '', // Will be assigned by API when meeting is saved
-        meeting_uid: this.meetingUid(),
+        meeting_id: this.meetingUid(),
         occurrence_id: null,
         email: member.email,
         first_name: member.first_name,
@@ -242,7 +250,7 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
     // Build complete MeetingRegistrant object
     const registrantData: MeetingRegistrant = {
       uid: '', // Will be assigned by API
-      meeting_uid: this.meetingUid(),
+      meeting_id: this.meetingUid(),
       occurrence_id: null,
       email: formValue.email,
       first_name: formValue.first_name,
@@ -265,7 +273,7 @@ export class MeetingRegistrantsManagerComponent implements OnInit {
     // Create new registrant with temporary ID for immediate UI updates
     const newRegistrant: MeetingRegistrantWithState = {
       ...registrantData,
-      meeting_uid: this.meetingUid(),
+      meeting_id: this.meetingUid(),
       uid: '', // Will be assigned by API
       state: 'new' as RegistrantState,
       tempId: generateTempId(),

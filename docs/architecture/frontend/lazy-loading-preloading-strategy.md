@@ -1,19 +1,6 @@
 # Lazy Loading & Preloading Strategy
 
-**Overview**: Comprehensive guide to LFX One's intelligent lazy loading and preloading architecture for optimal performance in Angular 19.
-
-## Table of Contents
-
-- [Overview](#overview)
-- [Lazy Loading Architecture](#lazy-loading-architecture)
-- [Custom Preloading Strategy](#custom-preloading-strategy)
-- [Route Configuration](#route-configuration)
-- [Performance Benefits](#performance-benefits)
-- [Implementation Guide](#implementation-guide)
-- [Monitoring & Optimization](#monitoring--optimization)
-- [Best Practices](#best-practices)
-
----
+**Overview**: Comprehensive guide to LFX One's intelligent lazy loading and preloading architecture for optimal performance in Angular 20.
 
 ## Overview
 
@@ -158,101 +145,6 @@ data: { preload: true, preloadDelay: 1500 }
 
 ---
 
-## Route Configuration
-
-### Main Application Routes
-
-#### 1. Home Route
-
-```typescript
-{
-  path: '',
-  loadComponent: () => import('./modules/pages/home/home.component')
-    .then(m => m.HomeComponent),
-}
-```
-
-- **Strategy**: Immediate lazy load
-- **Bundle**: ~200KB
-- **Reason**: Landing page needs fast initial load
-
-#### 2. Project Layout
-
-```typescript
-{
-  path: 'project/:slug',
-  loadComponent: () => import('./layouts/project-layout/project-layout.component')
-    .then(m => m.ProjectLayoutComponent),
-  loadChildren: () => import('./modules/project/project.routes')
-    .then(m => m.PROJECT_ROUTES),
-  data: { preload: true, preloadDelay: 1000 }
-}
-```
-
-- **Strategy**: Preload after 1s (high probability of navigation)
-- **Bundle**: ~300KB + child routes
-- **Reason**: Most users navigate to projects from home
-
-### Project Feature Routes
-
-#### Meetings Module (High Priority)
-
-```typescript
-{
-  path: 'meetings',
-  loadChildren: () => import('./meetings/meetings.routes')
-    .then(m => m.MEETINGS_ROUTES),
-  data: { preload: true, preloadDelay: 500 }
-}
-```
-
-- **Preload Delay**: 500ms (fastest)
-- **Reason**: Most frequently accessed feature
-
-#### Committees Module (Medium Priority)
-
-```typescript
-{
-  path: 'committees',
-  loadChildren: () => import('./committees/committees.routes')
-    .then(m => m.COMMITTEES_ROUTES),
-  data: { preload: true, preloadDelay: 1500 }
-}
-```
-
-- **Preload Delay**: 1.5s (moderate)
-- **Reason**: Moderately accessed feature
-
-#### Mailing Lists Module (Low Priority)
-
-```typescript
-{
-  path: 'mailing-lists',
-  loadChildren: () => import('./mailing-lists/mailing-lists.routes')
-    .then(m => m.MAILING_LISTS_ROUTES),
-  data: { preload: true, preloadDelay: 3000 }
-}
-```
-
-- **Preload Delay**: 3s (slower)
-- **Reason**: Less frequently accessed
-
-#### Settings Module (On-Demand Only)
-
-```typescript
-{
-  path: 'settings',
-  loadComponent: () => import('./settings/settings-dashboard.component')
-    .then(m => m.SettingsDashboardComponent),
-  data: { preload: false }
-}
-```
-
-- **Preload**: Disabled
-- **Reason**: Admin feature, accessed infrequently
-
----
-
 ## Performance Benefits
 
 ### Bundle Size Optimization
@@ -379,44 +271,6 @@ router.events.pipe(filter((event) => event instanceof NavigationEnd)).subscribe(
 
 ## Monitoring & Optimization
 
-### Performance Metrics to Track
-
-1. **Initial Bundle Size**
-   - Target: <2MB for critical path
-   - Current: ~1.5MB ✅
-
-2. **Time to Interactive (TTI)**
-   - Target: <3s on 3G
-   - Current: ~2-3s ✅
-
-3. **Route Navigation Speed**
-   - Target: <200ms for preloaded routes
-   - Current: ~50-100ms ✅
-
-4. **Cache Hit Rate**
-   - Target: >80% for preloaded routes
-   - Monitor with browser DevTools
-
-### Real-World Performance Data
-
-#### Before Optimization
-
-```text
-Initial Load: 8.2s (3G)
-Route Navigation: 1.2-2.8s
-Bundle Size: 7.7MB
-Cache Efficiency: N/A
-```
-
-#### After Lazy Loading + Preloading
-
-```text
-Initial Load: 2.1s (3G) - 74% improvement
-Route Navigation: 0.05-0.15s - 95% improvement
-Initial Bundle: 1.5MB - 81% reduction
-Cache Hit Rate: 85% (preloaded routes)
-```
-
 ### Optimization Opportunities
 
 1. **Fine-tune Preload Delays**
@@ -537,42 +391,3 @@ ng serve --verbose
 # Performance testing
 lighthouse http://localhost:4200 --chrome-flags="--headless"
 ```
-
----
-
-## Future Enhancements
-
-### Planned Improvements
-
-1. **Machine Learning-Based Preloading**
-   - User behavior pattern analysis
-   - Dynamic preload priority adjustment
-
-2. **Service Worker Integration**
-   - Advanced caching strategies
-   - Background preloading
-
-3. **A/B Testing Framework**
-   - Different preloading strategies
-   - Performance impact measurement
-
-4. **Advanced Network Detection**
-   - Data saver mode support
-   - Battery level consideration
-
----
-
-## Related Documentation
-
-- [Angular 19 SSR Configuration](./angular-patterns.md)
-- [Performance Optimization Guide](./performance.md)
-- [Bundle Analysis](../testing/performance-testing.md)
-- [Code Analysis Report](../../code-analysis-report.md)
-
----
-
-## Generated with
-
-🤖 Generated with [Claude Code](https://claude.ai/code)
-
-Co-Authored-By: Claude <noreply@anthropic.com>

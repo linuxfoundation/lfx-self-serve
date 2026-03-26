@@ -11,6 +11,32 @@ export function isUuid(value: string): boolean {
 }
 
 /**
+ * Wraps a text string into multiple lines, breaking on word boundaries.
+ * Used to produce multi-line Chart.js axis labels (which accept `string[]`).
+ * @param text - The label text to wrap
+ * @param maxWidth - Maximum character width per line
+ * @returns Array of line strings
+ */
+export function wrapLabel(text: string, maxWidth: number): string[] {
+  const words = text.split(' ');
+  const lines: string[] = [];
+  let current = '';
+
+  for (const word of words) {
+    const candidate = current ? `${current} ${word}` : word;
+    if (candidate.length > maxWidth && current) {
+      lines.push(current);
+      current = word;
+    } else {
+      current = candidate;
+    }
+  }
+
+  if (current) lines.push(current);
+  return lines;
+}
+
+/**
  * Parse a value to integer, handling both string and number inputs.
  * Useful for v1 meetings which return numeric fields as strings.
  * @param value - The value to parse (string or number)

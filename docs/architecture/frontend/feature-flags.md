@@ -32,11 +32,11 @@ LFX One uses **OpenFeature** as a vendor-agnostic abstraction layer with **Launc
 
 - **OpenFeature**: Provides a standardized API for feature flags, preventing vendor lock-in
 - **LaunchDarkly**: Enterprise-grade feature flag platform with real-time updates, targeting rules, and analytics
-- **Signal-based integration**: Native Angular 19 signals provide automatic reactivity without manual change detection
+- **Signal-based integration**: Native Angular 20 signals provide automatic reactivity without manual change detection
 
 ### Benefits for LFX One
 
-1. **Zoneless Compatibility**: Fully compatible with Angular 19's stable zoneless change detection
+1. **Zoneless Compatibility**: Fully compatible with Angular 20's stable zoneless change detection
 2. **Real-time Updates**: Flag changes in LaunchDarkly propagate instantly to the UI without refresh
 3. **Type Safety**: TypeScript interfaces ensure compile-time safety for flag values
 4. **SSR Support**: Graceful handling of server-side rendering with browser-only initialization
@@ -119,7 +119,7 @@ This design provides:
 
 - **Zero Subscriptions**: No manual subscribe/unsubscribe management
 - **Automatic Cleanup**: Signals are garbage collected with components
-- **Zoneless Compatible**: Works perfectly with Angular 19's zoneless change detection
+- **Zoneless Compatible**: Works perfectly with Angular 20's zoneless change detection
 - **Referential Stability**: Same signal instance is returned across calls (use computed() for derived logic)
 
 ## 🔧 Implementation Details
@@ -281,7 +281,7 @@ export const appConfig: ApplicationConfig = {
 
 **Provider Configuration:**
 
-- **provideAppInitializer**: Angular 19's modern API for app initialization, runs during application bootstrap before components render
+- **provideAppInitializer**: Angular 20's modern API for app initialization, runs during application bootstrap before components render
 - **Runtime Config via TransferState**: Client IDs are passed from server to browser via Angular's TransferState mechanism
 - **SSR Guard**: `typeof window === 'undefined'` check prevents server-side execution of LaunchDarkly
 - **Graceful Degradation**: Missing configuration or errors allow app to continue with default flag values
@@ -1555,8 +1555,3 @@ console.log('Flag value:', value);
 - **[LaunchDarkly JavaScript SDK](https://docs.launchdarkly.com/sdk/client-side/javascript)** - LaunchDarkly client SDK
 - **[Angular Signals Guide](https://angular.dev/guide/signals)** - Official Angular signals documentation
 - **[LaunchDarkly Targeting](https://docs.launchdarkly.com/home/flags/targeting)** - Targeting rules and strategies
-
----
-
-**Last Updated:** 2026-01-08
-**Version:** 2.0.0

@@ -31,6 +31,7 @@ export class MeetingCommitteeManagerComponent {
   // Inputs
   public readonly selectedCommittees: InputSignal<MeetingCommittee[]> = input<MeetingCommittee[]>([]);
   public readonly form: InputSignal<FormGroup> = input.required<FormGroup>();
+  public readonly committeeContext = input<Committee | null>(null);
 
   // Outputs
   public readonly committeesChange: OutputEmitterRef<MeetingCommittee[]> = output<MeetingCommittee[]>();

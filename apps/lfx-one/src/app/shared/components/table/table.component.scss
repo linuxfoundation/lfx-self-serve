@@ -42,5 +42,42 @@
         }
       }
     }
+
+    // Hide PrimeNG's default gray loading overlay (we use skeleton rows instead)
+    .p-datatable-mask {
+      display: none;
+    }
+  }
+}
+
+// Skeleton loading shimmer animation
+@keyframes lfx-shimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+
+@keyframes lfx-skeleton-fade-in {
+  from {
+    opacity: 0;
+  }
+  to {
+    opacity: 1;
+  }
+}
+
+::ng-deep .lfx-skeleton-row {
+  animation: lfx-skeleton-fade-in 0.2s ease-out both;
+
+  .lfx-skeleton-bar {
+    height: 12px;
+    border-radius: 4px;
+    background: linear-gradient(90deg, #e8ebf0 0%, #e8ebf0 35%, #f4f6f9 50%, #e8ebf0 65%, #e8ebf0 100%);
+    background-size: 200% 100%;
+    animation: lfx-shimmer 1.6s ease-in-out infinite;
+    animation-delay: inherit;
   }
 }

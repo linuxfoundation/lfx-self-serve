@@ -7,22 +7,14 @@ import { RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constant
 import {
   CustomRecurrencePattern,
   Meeting,
-  MeetingCommittee,
   MeetingOccurrence,
-  MeetingRecurrence,
   PastMeetingSummary,
   RecurrenceSummary,
   SummaryData,
   User,
-  V1Meeting,
-  V1MeetingCommittee,
-  V1MeetingOccurrence,
-  V1MeetingRecurrence,
   V1PastMeetingSummary,
   V1SummaryDetail,
-  ZoomConfig,
 } from '../interfaces';
-import { parseToInt } from './string.utils';
 
 /**
  * Build a human-readable recurrence summary from custom recurrence pattern
@@ -138,7 +130,7 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
  * @returns Array of active (non-cancelled) occurrences
  */
 export function getActiveOccurrences(occurrences: MeetingOccurrence[]): MeetingOccurrence[] {
-  return occurrences.filter((occurrence) => !occurrence.is_cancelled);
+  return occurrences.filter((occurrence) => occurrence.status !== 'cancel');
 }
 
 /**
@@ -296,188 +288,6 @@ export function buildJoinUrlWithParams(joinUrl: string, user?: User | null, opti
 }
 
 /**
- * Transform v1 recurrence object to v2 format (string values to numbers)
- * @param recurrence - V1 recurrence object with string values
- * @returns V2 recurrence object with number values
- */
-function transformV1RecurrenceToV2(recurrence: V1MeetingRecurrence | null | undefined): MeetingRecurrence | null {
-  if (!recurrence) {
-    return null;
-  }
-
-  return {
-    type: parseToInt(recurrence.type) ?? 2,
-    repeat_interval: parseToInt(recurrence.repeat_interval) ?? 1,
-    end_times: parseToInt(recurrence.end_times),
-    end_date_time: recurrence.end_date_time,
-    monthly_day: parseToInt(recurrence.monthly_day),
-    monthly_week: parseToInt(recurrence.monthly_week),
-    monthly_week_day: parseToInt(recurrence.monthly_week_day),
-    weekly_days: recurrence.weekly_days,
-  };
-}
-
-/**
- * Transform v1 occurrence to v2 format
- * @param occurrence - V1 occurrence object
- * @returns V2 occurrence object
- */
-function transformV1OccurrenceToV2(occurrence: V1MeetingOccurrence): MeetingOccurrence {
-  return {
-    occurrence_id: occurrence.occurrence_id,
-    title: occurrence.topic || '',
-    description: occurrence.agenda || '',
-    start_time: occurrence.start_time,
-    duration: parseToInt(occurrence.duration) ?? 0,
-    is_cancelled: occurrence.is_cancelled,
-  };
-}
-
-/**
- * Transform v1 committees to v2 format
- * @param v1Meeting - V1 meeting object with committee/committees fields
- * @returns V2 committees array
- */
-function transformV1CommitteesToV2(v1Meeting: V1Meeting): MeetingCommittee[] {
-  // If committees array already exists, normalize it
-  if (Array.isArray(v1Meeting.committees) && v1Meeting.committees.length > 0) {
-    return v1Meeting.committees.map((committee: V1MeetingCommittee) => ({
-      uid: committee.uid,
-      // V1 uses 'filters', V2 uses 'allowed_voting_statuses'
-      allowed_voting_statuses: committee.allowed_voting_statuses || committee.filters,
-      name: committee.name,
-    }));
-  }
-
-  // If single committee field exists, convert to array
-  if (v1Meeting.committee && v1Meeting.committee !== 'NONE') {
-    return [
-      {
-        uid: v1Meeting.committee,
-        allowed_voting_statuses: v1Meeting.committee_filters || undefined,
-      },
-    ];
-  }
-
-  return [];
-}
-
-/**
- * Transform v1 zoom config fields to v2 zoom_config object
- * @param v1Meeting - V1 meeting object
- * @returns V2 zoom_config object or null
- */
-function transformV1ZoomConfigToV2(v1Meeting: V1Meeting): ZoomConfig | null {
-  // Build from v1 fields
-  const hasZoomFields =
-    v1Meeting.zoom_ai_enabled !== undefined ||
-    v1Meeting.require_ai_summary_approval !== undefined ||
-    v1Meeting.passcode !== undefined ||
-    v1Meeting.meeting_id !== undefined;
-
-  if (!hasZoomFields) {
-    return null;
-  }
-
-  return {
-    ai_companion_enabled: v1Meeting.zoom_ai_enabled,
-    ai_summary_require_approval: v1Meeting.require_ai_summary_approval,
-    passcode: v1Meeting.passcode,
-    meeting_id: v1Meeting.meeting_id,
-  };
-}
-
-/**
- * Transform v1 meeting data to v2 format
- * @param meeting - V1 meeting object from API
- * @returns Meeting object normalized to v2 format
- * @description
- * Transforms v1 meeting fields to v2 equivalents:
- * - topic → title
- * - agenda → description
- * - id → uid
- * - project_id → project_uid
- * - duration (string) → duration (number)
- * - early_join_time (string) → early_join_time_minutes (number)
- * - modified_at → updated_at
- * - zoom_ai_enabled → zoom_config.ai_companion_enabled
- * - recurrence fields (string → number)
- * - occurrences fields transformation
- * - committee → committees array
- */
-export function transformV1MeetingToV2(meeting: Meeting): Meeting {
-  // If not v1, return as-is
-  if (meeting.version !== 'v1') {
-    return meeting;
-  }
-
-  // Cast to V1Meeting for accessing v1-specific fields with type safety
-  const v1Meeting = meeting as unknown as V1Meeting;
-
-  // Transform occurrences if present
-  const occurrences = Array.isArray(v1Meeting.occurrences) ? v1Meeting.occurrences.map(transformV1OccurrenceToV2) : [];
-
-  // Build transformed meeting
-  const transformed: Meeting = {
-    // V2 required fields - use v2 field or fall back to v1 equivalent
-    uid: meeting.uid || v1Meeting.id || '',
-    project_uid: meeting.project_uid || v1Meeting.project_id || '',
-    title: meeting.title || v1Meeting.topic || '',
-    description: meeting.description || v1Meeting.agenda || '',
-    start_time: meeting.start_time,
-    duration: parseToInt(v1Meeting.duration) ?? meeting.duration ?? 0,
-    timezone: meeting.timezone || v1Meeting.timezone || '',
-    created_at: meeting.created_at || v1Meeting.created_at || '',
-    updated_at: meeting.updated_at || v1Meeting.modified_at || meeting.created_at || '',
-
-    // Transform early join time
-    early_join_time_minutes: parseToInt(v1Meeting.early_join_time) ?? meeting.early_join_time_minutes ?? 10,
-
-    // Transform recurrence
-    recurrence: transformV1RecurrenceToV2(v1Meeting.recurrence),
-
-    // Transform occurrences
-    occurrences,
-
-    // Transform committees
-    committees: transformV1CommitteesToV2(v1Meeting),
-
-    // Transform zoom config
-    zoom_config: transformV1ZoomConfigToV2(v1Meeting),
-
-    // Pass through other fields
-    platform: meeting.platform,
-    meeting_type: meeting.meeting_type || v1Meeting.meeting_type || null,
-    visibility: meeting.visibility,
-    restricted: meeting.restricted,
-    recording_enabled: meeting.recording_enabled,
-    transcript_enabled: meeting.transcript_enabled,
-    youtube_upload_enabled: meeting.youtube_upload_enabled,
-    show_meeting_attendees: meeting.show_meeting_attendees,
-    artifact_visibility: meeting.artifact_visibility,
-    organizers: meeting.organizers || [],
-    password: meeting.password || v1Meeting.password || null,
-    invited: meeting.invited,
-    join_url: meeting.join_url || v1Meeting.join_url,
-    individual_registrants_count: meeting.individual_registrants_count || 0,
-    committee_members_count: meeting.committee_members_count || 0,
-    registrants_accepted_count: meeting.registrants_accepted_count || 0,
-    registrants_declined_count: meeting.registrants_declined_count || 0,
-    registrants_pending_count: meeting.registrants_pending_count || 0,
-    participant_count: meeting.participant_count,
-    attended_count: meeting.attended_count,
-    project_name: meeting.project_name || '',
-    project_slug: meeting.project_slug || v1Meeting.project_slug || '',
-    organizer: meeting.organizer,
-
-    // Keep version for reference
-    version: 'v1',
-  };
-
-  return transformed;
-}
-
-/**
  * Build v2 summary_data from v1 summary fields
  * @param v1Summary - V1 summary object
  * @returns V2 SummaryData object
@@ -543,8 +353,8 @@ export function transformV1SummaryToV2(summary: PastMeetingSummary): PastMeeting
   return {
     // V2 fields - use v2 field or fall back to v1 equivalent
     uid: summary.uid || v1Summary.id || '',
-    meeting_uid: summary.meeting_uid || v1Summary.meeting_id || '',
-    past_meeting_uid: summary.past_meeting_uid || '',
+    meeting_id: summary.meeting_id || v1Summary.meeting_id || '',
+    past_meeting_id: summary.past_meeting_id || '',
     platform: summary.platform || 'Zoom',
     approved: summary.approved ?? v1Summary.approved ?? false,
     requires_approval: summary.requires_approval ?? v1Summary.requires_approval ?? false,

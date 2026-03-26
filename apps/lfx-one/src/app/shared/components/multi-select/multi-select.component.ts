@@ -19,7 +19,7 @@ export class MultiSelectComponent {
   public readonly optionValue = input<string>('value');
   public readonly placeholder = input<string>('Select');
   public readonly showToggleAll = input<boolean>(true);
-  public readonly appendTo = input<any>();
+  public readonly appendTo = input<any>('body');
   public readonly filter = input<boolean>(true);
   public readonly filterPlaceHolder = input<string>('Search');
   public readonly size = input<'small' | 'large'>('small');

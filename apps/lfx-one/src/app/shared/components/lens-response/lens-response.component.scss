@@ -1,0 +1,31 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+:host {
+  display: block;
+}
+
+/* SQL table row hover */
+.sql-row {
+  transition: background-color 150ms ease;
+
+  &:hover {
+    background-color: #f9fafb; // gray-50
+  }
+}
+
+/* Suggestion row hover */
+.suggestion-row {
+  transition: all 200ms ease;
+}
+
+/* SQL viewer scrollbar */
+.sql-viewer {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+
+  pre {
+    white-space: pre-wrap;
+    overflow-wrap: break-word;
+  }
+}

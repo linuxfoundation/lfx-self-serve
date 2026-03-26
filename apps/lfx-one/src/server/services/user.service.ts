@@ -1,19 +1,16 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DEFAULT_QUERY_PARAMS, NATS_CONFIG } from '@lfx-one/shared/constants';
-import { parseToInt } from '@lfx-one/shared/utils';
+import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
   ActiveWeeksStreakRow,
   Meeting,
   MeetingOccurrence,
-  MeetingRegistrant,
   PendingActionItem,
   PersonaType,
   ProjectItem,
-  QueryServiceResponse,
   UserCodeCommitsResponse,
   UserCodeCommitsRow,
   UserMetadata,
@@ -24,11 +21,12 @@ import {
   UserPullRequestsResponse,
   UserPullRequestsRow,
 } from '@lfx-one/shared/interfaces';
+import { parseToInt } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { isUserInvitedToMeeting } from '../helpers/meeting.helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
-import { ApiClientService } from './api-client.service';
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
 import { NatsService } from './nats.service';
@@ -39,7 +37,6 @@ import { SnowflakeService } from './snowflake.service';
  * Service for handling user-related operations and user analytics
  */
 export class UserService {
-  private apiClientService: ApiClientService;
   private natsService: NatsService;
   private snowflakeService: SnowflakeService;
   private meetingService: MeetingService;
@@ -49,7 +46,6 @@ export class UserService {
   private readonly bufferMinutes = 40;
 
   public constructor() {
-    this.apiClientService = new ApiClientService();
     this.natsService = new NatsService();
     this.snowflakeService = SnowflakeService.getInstance();
     this.meetingService = new MeetingService();
@@ -460,27 +456,29 @@ export class UserService {
 
   /**
    * Fetches all meetings for the current user filtered by project
-   * Gets meetings the user has access to, then filters ALL meetings by registration status
-   * This ensures "my meetings" only shows meetings the user is actually invited to
+   * Gets meetings the user has access to, then filters by invitation status
+   * using the same isUserInvitedToMeeting check as the meeting card endpoint
    * @param req - Express request object
-   * @param email - User's email address for registration check
-   * @param projectUid - Project UID to filter meetings by
+   * @param email - User's email address for invitation check
    * @param query - Query parameters for filtering
    * @param limit - Optional limit on number of meetings to return
-   * @returns Array of Meeting objects the user is registered for
+   * @returns Array of Meeting objects the user is invited to
    */
-  public async getUserMeetings(req: Request, email: string, projectUid: string, query: Record<string, any>, limit?: number): Promise<Meeting[]> {
-    // Step 1: Get all meetings the user has access to, filtered by project
-    // Note: Writers have API access to all meetings, but we still filter by registration
-    const meetings = await this.meetingService.getMeetings(req, query, 'meeting', false);
-    const v1Meetings = await this.meetingService.getMeetings(req, query, 'v1_meeting', false);
+  public async getUserMeetings(req: Request, email: string, query: Record<string, any>, limit?: number): Promise<Meeting[]> {
+    // Step 1: Get ALL meetings by paginating through all pages
+    // TODO: Replace with a more efficient server-side filtering approach instead of client-side pagination
+    const allMeetings: Meeting[] = [];
+    let pageToken: string | undefined;
 
-    const allMeetings = [...meetings, ...v1Meetings];
+    do {
+      const pageQuery = { ...query, ...(pageToken && { page_token: pageToken }) };
+      const { data: meetings, page_token } = await this.meetingService.getMeetings(req, pageQuery, 'v1_meeting', true);
+      allMeetings.push(...meetings);
+      pageToken = page_token;
+    } while (pageToken);
 
-    logger.debug(req, 'get_user_meetings', 'Retrieved meetings from API', {
+    logger.debug(req, 'get_user_meetings', 'Retrieved all meetings from API', {
       total_meetings: allMeetings.length,
-      regular_meetings: meetings.length,
-      v1_meetings: v1Meetings.length,
     });
 
     if (allMeetings.length === 0) {
@@ -488,12 +486,22 @@ export class UserService {
     }
 
     const m2mToken = await generateM2MToken(req);
-    const baseUrl = process.env['LFX_V2_SERVICE'] || 'http://lfx-api.k8s.orb.local';
 
-    // Step 2: Filter ALL meetings by registration status
-    // For "my meetings", we only show meetings the user is actually registered for
-    // This applies to both public and private meetings, regardless of writer status
-    let filteredMeetings = await this.filterMeetingsByRegistration(req, allMeetings, email, m2mToken, baseUrl);
+    // Step 2: Filter meetings by invitation status using the same helper as the meeting card endpoint
+    const inviteChecks = await Promise.all(
+      allMeetings.map(async (meeting) => {
+        const invited = await isUserInvitedToMeeting(req, meeting.id, email, m2mToken).catch(() => false);
+
+        logger.debug(req, 'get_user_meetings', 'Checked user invitation for meeting', {
+          meeting_id: meeting.id,
+          invited,
+        });
+
+        return invited ? meeting : null;
+      })
+    );
+
+    let filteredMeetings = inviteChecks.filter((m): m is Meeting => m !== null);
 
     // Step 3: Apply limit if specified
     if (limit !== undefined && limit > 0) {
@@ -501,57 +509,6 @@ export class UserService {
     }
 
     return filteredMeetings;
-  }
-
-  /**
-   * Filter meetings by user registration status
-   * @private
-   */
-  private async filterMeetingsByRegistration(req: Request, meetings: Meeting[], email: string, m2mToken: string, baseUrl: string): Promise<Meeting[]> {
-    if (meetings.length === 0) {
-      return [];
-    }
-
-    const registrationChecks = await Promise.all(
-      meetings.map(async (meeting) => {
-        try {
-          const query = {
-            v: 1,
-            type: 'meeting_registrant',
-            parent: `meeting:${meeting.uid}`,
-            tags_all: [`email:${email}`],
-            ...DEFAULT_QUERY_PARAMS,
-          };
-
-          // If meeting is v1, use v1_meeting_registrant type and tags_all format
-          if (meeting.version === 'v1') {
-            query.type = 'v1_meeting_registrant';
-            query.tags_all.push(`meeting_uid:${meeting.uid}`);
-            query.parent = '';
-          }
-
-          const response = await this.apiClientService.request<QueryServiceResponse<MeetingRegistrant>>('GET', `${baseUrl}/query/resources`, m2mToken, query);
-
-          // If resources array has items, user is registered
-          const isRegistered = response.data.resources && response.data.resources.length > 0;
-
-          logger.debug(req, 'filter_meetings_by_registration', 'Checked user registration for meeting', {
-            meeting_uid: meeting.uid,
-            is_registered: isRegistered,
-          });
-
-          return isRegistered ? meeting : null;
-        } catch (error) {
-          logger.warning(req, 'filter_meetings_by_registration', 'Failed to check registration for meeting', {
-            meeting_uid: meeting.uid,
-            err: error,
-          });
-          return null;
-        }
-      })
-    );
-
-    return registrationChecks.filter((m): m is Meeting => m !== null);
   }
 
   /**
@@ -566,7 +523,7 @@ export class UserService {
         return [];
       }),
 
-      this.getUserMeetings(req, email, projectUid, { tags_all: [`project_uid:${projectUid}`, 'meeting_type:Board'] }).catch((error) => {
+      this.getUserMeetings(req, email, { tags_all: [`project_uid:${projectUid}`, 'meeting_type:Board'] }).catch((error) => {
         logger.warning(req, 'get_board_member_actions', 'Failed to fetch user meetings for pending actions', { err: error });
         return [];
       }),
@@ -590,7 +547,7 @@ export class UserService {
     for (const meeting of meetings) {
       if (meeting.occurrences && meeting.occurrences.length > 0) {
         // Filter active occurrences (not cancelled)
-        const activeOccurrences = meeting.occurrences.filter((occ) => !occ.is_cancelled);
+        const activeOccurrences = meeting.occurrences.filter((occ) => occ.status !== 'cancel');
 
         for (const occurrence of activeOccurrences) {
           const startTime = new Date(occurrence.start_time);
@@ -644,9 +601,8 @@ export class UserService {
 
     const params = new URLSearchParams();
     if (meeting.password) params.set('password', meeting.password);
-    if (meeting.version === 'v1') params.set('v1', 'true');
     const queryString = params.toString();
-    const buttonLink = queryString ? `/meetings/${meeting.uid}?${queryString}` : `/meetings/${meeting.uid}`;
+    const buttonLink = queryString ? `/meetings/${meeting.id}?${queryString}` : `/meetings/${meeting.id}`;
 
     return {
       type: 'Review Agenda',

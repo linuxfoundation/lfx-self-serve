@@ -2,14 +2,14 @@
 
 ## 🏗 System Overview
 
-LFX One is a modern Angular 19 SSR application built with stable zoneless change detection, featuring a sophisticated backend architecture and comprehensive design system integration.
+LFX One is a modern Angular 20 SSR application built with stable zoneless change detection, featuring a sophisticated backend architecture and comprehensive design system integration.
 
 ## 📖 Architecture Documentation Guide
 
 ### 🎨 Frontend Architecture
 
-- **[Frontend Overview](./frontend/README.md)** - Angular 19 architecture with zoneless change detection
-- **[Angular Patterns](./frontend/angular-patterns.md)** - Modern Angular 19 development patterns with signals
+- **[Frontend Overview](./frontend/README.md)** - Angular 20 architecture with zoneless change detection
+- **[Angular Patterns](./frontend/angular-patterns.md)** - Modern Angular 20 development patterns with signals
 - **[Component Architecture](./frontend/component-architecture.md)** - PrimeNG wrapper components and design patterns
 - **[Styling System](./frontend/styling-system.md)** - CSS layers, Tailwind, and LFX UI Core integration
 - **[State Management](./frontend/state-management.md)** - Angular Signals and reactive programming
@@ -48,7 +48,7 @@ LFX One is a modern Angular 19 SSR application built with stable zoneless change
 
 ### Frontend Development
 
-1. **[Angular Patterns](./frontend/angular-patterns.md)** - Modern Angular 19 patterns
+1. **[Angular Patterns](./frontend/angular-patterns.md)** - Modern Angular 20 patterns
 2. **[Component Architecture](./frontend/component-architecture.md)** - Component patterns and wrappers
 3. **[Styling System](./frontend/styling-system.md)** - CSS, Tailwind, and design system
 4. **[State Management](./frontend/state-management.md)** - Angular Signals patterns
@@ -76,9 +76,9 @@ LFX One is a modern Angular 19 SSR application built with stable zoneless change
 
 ### Frontend
 
-- **Angular 19** with stable zoneless change detection
+- **Angular 20** with stable zoneless change detection
 - **Angular Signals** for reactive state management
-- **PrimeNG 19** with custom LFX UI Core preset
+- **PrimeNG 20** with custom LFX UI Core preset
 - **Tailwind CSS v3** with CSS layers architecture
 
 ### Backend

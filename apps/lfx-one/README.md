@@ -1,12 +1,12 @@
 # LFX One Application
 
-This is the main Angular 19 application for the LFX One project, built with experimental zoneless change detection and direct PrimeNG integration.
+This is the main Angular 20 application for the LFX One project, built with stable zoneless change detection and direct PrimeNG integration.
 
 ## Key Features
 
-- **Angular 19** with experimental zoneless change detection
+- **Angular 20** with stable zoneless change detection
 - **Angular Signals** for reactive state management
-- **PrimeNG 19** UI components with custom LFX theming
+- **PrimeNG 20** UI components with custom LFX theming
 - **Tailwind CSS v3** with PrimeUI plugin integration
 - **LFX UI Core** design system
 - **Server-Side Rendering (SSR)** for better performance
@@ -37,7 +37,7 @@ Once the server is running, open your browser and navigate to `http://localhost:
 ### State Management
 
 - **Angular Signals**: Preferred for reactive state management
-- **Zoneless Change Detection**: Experimental feature for improved performance
+- **Zoneless Change Detection**: Stable feature for improved performance
 - **RxJS**: Used only when necessary for complex async operations
 
 ### Styling

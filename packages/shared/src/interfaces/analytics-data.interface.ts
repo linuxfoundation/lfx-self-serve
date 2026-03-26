@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { ProjectItem } from './components.interface';
+import type { ProjectTableRow } from './dashboard-metric.interface';
 
 /**
  * Active Weeks Streak row from Snowflake ACTIVE_WEEKS_STREAK table
@@ -746,6 +747,47 @@ export interface FoundationTotalProjectsResponse {
 }
 
 /**
+ * Row from FOUNDATION_UNIQUE_CONTRIBUTORS_DAILY aggregated by month
+ */
+export interface FoundationActiveContributorsMonthlyRow {
+  MONTH_START: string;
+  MONTHLY_AVG_CONTRIBUTORS: number;
+}
+
+/**
+ * API response for foundation active contributors monthly trend
+ */
+export interface FoundationActiveContributorsMonthlyResponse {
+  monthlyData: number[];
+  monthlyLabels: string[];
+}
+
+/**
+ * Single percentile band row from FOUNDATION_CONTRIBUTORS_DISTRIBUTION
+ */
+export interface FoundationContributorsDistributionRow {
+  PERCENTILE_BAND: string;
+  CONTRIBUTOR_COUNT: number;
+  CONTRIBUTION_SHARE_PERCENTAGE: number;
+}
+
+/**
+ * Single percentile band entry in the distribution response
+ */
+export interface ContributorsDistributionBand {
+  band: string;
+  contributionSharePercentage: number;
+  contributorCount: number;
+}
+
+/**
+ * API response for foundation contributor distribution by percentile band
+ */
+export interface FoundationContributorsDistributionResponse {
+  distribution: ContributorsDistributionBand[];
+}
+
+/**
  * API response for foundation total members query
  * Contains cumulative monthly trend data for member organizations
  * Optimized response with aggregated member counts over time
@@ -836,6 +878,47 @@ export interface FoundationSoftwareValueResponse {
 }
 
 /**
+ * Foundation value concentration row from Snowflake FOUNDATION_VALUE_CONCENTRATION table
+ * Contains total software value and concentration metrics across project buckets
+ */
+export interface FoundationValueConcentrationRow {
+  FOUNDATION_ID: string;
+  FOUNDATION_SLUG: string;
+  TOTAL_VALUE: number;
+  TOTAL_PROJECTS_COUNT: number;
+  LAST_METRIC_DATE: string;
+  TOP_1_VALUE: number;
+  TOP_3_VALUE: number;
+  TOP_5_VALUE: number;
+  ALL_OTHER_VALUE: number;
+  TOP_1_PROJECTS_COUNT: number;
+  TOP_3_PROJECTS_COUNT: number;
+  TOP_5_PROJECTS_COUNT: number;
+  ALL_OTHER_PROJECTS_COUNT: number;
+  TOP_1_PERCENTAGE: number;
+  TOP_3_PERCENTAGE: number;
+  TOP_5_PERCENTAGE: number;
+  ALL_OTHER_PERCENTAGE: number;
+}
+
+/**
+ * API response for foundation value concentration query
+ * All value fields are in millions of dollars
+ */
+export interface FoundationValueConcentrationResponse {
+  totalValue: number;
+  top1Value: number;
+  top3Value: number;
+  top5Value: number;
+  allOtherValue: number;
+  totalProjectsCount: number;
+  top1Percentage: number;
+  top3Percentage: number;
+  top5Percentage: number;
+  allOtherPercentage: number;
+}
+
+/**
  * Foundation maintainers daily row from Snowflake
  * Raw response from FOUNDATION_MAINTAINERS_YEARLY table (despite name, contains daily data)
  */
@@ -911,6 +994,88 @@ export interface FoundationMaintainersResponse {
    * Array of date strings matching trendData
    */
   trendLabels: string[];
+}
+
+/**
+ * Foundation maintainers repository monthly row from Snowflake
+ * Raw response from FOUNDATION_MAINTAINERS_REPOSITORY_MONTHLY table (all_repos scope)
+ */
+export interface FoundationMaintainersMonthlyRow {
+  /**
+   * Month for which maintainer count is calculated (first day of month)
+   */
+  METRIC_MONTH: string;
+
+  /**
+   * Count of distinct maintainers active during this month
+   */
+  ACTIVE_MAINTAINERS: number;
+}
+
+/**
+ * Processed monthly maintainers response for the trend chart
+ */
+export interface FoundationMaintainersMonthlyResponse {
+  /**
+   * Monthly active maintainer counts for chart Y-axis
+   */
+  monthlyData: number[];
+
+  /**
+   * Short month labels for chart X-axis (e.g. 'Jan', 'Feb')
+   */
+  monthlyLabels: string[];
+}
+
+/**
+ * Foundation maintainers distribution row from Snowflake
+ * Raw response from FOUNDATION_MAINTAINERS_DISTRIBUTION table (all_repos scope, last_12_months)
+ */
+export interface FoundationMaintainersDistributionRow {
+  /**
+   * Percentile band: 'Top 10%', 'Next 40%', or 'Bottom 50%'
+   */
+  PERCENTILE_BAND: string;
+
+  /**
+   * Number of distinct maintainers in this band
+   */
+  MAINTAINER_COUNT: number;
+
+  /**
+   * Percentage of total contributions made by this band
+   */
+  CONTRIBUTION_SHARE_PCT: number;
+}
+
+/**
+ * Processed distribution band for the maintainers distribution chart
+ */
+export interface MaintainersDistributionBand {
+  /**
+   * Band label: 'Top 10%', 'Next 40%', or 'Bottom 50%'
+   */
+  band: string;
+
+  /**
+   * Contribution share percentage for chart Y-axis
+   */
+  contributionSharePct: number;
+
+  /**
+   * Maintainer count shown in tooltip
+   */
+  maintainerCount: number;
+}
+
+/**
+ * Processed distribution response for the maintainers distribution chart
+ */
+export interface FoundationMaintainersDistributionResponse {
+  /**
+   * Ordered array of distribution bands
+   */
+  distribution: MaintainersDistributionBand[];
 }
 
 /**
@@ -1187,14 +1352,14 @@ export interface FoundationUniqueContributorsDailyRow {
   DAILY_UNIQUE_CONTRIBUTORS: number;
 
   /**
-   * Average contributors (calculated aggregate)
+   * Average contributors per day over the last 12 months (constant across all rows for a foundation)
    */
-  AVG_CONTRIBUTORS: number;
+  AVG_CONTRIBUTORS_LAST_12_MONTHS: number;
 
   /**
-   * Total days with data
+   * Total days with contributor activity in the last 12 months period
    */
-  TOTAL_DAYS: number;
+  TOTAL_DAYS_LAST_12_MONTHS: number;
 }
 
 /**
@@ -1228,14 +1393,14 @@ export interface ProjectUniqueContributorsDailyRow {
   DAILY_UNIQUE_CONTRIBUTORS: number;
 
   /**
-   * Average contributors (calculated aggregate)
+   * Average contributors per day over the last 12 months (constant across all rows for a project)
    */
-  AVG_CONTRIBUTORS: number;
+  AVG_CONTRIBUTORS_LAST_12_MONTHS: number;
 
   /**
-   * Total days with data
+   * Total days with contributor activity in the last 12 months period
    */
-  TOTAL_DAYS: number;
+  TOTAL_DAYS_LAST_12_MONTHS: number;
 }
 
 /**
@@ -1350,6 +1515,78 @@ export interface HealthEventsMonthlyResponse {
    * Number of months with data
    */
   totalMonths: number;
+}
+
+/**
+ * Foundation health events quarterly row from Snowflake
+ * Raw response from FOUNDATION_HEALTH_EVENTS_QUARTERLY table
+ */
+export interface FoundationEventsQuarterlyRow {
+  /**
+   * First day of the quarter
+   */
+  QUARTER_START_DATE: string;
+
+  /**
+   * Count of events in the quarter
+   */
+  EVENT_COUNT: number;
+}
+
+/**
+ * Processed quarterly events response for the trend bar chart
+ */
+export interface FoundationEventsQuarterlyResponse {
+  /**
+   * Event counts per quarter for chart Y-axis
+   */
+  quarterlyData: number[];
+
+  /**
+   * Quarter labels for chart X-axis (e.g. "Q1 '25")
+   */
+  quarterlyLabels: string[];
+}
+
+/**
+ * Foundation health events attendance distribution row from Snowflake
+ * Raw response from FOUNDATION_HEALTH_EVENTS_ATTENDANCE_DISTRIBUTION table
+ */
+export interface FoundationEventsAttendanceDistributionRow {
+  /**
+   * Attendance size bucket: 'Large', 'Medium', or 'Small'
+   */
+  ATTENDANCE_SIZE_BUCKET: string;
+
+  /**
+   * Count of events in this bucket over the last 12 months
+   */
+  EVENT_COUNT_LAST_12_MONTHS: number;
+}
+
+/**
+ * Processed attendance bucket for the distribution bar chart
+ */
+export interface EventsAttendanceBucket {
+  /**
+   * Bucket key as stored in Snowflake: 'Large', 'Medium', or 'Small'
+   */
+  bucket: string;
+
+  /**
+   * Event count for chart Y-axis and tooltip
+   */
+  eventCount: number;
+}
+
+/**
+ * Processed attendance distribution response
+ */
+export interface FoundationEventsAttendanceDistributionResponse {
+  /**
+   * Ordered array of attendance buckets (Large → Medium → Small)
+   */
+  distribution: EventsAttendanceBucket[];
 }
 
 /**
@@ -1844,6 +2081,49 @@ export interface FoundationCompanyBusFactorResponse {
 }
 
 /**
+ * Raw Snowflake row from PROJECT_COMPANY_BUS_FACTOR table
+ * Used in the Organization Dependency drawer (per-project breakdown)
+ */
+export interface ProjectOrgDependencyRow {
+  PROJECT_ID: string;
+  PROJECT_SLUG: string;
+  PROJECT_NAME: string;
+  /** Minimum # of orgs accounting for >50% of contributions */
+  BUS_FACTOR_COMPANY_COUNT: number;
+  /** Actual % of contributions from those orgs */
+  BUS_FACTOR_CONTRIBUTION_PCT: number;
+  /** Total distinct orgs that have contributed */
+  TOTAL_COMPANIES: number;
+  /** Total contributions from all orgs */
+  TOTAL_CONTRIBUTIONS: number;
+  /** Calculated: TOTAL_COMPANIES - BUS_FACTOR_COMPANY_COUNT */
+  OTHER_COMPANIES_COUNT: number;
+}
+
+/**
+ * Processed per-project item for the Organization Dependency drawer
+ */
+export interface ProjectOrgDependencyItem {
+  projectId: string;
+  projectSlug: string;
+  projectName: string;
+  busFactorOrgCount: number;
+  busFactorContributionPct: number;
+  totalOrgs: number;
+  totalContributions: number;
+  otherOrgsCount: number;
+}
+
+/**
+ * API response for the foundation org dependency projects endpoint
+ * Powers the per-project table in the Organization Dependency drawer
+ */
+export interface FoundationOrgDependencyProjectsResponse {
+  projects: ProjectOrgDependencyItem[];
+  totalCount: number;
+}
+
+/**
  * Foundation Code Commits Daily row from Snowflake
  * Raw response from FOUNDATION_CODE_COMMITS table
  * Contains daily code commit metrics for maintainer dashboard charts
@@ -2008,4 +2288,333 @@ export interface TrainingEnrollmentsResponse {
    * Project URL slug
    */
   projectSlug: string;
+}
+
+// ============================================
+// Foundation Total Projects Detail
+// ============================================
+
+/**
+ * Raw Snowflake row from PLATINUM.FOUNDATION_TOTAL_PROJECTS_DETAIL
+ */
+export interface FoundationProjectsDetailRow {
+  FOUNDATION_SEGMENT_ID: string;
+  FOUNDATION_NAME: string;
+  FOUNDATION_SLUG: string;
+  PROJECT_SEGMENT_ID: string;
+  PROJECT_NAME: string;
+  PROJECT_SLUG: string;
+  PROJECT_SOURCE_ID: string;
+  PROJECT_ID: string;
+  LIFECYCLE_STAGE: string | null;
+  PROJECT_START_DATE: string | null;
+  COMMITS_90D_COUNT: number;
+  CONTRIBUTORS_90D_COUNT: number;
+  COMMITS_YTD_COUNT: number;
+  CONTRIBUTORS_YTD_COUNT: number;
+  COMMITS_12M_COUNT: number;
+  CONTRIBUTORS_12M_COUNT: number;
+  MAINTAINERS_YTD_COUNT: number;
+  MAINTAINERS_12M_COUNT: number;
+  STARS_YTD_COUNT: number;
+  STARS_12M_COUNT: number;
+  LAST_UPDATED_TS: Date | string | null;
+}
+
+/**
+ * API response for foundation projects detail endpoint
+ */
+export interface FoundationProjectsDetailResponse {
+  projects: ProjectTableRow[];
+  totalCount: number;
+}
+
+// ============================================
+// Foundation Total Projects Monthly
+// ============================================
+
+/**
+ * Raw Snowflake row from ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_MONTHLY
+ */
+export interface FoundationTotalProjectsMonthlyRow {
+  FOUNDATION_SEGMENT_ID: string;
+  FOUNDATION_NAME: string;
+  FOUNDATION_SLUG: string;
+  MONTH_START: string | Date;
+  PROJECT_COUNT: number;
+}
+
+// ============================================
+// Foundation Projects Lifecycle Distribution
+// ============================================
+
+/**
+ * Raw Snowflake row from ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_LIFECYCLE_DISTRIBUTION
+ */
+export interface FoundationProjectsLifecycleDistributionRow {
+  FOUNDATION_SEGMENT_ID: string;
+  FOUNDATION_NAME: string;
+  FOUNDATION_SLUG: string;
+  LIFECYCLE_STAGE: string | null;
+  PROJECT_COUNT: number;
+}
+
+/**
+ * API response for foundation projects lifecycle distribution endpoint
+ */
+export interface FoundationProjectsLifecycleDistributionResponse {
+  distribution: { stage: string; count: number }[];
+}
+
+// ============================================
+// Org Active Contributors Drawer
+// ============================================
+
+/**
+ * Raw Snowflake row from ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_UNIQUE_CONTRIBUTORS_ORG_REPO_MONTHLY
+ * Contains monthly unique contributor counts for an organization within a foundation
+ */
+export interface OrgContributorsMonthlyRow {
+  ACCOUNT_ID: string;
+  FOUNDATION_ID: string;
+  FOUNDATION_NAME: string;
+  FOUNDATION_SLUG: string;
+  TIME_RANGE: string;
+  REPOSITORY_SCOPE: string;
+  MONTH_START_DATE: Date | string;
+  UNIQUE_CONTRIBUTORS: number;
+}
+
+/**
+ * API response for org contributors monthly trend endpoint
+ * Powers the line chart in the Org Active Contributors drawer
+ */
+export interface OrgContributorsMonthlyResponse {
+  monthlyData: number[];
+  monthlyLabels: string[];
+  totalContributors: number;
+}
+
+/**
+ * Raw Snowflake row from ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_CONTRIBUTORS_ORG_PROJECT_DISTRIBUTION
+ * Contains per-project contributor distribution for an organization within a foundation
+ */
+export interface OrgContributorsProjectDistributionRow {
+  ACCOUNT_ID: string;
+  FOUNDATION_SLUG: string;
+  PROJECT_ID: string;
+  PROJECT_NAME: string;
+  PROJECT_RANK: number;
+  UNIQUE_CONTRIBUTORS: number;
+  TOTAL_ORG_CONTRIBUTORS: number;
+  CONTRIBUTOR_SHARE_PERCENTAGE: number;
+}
+
+/**
+ * Single project entry in the org contributors project distribution response
+ */
+export interface OrgContributorsProjectDistributionItem {
+  projectId: string;
+  projectName: string;
+  contributorCount: number;
+  contributorPercentage: number;
+}
+
+/**
+ * API response for org contributors project distribution endpoint
+ * Powers the bar chart in the Org Active Contributors drawer (top 5 projects)
+ */
+export interface OrgContributorsProjectDistributionResponse {
+  projects: OrgContributorsProjectDistributionItem[];
+}
+
+// ============================================
+// Org Maintainers Drawer
+// ============================================
+
+/**
+ * Raw Snowflake row from ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_ORG_REPOSITORY_MONTHLY
+ * Contains monthly active maintainer counts for an organization within a foundation
+ */
+export interface OrgMaintainersMonthlyRow {
+  FOUNDATION_SLUG: string;
+  ACCOUNT_ID: string;
+  REPOSITORY_SCOPE: string;
+  METRIC_MONTH: Date | string;
+  ACTIVE_MAINTAINERS: number;
+  ACTIVE_PROJECTS: number;
+}
+
+/**
+ * API response for org maintainers monthly trend endpoint
+ * Powers the line chart in the Org Maintainers drawer
+ */
+export interface OrgMaintainersMonthlyResponse {
+  monthlyData: number[];
+  monthlyLabels: string[];
+  totalMaintainers: number;
+}
+
+/**
+ * Raw Snowflake row from ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_ORG_DISTRIBUTION
+ * Contains per-project maintainer distribution for an organization within a foundation
+ */
+export interface OrgMaintainersDistributionRow {
+  FOUNDATION_SLUG: string;
+  ACCOUNT_ID: string;
+  REPOSITORY_SCOPE: string;
+  TIME_RANGE: string;
+  PROJECT_ID: string;
+  PROJECT_NAME: string;
+  PROJECT_RANK: number;
+  MAINTAINER_COUNT: number;
+}
+
+/**
+ * Single project entry in the org maintainers distribution response
+ */
+export interface OrgMaintainersDistributionItem {
+  projectId: string;
+  projectName: string;
+  maintainerCount: number;
+}
+
+/**
+ * API response for org maintainers distribution endpoint
+ * Powers the bar chart in the Org Maintainers drawer (top 5 projects)
+ */
+export interface OrgMaintainersDistributionResponse {
+  projects: OrgMaintainersDistributionItem[];
+}
+
+/**
+ * Raw Snowflake row from ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_ORG_KEY_MEMBERS
+ * Contains key maintainer members for an organization within a foundation
+ */
+export interface OrgMaintainersKeyMemberRow {
+  FOUNDATION_SLUG: string;
+  ACCOUNT_ID: string;
+  REPOSITORY_SCOPE: string;
+  TIME_RANGE: string;
+  MEMBER_ID: string;
+  USER_ID: string;
+  USER_FULL_NAME: string;
+  USER_TITLE: string | null;
+  USER_PHOTO_URL: string;
+  PROJECT_LIST: string;
+  PROJECT_COUNT: number;
+}
+
+/**
+ * Single key maintainer member entry
+ */
+export interface OrgMaintainersKeyMember {
+  userId: string;
+  fullName: string;
+  title: string | null;
+  photoUrl: string;
+  projectList: string;
+  projectCount: number;
+}
+
+/**
+ * API response for org maintainers key members endpoint
+ * Powers the key members list in the Org Maintainers drawer
+ */
+export interface OrgMaintainersKeyMembersResponse {
+  members: OrgMaintainersKeyMember[];
+}
+
+// ============================================
+// Org Event Attendees Drawer
+// ============================================
+
+/**
+ * API response for org event attendees monthly trend endpoint
+ * Powers the bar chart in the Org Event Attendees drawer
+ * Uses per-month ATTENDED_COUNT (not cumulative)
+ */
+export interface OrgEventAttendeesMonthlyResponse {
+  monthlyData: number[];
+  monthlyLabels: string[];
+  totalAttendees: number;
+}
+
+// ============================================
+// Org Event Speakers Monthly
+// ============================================
+
+/**
+ * API response for org event speakers monthly trend endpoint
+ * Powers the bar chart in the Org Event Speakers drawer
+ * Uses per-month SPEAKER_COUNT from FOUNDATION_EVENT_ATTENDANCE_ORG_MONTHLY
+ */
+export interface OrgEventSpeakersMonthlyResponse {
+  monthlyData: number[];
+  monthlyLabels: string[];
+  totalSpeakers: number;
+}
+
+// ============================================
+// Org Training Enrollments
+// ============================================
+
+/**
+ * API response for org training enrollments monthly trend endpoint
+ * Powers the line chart in the Org Training Enrollments drawer
+ * Uses MONTHLY_ENROLLMENT_COUNT from FOUNDATION_TRAINING_ENROLLMENTS_ORG_MONTHLY
+ */
+export interface OrgTrainingEnrollmentsMonthlyResponse {
+  monthlyData: number[];
+  monthlyLabels: string[];
+  totalEnrollments: number;
+}
+
+/**
+ * A single project bucket entry in the training enrollments distribution
+ */
+export interface OrgTrainingEnrollmentsDistributionItem {
+  projectBucket: string;
+  enrollmentCount: number;
+}
+
+/**
+ * API response for org training enrollments distribution endpoint
+ * Powers the bar chart in the Org Training Enrollments drawer
+ * Uses PROJECT_BUCKET and ENROLLMENT_COUNT from FOUNDATION_TRAINING_ENROLLMENTS_ORG_DISTRIBUTION
+ */
+export interface OrgTrainingEnrollmentsDistributionResponse {
+  projects: OrgTrainingEnrollmentsDistributionItem[];
+}
+
+// ============================================
+// Org Certified Employees
+// ============================================
+
+/**
+ * API response for org certified employees monthly trend endpoint
+ * Powers the line chart in the Org Certified Employees drawer
+ * Uses cumulative MONTHLY_CERTIFIED_EMPLOYEES from FOUNDATION_CERTIFIED_EMPLOYEES_ORG_MONTHLY
+ */
+export interface OrgCertifiedEmployeesMonthlyResponse {
+  monthlyData: number[];
+  monthlyLabels: string[];
+  totalCertifiedEmployees: number;
+}
+
+/**
+ * A single certification program entry in the certified employees distribution
+ */
+export interface OrgCertifiedEmployeesDistributionItem {
+  certificationBucket: string;
+  certifiedEmployeeCount: number;
+}
+
+/**
+ * API response for org certified employees distribution endpoint
+ * Powers the bar chart in the Org Certified Employees drawer
+ * Uses CERTIFICATION_BUCKET and CERTIFIED_EMPLOYEE_COUNT from FOUNDATION_CERTIFIED_EMPLOYEES_ORG_DISTRIBUTION
+ */
+export interface OrgCertifiedEmployeesDistributionResponse {
+  programs: OrgCertifiedEmployeesDistributionItem[];
 }

@@ -1,0 +1,111 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Streamed content (character-drained message text) -->
+@if (content()) {
+  <div class="mb-3" data-testid="lens-response-content">
+    <lfx-markdown-renderer [content]="content()" />
+  </div>
+}
+
+<!-- Structured blocks -->
+@for (block of blocks(); track $index) {
+  @switch (block.type) {
+    @case ('message') {
+      <div class="mb-3" data-testid="lens-response-message-block">
+        <lfx-markdown-renderer [content]="block.content" />
+      </div>
+    }
+    @case ('sql') {
+      @if (block.result) {
+        <div class="mb-3 overflow-hidden rounded-xl bg-white shadow-sm" data-testid="lens-response-sql-block">
+          <!-- Header -->
+          <div class="flex items-center gap-2 border-b border-gray-100 px-4 py-2.5">
+            <span class="inline-block h-2 w-2 rounded-full bg-blue-400"></span>
+            <span class="text-xs font-medium text-gray-700">Results</span>
+            <span class="rounded-full bg-gray-100 px-2 py-0.5 text-[10px] text-gray-500">{{ block.result.rowCount }} rows</span>
+          </div>
+
+          @if (!block.result.data.length) {
+            <!-- Empty result -->
+            <div class="px-4 py-6 text-center text-sm text-gray-400" data-testid="lens-response-empty-result">No rows returned</div>
+          } @else if (isSingleMetric(block)) {
+            <!-- Single metric display -->
+            <div class="flex flex-col items-center gap-1 py-6" data-testid="lens-response-single-metric">
+              <span class="text-3xl font-bold text-gray-900">{{ getSingleMetricValue(block) }}</span>
+              <span class="text-[11px] font-medium uppercase tracking-wider text-gray-400">{{ getSingleMetricLabel(block) }}</span>
+            </div>
+          } @else {
+            <!-- Data table -->
+            <div class="max-h-[280px] overflow-y-auto overflow-x-auto">
+              <table class="w-full text-sm" data-testid="lens-response-data-table">
+                <thead>
+                  <tr class="border-b border-gray-100 bg-gray-50/50">
+                    @for (col of block.result.columns; track col) {
+                      <th class="sticky top-0 bg-gray-50/50 px-4 py-2 text-left text-[11px] font-medium uppercase tracking-wider text-gray-400">
+                        {{ col }}
+                      </th>
+                    }
+                  </tr>
+                </thead>
+                <tbody>
+                  @for (row of block.result.data; track $index) {
+                    <tr class="sql-row border-b border-gray-50 last:border-b-0">
+                      @for (col of block.result.columns; track col; let first = $first) {
+                        <td
+                          class="whitespace-nowrap px-4 py-2 text-[12px]"
+                          [class.font-medium]="first"
+                          [class.text-gray-900]="first"
+                          [class.text-gray-600]="!first">
+                          {{ row[col] }}
+                        </td>
+                      }
+                    </tr>
+                  }
+                </tbody>
+              </table>
+            </div>
+            @if (block.result.rowCount > block.result.data.length) {
+              <div class="border-t border-gray-100 px-4 py-2 text-[11px] text-gray-400">
+                Showing {{ block.result.data.length }} of {{ block.result.rowCount }} rows
+              </div>
+            }
+          }
+
+          <!-- Collapsible SQL viewer -->
+          @if (block.sql) {
+            <div class="border-t border-gray-100">
+              <button
+                (click)="toggleSqlView($index)"
+                class="flex w-full items-center gap-1.5 px-4 py-2 text-[11px] text-gray-400 transition-colors hover:text-gray-600"
+                data-testid="lens-response-sql-toggle">
+                <i class="fa-regular fa-code text-[10px]"></i>
+                {{ isSqlExpanded($index) ? 'Hide SQL' : 'View SQL' }}
+                <i class="fa-solid text-[8px]" [class.fa-chevron-up]="isSqlExpanded($index)" [class.fa-chevron-down]="!isSqlExpanded($index)"></i>
+              </button>
+              @if (isSqlExpanded($index)) {
+                <div class="sql-viewer border-t border-gray-100 bg-gray-50 px-4 py-3">
+                  <pre class="overflow-x-auto font-mono text-[11px] leading-relaxed text-gray-600">{{ block.sql }}</pre>
+                </div>
+              }
+            </div>
+          }
+        </div>
+      }
+    }
+    @case ('suggestions') {
+      <div class="mt-4 flex flex-col gap-2" data-testid="lens-response-suggestions">
+        <span class="text-[11px] font-medium uppercase tracking-wider text-gray-400">Explore further</span>
+        @for (item of block.items; track item) {
+          <button
+            (click)="suggestionClick.emit(item)"
+            class="suggestion-row flex items-center gap-3 rounded-lg border border-gray-200 bg-gray-50 px-4 py-3 text-left text-[13px] text-gray-600 transition-all hover:border-gray-300 hover:bg-gray-100"
+            data-testid="lens-suggestion-chip">
+            <span class="flex-1">{{ item }}</span>
+            <i class="fa-solid fa-arrow-right text-[10px] text-gray-300"></i>
+          </button>
+        }
+      </div>
+    }
+  }
+}

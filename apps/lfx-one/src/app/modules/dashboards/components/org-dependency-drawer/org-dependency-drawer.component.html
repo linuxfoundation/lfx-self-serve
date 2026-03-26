@@ -1,0 +1,70 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="org-dependency-drawer">
+  <!-- Header -->
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full" data-testid="org-dependency-drawer-header">
+      <!-- Title + Subtitle -->
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="org-dependency-drawer-title">Organization Dependency</h2>
+        <p class="text-sm text-gray-500">Board Member · Foundation view</p>
+      </div>
+
+      <!-- Close Button -->
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
+        aria-label="Close panel"
+        data-testid="org-dependency-drawer-close">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <!-- Content -->
+  <div class="flex flex-col gap-6 pb-2" data-testid="org-dependency-drawer-content">
+    <!-- Chart Section -->
+    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="org-dependency-drawer-chart-section">
+      <!-- Section header: description + big number -->
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex flex-col gap-1 flex-1">
+          <h3 class="text-sm font-semibold text-gray-900">Organization dependency</h3>
+          <p class="text-sm text-gray-600 leading-relaxed">
+            Distribution of contributions across organizations, highlighting the group of organizations whose contributors performed 51%+ of all contributions
+            in the selected time period.
+            <a
+              href="https://docs.linuxfoundation.org/lfx/insights/v2-current/all-projects/trends/overview"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="text-blue-500 hover:underline">
+              Learn more
+            </a>
+          </p>
+        </div>
+        <span class="text-3xl font-bold text-gray-900 flex-shrink-0" data-testid="org-dependency-drawer-bus-factor-value">
+          {{ summaryData().topCompaniesCount }}
+        </span>
+      </div>
+
+      <!-- Horizontal Bar Chart -->
+      <div class="h-[160px]" data-testid="org-dependency-drawer-chart">
+        <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
+      </div>
+    </div>
+
+    <!-- Insights Handoff -->
+    <lfx-insights-handoff-section
+      title="Looking for detailed contribution metrics?"
+      description="Detailed contribution patterns, activity breakdowns, and participation trends are available in LFX Insights."
+      link="https://insights.linuxfoundation.org"
+      data-testid="org-dependency-drawer-insights-handoff"></lfx-insights-handoff-section>
+  </div>
+</p-drawer>

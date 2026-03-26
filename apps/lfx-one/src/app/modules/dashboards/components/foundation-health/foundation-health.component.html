@@ -67,7 +67,9 @@
                 [chartOptions]="barChartOptions"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
-                [loading]="card.loading"></lfx-metric-card>
+                [loading]="card.loading"
+                [clickable]="!!card.drawerType"
+                (cardClick)="handleCardClick(card.drawerType!)"></lfx-metric-card>
             }
 
             <!-- Top Projects List - Custom content -->
@@ -79,7 +81,9 @@
                 [chartType]="card.chartType"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
-                [loading]="card.loading">
+                [loading]="card.loading"
+                [clickable]="!!card.drawerType"
+                (cardClick)="handleCardClick(card.drawerType!)">
                 <ng-template #customContent>
                   @if (card.topProjects) {
                     <div class="flex flex-col gap-0.5 p-0 pl-[60px] m-0 mb-[5px]">
@@ -96,7 +100,7 @@
               </lfx-metric-card>
             }
 
-            <!-- Company Bus Factor - Custom content -->
+            <!-- Organization Dependency - Custom content -->
             @case ('bus-factor') {
               <lfx-metric-card
                 [title]="card.title"
@@ -105,19 +109,21 @@
                 [chartType]="card.chartType"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
-                [loading]="card.loading">
+                [loading]="card.loading"
+                [clickable]="!!card.drawerType"
+                (cardClick)="handleCardClick(card.drawerType!)">
                 <ng-template #customContent>
                   @if (card.busFactor) {
                     <div class="flex-1 flex flex-col justify-end pb-2">
                       <div class="flex gap-0">
                         <div [style.width.%]="card.busFactor.topCompaniesPercentage" class="flex flex-col gap-1">
                           <div class="text-xs font-medium text-gray-700">
-                            {{ card.busFactor.topCompaniesCount }} Companies ({{ card.busFactor.topCompaniesPercentage }}%)
+                            {{ card.busFactor.topCompaniesCount }} Orgs ({{ card.busFactor.topCompaniesPercentage }}%)
                           </div>
                           <div class="h-4 rounded-l-sm bg-blue-500"></div>
                         </div>
                         <div [style.width.%]="card.busFactor.otherCompaniesPercentage" class="flex flex-col gap-1">
-                          <div class="text-xs text-gray-600 text-right">{{ card.busFactor.otherCompaniesCount }} Other Companies</div>
+                          <div class="text-xs text-gray-600 text-right">{{ card.busFactor.otherCompaniesCount }} Other Orgs</div>
                           <div class="h-4 bg-blue-200 rounded-r-sm"></div>
                         </div>
                       </div>
@@ -136,7 +142,9 @@
                 [chartType]="card.chartType"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
-                [loading]="card.loading">
+                [loading]="card.loading"
+                [clickable]="!!card.drawerType"
+                (cardClick)="handleCardClick(card.drawerType!)">
                 <ng-template #customContent>
                   @if (card.healthScores) {
                     <div class="flex-1 flex flex-col justify-end p-0">
@@ -171,7 +179,9 @@
                 [chartOptions]="card.chartOptions"
                 [value]="card.value"
                 [subtitle]="card.subtitle"
-                [loading]="card.loading"></lfx-metric-card>
+                [loading]="card.loading"
+                [clickable]="!!card.drawerType"
+                (cardClick)="handleCardClick(card.drawerType!)"></lfx-metric-card>
             }
           }
         }
@@ -195,3 +205,41 @@
     </div>
   }
 </section>
+
+<!-- Drill-Down Drawers -->
+<lfx-total-value-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.TotalValueOfProjects"
+  (visibleChange)="handleDrawerClose()"
+  [summaryData]="softwareValueData()"></lfx-total-value-drawer>
+
+<lfx-total-projects-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.TotalProjects"
+  (visibleChange)="handleDrawerClose()"
+  [data]="totalProjectsData()"></lfx-total-projects-drawer>
+
+<lfx-total-members-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.TotalMembers"
+  (visibleChange)="handleDrawerClose()"
+  [data]="totalMembersData()"></lfx-total-members-drawer>
+
+<lfx-active-contributors-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.ActiveContributors"
+  (visibleChange)="handleDrawerClose()"
+  [data]="activeContributorsData()"></lfx-active-contributors-drawer>
+
+<lfx-maintainers-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.Maintainers"
+  (visibleChange)="handleDrawerClose()"
+  [data]="maintainersData()"></lfx-maintainers-drawer>
+
+<lfx-events-drawer [visible]="activeDrawer() === DashboardDrawerType.Events" (visibleChange)="handleDrawerClose()" [data]="eventsData()"></lfx-events-drawer>
+
+<lfx-project-health-scores-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.ProjectHealthScores"
+  (visibleChange)="handleDrawerClose()"
+  [data]="healthScoresData()"></lfx-project-health-scores-drawer>
+
+<lfx-org-dependency-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.OrganizationDependency"
+  (visibleChange)="handleDrawerClose()"
+  [summaryData]="companyBusFactorData()"></lfx-org-dependency-drawer>

@@ -30,19 +30,6 @@
                 <lfx-tag [value]="badge.text" [severity]="badge.severity" [icon]="badge.icon" [attr.data-testid]="'meeting-badge-type'"></lfx-tag>
               }
 
-              <!-- View Guests Button (for invited users) -->
-              @if (authenticated() && meeting().invited && meeting().show_meeting_attendees && !isLegacyMeeting()) {
-                <lfx-button
-                  label="Show Members"
-                  icon="fa-light fa-users"
-                  [outlined]="true"
-                  severity="primary"
-                  (onClick)="onRegistrantsToggle()"
-                  styleClass="py-[0.15rem] text-xs"
-                  data-testid="view-members-button">
-                </lfx-button>
-              }
-
               <!-- Recurring Badge -->
               @if (meeting().recurrence) {
                 <lfx-tag
@@ -51,6 +38,20 @@
                   icon="fa-light fa-repeat"
                   pTooltip="This is a recurring meeting"
                   data-testid="recurring-badge"></lfx-tag>
+              }
+
+              <!-- View Guests Button (for organizers and invited users) -->
+              @if (authenticated() && (meeting().organizer || meeting().invited)) {
+                <lfx-button
+                  label="Show Members"
+                  icon="fa-light fa-users"
+                  [outlined]="true"
+                  severity="primary"
+                  [disabled]="!meeting().organizer && !meeting().invited"
+                  (onClick)="onRegistrantsToggle()"
+                  styleClass="py-[0.15rem] text-xs"
+                  data-testid="view-members-button">
+                </lfx-button>
               }
             </div>
 
@@ -165,21 +166,39 @@
                   </div>
                 </div>
               }
-            } @else if (authenticated() && meeting().organizer && !isLegacyMeeting()) {
-              <!-- RSVP Details - Future Meeting (Authenticated Organizers) -->
-              <div class="w-full md:w-[296px]">
-                <lfx-meeting-rsvp-details
-                  [meeting]="meeting()"
-                  [project]="project()"
-                  [currentOccurrence]="currentOccurrence()"
-                  [pastMeeting]="false"
-                  [showAddButton]="true"
-                  [additionalRegistrantsCount]="0"
-                  backgroundColor="bg-gray-50"
-                  borderColor="border-gray-200">
-                </lfx-meeting-rsvp-details>
+            } @else if (authenticated() && meeting().organizer) {
+              <!-- RSVP Section - Future Meeting (Authenticated Organizers) -->
+              <div class="w-full md:w-[296px] flex flex-col gap-2">
+                @if (canToggleRsvpView() && showMyRsvp()) {
+                  <!-- Show RSVP Button Group when organizer toggles to set their own RSVP -->
+                  <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="currentOccurrence()?.occurrence_id"> </lfx-rsvp-button-group>
+                } @else {
+                  <!-- Show RSVP Details for organizers (default view) -->
+                  <lfx-meeting-rsvp-details
+                    [meeting]="meeting()"
+                    [project]="project()"
+                    [currentOccurrence]="currentOccurrence()"
+                    [pastMeeting]="false"
+                    [showAddButton]="true"
+                    [additionalRegistrantsCount]="0"
+                    backgroundColor="bg-gray-50"
+                    borderColor="border-gray-200">
+                  </lfx-meeting-rsvp-details>
+                }
+                @if (canToggleRsvpView()) {
+                  <lfx-button
+                    class="w-full"
+                    styleClass="w-full"
+                    [icon]="showMyRsvp() ? 'fa-light fa-users' : 'fa-light fa-hand'"
+                    [label]="showMyRsvp() ? 'Show Guests' : 'Set My RSVP'"
+                    size="small"
+                    severity="secondary"
+                    (onClick)="onRsvpViewToggle()"
+                    data-testid="toggle-rsvp-view-button">
+                  </lfx-button>
+                }
               </div>
-            } @else if (authenticated() && !isLegacyMeeting()) {
+            } @else if (authenticated()) {
               <!-- RSVP Container - Future Meeting (Authenticated Non-Organizers) -->
               <div class="w-full md:w-[296px]">
                 @if (isInvited()) {
@@ -202,7 +221,7 @@
             }
           </div>
 
-          <!-- Meeting Registrants Drawer (only shown if user is invited) -->
+          <!-- Meeting Registrants Drawer (shown for organizers and invited users) -->
 
           <p-drawer
             [visible]="showRegistrants()"
@@ -264,43 +283,59 @@
 
             <!-- Right: Resources Card (fixed width) -->
             <div class="w-full md:w-[296px]">
-              <div class="bg-gray-50 border border-gray-200 rounded-md p-3" [attr.data-testid]="'resources-card'">
-                <!-- Resources Header -->
-                <div class="flex items-center gap-2 mb-2">
-                  <i class="fa-light fa-paperclip text-gray-500 text-xs"></i>
-                  <h3 class="text-gray-600 text-sm font-normal">Resources</h3>
-                </div>
-
-                <!-- Attachments List -->
-                @if (attachments().length > 0) {
-                  <div class="flex flex-col gap-2">
-                    @for (attachment of attachments(); track attachment.uid; let i = $index) {
-                      <a
-                        [href]="attachment.type === 'link' ? attachment.link : '/api/meetings/' + meeting().uid + '/attachments/' + attachment.uid"
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        class="bg-gray-200 hover:bg-gray-300 rounded px-3 py-2 flex items-center gap-3 min-w-[180px] transition-colors cursor-pointer"
-                        [attr.data-testid]="'meeting-attachment-' + i">
-                        <!-- Icon - File or Link -->
-                        @if (attachment.type === 'link') {
-                          <i class="fa-light fa-arrow-up-right-from-square text-3xl text-black w-8 flex-shrink-0"></i>
-                        } @else {
-                          <i [class]="(attachment.mime_type || '' | fileTypeIcon) + ' text-3xl text-black w-8 flex-shrink-0'"></i>
-                        }
-
-                        <!-- Attachment Name -->
-                        <span class="text-sm text-gray-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-sans">{{ attachment.name }}</span>
-                      </a>
+              @defer (on idle) {
+                <div class="bg-gray-50 border border-gray-200 rounded-md p-3" [attr.data-testid]="'resources-card'">
+                  <!-- Resources Header -->
+                  <div class="flex items-center gap-2 mb-2">
+                    <i class="fa-light fa-paperclip text-gray-500 text-xs"></i>
+                    <h3 class="text-gray-600 text-sm font-normal">Resources</h3>
+                    @if (attachments().length > 0) {
+                      <span class="inline-flex items-center text-[10px] font-medium text-gray-500 bg-gray-200/80 px-1.5 py-0.5 rounded-full">
+                        {{ attachments().length }}
+                      </span>
                     }
                   </div>
-                } @else {
-                  @if (!authenticated() && meeting().visibility === 'private') {
-                    <p class="text-sm text-gray-500 italic">If you have been invited to this meeting, resources may be available when you sign in.</p>
+
+                  <!-- Resources List -->
+                  @if (attachments().length > 0) {
+                    <div class="flex flex-col gap-2">
+                      @for (attachment of attachments(); track attachment.uid; let i = $index) {
+                        @if (attachment.type === 'link') {
+                          <a
+                            [href]="attachment.link"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="bg-gray-200 hover:bg-gray-300 rounded px-3 py-2 flex items-center gap-3 min-w-[180px] transition-colors cursor-pointer"
+                            [attr.data-testid]="'meeting-resource-' + i">
+                            <i class="fa-light fa-arrow-up-right-from-square text-3xl text-black w-8 flex-shrink-0"></i>
+                            <span class="text-sm text-gray-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-sans">{{
+                              attachment.name
+                            }}</span>
+                          </a>
+                        } @else {
+                          <a
+                            (click)="downloadAttachment(attachment)"
+                            class="bg-gray-200 hover:bg-gray-300 rounded px-3 py-2 flex items-center gap-3 min-w-[180px] transition-colors cursor-pointer"
+                            [attr.data-testid]="'meeting-resource-file-' + i">
+                            <i class="fa-light fa-file-arrow-down text-3xl text-black w-8 flex-shrink-0"></i>
+                            <span class="text-sm text-gray-950 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-sans">{{
+                              attachment.name
+                            }}</span>
+                          </a>
+                        }
+                      }
+                    </div>
                   } @else {
-                    <p class="text-sm text-gray-500 italic">No resources available</p>
+                    @if (!authenticated() && meeting().visibility === 'private') {
+                      <p class="text-sm text-gray-500 italic">If you have been invited to this meeting, resources may be available when you sign in.</p>
+                    } @else {
+                      <p class="text-sm text-gray-500 italic">No resources available</p>
+                    }
                   }
-                }
-              </div>
+                </div>
+              } @placeholder {
+                <div class="bg-gray-50 border border-gray-200 rounded-md p-3 animate-pulse min-h-[80px]"></div>
+              }
             </div>
           </div>
 

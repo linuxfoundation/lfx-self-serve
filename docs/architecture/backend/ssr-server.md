@@ -1,8 +1,8 @@
 # SSR Server Architecture
 
-## 🖥 Express.js with Angular 19 SSR
+## 🖥 Express.js with Angular 20 SSR
 
-The LFX application employs a hybrid architecture combining Express.js as the backend server with Angular 19's built-in server-side rendering capabilities. This design provides both traditional server functionality for API endpoints and modern client-side experience through SSR.
+The LFX application employs a hybrid architecture combining Express.js as the backend server with Angular 20's built-in server-side rendering capabilities. This design provides both traditional server functionality for API endpoints and modern client-side experience through SSR.
 
 ### Architectural Overview
 
@@ -23,7 +23,7 @@ The server employs a **dual-mode startup strategy** that automatically detects i
 
 This approach eliminates the need for separate server configurations across development and production environments.
 
-## 🔧 Angular 19 SSR Integration
+## 🔧 Angular 20 SSR Integration
 
 ### Static Asset Strategy
 

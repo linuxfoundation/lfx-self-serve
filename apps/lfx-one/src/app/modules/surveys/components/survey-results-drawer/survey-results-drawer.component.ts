@@ -2,14 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, effect, input, model, output, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, model, output, signal, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NpsGaugeComponent } from '@components/nps-gauge/nps-gauge.component';
 import { SurveyStatus } from '@lfx-one/shared';
-import { NpsBreakdown, SurveyParticipationStats, SurveyResultsDetail } from '@lfx-one/shared/interfaces';
+import { NpsBreakdown, Survey, SurveyComment, SurveyParticipationStats, SurveyResultsDetail } from '@lfx-one/shared/interfaces';
 import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { SurveyStatusLabelPipe } from '@pipes/survey-status-label.pipe';
+import { ProjectContextService } from '@services/project-context.service';
+import { SurveyService } from '@services/survey.service';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
+import { catchError, finalize, of, startWith, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-survey-results-drawer',
@@ -18,8 +22,13 @@ import { SkeletonModule } from 'primeng/skeleton';
   styleUrl: './survey-results-drawer.component.scss',
 })
 export class SurveyResultsDrawerComponent {
+  // === Services ===
+  private readonly surveyService = inject(SurveyService);
+  private readonly projectContextService = inject(ProjectContextService);
+
   // === Inputs ===
-  public readonly survey = input<SurveyResultsDetail | null>(null);
+  public readonly surveyId = input<string | null>(null);
+  public readonly listSurvey = input<Survey | null>(null);
   public readonly hasPMOAccess = input<boolean>(false);
 
   // === Model Signals (two-way binding) ===
@@ -33,6 +42,9 @@ export class SurveyResultsDrawerComponent {
   protected readonly loading = signal<boolean>(false);
   protected readonly showAdminMenu = signal<boolean>(false);
 
+  // === Derived Signals (from API) ===
+  protected readonly survey: Signal<Survey | null> = this.initSurvey();
+
   // === Computed Signals ===
   protected readonly isSurveyClosed: Signal<boolean> = this.initIsSurveyClosed();
   protected readonly isNpsSurvey: Signal<boolean> = this.initIsNpsSurvey();
@@ -40,21 +52,9 @@ export class SurveyResultsDrawerComponent {
   protected readonly npsScore: Signal<number> = this.initNpsScore();
   protected readonly npsBreakdown: Signal<NpsBreakdown | null> = this.initNpsBreakdown();
   protected readonly groupName: Signal<string> = this.initGroupName();
-  protected readonly hasComments: Signal<boolean> = this.initHasComments();
-  protected readonly commentsCount: Signal<number> = this.initCommentsCount();
-
-  // === Constructor ===
-  public constructor() {
-    // Simulate loading when survey changes
-    effect(() => {
-      const s = this.survey();
-      if (s && this.visible()) {
-        this.loading.set(true);
-        // Simulate API fetch delay
-        setTimeout(() => this.loading.set(false), 500);
-      }
-    });
-  }
+  protected readonly comments: Signal<SurveyComment[]> = this.initComments();
+  protected readonly hasComments: Signal<boolean> = computed(() => this.comments().length > 0);
+  protected readonly commentsCount: Signal<number> = computed(() => this.comments().length);
 
   // === Protected Methods ===
   protected onClose(): void {
@@ -72,16 +72,16 @@ export class SurveyResultsDrawerComponent {
 
   protected onDuplicate(): void {
     const s = this.survey();
-    if (s?.id) {
-      this.duplicate.emit(s.id);
+    if (s?.uid) {
+      this.duplicate.emit(s.uid);
       this.closeAdminMenu();
     }
   }
 
   protected onCloseSurvey(): void {
     const s = this.survey();
-    if (s?.id) {
-      this.closeSurvey.emit(s.id);
+    if (s?.uid) {
+      this.closeSurvey.emit(s.uid);
       this.closeAdminMenu();
     }
   }
@@ -92,6 +92,31 @@ export class SurveyResultsDrawerComponent {
   }
 
   // === Private Initializers ===
+  private initSurvey(): Signal<Survey | null> {
+    return toSignal(
+      toObservable(this.surveyId).pipe(
+        switchMap((id) => {
+          if (!id) {
+            this.loading.set(false);
+            return of(null);
+          }
+
+          this.loading.set(true);
+          const listData = this.listSurvey();
+          const project = this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation();
+          const projectId = project?.uid ?? undefined;
+
+          return this.surveyService.getSurvey(id, projectId).pipe(
+            catchError(() => of(listData)),
+            finalize(() => this.loading.set(false)),
+            startWith(listData)
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
   private initIsSurveyClosed(): Signal<boolean> {
     return computed(() => {
       const s = this.survey();
@@ -128,12 +153,12 @@ export class SurveyResultsDrawerComponent {
       const s = this.survey();
       if (!s?.is_nps_survey) return 0;
 
-      // Use provided nps_score if available, otherwise calculate from breakdown
-      if (s.nps_score !== undefined) {
-        return s.nps_score;
+      // Use top-level nps_value from detail API if available
+      if (s.nps_value !== undefined) {
+        return s.nps_value;
       }
 
-      // Calculate from committees if available
+      // Fall back: calculate from committees
       if (s.committees?.length > 0) {
         const totalResponses = s.committees.reduce((sum, c) => sum + c.total_responses, 0);
         if (totalResponses > 0) {
@@ -151,20 +176,24 @@ export class SurveyResultsDrawerComponent {
       const s = this.survey();
       if (!s?.is_nps_survey) return null;
 
-      // Use provided breakdown if available
-      if (s.nps_breakdown) {
-        return s.nps_breakdown;
+      // Use top-level counts from detail API if available
+      if (s.num_promoters !== undefined && s.num_passives !== undefined && s.num_detractors !== undefined) {
+        return {
+          promoters: s.num_promoters,
+          passives: s.num_passives,
+          detractors: s.num_detractors,
+          nonResponses: Math.max(0, (s.total_recipients || 0) - (s.total_responses || 0)),
+        };
       }
 
-      // Calculate from committees if available
+      // Fall back: calculate from committees
       if (s.committees?.length > 0) {
-        const breakdown: NpsBreakdown = {
+        return {
           promoters: s.committees.reduce((sum, c) => sum + c.num_promoters, 0),
           passives: s.committees.reduce((sum, c) => sum + c.num_passives, 0),
           detractors: s.committees.reduce((sum, c) => sum + c.num_detractors, 0),
           nonResponses: Math.max(0, s.total_recipients - s.total_responses),
         };
-        return breakdown;
       }
 
       return null;
@@ -174,21 +203,21 @@ export class SurveyResultsDrawerComponent {
   private initGroupName(): Signal<string> {
     return computed(() => {
       const s = this.survey();
-      return s?.committees?.[0]?.committee_name || 'Unknown';
+      if (!s) return 'Unknown';
+
+      // For multi-committee surveys, use the category label
+      if (s.committees?.length > 1 && s.committee_category) {
+        return s.committee_category;
+      }
+
+      return s.committees?.[0]?.committee_name || s.committee_category || 'Unknown';
     });
   }
 
-  private initHasComments(): Signal<boolean> {
+  private initComments(): Signal<SurveyComment[]> {
     return computed(() => {
-      const s = this.survey();
-      return (s?.additional_comments?.length ?? 0) > 0;
-    });
-  }
-
-  private initCommentsCount(): Signal<number> {
-    return computed(() => {
-      const s = this.survey();
-      return s?.additional_comments?.length ?? 0;
+      const s = this.survey() as SurveyResultsDetail | null;
+      return s?.additional_comments ?? [];
     });
   }
 }

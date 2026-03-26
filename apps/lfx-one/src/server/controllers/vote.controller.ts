@@ -23,13 +23,35 @@ export class VoteController {
     });
 
     try {
-      const votes = await this.voteService.getVotes(req, req.query as Record<string, any>);
+      const { data, page_token } = await this.voteService.getVotes(req, req.query as Record<string, any>);
 
       logger.success(req, 'get_votes', startTime, {
-        vote_count: votes.length,
+        vote_count: data.length,
+        has_more_pages: !!page_token,
       });
 
-      res.json(votes);
+      res.json({ data, page_token });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /votes/count
+   */
+  public async getVotesCount(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_votes_count', {
+      query_params: logger.sanitize(req.query as Record<string, any>),
+    });
+
+    try {
+      const count = await this.voteService.getVotesCount(req, req.query as Record<string, any>);
+
+      logger.success(req, 'get_votes_count', startTime, {
+        count,
+      });
+
+      res.json({ count });
     } catch (error) {
       next(error);
     }
@@ -49,7 +71,6 @@ export class VoteController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_vote_by_id',
           service: 'vote_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -85,7 +106,7 @@ export class VoteController {
       const vote = await this.voteService.createVote(req, voteData);
 
       logger.success(req, 'create_vote', startTime, {
-        vote_uid: vote.vote_uid,
+        uid: vote.uid,
         project_uid: vote.project_uid,
         name: vote.name,
       });
@@ -112,7 +133,6 @@ export class VoteController {
         !validateUidParameter(uid, req, next, {
           operation: 'update_vote',
           service: 'vote_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -146,7 +166,6 @@ export class VoteController {
         !validateUidParameter(uid, req, next, {
           operation: 'delete_vote',
           service: 'vote_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -166,6 +185,39 @@ export class VoteController {
   }
 
   /**
+   * GET /votes/:uid/results
+   */
+  public async getVoteResults(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+    const startTime = logger.startOperation(req, 'get_vote_results', {
+      vote_uid: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_vote_results',
+          service: 'vote_controller',
+        })
+      ) {
+        return;
+      }
+
+      const results = await this.voteService.getVoteResults(req, uid);
+
+      logger.success(req, 'get_vote_results', startTime, {
+        vote_uid: uid,
+        num_poll_results: results.poll_results?.length ?? 0,
+        num_votes_cast: results.num_votes_cast,
+      });
+
+      res.json(results);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * PUT /votes/:uid/enable
    */
   public async enableVote(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -179,7 +231,6 @@ export class VoteController {
         !validateUidParameter(uid, req, next, {
           operation: 'enable_vote',
           service: 'vote_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
@@ -189,8 +240,6 @@ export class VoteController {
 
       logger.success(req, 'enable_vote', startTime, {
         vote_uid: uid,
-        project_uid: vote.project_uid,
-        name: vote.name,
         status: vote.status,
       });
 

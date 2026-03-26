@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { TitleCasePipe } from '@angular/common';
-import { Component, computed, inject, input, OnInit, output, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, OnInit, output, signal, Signal } from '@angular/core';
+import { FullNamePipe } from '@pipes/full-name.pipe';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -14,10 +15,10 @@ import { TableComponent } from '@components/table/table.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { Committee, CommitteeMember } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
-import { PersonaService } from '@services/persona.service';
 import { ConfirmationService, MenuItem, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
+import { Skeleton } from 'primeng/skeleton';
 import { debounceTime, distinctUntilChanged, startWith, take } from 'rxjs';
 
 import { MemberFormComponent } from '../member-form/member-form.component';
@@ -28,6 +29,7 @@ import { MemberFormComponent } from '../member-form/member-form.component';
     TitleCasePipe,
     ReactiveFormsModule,
     CardComponent,
+    FullNamePipe,
     MenuComponent,
     ButtonComponent,
     InputTextComponent,
@@ -35,6 +37,7 @@ import { MemberFormComponent } from '../member-form/member-form.component';
     TableComponent,
     ConfirmDialogModule,
     DynamicDialogModule,
+    Skeleton,
   ],
   providers: [DialogService],
   templateUrl: './committee-members.component.html',
@@ -46,7 +49,6 @@ export class CommitteeMembersComponent implements OnInit {
   private readonly confirmationService = inject(ConfirmationService);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
-  private readonly personaService = inject(PersonaService);
 
   // Input signals
   public committee = input.required<Committee | null>();
@@ -55,13 +57,21 @@ export class CommitteeMembersComponent implements OnInit {
 
   public readonly refresh = output<void>();
 
-  // Class variables with types
-  public selectedMember: WritableSignal<CommitteeMember | null>;
-  public isDeleting: WritableSignal<boolean>;
+  // Simple writable signals
+  public selectedMember = signal<CommitteeMember | null>(null);
+  public isDeleting = signal<boolean>(false);
   public memberActionMenuItems: MenuItem[] = [];
   public committeeLabel = COMMITTEE_LABEL;
-  public isBoardMember: Signal<boolean>;
-  public canManageMembers: Signal<boolean>;
+
+  // Computed signals — inline per component-organization.md
+  // Permission is solely driven by the API's writer flag
+  public readonly canManageMembers = computed(() => !!this.committee()?.writer);
+  // Default to hidden while committee is loading (fail closed for privacy)
+  public readonly isMembersVisible = computed(() => {
+    const committee = this.committee();
+    if (!committee) return false;
+    return committee.member_visibility !== 'hidden' || this.canManageMembers();
+  });
 
   // Filter-related variables
   public filterForm: FormGroup;
@@ -75,12 +85,6 @@ export class CommitteeMembersComponent implements OnInit {
   public organizationOptions: Signal<{ label: string; value: string | null }[]>;
 
   public constructor() {
-    // Initialize all class variables
-    this.selectedMember = signal<CommitteeMember | null>(null);
-    this.isDeleting = signal<boolean>(false);
-    // Initialize permission signals
-    this.isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
-    this.canManageMembers = computed(() => !this.isBoardMember() && !!this.committee()?.writer);
     // Initialize filter form
     this.filterForm = this.initializeFilterForm();
     this.searchTerm = this.initializeSearchTerm();
@@ -100,6 +104,8 @@ export class CommitteeMembersComponent implements OnInit {
   public toggleMemberActionMenu(event: Event, member: CommitteeMember, menuComponent: MenuComponent): void {
     event.stopPropagation();
     this.selectedMember.set(member);
+    // Rebuild menu items so MenuItem.url reflects the selected member's email
+    this.memberActionMenuItems = this.initializeMemberActionMenuItems(member);
     menuComponent.toggle(event);
   }
 
@@ -116,9 +122,9 @@ export class CommitteeMembersComponent implements OnInit {
           // Dialog will close itself
         },
       },
-    }) as DynamicDialogRef;
+    });
 
-    dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
+    dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
       if (result) {
         this.refreshMembers();
       }
@@ -142,9 +148,9 @@ export class CommitteeMembersComponent implements OnInit {
             // Dialog will close itself
           },
         },
-      }) as DynamicDialogRef;
+      });
 
-      dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
+      dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
         if (result) {
           this.refreshMembers();
         }
@@ -157,7 +163,7 @@ export class CommitteeMembersComponent implements OnInit {
     if (!member) return;
 
     this.confirmationService.confirm({
-      message: `Are you sure you want to remove ${member.first_name || ''} ${member.last_name || ''} from this committee? ` + 'This action cannot be undone.',
+      message: `Are you sure you want to remove ${this.getMemberDisplayName(member)} from this committee? This action cannot be undone.`,
       header: 'Remove Member',
       acceptLabel: 'Remove',
       rejectLabel: 'Cancel',
@@ -184,7 +190,7 @@ export class CommitteeMembersComponent implements OnInit {
       next: () => {
         this.isDeleting.set(false);
 
-        const memberName = member.first_name && member.last_name ? `${member.first_name} ${member.last_name}` : member.email || 'Member';
+        const memberName = this.getMemberDisplayName(member);
 
         this.messageService.add({
           severity: 'success',
@@ -195,9 +201,8 @@ export class CommitteeMembersComponent implements OnInit {
         // Refresh members list by re-fetching
         this.refreshMembers();
       },
-      error: (error) => {
+      error: () => {
         this.isDeleting.set(false);
-        console.error('Failed to delete member:', error);
 
         this.messageService.add({
           severity: 'error',
@@ -210,6 +215,11 @@ export class CommitteeMembersComponent implements OnInit {
 
   private refreshMembers(): void {
     this.refresh.emit();
+  }
+
+  private getMemberDisplayName(member: CommitteeMember): string {
+    const parts = [member.first_name, member.last_name].filter(Boolean);
+    return parts.length > 0 ? parts.join(' ') : member.email || 'Member';
   }
 
   // Private initialization methods
@@ -238,12 +248,12 @@ export class CommitteeMembersComponent implements OnInit {
     return toSignal(this.filterForm.get('organization')!.valueChanges.pipe(startWith(null), distinctUntilChanged()), { initialValue: null });
   }
 
-  private initializeMemberActionMenuItems(): MenuItem[] {
+  private initializeMemberActionMenuItems(member?: CommitteeMember): MenuItem[] {
     return [
       {
         label: 'Send Message',
         icon: 'fa-light fa-envelope',
-        command: () => window.open(`mailto:${this.selectedMember()?.email}`, '_blank'),
+        url: member?.email ? `mailto:${member.email}` : undefined,
       },
       {
         separator: true,

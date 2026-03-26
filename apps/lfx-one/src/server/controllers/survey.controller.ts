@@ -48,13 +48,13 @@ export class SurveyController {
         !validateUidParameter(uid, req, next, {
           operation: 'get_survey_by_id',
           service: 'survey_controller',
-          logStartTime: startTime,
         })
       ) {
         return;
       }
 
-      const survey = await this.surveyService.getSurveyById(req, uid);
+      const projectId = req.query['project_id'] as string | undefined;
+      const survey = await this.surveyService.getSurveyById(req, uid, projectId);
 
       logger.success(req, 'get_survey_by_id', startTime, {
         survey_uid: uid,
@@ -81,7 +81,6 @@ export class SurveyController {
         !validateUidParameter(uid, req, next, {
           operation: 'delete_survey',
           service: 'survey_controller',
-          logStartTime: startTime,
         })
       ) {
         return;

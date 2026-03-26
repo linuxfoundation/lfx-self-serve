@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { MeetingOccurrence, MeetingRsvp, RsvpCounts } from '../interfaces/meeting.interface';
+import { ITXMeetingResponseResult, MeetingOccurrence, MeetingRsvp, RsvpCounts } from '../interfaces/meeting.interface';
 
 /**
  * Calculate RSVP counts for a specific occurrence
@@ -17,21 +17,21 @@ export function calculateRsvpCounts(occurrence: MeetingOccurrence | null, allRsv
     return { accepted: 0, declined: 0, maybe: 0, total: 0 };
   }
 
-  // Group RSVPs by username to handle multiple RSVPs from the same user
-  const rsvpsByUsername = new Map<string, MeetingRsvp[]>();
+  // Group RSVPs by registrant_id to handle multiple RSVPs from the same user
+  const rsvpsByRegistrant = new Map<string, MeetingRsvp[]>();
 
   for (const rsvp of allRsvps) {
-    const username = rsvp.username;
-    if (!rsvpsByUsername.has(username)) {
-      rsvpsByUsername.set(username, []);
+    const key = rsvp.registrant_id;
+    if (!rsvpsByRegistrant.has(key)) {
+      rsvpsByRegistrant.set(key, []);
     }
-    rsvpsByUsername.get(username)!.push(rsvp);
+    rsvpsByRegistrant.get(key)!.push(rsvp);
   }
 
   // For each user, determine which RSVP applies to this occurrence
   const applicableRsvps: MeetingRsvp[] = [];
 
-  for (const userRsvps of rsvpsByUsername.values()) {
+  for (const userRsvps of rsvpsByRegistrant.values()) {
     const applicableRsvp = getApplicableRsvp(occurrence, userRsvps, meetingStartTime);
     if (applicableRsvp) {
       applicableRsvps.push(applicableRsvp);
@@ -69,10 +69,10 @@ export function calculateRsvpCounts(occurrence: MeetingOccurrence | null, allRsv
  * @returns The most recent applicable RSVP, or null if none apply
  */
 function getApplicableRsvp(occurrence: MeetingOccurrence | null, userRsvps: MeetingRsvp[], meetingStartTime?: string): MeetingRsvp | null {
-  // Sort RSVPs by updated_at (most recent first)
+  // Sort RSVPs by most recent modification (API sends modified_at, fallback to updated_at then created_at)
   const sortedRsvps = [...userRsvps].sort((a, b) => {
-    const dateA = new Date(a.updated_at || a.created_at).getTime();
-    const dateB = new Date(b.updated_at || b.created_at).getTime();
+    const dateA = new Date(a.modified_at || a.updated_at || a.created_at).getTime();
+    const dateB = new Date(b.modified_at || b.updated_at || b.created_at).getTime();
     return dateB - dateA; // Descending order (newest first)
   });
 
@@ -83,6 +83,8 @@ function getApplicableRsvp(occurrence: MeetingOccurrence | null, userRsvps: Meet
 
   const occurrenceId = occurrence.occurrence_id;
   const occurrenceDate = new Date(occurrence.start_time);
+  // Build the expected meeting_and_occurrence_id for this occurrence (e.g., "95156357074_1707321600000")
+  const meetingAndOccurrenceId = occurrenceId ? `${sortedRsvps[0]?.meeting_id}_${occurrenceId}` : null;
 
   // Check each RSVP from newest to oldest (most recent wins)
   // Return the first RSVP that applies to this occurrence
@@ -93,12 +95,16 @@ function getApplicableRsvp(occurrence: MeetingOccurrence | null, userRsvps: Meet
       return rsvp;
     }
 
-    // Check for 'single' scope with matching occurrence_id
+    // Check for 'single' scope — match by occurrence_id or meeting_and_occurrence_id
     if (rsvp.scope === 'single' && occurrenceId) {
-      if (rsvp.occurrence_id === occurrenceId || rsvp.occurrence_id === String(occurrenceId)) {
+      const rsvpOccurrenceId = rsvp.occurrence_id || '';
+      const matchesOccurrenceId = rsvpOccurrenceId === occurrenceId || rsvpOccurrenceId === String(occurrenceId);
+      const matchesMeetingAndOccurrenceId = meetingAndOccurrenceId && rsvp.meeting_and_occurrence_id === meetingAndOccurrenceId;
+
+      if (matchesOccurrenceId || matchesMeetingAndOccurrenceId) {
         return rsvp;
       }
-      // If occurrence_id doesn't match, this RSVP doesn't apply to this occurrence
+      // If neither matches, this RSVP doesn't apply to this occurrence
       continue;
     }
 
@@ -116,4 +122,25 @@ function getApplicableRsvp(occurrence: MeetingOccurrence | null, userRsvps: Meet
 
   // No applicable RSVP found
   return null;
+}
+
+/**
+ * Map an ITX meeting response result to the MeetingRsvp shape used throughout the UI
+ *
+ * @param result - The raw response from the ITX endpoint
+ * @returns A MeetingRsvp object compatible with the rest of the application
+ */
+export function mapITXResponseToMeetingRsvp(result: ITXMeetingResponseResult): MeetingRsvp {
+  return {
+    id: result.id,
+    meeting_id: result.meeting_id,
+    registrant_id: result.registrant_id,
+    username: result.username,
+    email: result.email,
+    response: result.response,
+    scope: result.scope,
+    occurrence_id: result.occurrence_id,
+    created_at: result.created_at,
+    updated_at: result.updated_at,
+  };
 }

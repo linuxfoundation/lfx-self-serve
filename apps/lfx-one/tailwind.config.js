@@ -7,7 +7,7 @@ import PrimeUI from 'tailwindcss-primeui';
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./src/**/*.{html,ts}'],
-  safelist: [],
+  safelist: ['bg-violet-400', 'bg-blue-400', 'bg-emerald-400', 'bg-pink-300'],
   theme: {
     container: {
       center: true,
@@ -55,6 +55,7 @@ export default {
       inter: ['Inter', 'sans-serif'],
       display: ['Roboto Slab', 'serif'],
       serif: ['Roboto Slab', 'serif'],
+      mono: ['JetBrains Mono', 'ui-monospace', 'SFMono-Regular', 'Menlo', 'Monaco', 'Consolas', 'Liberation Mono', 'Courier New', 'monospace'],
     },
   },
   plugins: [PrimeUI],

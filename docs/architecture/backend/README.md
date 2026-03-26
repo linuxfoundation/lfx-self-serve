@@ -1,29 +1,29 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
 # Backend Architecture
 
 ## Overview
 
-The LFX One backend follows a modern **Controller-Service pattern** with Express.js server handling SSR, authentication, and API services. The architecture emphasizes separation of concerns, maintainability, and integration with microservices.
+The LFX One backend follows a modern **Controller-Service pattern** with an Express.js server handling SSR, authentication, and API routing. The architecture emphasizes separation of concerns, structured logging, maintainability, and integration with microservices.
 
 ## Architecture Components
 
 ### Server Stack
 
-- **Express.js** server with Angular 19 built-in SSR
+- **Express.js** server with Angular 20 built-in SSR
 - **Auth0** authentication integration with express-openid-connect
 - **Pino** structured JSON logging with sensitive data redaction
 - **PM2** process management for production deployment
-- **Controller-Service Pattern** for clean architecture separation
 
-### Core Architecture Patterns
-
-#### Controller-Service Pattern
+### Core Architecture
 
 ```text
 Request → Controller → Service → Microservice/Data Layer
-           ↓           ↓
-        Validation   Business Logic
-        Logging      Data Transformation
-        Response     Error Handling
+           ↓            ↓
+        Validation    Business Logic
+        Logging       Data Transformation
+        next(error)   Error Handling
 ```
 
 #### Core Services
@@ -32,7 +32,26 @@ Request → Controller → Service → Microservice/Data Layer
 - **ETag Service**: Concurrency control for safe data operations
 - **Error Classes**: Custom error hierarchy (BaseError, AuthenticationError, AuthorizationError, MicroserviceError, ServiceValidationError)
 
-### API Services
+#### Architecture Roles
+
+- **Controllers** handle HTTP boundary: validation, logging lifecycle, response
+- **Services** handle business logic: API calls via `MicroserviceProxyService`, data transformation
+- **Helpers** provide reusable utilities: validation type guards, pagination, polling
+
+## Documentation
+
+| Document                                            | Topics                                                                          |
+| --------------------------------------------------- | ------------------------------------------------------------------------------- |
+| [SSR Server](./ssr-server.md)                       | Express.js configuration, Angular SSR integration, static assets, health checks |
+| [Authentication](./authentication.md)               | Auth0 integration, selective auth middleware, M2M tokens, session management    |
+| [Logging & Monitoring](./logging-monitoring.md)     | Pino logger service, operation lifecycle, log levels, CloudWatch format         |
+| [Error Handling](./error-handling-architecture.md)  | Error classification, ServiceValidationError, error middleware                  |
+| [Server Helpers](./server-helpers.md)               | Validation type guards, pagination helper, polling, URL validation              |
+| [Pagination](./pagination.md)                       | Cursor-based pagination, fetchAllQueryResources, frontend patterns              |
+| [AI Service](./ai-service.md)                       | LiteLLM proxy, meeting agenda generation, JSON schema validation                |
+| [NATS Integration](./nats-integration.md)           | Inter-service messaging, project slug resolution, lazy connections              |
+| [Snowflake Integration](./snowflake-integration.md) | Analytics queries, connection pooling, query deduplication                      |
+| [Public Meetings](./public-meetings.md)             | Unauthenticated meeting access, M2M token flow                                  |
 
 #### Committee Management
 
@@ -85,44 +104,6 @@ Request → Controller → Service → Microservice/Data Layer
 - **M2M Token Utility**: Machine-to-machine token management for server-side API calls
 - **User Context**: Request-scoped AuthContext with user, persona, and organizations
 
-## Documentation Sections
-
-### [SSR Server](./ssr-server.md)
-
-Learn about Express.js configuration, Angular SSR integration, and server-side rendering setup.
-
-### [Authentication](./authentication.md)
-
-Understand Auth0 integration, unified auth middleware, and user session management.
-
-### [Logging & Monitoring](./logging-monitoring.md)
-
-Explore Pino logging configuration, structured logging, and the LoggerService pattern.
-
-### [AI Service](./ai-service.md)
-
-Learn about AI integration, Claude Sonnet model configuration, and meeting agenda generation.
-
-### [NATS Integration](./nats-integration.md)
-
-Understand NATS messaging integration, project slug resolution, and inter-service communication.
-
-### [Snowflake Integration](./snowflake-integration.md)
-
-Learn about Snowflake analytics queries and the SnowflakeService singleton.
-
-### [Error Handling Architecture](./error-handling-architecture.md)
-
-Understand the custom error class hierarchy and centralized error handling.
-
-### [Public Meetings](./public-meetings.md)
-
-Learn about public meeting join pages, V1/V2 detection, and unauthenticated access.
-
-### [Deployment](../../deployment.md)
-
-Discover PM2 configuration, production deployment, and server management.
-
 ## Key Features
 
 ### Architecture & Design Patterns
@@ -135,7 +116,7 @@ Discover PM2 configuration, production deployment, and server management.
 
 ### Core Platform Services
 
-- **Server-Side Rendering**: Angular 19 built-in SSR with Express.js for optimal SEO and performance
+- **Server-Side Rendering**: Angular 20 built-in SSR with Express.js for optimal SEO and performance
 - **Authentication**: Auth0 integration with selective route protection (public/optional/required)
 - **Structured Logging**: Pino with request correlation, timing, and sensitive data redaction
 - **Process Management**: PM2 for production deployment with health monitoring
@@ -148,79 +129,11 @@ Discover PM2 configuration, production deployment, and server management.
 - **Validation**: Comprehensive input validation with detailed error responses
 - **Error Handling**: Custom error class hierarchy with centralized error handler middleware
 - **Testing**: E2E testing with Playwright
-
-## Implementation Details
-
-### Logger Service (`/server/services/logger.service.ts`)
-
-The logger service is a singleton that provides a unified logging interface. See [CLAUDE.md Logging System](../../CLAUDE.md#logging-system) for complete documentation.
-
-```typescript
-import { logger } from './logger.service';
-
-// Controller usage (with request context):
-const startTime = logger.startOperation(req, 'get_committees', { query });
-logger.success(req, 'get_committees', startTime, { count: result.length });
-logger.error(req, 'get_committees', startTime, error, { query });
-
-// Service usage (debug tracing):
-logger.debug(req, 'get_committees', 'Fetching from microservice', { query });
-logger.warning(req, 'get_committees', 'No results found', { query });
-
-// Infrastructure usage (no request context):
-const startTime = logger.startOperation(undefined, 'nats_connect', { url });
-logger.success(undefined, 'nats_connect', startTime);
-```
-
-### Controller-Service Pattern Implementation
-
-#### Example: Committee Management
-
-**Controller Layer** (`/server/controllers/committee.controller.ts`):
-
-```typescript
-export const getCommittees = async (req: Request, res: Response, next: NextFunction) => {
-  const startTime = logger.startOperation(req, 'get_committees', {
-    query_params: req.query,
-  });
-
-  try {
-    const committees = await committeeService.getCommittees(req, req.query);
-
-    logger.success(req, 'get_committees', startTime, {
-      committee_count: committees.length,
-    });
-
-    res.json(committees);
-  } catch (error) {
-    logger.error(req, 'get_committees', startTime, error);
-    next(error);
-  }
-};
-```
-
-**Service Layer** (`/server/services/committee.service.ts`):
-
-```typescript
-export class CommitteeService {
-  public async getCommittees(req: Request, queryParams: any): Promise<Committee[]> {
-    logger.debug(req, 'get_committees', 'Fetching committees from microservice', { queryParams });
-
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      ...queryParams,
-      type: 'committee',
-    });
-
-    return resources.map((resource) => resource.data);
-  }
-}
-```
-
 ## Directory Structure
 
 ```text
 apps/lfx-one/src/server/
-├── controllers/              # HTTP request handling layer (13 controllers)
+├── controllers/              # HTTP request handling layer (15 controllers)
 │   ├── analytics.controller.ts
 │   ├── committee.controller.ts
 │   ├── mailing-list.controller.ts
@@ -240,16 +153,16 @@ apps/lfx-one/src/server/
 │   ├── microservice.error.ts # MicroserviceError for upstream failures
 │   ├── service-validation.error.ts # ServiceValidationError for input validation
 │   └── index.ts              # Barrel export
-├── helpers/                  # Server helper utilities
+├── helpers/                  # Pure utility functions (7 helpers)
 │   ├── error-serializer.ts   # Pino error serializer for structured logging
 │   ├── http-status.helper.ts # HTTP status code constants
 │   ├── meeting.helper.ts     # Meeting-specific helpers
 │   ├── url-validation.ts     # URL input validation
 │   └── validation.helper.ts  # General validation helpers
 ├── middleware/               # Express middleware
-│   ├── auth.middleware.ts    # Unified auth middleware (public/optional/required route classification)
+│   ├── auth.middleware.ts    # Unified auth with selective route config
 │   └── error-handler.middleware.ts # Centralized error handler
-├── routes/                   # API route definitions (13 route files)
+├── routes/                   # Express route definitions (15 route files)
 │   ├── analytics.route.ts
 │   ├── committees.route.ts
 │   ├── mailing-lists.route.ts
@@ -263,7 +176,7 @@ apps/lfx-one/src/server/
 │   ├── surveys.route.ts
 │   ├── user.route.ts
 │   └── votes.route.ts
-├── services/                 # Business logic layer (18 services)
+├── services/                 # Business logic layer (20 services)
 │   ├── access-check.service.ts    # Permission/access validation
 │   ├── ai.service.ts              # Claude Sonnet AI integration
 │   ├── api-client.service.ts      # HTTP client for external APIs
@@ -282,15 +195,15 @@ apps/lfx-one/src/server/
 │   ├── survey.service.ts          # Survey business logic
 │   ├── user.service.ts            # User management
 │   └── vote.service.ts            # Vote/poll business logic
-├── utils/                    # Server utilities
+├── utils/                    # Shared server utilities
 │   ├── auth-helper.ts        # Auth utility functions
 │   ├── lock-manager.ts       # Distributed lock management
 │   ├── m2m-token.util.ts     # Machine-to-machine token management
 │   ├── organization-matcher.ts # Organization matching logic
 │   ├── persona-helper.ts     # User persona helpers
 │   └── security.util.ts      # Security utilities
-├── server.ts                 # Express server entry point
-└── server-logger.ts          # Base Pino logger configuration
+├── server.ts                 # Server bootstrap and route registration
+└── server-logger.ts          # Base Pino logger instance
 ```
 
 ### API Routes
@@ -311,36 +224,51 @@ apps/lfx-one/src/server/
 | `/api/user`            | UserController          | User management and preferences        |
 | `/api/votes`           | VoteController          | Poll creation and vote casting         |
 
+## Key Patterns
+
+### Controller Pattern
+
+```typescript
+export const getItems = async (req: Request, res: Response, next: NextFunction) => {
+  const startTime = logger.startOperation(req, 'get_items', { query: req.query });
+
+  try {
+    const result = await itemService.getItems(req, req.query);
+    logger.success(req, 'get_items', startTime, { count: result.data.length });
+    res.json(result);
+  } catch (error) {
+    logger.error(req, 'get_items', startTime, error);
+    next(error); // Never res.status(500).json() — use next(error)
+  }
+};
+```
+
+### Service Pattern
+
+```typescript
+export class ItemService {
+  public async getItems(req: Request, query: Record<string, any>): Promise<{ data: Item[]; page_token?: string }> {
+    logger.debug(req, 'get_items', 'Fetching items', { query_params: Object.keys(query) });
+
+    const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Item>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+      ...query,
+      type: 'item',
+    });
+
+    return { data: resources.map((r) => r.data), page_token };
+  }
+}
+```
+
+### Logging Rules
+
+- **Controllers**: `logger.startOperation()` → `logger.success()` / `logger.error()` with `startTime`
+- **Services**: `logger.debug()` for tracing, `logger.info()` for significant operations, `logger.warning()` for graceful errors
+- **Never** import `serverLogger` directly — always use `logger` from `logger.service.ts`
+
+See [Logging & Monitoring](./logging-monitoring.md) for full details.
+
 ## Best Practices
-
-### Development Guidelines
-
-1. **Controller Responsibilities**:
-   - HTTP request/response handling
-   - Input validation and sanitization
-   - `logger.startOperation()` / `logger.success()` / `logger.error()` for HTTP operations
-   - Pass errors to `next(error)` for centralized handling
-
-2. **Service Responsibilities**:
-   - Business logic implementation
-   - Microservice integration
-   - `logger.debug()` for step-by-step tracing
-   - `logger.info()` for significant business operations
-   - `logger.warning()` for graceful error handling (returning null/empty)
-
-3. **Logging Rules**:
-   - Always use `logger` service, never `serverLogger` directly
-   - Controllers: one `startOperation` per endpoint
-   - Services: `debug` for tracing, `info` for significant operations
-   - Always pass `req` when available, `undefined` for infrastructure
-
-4. **Error Handling**:
-   - Use custom error classes from `errors/` directory
-   - Centralized error handler middleware converts errors to HTTP responses
-   - Always log errors with context using `logger.error()`
-   - Use `logger.warning()` for recoverable errors
-
-### Code Quality Standards
 
 - **TypeScript**: Strict type checking enabled
 - **Interfaces**: All interfaces in shared package (`@lfx-one/shared/interfaces`)

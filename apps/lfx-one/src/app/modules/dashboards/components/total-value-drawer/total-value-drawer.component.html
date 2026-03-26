@@ -1,0 +1,57 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="total-value-drawer">
+  <!-- Header -->
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full" data-testid="total-value-drawer-header">
+      <!-- Title + Subtitle -->
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="total-value-drawer-title">Total Value of Projects</h2>
+        <p class="text-sm text-gray-500">Board Member · Foundation view</p>
+      </div>
+
+      <!-- Close Button -->
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
+        aria-label="Close panel"
+        data-testid="total-value-drawer-close">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <!-- Content -->
+  <div class="flex flex-col gap-6 pb-2" data-testid="total-value-drawer-content">
+    <!-- Value Concentration Chart Section -->
+    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="total-value-drawer-chart-section">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-semibold text-gray-900">Value Concentration</h3>
+        <p class="text-sm text-gray-600">Share of total foundation value held by largest projects</p>
+      </div>
+      <div class="h-[240px]" data-testid="total-value-drawer-chart">
+        <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
+      </div>
+    </div>
+
+    <!-- Insights Handoff -->
+    <lfx-insights-handoff-section
+      title="Looking for project details?"
+      description="Individual project metrics, contribution history, and detailed analytics are available in LFX Insights."
+      link="https://insights.linuxfoundation.org"
+      data-testid="total-value-drawer-insights-handoff"></lfx-insights-handoff-section>
+
+    <!-- Disclaimer -->
+    <p class="text-xs text-gray-400 italic" data-testid="total-value-drawer-disclaimer">
+      This view provides governance context only and does not represent financial reporting or operational valuation detail.
+    </p>
+  </div>
+</p-drawer>

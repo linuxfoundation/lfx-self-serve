@@ -48,7 +48,7 @@ export class MeetingRsvpDetailsComponent {
     return toSignal(
       toObservable(this.meeting).pipe(
         switchMap((meeting) =>
-          this.meetingService.getMeetingRsvps(meeting.uid).pipe(
+          this.meetingService.getMeetingRsvps(meeting.id).pipe(
             catchError((error) => {
               console.error('Failed to fetch meeting RSVPs:', error);
               return of([]);
@@ -127,9 +127,9 @@ export class MeetingRsvpDetailsComponent {
     return computed(() => {
       const slug = this.project()?.slug;
       if (slug) {
-        return `/project/${slug}/meetings/${this.meeting().uid}/edit`;
+        return `/project/${slug}/meetings/${this.meeting().id}/edit`;
       }
-      return `/meetings/${this.meeting().uid}/edit`;
+      return `/meetings/${this.meeting().id}/edit`;
     });
   }
 }

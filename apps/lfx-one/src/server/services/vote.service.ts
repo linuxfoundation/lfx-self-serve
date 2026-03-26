@@ -1,11 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CreateVoteRequest, QueryServiceResponse, UpdateVoteRequest, Vote } from '@lfx-one/shared/interfaces';
+import {
+  CreateVoteRequest,
+  PaginatedResponse,
+  QueryServiceCountResponse,
+  QueryServiceResponse,
+  UpdateVoteRequest,
+  Vote,
+  VoteResultsResponse,
+} from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
-import { ETagService } from './etag.service';
+import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 
@@ -13,19 +21,17 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
  * Service for handling vote/poll business logic with microservice proxy
  */
 export class VoteService {
-  private etagService: ETagService;
   private microserviceProxy: MicroserviceProxyService;
 
   public constructor() {
     this.microserviceProxy = new MicroserviceProxyService();
-    this.etagService = new ETagService();
   }
 
   /**
    * Fetches all votes based on query parameters
-   * Uses query service which returns Vote entities
+   * Uses query service which returns Vote entities with pagination support
    */
-  public async getVotes(req: Request, query: Record<string, any> = {}): Promise<Vote[]> {
+  public async getVotes(req: Request, query: Record<string, any> = {}): Promise<PaginatedResponse<Vote>> {
     logger.debug(req, 'get_votes', 'Starting vote fetch', {
       query_params: Object.keys(query),
     });
@@ -35,7 +41,13 @@ export class VoteService {
       type: 'vote',
     };
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Vote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
+    const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Vote>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      params
+    );
 
     logger.debug(req, 'get_votes', 'Fetched resources from query service', {
       count: resources.length,
@@ -47,7 +59,25 @@ export class VoteService {
       final_count: votes.length,
     });
 
-    return votes;
+    return { data: votes, page_token };
+  }
+
+  /**
+   * Fetches the count of votes based on query parameters
+   */
+  public async getVotesCount(req: Request, query: Record<string, any> = {}): Promise<number> {
+    logger.debug(req, 'get_votes_count', 'Fetching vote count', {
+      query_params: Object.keys(query),
+    });
+
+    const params = {
+      ...query,
+      type: 'vote',
+    };
+
+    const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', params);
+
+    return count;
   }
 
   /**
@@ -60,7 +90,7 @@ export class VoteService {
 
     const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, 'GET');
 
-    if (!vote || !vote.vote_uid) {
+    if (!vote || !vote.uid) {
       throw new ResourceNotFoundError('Vote', voteUid, {
         operation: 'get_vote_by_id',
         service: 'vote_service',
@@ -82,46 +112,75 @@ export class VoteService {
     const sanitizedPayload = logger.sanitize({ voteData });
     logger.debug(req, 'create_vote', 'Creating vote payload', sanitizedPayload);
 
-    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', '/votes', 'POST', undefined, voteData, {
+    const newVote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', '/votes', 'POST', undefined, voteData, {
       ['X-Sync']: 'true',
     });
 
-    return vote;
+    // After creating, poll the query service until the vote is indexed.
+    // The query service uses eventual consistency, so the vote may not appear immediately.
+    const voteUid = newVote.uid;
+    let fetchedVote: Vote | undefined;
+
+    const resolved = await pollEndpoint({
+      req,
+      operation: 'create_vote',
+      pollFn: async () => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Vote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'vote',
+          tags: voteUid,
+        });
+        if (resources.length > 0) {
+          fetchedVote = resources[0].data;
+          return true;
+        }
+        return false;
+      },
+      metadata: { vote_uid: voteUid },
+    });
+
+    if (resolved && fetchedVote) {
+      return fetchedVote;
+    }
+
+    logger.warning(req, 'create_vote', 'Vote not yet indexed in query service, returning POST response', { vote_uid: voteUid });
+    return newVote;
   }
 
   /**
-   * Updates a vote using ETag for concurrency control
+   * Updates a vote directly via microservice proxy
    */
   public async updateVote(req: Request, voteUid: string, voteData: UpdateVoteRequest): Promise<Vote> {
-    // Step 1: Fetch vote with ETag
-    const { etag } = await this.etagService.fetchWithETag<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, 'update_vote');
-
     const sanitizedPayload = logger.sanitize({ voteData });
     logger.debug(req, 'update_vote', 'Updating vote payload', sanitizedPayload);
 
-    // Step 2: Update vote with ETag
-    const vote = await this.etagService.updateWithETag<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, etag, voteData, 'update_vote');
+    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, 'PUT', undefined, voteData);
 
     return vote;
   }
 
   /**
-   * Deletes a vote using ETag for concurrency control
+   * Deletes a vote directly via microservice proxy
    */
   public async deleteVote(req: Request, voteUid: string): Promise<void> {
-    logger.debug(req, 'delete_vote', 'Deleting vote with ETag', {
+    logger.debug(req, 'delete_vote', 'Deleting vote', {
       vote_uid: voteUid,
     });
 
-    // Step 1: Fetch vote with ETag
-    const { etag } = await this.etagService.fetchWithETag<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, 'delete_vote');
+    await this.microserviceProxy.proxyRequest<void>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, 'DELETE');
 
-    logger.debug(req, 'delete_vote', 'Fetched ETag for deletion', {
-      vote_uid: voteUid,
+    // Poll the query service until the vote is removed from the index
+    await pollEndpoint({
+      req,
+      operation: 'delete_vote',
+      pollFn: async () => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Vote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'vote',
+          tags: voteUid,
+        });
+        return resources.length === 0;
+      },
+      metadata: { vote_uid: voteUid },
     });
-
-    // Step 2: Delete vote with ETag
-    await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/votes/${voteUid}`, etag, 'delete_vote');
   }
 
   /**
@@ -132,13 +191,55 @@ export class VoteService {
       vote_uid: voteUid,
     });
 
-    const vote = await this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}/enable`, 'PUT');
+    await this.microserviceProxy.proxyRequestWithResponse<Vote>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}/enable`, 'PUT');
 
-    logger.debug(req, 'enable_vote', 'Vote enabled successfully', {
-      vote_uid: voteUid,
-      status: vote.status,
+    // Poll the query service until the indexed vote status is 'active'.
+    let fetchedVote: Vote | undefined;
+
+    const resolved = await pollEndpoint({
+      req,
+      operation: 'enable_vote',
+      pollFn: async () => {
+        const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Vote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'vote',
+          tags: voteUid,
+        });
+        if (resources.length > 0 && resources[0].data.status === 'active') {
+          fetchedVote = resources[0].data;
+          return true;
+        }
+        return false;
+      },
+      metadata: { vote_uid: voteUid },
+      maxRetries: 7,
     });
 
-    return vote;
+    if (resolved && fetchedVote) {
+      logger.debug(req, 'enable_vote', 'Vote enabled and indexed', {
+        vote_uid: voteUid,
+        status: fetchedVote.status,
+      });
+      return fetchedVote;
+    }
+
+    logger.warning(req, 'enable_vote', 'Vote not yet indexed as active, returning minimal response', { vote_uid: voteUid });
+    return { uid: voteUid, status: 'active' } as Vote;
+  }
+
+  /**
+   * Fetches aggregated vote results for a given vote
+   */
+  public async getVoteResults(req: Request, voteUid: string): Promise<VoteResultsResponse> {
+    logger.debug(req, 'get_vote_results', 'Fetching vote results', { vote_uid: voteUid });
+
+    const results = await this.microserviceProxy.proxyRequest<VoteResultsResponse>(req, 'LFX_V2_SERVICE', `/votes/${voteUid}/results`, 'GET');
+
+    logger.debug(req, 'get_vote_results', 'Completed vote results fetch', {
+      vote_uid: voteUid,
+      num_poll_results: results.poll_results?.length ?? 0,
+      num_votes_cast: results.num_votes_cast,
+    });
+
+    return results;
   }
 }

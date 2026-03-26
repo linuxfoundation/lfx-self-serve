@@ -1,0 +1,84 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="org-certified-employees-drawer">
+  <!-- Header -->
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full" data-testid="org-certified-employees-drawer-header">
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="org-certified-employees-drawer-title">Certified Employees</h2>
+        <p class="text-sm text-gray-500">Board Member · Organization view</p>
+      </div>
+
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
+        aria-label="Close panel"
+        data-testid="org-certified-employees-drawer-close">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <!-- Content -->
+  <div class="flex flex-col gap-6 pb-2" data-testid="org-certified-employees-drawer-content">
+    <!-- Trend Chart Section -->
+    <div class="flex flex-col gap-3" data-testid="org-certified-employees-drawer-trend-section">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-medium text-gray-900">Certified Employees</h3>
+        <p class="text-xs text-gray-500">Number of employees with active Linux Foundation certifications (last 12 months)</p>
+      </div>
+
+      @if (drawerLoading()) {
+        <div class="flex items-center justify-center py-12" data-testid="org-certified-employees-drawer-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+        </div>
+      } @else if (hasTrendData()) {
+        <div class="h-[260px]" data-testid="org-certified-employees-drawer-trend-chart">
+          <lfx-chart type="line" [data]="trendChartData()" [options]="trendChartOptions" height="100%"></lfx-chart>
+        </div>
+      } @else {
+        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="org-certified-employees-drawer-trend-empty">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No certified employee data available for this foundation.</p>
+        </div>
+      }
+    </div>
+
+    <!-- Distribution Chart Section -->
+    @if (!drawerLoading()) {
+      <div class="flex flex-col gap-3" data-testid="org-certified-employees-drawer-distribution-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-medium text-gray-900">Certifications by Program</h3>
+          <p class="text-xs text-gray-500">Distribution of employee certifications across different programs</p>
+        </div>
+
+        @if (hasDistributionData()) {
+          <div class="h-[260px]" data-testid="org-certified-employees-drawer-distribution-chart">
+            <lfx-chart type="bar" [data]="distributionChartData()" [options]="distributionChartOptions" height="100%"></lfx-chart>
+          </div>
+        } @else {
+          <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="org-certified-employees-drawer-distribution-empty">
+            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+            <p class="text-sm text-gray-500">No certification program data available for this foundation.</p>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Insights Handoff -->
+    <lfx-insights-handoff-section
+      title="Looking for certification details?"
+      description="Individual certification records, training enrollments, and detailed education analytics are available in the Organization Dashboard."
+      link="https://insights.linuxfoundation.org"
+      buttonLabel="View Organization Dashboard"
+      data-testid="org-certified-employees-drawer-insights-handoff"></lfx-insights-handoff-section>
+  </div>
+</p-drawer>

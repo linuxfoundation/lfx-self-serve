@@ -22,4 +22,9 @@ export const PERSONA_OPTIONS: PersonaOption[] = [
     label: 'Board Member',
     description: 'Board member focused experience',
   },
+  {
+    value: 'executive-director',
+    label: 'Executive Director',
+    description: 'Executive director focused experience',
+  },
 ];

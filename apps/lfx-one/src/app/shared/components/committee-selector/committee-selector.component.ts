@@ -161,6 +161,7 @@ export class CommitteeSelectorComponent {
   /**
    * Initialize selected items signal reactively from form control and committee options
    * Combines form value changes with loaded options to derive selected items
+   * Also syncs the autocomplete search input for single-select mode (e.g., when form is patched programmatically)
    */
   private initSelectedItems(): Signal<CommitteeSelectorOption[]> {
     const formControl$ = toObservable(computed(() => this.form().get(this.control())));
@@ -175,7 +176,8 @@ export class CommitteeSelectorComponent {
 
           return formControl.valueChanges.pipe(
             startWith(formControl.value as CommitteeReference | CommitteeReference[] | null),
-            map((value: CommitteeReference | CommitteeReference[] | null) => this.mapFormValueToSelectedItems(value, options))
+            map((value: CommitteeReference | CommitteeReference[] | null) => this.mapFormValueToSelectedItems(value, options)),
+            tap((selectedItems) => this.syncSearchInput(selectedItems))
           );
         })
       ),
@@ -205,6 +207,18 @@ export class CommitteeSelectorComponent {
         memberCount: option?.memberCount,
       };
     });
+  }
+
+  /**
+   * Syncs the autocomplete search input with the selected item in single-select mode.
+   * Handles programmatic form patches (e.g., edit mode) where onSelect() isn't called.
+   */
+  private syncSearchInput(selectedItems: CommitteeSelectorOption[]): void {
+    if (this.multiple()) {
+      return;
+    }
+    const name = selectedItems.length > 0 ? selectedItems[0].name : '';
+    this.searchForm.get('search')?.setValue(name, { emitEvent: false });
   }
 
   /**

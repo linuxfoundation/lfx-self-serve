@@ -11,6 +11,7 @@ Thank you for your interest in contributing to LFX One! This document provides g
 - [Development Setup](#development-setup)
 - [License Headers](#license-headers)
 - [Code Style](#code-style)
+- [Architecture Guidelines](#architecture-guidelines)
 - [Commit Messages](#commit-messages)
 - [Pull Request Process](#pull-request-process)
 - [Testing](#testing)
@@ -139,6 +140,61 @@ yarn lint:fix
 yarn format
 ```
 
+## Architecture Guidelines
+
+### Respect Existing Architecture
+
+Before making changes that affect how the application works at a foundational
+level, understand the decisions already in place. The project has established
+patterns for SSR, authentication, component structure, logging, and forms — all
+documented in [CLAUDE.md](CLAUDE.md) and the [architecture docs](docs/). Changes
+that deviate from these patterns need discussion and approval before
+implementation.
+
+### Fixing Problems at the Source
+
+When something doesn't work — a hydration crash, an auth issue, a build
+problem — fix the root cause rather than disabling the system that surfaced
+it. Disabling SSR, bypassing authentication, or adding build hacks are not
+fixes. They mask the real issue and introduce regressions that affect the entire
+application.
+
+### Security Is Not Optional
+
+Authentication and authorization controls exist to protect the application and
+its users. These controls should be addressed, not disabled for convenience.
+If your local environment needs credentials, request them or set up the
+environment properly. `TODO: TEMPORARY` bypasses have a tendency to reach
+production.
+
+### Architectural Changes Need Their Own PRs
+
+Changes that affect the entire application — auth middleware, SSR configuration,
+global interceptors, new development tooling patterns, mock infrastructure — are
+architectural decisions. They need standalone PRs with focused review and
+approval, not bundled inside feature work where they can be overlooked.
+
+### Follow Established Patterns
+
+The codebase has consistent patterns for how things are built. New code should
+follow the same patterns used by existing code. Before starting work, review the
+relevant documentation:
+
+- [Angular Patterns](docs/architecture/frontend/angular-patterns.md) — SSR,
+  zoneless change detection, signals
+- [Component Architecture](docs/architecture/frontend/component-architecture.md)
+  — PrimeNG wrappers, layout patterns, component hierarchy
+- [Authentication](docs/architecture/backend/authentication.md) — Auth0
+  middleware and route protection
+- [Logging & Monitoring](docs/architecture/backend/logging-monitoring.md) —
+  Structured logging patterns
+- [Shared Package](docs/architecture/shared/package-architecture.md) — Types,
+  constants, validators, and utilities
+
+See [CLAUDE.md](CLAUDE.md) for the complete reference on project patterns and
+conventions, and the [Architecture Navigation Hub](docs/architecture/README.md)
+for the full documentation index.
+
 ## Commit Messages
 
 ### Format
@@ -185,6 +241,20 @@ git commit --signoff
 This adds a `Signed-off-by` line to your commit message.
 
 ## Pull Request Process
+
+### PR Scope
+
+- **Keep PRs focused on a single concern** — a feature PR should contain only
+  the feature. Infrastructure changes (mock servers, new interceptors, build
+  tool changes) must be separate PRs
+- **Architectural decisions require their own PR** — changes that affect the
+  entire application (auth middleware, SSR config, global interceptors, new dev
+  tooling patterns) need standalone discussion and approval before
+  implementation
+- **Never mix security changes with feature work** — auth middleware or guard
+  modifications must be reviewed independently, not buried in a large feature PR
+
+### PR Checklist
 
 1. **Update Documentation**: Update relevant documentation for any new features
 2. **Add Tests**: Include tests for new functionality

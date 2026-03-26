@@ -5,6 +5,19 @@ import { IndividualVoteStatus, PollStatus, PollType, VoteResponseStatus } from '
 import { CommitteeReference } from './committee.interface';
 
 /**
+ * Filter state for the votes dashboard table
+ * @description Emitted by the votes table when search/filter controls change
+ */
+export interface VoteFilterState {
+  /** Search term for name typeahead */
+  search: string;
+  /** Status filter (active, disabled, ended) */
+  status: PollStatus | null;
+  /** Group/committee name filter */
+  group: string | null;
+}
+
+/**
  * User's vote/poll participation
  * @description Represents a user's participation in a poll - aligns with lfx-pcc VoteResponse
  */
@@ -154,8 +167,8 @@ export interface SESEmailTracking {
  * @see https://github.com/linuxfoundation/lfx-v2-voting-service
  */
 export interface Vote {
-  /** Primary unique identifier (API field: vote_uid) */
-  vote_uid: string;
+  /** Primary unique identifier (API field: uid) */
+  uid: string;
   /** Poll name/title */
   name: string;
   /** Poll description */
@@ -194,8 +207,6 @@ export interface Vote {
   total_voting_request_invitations?: number;
   /** Number of responses received */
   num_response_received?: number;
-  /** Vote results for generic/plurality voting (choice_id -> vote count) */
-  generic_choice_votes?: GenericChoiceVotes;
 }
 
 /**
@@ -353,6 +364,119 @@ export interface VoteParticipationStats {
 }
 
 /**
+ * Vote count per choice from the results API
+ * @description Used in PollQuestionResult for generic/plurality vote counts
+ */
+export interface VoteResultChoiceCount {
+  /** Choice identifier */
+  choice_id: string;
+  /** Number of votes for this choice */
+  vote_count: number;
+  /** Percentage of total votes (0-100) */
+  percentage: number;
+}
+
+/**
+ * Rank count for ranked-choice voting results
+ * @description Maps a rank position to the number of voters who assigned it
+ */
+export interface RankCount {
+  /** Rank position (1-based) */
+  rank: number;
+  /** Number of voters who assigned this rank */
+  count: number;
+}
+
+/**
+ * Ranked-choice vote result for a single choice
+ * @description Contains rank distribution and Condorcet matrix data
+ */
+export interface RankedChoiceVoteResult {
+  /** Choice identifier */
+  choice_id: string;
+  /** Distribution of ranks assigned to this choice */
+  rank_counts: RankCount[];
+  /** Condorcet pairwise comparison matrix entries */
+  condorcet_matrix: any[];
+}
+
+/**
+ * Winner information for ranked-choice voting
+ * @description Contains winning choices and algorithm metadata
+ */
+export interface RankedChoiceWinnerInfo {
+  /** Choices participating in the ranked vote */
+  poll_choices: { choice_id: string; choice_text: string }[];
+  /** Whether Condorcet-IRV hybrid was used for tie-breaking */
+  condorcet_irv_used_for_eliminations: boolean;
+}
+
+/**
+ * Question definition within a poll result
+ * @description Question metadata as returned by the results API
+ */
+export interface PollResultQuestion {
+  /** Question identifier */
+  question_id: string;
+  /** Question text/prompt */
+  prompt: string;
+  /** Question type */
+  type: 'single_choice' | 'multiple_choice';
+  /** Available choices for this question */
+  choices: { choice_id: string; choice_text: string }[];
+}
+
+/**
+ * Aggregated results for a single poll question
+ * @description Contains vote counts, ranked-choice data, and winner info
+ */
+export interface PollQuestionResult {
+  /** Question definition */
+  question: PollResultQuestion;
+  /** Generic/plurality vote counts per choice */
+  generic_choice_votes: VoteResultChoiceCount[];
+  /** Ranked-choice vote results per choice */
+  ranked_choice_votes: RankedChoiceVoteResult[];
+  /** Winner information for ranked-choice voting */
+  ranked_choice_winner_info?: RankedChoiceWinnerInfo;
+  /** IRV round-by-round elimination summary */
+  irv_round_summary?: any;
+  /** Meek STV round-by-round summary */
+  meek_stv_round_summary?: any;
+}
+
+/**
+ * Comment results for a poll comment prompt
+ * @description Contains the prompt text and all submitted comments
+ */
+export interface PollCommentResult {
+  /** Comment prompt text */
+  prompt: string;
+  /** Submitted voter comments */
+  comments: string[];
+}
+
+/**
+ * Full response from the vote results API
+ * @description Aggregated results for all questions and comments in a vote
+ * @see GET /votes/{vote_uid}/results
+ */
+export interface VoteResultsResponse {
+  /** Results for each poll question */
+  poll_results: PollQuestionResult[];
+  /** Comment results for each comment prompt */
+  comment_results: PollCommentResult[];
+  /** Total number of eligible recipients */
+  num_recipients: number;
+  /** Number of votes cast */
+  num_votes_cast: number;
+  /** Number of voters who abstained */
+  num_abstained: number;
+  /** Poll end/deadline timestamp */
+  poll_end_time: string;
+}
+
+/**
  * Choice definition for creating a poll question
  * @description Used in CreatePollQuestion to define answer options
  */
@@ -391,8 +515,8 @@ export interface CreatePollCommentPrompt {
 export interface CreateVoteRequest {
   /** Name/title of the poll (required) */
   name: string;
-  /** Description of the poll */
-  description?: string;
+  /** Description of the poll (required by voting service API) */
+  description: string;
   /** Poll end/deadline timestamp in RFC3339/ISO format (required) */
   end_time: string;
   /** V2 project UID the poll belongs to (required) */

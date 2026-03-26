@@ -18,7 +18,7 @@
         size="small"
         severity="secondary"
         [attr.data-testid]="'add-participant-button'"
-        [routerLink]="['/meetings', meeting().uid, 'edit']"
+        [routerLink]="['/meetings', meeting().id, 'edit']"
         [queryParams]="{ step: '5' }">
       </lfx-button>
     }

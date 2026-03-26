@@ -6,6 +6,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { FormArray, FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
+import { MessageComponent } from '@components/message/message.component';
 import {
   DEFAULT_ARTIFACT_VISIBILITY,
   DEFAULT_DURATION,
@@ -27,9 +28,12 @@ import {
   MeetingAttachment,
   MeetingRegistrant,
   PendingAttachment,
+  PresignAttachmentResponse,
   RegistrantPendingChanges,
   UpdateMeetingRequest,
+  Committee,
 } from '@lfx-one/shared/interfaces';
+import { CommitteeService } from '@services/committee.service';
 import {
   combineDateTime,
   formatTo12HourInTimezone,
@@ -44,6 +48,7 @@ import { ProjectContextService } from '@services/project-context.service';
 import { toZonedTime } from 'date-fns-tz';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { SkeletonModule } from 'primeng/skeleton';
 import { StepperModule } from 'primeng/stepper';
 import { BehaviorSubject, catchError, concat, filter, finalize, forkJoin, from, mergeMap, Observable, of, switchMap, take, toArray } from 'rxjs';
 
@@ -58,6 +63,7 @@ import { MeetingTypeSelectionComponent } from '../components/meeting-type-select
   imports: [
     StepperModule,
     ButtonComponent,
+    MessageComponent,
     ReactiveFormsModule,
     ConfirmDialogModule,
     MeetingTypeSelectionComponent,
@@ -66,6 +72,7 @@ import { MeetingTypeSelectionComponent } from '../components/meeting-type-select
     MeetingResourcesSummaryComponent,
     MeetingRegistrantsManagerComponent,
     RouterLink,
+    SkeletonModule,
   ],
   providers: [ConfirmationService],
   templateUrl: './meeting-manage.component.html',
@@ -78,6 +85,12 @@ export class MeetingManageComponent {
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly committeeService = inject(CommitteeService);
+
+  // Committee context — when navigated from a committee tab with ?committee_uid=
+  public readonly committeeContext = signal<Committee | null>(null);
+  private readonly committeeUidFromUrl = this.route.snapshot.queryParamMap.get('committee_uid');
+
   // Mode and state signals
   public mode = signal<'create' | 'edit'>('create');
   public meetingId = signal<string | null>(null);
@@ -90,6 +103,7 @@ export class MeetingManageComponent {
   });
   // Initialize meeting data using toSignal
   public meeting = this.initializeMeeting();
+  public meetingLoading = computed(() => this.isEditMode() && this.meeting() === null);
   // Initialize meeting attachments with refresh capability
   private attachmentsRefresh$ = new BehaviorSubject<void>(undefined);
   public attachments = this.initializeAttachments();
@@ -124,6 +138,8 @@ export class MeetingManageComponent {
   );
 
   public constructor() {
+    this.initCommitteeContext();
+
     // Initialize step based on mode
     // In edit mode, read from query parameters
     // In create mode, use internal step tracking
@@ -221,7 +237,7 @@ export class MeetingManageComponent {
   }
 
   public onCancel(): void {
-    this.router.navigate(['/', 'meetings']);
+    this.navigateBack();
   }
 
   public onSubmit(): void {
@@ -238,14 +254,28 @@ export class MeetingManageComponent {
 
     this.submitting.set(true);
     const meetingData = this.prepareMeetingData();
-    const operation = this.isEditMode()
-      ? this.meetingService.updateMeeting(this.meetingId()!, meetingData as UpdateMeetingRequest, 'single')
-      : this.meetingService.createMeeting(meetingData as CreateMeetingRequest);
 
-    operation.subscribe({
-      next: (meeting) => this.handleMeetingSuccess(meeting),
-      error: (error) => this.handleMeetingError(error),
-    });
+    if (!meetingData.project_uid) {
+      this.messageService.add({
+        severity: 'error',
+        summary: 'Error',
+        detail: 'Project is required. Please select a project before saving.',
+      });
+      this.submitting.set(false);
+      return;
+    }
+
+    if (this.isEditMode()) {
+      this.meetingService.updateMeeting(this.meetingId()!, meetingData as UpdateMeetingRequest, 'single').subscribe({
+        next: () => this.handleMeetingSuccess(),
+        error: (error) => this.handleMeetingError(error),
+      });
+    } else {
+      this.meetingService.createMeeting(meetingData as CreateMeetingRequest).subscribe({
+        next: (meeting) => this.handleMeetingSuccess(meeting),
+        error: (error) => this.handleMeetingError(error),
+      });
+    }
   }
 
   public deleteAttachment(attachmentId: string): void {
@@ -302,11 +332,11 @@ export class MeetingManageComponent {
       .pipe(finalize(() => this.submitting.set(false)))
       .subscribe({
         next: (result: {
-          meeting: Meeting;
+          meeting: void;
           registrants: { type: string; success: number; failed: number }[];
           attachments: {
             deletions: { successes: number; failures: string[] };
-            uploads: { successes: MeetingAttachment[]; failures: { fileName: string; error: any }[] };
+            uploads: { successes: PresignAttachmentResponse[]; failures: { fileName: string; error: any }[] };
             links: { successes: MeetingAttachment[]; failures: { linkName: string; error: any }[] };
           } | null;
         }) => {
@@ -346,8 +376,8 @@ export class MeetingManageComponent {
           // Show appropriate success message
           this.showSubmitAllOperationToast(totalRegistrantSuccess, totalRegistrantFailed, totalAttachmentSuccess, totalAttachmentFailed);
 
-          // Navigate back to meetings list
-          this.router.navigate(['/meetings']);
+          // Navigate back to meetings list or group
+          this.navigateBack();
         },
         error: (error: any) => {
           console.error('Error saving meeting and registrants:', error);
@@ -394,7 +424,7 @@ export class MeetingManageComponent {
           this.showRegistrantOperationToast(totalSuccess, totalFailed, totalOperations);
 
           if (!this.isEditMode()) {
-            this.router.navigate(['/', 'meetings']);
+            this.navigateBack();
           } else {
             this.registrantUpdatesRefresh$.next();
             // Reset registrant updates only if there were some successes
@@ -412,7 +442,8 @@ export class MeetingManageComponent {
 
   // Private methods
   private prepareMeetingData(): CreateMeetingRequest | UpdateMeetingRequest {
-    const formValue = this.form().value;
+    // Use getRawValue() to include disabled controls (e.g., locked committees from group context)
+    const formValue = this.form().getRawValue();
     const duration = formValue.duration === 'custom' ? Number(formValue.customDuration) : Number(formValue.duration);
     const startDateTime = combineDateTime(formValue.startDate, formValue.startTime, formValue.timezone);
 
@@ -460,22 +491,27 @@ export class MeetingManageComponent {
       visibility: formValue.visibility || MeetingVisibility.PRIVATE,
       restricted: formValue.restricted || false,
       recording_enabled: formValue.recording_enabled || false,
-      transcript_enabled: formValue.transcript_enabled || false,
-      youtube_upload_enabled: formValue.youtube_upload_enabled || false,
-      show_meeting_attendees: formValue.show_meeting_attendees || false,
+      transcript_enabled: formValue.recording_enabled ? formValue.transcript_enabled || false : false,
+      youtube_upload_enabled: formValue.recording_enabled ? formValue.youtube_upload_enabled || false : false,
+      show_meeting_attendees: false, // Coming Soon — disabled in form
       zoom_config: {
-        ai_companion_enabled: formValue.zoom_ai_enabled || false,
-        ai_summary_require_approval: formValue.require_ai_summary_approval || false,
+        ai_companion_enabled: formValue.recording_enabled ? formValue.zoom_ai_enabled || false : false,
+        ai_summary_require_approval: formValue.recording_enabled ? formValue.require_ai_summary_approval || false : false,
       },
-      artifact_visibility: formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY,
+      artifact_visibility: formValue.recording_enabled ? formValue.artifact_visibility || DEFAULT_ARTIFACT_VISIBILITY : null,
       recurrence: recurrenceObject,
       platform: formValue.platform || DEFAULT_MEETING_TOOL,
       committees: formValue.committees || [],
     };
   }
 
-  private handleMeetingSuccess(meeting: Meeting): void {
-    this.meetingId.set(meeting.uid);
+  private handleMeetingSuccess(meeting?: Meeting): void {
+    // In create mode, set the meeting ID from the response; in edit mode, it's already set
+    if (meeting) {
+      this.meetingId.set(meeting.id);
+    }
+
+    const meetingId = this.meetingId()!;
 
     // If we're in create mode and before the resources step (step 4), just continue to next step
     // We need to process attachments starting from step 4 (Resources & Summary) onwards
@@ -486,7 +522,7 @@ export class MeetingManageComponent {
     }
 
     // Process attachment operations using extracted method
-    this.processAttachmentOperations(meeting.uid).subscribe({
+    this.processAttachmentOperations(meetingId).subscribe({
       next: (result) => {
         if (result) {
           // Process attachment operations after meeting save
@@ -528,10 +564,15 @@ export class MeetingManageComponent {
       // After creating a meeting, navigate to edit mode on step 5 to manage guests
       const meetingId = this.meetingId();
       if (meetingId) {
-        this.router.navigate(['/meetings', meetingId, 'edit'], { queryParams: { step: '5' } });
+        const editQueryParams: Record<string, string> = { step: '5' };
+        const ctx = this.committeeContext();
+        if (ctx) {
+          editQueryParams['committee_uid'] = ctx.uid;
+        }
+        this.router.navigate(['/meetings', meetingId, 'edit'], { queryParams: editQueryParams });
       } else {
         // Fallback to meetings list if no meeting ID
-        this.router.navigate(['/meetings']);
+        this.navigateBack();
       }
     }
   }
@@ -548,7 +589,7 @@ export class MeetingManageComponent {
 
   private handleAttachmentOperationsResults(result: {
     deletions: { successes: number; failures: string[] };
-    uploads: { successes: MeetingAttachment[]; failures: { fileName: string; error: any }[] };
+    uploads: { successes: PresignAttachmentResponse[]; failures: { fileName: string; error: any }[] };
     links: { successes: MeetingAttachment[]; failures: { linkName: string; error: any }[] };
   }): void {
     const totalDeleteSuccesses = result.deletions.successes;
@@ -652,7 +693,7 @@ export class MeetingManageComponent {
                   summary: 'Error',
                   detail: 'Meeting not found or you do not have permission to access it',
                 });
-                this.router.navigate(['/meetings']);
+                this.navigateBack();
                 return of(null);
               })
             );
@@ -828,7 +869,6 @@ export class MeetingManageComponent {
       case 2: // Meeting Details
         return !!(
           form.get('title')?.value &&
-          form.get('description')?.value &&
           form.get('startDate')?.value &&
           form.get('startTime')?.value &&
           form.get('timezone')?.value &&
@@ -862,7 +902,7 @@ export class MeetingManageComponent {
 
         // Step 2: Meeting Details
         title: new FormControl('', [Validators.required]),
-        description: new FormControl('', [Validators.required, Validators.maxLength(2000)]),
+        description: new FormControl('', [Validators.maxLength(2000)]),
         aiPrompt: new FormControl(''),
         startDate: new FormControl(defaultDateTime.date, [Validators.required]),
         startTime: new FormControl(defaultDateTime.time, [Validators.required]),
@@ -892,7 +932,7 @@ export class MeetingManageComponent {
         recording_enabled: new FormControl(false),
         transcript_enabled: new FormControl({ value: false, disabled: true }),
         youtube_upload_enabled: new FormControl({ value: false, disabled: true }),
-        show_meeting_attendees: new FormControl(false),
+        show_meeting_attendees: new FormControl({ value: false, disabled: true }),
         zoom_ai_enabled: new FormControl({ value: false, disabled: true }),
         require_ai_summary_approval: new FormControl(false),
         artifact_visibility: new FormControl(DEFAULT_ARTIFACT_VISIBILITY),
@@ -945,7 +985,7 @@ export class MeetingManageComponent {
 
   private processAttachmentOperations(meetingId: string): Observable<{
     deletions: { successes: number; failures: string[] };
-    uploads: { successes: MeetingAttachment[]; failures: { fileName: string; error: any }[] };
+    uploads: { successes: PresignAttachmentResponse[]; failures: { fileName: string; error: any }[] };
     links: { successes: MeetingAttachment[]; failures: { linkName: string; error: any }[] };
   } | null> {
     const hasPendingDeletions = this.pendingAttachmentDeletions().length > 0;
@@ -988,7 +1028,7 @@ export class MeetingManageComponent {
 
     return from(attachmentIdsToDelete).pipe(
       mergeMap((attachmentId) =>
-        this.meetingService.deleteAttachment(meetingId, attachmentId).pipe(
+        this.meetingService.deleteMeetingAttachment(meetingId, attachmentId).pipe(
           switchMap(() => of({ success: attachmentId, failure: null })),
           catchError(() => of({ success: null, failure: attachmentId }))
         )
@@ -1003,7 +1043,7 @@ export class MeetingManageComponent {
     );
   }
 
-  private savePendingAttachments(meetingId: string): Observable<{ successes: MeetingAttachment[]; failures: { fileName: string; error: any }[] }> {
+  private savePendingAttachments(meetingId: string): Observable<{ successes: PresignAttachmentResponse[]; failures: { fileName: string; error: any }[] }> {
     const attachmentsToSave = this.pendingAttachments.filter(
       (attachment) => !attachment.uploading && !attachment.uploadError && !attachment.uploaded && attachment.file
     );
@@ -1014,10 +1054,16 @@ export class MeetingManageComponent {
 
     return from(attachmentsToSave).pipe(
       mergeMap((attachment) =>
-        this.meetingService.createFileAttachment(meetingId, attachment.file).pipe(
-          switchMap((result) => of({ success: result, failure: null })),
-          catchError((error) => of({ success: null, failure: { fileName: attachment.fileName, error } }))
-        )
+        this.meetingService
+          .uploadMeetingFile(meetingId, attachment.file, {
+            name: attachment.fileName,
+            file_size: attachment.fileSize,
+            file_type: attachment.mimeType,
+          })
+          .pipe(
+            switchMap((result) => of({ success: result, failure: null })),
+            catchError((error) => of({ success: null, failure: { fileName: attachment.fileName, error } }))
+          )
       ),
       toArray(),
       switchMap((results) => {
@@ -1041,7 +1087,7 @@ export class MeetingManageComponent {
 
     return from(linksToSave).pipe(
       mergeMap((link: ImportantLinkFormValue) =>
-        this.meetingService.createAttachmentFromUrl(meetingId, link.title, link.url).pipe(
+        this.meetingService.createMeetingAttachment(meetingId, { type: 'link', category: 'Other', name: link.title, link: link.url }).pipe(
           switchMap((result) => of({ success: result, failure: null })),
           catchError((error) => of({ success: null, failure: { linkName: link.title, error } }))
         )
@@ -1168,17 +1214,10 @@ export class MeetingManageComponent {
 
     if (totalFailed === 0) {
       // All successful
-      const parts = [];
-      if (registrantSuccess > 0) {
-        parts.push(`${registrantSuccess} guest(s)`);
-      }
-      if (attachmentSuccess > 0) {
-        parts.push(`${attachmentSuccess} attachment(s)`);
-      }
       this.messageService.add({
         severity: 'success',
         summary: 'Success',
-        detail: `Meeting updated successfully with ${parts.join(' and ')}`,
+        detail: `Meeting updated successfully`,
       });
     } else if (totalSuccess > 0 && totalFailed > 0) {
       // Partial success
@@ -1235,5 +1274,36 @@ export class MeetingManageComponent {
 
     // Update form validity
     currentForm.updateValueAndValidity();
+  }
+
+  /** Navigates back to the committee meetings tab or the main meetings page. */
+  private navigateBack(): void {
+    const uid = this.committeeContext()?.uid ?? this.committeeUidFromUrl;
+    if (uid) {
+      this.router.navigate(['/groups', uid], { queryParams: { tab: 'meetings' } });
+    } else {
+      this.router.navigate(['/', 'meetings']);
+    }
+  }
+
+  /** Reads committee_uid from queryParams and pre-populates the committees field (locked). */
+  private initCommitteeContext(): void {
+    this.route.queryParamMap
+      .pipe(
+        take(1),
+        filter((params) => !!params.get('committee_uid') && !this.route.snapshot.paramMap.has('id')),
+        switchMap((params) => this.committeeService.getCommittee(params.get('committee_uid')!)),
+        catchError(() => {
+          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load group context.' });
+          return of(null);
+        })
+      )
+      .subscribe((committee) => {
+        if (!committee) return;
+        this.committeeContext.set(committee);
+        const committeesControl = this.form().get('committees');
+        committeesControl?.setValue([{ uid: committee.uid, name: committee.name }]);
+        committeesControl?.disable();
+      });
   }
 }

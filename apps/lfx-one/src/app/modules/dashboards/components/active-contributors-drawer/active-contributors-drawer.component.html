@@ -1,0 +1,129 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="active-contributors-drawer">
+  <!-- Header -->
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full" data-testid="active-contributors-drawer-header">
+      <!-- Title + Subtitle -->
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="active-contributors-drawer-title">Active Contributors</h2>
+        <p class="text-sm text-gray-500">Board Member · Organization view</p>
+      </div>
+
+      <!-- Time Range Filter (disabled for board member organization view) -->
+      <div class="flex items-end">
+        <lfx-select
+          [form]="headerForm"
+          control="timeRange"
+          [options]="timeRangeOptions"
+          optionLabel="label"
+          optionValue="value"
+          styleClass="w-[180px]"
+          data-testid="active-contributors-drawer-time-range"></lfx-select>
+      </div>
+
+      <!-- Close Button -->
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
+        aria-label="Close panel"
+        data-testid="active-contributors-drawer-close">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <!-- Content -->
+  <div class="flex flex-col gap-6 pb-2" data-testid="active-contributors-drawer-content">
+    <!-- Monthly Trend Section -->
+    <div class="flex flex-col gap-3" data-testid="active-contributors-drawer-trend-section">
+      <!-- Section Header -->
+      <div class="flex items-center justify-between">
+        <!-- Title + Tooltip -->
+        <div class="flex items-center gap-2">
+          <h3 class="text-sm font-medium text-gray-900">Active Contributors</h3>
+          <div class="group relative">
+            <svg class="w-3.5 h-3.5 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+              <circle cx="12" cy="12" r="10" stroke-width="2" />
+              <path stroke-width="2" stroke-linecap="round" d="M12 16v-4m0-4h.01" />
+            </svg>
+            <div
+              class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10"
+              role="tooltip">
+              Monthly average unique contributors across the foundation over the last 12 months
+            </div>
+          </div>
+        </div>
+
+        <!-- Metric Value -->
+        @if (hasData()) {
+          <span class="text-xl font-semibold text-gray-900" data-testid="active-contributors-drawer-metric">{{ metricValue() }}</span>
+        }
+      </div>
+
+      <!-- Chart -->
+      @if (drawerLoading()) {
+        <div class="flex items-center justify-center py-12" data-testid="active-contributors-drawer-trend-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+        </div>
+      } @else if (hasTrendData()) {
+        <div class="h-[240px]" data-testid="active-contributors-drawer-trend-chart">
+          <lfx-chart type="line" [data]="trendChartData()" [options]="trendChartOptions" height="100%"></lfx-chart>
+        </div>
+      } @else {
+        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="active-contributors-drawer-trend-empty">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No contributor trend data available for this foundation.</p>
+        </div>
+      }
+    </div>
+
+    <!-- Contribution Distribution Section -->
+    <div class="flex flex-col gap-3" data-testid="active-contributors-drawer-distribution-section">
+      <div class="flex items-center gap-2">
+        <h3 class="text-sm font-medium text-gray-900">Contribution Distribution by Percentile Band</h3>
+        <div class="group relative">
+          <svg class="w-3.5 h-3.5 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" stroke-width="2" />
+            <path stroke-width="2" stroke-linecap="round" d="M12 16v-4m0-4h.01" />
+          </svg>
+          <div
+            class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10"
+            role="tooltip">
+            Share of total contributions made by each percentile group of contributors over the last 12 months
+          </div>
+        </div>
+      </div>
+
+      @if (drawerLoading()) {
+        <div class="flex items-center justify-center py-8" data-testid="active-contributors-drawer-distribution-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+        </div>
+      } @else if (hasDistributionData()) {
+        <div class="h-[220px]" data-testid="active-contributors-drawer-distribution-chart">
+          <lfx-chart type="bar" [data]="distributionChartData()" [options]="distributionChartOptions" height="100%"></lfx-chart>
+        </div>
+      } @else {
+        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="active-contributors-drawer-distribution-empty">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No distribution data available for this foundation.</p>
+        </div>
+      }
+    </div>
+
+    <!-- Insights Handoff -->
+    <lfx-insights-handoff-section
+      title="Looking for contributor details?"
+      description="Individual contributor profiles, commit history, and detailed activity breakdowns are available in LFX Insights."
+      link="https://insights.linuxfoundation.org"
+      data-testid="active-contributors-drawer-insights-handoff"></lfx-insights-handoff-section>
+  </div>
+</p-drawer>

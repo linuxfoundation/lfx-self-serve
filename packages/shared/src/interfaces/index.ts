@@ -85,3 +85,12 @@ export * from './filter.interface';
 
 // Profile interfaces
 export * from './profile.interface';
+
+// Lens interfaces
+export * from './lens.interface';
+
+// Committee application interfaces
+export * from './committee-application.interface';
+
+// Public committee interfaces
+export * from './public-committee.interface';

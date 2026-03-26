@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { HttpParams } from '@angular/common/http';
-import { Component, computed, inject, input, signal } from '@angular/core';
+import { Component, computed, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { RouterModule } from '@angular/router';
+import { Router, RouterModule } from '@angular/router';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
@@ -13,7 +12,7 @@ import { Project, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interf
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
-import { distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
+import { tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-sidebar',
@@ -22,9 +21,11 @@ import { distinctUntilChanged, map, of, switchMap, tap } from 'rxjs';
   styleUrl: './sidebar.component.scss',
 })
 export class SidebarComponent {
+  private readonly router = inject(Router);
   private readonly projectService = inject(ProjectService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // Input properties
   public readonly items = input.required<SidebarMenuItem[]>();
@@ -34,47 +35,15 @@ export class SidebarComponent {
   public readonly showProjectSelector = input<boolean>(false);
   public readonly mobile = input<boolean>(false);
 
-  // Load TLF project and its children, merging into a single array
-  protected readonly projects = toSignal(
-    // TODO: DEMO - Remove this once we are done with the demo and will use typeahead search
-    this.projectService.getProject('tlf').pipe(
-      distinctUntilChanged(),
-      switchMap((tlfProject: Project | null) => {
-        if (!tlfProject) {
-          return of([]);
-        }
-        return this.projectService
-          .getProjects(new HttpParams().set('tags', `parent_uid:${tlfProject.uid}`))
-          .pipe(map((childProjects: Project[]) => [tlfProject, ...childProjects]));
-      }),
-      tap((loadedProjects: Project[]) => {
-        this.projectContextService.availableProjects = loadedProjects;
-        const currentFoundation = this.projectContextService.selectedFoundation();
-        const currentProject = this.projectContextService.selectedProject();
-        const foundationExists = loadedProjects.some((p: Project) => p.uid === currentFoundation?.uid);
-
-        // Only set default if no foundation is selected, no project is selected, and projects exist
-        if (loadedProjects.length > 0 && (!foundationExists || !currentFoundation) && !currentProject) {
-          // Prefer "tlf" project, fallback to first available project
-          const defaultProject = loadedProjects.find((p: Project) => p.slug === 'tlf') || loadedProjects[0];
-
-          const projectContext: ProjectContext = {
-            uid: defaultProject.uid,
-            name: defaultProject.name,
-            slug: defaultProject.slug,
-          };
-          this.projectContextService.setFoundation(projectContext);
-        }
-      })
-    ),
-    {
-      initialValue: [],
-    }
-  );
+  // Load all available projects
+  // so TransferState never captures it and client makes a duplicate call anyway.
+  // shareReplay(1) in ProjectService deduplicates within the client runtime.
+  protected readonly projects: Signal<Project[]> = this.initProjects();
 
   // TODO: DEMO - Remove this once we have proper project permissions
-  public readonly isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
-  protected readonly foundationProjects = computed(() => this.projects().filter((p: Project) => (this.isBoardMember() ? p.slug === 'tlf' : true)));
+  protected readonly foundationProjects = computed(() =>
+    this.projects().filter((p: Project) => (this.personaService.isTlfOnlyPersona() ? p.slug === 'tlf' : true))
+  );
 
   protected readonly selectedProject = computed(() => {
     // First check if a specific project is selected (child project)
@@ -87,11 +56,6 @@ export class SidebarComponent {
     const foundation = this.projectContextService.selectedFoundation();
     if (!foundation) {
       return null;
-    }
-
-    // TODO: DEMO - Remove when proper permissions are implemented
-    if (this.isBoardMember()) {
-      return this.foundationProjects().find((p: Project) => p.slug === 'tlf') || null;
     }
 
     return this.projects().find((p: Project) => p.slug === foundation.slug) || null;
@@ -164,6 +128,9 @@ export class SidebarComponent {
       this.projectContextService.setProject(projectContext);
       this.projectContextService.clearFoundation();
     }
+
+    // Navigate to overview page on project change
+    this.router.navigate(['/']);
   }
 
   /**
@@ -172,6 +139,33 @@ export class SidebarComponent {
   protected onLogoClick(): void {
     // Navigate to home page
     window.location.href = '/';
+  }
+
+  private initProjects(): Signal<Project[]> {
+    return toSignal(
+      this.projectService.getProjects().pipe(
+        tap((loadedProjects: Project[]) => {
+          this.projectContextService.availableProjects = loadedProjects;
+          const currentFoundation = this.projectContextService.selectedFoundation();
+          const currentProject = this.projectContextService.selectedProject();
+          const foundationExists = loadedProjects.some((p: Project) => p.uid === currentFoundation?.uid);
+
+          if (loadedProjects.length > 0 && (!foundationExists || !currentFoundation) && !currentProject) {
+            const defaultProject = loadedProjects.find((p: Project) => p.slug === 'tlf') || loadedProjects[0];
+
+            const projectContext: ProjectContext = {
+              uid: defaultProject.uid,
+              name: defaultProject.name,
+              slug: defaultProject.slug,
+            };
+            this.projectContextService.setFoundation(projectContext);
+          }
+        })
+      ),
+      {
+        initialValue: [],
+      }
+    );
   }
 
   /**

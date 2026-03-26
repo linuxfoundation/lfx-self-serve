@@ -2,16 +2,19 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, effect, input, model, signal, Signal } from '@angular/core';
+import { Component, computed, inject, input, model, signal, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import { PollStatus, PollType } from '@lfx-one/shared';
-import { Vote, VoteParticipationStats, VoteResultsOption, VoteResultsQuestion } from '@lfx-one/shared/interfaces';
+import { PollCommentResult, Vote, VoteParticipationStats, VoteResultsOption, VoteResultsQuestion, VoteResultsResponse } from '@lfx-one/shared/interfaces';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
+import { VoteService } from '@services/vote.service';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
+import { catchError, finalize, of, shareReplay, startWith, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-vote-results-drawer',
@@ -20,35 +23,36 @@ import { SkeletonModule } from 'primeng/skeleton';
   styleUrl: './vote-results-drawer.component.scss',
 })
 export class VoteResultsDrawerComponent {
+  // === Services ===
+  private readonly voteService = inject(VoteService);
+
   // === Inputs ===
-  public readonly vote = input<Vote | null>(null);
+  public readonly voteId = input<string | null>(null);
+  public readonly listVote = input<Vote | null>(null);
 
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
   // === Writable Signals ===
-  protected readonly loading = signal<boolean>(false);
+  protected readonly loadingVoteDetails = signal<boolean>(false);
+  protected readonly loadingVoteResults = signal<boolean>(false);
+
+  // === Shared Observables ===
+  private readonly voteId$ = toObservable(this.voteId).pipe(shareReplay({ bufferSize: 1, refCount: true }));
+
+  // === Derived Signals (from API) ===
+  protected readonly vote: Signal<Vote | null> = this.initVote();
+  protected readonly voteResults: Signal<VoteResultsResponse | null> = this.initVoteResults();
 
   // === Computed Signals ===
   protected readonly isGenericPoll: Signal<boolean> = this.initIsGenericPoll();
   protected readonly pccVotingUrl: Signal<string> = this.initPccVotingUrl();
-  protected readonly isVoteClosed: Signal<boolean> = this.initIsVoteClosed();
+  protected readonly isLoading: Signal<boolean> = computed(() => this.loadingVoteDetails() || this.loadingVoteResults());
   protected readonly participationStats: Signal<VoteParticipationStats> = this.initParticipationStats();
+  protected readonly isVoteClosed: Signal<boolean> = this.initIsVoteClosed();
   protected readonly questionsWithResults: Signal<VoteResultsQuestion[]> = this.initQuestionsWithResults();
+  protected readonly commentResults: Signal<PollCommentResult[]> = this.initCommentResults();
   protected readonly votingMethodText: Signal<string> = this.initVotingMethodText();
-
-  // === Constructor ===
-  public constructor() {
-    // Simulate loading when vote changes
-    effect(() => {
-      const v = this.vote();
-      if (v && this.visible()) {
-        this.loading.set(true);
-        // Simulate API fetch delay
-        setTimeout(() => this.loading.set(false), 500);
-      }
-    });
-  }
 
   // === Protected Methods ===
   protected onClose(): void {
@@ -56,6 +60,49 @@ export class VoteResultsDrawerComponent {
   }
 
   // === Private Initializers ===
+  private initVote(): Signal<Vote | null> {
+    return toSignal(
+      this.voteId$.pipe(
+        switchMap((id) => {
+          if (!id) {
+            this.loadingVoteDetails.set(false);
+            return of(null);
+          }
+
+          this.loadingVoteDetails.set(true);
+          const listVote = this.listVote();
+
+          return this.voteService.getVote(id).pipe(
+            catchError(() => of(listVote)),
+            finalize(() => this.loadingVoteDetails.set(false)),
+            startWith(listVote)
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
+  private initVoteResults(): Signal<VoteResultsResponse | null> {
+    return toSignal(
+      this.voteId$.pipe(
+        switchMap((id) => {
+          if (!id) {
+            this.loadingVoteResults.set(false);
+            return of(null);
+          }
+
+          this.loadingVoteResults.set(true);
+          return this.voteService.getVoteResults(id).pipe(
+            catchError(() => of(null)),
+            finalize(() => this.loadingVoteResults.set(false))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
+  }
+
   private initIsGenericPoll(): Signal<boolean> {
     return computed(() => {
       const v = this.vote();
@@ -78,19 +125,23 @@ export class VoteResultsDrawerComponent {
   private initIsVoteClosed(): Signal<boolean> {
     return computed(() => {
       const v = this.vote();
-      return v?.status === PollStatus.ENDED;
+      if (v?.status === PollStatus.ENDED) return true;
+
+      // Treat 100% participation as finalized even if the vote hasn't formally ended
+      const stats = this.participationStats();
+      return stats.eligibleVoters > 0 && stats.participationRate >= 100;
     });
   }
 
   private initParticipationStats(): Signal<VoteParticipationStats> {
     return computed(() => {
-      const v = this.vote();
-      if (!v) {
+      const results = this.voteResults();
+      if (!results) {
         return { eligibleVoters: 0, totalResponses: 0, participationRate: 0 };
       }
 
-      const eligibleVoters = v.total_voting_request_invitations || 0;
-      const totalResponses = v.num_response_received || 0;
+      const eligibleVoters = results.num_recipients || 0;
+      const totalResponses = results.num_votes_cast || 0;
       const participationRate = eligibleVoters > 0 ? Math.round((totalResponses / eligibleVoters) * 100) : 0;
 
       return { eligibleVoters, totalResponses, participationRate };
@@ -99,57 +150,67 @@ export class VoteResultsDrawerComponent {
 
   private initQuestionsWithResults(): Signal<VoteResultsQuestion[]> {
     return computed(() => {
-      const v = this.vote();
+      const results = this.voteResults();
       const isClosed = this.isVoteClosed();
 
-      if (!v?.poll_questions?.length) {
+      if (!results?.poll_results?.length) {
         return [];
       }
 
-      return v.poll_questions.map((question) => {
-        // Get vote counts from generic_choice_votes or default to 0
-        const choiceVotes = v.generic_choice_votes || {};
+      return results.poll_results.map((pollResult) => {
+        const choiceVotes = pollResult.generic_choice_votes || [];
 
-        // Calculate total votes for this question
-        let totalVotes = 0;
-        const optionsWithCounts: VoteResultsOption[] = question.choices.map((choice) => {
-          const voteCount = choiceVotes[choice.choice_id] || 0;
-          totalVotes += voteCount;
-          return {
-            choiceId: choice.choice_id,
-            text: choice.choice_text,
-            voteCount,
-            percentage: 0, // Will calculate after we have total
-            isWinner: false,
-            isTied: false,
-            isLeading: false, // Will calculate after we have max votes
-          };
-        });
+        // Compute total votes first for percentage calculation
+        const totalVotes = choiceVotes.reduce((sum, cv) => sum + cv.vote_count, 0);
 
-        // Calculate percentages and determine winner/ties
+        // Build options with vote counts from the results API
+        const optionsWithCounts: VoteResultsOption[] = choiceVotes.map((cv) => ({
+          choiceId: cv.choice_id,
+          text: pollResult.question.choices.find((c) => c.choice_id === cv.choice_id)?.choice_text || cv.choice_id,
+          voteCount: cv.vote_count,
+          percentage: this.computePercentage(cv.percentage, cv.vote_count, totalVotes),
+          isWinner: false,
+          isTied: false,
+          isLeading: false,
+        }));
+
+        // Determine winner/ties based on max votes
         const maxVotes = Math.max(...optionsWithCounts.map((o) => o.voteCount), 0);
         const optionsWithMaxVotes = optionsWithCounts.filter((o) => o.voteCount === maxVotes);
         const isTied = optionsWithMaxVotes.length > 1 && maxVotes > 0;
 
         const processedOptions = optionsWithCounts.map((option) => ({
           ...option,
-          percentage: totalVotes > 0 ? Math.round((option.voteCount / totalVotes) * 100) : 0,
-          // Only show winner if vote is closed and there's no tie
           isWinner: isClosed && !isTied && option.voteCount === maxVotes && maxVotes > 0,
-          // Show tied status for all options with max votes (only for closed votes)
           isTied: isClosed && isTied && option.voteCount === maxVotes,
-          // Show leading status for live votes (options with max votes)
           isLeading: option.voteCount === maxVotes && maxVotes > 0,
         }));
 
         return {
-          questionId: question.question_id,
-          question: question.prompt,
+          questionId: pollResult.question.question_id,
+          question: pollResult.question.prompt,
           options: processedOptions,
           totalVotes,
         };
       });
     });
+  }
+
+  private initCommentResults(): Signal<PollCommentResult[]> {
+    return computed(() => {
+      const results = this.voteResults();
+      if (!results?.comment_results?.length) {
+        return [];
+      }
+
+      return results.comment_results.filter((cr) => cr.comments.length > 0);
+    });
+  }
+
+  private computePercentage(apiPercentage: number, voteCount: number, totalVotes: number): number {
+    if (apiPercentage > 0) return apiPercentage;
+    if (totalVotes <= 0) return 0;
+    return Math.round((voteCount / totalVotes) * 100);
   }
 
   private initVotingMethodText(): Signal<string> {

@@ -31,20 +31,8 @@
             data-testid="rsvp-filter-select">
           </lfx-select>
 
-          <!-- Role Filter (only show if meeting has committees) -->
+          <!-- Group Filter (only show if meeting has committees) -->
           @if (hasCommittees()) {
-            <lfx-select
-              [form]="filterForm"
-              control="roleFilter"
-              [options]="roleFilterOptions()"
-              optionLabel="label"
-              optionValue="value"
-              [styleClass]="'text-[10px]'"
-              placeholder="Role"
-              data-testid="role-filter-select">
-            </lfx-select>
-
-            <!-- Group Filter -->
             <lfx-select
               [form]="filterForm"
               control="groupFilter"
@@ -72,9 +60,10 @@
       <div class="flex flex-col gap-2">
         @if (!pastMeeting() && showAddRegistrant()) {
           <!-- Add Registrant Option -->
-          <div
-            class="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors border-2 border-solid border-blue-200 hover:border-blue-400"
-            (click)="onAddRegistrantClick()"
+          <a
+            class="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors border-2 border-solid border-blue-200 hover:border-blue-400 no-underline"
+            [routerLink]="['/meetings', meeting().id, 'edit']"
+            [queryParams]="{ step: '5' }"
             data-testid="add-registrant-button">
             <div class="w-8 h-8 bg-blue-100 border border-blue-200 rounded-full flex items-center justify-center">
               <i class="fa-light fa-plus text-blue-500"></i>
@@ -83,7 +72,7 @@
               <span class="text-sm text-blue-600 font-medium">Add Guests</span>
               <span class="text-xs text-blue-500">Click to add new guests</span>
             </div>
-          </div>
+          </a>
         }
 
         @if (pastMeeting()) {
@@ -121,32 +110,32 @@
               class="bg-white border border-gray-200 rounded-lg p-4 flex flex-col gap-3 shadow-md relative overflow-visible hover:border-blue-500 transition-colors"
               [ngClass]="{ 'cursor-pointer': meeting().organizer && registrant.type === 'committee' }"
               [attr.data-testid]="'registrant-' + registrant.uid">
-              <!-- Top Section: Avatar + Name + LinkedIn -->
-              <div class="flex items-start gap-3">
+              <!-- Avatar + Name + LinkedIn + Voting Status -->
+              <div class="flex items-center gap-3">
                 <!-- Avatar with RSVP Badge -->
-                <div class="relative">
+                <div class="relative flex-shrink-0">
                   <lfx-avatar
                     [label]="registrant.first_name"
                     [image]="registrant.avatar_url!"
-                    styleClass="bg-blue-50 border border-gray-200 w-12 h-12"
+                    styleClass="bg-blue-50 border border-gray-200 w-12 h-12 object-cover"
                     shape="circle"></lfx-avatar>
 
                   <!-- RSVP Status Badge Overlay -->
                   <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center">
                     @if (registrant.rsvp?.response === 'accepted' || registrant.invite_accepted === true) {
-                      <i class="fa-light fa-check-circle text-emerald-500 text-base" pTooltip="Accepted"></i>
+                      <i class="fa-solid fa-check-circle text-emerald-600 text-base" pTooltip="Accepted"></i>
                     } @else if (registrant.rsvp?.response === 'maybe') {
-                      <i class="fa-light fa-circle-question text-amber-500 text-base" pTooltip="Maybe"></i>
+                      <i class="fa-solid fa-circle-question text-amber-600 text-base" pTooltip="Maybe"></i>
                     } @else if (registrant.rsvp?.response === 'declined' || registrant.invite_accepted === false) {
-                      <i class="fa-light fa-times-circle text-red-500 text-base" pTooltip="Declined"></i>
+                      <i class="fa-solid fa-times-circle text-red-600 text-base" pTooltip="Declined"></i>
                     } @else {
-                      <i class="fa-light fa-clock text-gray-500 text-sm" pTooltip="Pending"></i>
+                      <i class="fa-solid fa-clock text-gray-400 text-sm" pTooltip="Pending"></i>
                     }
                   </div>
                 </div>
 
-                <!-- Name + LinkedIn -->
-                <div class="flex flex-col">
+                <!-- Name + Company + Voting Status -->
+                <div class="flex flex-col min-w-0">
                   <div class="flex items-center gap-2">
                     <h3>{{ registrant.first_name }} {{ registrant.last_name }}</h3>
                     @if (registrant.linkedin_profile) {
@@ -173,30 +162,16 @@
                       }
                     </p>
                   }
-                </div>
-              </div>
-
-              <!-- Bottom Section: Committee Information (only shown for committee members) -->
-              @if (registrant.committee_name) {
-                <div class="flex flex-col">
-                  <div class="flex items-center gap-4">
-                    <i class="fa-light fa-briefcase w-4 h-4 text-gray-600 flex-shrink-0"></i>
-                    <span class="text-gray-500 text-sm leading-relaxed tracking-tight truncate">
-                      @if (registrant.committee_role) {
-                        {{ registrant.committee_role }} of {{ registrant.committee_name }}
-                      } @else {
-                        {{ registrant.committee_name }}
-                      }
-                    </span>
-                  </div>
-                  @if (registrant.committee_category) {
-                    <div class="flex items-center gap-4">
-                      <i class="fa-light fa-users w-4 h-4 text-gray-600 flex-shrink-0"></i>
-                      <span class="text-gray-500 text-sm leading-relaxed tracking-tight truncate">{{ registrant.committee_category }}</span>
+                  @if (
+                    registrant.committee_voting_status && registrant.committee_voting_status !== 'Observer' && registrant.committee_voting_status !== 'None'
+                  ) {
+                    <div class="flex items-center gap-1">
+                      <i class="fa-light fa-check-to-slot text-sm text-gray-400 flex-shrink-0"></i>
+                      <span class="text-gray-400 text-xs leading-relaxed tracking-tight truncate">{{ registrant.committee_voting_status }}</span>
                     </div>
                   }
                 </div>
-              }
+              </div>
             </div>
           }
         }

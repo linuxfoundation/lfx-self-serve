@@ -50,6 +50,8 @@
           (valueChange)="onStatusChange($event)"
           data-testid="surveys-status-filter"></lfx-select>
       </div>
+
+      <ng-content select="[tableActions]"></ng-content>
     </div>
   </div>
 
@@ -76,13 +78,13 @@
     </ng-template>
 
     <ng-template #body let-survey let-rowIndex="rowIndex">
-      <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'surveys-row-' + survey.id" class="hover:bg-slate-50">
+      <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'surveys-row-' + survey.uid" class="hover:bg-slate-50">
         <td>
           <button
             type="button"
             class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0"
-            (click)="onViewResults(survey.id)"
-            [attr.data-testid]="'surveys-name-' + survey.id">
+            (click)="onViewResults(survey.uid)"
+            [attr.data-testid]="'surveys-name-' + survey.uid">
             {{ survey.survey_title }}
           </button>
         </td>
@@ -108,7 +110,7 @@
             class="text-xs text-slate-900"
             [pTooltip]="getResponseTooltip(survey)"
             tooltipPosition="top"
-            [attr.data-testid]="'surveys-responses-' + survey.id">
+            [attr.data-testid]="'surveys-responses-' + survey.uid">
             {{ survey.total_responses }}
           </span>
         </td>
@@ -128,7 +130,7 @@
         <td>
           <div class="flex items-center justify-end gap-1">
             @if (hasPMOAccess() && survey.survey_status === SurveyStatus.DRAFT) {
-              <lfx-button label="Edit" severity="primary" size="small" [text]="true" [attr.data-testid]="'surveys-edit-' + survey.id"> </lfx-button>
+              <lfx-button label="Edit" severity="primary" size="small" [text]="true" [attr.data-testid]="'surveys-edit-' + survey.uid"> </lfx-button>
               <lfx-button
                 label="Delete"
                 severity="danger"
@@ -136,7 +138,7 @@
                 [text]="true"
                 (onClick)="onDeleteSurvey(survey)"
                 [disabled]="isDeleting()"
-                [attr.data-testid]="'surveys-delete-' + survey.id">
+                [attr.data-testid]="'surveys-delete-' + survey.uid">
               </lfx-button>
             } @else if (survey.survey_status === SurveyStatus.SENT || survey.survey_status === SurveyStatus.OPEN) {
               <lfx-button
@@ -144,8 +146,8 @@
                 severity="primary"
                 size="small"
                 [text]="true"
-                (onClick)="onViewResults(survey.id)"
-                [attr.data-testid]="'surveys-results-' + survey.id">
+                (onClick)="onViewResults(survey.uid)"
+                [attr.data-testid]="'surveys-results-' + survey.uid">
               </lfx-button>
             } @else if (survey.survey_status === SurveyStatus.CLOSED) {
               <lfx-button
@@ -153,8 +155,8 @@
                 severity="primary"
                 size="small"
                 [text]="true"
-                (onClick)="onViewResults(survey.id)"
-                [attr.data-testid]="'surveys-results-' + survey.id">
+                (onClick)="onViewResults(survey.uid)"
+                [attr.data-testid]="'surveys-results-' + survey.uid">
               </lfx-button>
             }
           </div>

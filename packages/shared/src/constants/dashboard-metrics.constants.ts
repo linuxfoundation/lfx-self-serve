@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { DashboardMetricCard } from '../interfaces';
+import { DashboardDrawerType } from '../interfaces';
 import { hexToRgba } from '../utils';
 import { EMPTY_CHART_DATA, NO_TOOLTIP_CHART_OPTIONS } from './chart-options.constants';
 import { lfxColors } from './colors.constants';
 
+import type { DashboardMetricCard } from '../interfaces';
 // ============================================
 // Foundation Health Metrics
 // ============================================
@@ -17,11 +18,20 @@ import { lfxColors } from './colors.constants';
  */
 export const PRIMARY_FOUNDATION_HEALTH_METRICS: DashboardMetricCard[] = [
   {
+    title: 'Total Value of Projects',
+    icon: 'fa-light fa-chart-column',
+    chartType: 'line',
+    category: 'projects',
+    testId: 'foundation-health-card-total-value',
+    drawerType: DashboardDrawerType.TotalValueOfProjects,
+  },
+  {
     title: 'Total Projects',
     icon: 'fa-light fa-chart-bar',
     chartType: 'line',
     category: 'projects',
     testId: 'foundation-health-card-total-projects',
+    drawerType: DashboardDrawerType.TotalProjects,
   },
   {
     title: 'Total Members',
@@ -29,22 +39,16 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: DashboardMetricCard[] = [
     chartType: 'line',
     category: 'projects',
     testId: 'foundation-health-card-total-members',
+    drawerType: DashboardDrawerType.TotalMembers,
   },
   {
-    title: 'Software Value',
-    icon: 'fa-light fa-chart-bar',
-    chartType: 'line',
-    category: 'projects',
-    testId: 'foundation-health-card-software-value',
-    customContentType: 'top-projects',
-  },
-  {
-    title: 'Company Bus Factor',
+    title: 'Organization Dependency',
     icon: 'fa-light fa-shield',
     chartType: 'line',
     category: 'contributors',
-    testId: 'foundation-health-card-company-bus-factor',
+    testId: 'foundation-health-card-org-dependency',
     customContentType: 'bus-factor',
+    drawerType: DashboardDrawerType.OrganizationDependency,
   },
   {
     title: 'Active Contributors',
@@ -52,6 +56,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: DashboardMetricCard[] = [
     chartType: 'line',
     category: 'contributors',
     testId: 'foundation-health-card-active-contributors',
+    drawerType: DashboardDrawerType.ActiveContributors,
   },
   {
     title: 'Maintainers',
@@ -59,6 +64,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: DashboardMetricCard[] = [
     chartType: 'line',
     category: 'contributors',
     testId: 'foundation-health-card-maintainers',
+    drawerType: DashboardDrawerType.Maintainers,
   },
   {
     title: 'Events',
@@ -68,6 +74,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: DashboardMetricCard[] = [
     testId: 'foundation-health-card-events',
     customContentType: 'bar-chart',
     chartColor: lfxColors.blue[500],
+    drawerType: DashboardDrawerType.Events,
   },
   {
     title: 'Project Health Scores',
@@ -76,6 +83,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: DashboardMetricCard[] = [
     category: 'projects',
     testId: 'foundation-health-card-project-health-scores',
     customContentType: 'health-scores',
+    drawerType: DashboardDrawerType.ProjectHealthScores,
   },
 ];
 
@@ -102,6 +110,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartType: 'bar',
     testId: 'org-involvement-card-active-contributors',
     chartData: EMPTY_CHART_DATA,
+    drawerType: DashboardDrawerType.OrgActiveContributors,
   },
   {
     title: 'Maintainers',
@@ -109,6 +118,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartType: 'bar',
     testId: 'org-involvement-card-maintainers',
     chartData: EMPTY_CHART_DATA,
+    drawerType: DashboardDrawerType.OrgMaintainers,
   },
   {
     title: 'Event Attendees',
@@ -116,6 +126,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartType: 'line',
     testId: 'org-involvement-card-event-attendees',
     chartData: EMPTY_CHART_DATA,
+    drawerType: DashboardDrawerType.OrgEventAttendees,
   },
   {
     title: 'Event Speakers',
@@ -123,6 +134,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartType: 'line',
     testId: 'org-involvement-card-event-speakers',
     chartData: EMPTY_CHART_DATA,
+    drawerType: DashboardDrawerType.OrgEventSpeakers,
   },
   {
     title: 'Certified Employees',
@@ -130,6 +142,7 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartType: 'line',
     testId: 'org-involvement-card-certified-employees',
     chartData: EMPTY_CHART_DATA,
+    drawerType: DashboardDrawerType.OrgCertifiedEmployees,
   },
   {
     title: 'Training Enrollments',
@@ -137,6 +150,123 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
     chartType: 'line',
     testId: 'org-involvement-card-training-enrollments',
     chartData: EMPTY_CHART_DATA,
+    drawerType: DashboardDrawerType.OrgTrainingEnrollments,
+  },
+];
+
+// ============================================
+// Marketing Overview Metrics (Executive Director)
+// ============================================
+
+/**
+ * Marketing overview metrics for executive director dashboard
+ * NOTE: These are currently configured with mock data values.
+ * Data will be populated from live API once marketing analytics endpoints are available.
+ */
+export const MARKETING_OVERVIEW_METRICS: DashboardMetricCard[] = [
+  {
+    title: 'Website Visits',
+    icon: 'fa-light fa-globe',
+    value: '127,543',
+    changePercentage: '+12.4%',
+    trend: 'up',
+    subtitle: 'Last 30 days',
+    chartType: 'line',
+    category: 'marketing',
+    testId: 'marketing-card-website-visits',
+    chartData: {
+      labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
+      datasets: [
+        {
+          data: Array.from({ length: 30 }, (_, i) => 3000 + Math.floor(Math.sin(i / 3) * 500 + i * 50)),
+          borderColor: lfxColors.blue[500],
+          backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+        },
+      ],
+    },
+    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+  },
+  {
+    title: 'Social Media Reach',
+    icon: 'fa-light fa-share-nodes',
+    value: '89,231',
+    changePercentage: '+8.7%',
+    trend: 'up',
+    subtitle: 'Combined platform reach',
+    chartType: 'line',
+    category: 'marketing',
+    testId: 'marketing-card-social-media-reach',
+    chartData: {
+      labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
+      datasets: [
+        {
+          data: Array.from({ length: 30 }, (_, i) => 2000 + Math.floor(Math.sin(i / 4) * 400 + i * 30)),
+          borderColor: lfxColors.emerald[500],
+          backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+        },
+      ],
+    },
+    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+  },
+  {
+    title: 'Press Mentions',
+    icon: 'fa-light fa-newspaper',
+    value: '342',
+    changePercentage: '+15.2%',
+    trend: 'up',
+    subtitle: 'Last 30 days',
+    chartType: 'line',
+    category: 'marketing',
+    testId: 'marketing-card-press-mentions',
+    chartData: {
+      labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
+      datasets: [
+        {
+          data: Array.from({ length: 12 }, (_, i) => 20 + Math.floor(Math.sin(i / 2) * 8 + i * 2)),
+          borderColor: lfxColors.amber[500],
+          backgroundColor: hexToRgba(lfxColors.amber[500], 0.1),
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+        },
+      ],
+    },
+    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+  },
+  {
+    title: 'Newsletter Subscribers',
+    icon: 'fa-light fa-envelope-open-text',
+    value: '45,678',
+    changePercentage: '+5.1%',
+    trend: 'up',
+    subtitle: 'Active subscribers',
+    chartType: 'line',
+    category: 'marketing',
+    testId: 'marketing-card-newsletter-subscribers',
+    chartData: {
+      labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
+      datasets: [
+        {
+          data: Array.from({ length: 12 }, (_, i) => 35000 + i * 900),
+          borderColor: lfxColors.blue[300],
+          backgroundColor: hexToRgba(lfxColors.blue[300], 0.1),
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+        },
+      ],
+    },
+    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },
 ];
 

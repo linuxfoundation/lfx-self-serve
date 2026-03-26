@@ -43,8 +43,13 @@ export function getCombinedSurveyStatus(survey: UserSurvey): CombinedSurveyStatu
  * @param survey - The survey to compute status for
  * @returns The computed display status as SurveyStatus
  */
-export function getSurveyDisplayStatus(survey: Pick<Survey, 'survey_status' | 'survey_cutoff_date'>): SurveyStatus {
+export function getSurveyDisplayStatus(survey: Pick<Survey, 'survey_status' | 'survey_cutoff_date' | 'response_status'>): SurveyStatus {
   const status = survey.survey_status as SurveyStatus;
+
+  // Explicit response_status from the API takes precedence
+  if (survey.response_status === 'closed') {
+    return SurveyStatus.CLOSED;
+  }
 
   if (status === SurveyStatus.SENT) {
     const cutoffDate = survey.survey_cutoff_date ? new Date(survey.survey_cutoff_date) : null;

@@ -20,7 +20,7 @@ yarn start
 
 ## 🔧 Common Issues
 
-### Angular 19 Zoneless Issues
+### Angular 20 Zoneless Issues
 
 #### Component Not Updating
 

@@ -14,6 +14,8 @@ export interface CommitteeMember {
   committee_uid: string;
   /** Committee name for display purposes */
   committee_name: string;
+  /** Committee category (e.g. "Board", "Working Group") — returned by query service */
+  committee_category?: string;
   /** Member's username/handle */
   username?: string;
   /** Member's email address */
@@ -115,6 +117,27 @@ export interface CreateCommitteeMemberRequest {
     /** Organization website URL */
     website?: string | null;
   } | null;
+}
+
+/**
+ * Raw form values from the member form dialog
+ * @description Typed shape of the FormGroup.getRawValue() output in MemberFormComponent
+ */
+export interface MemberFormValue {
+  first_name: string;
+  last_name: string;
+  email: string;
+  job_title: string;
+  linkedin_profile: string;
+  organization: string;
+  organization_url: string;
+  role: CommitteeMemberRole | '';
+  voting_status: CommitteeMemberVotingStatus | '';
+  appointed_by: CommitteeMemberAppointedBy | '';
+  role_start: Date | null;
+  role_end: Date | null;
+  voting_status_start: Date | null;
+  voting_status_end: Date | null;
 }
 
 /**

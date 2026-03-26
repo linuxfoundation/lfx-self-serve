@@ -1,26 +1,26 @@
 # LFX One
 
 This is a monorepo for the LFX One application, built
-with Angular 19 and stable zoneless change detection.
+with Angular 20 and stable zoneless change detection.
 
 ## What's inside?
 
 ### Apps and Packages
 
-- `apps/lfx-one`: Angular 19 SSR application with zoneless change detection and
+- `apps/lfx-one`: Angular 20 SSR application with zoneless change detection and
   direct PrimeNG UI components
 
 The app is 100% [TypeScript](https://www.typescriptlang.org/).
 
 ### Architecture
 
-- **Frontend**: Angular 19 with stable zoneless change detection, Angular
+- **Frontend**: Angular 20 with stable zoneless change detection, Angular
   Signals, PrimeNG components, Tailwind CSS
-- **UI Framework**: PrimeNG 19 with custom LFX UI Core preset and Tailwind CSS integration
+- **UI Framework**: PrimeNG 20 with custom LFX UI Core preset and Tailwind CSS integration
 - **Styling**: Tailwind CSS v3 with PrimeUI plugin, CSS layers architecture,
-  Google Fonts (Open Sans + Roboto Slab)
+  Google Fonts (Inter primary, Open Sans fallback)
 - **Icons**: Font Awesome Pro via kits (no npm packages)
-- **Backend**: Express.js server with Angular 19 SSR, Auth0 authentication, Pino logging
+- **Backend**: Express.js server with Angular 20 SSR, Auth0 authentication, Pino logging
 - **Infrastructure**: PM2 process management for production deployment
 
 ### Development Tools
@@ -28,7 +28,7 @@ The app is 100% [TypeScript](https://www.typescriptlang.org/).
 This has comprehensive development tooling:
 
 - **[TypeScript](https://www.typescriptlang.org/)** for static type checking with strict configuration
-- **[ESLint](https://eslint.org/)** for code linting with Angular 19 specific rules
+- **[ESLint](https://eslint.org/)** for code linting with Angular 20 specific rules
 - **[Prettier](https://prettier.io)** for code formatting with Tailwind class sorting
 - **[Turborepo](https://turborepo.com/)** for efficient monorepo builds and caching
 - **[PM2](https://pm2.keymetrics.io/)** for production process management
@@ -46,8 +46,7 @@ of conduct, development process, and how to submit pull requests.
 
 - **Node.js** v22+ (specified in package.json)
 - **Yarn** v4.9.2+ package manager
-- **Auth0 Account** for authentication setup
-- **Supabase Project** for user profile email management
+- **1Password access** for environment variables (contact a code owner on Slack if you don't have access)
 
 #### Environment Setup
 
@@ -57,46 +56,20 @@ of conduct, development process, and how to submit pull requests.
    cp apps/lfx-one/.env.example apps/lfx-one/.env
    ```
 
-2. **Configure required environment variables:**
+2. **Get environment variables from 1Password:**
 
-   **Auth0 Configuration:**
-   - Set `PCC_AUTH0_CLIENT_ID` and `PCC_AUTH0_CLIENT_SECRET`
-     - Local Development: The default client ID is `lfx` and you can get the client secret from the k8s via `k get secrets authelia-clients -n lfx -o jsonpath='{.data.lfx}' | base64 --decode`
-   - Update `PCC_AUTH0_ISSUER_BASE_URL` with your Auth0 domain
-     - Local Development: `https://auth.k8s.orb.local`
-   - Configure `PCC_AUTH0_AUDIENCE` for your API
-     - Local Development: `http://lfx-api.k8s.orb.local/`
-   - Set `PCC_AUTH0_SECRET` to a sufficiently long random string (32+ characters)
-     - Generate a random 32 characters long string
+   All required environment variables are stored in the **LFX One Dev Environment** vault in
+   1Password. Copy the values into your `apps/lfx-one/.env` file.
 
-   **M2M (Machine-to-Machine) Authentication:**
-   - Set `M2M_AUTH_CLIENT_ID` and `M2M_AUTH_CLIENT_SECRET` for server-side API calls
-   - Configure `M2M_AUTH_ISSUER_BASE_URL` (typically same as Auth0 base URL)
-   - Set `M2M_AUTH_AUDIENCE` to match your API audience
+   If you don't have 1Password access, reach out to a code owner on Slack for help getting set up.
 
-   **Supabase Configuration:**
-   - Create a project in [Supabase](https://supabase.com)
-   - Get your project URL and anon key from Project Settings → API
-   - Set `SUPABASE_URL` and `POSTGRES_API_KEY`
-   - Used exclusively for user profile email management
+   The `.env.example` file documents all available variables and their purpose. The dev environment
+   is pre-configured — all services point to the shared development backend, so no local
+   infrastructure is required.
 
-   **Microservice Configuration:**
-   - Set `LFX_V2_SERVICE` to your query service endpoint
-     - Local Development: `http://lfx-api.k8s.orb.local`
-
-   **AI Service Configuration (Optional):**
-   - Set `AI_PROXY_URL` to your LiteLLM proxy endpoint for meeting agenda generation
-   - Provide a valid API key in `AI_API_KEY`
-
-   **NATS Configuration:**
-   - Set `NATS_URL` for internal messaging system (typically in Kubernetes environments)
-     - Local Development: `nats://lfx-platform-nats.lfx.svc.cluster.local:4222`
-
-   **Testing Configuration (Optional):**
-   - Set `TEST_USERNAME` and `TEST_PASSWORD` for automated E2E testing
-
-   **Local Development:**
-   - Set `NODE_TLS_REJECT_UNAUTHORIZED=0` when using Authelia for local authentication
+   **Optional variables** (not needed for basic development):
+   - `AI_PROXY_URL` / `AI_API_KEY` — For AI-powered features (meeting agenda generation)
+   - `TEST_USERNAME` / `TEST_PASSWORD` — For automated E2E testing
 
 #### Install and Run
 
@@ -168,7 +141,7 @@ yarn lint --filter=lfx-one
 ```text
 lfx-one/
 ├── apps/
-│   └── lfx-one/              # Angular 19 SSR application
+│   └── lfx-one/              # Angular 20 SSR application with stable zoneless change detection
 │       ├── src/app/config/   # Tailwind custom configurations
 │       │   └── styles/       # Colors and font-size configurations
 │       ├── eslint.config.mjs # Angular-specific ESLint rules
@@ -176,15 +149,15 @@ lfx-one/
 │       └── tailwind.config.js # Tailwind with PrimeUI plugin
 ├── docs/                     # Architecture and deployment documentation
 ├── turbo.json               # Turborepo pipeline configuration
-├── ecosystem.config.js      # PM2 production configuration
+├── apps/lfx-one/ecosystem.config.js  # PM2 production configuration
 └── package.json             # Root workspace configuration
 ```
 
 ## Key Features
 
-### Angular 19 with Zoneless Change Detection
+### Angular 20 with Zoneless Change Detection
 
-- **Experimental zoneless change detection** for improved performance
+- **Stable zoneless change detection** for improved performance
 - **Angular Signals** for reactive state management (preferred over RxJS)
 - **Standalone components** with explicit imports
 - **Component prefix**: All components use `lfx-` prefix (enforced by ESLint)
@@ -194,7 +167,7 @@ lfx-one/
 - **CSS Layers**: Organized layer system (`tailwind-base, primeng, tailwind-utilities`)
 - **PrimeNG Integration**: Custom preset using LFX UI Core design system
 - **Tailwind CSS**: Utility-first styling with PrimeUI plugin integration
-- **Custom Fonts**: Google Fonts (Open Sans + Roboto Slab) with CSS variables
+- **Custom Fonts**: Google Fonts (Inter primary, Open Sans fallback) with CSS variables
 
 ### Direct PrimeNG Usage
 
@@ -205,7 +178,7 @@ lfx-one/
 
 ### Code Quality
 
-- **ESLint**: Angular 19 specific rules with import organization and naming conventions
+- **ESLint**: Angular 20 specific rules with import organization and naming conventions
 - **Prettier**: Automatic code formatting with Tailwind class sorting
 - **TypeScript**: Strict configuration with path mappings (`@app/*`, `@config/*`)
 - **Testing**: Angular testing framework with comprehensive coverage
@@ -227,7 +200,7 @@ Comprehensive documentation organized by domain:
 
 #### 🎨 [Frontend Architecture](docs/architecture/frontend/)
 
-- **[Angular Patterns](docs/architecture/frontend/angular-patterns.md)** - Zoneless change detection, SSR, and Angular 19 features
+- **[Angular Patterns](docs/architecture/frontend/angular-patterns.md)** - Zoneless change detection, SSR, and Angular 20 features
 - **[Component Architecture](docs/architecture/frontend/component-architecture.md)** - PrimeNG wrappers, layout patterns, and component hierarchy
 - **[Styling System](docs/architecture/frontend/styling-system.md)** - CSS layers, Tailwind configuration, and LFX UI Core
 - **[State Management](docs/architecture/frontend/state-management.md)** - Angular Signals patterns and service architecture
@@ -235,7 +208,7 @@ Comprehensive documentation organized by domain:
 
 #### 🖥 [Backend Architecture](docs/architecture/backend/)
 
-- **[SSR Server](docs/architecture/backend/ssr-server.md)** - Express.js configuration and Angular 19 SSR integration
+- **[SSR Server](docs/architecture/backend/ssr-server.md)** - Express.js configuration and Angular 20 SSR integration
 - **[Authentication](docs/architecture/backend/authentication.md)** - Auth0 integration with express-openid-connect
 - **[Logging & Monitoring](docs/architecture/backend/logging-monitoring.md)** - Pino logging, structured logs, and health monitoring
 - **[Deployment](docs/deployment.md)** - PM2 configuration and production deployment
@@ -317,9 +290,9 @@ export class ExampleComponent {}
 
 ### Frontend
 
-- **Angular 19** with stable zoneless change detection
+- **Angular 20** with stable zoneless change detection
 - **Angular Signals** for state management
-- **PrimeNG 19** UI component library with custom LFX preset
+- **PrimeNG 20** UI component library with custom LFX preset
 - **Tailwind CSS v3** with PrimeUI plugin
 - **LFX UI Core** design system integration
 - **Font Awesome Pro** icons (via kits)
@@ -327,7 +300,7 @@ export class ExampleComponent {}
 
 ### Backend & Infrastructure
 
-- **Express.js** server with Angular 19 SSR
+- **Express.js** server with Angular 20 SSR
 - **Auth0** authentication with express-openid-connect
 - **Pino** high-performance structured logging
 - **PM2** for production process management and clustering

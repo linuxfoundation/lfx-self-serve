@@ -1,10 +1,82 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-.iframe-container {
-  width: 100%;
-  height: 100%;
-  display: flex;
-  flex-direction: column;
-  overflow: hidden;
+/* Message fade-in animation */
+.message-fade-in {
+  animation: fade-in 300ms ease-out;
+}
+
+@keyframes fade-in {
+  from {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Pulsing dot for active stage */
+.dot-pulse {
+  animation: dot-pulse-anim 1.5s ease-in-out infinite;
+}
+
+@keyframes dot-pulse-anim {
+  0%,
+  100% {
+    opacity: 1;
+    transform: scale(1);
+  }
+
+  50% {
+    opacity: 0.5;
+    transform: scale(0.75);
+  }
+}
+
+/* Fade + slide in for loading indicator */
+.fade-slide-in {
+  animation: fade-slide 400ms ease-out;
+}
+
+@keyframes fade-slide {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+/* Custom scrollbar for messages area */
+.messages-area {
+  scrollbar-width: thin;
+  scrollbar-color: #d1d5db transparent;
+
+  &::-webkit-scrollbar {
+    width: 4px;
+  }
+
+  &::-webkit-scrollbar-track {
+    background: transparent;
+  }
+
+  &::-webkit-scrollbar-thumb {
+    background-color: #d1d5db;
+    border-radius: 9999px;
+
+    &:hover {
+      background-color: #9ca3af;
+    }
+  }
+}
+
+/* Drawer background gradient */
+:host ::ng-deep .lens-drawer .p-drawer-content {
+  background: linear-gradient(180deg, #ffffff 0%, #f9fafb 100%);
 }

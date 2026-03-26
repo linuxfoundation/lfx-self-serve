@@ -3,11 +3,13 @@
 
 import { Request, NextFunction } from 'express';
 import { ServiceValidationError } from '../errors';
-import { logger } from '../services/logger.service';
 
 /**
  * Common validation utilities for controllers
  * Reduces duplication of parameter validation logic
+ *
+ * Note: These helpers do NOT log — the centralized apiErrorHandler
+ * logs all ServiceValidationErrors at WARN via getSeverity().
  */
 
 /**
@@ -16,7 +18,6 @@ import { logger } from '../services/logger.service';
 interface ValidationOptions {
   operation: string;
   service?: string;
-  logStartTime?: number;
 }
 
 /**
@@ -29,12 +30,6 @@ interface ValidationOptions {
  */
 export function validateUidParameter(uid: string | undefined, req: Request, next: NextFunction, options: ValidationOptions): uid is string {
   if (!uid || uid.trim() === '') {
-    const error = new Error(`Missing ${options.operation.replace('_', ' ')} UID parameter`);
-
-    if (options.logStartTime) {
-      logger.error(req, options.operation, options.logStartTime, error);
-    }
-
     const validationError = ServiceValidationError.forField('uid', 'UID is required', {
       operation: options.operation,
       service: options.service || 'controller',
@@ -65,12 +60,6 @@ export function validateArrayParameter<T>(
   options: ValidationOptions
 ): array is T[] {
   if (!Array.isArray(array) || array.length === 0) {
-    const error = new Error(`Missing or empty ${fieldName} array parameter`);
-
-    if (options.logStartTime) {
-      logger.error(req, options.operation, options.logStartTime, error);
-    }
-
     const validationError = ServiceValidationError.forField(fieldName, `${fieldName} must be a non-empty array`, {
       operation: options.operation,
       service: options.service || 'controller',
@@ -101,12 +90,6 @@ export function validateRequiredParameter<T>(
   options: ValidationOptions
 ): value is T {
   if (value === undefined || value === null || (typeof value === 'string' && value.trim() === '')) {
-    const error = new Error(`Missing required parameter: ${fieldName}`);
-
-    if (options.logStartTime) {
-      logger.error(req, options.operation, options.logStartTime, error);
-    }
-
     const validationError = ServiceValidationError.forField(fieldName, `${fieldName} is required`, {
       operation: options.operation,
       service: options.service || 'controller',
@@ -130,12 +113,6 @@ export function validateRequiredParameter<T>(
  */
 export function validateRequestBody<T>(body: T | undefined, req: Request, next: NextFunction, options: ValidationOptions): body is T {
   if (!body || (typeof body === 'object' && Object.keys(body).length === 0)) {
-    const error = new Error('Missing request body');
-
-    if (options.logStartTime) {
-      logger.error(req, options.operation, options.logStartTime, error);
-    }
-
     const validationError = ServiceValidationError.forField('body', 'Request body is required', {
       operation: options.operation,
       service: options.service || 'controller',

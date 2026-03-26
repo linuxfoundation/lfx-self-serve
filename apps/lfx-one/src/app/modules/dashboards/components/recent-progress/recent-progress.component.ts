@@ -3,7 +3,8 @@
 
 import { Component, computed, inject, signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FilterOption, FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
+import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
+import { FilterPillOption } from '@lfx-one/shared/interfaces';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
 import {
   BAR_CHART_WITH_FOOTER_OPTIONS,
@@ -98,7 +99,7 @@ export class RecentProgressComponent {
 
   protected readonly currentPersona = computed(() => this.personaService.currentPersona());
   protected readonly showFilterPills = computed(() => this.currentPersona() === 'maintainer');
-  protected readonly filterOptions: FilterOption[] = [
+  protected readonly filterOptions: FilterPillOption[] = [
     { id: 'all', label: 'All' },
     { id: 'code', label: 'Code' },
     { id: 'projectHealth', label: 'Project Health' },

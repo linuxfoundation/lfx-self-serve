@@ -2,9 +2,9 @@
 
 ## ⚡ Zoneless Change Detection
 
-Angular 19 provides zoneless change detection as a stable feature, which this application uses for improved performance.
+Angular 20 provides zoneless change detection as a stable feature, which this application uses for improved performance.
 
-> **Note**: Zoneless change detection is now stable in Angular 19. The experimental API `provideExperimentalZonelessChangeDetection()` has been replaced with `provideZonelessChangeDetection()`.
+> **Note**: Zoneless change detection is now stable in Angular 20. The experimental API `provideExperimentalZonelessChangeDetection()` has been replaced with `provideZonelessChangeDetection()`.
 
 ### Configuration
 

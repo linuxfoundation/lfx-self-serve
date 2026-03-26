@@ -19,7 +19,7 @@ apps/lfx-one/src/app/modules/
 │   ├── board-member/           # Board member dashboard
 │   ├── core-developer/         # Core developer dashboard
 │   ├── maintainer/             # Maintainer dashboard
-│   └── components/             # Dashboard-specific components
+│   └── components/             # Dashboard-specific components (drawers, cards)
 ├── meetings/                   # Meetings management
 │   ├── meetings-dashboard/     # Main meetings route component
 │   ├── meeting-manage/         # Meeting create/edit
@@ -42,7 +42,7 @@ apps/lfx-one/src/app/modules/
 ├── my-activity/                # User activity tracking
 │   ├── my-activity-dashboard/  # Main activity route component
 │   └── components/             # Activity components
-├── profile/                    # User profile
+├── profile/                    # User profile management
 │   ├── profile-overview/       # Profile overview tab
 │   ├── manage-profile/         # Profile editing
 │   ├── affiliations/           # User affiliations
@@ -52,17 +52,19 @@ apps/lfx-one/src/app/modules/
 │   └── components/             # Profile components
 ├── settings/                   # Application settings
 │   ├── settings-dashboard/     # Main settings route component
-│   └── components/             # Settings components
+│   └── components/             # Settings-specific components
 └── pages/                      # Static pages
     └── home/                   # Home/projects listing
 ```
+
+> **Note**: Routes are FLAT under `MainLayoutComponent` — there is no `/project/:slug` nesting.
 
 ### Key Principles
 
 1. **Section Organization**: Each major feature area (meetings, committees, etc.) has its own folder
 2. **Route Components**: Components that have routes live directly in their section folder
 3. **Shared Components Within Section**: Components used only within a section live in that section's `components` folder
-4. **Truly Shared Components**: Only components used across multiple sections remain in `app/shared/components`
+4. **Truly Shared Components**: Only components used across multiple sections remain in `apps/lfx-one/src/app/shared/components`
 
 ### Import Pattern
 
@@ -161,224 +163,19 @@ export class AvatarComponent {
 }
 ```
 
-### MenuComponent (`lfx-menu`)
+### Other Wrapper Components
 
-**Enhanced Features**: Programmatic control with `toggle()`, `show()`, `hide()` methods
-
-```html
-<!-- Popup menu with programmatic control -->
-<lfx-avatar (onClick)="userMenu.toggle($event)"></lfx-avatar>
-<lfx-menu #userMenu [model]="userMenuItems" [popup]="true"></lfx-menu>
-```
-
-**Public API Methods**:
-
-```typescript
-// MenuComponent exposes PrimeNG's programmatic control
-public toggle(event?: Event): void
-public show(event?: Event): void
-public hide(): void
-```
-
-### BadgeComponent (`lfx-badge`)
-
-**Template Support**: None (property-based component)
-
-**Features**: Simple wrapper for PrimeNG Badge with type-safe properties
-
-```html
-<lfx-badge [value]="'42'" [severity]="'success'" [size]="'large'"></lfx-badge>
-```
-
-**Properties**:
-
-- `value: string` - Badge text content
-- `severity: 'success' | 'info' | 'warning' | 'danger' | 'help' | 'primary' | 'secondary'`
-- `size: 'small' | 'large' | 'xlarge'`
-
-### ButtonComponent (`lfx-button`)
-
-**Template Support**: Content projection via `<ng-content>` (PrimeNG Button doesn't support pTemplate)
-
-```html
-<!-- Using properties for standard buttons -->
-<lfx-button [label]="'Save'" [icon]="'fa-light fa-save'" [severity]="'primary'" [loading]="isLoading()" (onClick)="handleSave($event)"> </lfx-button>
-
-<!-- Using content projection for custom button content -->
-<lfx-button [outlined]="true">
-  <svg width="20" height="20" viewBox="0 0 20 20">
-    <path d="..." fill="currentColor" />
-  </svg>
-  Custom Icon & Text
-</lfx-button>
-```
-
-**Key Properties**:
-
-- `label`, `icon`, `iconPos`
-- `severity`, `raised`, `rounded`, `text`, `outlined`, `link`, `plain`
-- `size`, `disabled`, `loading`, `loadingIcon`
-- `badge`, `badgeClass`, `badgeSeverity`
-
-### BreadcrumbComponent (`lfx-breadcrumb`)
-
-**Template Support**: `item` (with MenuItem context), `separator`
-
-```html
-<lfx-breadcrumb [model]="breadcrumbItems()">
-  <ng-template #item let-item>
-    <a [routerLink]="item.routerLink">{{ item.label }}</a>
-  </ng-template>
-  <ng-template #separator>
-    <i class="fa-light fa-angle-right"></i>
-  </ng-template>
-</lfx-breadcrumb>
-```
-
-### CardComponent (`lfx-card`)
-
-**Template Support**: `header`, `title`, `subtitle`, `footer`
-
-```html
-<lfx-card>
-  <ng-template #header>
-    <img src="header.jpg" alt="Header" />
-  </ng-template>
-  <ng-template #title>
-    <h3>Custom Title</h3>
-  </ng-template>
-  <ng-template #subtitle>
-    <p>Custom Subtitle</p>
-  </ng-template>
-  <p>Default content</p>
-  <ng-template #footer>
-    <button>Action</button>
-  </ng-template>
-</lfx-card>
-```
-
-### MenubarComponent (`lfx-menubar`)
-
-**Template Support**: `start`, `end`, `item` (with MenuItem + root context)
-
-```html
-<lfx-menubar [model]="menuItems()">
-  <ng-template #start>
-    <div>Start content</div>
-  </ng-template>
-  <ng-template #end>
-    <div>End content</div>
-  </ng-template>
-  <ng-template #item let-item let-root="root">
-    <a [routerLink]="item.routerLink">{{ item.label }}</a>
-  </ng-template>
-</lfx-menubar>
-```
-
-### TableComponent (`lfx-table`)
-
-**Template Support**: `header`, `body`, `footer`, `caption`, `summary`, `emptymessage`, `loading`, `loadingbody`, `groupheader`, `groupfooter`, `paginatorleft`, `paginatorright`, `paginatordropdownitem`
-
-**Features**:
-
-- **Full Template Support**: All PrimeNG Table templates are supported
-- **Comprehensive Properties**: Pagination, sorting, filtering, selection, lazy loading
-- **Event Handling**: Complete event coverage for table interactions
-- **Performance**: Virtual scrolling and lazy loading support
-
-```html
-<lfx-table [value]="projects()" [paginator]="true" [rows]="10" [globalFilterFields]="['name', 'description']">
-  <ng-template #header>
-    <tr>
-      <th>Name</th>
-      <th>Description</th>
-      <th>Status</th>
-    </tr>
-  </ng-template>
-
-  <ng-template #body let-project let-rowIndex="rowIndex">
-    <tr>
-      <td>{{ project.name }}</td>
-      <td>{{ project.description }}</td>
-      <td>
-        <lfx-badge [value]="project.status" [severity]="project.status === 'active' ? 'success' : 'warning'"> </lfx-badge>
-      </td>
-    </tr>
-  </ng-template>
-
-  <ng-template #emptymessage>
-    <tr>
-      <td colspan="3" class="text-center p-4">
-        <i class="fa-light fa-inbox text-4xl text-gray-400 mb-2"></i>
-        <p>No projects found</p>
-      </td>
-    </tr>
-  </ng-template>
-
-  <ng-template #paginatorleft let-state>
-    <lfx-button [icon]="'fa-light fa-refresh'" [text]="true" (onClick)="refresh()"> </lfx-button>
-  </ng-template>
-
-  <ng-template #paginatorright let-state>
-    <span class="text-sm text-gray-600"> Showing {{ state.first + 1 }} to {{ state.first + state.rows }} of {{ state.totalRecords }} </span>
-  </ng-template>
-</lfx-table>
-```
+Additional wrappers follow the same pattern: `BadgeComponent`, `ButtonComponent`, `BreadcrumbComponent`, `CardComponent`, `MenuComponent`, `MenubarComponent`, `TableComponent`. Each uses `input()` signals for properties, `output()` for events, and `@ContentChild` with `descendants: false` for template projection. See the source files in `app/shared/components/` for each wrapper's specific API.
 
 ## 🏗 Layout Components
 
-### ProjectLayoutComponent
+### MainLayoutComponent
 
-Provides consistent layout wrapper for project-related pages:
+The primary layout component that wraps all authenticated routes. Routes are flat under this layout — there is no nested `/project/:slug` routing pattern.
 
-```typescript
-@Component({
-  selector: 'lfx-project-layout',
-  template: `
-    <div class="project-layout">
-      <div class="project-header">
-        <lfx-breadcrumb [model]="breadcrumbItems()"></lfx-breadcrumb>
-        <h1>{{ projectTitle() }}</h1>
-        <p>{{ projectDescription() }}</p>
-      </div>
+### DevToolbarComponent
 
-      <nav class="project-nav">
-        @for (item of menuItems(); track item.label) {
-          <a [routerLink]="item.routerLink" routerLinkActive="active">
-            {{ item.label }}
-          </a>
-        }
-      </nav>
-
-      <main class="project-content">
-        <ng-content></ng-content>
-      </main>
-    </div>
-  `,
-})
-export class ProjectLayoutComponent {
-  // Required inputs
-  public readonly projectTitle = input.required<string>();
-  public readonly projectDescription = input.required<string>();
-  public readonly projectSlug = input.required<string>();
-
-  // Computed navigation items
-  public readonly menuItems = computed(() => [
-    {
-      label: 'Meetings',
-      routerLink: `/project/${this.projectSlug()}/meetings`,
-    },
-    {
-      label: 'Committees',
-      routerLink: `/project/${this.projectSlug()}/committees`,
-    },
-    {
-      label: 'Mailing Lists',
-      routerLink: `/project/${this.projectSlug()}/mailing-lists`,
-    },
-  ]);
-}
-```
+Development-only toolbar for persona selection and project switching. Includes board member project override functionality.
 
 ## 🎨 Component Development Pattern
 
@@ -573,14 +370,7 @@ protected handleSelectionChange(event: SelectionChangeEvent): void {
 
 - [ ] **Type Safety**: Import and use interfaces from `@lfx-one/shared` package
 - [ ] **Event Handling**: Proper event emission and parameter passing
-- [ ] **Error Handling**: Graceful handling of edge cases
 - [ ] **Accessibility**: Include ARIA labels and roles where applicable
-
-### Testing & Documentation
-
-- [ ] **Component Import**: Import wrapper component directly, not through barrel exports
-- [ ] **Usage Examples**: Create comprehensive usage examples
-- [ ] **Template Testing**: Verify all templates work correctly
 - [ ] **Nested Testing**: Test component works when nested with other wrappers
 - [ ] **Build Verification**: Ensure build passes and no TypeScript errors
 - [ ] **Documentation**: Update this documentation with usage examples

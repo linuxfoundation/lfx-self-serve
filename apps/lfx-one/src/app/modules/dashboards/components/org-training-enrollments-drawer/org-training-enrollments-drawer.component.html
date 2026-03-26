@@ -1,0 +1,84 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="org-training-enrollments-drawer">
+  <!-- Header -->
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full" data-testid="org-training-enrollments-drawer-header">
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="org-training-enrollments-drawer-title">Training Enrollments</h2>
+        <p class="text-sm text-gray-500">Board Member · Organization view</p>
+      </div>
+
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
+        aria-label="Close panel"
+        data-testid="org-training-enrollments-drawer-close">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <!-- Content -->
+  <div class="flex flex-col gap-6 pb-2" data-testid="org-training-enrollments-drawer-content">
+    <!-- Trend Chart Section -->
+    <div class="flex flex-col gap-3" data-testid="org-training-enrollments-drawer-trend-section">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-medium text-gray-900">Training Enrollments</h3>
+        <p class="text-xs text-gray-500">Employee training enrollments (last 12 months)</p>
+      </div>
+
+      @if (drawerLoading()) {
+        <div class="flex items-center justify-center py-12" data-testid="org-training-enrollments-drawer-loading">
+          <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+        </div>
+      } @else if (hasTrendData()) {
+        <div class="h-[260px]" data-testid="org-training-enrollments-drawer-trend-chart">
+          <lfx-chart type="line" [data]="trendChartData()" [options]="trendChartOptions" height="100%"></lfx-chart>
+        </div>
+      } @else {
+        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="org-training-enrollments-drawer-trend-empty">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No training enrollment data available for this foundation.</p>
+        </div>
+      }
+    </div>
+
+    <!-- Distribution Chart Section -->
+    @if (!drawerLoading()) {
+      <div class="flex flex-col gap-3" data-testid="org-training-enrollments-drawer-distribution-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-medium text-gray-900">Enrollments by Training Project</h3>
+          <p class="text-xs text-gray-500">Distribution of training enrollments across different projects</p>
+        </div>
+
+        @if (hasDistributionData()) {
+          <div class="h-[260px]" data-testid="org-training-enrollments-drawer-distribution-chart">
+            <lfx-chart type="bar" [data]="distributionChartData()" [options]="distributionChartOptions" height="100%"></lfx-chart>
+          </div>
+        } @else {
+          <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="org-training-enrollments-drawer-distribution-empty">
+            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+            <p class="text-sm text-gray-500">No training project distribution data available for this foundation.</p>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Insights Handoff -->
+    <lfx-insights-handoff-section
+      title="Looking for training details?"
+      description="Individual training records and project-level training analytics are available in the Organization Dashboard."
+      link="https://insights.linuxfoundation.org"
+      buttonLabel="View Organization Dashboard"
+      data-testid="org-training-enrollments-drawer-insights-handoff"></lfx-insights-handoff-section>
+  </div>
+</p-drawer>

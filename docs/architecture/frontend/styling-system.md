@@ -54,18 +54,7 @@ providePrimeNG({
 
 ## 🎯 LFX UI Core Integration
 
-### Custom PrimeNG Preset
-
-The application uses a custom PrimeNG preset based on LFX UI Core design tokens:
-
-```typescript
-// Custom preset configuration
-const customPreset = definePreset(Aura, {
-  primitive: lfxPreset.primitive, // Base design tokens
-  semantic: lfxPreset.semantic, // Semantic color mappings
-  components: lfxPreset.component, // Component-specific styles
-});
-```
+The `customPreset` shown above is built from LFX UI Core design tokens via `definePreset(Aura, lfxPreset)`, configuring primitive tokens, semantic color mappings, and component-specific styles.
 
 ### Design System Benefits
 
@@ -79,31 +68,25 @@ const customPreset = definePreset(Aura, {
 ### LFX Brand Colors
 
 ```typescript
-// packages/shared/src/constants/colors.constants.ts (imported via @lfx-one/shared)
-export const lfxColors = {
-  primary: {
-    50: '#eff6ff',
-    100: '#dbeafe',
-    // ... full color scale
-    900: '#1e3a8a',
-  },
-  secondary: {
-    // ... secondary color scale
-  },
-  // ... additional brand colors
-};
+// Colors imported from @lfx-one/shared package
+// Defined in packages/shared/src/constants/colors.constants.ts
+import { lfxColors } from '@lfx-one/shared/constants';
 ```
 
 ### Usage in Tailwind
 
-```typescript
+```javascript
 // tailwind.config.js
-module.exports = {
+import PrimeUI from 'tailwindcss-primeui';
+import { lfxColors } from '@lfx-one/shared/constants';
+
+export default {
   theme: {
     extend: {
       colors: lfxColors,
     },
   },
+  plugins: [PrimeUI],
 };
 ```
 
@@ -124,7 +107,8 @@ module.exports = {
 
 Fonts are loaded via Google Fonts for optimal performance:
 
-- **Open Sans**: Primary sans-serif font for body text
+- **Inter**: Primary visible sans-serif font (overrides Open Sans in styles.scss)
+- **Open Sans**: Fallback sans-serif font
 - **Roboto Slab**: Display font for headings and emphasis
 
 ### Custom Font Sizes
@@ -144,7 +128,11 @@ export const lfxFontSizes = {
 
 ```javascript
 // tailwind.config.js
-module.exports = {
+import PrimeUI from 'tailwindcss-primeui';
+import { lfxColors } from '@lfx-one/shared/constants';
+import { lfxFontSizes } from '@lfx-one/shared/constants';
+
+export default {
   content: ['./src/**/*.{html,ts}'],
   theme: {
     extend: {
@@ -158,7 +146,7 @@ module.exports = {
       },
     },
   },
-  plugins: [PrimeUI], // from 'tailwindcss-primeui'
+  plugins: [PrimeUI],
 };
 ```
 
@@ -283,7 +271,7 @@ Unused CSS is automatically removed in production builds:
 
 ```javascript
 // tailwind.config.js
-module.exports = {
+export default {
   content: ['./src/**/*.{html,ts}'],
   // Only CSS used in these files is included
 };
@@ -296,38 +284,3 @@ Critical CSS is inlined for faster initial renders:
 - Above-the-fold styles are prioritized
 - Non-critical styles are loaded asynchronously
 - Font loading is optimized with preload hints
-
-## 📏 Design Tokens
-
-### Spacing Scale
-
-```typescript
-// Consistent spacing throughout the application
-const spacing = {
-  0: '0px',
-  1: '0.25rem',
-  2: '0.5rem',
-  3: '0.75rem',
-  4: '1rem',
-  // ... standard Tailwind scale
-};
-```
-
-### Component Tokens
-
-```typescript
-// Component-specific design tokens
-const tokens = {
-  borderRadius: {
-    sm: '0.125rem',
-    DEFAULT: '0.25rem',
-    md: '0.375rem',
-    lg: '0.5rem',
-  },
-  boxShadow: {
-    sm: '0 1px 2px 0 rgb(0 0 0 / 0.05)',
-    DEFAULT: '0 1px 3px 0 rgb(0 0 0 / 0.1)',
-    // ... elevation scale
-  },
-};
-```

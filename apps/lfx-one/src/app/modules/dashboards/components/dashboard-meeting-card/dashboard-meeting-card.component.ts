@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import { ClipboardModule } from '@angular/cdk/clipboard';
-import { NgClass } from '@angular/common';
 import { Component, computed, inject, input, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
@@ -12,32 +11,33 @@ import {
   canJoinMeeting,
   DEFAULT_MEETING_TYPE_CONFIG,
   Meeting,
-  MEETING_TYPE_CONFIGS,
   MeetingAttachment,
+  MEETING_TYPE_CONFIGS,
   MeetingOccurrence,
   MeetingTypeBadge,
   TagSeverity,
 } from '@lfx-one/shared';
-import { FileTypeIconPipe } from '@pipes/file-type-icon.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
 import { UserService } from '@services/user.service';
+import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, combineLatest, map, of, switchMap } from 'rxjs';
+import { catchError, combineLatest, map, of, switchMap, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-dashboard-meeting-card',
-  imports: [NgClass, ButtonComponent, TagComponent, TooltipModule, ClipboardModule, FileTypeIconPipe, RecurrenceSummaryPipe],
+  imports: [ButtonComponent, TagComponent, TooltipModule, ClipboardModule, RecurrenceSummaryPipe],
   templateUrl: './dashboard-meeting-card.component.html',
 })
 export class DashboardMeetingCardComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
+  private readonly messageService = inject(MessageService);
 
   public readonly meeting = input.required<Meeting>();
   public readonly occurrence = input<MeetingOccurrence | null>(null);
 
-  public readonly attachments: Signal<MeetingAttachment[]>;
+  public readonly attachments: Signal<MeetingAttachment[]> = this.initAttachments();
   public readonly joinUrl: Signal<string | null>;
 
   // Computed values
@@ -54,38 +54,29 @@ export class DashboardMeetingCardComponent {
 
   public readonly hasAiSummary: Signal<boolean> = this.initHasAiSummary();
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
-  public readonly isLegacyMeeting: Signal<boolean> = this.initIsLegacyMeeting();
   public readonly isRecurring: Signal<boolean> = this.initIsRecurring();
   public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
 
   public constructor() {
     const meeting$ = toObservable(this.meeting);
-    const attachments$ = meeting$.pipe(
-      switchMap((meeting) => {
-        if (meeting?.uid) {
-          return this.meetingService.getMeetingAttachments(meeting.uid).pipe(catchError(() => of([])));
-        }
-        return of([]);
-      })
-    );
-
-    this.attachments = toSignal(attachments$, { initialValue: [] });
-
     const user$ = toObservable(this.userService.user);
     const authenticated$ = toObservable(this.userService.authenticated);
-    const isLegacyMeeting$ = toObservable(this.isLegacyMeeting);
 
-    const joinUrl$ = combineLatest([meeting$, user$, authenticated$, isLegacyMeeting$]).pipe(
-      switchMap(([meeting, user, authenticated, isLegacy]) => {
-        // For v1 meetings, use the join_url directly from the meeting object
-        if (isLegacy && meeting.join_url && this.canJoinMeeting()) {
-          return of(meeting.join_url);
+    const joinUrl$ = combineLatest([meeting$, user$, authenticated$]).pipe(
+      switchMap(([meeting, user, authenticated]) => {
+        if (!meeting.id || !this.canJoinMeeting()) {
+          return of(null);
         }
 
-        // For v2 meetings, fetch join URL from API for authenticated users
-        if (meeting.uid && authenticated && user?.email && this.canJoinMeeting()) {
-          return this.meetingService.getPublicMeetingJoinUrl(meeting.uid, meeting.password, { email: user.email }).pipe(
-            map((res) => buildJoinUrlWithParams(res.join_url, user)),
+        // Use public_link directly if available (e.g. for legacy meetings with link from query service)
+        if (meeting.public_link) {
+          return of(meeting.public_link);
+        }
+
+        // Otherwise fetch join URL from API for authenticated users
+        if (authenticated && user?.email) {
+          return this.meetingService.getPublicMeetingJoinUrl(meeting.id, meeting.password, { email: user.email }).pipe(
+            map((res) => buildJoinUrlWithParams(res.link, user)),
             catchError(() => of(null))
           );
         }
@@ -94,6 +85,27 @@ export class DashboardMeetingCardComponent {
     );
 
     this.joinUrl = toSignal(joinUrl$, { initialValue: null });
+  }
+
+  public downloadAttachment(attachment: MeetingAttachment): void {
+    const meetingId = this.meeting().id;
+    this.meetingService
+      .getMeetingAttachmentDownloadUrl(meetingId, attachment.uid)
+      .pipe(take(1))
+      .subscribe({
+        next: (res) => {
+          const newWindow = window.open(res.download_url, '_blank', 'noopener,noreferrer');
+          if (newWindow) {
+            newWindow.opener = null;
+          }
+        },
+        error: () =>
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Download Failed',
+            detail: 'Unable to download the attachment. Please try again.',
+          }),
+      });
   }
 
   private initMeetingTypeInfo(): Signal<MeetingTypeBadge> {
@@ -219,7 +231,14 @@ export class DashboardMeetingCardComponent {
 
   private initCanJoinMeeting(): Signal<boolean> {
     return computed(() => {
-      return canJoinMeeting(this.meeting(), this.occurrence());
+      const meeting = this.meeting();
+
+      // Restricted meetings require the user to be invited
+      if (meeting.restricted && !meeting.invited) {
+        return false;
+      }
+
+      return canJoinMeeting(meeting, this.occurrence());
     });
   }
 
@@ -235,10 +254,6 @@ export class DashboardMeetingCardComponent {
     });
   }
 
-  private initIsLegacyMeeting(): Signal<boolean> {
-    return computed(() => this.meeting().version === 'v1');
-  }
-
   private initIsRecurring(): Signal<boolean> {
     return computed(() => !!this.meeting().recurrence);
   }
@@ -252,12 +267,18 @@ export class DashboardMeetingCardComponent {
         params.set('password', meeting.password);
       }
 
-      if (this.isLegacyMeeting()) {
-        params.set('v1', 'true');
-      }
-
       const queryString = params.toString();
-      return queryString ? `/meetings/${meeting.uid}?${queryString}` : `/meetings/${meeting.uid}`;
+      return queryString ? `/meetings/${meeting.id}?${queryString}` : `/meetings/${meeting.id}`;
     });
+  }
+
+  private initAttachments(): Signal<MeetingAttachment[]> {
+    return toSignal(
+      toObservable(this.meeting).pipe(
+        switchMap((meeting) => (meeting?.id ? this.meetingService.getMeetingAttachments(meeting.id) : of([]))),
+        catchError(() => of([] as MeetingAttachment[]))
+      ),
+      { initialValue: [] }
+    );
   }
 }

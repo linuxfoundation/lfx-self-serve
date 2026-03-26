@@ -18,7 +18,7 @@ declare global {
 
 /**
  * Segment tracking service for Segment integration
- * Uses Angular 19's afterNextRender for SSR-safe script loading
+ * Uses Angular's afterNextRender for SSR-safe script loading
  */
 @Injectable({
   providedIn: 'root',

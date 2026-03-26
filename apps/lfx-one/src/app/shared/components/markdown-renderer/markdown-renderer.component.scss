@@ -1,0 +1,50 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+:host {
+  @apply block;
+}
+
+:host ::ng-deep .prose h1 {
+  @apply mb-2 text-xl font-bold;
+}
+
+:host ::ng-deep .prose h2 {
+  @apply mb-2 text-lg font-semibold;
+}
+
+:host ::ng-deep .prose h3 {
+  @apply mb-1.5 text-base font-semibold;
+}
+
+:host ::ng-deep .prose p {
+  @apply mb-2 leading-relaxed;
+}
+
+:host ::ng-deep .prose ul {
+  @apply mb-2 list-disc pl-6;
+}
+
+:host ::ng-deep .prose ol {
+  @apply mb-2 list-decimal pl-6;
+}
+
+:host ::ng-deep .prose li {
+  @apply mb-1;
+}
+
+:host ::ng-deep .prose strong {
+  @apply font-semibold;
+}
+
+:host ::ng-deep .prose code {
+  @apply rounded bg-gray-100 px-1.5 py-0.5 text-[0.875em];
+}
+
+:host ::ng-deep .prose a {
+  @apply text-blue-600 underline underline-offset-2;
+}
+
+:host ::ng-deep .prose p:last-child {
+  @apply mb-0;
+}

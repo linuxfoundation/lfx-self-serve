@@ -63,18 +63,33 @@
         <div class="flex flex-col gap-4">
           <!-- Group/Committee Selector -->
           <div class="flex flex-col gap-1">
-            <lfx-committee-selector
-              [form]="form()"
-              control="committee"
-              [multiple]="false"
-              [required]="true"
-              [label]="committeeLabel.singular"
-              [description]="'The selected ' + (committeeLabel.singular | lowercase) + ' defines who can vote.'"
-              [placeholder]="'Select a ' + (committeeLabel.singular | lowercase)"
-              testIdPrefix="vote-committee-selector">
-            </lfx-committee-selector>
-            @if (form().get('committee')?.touched && !form().get('committee')?.value) {
-              <p class="text-red-500 text-xs">{{ committeeLabel.singular }} is required.</p>
+            @if (committeeContext(); as ctx) {
+              <!-- Read-only committee display (locked from group context) -->
+              <label class="text-sm font-medium text-gray-700 block"> {{ committeeLabel.singular }} <span class="text-red-500">*</span> </label>
+              <div class="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg" data-testid="vote-committee-locked">
+                <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+                  <i class="fa-light fa-users text-sm text-blue-600" aria-hidden="true"></i>
+                </div>
+                <div class="flex-1">
+                  <p class="text-sm font-medium text-gray-900">{{ ctx.name }}</p>
+                  <p class="text-xs text-gray-500">{{ ctx.category }}</p>
+                </div>
+                <i class="fa-light fa-lock text-gray-400" aria-hidden="true"></i>
+              </div>
+            } @else {
+              <lfx-committee-selector
+                [form]="form()"
+                control="committee"
+                [multiple]="false"
+                [required]="true"
+                [label]="committeeLabel.singular"
+                [description]="'The selected ' + (committeeLabel.singular | lowercase) + ' defines who can vote.'"
+                [placeholder]="'Select a ' + (committeeLabel.singular | lowercase)"
+                testIdPrefix="vote-committee-selector">
+              </lfx-committee-selector>
+              @if (form().get('committee')?.touched && !form().get('committee')?.value) {
+                <p class="text-red-500 text-xs">{{ committeeLabel.singular }} is required.</p>
+              }
             }
           </div>
 
@@ -107,6 +122,7 @@
               placeholder="Select close date"
               [minDate]="minDate"
               [showButtonBar]="true"
+              appendTo="body"
               data-testid="vote-close-date-calendar">
             </lfx-calendar>
             @if (form().get('close_date')?.touched && !form().get('close_date')?.value) {

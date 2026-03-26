@@ -7,6 +7,7 @@ import { PendingActionItem } from '@lfx-one/shared/interfaces';
 import { HiddenActionsService } from '@services/hidden-actions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
 
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
@@ -16,7 +17,7 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
 
 @Component({
   selector: 'lfx-board-member-dashboard',
-  imports: [OrganizationInvolvementComponent, PendingActionsComponent, MyMeetingsComponent, FoundationHealthComponent],
+  imports: [OrganizationInvolvementComponent, PendingActionsComponent, MyMeetingsComponent, FoundationHealthComponent, SkeletonModule],
   templateUrl: './board-member-dashboard.component.html',
   styleUrl: './board-member-dashboard.component.scss',
 })

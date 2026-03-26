@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { isUuid, Meeting } from '@lfx-one/shared';
+import { Meeting } from '@lfx-one/shared';
 import { MeetingVisibility, QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import { CreateMeetingRegistrantRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
@@ -28,24 +28,16 @@ export class PublicMeetingController {
    * GET /public/api/meetings/:id
    * Retrieves a single meeting by ID without requiring authentication
    */
-  // TODO(v1-migration): Remove V1 detection and handling once all meetings are migrated to V2
   public async getMeetingById(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
-    let v1 = false; // Default to v2 meetings
-
-    // Validate the meeting ID is a UUID -- if not, set v1 to true
-    if (!isUuid(id)) {
-      v1 = true;
-    }
 
     const startTime = logger.startOperation(req, 'get_public_meeting_by_id', {
-      meeting_uid: id,
-      v1,
+      meeting_id: id,
     });
 
     try {
       // Check if the meeting UID is provided
-      if (!this.validateMeetingId(id, 'get_public_meeting_by_id', req, next, startTime)) {
+      if (!this.validateMeetingId(id, 'get_public_meeting_by_id', req, next)) {
         return;
       }
 
@@ -55,21 +47,28 @@ export class PublicMeetingController {
       // Generate M2M token once for all operations
       const m2mToken = await this.setupM2MToken(req);
 
-      // Get the meeting by ID using M2M token
-      let meeting = await this.fetchMeetingWithM2M(req, id, v1 ? 'v1_meeting' : 'meeting', m2mToken);
+      // Get the meeting by ID using M2M token (all meetings are now v1_meeting type)
+      let meeting = await this.fetchMeetingWithM2M(req, id, 'v1_meeting', m2mToken);
       if (!meeting) {
         // Throw a resource not found error (error handler will log)
         throw new ResourceNotFoundError('Meeting', id, {
           operation: 'get_public_meeting_by_id',
           service: 'public_meeting_controller',
-          path: `/meetings/${id}`,
+          path: `/itx/meetings/${id}`,
         });
       }
 
-      // Fetch the project
-      const project = await this.projectService.getProjectById(req, meeting.project_uid, false);
+      // Fetch project and invited status in parallel (both depend only on meeting data)
+      const isAuthenticated = req.oidc?.isAuthenticated();
+      const [project, meetingWithInvited] = await Promise.all([
+        this.projectService.getProjectById(req, meeting.project_uid, false),
+        isAuthenticated
+          ? addInvitedStatusToMeeting(req, meeting, (req.oidc.user?.['email'] as string) || '', m2mToken)
+          : Promise.resolve(Object.assign(meeting, { invited: false })),
+      ]);
+      meeting = meetingWithInvited;
+
       if (!project) {
-        // Throw a resource not found error (error handler will log)
         throw new ResourceNotFoundError('Project', meeting.project_uid, {
           operation: 'get_public_meeting_by_id',
           service: 'public_meeting_controller',
@@ -77,72 +76,76 @@ export class PublicMeetingController {
         });
       }
 
-      // Fetch the registrants
-      const registrants = v1 ? [] : await this.meetingService.getMeetingRegistrants(req, meeting.uid);
-      const committeeMembers = registrants.filter((r) => r.type === 'committee').length ?? 0;
-      meeting.individual_registrants_count = (registrants?.length ?? 0) - (committeeMembers ?? 0);
-      meeting.committee_members_count = committeeMembers ?? 0;
-
-      // Check if authenticated user is invited to the meeting
-      if (req.oidc?.isAuthenticated()) {
-        const userEmail = (req.oidc.user?.['email'] as string) || '';
-        meeting = await addInvitedStatusToMeeting(req, meeting, userEmail, m2mToken);
-      } else {
-        meeting.invited = false;
-      }
-
-      // Log the success
-      logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_uid: id, project_uid: meeting.project_uid, title: meeting.title });
-
-      // Check if the meeting visibility is public and not restricted, if so, get join URL and return the meeting and project
-      if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
-        // Only get join URL if within allowed join time window
-        if (this.isWithinJoinWindow(meeting)) {
-          // Only get join URL if not a legacy meeting
-          if (!v1) {
-            await this.handleJoinUrlForPublicMeeting(req, meeting, id);
-          }
-        } else {
-          // Delete join URL if not within allowed join time window for legacy meetings
-          if (v1) {
-            delete meeting.join_url;
-          }
-        }
-        res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url } });
-        return;
-      }
-
-      // Delete join URL if not within allowed join time window for legacy meetings
-      if (v1) {
-        delete meeting.join_url;
-      }
-
-      // Check if the user has passed in a password, if so, check if it's correct
-      const { password } = req.query;
-      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'get_public_meeting_by_id', req, next)) {
-        return;
-      }
-
-      // Check if user is authenticated and add organizer field
-      if (req.oidc?.isAuthenticated()) {
-        // Restore user's original token before organizer check
+      // Check organizer status for authenticated users (needed for all meeting types)
+      if (isAuthenticated) {
+        // Temporarily restore user's original token for the access check
         if (originalToken !== undefined) {
           req.bearerToken = originalToken;
         }
 
         try {
-          meeting = await this.accessCheckService.addAccessToResource(req, meeting, 'meeting', 'organizer');
+          meeting = await this.accessCheckService.addAccessToResource(req, meeting, 'v1_meeting', 'organizer');
         } catch (error) {
           // If organizer check fails, log but continue with organizer = false
           logger.warning(req, 'get_public_meeting_by_id', 'Failed to check organizer status, continuing with organizer = false', {
             err: error,
-            meeting_uid: id,
+            meeting_id: id,
           });
           meeting.organizer = false;
         }
+
+        // Restore M2M token for subsequent operations (e.g., fetching public join URL)
+        req.bearerToken = m2mToken;
       } else {
-        // User is not authenticated, set organizer to false
         meeting.organizer = false;
+      }
+
+      // Fetch registrant counts for organizers, otherwise default to 0
+      if (meeting.organizer) {
+        try {
+          const registrants = await this.meetingService.getMeetingRegistrants(req, id);
+          const committeeMembers = registrants.filter((r) => r.type === 'committee').length;
+          meeting.individual_registrants_count = registrants.length - committeeMembers;
+          meeting.committee_members_count = committeeMembers;
+        } catch (error) {
+          logger.warning(req, 'get_public_meeting_by_id', 'Failed to fetch registrant counts for organizer', {
+            meeting_id: id,
+            err: error,
+          });
+          meeting.individual_registrants_count = 0;
+          meeting.committee_members_count = 0;
+        }
+      } else {
+        meeting.individual_registrants_count = 0;
+        meeting.committee_members_count = 0;
+      }
+
+      // Log the success
+      logger.success(req, 'get_public_meeting_by_id', startTime, { meeting_id: id, project_uid: meeting.project_uid, title: meeting.title });
+
+      // Check if the meeting visibility is public and not restricted, if so, get join URL and return the meeting and project
+      if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
+        // Only get join URL if within allowed join time window
+        if (this.isWithinJoinWindow(meeting)) {
+          // Fetch join URL if not already available from ITX data
+          if (!meeting.public_link) {
+            await this.handleJoinUrlForPublicMeeting(req, meeting, id);
+          }
+        } else {
+          // Remove public link outside join window
+          delete meeting.public_link;
+        }
+        res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url } });
+        return;
+      }
+
+      // Remove public link for restricted/private meetings (will be provided after password validation)
+      delete meeting.public_link;
+
+      // Check if the user has passed in a password, if so, check if it's correct
+      const { password } = req.query;
+      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'get_public_meeting_by_id', req, next)) {
+        return;
       }
 
       // Send the meeting and project data to the client
@@ -153,34 +156,32 @@ export class PublicMeetingController {
     }
   }
 
-  // TODO(v1-migration): Remove V1 detection and handling once all meetings are migrated to V2
   public async postMeetingJoinUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
     const { password } = req.query;
     const email: string = req.body.email ?? req.oidc.user?.['email'] ?? '';
-    const startTime = logger.startOperation(req, 'post_meeting_join_url', {
-      meeting_uid: id,
+    const startTime = logger.startOperation(req, 'post_meeting_link', {
+      meeting_id: id,
     });
-    const v1 = !isUuid(id);
 
     try {
       // Check if the meeting UID is provided
-      if (!this.validateMeetingId(id, 'post_meeting_join_url', req, next, startTime)) {
+      if (!this.validateMeetingId(id, 'post_meeting_link', req, next)) {
         return;
       }
 
-      const meeting = await this.fetchMeetingWithM2M(req, id, v1 ? 'v1_meeting' : 'meeting');
+      const meeting = await this.fetchMeetingWithM2M(req, id, 'v1_meeting');
 
       if (!meeting) {
         throw new ResourceNotFoundError('Meeting', id, {
-          operation: 'post_meeting_join_url',
+          operation: 'post_meeting_link',
           service: 'public_meeting_controller',
-          path: `/meetings/${id}`,
+          path: `/itx/meetings/${id}`,
         });
       }
 
       // Check if the user has passed in a password, if so, check if it's correct
-      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_join_url', req, next)) {
+      if (!this.validateMeetingPassword(password as string, meeting.password as string, 'post_meeting_link', req, next)) {
         return;
       }
 
@@ -189,7 +190,7 @@ export class PublicMeetingController {
         const earlyJoinMinutes = meeting?.early_join_time_minutes ?? 10;
 
         const validationError = ServiceValidationError.forField('timing', `You can join the meeting up to ${earlyJoinMinutes} minutes before the start time`, {
-          operation: 'post_meeting_join_url',
+          operation: 'post_meeting_link',
           service: 'public_meeting_controller',
           path: req.path,
         });
@@ -204,17 +205,18 @@ export class PublicMeetingController {
         await this.restrictedMeetingCheck(req, next, email, id);
       }
 
-      if (v1) {
-        // If the meeting is v1, return the join URL
-        res.json({ join_url: meeting.join_url });
+      // Return public_link if available from ITX data, otherwise fetch from API
+      if (meeting.public_link) {
+        res.json({ link: meeting.public_link });
         return;
       }
 
-      const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
+      const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id, email);
 
       // Log the success
-      logger.success(req, 'post_meeting_join_url', startTime, {
-        meeting_uid: id,
+      logger.success(req, 'post_meeting_link', startTime, {
+        meeting_id: id,
+        email: email,
         project_uid: meeting.project_uid,
         title: meeting.title,
       });
@@ -232,16 +234,16 @@ export class PublicMeetingController {
    */
   public async registerForPublicMeeting(req: Request, res: Response, next: NextFunction): Promise<void> {
     const registrantData: CreateMeetingRegistrantRequest = req.body;
-    const meetingId = registrantData.meeting_uid;
+    const meetingId = registrantData.meeting_id;
 
     const startTime = logger.startOperation(req, 'register_for_public_meeting', {
-      meeting_uid: meetingId,
+      meeting_id: meetingId,
     });
 
     try {
       // Validate the meeting ID is provided
       if (!meetingId) {
-        const validationError = ServiceValidationError.forField('meeting_uid', 'Meeting ID is required', {
+        const validationError = ServiceValidationError.forField('meeting_id', 'Meeting ID is required', {
           operation: 'register_for_public_meeting',
           service: 'public_meeting_controller',
           path: req.path,
@@ -273,13 +275,13 @@ export class PublicMeetingController {
       const m2mToken = await this.setupM2MToken(req);
 
       // Fetch the meeting to validate it's public and non-restricted
-      const meeting = await this.meetingService.getMeetingById(req, meetingId, 'meeting', false);
+      const meeting = await this.meetingService.getMeetingById(req, meetingId, 'v1_meeting', false);
 
       if (!meeting) {
         throw new ResourceNotFoundError('Meeting', meetingId, {
           operation: 'register_for_public_meeting',
           service: 'public_meeting_controller',
-          path: `/meetings/${meetingId}`,
+          path: `/itx/meetings/${meetingId}`,
         });
       }
 
@@ -309,7 +311,7 @@ export class PublicMeetingController {
       const newRegistrant = await this.meetingService.addMeetingRegistrantWithM2M(req, registrantData, m2mToken);
 
       logger.success(req, 'register_for_public_meeting', startTime, {
-        meeting_uid: meetingId,
+        meeting_id: meetingId,
         registrant_uid: newRegistrant.uid,
       });
 
@@ -339,11 +341,10 @@ export class PublicMeetingController {
   /**
    * Validates meeting ID parameter
    */
-  private validateMeetingId(id: string, operation: string, req: Request, next: NextFunction, startTime: number): boolean {
+  private validateMeetingId(id: string, operation: string, req: Request, next: NextFunction): boolean {
     return validateUidParameter(id, req, next, {
       operation,
       service: 'public_meeting_controller',
-      logStartTime: startTime,
     });
   }
 
@@ -371,7 +372,7 @@ export class PublicMeetingController {
    * @param meetingType - Type of meeting query
    * @param m2mToken - Optional pre-generated M2M token (will be generated if not provided)
    */
-  private async fetchMeetingWithM2M(req: Request, id: string, meetingType: QueryServiceMeetingType = 'meeting', m2mToken?: string) {
+  private async fetchMeetingWithM2M(req: Request, id: string, meetingType: QueryServiceMeetingType = 'v1_meeting', m2mToken?: string) {
     const startTime = logger.startOperation(req, 'fetch_meeting_with_m2m', {
       meeting_id: id,
     });
@@ -385,8 +386,7 @@ export class PublicMeetingController {
     const meeting = await this.meetingService.getMeetingById(req, id, meetingType, false);
 
     logger.success(req, 'fetch_meeting_with_m2m', startTime, {
-      meeting_id: id,
-      meeting_uid: meeting.uid,
+      meeting_id: meeting.id,
     });
 
     return meeting;
@@ -396,21 +396,21 @@ export class PublicMeetingController {
    * Handles join URL logic for public meetings
    */
   private async handleJoinUrlForPublicMeeting(req: Request, meeting: any, id: string): Promise<void> {
-    const startTime = logger.startOperation(req, 'handle_join_url_for_public_meeting', {
-      meeting_uid: id,
+    const startTime = logger.startOperation(req, 'handle_link_for_public_meeting', {
+      meeting_id: id,
     });
 
     try {
       const joinUrlData = await this.meetingService.getMeetingJoinUrl(req, id);
-      meeting.join_url = joinUrlData.join_url;
+      meeting.public_link = joinUrlData.link;
 
-      logger.success(req, 'handle_join_url_for_public_meeting', startTime, {
-        meeting_uid: id,
-        has_join_url: !!joinUrlData.join_url,
+      logger.success(req, 'handle_link_for_public_meeting', startTime, {
+        meeting_id: id,
+        has_link: !!joinUrlData.link,
       });
     } catch (error) {
-      logger.warning(req, 'handle_join_url_for_public_meeting', 'Failed to fetch join URL, continuing without it', {
-        meeting_uid: id,
+      logger.warning(req, 'handle_link_for_public_meeting', 'Failed to fetch join URL, continuing without it', {
+        meeting_id: id,
         has_token: !!req.bearerToken,
         err: error,
       });
@@ -443,7 +443,7 @@ export class PublicMeetingController {
     if (!email) {
       // Create a validation error (error handler will log)
       const validationError = ServiceValidationError.forField('email', 'Email is required', {
-        operation: 'post_meeting_join_url',
+        operation: 'post_meeting_link',
         service: 'public_meeting_controller',
         path: req.path,
       });
@@ -454,11 +454,11 @@ export class PublicMeetingController {
 
     // Query the meeting registrants filtered by the user's email to validate if the user was invited to the meeting
     const registrants = await this.meetingService.getMeetingRegistrantsByEmail(req, id, email);
-    if (registrants.resources.length === 0) {
+    if (registrants.length === 0) {
       const authError = new AuthorizationError('The email address is not registered for this restricted meeting', {
-        operation: 'post_meeting_join_url',
+        operation: 'post_meeting_link',
         service: 'public_meeting_controller',
-        path: `/meetings/${id}`,
+        path: `/itx/meetings/${id}`,
       });
       throw authError;
     }
@@ -466,7 +466,7 @@ export class PublicMeetingController {
     logger.success(req, 'restricted_meeting_check', helperStartTime, {
       meeting_id: id,
       email,
-      registrant_count: registrants.resources.length,
+      registrant_count: registrants.length,
     });
   }
 }

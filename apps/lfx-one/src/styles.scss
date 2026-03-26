@@ -2,7 +2,7 @@
 /* SPDX-License-Identifier: MIT */
 
 /* Google Fonts - Must be at the very top */
-@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Roboto+Slab:wght@100..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=JetBrains+Mono:wght@400;500;600&family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Roboto+Slab:wght@100..900&display=swap');
 
 @layer tailwind-base, primeng, tailwind-utilities;
 
@@ -77,6 +77,9 @@
 
   /* Keep Roboto Slab as serif option too */
   --font-serif: 'Roboto Slab', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
+
+  /* JetBrains Mono for code/SQL blocks */
+  --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 
 :root {

@@ -31,10 +31,10 @@
         }
       </div>
 
-      <!-- Agenda (Required) -->
+      <!-- Agenda (Optional) -->
       <div>
         <div class="flex items-center justify-between mb-2">
-          <label for="meeting-agenda" class="block text-neutral-950"> Agenda <span class="text-red-500">*</span> </label>
+          <label for="meeting-agenda" class="block text-neutral-950"> Agenda <span class="text-gray-400">(optional)</span> </label>
           @if (!showAiHelper() && !showTemplateSelector()) {
             <div class="flex items-center gap-3">
               <button
@@ -130,9 +130,6 @@
             {{ form().get('description')?.value?.length || 0 }}/2000
           </p>
         </div>
-        @if (form().get('description')?.errors?.['required'] && form().get('description')?.touched) {
-          <p class="mt-1 text-sm text-red-600">Meeting agenda is required</p>
-        }
         @if (form().get('description')?.errors?.['maxlength'] && form().get('description')?.touched) {
           <p class="mt-1 text-sm text-red-600">Meeting agenda cannot exceed 2000 characters</p>
         }

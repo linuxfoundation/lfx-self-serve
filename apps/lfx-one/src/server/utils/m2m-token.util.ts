@@ -87,7 +87,9 @@ export async function generateM2MToken(req: Request, options?: M2MTokenOptions):
 
     if (!tokenResponse.access_token) {
       logger.error(req, 'generate_m2m_token', startTime, new Error('No access token in response'), {
-        token_response: tokenResponse,
+        token_type: tokenResponse.token_type,
+        expires_in: tokenResponse.expires_in,
+        scope: tokenResponse.scope,
       });
 
       throw new MicroserviceError('Invalid token response: missing access_token', 500, 'INVALID_TOKEN_RESPONSE', {

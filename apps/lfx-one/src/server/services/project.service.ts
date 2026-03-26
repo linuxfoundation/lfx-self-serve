@@ -11,18 +11,37 @@ import {
   FoundationHealthEventsMonthlyRow,
   FoundationHealthScoreDistributionResponse,
   FoundationHealthScoreDistributionRow,
+  FoundationEventsAttendanceDistributionResponse,
+  FoundationEventsAttendanceDistributionRow,
+  FoundationEventsQuarterlyResponse,
+  FoundationEventsQuarterlyRow,
   FoundationMaintainersDailyRow,
+  FoundationMaintainersDistributionResponse,
+  FoundationMaintainersDistributionRow,
+  FoundationMaintainersMonthlyResponse,
+  FoundationMaintainersMonthlyRow,
   FoundationMaintainersResponse,
+  FoundationProjectsDetailResponse,
+  FoundationProjectsDetailRow,
+  FoundationProjectsLifecycleDistributionResponse,
+  FoundationProjectsLifecycleDistributionRow,
+  LifecycleStage,
   FoundationSoftwareValueResponse,
+  FoundationValueConcentrationResponse,
+  FoundationValueConcentrationRow,
+  FoundationTotalProjectsMonthlyRow,
   FoundationTopProjectBySoftwareValueRow,
   FoundationTotalMembersResponse,
   FoundationTotalProjectsResponse,
+  FoundationActiveContributorsMonthlyRow,
+  FoundationActiveContributorsMonthlyResponse,
+  FoundationContributorsDistributionResponse,
+  FoundationContributorsDistributionRow,
   FoundationUniqueContributorsDailyRow,
   HealthEventsMonthlyResponse,
   HealthMetricsAggregatedRow,
   HealthMetricsDailyResponse,
   MonthlyMemberCountWithFoundation,
-  MonthlyProjectCountWithFoundation,
   PendingActionItem,
   PendingSurveyRow,
   Project,
@@ -47,6 +66,7 @@ import {
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { logger } from './logger.service';
@@ -58,11 +78,11 @@ import { SnowflakeService } from './snowflake.service';
  * Service for handling project business logic
  */
 export class ProjectService {
-  private accessCheckService: AccessCheckService;
-  private microserviceProxy: MicroserviceProxyService;
-  private natsService: NatsService;
-  private etagService: ETagService;
-  private snowflakeService: SnowflakeService;
+  private readonly accessCheckService: AccessCheckService;
+  private readonly microserviceProxy: MicroserviceProxyService;
+  private readonly natsService: NatsService;
+  private readonly etagService: ETagService;
+  private readonly snowflakeService: SnowflakeService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
@@ -79,28 +99,15 @@ export class ProjectService {
     const params = {
       ...query,
       type: 'project',
+      page_size: 100,
     };
 
-    const resources: Project[] = [];
-
-    let response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
-
-    resources.push(...response.resources.map((resource) => resource.data));
-    // If there is a page_token, we need to paginate to get the rest fo the projects and merge
-    while (response.page_token) {
-      const pagedResponse: QueryServiceResponse<Project> = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        {
-          ...params,
-          page_token: response.page_token,
-        }
-      );
-      resources.push(...pagedResponse.resources.map((resource) => resource.data));
-      response = pagedResponse;
-    }
+    const resources = await fetchAllQueryResources<Project>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
 
     // Add writer access field to all projects
     return await this.accessCheckService.addAccessToResources(req, resources, 'project');
@@ -110,29 +117,15 @@ export class ProjectService {
    * Fetches a single project by ID
    */
   public async getProjectById(req: Request, uid: string, access: boolean = true): Promise<Project> {
-    const params = {
-      type: 'project',
-      tags: uid,
-    };
+    const project = await this.microserviceProxy.proxyRequest<Project>(req, 'LFX_V2_SERVICE', `/projects/${uid}`, 'GET');
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
-
-    if (!resources || resources.length === 0) {
+    if (!project) {
       throw new ResourceNotFoundError('Project', uid, {
         operation: 'get_project_by_id',
         service: 'project_service',
-        path: '/query/resources',
+        path: `/projects/${uid}`,
       });
     }
-
-    if (resources.length > 1) {
-      logger.warning(req, 'get_project_by_id', 'Multiple projects found for single ID lookup', {
-        project_id: uid,
-        result_count: resources.length,
-      });
-    }
-
-    const project = resources[0].data;
 
     // Add writer access field to the project
     if (access) {
@@ -893,53 +886,31 @@ export class ProjectService {
 
   /**
    * Get total projects count for a foundation from Snowflake
-   * Queries MEMBER_DASHBOARD_TOTAL_PROJECTS table with monthly cumulative aggregation
-   * Optimized single query including foundation metadata
+   * Queries FOUNDATION_TOTAL_PROJECTS_MONTHLY with pre-computed cumulative monthly counts
    * @param foundationSlug - Foundation slug to filter by (e.g., 'tlf', 'cncf')
    * @returns Foundation total projects response with cumulative monthly data and metadata
    */
   public async getFoundationTotalProjects(foundationSlug: string): Promise<FoundationTotalProjectsResponse> {
     const query = `
-      WITH monthly_counts AS (
-        SELECT
-          FOUNDATION_SEGMENT_ID,
-          FOUNDATION_NAME,
-          FOUNDATION_SOURCE_ID,
-          FOUNDATION_SLUG,
-          DATE_TRUNC('MONTH', CHILD_START_DATE) AS MONTH_START,
-          COUNT(DISTINCT CHILD_SEGMENT_ID) AS MONTHLY_COUNT
-        FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_TOTAL_PROJECTS
-        WHERE FOUNDATION_SLUG = ?
-        GROUP BY FOUNDATION_SEGMENT_ID, FOUNDATION_NAME, FOUNDATION_SOURCE_ID, FOUNDATION_SLUG, DATE_TRUNC('MONTH', CHILD_START_DATE)
-      )
       SELECT
-        FOUNDATION_SEGMENT_ID,
-        FOUNDATION_NAME,
-        FOUNDATION_SOURCE_ID,
-        FOUNDATION_SLUG,
         MONTH_START,
-        SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS PROJECT_COUNT
-      FROM monthly_counts
+        PROJECT_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_MONTHLY
+      WHERE FOUNDATION_SLUG = ?
       ORDER BY MONTH_START ASC
     `;
 
-    const result = await this.snowflakeService.execute<MonthlyProjectCountWithFoundation>(query, [foundationSlug]);
+    const result = await this.snowflakeService.execute<FoundationTotalProjectsMonthlyRow>(query, [foundationSlug]);
 
-    // Convert monthly data to arrays of counts and labels
     const monthlyData = result.rows.map((row) => row.PROJECT_COUNT);
     const monthlyLabels = result.rows.map((row) => {
       const date = new Date(row.MONTH_START);
       return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
     });
 
-    // Total projects is the last cumulative count
     const totalProjects = result.rows.length > 0 ? result.rows[result.rows.length - 1].PROJECT_COUNT : 0;
 
-    return {
-      totalProjects,
-      monthlyData,
-      monthlyLabels,
-    };
+    return { totalProjects, monthlyData, monthlyLabels };
   }
 
   /**
@@ -961,14 +932,24 @@ export class ProjectService {
         FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
         WHERE PROJECT_SLUG = ?
         GROUP BY PROJECT_ID, PROJECT_NAME, PROJECT_SLUG, DATE_TRUNC('MONTH', START_DATE)
+      ),
+      cumulative AS (
+        SELECT
+          PROJECT_ID,
+          PROJECT_NAME,
+          PROJECT_SLUG,
+          MONTH_START,
+          SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
+        FROM monthly_counts
       )
       SELECT
         PROJECT_ID,
         PROJECT_NAME,
         PROJECT_SLUG,
         MONTH_START,
-        SUM(MONTHLY_COUNT) OVER (ORDER BY MONTH_START ASC ROWS BETWEEN UNBOUNDED PRECEDING AND CURRENT ROW) AS MEMBER_COUNT
-      FROM monthly_counts
+        MEMBER_COUNT
+      FROM cumulative
+      WHERE MONTH_START >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
       ORDER BY MONTH_START ASC
     `;
 
@@ -978,7 +959,7 @@ export class ProjectService {
     const monthlyData = result.rows.map((row) => row.MEMBER_COUNT);
     const monthlyLabels = result.rows.map((row) => {
       const date = new Date(row.MONTH_START);
-      return date.toLocaleDateString('en-US', { month: 'short', year: 'numeric' });
+      return date.toLocaleDateString('en-US', { month: 'short' });
     });
 
     // Total members is the last cumulative count
@@ -989,6 +970,78 @@ export class ProjectService {
       monthlyData,
       monthlyLabels,
     };
+  }
+
+  /**
+   * Get monthly average active contributors for a foundation (last 12 months)
+   * Aggregates FOUNDATION_UNIQUE_CONTRIBUTORS_DAILY by month
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Monthly contributor counts with short month labels
+   */
+  public async getFoundationActiveContributorsMonthly(foundationSlug: string): Promise<FoundationActiveContributorsMonthlyResponse> {
+    logger.debug(undefined, 'get_foundation_active_contributors_monthly', 'Fetching monthly active contributors', { foundation_slug: foundationSlug });
+
+    const query = `
+      SELECT
+        DATE_TRUNC('MONTH', ACTIVITY_DATE) AS MONTH_START,
+        ROUND(AVG(DAILY_UNIQUE_CONTRIBUTORS)) AS MONTHLY_AVG_CONTRIBUTORS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_UNIQUE_CONTRIBUTORS_DAILY
+      WHERE FOUNDATION_SLUG = ?
+        AND ACTIVITY_DATE >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
+      GROUP BY DATE_TRUNC('MONTH', ACTIVITY_DATE)
+      ORDER BY MONTH_START ASC
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationActiveContributorsMonthlyRow>(query, [foundationSlug]);
+
+    logger.debug(undefined, 'get_foundation_active_contributors_monthly', 'Fetched monthly active contributors', { row_count: result.rows.length });
+
+    const monthlyData = result.rows.map((row) => row.MONTHLY_AVG_CONTRIBUTORS);
+    const monthlyLabels = result.rows.map((row) => {
+      const date = new Date(row.MONTH_START);
+      return date.toLocaleDateString('en-US', { month: 'short' });
+    });
+
+    return { monthlyData, monthlyLabels };
+  }
+
+  /**
+   * Get contributor distribution by percentile band for a foundation
+   * Queries FOUNDATION_CONTRIBUTORS_DISTRIBUTION for last_12_months time range
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Distribution of contribution share across Top 10%, Next 40%, Bottom 50%
+   */
+  public async getFoundationContributorsDistribution(foundationSlug: string): Promise<FoundationContributorsDistributionResponse> {
+    logger.debug(undefined, 'get_foundation_contributors_distribution', 'Fetching contributors distribution', { foundation_slug: foundationSlug });
+
+    const query = `
+      SELECT
+        PERCENTILE_BAND,
+        CONTRIBUTOR_COUNT,
+        CONTRIBUTION_SHARE_PERCENTAGE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_CONTRIBUTORS_DISTRIBUTION
+      WHERE FOUNDATION_SLUG = ?
+        AND TIME_RANGE = 'last_12_months'
+      ORDER BY
+        CASE PERCENTILE_BAND
+          WHEN 'Top 10%' THEN 1
+          WHEN 'Next 40%' THEN 2
+          WHEN 'Bottom 50%' THEN 3
+          ELSE 4
+        END
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationContributorsDistributionRow>(query, [foundationSlug]);
+
+    logger.debug(undefined, 'get_foundation_contributors_distribution', 'Fetched contributors distribution', { row_count: result.rows.length });
+
+    const distribution = result.rows.map((row) => ({
+      band: row.PERCENTILE_BAND,
+      contributionSharePercentage: row.CONTRIBUTION_SHARE_PERCENTAGE,
+      contributorCount: row.CONTRIBUTOR_COUNT,
+    }));
+
+    return { distribution };
   }
 
   /**
@@ -1024,6 +1077,65 @@ export class ProjectService {
     return {
       totalValue,
       topProjects,
+    };
+  }
+
+  /**
+   * Get foundation value concentration data from Snowflake
+   * Queries FOUNDATION_VALUE_CONCENTRATION table
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Value concentration response with total value and per-bucket breakdowns in millions
+   */
+  public async getFoundationValueConcentration(foundationSlug: string): Promise<FoundationValueConcentrationResponse> {
+    logger.debug(undefined, 'get_foundation_value_concentration', 'Fetching foundation value concentration', { foundationSlug });
+
+    const query = `
+      SELECT
+        FOUNDATION_ID,
+        FOUNDATION_SLUG,
+        TOTAL_VALUE,
+        TOTAL_PROJECTS_COUNT,
+        LAST_METRIC_DATE,
+        TOP_1_VALUE,
+        TOP_3_VALUE,
+        TOP_5_VALUE,
+        ALL_OTHER_VALUE,
+        TOP_1_PROJECTS_COUNT,
+        TOP_3_PROJECTS_COUNT,
+        TOP_5_PROJECTS_COUNT,
+        ALL_OTHER_PROJECTS_COUNT,
+        TOP_1_PERCENTAGE,
+        TOP_3_PERCENTAGE,
+        TOP_5_PERCENTAGE,
+        ALL_OTHER_PERCENTAGE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_VALUE_CONCENTRATION
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY LAST_METRIC_DATE DESC
+      LIMIT 1
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationValueConcentrationRow>(query, [foundationSlug]);
+
+    if (result.rows.length === 0) {
+      throw new ResourceNotFoundError('Foundation value concentration data', foundationSlug, {
+        operation: 'get_foundation_value_concentration',
+      });
+    }
+
+    const row = result.rows[0];
+    const toMillions = (v: number): number => v / 1_000_000;
+
+    return {
+      totalValue: toMillions(row.TOTAL_VALUE),
+      top1Value: toMillions(row.TOP_1_VALUE),
+      top3Value: toMillions(row.TOP_3_VALUE),
+      top5Value: toMillions(row.TOP_5_VALUE),
+      allOtherValue: toMillions(row.ALL_OTHER_VALUE),
+      totalProjectsCount: row.TOTAL_PROJECTS_COUNT,
+      top1Percentage: row.TOP_1_PERCENTAGE,
+      top3Percentage: row.TOP_3_PERCENTAGE,
+      top5Percentage: row.TOP_5_PERCENTAGE,
+      allOtherPercentage: row.ALL_OTHER_PERCENTAGE,
     };
   }
 
@@ -1065,6 +1177,142 @@ export class ProjectService {
   }
 
   /**
+   * Get monthly maintainer counts for a foundation (last 12 months, all repos aggregated)
+   * Queries FOUNDATION_MAINTAINERS_REPOSITORY_MONTHLY table
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Monthly maintainer counts with short month labels
+   */
+  public async getFoundationMaintainersMonthly(foundationSlug: string): Promise<FoundationMaintainersMonthlyResponse> {
+    logger.debug(undefined, 'get_foundation_maintainers_monthly', 'Fetching monthly maintainers', { foundation_slug: foundationSlug });
+
+    const query = `
+      SELECT
+        METRIC_MONTH,
+        ACTIVE_MAINTAINERS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_REPOSITORY_MONTHLY
+      WHERE FOUNDATION_SLUG = ?
+        AND REPOSITORY_SCOPE = 'all_repos'
+        AND METRIC_MONTH >= DATE_TRUNC('MONTH', DATEADD('month', -11, CURRENT_DATE()))
+      ORDER BY METRIC_MONTH ASC
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationMaintainersMonthlyRow>(query, [foundationSlug]);
+
+    logger.debug(undefined, 'get_foundation_maintainers_monthly', 'Fetched monthly maintainers', { row_count: result.rows.length });
+
+    const monthlyData = result.rows.map((row) => row.ACTIVE_MAINTAINERS);
+    const monthlyLabels = result.rows.map((row) => {
+      const date = new Date(row.METRIC_MONTH);
+      return date.toLocaleDateString('en-US', { month: 'short' });
+    });
+
+    return { monthlyData, monthlyLabels };
+  }
+
+  /**
+   * Get maintainer contribution distribution by percentile band for a foundation
+   * Queries FOUNDATION_MAINTAINERS_DISTRIBUTION table (all_repos, last_12_months)
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Distribution of contribution share across Top 10%, Next 40%, Bottom 50%
+   */
+  public async getFoundationMaintainersDistribution(foundationSlug: string): Promise<FoundationMaintainersDistributionResponse> {
+    logger.debug(undefined, 'get_foundation_maintainers_distribution', 'Fetching maintainers distribution', { foundation_slug: foundationSlug });
+
+    const query = `
+      SELECT
+        PERCENTILE_BAND,
+        MAINTAINER_COUNT,
+        CONTRIBUTION_SHARE_PCT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_MAINTAINERS_DISTRIBUTION
+      WHERE FOUNDATION_SLUG = ?
+        AND REPOSITORY_SCOPE = 'all_repos'
+        AND TIME_RANGE_NAME = 'last_12_months'
+      ORDER BY CASE PERCENTILE_BAND WHEN 'Top 10%' THEN 1 WHEN 'Next 40%' THEN 2 WHEN 'Bottom 50%' THEN 3 ELSE 4 END
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationMaintainersDistributionRow>(query, [foundationSlug]);
+
+    logger.debug(undefined, 'get_foundation_maintainers_distribution', 'Fetched maintainers distribution', { row_count: result.rows.length });
+
+    const distribution = result.rows.map((row) => ({
+      band: row.PERCENTILE_BAND,
+      contributionSharePct: row.CONTRIBUTION_SHARE_PCT,
+      maintainerCount: row.MAINTAINER_COUNT,
+    }));
+
+    return { distribution };
+  }
+
+  /**
+   * Get quarterly event counts for a foundation (last 8 quarters)
+   * Queries FOUNDATION_HEALTH_EVENTS_QUARTERLY table
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Quarterly event counts with quarter labels
+   */
+  public async getFoundationEventsQuarterly(foundationSlug: string): Promise<FoundationEventsQuarterlyResponse> {
+    logger.debug(undefined, 'get_foundation_events_quarterly', 'Fetching quarterly events', { foundation_slug: foundationSlug });
+
+    const query = `
+      SELECT
+        QUARTER_START_DATE,
+        EVENT_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_EVENTS_QUARTERLY
+      WHERE FOUNDATION_SLUG = ?
+        AND QUARTER_START_DATE >= DATEADD('quarter', -7, DATE_TRUNC('QUARTER', CURRENT_DATE()))
+      ORDER BY QUARTER_START_DATE ASC
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationEventsQuarterlyRow>(query, [foundationSlug]);
+
+    logger.debug(undefined, 'get_foundation_events_quarterly', 'Fetched quarterly events', { row_count: result.rows.length });
+
+    const quarterlyData = result.rows.map((row) => row.EVENT_COUNT);
+    const quarterlyLabels = result.rows.map((row) => {
+      const date = new Date(row.QUARTER_START_DATE);
+      const quarter = Math.floor(date.getUTCMonth() / 3) + 1;
+      const year = date.getUTCFullYear().toString().slice(-2);
+      return `Q${quarter} '${year}`;
+    });
+
+    return { quarterlyData, quarterlyLabels };
+  }
+
+  /**
+   * Get event distribution by attendance size bucket for a foundation (last 12 months)
+   * Queries FOUNDATION_HEALTH_EVENTS_ATTENDANCE_DISTRIBUTION table
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Distribution of events across Large, Medium, Small attendance buckets
+   */
+  public async getFoundationEventsAttendanceDistribution(foundationSlug: string): Promise<FoundationEventsAttendanceDistributionResponse> {
+    logger.debug(undefined, 'get_foundation_events_attendance_distribution', 'Fetching events attendance distribution', { foundation_slug: foundationSlug });
+
+    const query = `
+      SELECT
+        ATTENDANCE_SIZE_BUCKET,
+        EVENT_COUNT_LAST_12_MONTHS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_EVENTS_ATTENDANCE_DISTRIBUTION
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY CASE ATTENDANCE_SIZE_BUCKET
+        WHEN 'Large'  THEN 1
+        WHEN 'Medium' THEN 2
+        WHEN 'Small'  THEN 3
+        ELSE 4
+      END
+    `;
+
+    const result = await this.snowflakeService.execute<FoundationEventsAttendanceDistributionRow>(query, [foundationSlug]);
+
+    logger.debug(undefined, 'get_foundation_events_attendance_distribution', 'Fetched events attendance distribution', { row_count: result.rows.length });
+
+    const distribution = result.rows.map((row) => ({
+      bucket: row.ATTENDANCE_SIZE_BUCKET,
+      eventCount: row.EVENT_COUNT_LAST_12_MONTHS,
+    }));
+
+    return { distribution };
+  }
+
+  /**
    * Get foundation health score distribution from Snowflake
    * Queries FOUNDATION_HEALTH_SCORE_DISTRIBUTION table
    * Returns project count breakdown by health category
@@ -1101,6 +1349,100 @@ export class ProjectService {
     });
 
     return distribution;
+  }
+
+  /**
+   * Get per-project detail rows for a foundation from Snowflake
+   * Queries ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL for the drill-down table
+   * @param foundationSlug - Foundation slug to filter by (e.g., 'cncf', 'tlf')
+   */
+  public async getFoundationProjectsDetail(foundationSlug: string): Promise<FoundationProjectsDetailResponse> {
+    logger.debug(undefined, 'get_foundation_projects_detail', 'Fetching project detail rows', { foundationSlug });
+
+    const query = `
+      SELECT
+        PROJECT_NAME,
+        PROJECT_SLUG,
+        LIFECYCLE_STAGE,
+        CONTRIBUTORS_90D_COUNT,
+        COMMITS_90D_COUNT,
+        MAINTAINERS_YTD_COUNT,
+        STARS_YTD_COUNT,
+        LAST_UPDATED_TS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY PROJECT_NAME ASC
+    `;
+
+    try {
+      const result = await this.snowflakeService.execute<FoundationProjectsDetailRow>(query, [foundationSlug]);
+
+      const projects = result.rows
+        .filter((row): row is typeof row & { LIFECYCLE_STAGE: string } => row.LIFECYCLE_STAGE != null)
+        .map((row) => ({
+          id: row.PROJECT_SLUG,
+          projectName: row.PROJECT_NAME,
+          projectSlug: row.PROJECT_SLUG,
+          lifecycleStage: row.LIFECYCLE_STAGE as LifecycleStage,
+          activeContributors: row.CONTRIBUTORS_90D_COUNT ?? 0,
+          commitsLast90Days: row.COMMITS_90D_COUNT ?? 0,
+          maintainers: row.MAINTAINERS_YTD_COUNT ?? 0,
+          stars: row.STARS_YTD_COUNT ?? 0,
+          lastUpdated: row.LAST_UPDATED_TS ? new Date(row.LAST_UPDATED_TS).toISOString().split('T')[0] : null,
+        }));
+
+      logger.debug(undefined, 'get_foundation_projects_detail', 'Fetched project detail rows', { count: projects.length });
+
+      return { projects, totalCount: projects.length };
+    } catch (error) {
+      logger.warning(undefined, 'get_foundation_projects_detail', 'Failed to fetch project detail rows', {
+        foundationSlug,
+        err: error,
+      });
+      throw error;
+    }
+  }
+
+  /**
+   * Get lifecycle stage distribution for a foundation from Snowflake
+   * Queries ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_LIFECYCLE_DISTRIBUTION
+   * @param foundationSlug - Foundation slug to filter by (e.g., 'cncf', 'tlf')
+   */
+  public async getFoundationProjectsLifecycleDistribution(foundationSlug: string): Promise<FoundationProjectsLifecycleDistributionResponse> {
+    logger.debug(undefined, 'get_foundation_projects_lifecycle_distribution', 'Fetching lifecycle distribution', { foundationSlug });
+
+    const query = `
+      SELECT
+        LIFECYCLE_STAGE,
+        PROJECT_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_LIFECYCLE_DISTRIBUTION
+      WHERE FOUNDATION_SLUG = ?
+      ORDER BY
+        CASE LIFECYCLE_STAGE
+          WHEN 'Sandbox' THEN 1
+          WHEN 'Incubating' THEN 2
+          WHEN 'Graduated' THEN 3
+          ELSE 4
+        END ASC
+    `;
+
+    try {
+      const result = await this.snowflakeService.execute<FoundationProjectsLifecycleDistributionRow>(query, [foundationSlug]);
+
+      logger.debug(undefined, 'get_foundation_projects_lifecycle_distribution', 'Fetched lifecycle distribution', { stage_count: result.rows.length });
+
+      return {
+        distribution: result.rows
+          .filter((row): row is typeof row & { LIFECYCLE_STAGE: string } => row.LIFECYCLE_STAGE != null)
+          .map((row) => ({ stage: row.LIFECYCLE_STAGE, count: row.PROJECT_COUNT })),
+      };
+    } catch (error) {
+      logger.warning(undefined, 'get_foundation_projects_lifecycle_distribution', 'Failed to fetch lifecycle distribution', {
+        foundationSlug,
+        err: error,
+      });
+      throw error;
+    }
   }
 
   /**
@@ -1188,8 +1530,8 @@ export class ProjectService {
         FOUNDATION_SLUG,
         ACTIVITY_DATE,
         DAILY_UNIQUE_CONTRIBUTORS,
-        AVG_CONTRIBUTORS,
-        TOTAL_DAYS
+        AVG_CONTRIBUTORS_LAST_12_MONTHS,
+        TOTAL_DAYS_LAST_12_MONTHS
       FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_UNIQUE_CONTRIBUTORS_DAILY
       WHERE FOUNDATION_SLUG = ?
       ORDER BY ACTIVITY_DATE DESC
@@ -1201,8 +1543,8 @@ export class ProjectService {
         PROJECT_SLUG,
         ACTIVITY_DATE,
         DAILY_UNIQUE_CONTRIBUTORS,
-        AVG_CONTRIBUTORS,
-        TOTAL_DAYS
+        AVG_CONTRIBUTORS_LAST_12_MONTHS,
+        TOTAL_DAYS_LAST_12_MONTHS
       FROM ANALYTICS.PLATINUM_LFX_ONE.PROJECT_UNIQUE_CONTRIBUTORS_DAILY
       WHERE PROJECT_SLUG = ?
       ORDER BY ACTIVITY_DATE DESC
@@ -1214,7 +1556,7 @@ export class ProjectService {
         : await this.snowflakeService.execute<ProjectUniqueContributorsDailyRow>(query, [slug]);
 
     // Get average contributors from first row (same across all rows from SQL calculation)
-    const avgContributors = result.rows.length > 0 ? Math.round(result.rows[0].AVG_CONTRIBUTORS) : 0;
+    const avgContributors = result.rows.length > 0 ? Math.round(result.rows[0].AVG_CONTRIBUTORS_LAST_12_MONTHS) : 0;
 
     return {
       data: result.rows,
@@ -1326,7 +1668,41 @@ export class ProjectService {
    * Get project UID by slug using NATS request-reply pattern
    * @private
    */
-  private async getProjectIdBySlug(req: Request, slug: string): Promise<ProjectSlugToIdResponse> {
+  public async getProjectSfidByUid(req: Request, projectUid: string): Promise<string | null> {
+    const codec = this.natsService.getCodec();
+
+    try {
+      const lookupKey = `project.uid.${projectUid}`;
+      const response = await this.natsService.request(NatsSubjects.LOOKUP_V1_MAPPING, codec.encode(lookupKey), {
+        timeout: NATS_CONFIG.REQUEST_TIMEOUT,
+      });
+
+      const sfid = codec.decode(response.data);
+
+      if (!sfid || sfid.startsWith('error:')) {
+        logger.warning(req, 'get_project_sfid_by_uid', 'Could not resolve project UUID to SFID', {
+          project_uid: projectUid,
+          response: sfid || '(empty)',
+        });
+        return null;
+      }
+
+      logger.debug(req, 'get_project_sfid_by_uid', 'Resolved project UUID to SFID', {
+        project_uid: projectUid,
+        sfid,
+      });
+
+      return sfid;
+    } catch (error) {
+      logger.warning(req, 'get_project_sfid_by_uid', 'NATS lookup failed for project SFID', {
+        project_uid: projectUid,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return null;
+    }
+  }
+
+  public async getProjectIdBySlug(req: Request, slug: string): Promise<ProjectSlugToIdResponse> {
     const codec = this.natsService.getCodec();
 
     try {

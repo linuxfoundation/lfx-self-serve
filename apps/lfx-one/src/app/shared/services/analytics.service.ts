@@ -7,16 +7,36 @@ import {
   ActiveWeeksStreakResponse,
   CertifiedEmployeesResponse,
   CodeCommitsDailyResponse,
+  FoundationActiveContributorsMonthlyResponse,
   FoundationCompanyBusFactorResponse,
   FoundationContributorsMentoredResponse,
+  FoundationContributorsDistributionResponse,
   FoundationHealthScoreDistributionResponse,
+  FoundationEventsAttendanceDistributionResponse,
+  FoundationEventsQuarterlyResponse,
+  FoundationMaintainersDistributionResponse,
+  FoundationMaintainersMonthlyResponse,
   FoundationMaintainersResponse,
   FoundationSoftwareValueResponse,
+  FoundationValueConcentrationResponse,
   FoundationTotalMembersResponse,
+  FoundationProjectsDetailResponse,
+  FoundationProjectsLifecycleDistributionResponse,
   FoundationTotalProjectsResponse,
   HealthEventsMonthlyResponse,
   HealthMetricsDailyResponse,
   MembershipTierResponse,
+  OrgContributorsMonthlyResponse,
+  OrgContributorsProjectDistributionResponse,
+  OrgEventAttendeesMonthlyResponse,
+  OrgEventSpeakersMonthlyResponse,
+  OrgCertifiedEmployeesDistributionResponse,
+  OrgCertifiedEmployeesMonthlyResponse,
+  OrgTrainingEnrollmentsDistributionResponse,
+  OrgTrainingEnrollmentsMonthlyResponse,
+  OrgMaintainersDistributionResponse,
+  OrgMaintainersKeyMembersResponse,
+  OrgMaintainersMonthlyResponse,
   OrganizationContributorsResponse,
   OrganizationEventAttendanceMonthlyResponse,
   OrganizationMaintainersResponse,
@@ -47,8 +67,7 @@ export class AnalyticsService {
    */
   public getActiveWeeksStreak(): Observable<ActiveWeeksStreakResponse> {
     return this.http.get<ActiveWeeksStreakResponse>('/api/analytics/active-weeks-streak').pipe(
-      catchError((error) => {
-        console.error('Failed to fetch active weeks streak:', error);
+      catchError(() => {
         return of({
           data: [],
           currentStreak: 0,
@@ -64,8 +83,7 @@ export class AnalyticsService {
    */
   public getPullRequestsMerged(): Observable<UserPullRequestsResponse> {
     return this.http.get<UserPullRequestsResponse>('/api/analytics/pull-requests-merged').pipe(
-      catchError((error) => {
-        console.error('Failed to fetch pull requests merged:', error);
+      catchError(() => {
         return of({
           data: [],
           totalPullRequests: 0,
@@ -81,8 +99,7 @@ export class AnalyticsService {
    */
   public getCodeCommits(): Observable<UserCodeCommitsResponse> {
     return this.http.get<UserCodeCommitsResponse>('/api/analytics/code-commits').pipe(
-      catchError((error) => {
-        console.error('Failed to fetch code commits:', error);
+      catchError(() => {
         return of({
           data: [],
           totalCommits: 0,
@@ -98,8 +115,7 @@ export class AnalyticsService {
    */
   public getMyProjects(): Observable<UserProjectsResponse> {
     return this.http.get<UserProjectsResponse>('/api/analytics/my-projects').pipe(
-      catchError((error) => {
-        console.error('Failed to fetch my projects:', error);
+      catchError(() => {
         return of({
           data: [],
           totalProjects: 0,
@@ -117,8 +133,7 @@ export class AnalyticsService {
   public getOrganizationMaintainers(accountId: string, foundationSlug: string): Observable<OrganizationMaintainersResponse> {
     const params = { accountId, foundationSlug };
     return this.http.get<OrganizationMaintainersResponse>('/api/analytics/organization-maintainers', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch organization maintainers:', error);
+      catchError(() => {
         return of({
           maintainers: 0,
           projects: 0,
@@ -140,8 +155,7 @@ export class AnalyticsService {
   public getOrganizationContributors(accountId: string, foundationSlug: string): Observable<OrganizationContributorsResponse> {
     const params = { accountId, foundationSlug };
     return this.http.get<OrganizationContributorsResponse>('/api/analytics/organization-contributors', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch organization contributors:', error);
+      catchError(() => {
         return of({
           contributors: 0,
           accountId: '',
@@ -162,8 +176,7 @@ export class AnalyticsService {
   public getMembershipTier(accountId: string, projectSlug: string): Observable<MembershipTierResponse> {
     const params = { accountId, projectSlug };
     return this.http.get<MembershipTierResponse>('/api/analytics/membership-tier', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch membership tier:', error);
+      catchError(() => {
         return of({
           projectId: '',
           projectName: '',
@@ -191,8 +204,7 @@ export class AnalyticsService {
   public getCertifiedEmployees(accountId: string, foundationSlug: string): Observable<CertifiedEmployeesResponse> {
     const params = { accountId, foundationSlug };
     return this.http.get<CertifiedEmployeesResponse>('/api/analytics/certified-employees', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch certified employees:', error);
+      catchError(() => {
         return of({
           certifications: 0,
           certifiedEmployees: 0,
@@ -213,8 +225,7 @@ export class AnalyticsService {
   public getTrainingEnrollments(accountId: string, projectSlug: string): Observable<TrainingEnrollmentsResponse> {
     const params = { accountId, projectSlug };
     return this.http.get<TrainingEnrollmentsResponse>('/api/analytics/training-enrollments', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch training enrollments:', error);
+      catchError(() => {
         return of({
           totalEnrollments: 0,
           dailyData: [],
@@ -235,8 +246,7 @@ export class AnalyticsService {
   public getEventAttendanceMonthly(accountId: string, foundationSlug: string): Observable<OrganizationEventAttendanceMonthlyResponse> {
     const params = { accountId, foundationSlug };
     return this.http.get<OrganizationEventAttendanceMonthlyResponse>('/api/analytics/event-attendance-monthly', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch event attendance monthly:', error);
+      catchError(() => {
         return of({
           totalAttended: 0,
           totalSpeakers: 0,
@@ -251,14 +261,54 @@ export class AnalyticsService {
   }
 
   /**
-   * Get total projects count for a foundation from Snowflake
-   * @param foundationSlug - Required foundation slug to filter projects (e.g., 'tlf', 'cncf')
-   * @returns Observable of foundation total projects response with cumulative monthly data
+   * Get per-project detail rows for the total projects drill-down drawer
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
    */
+  public getFoundationProjectsDetail(foundationSlug: string): Observable<FoundationProjectsDetailResponse> {
+    return this.http.get<FoundationProjectsDetailResponse>('/api/analytics/foundation-projects-detail', { params: { foundationSlug } }).pipe(
+      catchError(() => {
+        return of({ projects: [], totalCount: 0 });
+      })
+    );
+  }
+
+  /**
+   * Get lifecycle stage distribution for the total projects drill-down drawer
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
+   */
+  public getFoundationProjectsLifecycleDistribution(foundationSlug: string): Observable<FoundationProjectsLifecycleDistributionResponse> {
+    return this.http
+      .get<FoundationProjectsLifecycleDistributionResponse>('/api/analytics/foundation-projects-lifecycle-distribution', { params: { foundationSlug } })
+      .pipe(
+        catchError(() => {
+          return of({ distribution: [] });
+        })
+      );
+  }
+
+  /**
+   * Get monthly average active contributors for a foundation (last 12 months)
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
+   */
+  public getFoundationActiveContributorsMonthly(foundationSlug: string): Observable<FoundationActiveContributorsMonthlyResponse> {
+    return this.http
+      .get<FoundationActiveContributorsMonthlyResponse>('/api/analytics/foundation-active-contributors-monthly', { params: { foundationSlug } })
+      .pipe(catchError(() => of({ monthlyData: [], monthlyLabels: [] })));
+  }
+
+  /**
+   * Get contributor distribution by percentile band for a foundation
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
+   */
+  public getFoundationContributorsDistribution(foundationSlug: string): Observable<FoundationContributorsDistributionResponse> {
+    return this.http
+      .get<FoundationContributorsDistributionResponse>('/api/analytics/foundation-contributors-distribution', { params: { foundationSlug } })
+      .pipe(catchError(() => of({ distribution: [] })));
+  }
+
   public getFoundationTotalProjects(foundationSlug: string): Observable<FoundationTotalProjectsResponse> {
     return this.http.get<FoundationTotalProjectsResponse>('/api/analytics/foundation-total-projects', { params: { foundationSlug } }).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch foundation total projects:', error);
+      catchError(() => {
         return of({
           totalProjects: 0,
           monthlyData: [],
@@ -275,8 +325,7 @@ export class AnalyticsService {
    */
   public getFoundationTotalMembers(foundationSlug: string): Observable<FoundationTotalMembersResponse> {
     return this.http.get<FoundationTotalMembersResponse>('/api/analytics/foundation-total-members', { params: { foundationSlug } }).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch foundation total members:', error);
+      catchError(() => {
         return of({
           totalMembers: 0,
           monthlyData: [],
@@ -293,11 +342,34 @@ export class AnalyticsService {
    */
   public getFoundationSoftwareValue(foundationSlug: string): Observable<FoundationSoftwareValueResponse> {
     return this.http.get<FoundationSoftwareValueResponse>('/api/analytics/foundation-software-value', { params: { foundationSlug } }).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch foundation software value:', error);
+      catchError(() => {
         return of({
           totalValue: 0,
           topProjects: [],
+        });
+      })
+    );
+  }
+
+  /**
+   * Get foundation value concentration data from Snowflake
+   * @param foundationSlug - Required foundation slug to filter by
+   * @returns Observable of foundation value concentration response
+   */
+  public getFoundationValueConcentration(foundationSlug: string): Observable<FoundationValueConcentrationResponse> {
+    return this.http.get<FoundationValueConcentrationResponse>('/api/analytics/foundation-value-concentration', { params: { foundationSlug } }).pipe(
+      catchError(() => {
+        return of({
+          totalValue: 0,
+          top1Value: 0,
+          top3Value: 0,
+          top5Value: 0,
+          allOtherValue: 0,
+          totalProjectsCount: 0,
+          top1Percentage: 0,
+          top3Percentage: 0,
+          top5Percentage: 0,
+          allOtherPercentage: 0,
         });
       })
     );
@@ -310,8 +382,7 @@ export class AnalyticsService {
    */
   public getFoundationMaintainers(foundationSlug: string): Observable<FoundationMaintainersResponse> {
     return this.http.get<FoundationMaintainersResponse>('/api/analytics/foundation-maintainers', { params: { foundationSlug } }).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch foundation maintainers:', error);
+      catchError(() => {
         return of({
           avgMaintainers: 0,
           trendData: [],
@@ -322,14 +393,53 @@ export class AnalyticsService {
   }
 
   /**
+   * Get monthly maintainer counts for a foundation (last 12 months, all repos aggregated)
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
+   */
+  public getFoundationMaintainersMonthly(foundationSlug: string): Observable<FoundationMaintainersMonthlyResponse> {
+    return this.http
+      .get<FoundationMaintainersMonthlyResponse>('/api/analytics/foundation-maintainers-monthly', { params: { foundationSlug } })
+      .pipe(catchError(() => of({ monthlyData: [], monthlyLabels: [] })));
+  }
+
+  /**
+   * Get maintainer contribution distribution by percentile band for a foundation
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
+   */
+  public getFoundationMaintainersDistribution(foundationSlug: string): Observable<FoundationMaintainersDistributionResponse> {
+    return this.http
+      .get<FoundationMaintainersDistributionResponse>('/api/analytics/foundation-maintainers-distribution', { params: { foundationSlug } })
+      .pipe(catchError(() => of({ distribution: [] })));
+  }
+
+  /**
+   * Get quarterly event counts for a foundation (last 8 quarters)
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
+   */
+  public getFoundationEventsQuarterly(foundationSlug: string): Observable<FoundationEventsQuarterlyResponse> {
+    return this.http
+      .get<FoundationEventsQuarterlyResponse>('/api/analytics/foundation-events-quarterly', { params: { foundationSlug } })
+      .pipe(catchError(() => of({ quarterlyData: [], quarterlyLabels: [] })));
+  }
+
+  /**
+   * Get event distribution by attendance size bucket for a foundation
+   * @param foundationSlug - Required foundation slug (e.g., 'cncf', 'tlf')
+   */
+  public getFoundationEventsAttendanceDistribution(foundationSlug: string): Observable<FoundationEventsAttendanceDistributionResponse> {
+    return this.http
+      .get<FoundationEventsAttendanceDistributionResponse>('/api/analytics/foundation-events-attendance-distribution', { params: { foundationSlug } })
+      .pipe(catchError(() => of({ distribution: [] })));
+  }
+
+  /**
    * Get foundation health score distribution from Snowflake
    * @param foundationSlug - Required foundation slug to filter by (e.g., 'tlf', 'cncf')
    * @returns Observable of foundation health score distribution response
    */
   public getFoundationHealthScoreDistribution(foundationSlug: string): Observable<FoundationHealthScoreDistributionResponse> {
     return this.http.get<FoundationHealthScoreDistributionResponse>('/api/analytics/foundation-health-score-distribution', { params: { foundationSlug } }).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch foundation health score distribution:', error);
+      catchError(() => {
         return of({
           excellent: 0,
           healthy: 0,
@@ -348,8 +458,7 @@ export class AnalyticsService {
    */
   public getCompanyBusFactor(foundationSlug: string): Observable<FoundationCompanyBusFactorResponse> {
     return this.http.get<FoundationCompanyBusFactorResponse>('/api/analytics/company-bus-factor', { params: { foundationSlug } }).pipe(
-      catchError((error) => {
-        console.error('Failed to fetch company bus factor:', error);
+      catchError(() => {
         return of({
           topCompaniesCount: 0,
           topCompaniesPercentage: 0,
@@ -373,8 +482,7 @@ export class AnalyticsService {
         params,
       })
       .pipe(
-        catchError((error) => {
-          console.error('Failed to fetch project issues resolution:', error);
+        catchError(() => {
           return of({
             data: [],
             totalOpenedIssues: 0,
@@ -400,8 +508,7 @@ export class AnalyticsService {
         params,
       })
       .pipe(
-        catchError((error) => {
-          console.error('Failed to fetch project pull requests weekly:', error);
+        catchError(() => {
           return of({
             data: [],
             totalMergedPRs: 0,
@@ -424,8 +531,7 @@ export class AnalyticsService {
         params,
       })
       .pipe(
-        catchError((error) => {
-          console.error('Failed to fetch contributors mentored:', error);
+        catchError(() => {
           return of({
             data: [],
             totalMentored: 0,
@@ -449,8 +555,7 @@ export class AnalyticsService {
         params,
       })
       .pipe(
-        catchError((error) => {
-          console.error('Failed to fetch unique contributors weekly:', error);
+        catchError(() => {
           return of({
             data: [],
             totalUniqueContributors: 0,
@@ -474,8 +579,7 @@ export class AnalyticsService {
         params,
       })
       .pipe(
-        catchError((error) => {
-          console.error('Failed to fetch health metrics daily:', error);
+        catchError(() => {
           return of({
             data: [],
             currentAvgHealthScore: 0,
@@ -498,8 +602,7 @@ export class AnalyticsService {
         params,
       })
       .pipe(
-        catchError((error) => {
-          console.error('Failed to fetch unique contributors daily:', error);
+        catchError(() => {
           return of({
             data: [],
             avgContributors: 0,
@@ -522,8 +625,7 @@ export class AnalyticsService {
         params,
       })
       .pipe(
-        catchError((error) => {
-          console.error('Failed to fetch health events monthly:', error);
+        catchError(() => {
           return of({
             data: [],
             totalEvents: 0,
@@ -546,8 +648,7 @@ export class AnalyticsService {
         params,
       })
       .pipe(
-        catchError((error) => {
-          console.error('Failed to fetch code commits daily:', error);
+        catchError(() => {
           return of({
             data: [],
             totalCommits: 0,
@@ -555,5 +656,140 @@ export class AnalyticsService {
           });
         })
       );
+  }
+
+  /**
+   * Get monthly unique contributor trend for an organization within a foundation
+   * @param accountId - Organization account ID
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Observable of org contributors monthly response
+   */
+  public getOrgContributorsMonthly(accountId: string, foundationSlug: string): Observable<OrgContributorsMonthlyResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrgContributorsMonthlyResponse>('/api/analytics/org-contributors-monthly', { params }).pipe(
+      catchError(() => {
+        return of({ monthlyData: [], monthlyLabels: [], totalContributors: 0 });
+      })
+    );
+  }
+
+  /**
+   * Get top 5 project contributor distribution for an organization within a foundation
+   * @param accountId - Organization account ID
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Observable of org contributors project distribution response
+   */
+  public getOrgContributorsProjectDistribution(accountId: string, foundationSlug: string): Observable<OrgContributorsProjectDistributionResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrgContributorsProjectDistributionResponse>('/api/analytics/org-contributors-project-distribution', { params }).pipe(
+      catchError(() => {
+        return of({ projects: [] });
+      })
+    );
+  }
+
+  /**
+   * Get monthly active maintainer trend for an organization within a foundation
+   * @param accountId - Organization account ID
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Observable of org maintainers monthly response
+   */
+  public getOrgMaintainersMonthly(accountId: string, foundationSlug: string): Observable<OrgMaintainersMonthlyResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrgMaintainersMonthlyResponse>('/api/analytics/org-maintainers-monthly', { params }).pipe(
+      catchError(() => {
+        return of({ monthlyData: [], monthlyLabels: [], totalMaintainers: 0 });
+      })
+    );
+  }
+
+  /**
+   * Get top 5 project maintainer distribution for an organization within a foundation
+   * @param accountId - Organization account ID
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Observable of org maintainers distribution response
+   */
+  public getOrgMaintainersDistribution(accountId: string, foundationSlug: string): Observable<OrgMaintainersDistributionResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrgMaintainersDistributionResponse>('/api/analytics/org-maintainers-distribution', { params }).pipe(
+      catchError(() => {
+        return of({ projects: [] });
+      })
+    );
+  }
+
+  /**
+   * Get key maintainer members for an organization within a foundation
+   * @param accountId - Organization account ID
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Observable of org maintainers key members response
+   */
+  public getOrgMaintainersKeyMembers(accountId: string, foundationSlug: string): Observable<OrgMaintainersKeyMembersResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrgMaintainersKeyMembersResponse>('/api/analytics/org-maintainers-key-members', { params }).pipe(
+      catchError(() => {
+        return of({ members: [] });
+      })
+    );
+  }
+
+  /**
+   * Get monthly per-event-attendee counts for an organization within a foundation
+   * @param accountId - Organization account ID
+   * @param foundationSlug - Foundation slug to filter by
+   * @returns Observable of org event attendees monthly response
+   */
+  public getOrgEventAttendeesMonthly(accountId: string, foundationSlug: string): Observable<OrgEventAttendeesMonthlyResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrgEventAttendeesMonthlyResponse>('/api/analytics/org-event-attendees-monthly', { params }).pipe(
+      catchError(() => {
+        return of({ monthlyData: [], monthlyLabels: [], totalAttendees: 0 });
+      })
+    );
+  }
+
+  public getOrgEventSpeakersMonthly(accountId: string, foundationSlug: string): Observable<OrgEventSpeakersMonthlyResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrgEventSpeakersMonthlyResponse>('/api/analytics/org-event-speakers-monthly', { params }).pipe(
+      catchError(() => {
+        return of({ monthlyData: [], monthlyLabels: [], totalSpeakers: 0 });
+      })
+    );
+  }
+
+  public getOrgCertifiedEmployeesMonthly(accountId: string, foundationSlug: string): Observable<OrgCertifiedEmployeesMonthlyResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrgCertifiedEmployeesMonthlyResponse>('/api/analytics/org-certified-employees-monthly', { params }).pipe(
+      catchError(() => {
+        return of({ monthlyData: [], monthlyLabels: [], totalCertifiedEmployees: 0 });
+      })
+    );
+  }
+
+  public getOrgCertifiedEmployeesDistribution(accountId: string, foundationSlug: string): Observable<OrgCertifiedEmployeesDistributionResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrgCertifiedEmployeesDistributionResponse>('/api/analytics/org-certified-employees-distribution', { params }).pipe(
+      catchError(() => {
+        return of({ programs: [] });
+      })
+    );
+  }
+
+  public getOrgTrainingEnrollmentsMonthly(accountId: string, foundationSlug: string): Observable<OrgTrainingEnrollmentsMonthlyResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrgTrainingEnrollmentsMonthlyResponse>('/api/analytics/org-training-enrollments-monthly', { params }).pipe(
+      catchError(() => {
+        return of({ monthlyData: [], monthlyLabels: [], totalEnrollments: 0 });
+      })
+    );
+  }
+
+  public getOrgTrainingEnrollmentsDistribution(accountId: string, foundationSlug: string): Observable<OrgTrainingEnrollmentsDistributionResponse> {
+    const params = { accountId, foundationSlug };
+    return this.http.get<OrgTrainingEnrollmentsDistributionResponse>('/api/analytics/org-training-enrollments-distribution', { params }).pipe(
+      catchError(() => {
+        return of({ projects: [] });
+      })
+    );
   }
 }

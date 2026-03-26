@@ -119,12 +119,12 @@ export class AccessCheckService {
   /**
    * Add writer access field to multiple resources automatically
    * @param req Express request object with auth context
-   * @param resources Array of resource objects with uid field
+   * @param resources Array of resource objects with uid or id field
    * @param resourceType Type of resource (project, meeting, committee)
    * @param accessType Type of access to check (default: writer)
    * @returns Array of resources with writer field added
    */
-  public async addAccessToResources<T extends { uid: string }>(
+  public async addAccessToResources<T extends { uid: string } | { id: string }>(
     req: Request,
     resources: T[],
     resourceType: AccessCheckResourceType,
@@ -137,7 +137,7 @@ export class AccessCheckService {
     // Create access check requests for all resources
     const accessCheckRequests: AccessCheckRequest[] = resources.map((resource) => ({
       resource: resourceType,
-      id: resource.uid,
+      id: this.getResourceId(resource),
       access: accessType,
     }));
 
@@ -147,33 +147,34 @@ export class AccessCheckService {
     // Add access field to each resource
     return resources.map((resource) => ({
       ...resource,
-      [accessType]: accessResults.get(resource.uid) || false,
+      [accessType]: accessResults.get(this.getResourceId(resource)) || false,
     }));
   }
 
   /**
    * Add writer access field to a single resource automatically
    * @param req Express request object with auth context
-   * @param resource Single resource object with uid field
+   * @param resource Single resource object with uid or id field
    * @param resourceType Type of resource (project, meeting, committee)
    * @param accessType Type of access to check (default: writer)
    * @returns Resource with writer field added
    */
-  public async addAccessToResource<T extends { uid: string }>(
+  public async addAccessToResource<T extends { uid: string } | { id: string }>(
     req: Request,
     resource: T,
     resourceType: AccessCheckResourceType,
     accessType: AccessCheckAccessType = 'writer'
   ): Promise<T & { writer?: boolean }> {
+    const resourceId = this.getResourceId(resource);
     logger.debug(req, 'add_access_to_resource', 'Adding access to resource', {
       resource_type: resourceType,
-      resource_id: resource.uid,
+      resource_id: resourceId,
       access_type: accessType,
     });
 
     const hasAccess = await this.checkSingleAccess(req, {
       resource: resourceType,
-      id: resource.uid,
+      id: resourceId,
       access: accessType,
     });
 
@@ -181,5 +182,9 @@ export class AccessCheckService {
       ...resource,
       [accessType]: hasAccess,
     };
+  }
+
+  private getResourceId(resource: { uid: string } | { id: string }): string {
+    return 'uid' in resource ? resource.uid : resource.id;
   }
 }

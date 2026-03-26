@@ -6,8 +6,8 @@ import { ApplicationConfig, provideZonelessChangeDetection } from '@angular/core
 import { provideClientHydration, withEventReplay, withHttpTransferCacheOptions, withIncrementalHydration } from '@angular/platform-browser';
 import { provideAnimationsAsync } from '@angular/platform-browser/animations/async';
 import { provideRouter, withInMemoryScrolling, withPreloading } from '@angular/router';
-import { lfxPreset } from '@linuxfoundation/lfx-ui-core';
 import { lfxCardTheme, lfxDataTableTheme } from '@lfx-one/shared';
+import { lfxPreset } from '@linuxfoundation/lfx-ui-core';
 import { definePreset } from '@primeuix/themes';
 import Aura from '@primeuix/themes/aura';
 import { authenticationInterceptor } from '@shared/interceptors/authentication.interceptor';

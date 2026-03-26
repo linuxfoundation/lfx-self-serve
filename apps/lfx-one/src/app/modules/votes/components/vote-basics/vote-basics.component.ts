@@ -3,6 +3,7 @@
 
 import { LowerCasePipe } from '@angular/common';
 import { Component, input, Signal } from '@angular/core';
+import { Committee } from '@lfx-one/shared/interfaces';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CalendarComponent } from '@components/calendar/calendar.component';
 import { CommitteeSelectorComponent } from '@components/committee-selector/committee-selector.component';
@@ -21,6 +22,7 @@ export class VoteBasicsComponent {
   public readonly form = input.required<FormGroup>();
   public readonly formValue = input.required<Signal<Record<string, unknown>>>();
   public readonly isEditMode = input<boolean>(false);
+  public readonly committeeContext = input<Committee | null>(null);
 
   // Constants
   public readonly committeeLabel = COMMITTEE_LABEL;

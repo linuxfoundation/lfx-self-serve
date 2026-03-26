@@ -25,7 +25,7 @@ import { filter, map, startWith } from 'rxjs';
 })
 export class DevToolbarComponent {
   private readonly personaService = inject(PersonaService);
-  private readonly projectContextService = inject(ProjectContextService);
+  protected readonly projectContextService = inject(ProjectContextService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly featureFlagService = inject(FeatureFlagService);
@@ -41,6 +41,9 @@ export class DevToolbarComponent {
   // Persona options for SelectButton
   protected readonly personaOptions = PERSONA_OPTIONS;
 
+  // TLF-only persona project override
+  protected readonly isTlfOnlyPersona = this.personaService.isTlfOnlyPersona;
+
   // Check if we're on the board dashboard page
   protected readonly isOnBoardDashboard: Signal<boolean> = this.initIsOnBoardDashboard();
 
@@ -51,6 +54,7 @@ export class DevToolbarComponent {
     this.form = new FormGroup({
       persona: new FormControl<PersonaType>(this.personaService.currentPersona(), [Validators.required]),
       selectedAccountId: new FormControl<string>(this.accountContextService.selectedAccount().accountId),
+      selectedProjectUid: new FormControl<string>(this.projectContextService.selectedFoundation()?.uid || ''),
     });
 
     // Subscribe to persona changes
@@ -58,7 +62,7 @@ export class DevToolbarComponent {
       .get('persona')
       ?.valueChanges.pipe(takeUntilDestroyed())
       .subscribe((value: PersonaType) => {
-        if (value === 'board-member') {
+        if (value === 'board-member' || value === 'executive-director') {
           // TODO: DEMO - Remove when proper permissions are implemented
           const tlfProject = this.projectContextService.availableProjects.find((p) => p.slug === 'tlf');
           if (tlfProject) {
@@ -67,6 +71,7 @@ export class DevToolbarComponent {
               name: tlfProject.name,
               slug: tlfProject.slug,
             });
+            this.form.get('selectedProjectUid')?.setValue(tlfProject.uid, { emitEvent: false });
           }
         } else {
           // Navigate to the first project in the list that is not the TLF project
@@ -87,6 +92,17 @@ export class DevToolbarComponent {
         const selectedAccount = ACCOUNTS.find((acc) => acc.accountId === value);
         if (selectedAccount) {
           this.accountContextService.setAccount(selectedAccount as Account);
+        }
+      });
+
+    // Subscribe to board member project override changes
+    this.form
+      .get('selectedProjectUid')
+      ?.valueChanges.pipe(takeUntilDestroyed())
+      .subscribe((uid: string) => {
+        const project = this.projectContextService.availableProjects.find((p) => p.uid === uid);
+        if (project) {
+          this.projectContextService.setFoundation(project);
         }
       });
   }

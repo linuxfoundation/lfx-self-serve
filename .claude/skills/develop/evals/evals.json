@@ -1,0 +1,14 @@
+[
+  {
+    "prompt": "Create a new backend API endpoint to fetch notifications",
+    "expected_behavior": "Should follow the full develop workflow: start from main, validate upstream API, create shared types, build service → controller → route, then suggest frontend work. Should read architecture docs before generating code."
+  },
+  {
+    "prompt": "Add a filter dropdown to the meetings page",
+    "expected_behavior": "Should identify this as a frontend modification, read existing meetings module code first, trace the data flow, identify minimal change needed, and follow component conventions. Should check if backend supports filtering."
+  },
+  {
+    "prompt": "Fix the bug where committee list shows duplicates",
+    "expected_behavior": "Should identify this as a modify-existing workflow, read existing committee code first, trace the data flow end-to-end, find the root cause, and apply the minimal fix. Should not create new files unnecessarily."
+  }
+]

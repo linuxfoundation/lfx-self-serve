@@ -51,6 +51,7 @@ export interface GenerateAgendaRequest {
   title: string; // Meeting title/topic
   projectName: string; // Project name for context
   context?: string; // Additional context from user
+  maxCharacters?: number; // Max agenda length (default: 2000)
 }
 ```
 

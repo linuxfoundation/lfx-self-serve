@@ -3,10 +3,12 @@
 
 <div class="flex flex-col gap-6">
   <!-- Header -->
-  <div class="text-center mb-8">
-    <h2 class="mb-2">{{ committeeLabel }} Settings</h2>
-    <p class="text-gray-500 text-base">Configure permissions and features for your {{ committeeLabel.toLowerCase() }}</p>
-  </div>
+  @if (showHeader()) {
+    <div class="mb-6">
+      <h2 class="mb-1 text-[17.5px] font-semibold text-gray-900">{{ committeeLabel }} Settings</h2>
+      <p class="text-[13px] text-gray-500">Configure permissions and features for your {{ committeeLabel.toLowerCase() }}.</p>
+    </div>
+  }
 
   <!-- Info Section -->
   <lfx-message severity="info" icon="fa-light fa-info-circle">
@@ -47,6 +49,34 @@
     </div>
   </div>
 
+  <!-- Join Mode Setting -->
+  <div class="flex flex-col gap-2">
+    <h3 class="text-base font-medium text-gray-900">How Can People Join the Group?</h3>
+    <div class="bg-white border border-gray-200 p-4 rounded-lg">
+      <div class="flex flex-col gap-3">
+        <div class="flex items-center gap-3">
+          <div class="p-2 rounded-lg bg-green-50 text-green-500">
+            <i class="fa-light fa-door-open text-sm"></i>
+          </div>
+          <div class="flex-1">
+            <label for="join-mode" class="text-sm font-semibold text-gray-900">Join Mode</label>
+            <p class="text-xs text-gray-600">Control how new members can join this {{ committeeLabel.toLowerCase() }}</p>
+          </div>
+        </div>
+        <lfx-select
+          [form]="form()"
+          control="join_mode"
+          [options]="joinModeOptions"
+          placeholder="Select join mode"
+          styleClass="w-full"
+          size="small"
+          id="join-mode"
+          data-testid="join-mode-select">
+        </lfx-select>
+      </div>
+    </div>
+  </div>
+
   <!-- Committee Settings Features -->
   <div class="flex flex-col gap-4">
     <h3 class="text-base font-medium text-gray-900">{{ committeeLabel }} Features</h3>
@@ -62,7 +92,7 @@
               <div class="flex items-center gap-2">
                 <label [for]="feature.key" class="text-sm font-semibold text-gray-900 cursor-pointer">{{ feature.title }}</label>
                 @if (feature.recommended) {
-                  <span class="bg-blue-100 text-primary text-xs px-2 py-1 rounded-full font-medium">Recommended</span>
+                  <lfx-tag value="Recommended" severity="success" [rounded]="true" />
                 }
               </div>
               <p class="text-xs text-gray-600">{{ feature.description }}</p>

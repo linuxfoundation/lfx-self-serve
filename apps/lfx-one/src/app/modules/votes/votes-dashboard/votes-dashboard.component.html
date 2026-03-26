@@ -40,13 +40,24 @@
       [votes]="votes()"
       [hasPMOAccess]="hasPMOAccess()"
       [loading]="loading()"
+      [totalRecords]="totalRecords()"
+      [rowsPerPage]="rowsPerPage()"
+      [first]="currentFirst()"
+      [lazy]="true"
+      [groupOptions]="groupOptions()"
       (viewVote)="onViewVote($event)"
       (viewResults)="onViewResults($event)"
       (refresh)="refreshVotes()"
+      (pageChange)="onPageChange($event)"
+      (filtersChange)="onFiltersChange($event)"
       data-testid="votes-table-container">
     </lfx-votes-table>
   }
 </div>
 
 <!-- Vote Results Drawer -->
-<lfx-vote-results-drawer [(visible)]="resultsDrawerVisible" [vote]="selectedVote()" data-testid="votes-results-drawer"></lfx-vote-results-drawer>
+<lfx-vote-results-drawer
+  [(visible)]="resultsDrawerVisible"
+  [voteId]="selectedVoteId()"
+  [listVote]="selectedListVote()"
+  data-testid="votes-results-drawer"></lfx-vote-results-drawer>

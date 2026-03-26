@@ -52,28 +52,27 @@
         @for (metric of primaryMetrics(); track metric.testId) {
           <!-- Membership Tier Card (Special) -->
           @if (metric.isMembershipTier) {
-            <div
-              class="p-4 bg-white hover:border-blue-500 hover:border hover:border-solid rounded-lg border border-gray-200 transition-colors flex-shrink-0 w-80"
-              [attr.data-testid]="metric.testId">
-              <div class="flex flex-col gap-3">
-                <div class="flex items-center gap-1">
-                  <i [class]="metric.icon + ' text-gray-500'" class="w-4 h-4"></i>
-                  <h5 class="text-sm font-medium">{{ metric.title }}</h5>
+            <div class="p-4 bg-white rounded-lg border border-gray-200 flex-shrink-0 w-80" [attr.data-testid]="metric.testId">
+              <div class="flex flex-col gap-4">
+                <!-- Header -->
+                <div class="flex items-center gap-2">
+                  <i [class]="metric.icon + ' text-gray-500'"></i>
+                  <h5 class="text-sm font-semibold">{{ metric.title }}</h5>
                 </div>
 
-                <!-- Membership Info -->
-                <div class="flex flex-col gap-2">
+                <!-- Tier rows -->
+                <div class="flex flex-col gap-3">
                   <div class="flex items-center justify-between">
                     <span class="text-sm text-gray-500">Tier</span>
-                    <lfx-tag [value]="metric.tier || 'N/A'" severity="secondary"></lfx-tag>
+                    <span class="px-3 py-0.5 bg-gray-100 text-gray-700 rounded-full text-sm font-medium">{{ metric.tier || 'N/A' }}</span>
                   </div>
                   <div class="flex items-center justify-between">
                     <span class="text-sm text-gray-500">Member Since</span>
-                    <span class="text-sm font-medium">{{ metric.tierSince }}</span>
+                    <span class="text-sm font-semibold text-gray-900">{{ metric.tierSince || '—' }}</span>
                   </div>
                   <div class="flex items-center justify-between">
                     <span class="text-sm text-gray-500">Renewal Date</span>
-                    <span class="text-sm font-medium">{{ metric.nextDue }}</span>
+                    <span class="text-sm font-semibold text-gray-900">{{ metric.nextDue || '—' }}</span>
                   </div>
                 </div>
               </div>
@@ -89,7 +88,9 @@
               [chartOptions]="metric.chartOptions"
               [value]="metric.value"
               [subtitle]="metric.subtitle"
-              [loading]="metric.loading"></lfx-metric-card>
+              [loading]="metric.loading"
+              [clickable]="!!metric.drawerType"
+              (cardClick)="metric.drawerType && handleCardClick(metric.drawerType)"></lfx-metric-card>
           }
         }
       </div>
@@ -112,3 +113,28 @@
     </div>
   }
 </section>
+
+<!-- Drill-Down Drawers -->
+<lfx-org-active-contributors-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.OrgActiveContributors"
+  (visibleChange)="handleDrawerClose()"></lfx-org-active-contributors-drawer>
+
+<lfx-org-event-attendees-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.OrgEventAttendees"
+  (visibleChange)="handleDrawerClose()"></lfx-org-event-attendees-drawer>
+
+<lfx-org-event-speakers-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.OrgEventSpeakers"
+  (visibleChange)="handleDrawerClose()"></lfx-org-event-speakers-drawer>
+
+<lfx-org-training-enrollments-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.OrgTrainingEnrollments"
+  (visibleChange)="handleDrawerClose()"></lfx-org-training-enrollments-drawer>
+
+<lfx-org-certified-employees-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.OrgCertifiedEmployees"
+  (visibleChange)="handleDrawerClose()"></lfx-org-certified-employees-drawer>
+
+<lfx-org-maintainers-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.OrgMaintainers"
+  (visibleChange)="handleDrawerClose()"></lfx-org-maintainers-drawer>

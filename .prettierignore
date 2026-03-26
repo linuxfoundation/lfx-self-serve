@@ -11,6 +11,9 @@ dist/
 node_modules/
 .angular/
 
+# Include .claude directory (Prettier 3.x ignores dot-directories by default)
+!.claude/
+
 # Don't ignore these file types
 !*.html
 !*.tsx

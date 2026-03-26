@@ -1,35 +1,48 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="border border-gray-200 p-4 rounded-lg" [attr.data-testid]="'feature-' + feature().key">
+<div
+  class="border p-4 rounded-lg"
+  [ngClass]="{
+    'border-gray-200': !comingSoon(),
+    'border-gray-200 bg-gray-50': comingSoon(),
+  }"
+  [attr.data-testid]="'feature-' + feature().key">
   <div class="flex items-center justify-between">
     <div class="flex items-start gap-3">
       <div
         class="w-10 h-10 rounded-lg text-center items-center justify-center flex"
+        [ngClass]="{ 'grayscale opacity-50': comingSoon() }"
         [style.background-color]="feature().color + '15'"
         [style.color]="feature().color">
         <i [class]="feature().icon + ' text-lg'"></i>
       </div>
       <div class="flex-1">
         <div class="flex items-center gap-2 mb-1">
-          <p class="text-neutral-950">{{ feature().title }}</p>
-          @if (feature().recommended) {
+          <p [ngClass]="{ 'text-neutral-950': !comingSoon(), 'text-gray-400': comingSoon() }">{{ feature().title }}</p>
+          @if (comingSoon()) {
+            <span class="px-2 py-0.5 bg-gray-200 text-gray-500 text-xs rounded">Coming Soon</span>
+          } @else if (feature().recommended) {
             <span class="px-2 py-0.5 bg-blue-100 text-blue-500 text-xs rounded">Recommended</span>
           }
         </div>
-        <p class="text-sm text-gray-600">{{ feature().description }}</p>
+        <p class="text-sm" [ngClass]="{ 'text-gray-600': !comingSoon(), 'text-gray-400': comingSoon() }">{{ feature().description }}</p>
       </div>
     </div>
-    <lfx-toggle
-      [form]="form()"
-      [control]="feature().key"
-      [id]="feature().key"
-      [trueValue]="feature().trueValue || true"
-      [falseValue]="feature().falseValue || false"
-      [attr.data-testid]="'toggle-' + feature().key">
-    </lfx-toggle>
+    @if (!comingSoon()) {
+      <lfx-toggle
+        [form]="form()"
+        [control]="feature().key"
+        [id]="feature().key"
+        [trueValue]="feature().trueValue || true"
+        [falseValue]="feature().falseValue || false"
+        [attr.data-testid]="'toggle-' + feature().key">
+      </lfx-toggle>
+    }
   </div>
 
   <!-- Nested content slot - parent controls visibility with @if -->
-  <ng-content></ng-content>
+  @if (!comingSoon()) {
+    <ng-content></ng-content>
+  }
 </div>

@@ -192,7 +192,7 @@ try {
 } catch (error) {
   // Handle timeout and no responder errors gracefully
   if (error.message.includes('timeout') || error.message.includes('503')) {
-    serverLogger.info({ slug }, 'Project slug not found via NATS');
+    logger.warning(undefined, 'nats_request', 'Project slug not found via NATS', { slug });
     return { exists: false, uid: '', slug };
   }
 
@@ -206,13 +206,13 @@ try {
 ```typescript
 public async shutdown(): Promise<void> {
   if (this.connection && !this.connection.isClosed()) {
-    serverLogger.info('Shutting down NATS connection');
+    logger.info(undefined, 'nats_shutdown', 'Shutting down NATS connection');
 
     try {
       await this.connection.drain(); // Graceful shutdown
-      serverLogger.info('NATS connection closed successfully');
+      logger.info(undefined, 'nats_shutdown', 'NATS connection closed successfully');
     } catch (error) {
-      serverLogger.error({ error }, 'Error during NATS shutdown');
+      logger.error(undefined, 'nats_shutdown', 0, error);
     }
   }
   this.connection = null;
@@ -233,13 +233,13 @@ public isConnected(): boolean {
 
 ```typescript
 // Success logging
-serverLogger.info({ slug, project_id: uid }, 'Successfully resolved project slug to ID');
+logger.success(undefined, 'nats_resolve_slug', startTime, { slug, project_id: uid });
 
 // Error logging
-serverLogger.error({ error, slug }, 'Failed to resolve project slug via NATS');
+logger.error(undefined, 'nats_resolve_slug', startTime, error, { slug });
 
 // Connection logging
-serverLogger.info({ url: natsUrl }, 'Connecting to NATS server on demand');
+logger.info(undefined, 'nats_connect', 'Connecting to NATS server on demand', { url: natsUrl });
 ```
 
 ### Health Check Integration
@@ -268,15 +268,6 @@ Since NATS runs in the local Kubernetes cluster, the application connects direct
 NATS_URL=nats://lfx-platform-nats.lfx.svc.cluster.local:4222
 ```
 
-### Kubernetes Service Discovery
-
-The application leverages Kubernetes service discovery:
-
-- **Service Name**: `lfx-platform-nats`
-- **Namespace**: `lfx`
-- **Port**: `4222`
-- **Full DNS**: `lfx-platform-nats.lfx.svc.cluster.local:4222`
-
 ### Common Issues and Solutions
 
 #### 1. DNS Resolution Issues
@@ -303,22 +294,6 @@ Cause: No service responding to the subject or high latency
 Solution: Verify target microservice deployment and health
 ```
 
-### Debugging Commands
-
-```bash
-# Check NATS pod status
-kubectl get pods -n lfx -l app=nats
-
-# Check NATS service
-kubectl get svc -n lfx lfx-platform-nats
-
-# Check NATS logs
-kubectl logs -n lfx deployment/lfx-platform-nats
-
-# Test NATS connectivity from within cluster
-kubectl run nats-test --rm -i --tty --image=natsio/nats-box -- nats pub test "hello"
-```
-
 ## 🎯 Best Practices
 
 ### Performance Optimization
@@ -341,53 +316,6 @@ kubectl run nats-test --rm -i --tty --image=natsio/nats-box -- nats pub test "he
 2. **Subject Constants**: Define subjects as enums to prevent typos
 3. **Error Logging**: Log all NATS operations with appropriate context
 4. **Unit Testing**: Mock NATS connections for comprehensive testing
-
-## 📈 Performance Metrics
-
-### Key Metrics to Monitor
-
-- **Connection Status**: Track connection health and reconnections
-- **Request Latency**: Monitor request-reply response times
-- **Error Rate**: Track timeout and connection failures
-- **Message Volume**: Monitor message throughput and patterns
-
-### Request Performance Logging
-
-```typescript
-// Request timing and metrics
-const startTime = Date.now();
-try {
-  const response = await connection.request(subject, data, { timeout });
-  const duration = Date.now() - startTime;
-
-  serverLogger.info(
-    {
-      subject,
-      duration,
-      success: true,
-      slug,
-    },
-    'NATS request completed successfully'
-  );
-
-  return response;
-} catch (error) {
-  const duration = Date.now() - startTime;
-
-  serverLogger.error(
-    {
-      subject,
-      duration,
-      success: false,
-      error: error.message,
-      slug,
-    },
-    'NATS request failed'
-  );
-
-  throw error;
-}
-```
 
 ## 🔗 Related Documentation
 

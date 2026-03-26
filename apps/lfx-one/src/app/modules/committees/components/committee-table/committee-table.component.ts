@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe } from '@angular/common';
-import { Component, computed, inject, input, output, signal, Signal, WritableSignal } from '@angular/core';
+import { DatePipe, DecimalPipe } from '@angular/common';
+import { Component, computed, inject, input, output, Signal } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -13,20 +13,19 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { Committee, COMMITTEE_LABEL } from '@lfx-one/shared';
 import { CommitteeCategorySeverityPipe } from '@pipes/committee-category-severity.pipe';
+import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
+import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { PersonaService } from '@services/persona.service';
-import { ConfirmationService, MessageService } from 'primeng/api';
-import { ConfirmDialogModule } from 'primeng/confirmdialog';
-import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { TooltipModule } from 'primeng/tooltip';
-import { take } from 'rxjs';
+import { MessageService } from 'primeng/api';
 
-import { MemberFormComponent } from '../member-form/member-form.component';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-committee-table',
   imports: [
     DatePipe,
+    DecimalPipe,
     ReactiveFormsModule,
     RouterLink,
     CardComponent,
@@ -36,99 +35,87 @@ import { MemberFormComponent } from '../member-form/member-form.component';
     InputTextComponent,
     SelectComponent,
     TooltipModule,
-    ConfirmDialogModule,
-    DynamicDialogModule,
     CommitteeCategorySeverityPipe,
+    PlatformIconPipe,
+    PlatformLabelPipe,
   ],
-  providers: [ConfirmationService, DialogService],
   templateUrl: './committee-table.component.html',
   styleUrl: './committee-table.component.scss',
 })
 export class CommitteeTableComponent {
   // Injected services
   private readonly committeeService = inject(CommitteeService);
-  private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
-  private readonly dialogService = inject(DialogService);
   private readonly personaService = inject(PersonaService);
 
   // Inputs
   public committees = input.required<Committee[]>();
   public canManageCommittee = input<boolean>(false);
-  public committeeLabel = input<string>(COMMITTEE_LABEL.singular);
+  public myCommitteeUids = input<Set<string>>(new Set());
+  public readonly committeeLabel = COMMITTEE_LABEL;
   public searchForm = input.required<FormGroup>();
   public categoryOptions = input.required<{ label: string; value: string | null }[]>();
   public votingStatusOptions = input.required<{ label: string; value: string | null }[]>();
 
   // State
-  public isDeleting: WritableSignal<boolean> = signal<boolean>(false);
   public isBoardMember: Signal<boolean> = computed(() => this.personaService.currentPersona() === 'board-member');
 
   // Outputs
   public readonly refresh = output<void>();
   public readonly rowClick = output<Committee>();
 
-  // Event handlers
-  public onAddMember(committee: Committee): void {
-    const dialogRef = this.dialogService.open(MemberFormComponent, {
-      header: 'Add Member',
-      width: '700px',
-      modal: true,
-      closable: true,
-      data: {
-        isEditing: false,
-        committee: committee,
-        onCancel: () => {
-          // Dialog will close itself
-        },
-      },
-    }) as DynamicDialogRef;
+  public joinGroup(committee: Committee): void {
+    const joinMode = committee.join_mode || 'closed';
 
-    dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | undefined) => {
-      if (result) {
-        this.refresh.emit();
-      }
-    });
-  }
+    switch (joinMode) {
+      case 'open':
+        this.committeeService.joinCommittee(committee.uid).subscribe({
+          next: () => {
+            this.messageService.add({
+              severity: 'success',
+              summary: 'Joined',
+              detail: `You have joined "${committee.name}"`,
+            });
+            this.refresh.emit();
+          },
+          error: () => {
+            this.messageService.add({
+              severity: 'error',
+              summary: 'Error',
+              detail: `Failed to join "${committee.name}"`,
+            });
+          },
+        });
+        break;
 
-  public onDeleteCommittee(committee: Committee): void {
-    this.confirmationService.confirm({
-      message: `Are you sure you want to delete the ${this.committeeLabel().toLowerCase()} "${committee.name}"? This action cannot be undone.`,
-      header: `Delete ${this.committeeLabel()}`,
-      acceptLabel: 'Delete',
-      rejectLabel: 'Cancel',
-      acceptButtonStyleClass: 'p-button-danger p-button-sm',
-      rejectButtonStyleClass: 'p-button-outlined p-button-sm',
-      accept: () => this.performDelete(committee),
-    });
+      case 'application':
+        this.messageService.add({
+          severity: 'info',
+          summary: 'Apply to Join',
+          detail: `"${committee.name}" requires an application. This feature is coming soon.`,
+        });
+        break;
+
+      case 'invite_only':
+        this.messageService.add({
+          severity: 'info',
+          summary: 'Invite Only',
+          detail: `"${committee.name}" is invite-only. Ask an existing member to invite you.`,
+        });
+        break;
+
+      case 'closed':
+      default:
+        this.messageService.add({
+          severity: 'warn',
+          summary: 'Closed',
+          detail: `"${committee.name}" is not currently accepting new members.`,
+        });
+        break;
+    }
   }
 
   protected onRowSelect(event: { data: Committee }): void {
     this.rowClick.emit(event.data);
-  }
-
-  private performDelete(committee: Committee): void {
-    this.isDeleting.set(true);
-
-    this.committeeService.deleteCommittee(committee.uid).subscribe({
-      next: () => {
-        this.isDeleting.set(false);
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Success',
-          detail: `${this.committeeLabel()} deleted successfully`,
-        });
-        this.refresh.emit();
-      },
-      error: (error) => {
-        this.isDeleting.set(false);
-        this.messageService.add({
-          severity: 'error',
-          summary: 'Error',
-          detail: `Failed to delete ${this.committeeLabel().toLowerCase()}`,
-        });
-        console.error(`Failed to delete ${this.committeeLabel().toLowerCase()}:`, error);
-      },
-    });
   }
 }

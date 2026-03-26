@@ -31,7 +31,7 @@ export class CancelOccurrenceConfirmationComponent {
   public onConfirm(): void {
     this.isCanceling.set(true);
 
-    this.meetingService.cancelOccurrence(this.meeting.uid, this.occurrence.occurrence_id).subscribe({
+    this.meetingService.cancelOccurrence(this.meeting.id, this.occurrence.occurrence_id).subscribe({
       next: () => {
         this.isCanceling.set(false);
         this.dialogRef.close({ confirmed: true });

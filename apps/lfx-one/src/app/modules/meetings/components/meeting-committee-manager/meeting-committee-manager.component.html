@@ -9,26 +9,44 @@
     </div>
   } @else {
     <!-- Committee Selection -->
-    <div class="flex flex-col gap-1">
-      <label class="block text-neutral-950 mb-2">Select {{ committeeLabel.plural }}</label>
-      <lfx-multi-select
-        [form]="committeeForm"
-        control="committees"
-        [options]="committeeOptions()"
-        optionLabel="name"
-        optionValue="uid"
-        [placeholder]="'Select one or more ' + committeeLabel.plural.toLowerCase()"
-        [filter]="true"
-        [filterPlaceHolder]="'Search ' + committeeLabel.plural.toLowerCase()"
-        [showToggleAll]="true"
-        class="w-full"
-        data-testid="meeting-committee-multi-select"></lfx-multi-select>
-    </div>
-    @if (selectedCommitteeIds().length === 0) {
-      <p class="text-xs text-gray-500">
-        Select {{ committeeLabel.plural.toLowerCase() }} to associate with this meeting. {{ committeeLabel.singular }} members will automatically be added as
-        guests.
-      </p>
+    @if (committeeContext(); as ctx) {
+      <!-- Read-only locked group display (from group context) -->
+      <div class="flex flex-col gap-1">
+        <label class="block text-neutral-950 mb-2">{{ committeeLabel.singular }}</label>
+        <div class="flex items-center gap-3 p-3 bg-gray-50 border border-gray-200 rounded-lg" data-testid="meeting-committee-locked">
+          <div class="w-8 h-8 rounded-full bg-blue-100 flex items-center justify-center flex-shrink-0">
+            <i class="fa-light fa-users text-sm text-blue-600" aria-hidden="true"></i>
+          </div>
+          <div class="flex-1">
+            <p class="text-sm font-medium text-gray-900">{{ ctx.name }}</p>
+            <p class="text-xs text-gray-500">{{ ctx.category }}</p>
+          </div>
+          <i class="fa-light fa-lock text-gray-400" aria-hidden="true"></i>
+        </div>
+      </div>
+    } @else {
+      <div class="flex flex-col gap-1">
+        <label class="block text-neutral-950 mb-2">Select {{ committeeLabel.plural }}</label>
+        <lfx-multi-select
+          [form]="committeeForm"
+          control="committees"
+          [options]="committeeOptions()"
+          optionLabel="name"
+          optionValue="uid"
+          [placeholder]="'Select one or more ' + committeeLabel.plural.toLowerCase()"
+          [filter]="true"
+          [filterPlaceHolder]="'Search ' + committeeLabel.plural.toLowerCase()"
+          [showToggleAll]="true"
+          class="w-full"
+          appendTo="body"
+          data-testid="meeting-committee-multi-select"></lfx-multi-select>
+      </div>
+      @if (selectedCommitteeIds().length === 0) {
+        <p class="text-xs text-gray-500">
+          Select {{ committeeLabel.plural.toLowerCase() }} to associate with this meeting. {{ committeeLabel.singular }} members will automatically be added as
+          guests.
+        </p>
+      }
     }
 
     <!-- Voting Status Selection -->

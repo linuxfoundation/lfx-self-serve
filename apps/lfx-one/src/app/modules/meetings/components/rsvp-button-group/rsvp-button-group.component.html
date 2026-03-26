@@ -4,72 +4,87 @@
 <!-- RSVP Container -->
 <div
   [ngClass]="{
-    'bg-blue-50 border border-blue-300': selectedResponse() === null && !disabled(),
-    'bg-gray-200/50': selectedResponse() !== null || disabled(),
+    'bg-blue-50 border border-blue-300': selectedResponse() === null && !disabled() && !isLoading(),
+    'bg-gray-100/60': disabled() && !isLoading(),
+    'bg-blue-50/40 border border-blue-200': isLoading(),
+    'bg-gray-200/50': selectedResponse() !== null && !disabled() && !isLoading(),
   }"
   class="rounded-[6px] p-[12px] flex flex-col gap-2 flex-1"
   [attr.data-testid]="'meeting-rsvp-container'">
   <!-- Header -->
   <div
     [ngClass]="{
-      'text-blue-600': selectedResponse() === null && !disabled(),
-      'text-gray-500': selectedResponse() !== null || disabled(),
+      'text-blue-600': selectedResponse() === null && !disabled() && !isLoading(),
+      'text-gray-400': disabled() && !isLoading(),
+      'text-blue-500': isLoading(),
+      'text-gray-500': selectedResponse() !== null && !disabled() && !isLoading(),
     }"
     class="flex items-center gap-[7px]"
     [attr.data-testid]="'meeting-rsvp-header'">
-    <i class="fa-light fa-users text-[10.5px]"></i>
-    <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">RSVP</span>
+    @if (isLoading()) {
+      <i class="fa-light fa-spinner-third fa-spin text-[10.5px]"></i>
+    } @else {
+      <i class="fa-light fa-users text-[10.5px]"></i>
+    }
+    <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">{{ isLoading() ? 'Saving RSVP...' : 'RSVP' }}</span>
+    @if (disabled() && disabledMessage()) {
+      <span
+        class="inline-flex items-center gap-0.5 text-[10px] font-medium text-gray-400 bg-gray-100 border border-gray-200 px-1.5 py-0.5 rounded-full"
+        [attr.data-testid]="'meeting-rsvp-disabled-badge'">
+        <i class="fa-light fa-clock text-[8px]"></i>
+        {{ disabledMessage() }}
+      </span>
+    }
   </div>
 
-  @if (disabled()) {
-    <!-- Disabled Message -->
-    <div class="flex items-center justify-center py-1" [attr.data-testid]="'meeting-rsvp-disabled-message'">
-      <span class="text-[10.5px] tracking-[0.0923px] leading-[14px] text-gray-500">{{ disabledMessage() }}</span>
-    </div>
-  } @else {
-    <!-- RSVP Buttons -->
-    <div class="flex gap-[7px]" [attr.data-testid]="'meeting-rsvp-buttons'">
-      <!-- Yes Button -->
-      <button
-        (click)="handleRsvpClick('accepted')"
-        [disabled]="isLoading()"
-        [ngClass]="{
-          'bg-blue-500 border-blue-500 text-white': selectedResponse() === 'accepted',
-          'bg-white border-blue-500 text-blue-700 hover:bg-blue-50': selectedResponse() !== 'accepted',
-        }"
-        class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
-        [attr.data-testid]="'meeting-rsvp-button-yes'">
-        <i class="fa-light fa-circle-check text-[14px]"></i>
-        <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">Yes</span>
-      </button>
+  <!-- RSVP Buttons -->
+  <div class="flex gap-[7px]" [attr.data-testid]="'meeting-rsvp-buttons'">
+    <!-- Yes Button -->
+    <button
+      (click)="handleRsvpClick('accepted')"
+      [disabled]="isLoading() || disabled()"
+      [ngClass]="{
+        'bg-blue-500 border-blue-500 text-white': selectedResponse() === 'accepted' && !disabled() && !isLoading(),
+        'bg-white border-blue-500 text-blue-700 hover:bg-blue-50': selectedResponse() !== 'accepted' && !disabled() && !isLoading(),
+        'bg-white border-gray-300 text-gray-400 cursor-not-allowed': disabled() && !isLoading(),
+        'bg-blue-100/50 border-blue-200 text-blue-300 cursor-wait animate-pulse': isLoading(),
+      }"
+      class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
+      [attr.data-testid]="'meeting-rsvp-button-yes'">
+      <i class="fa-light fa-circle-check text-[14px]"></i>
+      <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">Yes</span>
+    </button>
 
-      <!-- No Button -->
-      <button
-        (click)="handleRsvpClick('declined')"
-        [disabled]="isLoading()"
-        [ngClass]="{
-          'bg-red-500 border-red-500 text-white': selectedResponse() === 'declined',
-          'bg-white border-red-500 text-red-700 hover:bg-red-50': selectedResponse() !== 'declined',
-        }"
-        class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
-        [attr.data-testid]="'meeting-rsvp-button-no'">
-        <i class="fa-light fa-circle-xmark text-[14px]"></i>
-        <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">No</span>
-      </button>
+    <!-- No Button -->
+    <button
+      (click)="handleRsvpClick('declined')"
+      [disabled]="isLoading() || disabled()"
+      [ngClass]="{
+        'bg-red-500 border-red-500 text-white': selectedResponse() === 'declined' && !disabled() && !isLoading(),
+        'bg-white border-red-500 text-red-700 hover:bg-red-50': selectedResponse() !== 'declined' && !disabled() && !isLoading(),
+        'bg-white border-gray-300 text-gray-400 cursor-not-allowed': disabled() && !isLoading(),
+        'bg-blue-100/50 border-blue-200 text-blue-300 cursor-wait animate-pulse': isLoading(),
+      }"
+      class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
+      [attr.data-testid]="'meeting-rsvp-button-no'">
+      <i class="fa-light fa-circle-xmark text-[14px]"></i>
+      <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">No</span>
+    </button>
 
-      <!-- Maybe Button -->
-      <button
-        (click)="handleRsvpClick('maybe')"
-        [disabled]="isLoading()"
-        [ngClass]="{
-          'bg-amber-500 border-amber-500 text-white': selectedResponse() === 'maybe',
-          'bg-white border-amber-500 text-amber-700 hover:bg-amber-50': selectedResponse() !== 'maybe',
-        }"
-        class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
-        [attr.data-testid]="'meeting-rsvp-button-maybe'">
-        <i class="fa-light fa-circle-question text-[14px]"></i>
-        <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">Maybe</span>
-      </button>
-    </div>
-  }
+    <!-- Maybe Button -->
+    <button
+      (click)="handleRsvpClick('maybe')"
+      [disabled]="isLoading() || disabled()"
+      [ngClass]="{
+        'bg-amber-500 border-amber-500 text-white': selectedResponse() === 'maybe' && !disabled() && !isLoading(),
+        'bg-white border-amber-500 text-amber-700 hover:bg-amber-50': selectedResponse() !== 'maybe' && !disabled() && !isLoading(),
+        'bg-white border-gray-300 text-gray-400 cursor-not-allowed': disabled() && !isLoading(),
+        'bg-blue-100/50 border-blue-200 text-blue-300 cursor-wait animate-pulse': isLoading(),
+      }"
+      class="flex-1 inline-flex items-center justify-center gap-[3.5px] px-[7px] py-[5.25px] rounded-[3.5px] h-[28px] border transition-colors"
+      [attr.data-testid]="'meeting-rsvp-button-maybe'">
+      <i class="fa-light fa-circle-question text-[14px]"></i>
+      <span class="text-[10.5px] tracking-[0.0923px] leading-[14px]">Maybe</span>
+    </button>
+  </div>
 </div>

@@ -1,0 +1,103 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="project-health-scores-drawer">
+  <!-- Header -->
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full" data-testid="project-health-scores-drawer-header">
+      <!-- Title + Subtitle -->
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="project-health-scores-drawer-title">Project Health Scores</h2>
+        <p class="text-sm text-gray-500">Board Member · Organization view</p>
+      </div>
+
+      <!-- Total Projects Badge -->
+      @if (hasData()) {
+        <div class="flex items-center gap-1.5 px-3 py-1 bg-gray-100 rounded-full" data-testid="project-health-scores-drawer-total">
+          <span class="text-sm font-medium text-gray-700">{{ totalProjects().toLocaleString() }} projects</span>
+        </div>
+      }
+
+      <!-- Close Button -->
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
+        aria-label="Close panel"
+        data-testid="project-health-scores-drawer-close">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <!-- Content -->
+  <div class="flex flex-col gap-6 pb-2" data-testid="project-health-scores-drawer-content">
+    <!-- Distribution Section -->
+    <div class="flex flex-col gap-3" data-testid="project-health-scores-drawer-distribution-section">
+      <!-- Section Header -->
+      <div class="flex items-center gap-2">
+        <h3 class="text-sm font-medium text-gray-900">Projects by Health Status</h3>
+        <div class="group relative">
+          <svg class="w-3.5 h-3.5 text-gray-400 cursor-help" fill="none" stroke="currentColor" viewBox="0 0 24 24" aria-hidden="true">
+            <circle cx="12" cy="12" r="10" stroke-width="2" />
+            <path stroke-width="2" stroke-linecap="round" d="M12 16v-4m0-4h.01" />
+          </svg>
+          <div
+            class="absolute left-1/2 -translate-x-1/2 bottom-full mb-2 hidden group-hover:block w-64 p-2 bg-slate-900 text-white text-xs rounded shadow-lg z-10"
+            role="tooltip">
+            Number of foundation projects in each health score category
+          </div>
+        </div>
+      </div>
+
+      <!-- Legend -->
+      <div class="flex flex-wrap gap-3" data-testid="project-health-scores-drawer-legend">
+        <div class="flex items-center gap-1.5">
+          <span class="inline-block w-3 h-3 rounded-sm" [style.backgroundColor]="legendColors.critical"></span>
+          <span class="text-xs text-gray-600">Critical</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="inline-block w-3 h-3 rounded-sm" [style.backgroundColor]="legendColors.unsteady"></span>
+          <span class="text-xs text-gray-600">Unsteady</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="inline-block w-3 h-3 rounded-sm" [style.backgroundColor]="legendColors.stable"></span>
+          <span class="text-xs text-gray-600">Stable</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="inline-block w-3 h-3 rounded-sm" [style.backgroundColor]="legendColors.healthy"></span>
+          <span class="text-xs text-gray-600">Healthy</span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <span class="inline-block w-3 h-3 rounded-sm" [style.backgroundColor]="legendColors.excellent"></span>
+          <span class="text-xs text-gray-600">Excellent</span>
+        </div>
+      </div>
+
+      <!-- Chart -->
+      @if (hasData()) {
+        <div class="h-[280px]" data-testid="project-health-scores-drawer-chart">
+          <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
+        </div>
+      } @else {
+        <div class="text-center py-8 border border-slate-200 rounded-lg" data-testid="project-health-scores-drawer-empty">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No health score data available for this foundation.</p>
+        </div>
+      }
+    </div>
+
+    <!-- Insights Handoff -->
+    <lfx-insights-handoff-section
+      title="Looking for detailed project health metrics?"
+      description="Project-level health diagnostics, activity patterns, and individual project metrics are available in LFX Insights."
+      link="https://insights.linuxfoundation.org"
+      data-testid="project-health-scores-drawer-insights-handoff"></lfx-insights-handoff-section>
+  </div>
+</p-drawer>

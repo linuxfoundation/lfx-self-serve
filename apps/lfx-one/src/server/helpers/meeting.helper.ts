@@ -5,12 +5,15 @@ import { Meeting } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { MeetingService } from '../services/meeting.service';
+import { getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 const meetingService = new MeetingService();
 
 /**
- * Checks if a user is invited to a meeting by their email
+ * Checks if a user is invited to a meeting by their email, falling back to username
+ * The meeting service may store a different email (e.g. "meeting email" preference) than the
+ * auth email, so we also check by username to ensure we find the registrant.
  * @param req - Express request object
  * @param meetingUid - The meeting UID to check
  * @param email - The user's email address
@@ -18,14 +21,28 @@ const meetingService = new MeetingService();
  * @returns True if the user is invited to the meeting
  */
 export async function isUserInvitedToMeeting(req: Request, meetingUid: string, email: string, m2mToken?: string): Promise<boolean> {
-  if (!email || !meetingUid) {
+  if (!meetingUid) {
     return false;
   }
 
   const token = m2mToken || (await generateM2MToken(req));
-  const registrants = await meetingService.getMeetingRegistrantsByEmail(req, meetingUid, email, token);
 
-  return registrants.resources.length > 0;
+  // Try email first
+  if (email) {
+    const registrants = await meetingService.getMeetingRegistrantsByEmail(req, meetingUid, email, token);
+    if (registrants.length > 0) {
+      return true;
+    }
+  }
+
+  // Fall back to username
+  const username = await getUsernameFromAuth(req);
+  if (username) {
+    const registrants = await meetingService.getMeetingRegistrantsByUsername(req, meetingUid, username, token);
+    return registrants.length > 0;
+  }
+
+  return false;
 }
 
 /**
@@ -37,9 +54,8 @@ export async function isUserInvitedToMeeting(req: Request, meetingUid: string, e
  * @returns The meeting with the invited property added
  */
 export async function addInvitedStatusToMeeting(req: Request, meeting: Meeting, email: string, m2mToken?: string): Promise<Meeting> {
-  // V1 meetings are now transformed server-side to have uid populated
   // Check invitation status for all users, including organizers (who may also be invited)
-  const invited = await isUserInvitedToMeeting(req, meeting.uid, email, m2mToken);
+  const invited = await isUserInvitedToMeeting(req, meeting.id, email, m2mToken);
 
   return {
     ...meeting,
@@ -55,7 +71,7 @@ export async function addInvitedStatusToMeeting(req: Request, meeting: Meeting, 
  * @returns Array of meetings with the invited property added
  */
 export async function addInvitedStatusToMeetings(req: Request, meetings: Meeting[], email: string): Promise<Meeting[]> {
-  if (!email || meetings.length === 0) {
+  if (meetings.length === 0) {
     return meetings.map((m) => ({ ...m, invited: false }));
   }
 

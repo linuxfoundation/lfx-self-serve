@@ -2,7 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <p-table
-  [value]="value()"
+  [value]="displayValue()"
   [columns]="columns()"
   [dataKey]="dataKey()"
   [style]="style()"
@@ -101,10 +101,20 @@
     </ng-template>
   }
 
-  <!-- Body template -->
-  @if (bodyTemplate) {
+  <!-- Body template: renders skeleton rows when loading, otherwise delegates to consumer's template -->
+  @if (bodyTemplate || loading()) {
     <ng-template #body let-rowData let-columns="columns" let-rowIndex="rowIndex">
-      <ng-container *ngTemplateOutlet="bodyTemplate || null; context: { $implicit: rowData, columns: columns, rowIndex: rowIndex }"> </ng-container>
+      @if (loading() && !loadingBodyTemplate) {
+        <tr class="lfx-skeleton-row" [style.animation-delay]="rowData.delay">
+          @for (col of rowData.cols; track col.idx) {
+            <td>
+              <div class="lfx-skeleton-bar" [style.width]="col.width"></div>
+            </td>
+          }
+        </tr>
+      } @else if (bodyTemplate) {
+        <ng-container *ngTemplateOutlet="bodyTemplate; context: { $implicit: rowData, columns: columns, rowIndex: rowIndex }"> </ng-container>
+      }
     </ng-template>
   }
 
@@ -129,17 +139,10 @@
     </ng-template>
   }
 
-  <!-- Loading template -->
+  <!-- Loading overlay: custom template only (PrimeNG default overlay hidden via CSS) -->
   @if (loadingTemplate) {
     <ng-template #loading>
-      <ng-container *ngTemplateOutlet="loadingTemplate || null"></ng-container>
-    </ng-template>
-  }
-
-  <!-- Loading body template -->
-  @if (loadingBodyTemplate) {
-    <ng-template #loadingbody>
-      <ng-container *ngTemplateOutlet="loadingBodyTemplate || null"></ng-container>
+      <ng-container *ngTemplateOutlet="loadingTemplate"></ng-container>
     </ng-template>
   }
 

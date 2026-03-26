@@ -23,13 +23,13 @@ export class CommitteeController {
     });
 
     try {
-      const committees = await this.committeeService.getCommittees(req, req.query);
+      const data = await this.committeeService.getCommittees(req, req.query);
 
       logger.success(req, 'get_committees', startTime, {
-        committee_count: committees.length,
+        committee_count: data.length,
       });
 
-      res.json(committees);
+      res.json(data);
     } catch (error) {
       next(error);
     }
@@ -51,6 +51,27 @@ export class CommitteeController {
       });
 
       res.json({ count });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /committees/my-committees
+   * Returns committees the current user is a member of, with their role in each.
+   */
+  public async getMyCommittees(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const projectUid = req.query['project_uid'] as string | undefined;
+    const startTime = logger.startOperation(req, 'get_my_committees', { project_uid: projectUid });
+
+    try {
+      const myCommittees = await this.committeeService.getMyCommittees(req, projectUid);
+
+      logger.success(req, 'get_my_committees', startTime, {
+        committee_count: myCommittees.length,
+      });
+
+      res.json(myCommittees);
     } catch (error) {
       next(error);
     }
@@ -460,6 +481,43 @@ export class CommitteeController {
       res.status(204).send();
     } catch (error) {
       // Send the error to the next middleware
+      next(error);
+    }
+  }
+
+  // ── Join / Leave Endpoints ───────────────────────────────────────────────
+
+  /**
+   * POST /committees/:id/join
+   * Self-join an open committee.
+   */
+  public async joinCommittee(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'join_committee', { committee_id: id });
+
+    try {
+      const member = await this.committeeService.joinCommittee(req, id);
+
+      logger.success(req, 'join_committee', startTime, { committee_id: id });
+      res.status(201).json(member);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * DELETE /committees/:id/leave
+   */
+  public async leaveCommittee(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'leave_committee', { committee_id: id });
+
+    try {
+      await this.committeeService.leaveCommittee(req, id);
+
+      logger.success(req, 'leave_committee', startTime, { committee_id: id });
+      res.status(204).send();
+    } catch (error) {
       next(error);
     }
   }

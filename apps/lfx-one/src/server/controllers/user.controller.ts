@@ -119,8 +119,8 @@ export class UserController {
         return;
       }
 
-      // Extract user email from OIDC
-      const userEmail = req.oidc?.user?.['email'];
+      // Extract user email from OIDC (lowercased for consistent tag matching)
+      const userEmail = (req.oidc?.user?.['email'] as string)?.toLowerCase();
       if (!userEmail) {
         const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
           operation: 'get_user_meetings',
@@ -152,7 +152,7 @@ export class UserController {
 
       // Get user's meetings from service
       const query = { tags_all: `project_uid:${projectUid}` };
-      const meetings = await this.userService.getUserMeetings(req, userEmail, projectUid, query, limit);
+      const meetings = await this.userService.getUserMeetings(req, userEmail, query, limit);
 
       logger.success(req, 'get_user_meetings', startTime, {
         project_uid: projectUid,

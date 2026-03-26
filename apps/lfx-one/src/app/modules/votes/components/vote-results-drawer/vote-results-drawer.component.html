@@ -54,7 +54,7 @@
 
     <!-- Content Section -->
     <div class="flex flex-col gap-6" data-testid="vote-results-drawer-content">
-      @if (loading()) {
+      @if (isLoading()) {
         <!-- Loading Skeleton -->
         <div class="flex flex-col gap-6">
           <!-- Participation Stats Skeleton -->
@@ -104,7 +104,8 @@
           @if (voteData.description) {
             <div class="w-full mt-8 pt-6 border-t border-slate-200 text-left" data-testid="vote-results-details">
               <h3 class="text-base font-semibold text-slate-900 mb-2">Vote Details</h3>
-              <p class="text-sm text-slate-700 leading-relaxed"><span class="font-medium">Description:</span> {{ voteData.description }}</p>
+              <p class="text-sm text-slate-700 leading-relaxed"><span class="font-medium">Description:</span></p>
+              <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
             </div>
           }
         </div>
@@ -115,7 +116,8 @@
           @if (voteData.description) {
             <div class="flex flex-col gap-4" data-testid="vote-results-details">
               <h2 class="text-lg font-semibold text-slate-900">Vote Details</h2>
-              <p class="text-sm text-slate-700 leading-relaxed"><span class="font-medium">Description:</span> {{ voteData.description }}</p>
+              <p class="text-sm text-slate-700 leading-relaxed"><span class="font-medium">Description:</span></p>
+              <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
             </div>
           }
 
@@ -187,6 +189,23 @@
               </p>
             </div>
           </div>
+
+          <!-- Comments Section -->
+          @if (commentResults().length > 0) {
+            <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
+              <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
+              @for (commentResult of commentResults(); track commentResult.prompt) {
+                <div class="flex flex-col gap-2">
+                  <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
+                  @for (comment of commentResult.comments; track $index) {
+                    <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                      <p class="text-sm text-slate-700">{{ comment }}</p>
+                    </div>
+                  }
+                </div>
+              }
+            </div>
+          }
         </div>
       } @else {
         <!-- Closed Vote - Final Results Layout -->
@@ -298,12 +317,30 @@
           </div>
         </div>
 
+        <!-- Comments Section -->
+        @if (commentResults().length > 0) {
+          <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-comments">
+            <h2 class="text-lg font-semibold text-slate-900">Comments</h2>
+            @for (commentResult of commentResults(); track commentResult.prompt) {
+              <div class="flex flex-col gap-2">
+                <h3 class="text-sm font-medium text-slate-700">{{ commentResult.prompt }}</h3>
+                @for (comment of commentResult.comments; track $index) {
+                  <div class="p-3 bg-slate-50 rounded-lg border border-slate-200">
+                    <p class="text-sm text-slate-700">{{ comment }}</p>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        }
+
         <!-- Vote Details Section (at bottom for closed votes) -->
         @if (voteData.description) {
           <div class="flex flex-col gap-4 pt-4 border-t border-slate-200" data-testid="vote-results-details">
             <h2 class="text-lg font-semibold text-slate-900">Vote Details</h2>
 
-            <p class="text-sm text-slate-700 leading-relaxed"><span class="font-medium">Description:</span> {{ voteData.description }}</p>
+            <p class="text-sm text-slate-700 leading-relaxed"><span class="font-medium">Description:</span></p>
+            <div class="vote-description text-sm text-slate-700 leading-relaxed" [innerHTML]="voteData.description"></div>
           </div>
         }
       }

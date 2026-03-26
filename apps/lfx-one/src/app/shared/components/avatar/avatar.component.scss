@@ -4,5 +4,9 @@
 ::ng-deep {
   .p-avatar {
     @apply flex;
+
+    img {
+      @apply object-cover;
+    }
   }
 }

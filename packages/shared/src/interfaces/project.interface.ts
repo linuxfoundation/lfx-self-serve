@@ -2,52 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 /**
- * Metric data for project cards with optional badge indicator
- * @description Displays key project statistics with visual indicators
- */
-export interface ProjectCardMetric {
-  /** Icon name/class for the metric */
-  icon: string;
-  /** Display label for the metric */
-  label: string;
-  /** Numeric value of the metric */
-  value: number;
-  /** Optional badge with status indicator */
-  badge?: {
-    /** Badge text label */
-    label: string;
-    /** Badge color/severity level */
-    severity: 'success' | 'info' | 'warning' | 'danger';
-  };
-}
-
-/**
- * Simple metric display for project statistics
- * @description Basic metric representation without additional styling
- */
-export interface ProjectMetric {
-  /** Icon name/class for the metric */
-  icon: string;
-  /** Display label for the metric */
-  label: string;
-  /** Numeric value of the metric */
-  value: number;
-}
-
-/**
- * Filter button configuration for project lists
- * @description Interactive filter controls for project navigation
- */
-export interface FilterButton {
-  /** Button display text */
-  label: string;
-  /** Optional icon for the button */
-  icon?: string;
-  /** Whether the filter is currently active */
-  active?: boolean;
-}
-
-/**
  * Complete project entity with all metadata
  * @description Full project information from the LFX platform
  */
@@ -94,21 +48,8 @@ export interface Project {
   created_at: string;
   /** Timestamp when project was last updated */
   updated_at: string;
-  /** Number of committees in this project */
-  committees_count: number;
-  /** Number of meetings scheduled/held */
-  meetings_count: number;
   /** Number of mailing lists associated */
   mailing_list_count: number;
-}
-
-/**
- * Project data optimized for card display with metrics
- * @description Extends partial project data with calculated metrics for UI cards
- */
-export interface ProjectCard extends Partial<Project> {
-  /** Array of metrics to display on the project card */
-  metrics: ProjectCardMetric[];
 }
 
 /**

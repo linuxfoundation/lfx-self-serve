@@ -4,6 +4,7 @@
 import { Component, computed, inject, signal } from '@angular/core';
 import { HiddenActionsService } from '@services/hidden-actions.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject } from 'rxjs';
 
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
@@ -13,7 +14,7 @@ import { RecentProgressComponent } from '../components/recent-progress/recent-pr
 
 @Component({
   selector: 'lfx-maintainer-dashboard',
-  imports: [RecentProgressComponent, PendingActionsComponent, MyMeetingsComponent, MyProjectsComponent],
+  imports: [RecentProgressComponent, PendingActionsComponent, MyMeetingsComponent, MyProjectsComponent, SkeletonModule],
   templateUrl: './maintainer-dashboard.component.html',
   styleUrl: './maintainer-dashboard.component.scss',
 })
