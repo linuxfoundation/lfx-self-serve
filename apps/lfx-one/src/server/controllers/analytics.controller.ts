@@ -1732,6 +1732,10 @@ export class AnalyticsController {
     }
   }
 
+  /**
+   * GET /api/analytics/social-reach
+   * Get paid social reach and ROAS data from Snowflake Platinum tables
+   */
   public async getSocialReach(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_social_reach');
 

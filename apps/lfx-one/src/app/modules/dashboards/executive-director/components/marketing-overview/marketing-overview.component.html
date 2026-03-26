@@ -102,3 +102,13 @@
   [visible]="activeDrawer() === DashboardDrawerType.MarketingEmailCtr"
   (visibleChange)="handleDrawerClose()"
   [data]="marketingData().emailCtr"></lfx-email-ctr-drawer>
+
+<lfx-paid-social-reach-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.MarketingPaidSocialReach"
+  (visibleChange)="handleDrawerClose()"
+  [data]="marketingData().socialReach"></lfx-paid-social-reach-drawer>
+
+<lfx-social-media-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.MarketingSocialMedia"
+  (visibleChange)="handleDrawerClose()"
+  [data]="marketingData().socialMedia"></lfx-social-media-drawer>

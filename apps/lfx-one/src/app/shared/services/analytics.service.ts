@@ -49,6 +49,8 @@ import {
   UserProjectsResponse,
   UserPullRequestsResponse,
   EmailCtrResponse,
+  SocialMediaResponse,
+  SocialReachResponse,
   WebActivitiesSummaryResponse,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of } from 'rxjs';
@@ -831,6 +833,40 @@ export class AnalyticsService {
           campaignGroups: [],
           monthlySends: [],
           monthlyOpens: [],
+        });
+      })
+    );
+  }
+
+  public getSocialMedia(foundationName: string): Observable<SocialMediaResponse> {
+    return this.http.get<SocialMediaResponse>('/api/analytics/social-media', { params: { foundationName } }).pipe(
+      catchError(() => {
+        return of({
+          totalFollowers: 0,
+          totalPlatforms: 0,
+          changePercentage: 0,
+          trend: 'up' as const,
+          platforms: [],
+          monthlyData: [],
+        });
+      })
+    );
+  }
+
+  public getSocialReach(foundationName: string): Observable<SocialReachResponse> {
+    return this.http.get<SocialReachResponse>('/api/analytics/social-reach', { params: { foundationName } }).pipe(
+      catchError(() => {
+        return of({
+          totalReach: 0,
+          roas: 0,
+          totalSpend: 0,
+          totalRevenue: 0,
+          changePercentage: 0,
+          trend: 'up' as const,
+          monthlyData: [],
+          monthlyLabels: [],
+          monthlyRoas: [],
+          channelGroups: [],
         });
       })
     );
