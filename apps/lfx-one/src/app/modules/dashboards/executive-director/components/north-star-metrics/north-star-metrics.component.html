@@ -1,0 +1,57 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section data-testid="north-star-metrics-section">
+  <div class="flex flex-wrap gap-3 items-end justify-between mb-4">
+    <div class="flex flex-col gap-1">
+      <div class="flex items-center gap-2">
+        <h2 class="mb-0">North Star Metrics</h2>
+        <span class="px-2 py-0.5 text-xs font-medium text-amber-700 bg-amber-50 border border-amber-200 rounded-full">Sample Data</span>
+      </div>
+      <p class="text-sm text-gray-500 mb-0">Board-level KPIs · Always visible</p>
+    </div>
+  </div>
+
+  <!-- Cards Grid - Always visible, no carousel -->
+  <div class="border-2 border-dashed border-amber-300 rounded-lg p-4 bg-amber-50/30" data-testid="north-star-metrics-grid-wrapper">
+    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4" data-testid="north-star-metrics-grid">
+      @for (card of northStarCards(); track card.testId) {
+        <lfx-metric-card
+          [title]="card.title"
+          [icon]="card.icon"
+          [testId]="card.testId"
+          [chartType]="card.chartType"
+          [chartData]="card.chartData"
+          [chartOptions]="card.chartOptions"
+          [value]="card.value"
+          [subtitle]="card.subtitle"
+          [trend]="card.trend"
+          [changePercentage]="card.changePercentage"
+          [loading]="card.loading"
+          [clickable]="!!card.drawerType"
+          (cardClick)="handleCardClick(card.drawerType!)"></lfx-metric-card>
+      }
+    </div>
+  </div>
+</section>
+
+<!-- Drill-Down Drawers -->
+<lfx-engaged-community-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.NorthStarEngagedCommunity"
+  (visibleChange)="handleDrawerClose()"
+  [data]="engagedCommunityData"></lfx-engaged-community-drawer>
+
+<lfx-member-acquisition-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.NorthStarMemberAcquisition"
+  (visibleChange)="handleDrawerClose()"
+  [data]="memberAcquisitionData"></lfx-member-acquisition-drawer>
+
+<lfx-member-retention-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.NorthStarMemberRetention"
+  (visibleChange)="handleDrawerClose()"
+  [data]="memberRetentionData"></lfx-member-retention-drawer>
+
+<lfx-flywheel-conversion-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.NorthStarFlywheelConversion"
+  (visibleChange)="handleDrawerClose()"
+  [data]="flywheelConversionData"></lfx-flywheel-conversion-drawer>

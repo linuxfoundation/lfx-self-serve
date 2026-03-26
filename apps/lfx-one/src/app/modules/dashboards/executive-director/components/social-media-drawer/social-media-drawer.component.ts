@@ -28,9 +28,31 @@ export class SocialMediaDrawerComponent {
     monthlyData: [],
   });
 
+  // === Dummy Data ===
+  protected readonly recommendedActions: MarketingRecommendedAction[] = [
+    {
+      title: 'Increase posting frequency on Bluesky',
+      description: 'Bluesky has highest engagement rate (6.1%) but fewest posts',
+      priority: 'high',
+      dueLabel: 'This week',
+      iconClass: 'fa-light fa-calendar-plus',
+    },
+    {
+      title: 'Cross-post video content to YouTube Shorts',
+      description: 'Repurpose top-performing social content as short-form video',
+      priority: 'medium',
+      dueLabel: 'This month',
+      iconClass: 'fa-light fa-video',
+    },
+  ];
+
+  protected readonly keyInsights: MarketingKeyInsight[] = [
+    { text: 'Driver: LinkedIn engagement rate highest at 4.8%', type: 'driver' },
+    { text: 'YouTube growth stalled — only 8 posts in 30 days', type: 'warning' },
+    { text: 'Mastodon and Bluesky growing fastest among new platforms', type: 'info' },
+  ];
+
   // === Computed Signals ===
-  protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
-  protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
   protected readonly followerTrendChartData: Signal<ChartData<'line'>> = this.initFollowerTrendChartData();
   protected readonly platformChartData: Signal<ChartData<'bar'>> = this.initPlatformChartData();
 
@@ -142,126 +164,6 @@ export class SocialMediaDrawerComponent {
   }
 
   // === Private Initializers ===
-  private initRecommendedActions(): Signal<MarketingRecommendedAction[]> {
-    return computed(() => {
-      const { platforms, changePercentage, totalFollowers } = this.data();
-      const actions: MarketingRecommendedAction[] = [];
-
-      if (platforms.length === 0 && totalFollowers === 0) {
-        return actions;
-      }
-
-      // Find platform with high engagement but low posting
-      const highEngageLowPost = [...platforms]
-        .filter((p) => p.engagementRate > 0 && p.postsLast30Days > 0)
-        .sort((a, b) => b.engagementRate - a.engagementRate)
-        .find((p) => {
-          const avgPosts = platforms.reduce((s, pl) => s + pl.postsLast30Days, 0) / platforms.length;
-          return p.postsLast30Days < avgPosts * 0.7;
-        });
-
-      if (highEngageLowPost) {
-        actions.push({
-          title: `Increase posting on ${highEngageLowPost.platform}`,
-          description: `${highEngageLowPost.engagementRate.toFixed(1)}% engagement rate but only ${highEngageLowPost.postsLast30Days} posts in 30 days`,
-          priority: 'high',
-          dueLabel: 'This week',
-          iconClass: 'fa-light fa-calendar-plus',
-        });
-      }
-
-      if (changePercentage < -5) {
-        actions.push({
-          title: 'Address follower decline',
-          description: `Followers dropped ${Math.abs(changePercentage)}% — review content strategy and posting cadence`,
-          priority: 'high',
-          dueLabel: 'This week',
-          iconClass: 'fa-light fa-user-minus',
-        });
-      }
-
-      // Find low-engagement platform with many followers
-      if (platforms.length > 1) {
-        const sorted = [...platforms].sort((a, b) => a.engagementRate - b.engagementRate);
-        const lowest = sorted[0];
-        if (lowest.engagementRate > 0 && lowest.followers > totalFollowers * 0.2) {
-          actions.push({
-            title: `Boost engagement on ${lowest.platform}`,
-            description: `${this.formatNumber(lowest.followers)} followers but only ${lowest.engagementRate.toFixed(1)}% engagement — try interactive content`,
-            priority: 'medium',
-            dueLabel: 'This month',
-            iconClass: 'fa-light fa-comments',
-          });
-        }
-      }
-
-      if (actions.length === 0) {
-        actions.push({
-          title: 'Continue growth strategy',
-          description: `${this.formatNumber(totalFollowers)} followers across ${platforms.length} platforms${changePercentage > 0 ? ` — growing ${changePercentage}%` : ''}`,
-          priority: 'low',
-          dueLabel: 'Ongoing',
-          iconClass: 'fa-light fa-chart-line-up',
-        });
-      }
-
-      return actions;
-    });
-  }
-
-  private initKeyInsights(): Signal<MarketingKeyInsight[]> {
-    return computed(() => {
-      const { totalFollowers, changePercentage, platforms, monthlyData } = this.data();
-      const insights: MarketingKeyInsight[] = [];
-
-      if (totalFollowers === 0 && platforms.length === 0) {
-        return insights;
-      }
-
-      // Follower trend
-      if (changePercentage > 5) {
-        insights.push({ text: `Followers grew ${changePercentage}% month-over-month`, type: 'driver' });
-      } else if (changePercentage < -5) {
-        insights.push({ text: `Followers declined ${Math.abs(changePercentage)}% month-over-month`, type: 'warning' });
-      } else if (changePercentage !== 0) {
-        insights.push({ text: `Followers ${changePercentage > 0 ? 'up' : 'down'} ${Math.abs(changePercentage)}% — relatively stable`, type: 'info' });
-      }
-
-      // Best engagement platform
-      if (platforms.length > 0) {
-        const byEngagement = [...platforms].filter((p) => p.engagementRate > 0).sort((a, b) => b.engagementRate - a.engagementRate);
-        if (byEngagement.length > 0) {
-          insights.push({ text: `${byEngagement[0].platform} leads engagement at ${byEngagement[0].engagementRate.toFixed(1)}%`, type: 'driver' });
-        }
-      }
-
-      // Platform concentration
-      if (platforms.length > 1 && totalFollowers > 0) {
-        const sorted = [...platforms].sort((a, b) => b.followers - a.followers);
-        const topShare = (sorted[0].followers / totalFollowers) * 100;
-        if (topShare > 70) {
-          insights.push({ text: `${topShare.toFixed(0)}% of followers on ${sorted[0].platform} — audience concentration risk`, type: 'warning' });
-        } else {
-          insights.push({ text: `Audience spread across ${platforms.length} platforms — healthy diversification`, type: 'info' });
-        }
-      }
-
-      // Monthly trend
-      if (monthlyData.length >= 3) {
-        const recent3 = monthlyData.slice(-3);
-        const isGrowing = recent3[0].totalFollowers < recent3[1].totalFollowers && recent3[1].totalFollowers < recent3[2].totalFollowers;
-        const isShrinking = recent3[0].totalFollowers > recent3[1].totalFollowers && recent3[1].totalFollowers > recent3[2].totalFollowers;
-        if (isGrowing) {
-          insights.push({ text: 'Follower count growing for 3 consecutive months', type: 'driver' });
-        } else if (isShrinking) {
-          insights.push({ text: 'Follower count declining for 3 consecutive months', type: 'warning' });
-        }
-      }
-
-      return insights;
-    });
-  }
-
   private initFollowerTrendChartData(): Signal<ChartData<'line'>> {
     return computed(() => {
       const { monthlyData } = this.data();

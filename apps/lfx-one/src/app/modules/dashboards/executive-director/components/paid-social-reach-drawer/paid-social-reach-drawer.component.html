@@ -65,15 +65,13 @@
     </div>
 
     <!-- Recommended Actions -->
-    @if (recommendedActions().length > 0) {
+    @if (recommendedActions.length > 0) {
       <div class="flex flex-col gap-3" data-testid="paid-social-reach-drawer-actions">
-        <div class="flex items-center gap-2">
-          <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <i class="fa-light fa-lightbulb text-amber-500"></i>
-            Recommended Actions
-          </h3>
-        </div>
-        @for (action of recommendedActions(); track action.title) {
+        <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
+          <i class="fa-light fa-lightbulb text-amber-500"></i>
+          Recommended Actions
+        </h3>
+        @for (action of recommendedActions; track action.title) {
           <div class="flex items-start gap-3 p-4 border border-gray-200 rounded-lg">
             <div class="flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 flex-shrink-0 mt-0.5">
               <i [class]="action.iconClass + ' text-gray-600'"></i>
@@ -81,13 +79,17 @@
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between gap-2">
                 <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
-                @if (action.priority === 'high') {
-                  <span class="text-xs font-medium px-2.5 py-0.5 rounded-full flex-shrink-0 bg-red-100 text-red-700">High Priority</span>
-                } @else if (action.priority === 'medium') {
-                  <span class="text-xs font-medium px-2.5 py-0.5 rounded-full flex-shrink-0 bg-gray-100 text-gray-700">Medium Priority</span>
-                } @else {
-                  <span class="text-xs font-medium px-2.5 py-0.5 rounded-full flex-shrink-0 bg-blue-100 text-blue-700">Low Priority</span>
-                }
+                <span
+                  class="text-xs font-medium px-2.5 py-0.5 rounded-full flex-shrink-0"
+                  [class]="
+                    action.priority === 'high'
+                      ? 'bg-red-100 text-red-700'
+                      : action.priority === 'medium'
+                        ? 'bg-gray-100 text-gray-700'
+                        : 'bg-blue-100 text-blue-700'
+                  ">
+                  {{ action.priority === 'high' ? 'High Priority' : action.priority === 'medium' ? 'Medium Priority' : 'Low Priority' }}
+                </span>
               </div>
               <p class="text-sm text-gray-500 mt-0.5">{{ action.description }}</p>
               <p class="text-xs text-gray-400 mt-1">Due: {{ action.dueLabel }}</p>
@@ -98,15 +100,13 @@
     }
 
     <!-- Key Insights -->
-    @if (keyInsights().length > 0) {
+    @if (keyInsights.length > 0) {
       <div class="flex flex-col gap-3 p-4 bg-gray-50 rounded-lg" data-testid="paid-social-reach-drawer-insights">
-        <div class="flex items-center gap-2">
-          <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
-            Key Insights
-          </h3>
-        </div>
-        @for (insight of keyInsights(); track insight.text) {
+        <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
+          <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
+          Key Insights
+        </h3>
+        @for (insight of keyInsights; track insight.text) {
           <div class="flex items-center gap-2 text-sm">
             @if (insight.type === 'driver') {
               <i class="fa-light fa-bullseye text-gray-500"></i>
@@ -122,57 +122,42 @@
     }
 
     <!-- ROAS Trend Chart -->
-    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-roas-chart-section">
-      <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Monthly ROAS Trend</h3>
-        <p class="text-sm text-gray-600">Return on ad spend across all channels over the last 6 months</p>
-      </div>
-      @if (data().monthlyRoas && data().monthlyRoas.length > 0) {
+    @if (data().monthlyRoas && data().monthlyRoas.length > 0) {
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-roas-chart-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Monthly ROAS Trend</h3>
+          <p class="text-sm text-gray-600">Return on ad spend across all channels over the last 6 months</p>
+        </div>
         <div class="h-[240px]" data-testid="paid-social-reach-drawer-roas-chart">
           <lfx-chart type="bar" [data]="roasChartData()" [options]="roasChartOptions" height="100%"></lfx-chart>
         </div>
-      } @else {
-        <div class="text-center py-8 border border-slate-200 rounded-lg">
-          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-          <p class="text-sm text-gray-500">No ROAS data available</p>
-        </div>
-      }
-    </div>
+      </div>
+    }
 
     <!-- Monthly Impressions Chart -->
-    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-chart-section">
-      <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Monthly Paid Impressions</h3>
-        <p class="text-sm text-gray-600">Paid ad impressions across all channels over the last 6 months</p>
-      </div>
-      @if (data().monthlyData.length > 0) {
+    @if (data().monthlyData.length > 0) {
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-chart-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Monthly Paid Impressions</h3>
+          <p class="text-sm text-gray-600">Paid ad impressions across all channels over the last 6 months</p>
+        </div>
         <div class="h-[240px]" data-testid="paid-social-reach-drawer-chart">
           <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
         </div>
-      } @else {
-        <div class="text-center py-8 border border-slate-200 rounded-lg">
-          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-          <p class="text-sm text-gray-500">No impression data available</p>
-        </div>
-      }
-    </div>
+      </div>
+    }
 
     <!-- Channel Breakdown -->
-    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-channels-section">
-      <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Impressions by Channel</h3>
-        <p class="text-sm text-gray-600">Paid ad distribution across channels over the last 6 months</p>
-      </div>
-      @if (data().channelGroups.length > 1) {
+    @if (data().channelGroups.length > 1) {
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-channels-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Impressions by Channel</h3>
+          <p class="text-sm text-gray-600">Paid ad distribution across channels over the last 6 months</p>
+        </div>
         <div class="h-[240px]" data-testid="paid-social-reach-drawer-channels-chart">
           <lfx-chart type="bar" [data]="channelChartData()" [options]="channelChartOptions" height="100%"></lfx-chart>
         </div>
-      } @else {
-        <div class="text-center py-8 border border-slate-200 rounded-lg">
-          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-          <p class="text-sm text-gray-500">No channel breakdown available</p>
-        </div>
-      }
-    </div>
+      </div>
+    }
   </div>
 </p-drawer>

@@ -32,9 +32,31 @@ export class PaidSocialReachDrawerComponent {
     channelGroups: [],
   });
 
+  // === Dummy Data ===
+  protected readonly recommendedActions: MarketingRecommendedAction[] = [
+    {
+      title: 'Reallocate budget to top channels',
+      description: 'Shift spend toward LinkedIn and Twitter where CPM is lowest',
+      priority: 'high',
+      dueLabel: 'Next campaign',
+      iconClass: 'fa-light fa-chart-pie',
+    },
+    {
+      title: 'A/B test ad creatives',
+      description: 'Test 3 new visual formats across paid channels',
+      priority: 'medium',
+      dueLabel: 'This quarter',
+      iconClass: 'fa-light fa-flask',
+    },
+  ];
+
+  protected readonly keyInsights: MarketingKeyInsight[] = [
+    { text: 'Driver: LinkedIn impressions up 25%', type: 'driver' },
+    { text: 'Twitter/X reach declining 8% MoM', type: 'warning' },
+    { text: 'Cost per impression down across all channels', type: 'info' },
+  ];
+
   // === Computed Signals ===
-  protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
-  protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
   protected readonly chartData: Signal<ChartData<'bar'>> = this.initChartData();
   protected readonly roasChartData: Signal<ChartData<'bar'>> = this.initRoasChartData();
   protected readonly channelChartData: Signal<ChartData<'bar'>> = this.initChannelChartData();
@@ -208,129 +230,6 @@ export class PaidSocialReachDrawerComponent {
   }
 
   // === Private Initializers ===
-  private initRecommendedActions(): Signal<MarketingRecommendedAction[]> {
-    return computed(() => {
-      const { roas, changePercentage, channelGroups, totalSpend, totalRevenue } = this.data();
-      const actions: MarketingRecommendedAction[] = [];
-
-      if (roas > 0 && roas < 1) {
-        actions.push({
-          title: 'Review ad spend efficiency',
-          description: `ROAS is ${roas.toFixed(2)}x — spending more than earning. Pause underperforming campaigns`,
-          priority: 'high',
-          dueLabel: 'This week',
-          iconClass: 'fa-light fa-circle-exclamation',
-        });
-      } else if (changePercentage < -10) {
-        actions.push({
-          title: 'Investigate reach decline',
-          description: `Impressions dropped ${Math.abs(changePercentage)}% — review targeting and bid strategy`,
-          priority: 'high',
-          dueLabel: 'Next campaign',
-          iconClass: 'fa-light fa-magnifying-glass-chart',
-        });
-      }
-
-      if (channelGroups.length > 1) {
-        const sorted = [...channelGroups].sort((a, b) => b.roas - a.roas);
-        const best = sorted[0];
-        const worst = sorted[sorted.length - 1];
-        if (best.roas > worst.roas * 2 && worst.totalSpend > 0) {
-          actions.push({
-            title: `Shift budget to ${this.formatChannelName(best.channel)}`,
-            description: `${this.formatChannelName(best.channel)} ROAS is ${best.roas.toFixed(1)}x vs ${worst.roas.toFixed(1)}x for ${this.formatChannelName(worst.channel)}`,
-            priority: 'medium',
-            dueLabel: 'Next campaign',
-            iconClass: 'fa-light fa-chart-pie',
-          });
-        }
-      }
-
-      if (actions.length === 0) {
-        if (roas > 1) {
-          actions.push({
-            title: 'Scale current campaigns',
-            description: `ROAS at ${roas.toFixed(2)}x with ${this.formatCurrency(totalRevenue)} revenue on ${this.formatCurrency(totalSpend)} spend — room to grow`,
-            priority: 'low',
-            dueLabel: 'Ongoing',
-            iconClass: 'fa-light fa-chart-line-up',
-          });
-        } else {
-          actions.push({
-            title: 'Monitor campaign performance',
-            description: `${this.formatNumber(this.data().totalReach)} impressions across ${channelGroups.length} channels`,
-            priority: 'low',
-            dueLabel: 'Ongoing',
-            iconClass: 'fa-light fa-chart-line-up',
-          });
-        }
-      }
-
-      return actions;
-    });
-  }
-
-  private initKeyInsights(): Signal<MarketingKeyInsight[]> {
-    return computed(() => {
-      const { roas, totalReach, totalSpend, totalRevenue, changePercentage, channelGroups, monthlyRoas } = this.data();
-      const insights: MarketingKeyInsight[] = [];
-
-      if (totalReach === 0 && channelGroups.length === 0) {
-        return insights;
-      }
-
-      // ROAS insight
-      if (roas > 0) {
-        if (roas >= 3) {
-          insights.push({
-            text: `Strong ROAS at ${roas.toFixed(2)}x — ${this.formatCurrency(totalRevenue)} revenue on ${this.formatCurrency(totalSpend)} spend`,
-            type: 'driver',
-          });
-        } else if (roas >= 1) {
-          insights.push({ text: `ROAS at ${roas.toFixed(2)}x — profitable but room for optimization`, type: 'info' });
-        } else {
-          insights.push({
-            text: `ROAS below break-even at ${roas.toFixed(2)}x — spending ${this.formatCurrency(totalSpend)} for ${this.formatCurrency(totalRevenue)} revenue`,
-            type: 'warning',
-          });
-        }
-      }
-
-      // Impression trend
-      if (changePercentage !== 0) {
-        if (changePercentage > 0) {
-          insights.push({ text: `Impressions grew ${changePercentage}% month-over-month`, type: 'driver' });
-        } else {
-          insights.push({ text: `Impressions declined ${Math.abs(changePercentage)}% month-over-month`, type: 'warning' });
-        }
-      }
-
-      // Channel concentration
-      if (channelGroups.length > 1 && totalReach > 0) {
-        const sorted = [...channelGroups].sort((a, b) => b.totalImpressions - a.totalImpressions);
-        const topShare = (sorted[0].totalImpressions / totalReach) * 100;
-        insights.push({
-          text: `${this.formatChannelName(sorted[0].channel)} accounts for ${topShare.toFixed(0)}% of total impressions`,
-          type: topShare > 80 ? 'warning' : 'info',
-        });
-      }
-
-      // ROAS trend
-      if (monthlyRoas && monthlyRoas.length >= 3) {
-        const recent3 = monthlyRoas.slice(-3);
-        const isDecreasing = recent3[0] > recent3[1] && recent3[1] > recent3[2];
-        const isIncreasing = recent3[0] < recent3[1] && recent3[1] < recent3[2];
-        if (isDecreasing) {
-          insights.push({ text: 'ROAS declining for 3 consecutive months', type: 'warning' });
-        } else if (isIncreasing) {
-          insights.push({ text: 'ROAS improving for 3 consecutive months', type: 'driver' });
-        }
-      }
-
-      return insights;
-    });
-  }
-
   private initChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
       const { monthlyData, monthlyLabels } = this.data();
