@@ -98,6 +98,7 @@ export class CommitteeViewComponent {
   public channelsForm = new FormGroup({
     mailingList: new FormControl(''),
     chatChannel: new FormControl(''),
+    website: new FormControl(''),
   });
   public savingChannels = signal(false);
 
@@ -231,6 +232,7 @@ export class CommitteeViewComponent {
     this.channelsForm.patchValue({
       mailingList: this.committee()?.mailing_list || '',
       chatChannel: this.committee()?.chat_channel || '',
+      website: this.committee()?.website || '',
     });
     this.showChannelsModal.set(true);
   }
@@ -250,6 +252,7 @@ export class CommitteeViewComponent {
       .updateCommittee(committee.uid, {
         mailing_list: this.channelsForm.get('mailingList')?.value || null,
         chat_channel: this.channelsForm.get('chatChannel')?.value || null,
+        website: this.channelsForm.get('website')?.value || null,
       })
       .pipe(finalize(() => this.savingChannels.set(false)))
       .subscribe({

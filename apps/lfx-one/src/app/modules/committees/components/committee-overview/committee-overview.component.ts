@@ -3,7 +3,7 @@
 
 import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { DatePipe, NgClass, NgTemplateOutlet } from '@angular/common';
+import { DatePipe, NgClass } from '@angular/common';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Dialog } from 'primeng/dialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -21,9 +21,8 @@ import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
 import { SurveyService } from '@services/survey.service';
-import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { MessageService } from 'primeng/api';
-import { catchError, EMPTY, filter, finalize, forkJoin, of, switchMap } from 'rxjs';
+import { catchError, filter, finalize, forkJoin, of, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-overview',
@@ -35,12 +34,10 @@ import { catchError, EMPTY, filter, finalize, forkJoin, of, switchMap } from 'rx
     DashboardMeetingCardComponent,
     MessageComponent,
     NgClass,
-    NgTemplateOutlet,
     DatePipe,
     SkeletonModule,
     SelectComponent,
     TagComponent,
-    JoinModeLabelPipe,
     VoteResultsDrawerComponent,
   ],
   templateUrl: './committee-overview.component.html',
@@ -244,11 +241,11 @@ export class CommitteeOverviewComponent {
 
     // Remove old chair role if changed
     if (currentChair && currentChair.uid !== newChairUid) {
-      removals.push(this.committeeService.updateCommitteeMember(committeeId, currentChair.uid, { role: null }));
+      removals.push(this.committeeService.updateCommitteeMember(committeeId, currentChair.uid, { role: { name: CommitteeMemberRole.NONE } }));
     }
     // Remove old vice chair role if changed
     if (currentViceChair && currentViceChair.uid !== newViceChairUid) {
-      removals.push(this.committeeService.updateCommitteeMember(committeeId, currentViceChair.uid, { role: null }));
+      removals.push(this.committeeService.updateCommitteeMember(committeeId, currentViceChair.uid, { role: { name: CommitteeMemberRole.NONE } }));
     }
     // Assign new chair
     if (newChairUid && newChairUid !== currentChair?.uid) {
@@ -277,8 +274,9 @@ export class CommitteeOverviewComponent {
           this.showChairsModal.set(false);
           this.committeeUpdated.emit();
         },
-        error: () => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update chairs' });
+        error: (err: { error?: { message?: string }; message?: string }) => {
+          const detail = err?.error?.message || err?.message || 'Failed to update chairs';
+          this.messageService.add({ severity: 'error', summary: 'Error', detail });
         },
       });
   }

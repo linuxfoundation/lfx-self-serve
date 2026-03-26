@@ -40,7 +40,11 @@
     <!-- Members -->
     <lfx-card styleClass="h-full [&_.p-card-body]:h-full [&_.p-card-content]:h-full">
       <div class="flex flex-col items-center justify-center gap-1 h-full">
-        <p class="text-2xl font-bold text-gray-900">{{ committee().total_members || 0 }}</p>
+        @if (membersLoading()) {
+          <p class="text-2xl font-bold text-gray-400">&mdash;</p>
+        } @else {
+          <p class="text-2xl font-bold text-gray-900">{{ members().length }}</p>
+        }
         <p class="text-xs text-gray-500">Members</p>
       </div>
     </lfx-card>
