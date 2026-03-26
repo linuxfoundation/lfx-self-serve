@@ -11,4 +11,9 @@ export enum NatsSubjects {
   EMAIL_TO_USERNAME = 'lfx.auth-service.email_to_username',
   EMAIL_TO_SUB = 'lfx.auth-service.email_to_sub',
   USERNAME_TO_USER_INFO = 'lfx.auth-service.username_to_user_info',
+  EMAIL_SEND_VERIFICATION = 'lfx.auth-service.email_linking.send_verification',
+  EMAIL_VERIFY_OTP = 'lfx.auth-service.email_linking.verify',
+  USER_IDENTITY_LINK = 'lfx.auth-service.user_identity.link',
+  USER_IDENTITY_UNLINK = 'lfx.auth-service.user_identity.unlink',
+  USER_IDENTITY_LIST = 'lfx.auth-service.user_identity.list',
 }

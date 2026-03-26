@@ -312,6 +312,44 @@ export function isDateTimeInFutureForTimezone(dateTime: string | Date, timezone:
 }
 
 // ============================================================================
+// Month/Year Conversion Utilities
+// ============================================================================
+
+/**
+ * Converts month and year dropdown values to an ISO date string (YYYY-MM-01)
+ * @param month Two-digit month string ('01' through '12')
+ * @param year Four-digit year string (e.g., '2024')
+ * @returns ISO date string in format 'YYYY-MM-01'
+ */
+export function monthYearToIsoDate(month: string, year: string): string {
+  return `${year}-${month.padStart(2, '0')}-01`;
+}
+
+/**
+ * Converts an ISO date string to abbreviated month-year format (e.g., "Mar 2023")
+ * @param isoDate ISO date string (e.g., "2023-03-15T00:00:00Z")
+ * @returns Formatted string like "Mar 2023"
+ */
+export function isoDateToMonthYear(isoDate: string): string {
+  const date = new Date(isoDate);
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  return `${months[date.getUTCMonth()]} ${date.getUTCFullYear()}`;
+}
+
+/**
+ * Converts an abbreviated month-year string (e.g., "Mar 2023") to ISO date (YYYY-MM-01)
+ * @param monthYear Abbreviated month-year string like "Mar 2023"
+ * @returns ISO date string like "2023-03-01", or the original string if parsing fails
+ */
+export function abbreviatedMonthYearToIsoDate(monthYear: string): string {
+  const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+  const [monthAbbr, year] = monthYear.split(' ');
+  const monthIndex = months.indexOf(monthAbbr);
+  if (monthIndex === -1) return monthYear;
+  return `${year}-${String(monthIndex + 1).padStart(2, '0')}-01`;
+}
+
+// ============================================================================
 // Date Calculation Utilities
 // ============================================================================
 

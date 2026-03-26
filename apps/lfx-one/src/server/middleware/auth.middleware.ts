@@ -23,6 +23,21 @@ const DEFAULT_ROUTE_CONFIG: RouteAuthConfig[] = [
   // Public meeting join - no authentication required
   { pattern: '/meetings/', type: 'ssr', auth: 'optional' },
 
+  // Flow C callback via /passwordless/callback — needs session auth but no bearer token
+  { pattern: '/passwordless/callback', type: 'ssr', auth: 'required', tokenRequired: false },
+
+  // Social identity verification callback — needs session auth but no bearer token
+  { pattern: '/social/callback', type: 'ssr', auth: 'required', tokenRequired: false },
+
+  // Social identity connect initiation — needs session auth but no bearer token (initiates redirect)
+  { pattern: '/api/profile/identities/social/connect', type: 'api', auth: 'required', tokenRequired: false },
+
+  // Profile auth callback — needs auth but no bearer token (Auth0 redirects here)
+  { pattern: '/api/profile/auth/callback', type: 'api', auth: 'required', tokenRequired: false },
+
+  // Profile auth start — needs auth but no bearer token (initiates redirect)
+  { pattern: '/api/profile/auth/start', type: 'api', auth: 'required', tokenRequired: false },
+
   // Protected API routes - require authentication and token
   { pattern: '/api', type: 'api', auth: 'required', tokenRequired: true },
 

@@ -1,0 +1,61 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-5" data-testid="how-affiliations-work-dialog">
+  <!-- Description -->
+  <p class="text-sm leading-relaxed text-slate-600">
+    Affiliations connect your contributions to the organization you were working for at the time. They are determined using three data sources:
+  </p>
+
+  <!-- Sources -->
+  <div class="flex flex-col gap-4">
+    <!-- Source 1: Verified Identities -->
+    <div class="flex items-start gap-3">
+      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-blue-50">
+        <i class="fa-light fa-fingerprint text-sm text-blue-500"></i>
+      </div>
+      <div class="flex flex-col gap-0.5">
+        <p class="text-sm font-semibold text-slate-800">Verified identities</p>
+        <p class="text-xs text-slate-500">Your connected accounts (GitHub, GitLab, email) link code commits and activity to your profile.</p>
+      </div>
+    </div>
+
+    <!-- Source 2: Work Experience -->
+    <div class="flex items-start gap-3">
+      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-green-50">
+        <i class="fa-light fa-briefcase text-sm text-green-500"></i>
+      </div>
+      <div class="flex flex-col gap-0.5">
+        <p class="text-sm font-semibold text-slate-800">Work experience</p>
+        <p class="text-xs text-slate-500">Your employment history tells us which organization you were representing during each time period.</p>
+      </div>
+    </div>
+
+    <!-- Source 3: Contribution Timestamps -->
+    <div class="flex items-start gap-3">
+      <div class="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-purple-50">
+        <i class="fa-light fa-clock text-sm text-purple-500"></i>
+      </div>
+      <div class="flex flex-col gap-0.5">
+        <p class="text-sm font-semibold text-slate-800">Contribution timestamp overlap</p>
+        <p class="text-xs text-slate-500">
+          By matching when you contributed with your employment dates, we attribute each contribution to the correct organization.
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Explanation -->
+  <div class="rounded-lg border border-slate-100 bg-slate-50/50 p-4">
+    <p class="text-xs leading-relaxed text-slate-500">
+      <span class="font-semibold text-slate-600">How it works:</span>
+      The system overlaps your contribution timestamps with your work experience to determine which organization to attribute each contribution to. You can
+      override any affiliation if the system gets it wrong.
+    </p>
+  </div>
+
+  <!-- Footer -->
+  <div class="flex justify-end border-t border-slate-100 pt-4">
+    <lfx-button label="Got it" severity="primary" size="small" (onClick)="close()" data-testid="how-affiliations-close-btn" />
+  </div>
+</div>

@@ -4,14 +4,16 @@
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
-import { Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
-import { AvatarComponent } from '@components/avatar/avatar.component';
-import { CardComponent } from '@components/card/card.component';
+import { ActivatedRoute, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { SelectComponent } from '@components/select/select.component';
-import { PROFILE_TABS } from '@lfx-one/shared/constants';
-import { CombinedProfile, ProfileHeaderData, ProfileTab } from '@lfx-one/shared/interfaces';
+import { PROFILE_TABS, TSHIRT_SIZES } from '@lfx-one/shared/constants';
+import { CombinedProfile, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
-import { catchError, filter, map, of, switchMap } from 'rxjs';
+import { MessageService } from 'primeng/api';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { BehaviorSubject, catchError, filter, map, of, switchMap, take } from 'rxjs';
+
+import { ProfileEditDialogComponent } from '../../modules/profile/components/profile-edit-dialog/profile-edit-dialog.component';
 
 /**
  * ProfileLayoutComponent serves as the shell for all profile pages.
@@ -22,16 +24,28 @@ import { catchError, filter, map, of, switchMap } from 'rxjs';
  */
 @Component({
   selector: 'lfx-profile-layout',
-  imports: [RouterOutlet, RouterLink, RouterLinkActive, ReactiveFormsModule, CardComponent, AvatarComponent, SelectComponent],
+  imports: [RouterOutlet, RouterLink, RouterLinkActive, ReactiveFormsModule, SelectComponent],
+  providers: [DialogService, MessageService],
   templateUrl: './profile-layout.component.html',
   styleUrl: './profile-layout.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfileLayoutComponent {
+  private static readonly formStateKey = 'lfx_profile_pending_save';
+
   // Private injections
+  private readonly route = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
   private readonly fb = inject(NonNullableFormBuilder);
+  private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
+
+  // Refresh trigger for profile data
+  private readonly refreshProfile$ = new BehaviorSubject<void>(undefined);
+
+  // Store raw CombinedProfile for passing to dialog
+  private combinedProfile: CombinedProfile | null = null;
 
   // Tab configuration
   public readonly tabs: ProfileTab[] = PROFILE_TABS;
@@ -44,7 +58,7 @@ export class ProfileLayoutComponent {
 
   // Form for mobile tab selection
   public readonly tabForm = this.fb.group({
-    selectedTab: ['overview'],
+    selectedTab: ['attribution'],
   });
 
   // Profile data from service
@@ -63,23 +77,27 @@ export class ProfileLayoutComponent {
   public readonly initials = computed(() => {
     const data = this.profileData();
     if (!data) return 'U';
-    const first = data.firstName?.charAt(0).toUpperCase() || '';
-    const last = data.lastName?.charAt(0).toUpperCase() || '';
-    return first + last || data.username?.charAt(0).toUpperCase() || 'U';
+    return data.firstName?.charAt(0).toUpperCase() || data.username?.charAt(0).toUpperCase() || 'U';
   });
 
-  public readonly jobInfo = computed(() => {
+  public readonly jobTitle = computed(() => this.profileData()?.jobTitle || '');
+
+  public readonly organization = computed(() => this.profileData()?.organization || '');
+
+  public readonly emailInfo = computed(() => this.profileData()?.email || '');
+
+  public readonly fullAddress: Signal<string[]> = this.initFullAddress();
+
+  public readonly phoneInfo = computed(() => {
     const data = this.profileData();
-    if (!data) return '';
-    const parts = [data.jobTitle, data.organization].filter(Boolean);
-    return parts.join(' at ');
+    return data?.phoneNumber || '';
   });
 
-  public readonly locationInfo = computed(() => {
+  public readonly tshirtSizeLabel = computed(() => {
     const data = this.profileData();
-    if (!data) return '';
-    const parts = [data.city, data.stateProvince, data.country].filter(Boolean);
-    return parts.join(', ');
+    if (!data?.tshirtSize) return '';
+    const match = TSHIRT_SIZES.find((s) => s.value === data.tshirtSize);
+    return match?.label || data.tshirtSize;
   });
 
   public constructor() {
@@ -89,17 +107,108 @@ export class ProfileLayoutComponent {
         this.router.navigate(['/profile', route]);
       }
     });
+
+    // Handle Flow C return — restore saved form state and auto-save
+    this.route.queryParams.pipe(takeUntilDestroyed()).subscribe((params) => {
+      if (params['success'] === 'profile_token_obtained') {
+        this.handleProfileAuthReturn();
+        this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+      }
+
+      if (params['error']) {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Authorization Error',
+          detail: 'Profile authorization failed. Please try saving again.',
+        });
+        this.router.navigate([], { relativeTo: this.route, queryParams: {}, replaceUrl: true });
+      }
+    });
+  }
+
+  // Public methods
+  public openEditDialog(): void {
+    if (!this.combinedProfile) return;
+
+    const dialogRef = this.dialogService.open(ProfileEditDialogComponent, {
+      header: 'Edit Profile',
+      width: '900px',
+      modal: true,
+      closable: true,
+      dismissableMask: false,
+      data: { combinedProfile: this.combinedProfile },
+    }) as DynamicDialogRef;
+
+    dialogRef.onClose.pipe(take(1)).subscribe((result: boolean | null) => {
+      if (result) {
+        this.refreshProfile$.next();
+      }
+    });
+  }
+
+  /**
+   * After returning from Flow C authorization, restore saved form state and auto-save
+   */
+  private handleProfileAuthReturn(): void {
+    const savedState = sessionStorage.getItem(ProfileLayoutComponent.formStateKey);
+    if (!savedState) {
+      return;
+    }
+
+    sessionStorage.removeItem(ProfileLayoutComponent.formStateKey);
+
+    const formData = JSON.parse(savedState);
+    const userMetadata: Partial<UserMetadata> = {
+      given_name: formData.given_name || undefined,
+      family_name: formData.family_name || undefined,
+      job_title: formData.job_title || undefined,
+      organization: formData.organization || undefined,
+      country: formData.country || undefined,
+      state_province: formData.state_province || undefined,
+      city: formData.city || undefined,
+      address: formData.address || undefined,
+      postal_code: formData.postal_code || undefined,
+      phone_number: formData.phone_number || undefined,
+      t_shirt_size: formData.t_shirt_size || undefined,
+    };
+
+    const updateData: ProfileUpdateRequest = {
+      user_metadata: userMetadata as UserMetadata,
+    };
+
+    this.userService.updateUserProfile(updateData).subscribe({
+      next: () => {
+        this.messageService.add({
+          severity: 'success',
+          summary: 'Success',
+          detail: 'Profile updated successfully!',
+        });
+        this.refreshProfile$.next();
+      },
+      error: () => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Error',
+          detail: 'Failed to save profile. Please try again.',
+        });
+      },
+    });
   }
 
   // Private init functions
   private initProfileData(): Signal<ProfileHeaderData | null> {
+    const user$ = toObservable(this.userService.user);
     return toSignal(
-      toObservable(this.userService.user).pipe(
-        filter((user) => user !== null),
+      this.refreshProfile$.pipe(
         switchMap(() =>
-          this.userService.getCurrentUserProfile().pipe(
-            map((profile: CombinedProfile) => this.mapToHeaderData(profile)),
-            catchError(() => of(null))
+          user$.pipe(
+            filter((user) => user !== null),
+            switchMap(() =>
+              this.userService.getCurrentUserProfile().pipe(
+                map((profile: CombinedProfile) => this.mapToHeaderData(profile)),
+                catchError(() => of(null))
+              )
+            )
           )
         )
       ),
@@ -107,17 +216,43 @@ export class ProfileLayoutComponent {
     );
   }
 
+  private initFullAddress(): Signal<string[]> {
+    return computed(() => {
+      const data = this.profileData();
+      if (!data) return [];
+      const lines: string[] = [];
+      if (data.address) {
+        lines.push(data.address);
+      }
+      const cityStateParts = [data.city, data.stateProvince, data.postalCode].filter(Boolean);
+      if (cityStateParts.length > 0) {
+        const cityState = [data.city, data.stateProvince].filter(Boolean).join(', ');
+        lines.push(data.postalCode ? `${cityState} ${data.postalCode}`.trim() : cityState);
+      }
+      if (data.country) {
+        lines.push(data.country);
+      }
+      return lines;
+    });
+  }
+
   private mapToHeaderData(profile: CombinedProfile): ProfileHeaderData {
     this.loading.set(false);
+    this.combinedProfile = profile;
     return {
       firstName: profile.user.first_name || '',
       lastName: profile.user.last_name || '',
       username: profile.user.username || '',
+      email: profile.user.email || '',
       jobTitle: profile.profile?.job_title || '',
       organization: profile.profile?.organization || '',
       city: profile.profile?.city || '',
       stateProvince: profile.profile?.state_province || '',
       country: profile.profile?.country || '',
+      address: profile.profile?.address || '',
+      postalCode: profile.profile?.postal_code || '',
+      phoneNumber: profile.profile?.phone_number || '',
+      tshirtSize: profile.profile?.t_shirt_size || '',
       avatarUrl: profile.profile?.picture || '',
     };
   }

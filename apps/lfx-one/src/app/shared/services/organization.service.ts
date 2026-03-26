@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { OrganizationSuggestion, OrganizationSuggestionsResponse } from '@lfx-one/shared';
+import { CdpOrganization, OrganizationSuggestion, OrganizationSuggestionsResponse } from '@lfx-one/shared';
 import { catchError, map, Observable, of } from 'rxjs';
 
 @Injectable({
@@ -34,5 +34,15 @@ export class OrganizationService {
           return of([]);
         })
       );
+  }
+
+  /**
+   * Resolve (find or create) an organization in CDP
+   * @param name - Organization name
+   * @param domain - Organization domain
+   * @returns Observable of the resolved CDP organization
+   */
+  public resolveOrganization(name: string, domain: string): Observable<CdpOrganization> {
+    return this.http.post<CdpOrganization>(`${this.baseUrl}/resolve`, { name, domain });
   }
 }

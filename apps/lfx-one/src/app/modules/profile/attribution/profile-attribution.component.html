@@ -1,0 +1,34 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="w-full pb-12" data-testid="profile-attribution">
+  <div class="grid grid-cols-1 gap-8 lg:grid-cols-[3fr_1fr]">
+    <!-- Left Column: Work history -->
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <h2 class="text-sm font-bold text-slate-900">Work history</h2>
+        <lfx-button
+          label="Add work experience"
+          icon="fa-light fa-plus"
+          severity="secondary"
+          [text]="true"
+          size="small"
+          (onClick)="onAddWorkExperience()"
+          data-testid="add-work-experience-header-btn" />
+      </div>
+      <p class="mb-4 text-[13px] leading-normal text-slate-500">
+        Work experiences determine which organization receives credit for your contributions during each time period.
+      </p>
+      <lfx-profile-work-experience [hideHeader]="true" (workExperienceChanged)="onWorkExperienceChanged()" />
+    </div>
+
+    <!-- Right Column: Project Involvement -->
+    <div class="flex w-[360px] flex-col gap-3">
+      <h2 class="text-sm font-bold text-slate-900">Project Involvement</h2>
+      <p class="text-[13px] leading-normal text-slate-500">
+        Your contributions are automatically attributed based on your verified identities and work history.
+      </p>
+      <lfx-profile-affiliations [hideHeader]="true" [compact]="true" />
+    </div>
+  </div>
+</div>

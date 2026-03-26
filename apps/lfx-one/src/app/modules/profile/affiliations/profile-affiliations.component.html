@@ -1,117 +1,381 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="w-full flex flex-col gap-6" data-testid="profile-affiliations">
-  <!-- Page Header -->
-  <div class="flex flex-col gap-2">
-    <h2 class="text-2xl font-semibold text-gray-900">Affiliations</h2>
-    <p class="text-sm text-slate-600">Organizations you are associated with through verified identities and project participation.</p>
-    <p class="text-xs text-slate-500">Affiliations are used to represent you accurately across projects and reports.</p>
-  </div>
+<div class="flex w-full flex-col gap-5" data-testid="profile-affiliations">
+  <!-- Header -->
+  @if (!hideHeader()) {
+    <div class="flex flex-col gap-1">
+      <h2 class="text-lg font-semibold text-slate-900">Project Involvement</h2>
+      <p class="text-sm text-slate-500">Your role and organizational affiliation for each open source project you contribute to.</p>
+    </div>
+  }
 
-  <!-- Affiliations Table Card -->
-  <lfx-card data-testid="affiliations-card">
-    <div class="flex flex-col gap-4">
-      <!-- Card Header -->
-      <div class="flex items-center justify-between">
-        <h3 class="text-base font-semibold text-slate-900">Your Affiliations</h3>
-        @if (hasUnverifiedAffiliations()) {
+  <!-- Affiliation History Banner (hidden in compact mode) -->
+  @if (!compact() && !isAffiliationHistoryConfirmed()) {
+    <div class="rounded-xl border border-blue-200 bg-blue-50/30 p-6 shadow-sm" data-testid="affiliation-history-banner">
+      <div class="flex items-start gap-4">
+        <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-blue-100">
+          <i class="fa-light fa-circle-info text-lg text-blue-600"></i>
+        </div>
+        <div class="flex flex-1 flex-col">
+          <h3 class="mb-1 text-base font-bold text-slate-900">Affiliations calculated from work history</h3>
+          <p class="mb-4 text-sm text-slate-600">We've attributed your project contributions based on your employment timeline. Confirm or adjust if needed.</p>
+          <div>
+            <lfx-button
+              label="Confirm Affiliation History"
+              severity="primary"
+              size="small"
+              (onClick)="openAffiliationTimeline()"
+              data-testid="confirm-affiliation-history-btn" />
+          </div>
+        </div>
+      </div>
+    </div>
+  }
+
+  @if (loading()) {
+    <!-- Loading State -->
+    <div class="flex w-full flex-col gap-4" data-testid="affiliations-loading">
+      @for (i of [1, 2]; track i) {
+        <div class="animate-pulse rounded-xl border border-slate-200 bg-white p-4">
+          <div class="flex items-center gap-3">
+            <div class="h-10 w-10 rounded-lg bg-slate-200"></div>
+            <div class="flex flex-col gap-1.5">
+              <div class="h-4 w-28 rounded bg-slate-200"></div>
+              <div class="h-3 w-20 rounded bg-slate-100"></div>
+            </div>
+          </div>
+          <div class="mt-3 border-t border-slate-200"></div>
+          <div class="flex items-center gap-2.5 py-3">
+            <div class="h-6 w-6 rounded-full bg-slate-200"></div>
+            <div class="flex flex-col gap-1">
+              <div class="h-3.5 w-24 rounded bg-slate-200"></div>
+              <div class="h-3 w-32 rounded bg-slate-100"></div>
+            </div>
+          </div>
+        </div>
+      }
+    </div>
+  } @else if (isEmpty()) {
+    <!-- Empty State -->
+    <lfx-card>
+      <div class="flex flex-col items-center gap-4 py-12" data-testid="affiliations-empty-state">
+        <div class="flex h-14 w-14 items-center justify-center rounded-full bg-slate-100">
+          <i class="fa-light fa-code-branch text-2xl text-slate-400"></i>
+        </div>
+        <div class="flex flex-col items-center gap-1 text-center">
+          <p class="text-base font-medium text-slate-700">No project affiliations yet</p>
+          <p class="max-w-sm text-sm text-slate-500">Connect your identities and add work experience to see your project affiliations.</p>
+        </div>
+        <div class="flex items-center gap-3">
           <lfx-button
             label="Verify identities"
-            icon="fa-light fa-circle-exclamation"
+            icon="fa-light fa-fingerprint"
             severity="secondary"
             [outlined]="true"
             size="small"
-            (onClick)="openVerifyIdentitiesModal()"
-            data-testid="verify-identities-header-btn" />
-        }
+            data-testid="verify-identities-btn" />
+          <lfx-button
+            label="Add work experience"
+            icon="fa-light fa-briefcase"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            data-testid="add-work-exp-from-affiliations-btn" />
+        </div>
       </div>
-
-      <!-- Affiliations Table -->
-      <lfx-table [value]="sortedAffiliations()" data-testid="affiliations-table">
-        <ng-template #header>
-          <tr>
-            <th class="text-left">Organization</th>
-            <th class="text-left">Basis</th>
-            <th class="text-left">Scope</th>
-            <th class="text-left">Status</th>
-            <th class="text-left">Dates</th>
-          </tr>
-        </ng-template>
-        <ng-template #body let-affiliation let-rowIndex="rowIndex">
-          <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'affiliation-row-' + affiliation.id">
-            <!-- Organization -->
-            <td>
-              <div class="flex items-center gap-3">
-                @if (affiliation.organizationLogo) {
-                  <img
-                    [src]="affiliation.organizationLogo"
-                    [alt]="affiliation.organization"
-                    class="w-8 h-8 rounded object-contain border border-slate-200 bg-white p-0.5"
-                    loading="lazy" />
-                } @else {
-                  <div class="w-8 h-8 rounded bg-slate-100 flex items-center justify-center">
-                    <i class="fa-light fa-building text-slate-500"></i>
-                  </div>
-                }
-                <span class="font-medium text-slate-900">{{ affiliation.organization }}</span>
-              </div>
-            </td>
-
-            <!-- Basis -->
-            <td>
-              <div class="flex flex-col gap-0.5">
-                <span class="text-sm text-slate-700">{{ affiliation.basis.source }}</span>
-                @if (affiliation.basis.contributionCount !== undefined) {
-                  <span class="text-xs text-slate-500">{{ affiliation.basis.contributionCount }} contributions</span>
-                }
-              </div>
-            </td>
-
-            <!-- Scope -->
-            <td>
-              <lfx-tag [value]="affiliation.scope" severity="secondary" [rounded]="true" />
-            </td>
-
-            <!-- Status -->
-            <td>
-              @if (affiliation.verified) {
-                <div class="flex items-center gap-2">
-                  <i class="fa-solid fa-circle-check text-blue-600"></i>
-                  <span class="text-sm font-medium text-blue-600">Verified affiliation</span>
-                </div>
+    </lfx-card>
+  } @else if (compact()) {
+    <!-- Compact card-based list for narrow column -->
+    <div class="flex w-full flex-col gap-4" data-testid="project-affiliations-list">
+      @for (group of sortedProjectGroups(); track group.id) {
+        <div class="group rounded-xl border border-slate-200 bg-white p-4" [attr.data-testid]="'project-card-' + group.id">
+          <!-- Project Header -->
+          <div class="flex items-center justify-between">
+            <div class="flex items-center gap-3">
+              @if (group.projectLogo) {
+                <img
+                  [src]="group.projectLogo"
+                  [alt]="group.projectName"
+                  class="h-10 w-10 rounded-lg border border-slate-200 bg-white object-contain p-1"
+                  loading="lazy" />
               } @else {
-                <div class="flex flex-col gap-1">
-                  <div class="flex items-center gap-2">
-                    <i class="fa-light fa-circle-exclamation text-amber-600"></i>
-                    <span class="text-sm font-medium text-amber-600">Unverified</span>
-                  </div>
-                  <p class="text-xs text-slate-600">Verify your identity to confirm this affiliation.</p>
+                <div class="flex h-10 w-10 items-center justify-center rounded-lg bg-slate-100">
+                  <i class="fa-light fa-code text-slate-500"></i>
                 </div>
               }
-            </td>
+              <div class="flex items-center gap-2">
+                <span class="text-base font-bold text-slate-900">{{ group.projectName }}</span>
 
-            <!-- Dates -->
-            <td>
-              <div class="flex items-center gap-1.5 text-sm text-slate-600">
-                <i class="fa-light fa-calendar text-slate-400"></i>
-                <span>{{ affiliation.startDate }} – {{ affiliation.endDate || 'Present' }}</span>
+                <!-- Role pill (project-level) -->
+                @if (group.segments[0]; as seg) {
+                  @if (seg.needsConfirmation && seg.roleSource === 'cdp-detected') {
+                    <button
+                      class="inline-flex cursor-pointer items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2 py-0.5 text-[11px] font-medium text-amber-700 transition-colors hover:bg-amber-100"
+                      (click)="openMaintainerConfirmation(group)"
+                      [attr.data-testid]="'compact-confirm-role-' + group.id">
+                      <i class="fa-light fa-circle-question text-[10px]"></i>
+                      {{ seg.role }}
+                    </button>
+                  } @else if (seg.role === 'Maintainer') {
+                    <div class="relative">
+                      <button
+                        class="inline-flex cursor-pointer items-center gap-1 rounded-full border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600 transition-colors hover:bg-slate-100"
+                        (click)="roleMenu.toggle($event)"
+                        [attr.data-testid]="'compact-role-pill-' + group.id">
+                        {{ seg.role }}
+                        <i class="fa-light fa-chevron-down text-[8px]"></i>
+                      </button>
+                      <lfx-menu #roleMenu [model]="getRoleMenuItems(group)" [popup]="true" appendTo="body" />
+                    </div>
+                  } @else {
+                    <span class="inline-flex items-center rounded-full border border-slate-200 px-2 py-0.5 text-[11px] font-medium text-slate-600">
+                      {{ seg.role }}
+                    </span>
+                  }
+
+                  @if (seg.role === 'Maintainer' && seg.roleSource === 'repo-file') {
+                    <a
+                      class="flex items-center gap-1 text-[11px] font-medium text-slate-500 opacity-0 transition-opacity group-hover:opacity-100 hover:text-slate-900"
+                      href="#"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      [attr.data-testid]="'compact-source-link-' + group.id">
+                      Source
+                      <i class="fa-light fa-arrow-up-right-from-square text-[10px]"></i>
+                    </a>
+                  }
+                }
               </div>
-            </td>
-          </tr>
-        </ng-template>
-        <ng-template #emptymessage>
-          <tr>
-            <td colspan="5" class="text-center py-8">
-              <div class="flex flex-col items-center gap-2">
-                <i class="fa-light fa-building text-3xl text-gray-300"></i>
-                <p class="text-sm text-gray-500">No affiliations found</p>
-                <p class="text-xs text-gray-400">Connect your identities to see your organizational affiliations</p>
+            </div>
+            <!-- 3-dot menu -->
+            <div class="relative">
+              <button
+                class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                (click)="projectMenu.toggle($event)"
+                [attr.data-testid]="'project-menu-' + group.id">
+                <i class="fa-solid fa-ellipsis-vertical text-xs"></i>
+              </button>
+              <lfx-menu #projectMenu [model]="getProjectMenuItems(group)" [popup]="true" appendTo="body" />
+            </div>
+          </div>
+
+          <!-- Separator -->
+          <div class="mt-3 border-t border-slate-200"></div>
+
+          <!-- Company rows -->
+          @for (segment of group.segments; track segment.id; let lastSeg = $last) {
+            <div
+              class="flex items-center py-3"
+              [class.border-b]="!lastSeg"
+              [class.border-slate-100]="!lastSeg"
+              [attr.data-testid]="'compact-segment-' + segment.id">
+              <div class="flex items-center gap-2.5">
+                <!-- Company logo -->
+                @if (segment.organization === 'Independent') {
+                  <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500">
+                    <i class="fa-light fa-user text-[10px] text-white"></i>
+                  </div>
+                } @else if (segment.organizationLogo) {
+                  <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-slate-100 bg-white">
+                    <img [src]="segment.organizationLogo" [alt]="segment.organization" class="h-4 w-4 object-contain" loading="lazy" />
+                  </div>
+                } @else {
+                  <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-slate-100 bg-white">
+                    <i class="fa-light fa-building text-[10px] text-slate-400"></i>
+                  </div>
+                }
+
+                <div class="flex flex-col">
+                  <span class="text-sm font-bold text-slate-900">{{ segment.organization }}</span>
+                  <span class="text-sm text-slate-500">{{ segment.startDate }} – {{ segment.endDate || 'Present' }}</span>
+                </div>
               </div>
-            </td>
-          </tr>
-        </ng-template>
-      </lfx-table>
+            </div>
+          }
+        </div>
+      }
     </div>
-  </lfx-card>
+  } @else {
+    <!-- Affiliations Table -->
+    <div class="overflow-hidden rounded-xl border border-gray-200">
+      <table class="w-full" data-testid="affiliations-table">
+        <!-- Table Header -->
+        <thead>
+          <tr class="border-b border-slate-100 bg-slate-50/50">
+            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Project</th>
+            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">
+              <div class="flex items-center gap-1.5">
+                <span>Affiliation</span>
+                <button
+                  class="flex h-4 w-4 cursor-pointer items-center justify-center rounded-full text-slate-400 transition-colors hover:text-slate-600"
+                  (click)="openHowItWorks()"
+                  data-testid="affiliation-info-icon">
+                  <i class="fa-light fa-circle-info text-[10px]"></i>
+                </button>
+              </div>
+            </th>
+          </tr>
+        </thead>
+
+        <!-- Table Body -->
+        <tbody>
+          @for (group of sortedProjectGroups(); track group.id; let groupIdx = $index; let lastGroup = $last) {
+            @for (segment of group.segments; track segment.id; let segIdx = $index; let firstSeg = $first) {
+              <tr
+                class="transition-colors hover:bg-slate-50/50"
+                [class.border-b]="!lastGroup && segIdx === group.segments.length - 1"
+                [class.border-slate-200]="!lastGroup && segIdx === group.segments.length - 1"
+                [attr.data-testid]="'affiliation-row-' + segment.id">
+                <!-- Project Column -->
+                <td class="px-5 py-3.5">
+                  @if (firstSeg) {
+                    <div class="flex items-center gap-3">
+                      @if (group.projectLogo) {
+                        <img
+                          [src]="group.projectLogo"
+                          [alt]="group.projectName"
+                          class="h-8 w-8 rounded border border-slate-200 bg-white object-contain p-1"
+                          loading="lazy" />
+                      } @else {
+                        <div class="flex h-8 w-8 items-center justify-center rounded bg-slate-100">
+                          <i class="fa-light fa-code text-slate-500"></i>
+                        </div>
+                      }
+                      <div class="flex flex-col">
+                        <div class="flex items-center gap-2">
+                          <span class="text-sm font-semibold text-slate-900">{{ group.projectName }}</span>
+
+                          <!-- Role pill (project-level) -->
+                          @if (group.segments[0]; as seg) {
+                            @switch (seg.roleSource) {
+                              @case ('repo-file') {
+                                <div class="flex items-center gap-1.5">
+                                  @if (seg.role === 'Maintainer') {
+                                    <div class="relative">
+                                      <button
+                                        class="inline-flex w-fit cursor-pointer items-center gap-[2px] overflow-clip rounded-full bg-slate-100 px-1.5 py-0.5 transition-colors hover:bg-slate-200"
+                                        [pTooltip]="'Role defined in repository configuration file.'"
+                                        tooltipPosition="top"
+                                        (click)="roleMenu.toggle($event)"
+                                        [attr.data-testid]="'role-pill-' + group.id">
+                                        <span class="flex items-center gap-1.5">
+                                          <i class="fa-light fa-lock text-xs text-slate-500"></i>
+                                          <span class="shrink-0 text-xs font-semibold text-slate-500">{{ seg.role }}</span>
+                                        </span>
+                                        <i class="fa-light fa-chevron-down text-[8px] text-slate-400"></i>
+                                      </button>
+                                      <lfx-menu #roleMenu [model]="getRoleMenuItems(group)" [popup]="true" appendTo="body" />
+                                    </div>
+                                  } @else {
+                                    <div
+                                      class="inline-flex w-fit items-center gap-[2px] overflow-clip rounded-full bg-slate-100 px-1.5 py-0.5"
+                                      [pTooltip]="'Role defined in repository configuration file.'"
+                                      tooltipPosition="top">
+                                      <span class="flex items-center gap-1.5">
+                                        <i class="fa-light fa-lock text-xs text-slate-500"></i>
+                                        <span class="shrink-0 text-xs font-semibold text-slate-500">{{ seg.role }}</span>
+                                      </span>
+                                    </div>
+                                  }
+                                  <a
+                                    class="flex w-fit items-center gap-1 text-[11px] font-medium text-slate-600 hover:text-slate-900"
+                                    href="#"
+                                    target="_blank"
+                                    rel="noopener noreferrer"
+                                    [attr.data-testid]="'view-source-link-' + group.id">
+                                    View source
+                                    <i class="fa-light fa-arrow-up-right-from-square text-xs"></i>
+                                  </a>
+                                </div>
+                              }
+                              @case ('cdp-detected') {
+                                @if (seg.needsConfirmation) {
+                                  <button
+                                    class="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-xs font-medium text-amber-700 transition-colors hover:bg-amber-100"
+                                    (click)="openMaintainerConfirmation(group)"
+                                    [attr.data-testid]="'confirm-role-' + group.id">
+                                    <i class="fa-light fa-circle-question text-[10px]"></i>
+                                    {{ seg.role }}
+                                  </button>
+                                } @else {
+                                  <span class="inline-flex w-fit items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                                    {{ seg.role }}
+                                  </span>
+                                }
+                              }
+                              @default {
+                                @if (seg.role === 'Maintainer') {
+                                  <div class="relative">
+                                    <button
+                                      class="inline-flex w-fit cursor-pointer items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600 transition-colors hover:bg-slate-200"
+                                      (click)="roleMenu.toggle($event)"
+                                      [attr.data-testid]="'role-pill-' + group.id">
+                                      {{ seg.role }}
+                                      <i class="fa-light fa-chevron-down text-[8px]"></i>
+                                    </button>
+                                    <lfx-menu #roleMenu [model]="getRoleMenuItems(group)" [popup]="true" appendTo="body" />
+                                  </div>
+                                } @else {
+                                  <span class="inline-flex w-fit items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-1 text-xs font-medium text-slate-600">
+                                    {{ seg.role }}
+                                  </span>
+                                }
+                              }
+                            }
+                          }
+                        </div>
+                        @if (group.segments.length > 1) {
+                          <span class="text-[10px] text-slate-400">{{ group.segments.length }} affiliations</span>
+                        }
+                      </div>
+                    </div>
+                  }
+                </td>
+
+                <!-- Affiliation Column -->
+                <td class="px-5 py-3.5">
+                  <div class="flex items-center justify-between">
+                    <div class="flex items-center gap-2.5">
+                      <!-- Org Logo -->
+                      @if (segment.organization === 'Independent') {
+                        <div class="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500">
+                          <i class="fa-light fa-user text-xs text-white"></i>
+                        </div>
+                      } @else if (segment.organizationLogo) {
+                        <div class="flex h-7 w-7 items-center justify-center rounded-md border border-slate-100 bg-white shadow-sm">
+                          <img [src]="segment.organizationLogo" [alt]="segment.organization" class="h-4 w-4 object-contain" loading="lazy" />
+                        </div>
+                      } @else {
+                        <div class="flex h-7 w-7 items-center justify-center rounded-md border border-slate-100 bg-white shadow-sm">
+                          <i class="fa-light fa-building text-xs text-slate-400"></i>
+                        </div>
+                      }
+
+                      <!-- Org Name & Dates -->
+                      <div class="flex flex-col">
+                        <span class="text-sm font-medium text-slate-700">{{ segment.organization }}</span>
+                        <span class="text-[10px] text-slate-400">{{ segment.startDate }} – {{ segment.endDate || 'Present' }}</span>
+                      </div>
+                    </div>
+
+                    <!-- 3-dot menu -->
+                    <div class="relative">
+                      <button
+                        class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
+                        (click)="affiliationMenu.toggle($event)"
+                        [attr.data-testid]="'affiliation-menu-' + segment.id">
+                        <i class="fa-solid fa-ellipsis-vertical text-xs"></i>
+                      </button>
+                      <lfx-menu #affiliationMenu [model]="getAffiliationMenuItems(segment, group)" [popup]="true" appendTo="body" />
+                    </div>
+                  </div>
+                </td>
+              </tr>
+            }
+          }
+        </tbody>
+      </table>
+    </div>
+  }
 </div>

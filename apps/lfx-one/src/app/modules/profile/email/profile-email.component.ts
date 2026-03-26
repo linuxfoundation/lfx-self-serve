@@ -11,18 +11,13 @@ import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
-import { EmailManagementData, EmailPreferences, UpdateEmailPreferencesRequest, UserEmail } from '@lfx-one/shared/interfaces';
+import { EmailManagementData, EmailOption, EmailPreferences, UpdateEmailPreferencesRequest, UserEmail } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, finalize, switchMap, tap } from 'rxjs';
-
-interface EmailOption {
-  label: string;
-  value: string | null;
-}
 
 @Component({
   selector: 'lfx-profile-email',
@@ -107,7 +102,6 @@ export class ProfileEmailComponent {
           });
         },
         error: (error) => {
-          console.error('Failed to add email:', error);
           const message = error.error?.message || 'Failed to add email address';
           this.messageService.add({
             severity: 'error',
@@ -142,8 +136,7 @@ export class ProfileEmailComponent {
           detail: 'Primary email updated successfully',
         });
       },
-      error: (error) => {
-        console.error('Failed to set primary email:', error);
+      error: () => {
         this.messageService.add({
           severity: 'error',
           summary: 'Error',
@@ -172,7 +165,6 @@ export class ProfileEmailComponent {
             });
           },
           error: (error) => {
-            console.error('Failed to delete email:', error);
             const message = error.error?.message || 'Failed to delete email address';
             this.messageService.add({
               severity: 'error',
@@ -215,8 +207,7 @@ export class ProfileEmailComponent {
             detail: 'Email preferences updated successfully',
           });
         },
-        error: (error) => {
-          console.error('Failed to update preferences:', error);
+        error: () => {
           this.messageService.add({
             severity: 'error',
             summary: 'Error',

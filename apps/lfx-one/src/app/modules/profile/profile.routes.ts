@@ -8,22 +8,22 @@ export const PROFILE_ROUTES: Routes = [
     path: '',
     loadComponent: () => import('@app/layouts/profile-layout/profile-layout.component').then((m) => m.ProfileLayoutComponent),
     children: [
-      // Default redirect to overview
-      { path: '', redirectTo: 'overview', pathMatch: 'full' },
+      // Default redirect to attribution
+      { path: '', redirectTo: 'attribution', pathMatch: 'full' },
 
-      // Overview tab (new)
+      // Attribution tab (merges affiliations + work experience)
       {
-        path: 'overview',
-        loadComponent: () => import('./profile-overview/profile-overview.component').then((m) => m.ProfileOverviewComponent),
+        path: 'attribution',
+        loadComponent: () => import('./attribution/profile-attribution.component').then((m) => m.ProfileAttributionComponent),
       },
 
-      // Edit profile (previously the default route)
+      // Identities tab
       {
-        path: 'edit',
-        loadComponent: () => import('./manage-profile/profile-manage.component').then((m) => m.ProfileManageComponent),
+        path: 'identities',
+        loadComponent: () => import('./identities/profile-identities.component').then((m) => m.ProfileIdentitiesComponent),
       },
 
-      // Security tabs
+      // Direct-URL-only routes (no tab, but still accessible)
       {
         path: 'password',
         loadComponent: () => import('./password/profile-password.component').then((m) => m.ProfilePasswordComponent),
@@ -32,24 +32,21 @@ export const PROFILE_ROUTES: Routes = [
         path: 'email',
         loadComponent: () => import('./email/profile-email.component').then((m) => m.ProfileEmailComponent),
       },
-
-      // Developer settings
       {
         path: 'developer',
         loadComponent: () => import('./developer/profile-developer.component').then((m) => m.ProfileDeveloperComponent),
       },
 
-      // Affiliations tab
-      {
-        path: 'affiliations',
-        loadComponent: () => import('./affiliations/profile-affiliations.component').then((m) => m.ProfileAffiliationsComponent),
-      },
-
-      // Future placeholders - redirect to overview for now
-      { path: 'badges', redirectTo: 'overview' },
-      { path: 'certificates', redirectTo: 'overview' },
-      { path: 'visibility', redirectTo: 'overview' },
-      { path: 'identity-services', redirectTo: 'overview' },
+      // Backward-compat redirects for old URLs
+      { path: 'overview', redirectTo: 'attribution' },
+      { path: 'edit', redirectTo: 'attribution' },
+      { path: 'affiliations', redirectTo: 'attribution' },
+      { path: 'work-experience', redirectTo: 'attribution' },
+      { path: 'identity-services', redirectTo: 'identities' },
+      { path: 'badges', redirectTo: 'attribution' },
+      { path: 'certificates', redirectTo: 'attribution' },
+      { path: 'visibility', redirectTo: 'attribution' },
+      { path: 'manage', redirectTo: 'attribution' },
     ],
   },
 ];

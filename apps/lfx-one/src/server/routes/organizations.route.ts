@@ -11,4 +11,7 @@ const organizationController = new OrganizationController();
 // GET /api/organizations/search - Search for organizations
 router.get('/search', organizationController.searchOrganizations.bind(organizationController));
 
+// POST /api/organizations/resolve - Find or create an organization in CDP
+router.post('/resolve', organizationController.resolveOrganization.bind(organizationController));
+
 export default router;

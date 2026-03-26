@@ -34,7 +34,7 @@
               @for (email of emailsWithMetadata(); track email.id) {
                 <div class="flex items-center justify-between p-4 border border-gray-200 rounded-lg" [attr.data-testid]="'email-item-' + email.id">
                   <!-- Email Info and Primary Icon -->
-                  <div class="flex items-center space-x-4 flex-1">
+                  <div class="flex items-center gap-4 flex-1">
                     <lfx-button
                       type="button"
                       (onClick)="setPrimary(email)"
@@ -54,7 +54,7 @@
                     </lfx-button>
 
                     <div class="flex-1">
-                      <div class="flex items-center space-x-2">
+                      <div class="flex items-center gap-2">
                         <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'email-address-' + email.id">
                           {{ email.email }}
                         </span>
@@ -229,7 +229,7 @@
               </div>
 
               <!-- Save Button -->
-              <div class="flex justify-end space-x-4 pt-6 border-t border-gray-200">
+              <div class="flex justify-end gap-4 pt-6 border-t border-gray-200">
                 <lfx-button
                   size="small"
                   type="submit"

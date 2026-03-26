@@ -7,26 +7,47 @@ import { Request } from 'express';
 import { MicroserviceError } from '../errors';
 import { logger } from '../services/logger.service';
 
+interface CachedToken {
+  token: string;
+  expiresAt: number;
+}
+
+const TOKEN_EXPIRY_BUFFER_SECONDS = 300; // 5 minutes before actual expiry
+const tokenCache = new Map<string, CachedToken>();
+
+export interface M2MTokenOptions {
+  audience?: string; // Override default M2M_AUTH_AUDIENCE
+}
+
 /**
  * Generates a machine-to-machine (M2M) token from Auth0 (production) or Authelia (local dev)
  * @param req Express request object for logging context
+ * @param options Optional overrides (e.g. audience for auth-service)
  * @returns Promise resolving to the access token string
  * @throws MicroserviceError if token generation fails
  */
-export async function generateM2MToken(req: Request): Promise<string> {
-  // TODO: Cache the token
+export async function generateM2MToken(req: Request, options?: M2MTokenOptions): Promise<string> {
   const issuerBaseUrl = process.env['M2M_AUTH_ISSUER_BASE_URL'];
   const isAuthelia = issuerBaseUrl?.includes('auth.k8s.orb.local');
 
+  const audience = options?.audience || process.env['M2M_AUTH_AUDIENCE'];
+  const cacheKey = audience || '__default__';
+
+  const cached = tokenCache.get(cacheKey);
+  if (cached && Date.now() < cached.expiresAt) {
+    logger.debug(req, 'generate_m2m_token', 'Using cached M2M token', { audience });
+    return cached.token;
+  }
+
   const startTime = logger.startOperation(req, 'generate_m2m_token', {
-    audience: process.env['M2M_AUTH_AUDIENCE'],
+    audience,
     issuer: issuerBaseUrl,
     auth_provider: isAuthelia ? 'authelia' : 'auth0',
   });
 
   try {
-    // Select the appropriate request configuration
-    const config = isAuthelia ? AUTHELIA_TOKEN_REQUEST : AUTH0_TOKEN_REQUEST;
+    // Select the appropriate request configuration, passing audience override
+    const config = isAuthelia ? createAutheliaTokenRequest(audience) : createAuth0TokenRequest(audience);
     const tokenEndpoint = new URL(config.endpoint, issuerBaseUrl).toString();
 
     // Prepare request options based on auth provider
@@ -82,7 +103,11 @@ export async function generateM2MToken(req: Request): Promise<string> {
       scope: tokenResponse.scope,
     });
 
-    // TODO: Cache the token
+    // Cache with 5-minute buffer before expiry
+    tokenCache.set(cacheKey, {
+      token: tokenResponse.access_token,
+      expiresAt: Date.now() + (tokenResponse.expires_in - TOKEN_EXPIRY_BUFFER_SECONDS) * 1000,
+    });
 
     return tokenResponse.access_token;
   } catch (error) {
@@ -108,45 +133,49 @@ export async function generateM2MToken(req: Request): Promise<string> {
 }
 
 /**
- * Request configuration for Auth0 M2M token generation
+ * Creates request configuration for Auth0 M2M token generation
  */
-const AUTH0_TOKEN_REQUEST = {
-  endpoint: 'oauth/token',
-  method: 'POST',
-  createHeaders: () => ({
-    ['Cache-Control']: 'no-cache',
-    ['Content-Type']: 'application/json',
-  }),
-  createBody: () =>
-    JSON.stringify({
-      audience: process.env['M2M_AUTH_AUDIENCE'],
-      grant_type: 'client_credentials',
-      client_id: process.env['M2M_AUTH_CLIENT_ID'],
-      client_secret: process.env['M2M_AUTH_CLIENT_SECRET'],
+function createAuth0TokenRequest(audience: string | undefined) {
+  return {
+    endpoint: 'oauth/token',
+    method: 'POST',
+    createHeaders: () => ({
+      ['Cache-Control']: 'no-cache',
+      ['Content-Type']: 'application/json',
     }),
-};
+    createBody: () =>
+      JSON.stringify({
+        audience,
+        grant_type: 'client_credentials',
+        client_id: process.env['M2M_AUTH_CLIENT_ID'],
+        client_secret: process.env['M2M_AUTH_CLIENT_SECRET'],
+      }),
+  };
+}
 
 /**
- * Request configuration for Authelia M2M token generation
+ * Creates request configuration for Authelia M2M token generation
  */
-const AUTHELIA_TOKEN_REQUEST = {
-  endpoint: 'api/oidc/token',
-  method: 'POST',
-  createHeaders: () => {
-    const clientId = process.env['M2M_AUTH_CLIENT_ID'];
-    const clientSecret = process.env['M2M_AUTH_CLIENT_SECRET'];
-    const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
+function createAutheliaTokenRequest(audience: string | undefined) {
+  return {
+    endpoint: 'api/oidc/token',
+    method: 'POST',
+    createHeaders: () => {
+      const clientId = process.env['M2M_AUTH_CLIENT_ID'];
+      const clientSecret = process.env['M2M_AUTH_CLIENT_SECRET'];
+      const basicAuth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
 
-    return {
-      ['Authorization']: `Basic ${basicAuth}`,
-      ['Content-Type']: 'application/x-www-form-urlencoded',
-    };
-  },
-  createBody: () => {
-    const formData = new URLSearchParams({
-      grant_type: 'client_credentials',
-      audience: process.env['M2M_AUTH_AUDIENCE'] || '',
-    });
-    return formData.toString();
-  },
-};
+      return {
+        ['Authorization']: `Basic ${basicAuth}`,
+        ['Content-Type']: 'application/x-www-form-urlencoded',
+      };
+    },
+    createBody: () => {
+      const formData = new URLSearchParams({
+        grant_type: 'client_credentials',
+        audience: audience || '',
+      });
+      return formData.toString();
+    },
+  };
+}
