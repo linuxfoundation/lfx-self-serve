@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, Signal } from '@angular/core';
+import { Component, computed, inject, Signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { NavigationEnd, Router } from '@angular/router';
@@ -41,8 +41,10 @@ export class DevToolbarComponent {
   // Persona options for SelectButton
   protected readonly personaOptions = PERSONA_OPTIONS;
 
-  // TLF-only persona project override
-  protected readonly isTlfOnlyPersona = this.personaService.isTlfOnlyPersona;
+  // Board member project override
+  protected readonly isBoardMember = computed(
+    () => this.personaService.currentPersona() === 'board-member' || this.personaService.currentPersona() === 'executive-director'
+  );
 
   // Check if we're on the board dashboard page
   protected readonly isOnBoardDashboard: Signal<boolean> = this.initIsOnBoardDashboard();

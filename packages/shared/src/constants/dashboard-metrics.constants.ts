@@ -160,113 +160,100 @@ export const PRIMARY_INVOLVEMENT_METRICS: DashboardMetricCard[] = [
 
 /**
  * Marketing overview metrics for executive director dashboard
- * NOTE: These are currently configured with mock data values.
- * Data will be populated from live API once marketing analytics endpoints are available.
+ * UI configuration templates (icons, categories, drawer types). Data values are populated at runtime.
  */
 export const MARKETING_OVERVIEW_METRICS: DashboardMetricCard[] = [
   {
     title: 'Website Visits',
     icon: 'fa-light fa-globe',
-    value: '127,543',
-    changePercentage: '+12.4%',
-    trend: 'up',
-    subtitle: 'Last 30 days',
     chartType: 'line',
     category: 'marketing',
     testId: 'marketing-card-website-visits',
-    chartData: {
-      labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
-      datasets: [
-        {
-          data: Array.from({ length: 30 }, (_, i) => 3000 + Math.floor(Math.sin(i / 3) * 500 + i * 50)),
-          borderColor: lfxColors.blue[500],
-          backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2,
-          pointRadius: 0,
-        },
-      ],
-    },
+    chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+    drawerType: DashboardDrawerType.MarketingWebsiteVisits,
   },
   {
-    title: 'Social Media Reach',
+    title: 'Email CTR',
+    icon: 'fa-light fa-envelope',
+    chartType: 'line',
+    category: 'marketing',
+    testId: 'marketing-card-email-ctr',
+    chartData: EMPTY_CHART_DATA,
+    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+    drawerType: DashboardDrawerType.MarketingEmailCtr,
+  },
+  {
+    title: 'Paid Social Reach',
     icon: 'fa-light fa-share-nodes',
-    value: '89,231',
-    changePercentage: '+8.7%',
-    trend: 'up',
-    subtitle: 'Combined platform reach',
     chartType: 'line',
     category: 'marketing',
-    testId: 'marketing-card-social-media-reach',
-    chartData: {
-      labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
-      datasets: [
-        {
-          data: Array.from({ length: 30 }, (_, i) => 2000 + Math.floor(Math.sin(i / 4) * 400 + i * 30)),
-          borderColor: lfxColors.emerald[500],
-          backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2,
-          pointRadius: 0,
-        },
-      ],
-    },
+    testId: 'marketing-card-paid-social-reach',
+    chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+    drawerType: DashboardDrawerType.MarketingPaidSocialReach,
   },
   {
-    title: 'Press Mentions',
-    icon: 'fa-light fa-newspaper',
-    value: '342',
-    changePercentage: '+15.2%',
-    trend: 'up',
-    subtitle: 'Last 30 days',
+    title: 'Social Media',
+    icon: 'fa-light fa-thumbs-up',
     chartType: 'line',
     category: 'marketing',
-    testId: 'marketing-card-press-mentions',
-    chartData: {
-      labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
-      datasets: [
-        {
-          data: Array.from({ length: 12 }, (_, i) => 20 + Math.floor(Math.sin(i / 2) * 8 + i * 2)),
-          borderColor: lfxColors.amber[500],
-          backgroundColor: hexToRgba(lfxColors.amber[500], 0.1),
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2,
-          pointRadius: 0,
-        },
-      ],
-    },
+    testId: 'marketing-card-social-media',
+    chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+    drawerType: DashboardDrawerType.MarketingSocialMedia,
+  },
+];
+
+// ============================================
+// North Star Metrics (Executive Director)
+// ============================================
+
+/**
+ * North Star KPI metrics for executive director dashboard
+ * UI configuration templates (icons, categories, drawer types). Data values populated at runtime from mock data
+ * until Snowflake tables for membership/financial data are available.
+ */
+export const NORTH_STAR_METRICS: DashboardMetricCard[] = [
+  {
+    title: 'Engaged Community',
+    icon: 'fa-light fa-users',
+    chartType: 'line',
+    category: 'memberships',
+    testId: 'north-star-card-engaged-community',
+    chartData: EMPTY_CHART_DATA,
+    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+    drawerType: DashboardDrawerType.NorthStarEngagedCommunity,
   },
   {
-    title: 'Newsletter Subscribers',
-    icon: 'fa-light fa-envelope-open-text',
-    value: '45,678',
-    changePercentage: '+5.1%',
-    trend: 'up',
-    subtitle: 'Active subscribers',
-    chartType: 'line',
-    category: 'marketing',
-    testId: 'marketing-card-newsletter-subscribers',
-    chartData: {
-      labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
-      datasets: [
-        {
-          data: Array.from({ length: 12 }, (_, i) => 35000 + i * 900),
-          borderColor: lfxColors.blue[300],
-          backgroundColor: hexToRgba(lfxColors.blue[300], 0.1),
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2,
-          pointRadius: 0,
-        },
-      ],
-    },
+    title: 'Member Acq. Rate & CAC',
+    icon: 'fa-light fa-user-plus',
+    chartType: 'bar',
+    category: 'memberships',
+    testId: 'north-star-card-member-acquisition',
+    chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+    drawerType: DashboardDrawerType.NorthStarMemberAcquisition,
+  },
+  {
+    title: 'Member Retention & NRR',
+    icon: 'fa-light fa-arrow-rotate-right',
+    chartType: 'line',
+    category: 'memberships',
+    testId: 'north-star-card-member-retention',
+    chartData: EMPTY_CHART_DATA,
+    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+    drawerType: DashboardDrawerType.NorthStarMemberRetention,
+  },
+  {
+    title: 'Flywheel Conv. Rate',
+    icon: 'fa-light fa-rotate',
+    chartType: 'line',
+    category: 'memberships',
+    testId: 'north-star-card-flywheel-conversion',
+    chartData: EMPTY_CHART_DATA,
+    chartOptions: NO_TOOLTIP_CHART_OPTIONS,
+    drawerType: DashboardDrawerType.NorthStarFlywheelConversion,
   },
 ];
 

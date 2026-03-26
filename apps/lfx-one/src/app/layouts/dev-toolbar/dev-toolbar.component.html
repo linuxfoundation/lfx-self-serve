@@ -18,8 +18,8 @@
         </lfx-select-button>
       </div>
 
-      <!-- TLF-Only Persona Project Override -->
-      @if (isTlfOnlyPersona()) {
+      <!-- Board Member Project Override -->
+      @if (isBoardMember()) {
         <div class="flex items-center gap-2" data-testid="dev-tools-bar-project-override">
           <label for="project-override-select" class="text-sm">Project:</label>
           <lfx-select

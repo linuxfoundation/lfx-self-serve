@@ -205,6 +205,14 @@ export enum DashboardDrawerType {
   OrgEventSpeakers = 'org-event-speakers',
   OrgTrainingEnrollments = 'org-training-enrollments',
   OrgCertifiedEmployees = 'org-certified-employees',
+  MarketingWebsiteVisits = 'marketing-website-visits',
+  MarketingEmailCtr = 'marketing-email-ctr',
+  MarketingPaidSocialReach = 'marketing-paid-social-reach',
+  MarketingSocialMedia = 'marketing-social-media',
+  NorthStarEngagedCommunity = 'north-star-engaged-community',
+  NorthStarMemberAcquisition = 'north-star-member-acquisition',
+  NorthStarMemberRetention = 'north-star-member-retention',
+  NorthStarFlywheelConversion = 'north-star-flywheel-conversion',
 }
 
 /** Lifecycle stage of a foundation project */
