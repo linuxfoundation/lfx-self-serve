@@ -131,4 +131,16 @@ router.get('/org-training-enrollments-distribution', (req, res, next) => analyti
 router.get('/org-certified-employees-monthly', (req, res, next) => analyticsController.getOrgCertifiedEmployeesMonthly(req, res, next));
 router.get('/org-certified-employees-distribution', (req, res, next) => analyticsController.getOrgCertifiedEmployeesDistribution(req, res, next));
 
+// Web activities summary endpoint (marketing dashboard)
+router.get('/web-activities-summary', (req, res, next) => analyticsController.getWebActivitiesSummary(req, res, next));
+
+// Email CTR endpoint (marketing dashboard)
+router.get('/email-ctr', (req, res, next) => analyticsController.getEmailCtr(req, res, next));
+
+// Social reach endpoint (marketing dashboard)
+router.get('/social-reach', (req, res, next) => analyticsController.getSocialReach(req, res, next));
+
+// Social media endpoint (marketing dashboard)
+router.get('/social-media', (req, res, next) => analyticsController.getSocialMedia(req, res, next));
+
 export default router;
