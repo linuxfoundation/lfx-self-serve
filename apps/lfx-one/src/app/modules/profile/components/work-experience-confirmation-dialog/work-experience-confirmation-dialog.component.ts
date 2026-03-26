@@ -1,17 +1,19 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { WorkExperienceUpdate } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { ToggleSwitchModule } from 'primeng/toggleswitch';
 
 @Component({
   selector: 'lfx-work-experience-confirmation-dialog',
-  imports: [FormsModule, ButtonComponent, ToggleSwitchModule],
+  imports: [FormsModule, ButtonComponent, TagComponent, ToggleSwitchModule],
   templateUrl: './work-experience-confirmation-dialog.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WorkExperienceConfirmationDialogComponent {
   private readonly ref = inject(DynamicDialogRef);

@@ -6,12 +6,15 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
+import { TableComponent } from '@components/table/table.component';
+import { TagComponent } from '@components/tag/tag.component';
 import {
   AffiliationSegment,
   AffiliationTimelineDialogData,
   CdpProjectAffiliation,
   CdpProjectAffiliationEntry,
   DisabledOrgSuggestion,
+  FlatAffiliationRow,
   MaintainerConfirmationResult,
   ProjectAffiliationPatchBody,
   ProjectGroup,
@@ -21,7 +24,7 @@ import {
 import { LFX_ONE_WORK_EXPERIENCE_SOURCE } from '@lfx-one/shared/constants';
 import { abbreviatedMonthYearToIsoDate, isoDateToMonthYear } from '@lfx-one/shared/utils';
 import { Router } from '@angular/router';
-import { MenuItem } from 'primeng/api';
+import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, forkJoin, map, Observable, of, take } from 'rxjs';
@@ -34,13 +37,14 @@ import { MaintainerConfirmationDialogComponent } from '../components/maintainer-
 
 @Component({
   selector: 'lfx-profile-affiliations',
-  imports: [ButtonComponent, CardComponent, MenuComponent, TooltipModule],
+  imports: [ButtonComponent, CardComponent, MenuComponent, TableComponent, TagComponent, TooltipModule],
   providers: [DialogService],
   templateUrl: './profile-affiliations.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfileAffiliationsComponent {
   private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
   private readonly router = inject(Router);
   private readonly userService = inject(UserService);
   private readonly projectService = inject(ProjectService);
@@ -59,6 +63,11 @@ export class ProfileAffiliationsComponent {
   public readonly apiProjectGroups: Signal<ProjectGroup[]> = this.initApiProjectGroups();
   public readonly sortedProjectGroups: Signal<ProjectGroup[]> = this.initSortedProjectGroups();
   public readonly isEmpty: Signal<boolean> = computed(() => this.projectGroups().length === 0);
+
+  public readonly flattenedRows: Signal<FlatAffiliationRow[]> = this.initFlattenedRows();
+  public readonly roleMenuItemsMap: Signal<Map<string, MenuItem[]>> = this.initRoleMenuItemsMap();
+  public readonly projectMenuItemsMap: Signal<Map<string, MenuItem[]>> = this.initProjectMenuItemsMap();
+  public readonly affiliationMenuItemsMap: Signal<Map<string, MenuItem[]>> = this.initAffiliationMenuItemsMap();
 
   public constructor() {
     effect(() => {
@@ -155,38 +164,6 @@ export class ProfileAffiliationsComponent {
 
   public navigateToIdentities(): void {
     void this.router.navigate(['/profile', 'identities']);
-  }
-
-  public getRoleMenuItems(project: ProjectGroup): MenuItem[] {
-    return [
-      {
-        label: 'Contributor',
-        command: () => this.handleRoleChange(project.id, 'Contributor'),
-      },
-    ];
-  }
-
-  public getProjectMenuItems(project: ProjectGroup): MenuItem[] {
-    return [
-      {
-        label: 'Edit Affiliation',
-        icon: 'fa-light fa-pencil',
-        command: () => this.openSingleProjectTimeline(project),
-      },
-    ];
-  }
-
-  public getAffiliationMenuItems(segment: AffiliationSegment, project: ProjectGroup): MenuItem[] {
-    return [
-      {
-        label: 'Edit Affiliation',
-        icon: 'fa-light fa-pencil',
-        command: () => {
-          void segment;
-          this.openSingleProjectTimeline(project);
-        },
-      },
-    ];
   }
 
   private openSingleProjectTimeline(project: ProjectGroup): void {
@@ -308,7 +285,16 @@ export class ProfileAffiliationsComponent {
     }
 
     if (ops.length > 0) {
-      forkJoin(ops).pipe(take(1)).subscribe();
+      forkJoin(ops)
+        .pipe(take(1))
+        .subscribe({
+          next: () => {
+            this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Affiliations updated successfully.' });
+          },
+          error: () => {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to save some affiliation changes. Please try again.' });
+          },
+        });
     }
   }
 
@@ -338,6 +324,76 @@ export class ProfileAffiliationsComponent {
     }
 
     return lookup;
+  }
+
+  private initFlattenedRows(): Signal<FlatAffiliationRow[]> {
+    return computed(() => {
+      const groups = this.sortedProjectGroups();
+      const rows: FlatAffiliationRow[] = [];
+      for (let g = 0; g < groups.length; g++) {
+        const group = groups[g];
+        const isLastGroup = g === groups.length - 1;
+        for (let i = 0; i < group.segments.length; i++) {
+          rows.push({
+            group,
+            segment: group.segments[i],
+            isFirstSegment: i === 0,
+            isLastSegmentInGroup: i === group.segments.length - 1,
+            isLastGroup,
+          });
+        }
+      }
+      return rows;
+    });
+  }
+
+  private initRoleMenuItemsMap(): Signal<Map<string, MenuItem[]>> {
+    return computed(() => {
+      const map = new Map<string, MenuItem[]>();
+      for (const project of this.sortedProjectGroups()) {
+        map.set(project.id, [
+          {
+            label: 'Contributor',
+            command: () => this.handleRoleChange(project.id, 'Contributor'),
+          },
+        ]);
+      }
+      return map;
+    });
+  }
+
+  private initProjectMenuItemsMap(): Signal<Map<string, MenuItem[]>> {
+    return computed(() => {
+      const map = new Map<string, MenuItem[]>();
+      for (const project of this.sortedProjectGroups()) {
+        map.set(project.id, [
+          {
+            label: 'Edit Affiliation',
+            icon: 'fa-light fa-pencil',
+            command: () => this.openSingleProjectTimeline(project),
+          },
+        ]);
+      }
+      return map;
+    });
+  }
+
+  private initAffiliationMenuItemsMap(): Signal<Map<string, MenuItem[]>> {
+    return computed(() => {
+      const map = new Map<string, MenuItem[]>();
+      for (const project of this.sortedProjectGroups()) {
+        for (const segment of project.segments) {
+          map.set(segment.id, [
+            {
+              label: 'Edit Affiliation',
+              icon: 'fa-light fa-pencil',
+              command: () => this.openSingleProjectTimeline(project),
+            },
+          ]);
+        }
+      }
+      return map;
+    });
   }
 
   private initSortedProjectGroups(): Signal<ProjectGroup[]> {

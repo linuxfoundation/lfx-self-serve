@@ -6,6 +6,7 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
+import { TableComponent } from '@components/table/table.component';
 import { LFX_ONE_WORK_EXPERIENCE_SOURCE, MONTH_OPTIONS } from '@lfx-one/shared/constants';
 import {
   CdpProjectAffiliation,
@@ -29,7 +30,7 @@ import { WorkExperienceFormDialogComponent } from '../components/work-experience
 
 @Component({
   selector: 'lfx-profile-work-experience',
-  imports: [ButtonComponent, CardComponent, MenuComponent],
+  imports: [ButtonComponent, CardComponent, MenuComponent, TableComponent],
   providers: [DialogService],
   templateUrl: './profile-work-experience.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -50,6 +51,7 @@ export class ProfileWorkExperienceComponent {
   public readonly sortedExperience: Signal<WorkExperienceEntry[]> = this.initSortedExperience();
   public readonly isEmpty: Signal<boolean> = computed(() => this.workExperience().length === 0);
   public readonly hasReviewable: Signal<boolean> = computed(() => this.workExperience().some((e) => e.needsReview));
+  public readonly menuItemsMap: Signal<Map<string, MenuItem[]>> = this.initMenuItemsMap();
 
   public onAdd(): void {
     const data: WorkExperienceFormDialogData = { mode: 'add' };
@@ -289,13 +291,6 @@ export class ProfileWorkExperienceComponent {
     });
   }
 
-  public getMenuItems(item: WorkExperienceEntry): MenuItem[] {
-    return [
-      { label: 'Edit', icon: 'fa-light fa-pencil', command: () => this.onEdit(item) },
-      { label: 'Delete', icon: 'fa-light fa-trash', command: () => this.onDelete(item) },
-    ];
-  }
-
   public parseDate(dateStr: string): Date {
     const parts = dateStr.split(' ');
     if (parts.length !== 2) {
@@ -331,6 +326,19 @@ export class ProfileWorkExperienceComponent {
     }
 
     return results;
+  }
+
+  private initMenuItemsMap(): Signal<Map<string, MenuItem[]>> {
+    return computed(() => {
+      const map = new Map<string, MenuItem[]>();
+      for (const item of this.sortedExperience()) {
+        map.set(item.id, [
+          { label: 'Edit', icon: 'fa-light fa-pencil', command: () => this.onEdit(item) },
+          { label: 'Delete', icon: 'fa-light fa-trash', command: () => this.onDelete(item) },
+        ]);
+      }
+      return map;
+    });
   }
 
   private initApiWorkExperience(): Signal<WorkExperienceEntry[]> {

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { MaintainerConfirmationDialogData, MaintainerConfirmationResult } from '@lfx-one/shared/interfaces';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
@@ -10,6 +10,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
   selector: 'lfx-maintainer-confirmation-dialog',
   imports: [ButtonComponent],
   templateUrl: './maintainer-confirmation-dialog.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class MaintainerConfirmationDialogComponent {
   private readonly ref = inject(DynamicDialogRef);

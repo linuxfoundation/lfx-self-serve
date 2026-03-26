@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { MONTH_ABBREV_OPTIONS, YEAR_OPTIONS } from '@lfx-one/shared/constants';
@@ -23,6 +23,7 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
   selector: 'lfx-affiliation-timeline-dialog',
   imports: [FormsModule, ButtonComponent, CheckboxModule, SelectModule, ToggleSwitchModule],
   templateUrl: './affiliation-timeline-dialog.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AffiliationTimelineDialogComponent {
   private readonly ref = inject(DynamicDialogRef);
@@ -41,6 +42,9 @@ export class AffiliationTimelineDialogComponent {
   public readonly hasOverlap: Signal<boolean> = computed(() => this.overlappingPeriodIds().size > 0);
   public readonly hasNoWorkExperience: Signal<boolean> = computed(() => this.companyOrgs().length === 0);
   public readonly hasValidationErrors: Signal<boolean> = this.initHasValidationErrors();
+  public readonly availableYearsMap: Signal<Map<string, { label: string; value: string }[]>> = this.initAvailableYearsMap();
+  public readonly periodErrorsMap: Signal<Map<string, { startBeforeWeStart: boolean; endAfterWeEnd: boolean; startAfterEnd: boolean }>> =
+    this.initPeriodErrorsMap();
 
   public constructor() {
     this.organizations.set(this.buildInitialState());
@@ -121,18 +125,6 @@ export class AffiliationTimelineDialogComponent {
     return org.periods.every((p) => p.startMonth && p.startYear && (p.isPresent || (p.endMonth && p.endYear)));
   }
 
-  public getAvailableYears(org: AffiliationEditOrg): { label: string; value: string }[] {
-    if (org.organization === 'Independent' || !org.weStartDate) {
-      return this.yearOptions;
-    }
-    const startYear = parseInt(org.weStartDate.split(' ')[1], 10) || 2000;
-    const endYear = org.weEndDate ? parseInt(org.weEndDate.split(' ')[1], 10) || new Date().getFullYear() : new Date().getFullYear();
-    return this.yearOptions.filter((y) => {
-      const yr = parseInt(y.value, 10);
-      return yr >= startYear && yr <= endYear;
-    });
-  }
-
   public save(): void {
     const enabledOrgs = this.organizations().filter((org) => org.enabled);
     const segments: AffiliationSegment[] = [];
@@ -171,39 +163,6 @@ export class AffiliationTimelineDialogComponent {
     };
 
     this.ref.close({ projects: [updatedProject] });
-  }
-
-  public getPeriodErrors(
-    org: AffiliationEditOrg,
-    period: AffiliationEditPeriod
-  ): { startBeforeWeStart: boolean; endAfterWeEnd: boolean; startAfterEnd: boolean } {
-    const errors = { startBeforeWeStart: false, endAfterWeEnd: false, startAfterEnd: false };
-
-    const hasStart = period.startMonth && period.startYear;
-    const hasEnd = !period.isPresent && period.endMonth && period.endYear;
-
-    if (!hasStart) {
-      return errors;
-    }
-
-    const startTs = this.periodToTimestamp(period.startMonth, period.startYear);
-
-    if (org.weStartDate) {
-      const weStartTs = this.parseWeDate(org.weStartDate);
-      errors.startBeforeWeStart = startTs < weStartTs;
-    }
-
-    if (hasEnd) {
-      const endTs = this.periodToTimestamp(period.endMonth, period.endYear);
-      errors.startAfterEnd = startTs > endTs;
-
-      if (org.weEndDate) {
-        const weEndTs = this.parseWeDate(org.weEndDate);
-        errors.endAfterWeEnd = endTs > weEndTs;
-      }
-    }
-
-    return errors;
   }
 
   public cancel(): void {
@@ -302,6 +261,73 @@ export class AffiliationTimelineDialogComponent {
     };
   }
 
+  private computePeriodErrors(
+    org: AffiliationEditOrg,
+    period: AffiliationEditPeriod
+  ): { startBeforeWeStart: boolean; endAfterWeEnd: boolean; startAfterEnd: boolean } {
+    const errors = { startBeforeWeStart: false, endAfterWeEnd: false, startAfterEnd: false };
+
+    const hasStart = period.startMonth && period.startYear;
+    const hasEnd = !period.isPresent && period.endMonth && period.endYear;
+
+    if (!hasStart) {
+      return errors;
+    }
+
+    const startTs = this.periodToTimestamp(period.startMonth, period.startYear);
+
+    if (org.weStartDate) {
+      const weStartTs = this.parseWeDate(org.weStartDate);
+      errors.startBeforeWeStart = startTs < weStartTs;
+    }
+
+    if (hasEnd) {
+      const endTs = this.periodToTimestamp(period.endMonth, period.endYear);
+      errors.startAfterEnd = startTs > endTs;
+
+      if (org.weEndDate) {
+        const weEndTs = this.parseWeDate(org.weEndDate);
+        errors.endAfterWeEnd = endTs > weEndTs;
+      }
+    }
+
+    return errors;
+  }
+
+  private initAvailableYearsMap(): Signal<Map<string, { label: string; value: string }[]>> {
+    return computed(() => {
+      const map = new Map<string, { label: string; value: string }[]>();
+      for (const org of this.organizations()) {
+        if (org.organization === 'Independent' || !org.weStartDate) {
+          map.set(org.organization, this.yearOptions);
+        } else {
+          const startYear = parseInt(org.weStartDate.split(' ')[1], 10) || 2000;
+          const endYear = org.weEndDate ? parseInt(org.weEndDate.split(' ')[1], 10) || new Date().getFullYear() : new Date().getFullYear();
+          map.set(
+            org.organization,
+            this.yearOptions.filter((y) => {
+              const yr = parseInt(y.value, 10);
+              return yr >= startYear && yr <= endYear;
+            })
+          );
+        }
+      }
+      return map;
+    });
+  }
+
+  private initPeriodErrorsMap(): Signal<Map<string, { startBeforeWeStart: boolean; endAfterWeEnd: boolean; startAfterEnd: boolean }>> {
+    return computed(() => {
+      const map = new Map<string, { startBeforeWeStart: boolean; endAfterWeEnd: boolean; startAfterEnd: boolean }>();
+      for (const org of this.organizations()) {
+        for (const period of org.periods) {
+          map.set(period.id, this.computePeriodErrors(org, period));
+        }
+      }
+      return map;
+    });
+  }
+
   private initCompanyOrgs(): Signal<AffiliationEditOrg[]> {
     return computed(() => this.organizations().filter((org) => org.organization !== 'Independent'));
   }
@@ -311,7 +337,7 @@ export class AffiliationTimelineDialogComponent {
       const enabledOrgs = this.organizations().filter((org) => org.enabled);
       return enabledOrgs.some((org) =>
         org.periods.some((period) => {
-          const errors = this.getPeriodErrors(org, period);
+          const errors = this.computePeriodErrors(org, period);
           return errors.startBeforeWeStart || errors.endAfterWeEnd || errors.startAfterEnd;
         })
       );

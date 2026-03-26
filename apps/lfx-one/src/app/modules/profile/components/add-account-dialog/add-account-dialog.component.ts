@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, DestroyRef, inject, signal } from '@angular/core';
 import { FormsModule, NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { IDENTITY_PROVIDER_OPTIONS } from '@lfx-one/shared/constants';
 import { AddAccountDialogData, AddAccountDialogResult, IdentityProvider, IdentityProviderOption } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
+import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputOtp } from 'primeng/inputotp';
 
@@ -15,6 +16,7 @@ import { InputOtp } from 'primeng/inputotp';
   selector: 'lfx-add-account-dialog',
   imports: [ButtonComponent, InputTextComponent, FormsModule, ReactiveFormsModule, InputOtp],
   templateUrl: './add-account-dialog.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AddAccountDialogComponent {
   private readonly ref = inject(DynamicDialogRef);
@@ -37,9 +39,9 @@ export class AddAccountDialogComponent {
   public verificationCode = signal('');
   public verificationError = signal('');
   public isVerifying = signal(false);
-  public resendCooldown = signal(0);
 
-  private cooldownInterval: ReturnType<typeof setInterval> | null = null;
+  private readonly resendCooldownUtil = useResendCooldown(this.destroyRef);
+  public readonly resendCooldown = this.resendCooldownUtil.cooldown;
 
   public onSelectProvider(provider: IdentityProviderOption): void {
     if (provider.id === 'email') {
@@ -66,7 +68,7 @@ export class AddAccountDialogComponent {
         if (response.success) {
           this.codeSent.set(true);
           this.form.controls.email.disable();
-          this.startResendCooldown();
+          this.resendCooldownUtil.start();
         } else {
           this.verificationError.set(response.error || response.message || 'Failed to send verification code');
         }
@@ -131,7 +133,7 @@ export class AddAccountDialogComponent {
           this.verificationError.set(response.error || response.message || 'Failed to resend code');
         }
         this.isConnecting.set(false);
-        this.startResendCooldown();
+        this.resendCooldownUtil.start();
       },
       error: (err) => {
         this.verificationError.set(err.error?.message || err.error?.error || 'Failed to resend code');
@@ -141,36 +143,12 @@ export class AddAccountDialogComponent {
   }
 
   public onCancel(): void {
-    this.clearCooldown();
+    this.resendCooldownUtil.clear();
     this.ref.close(null);
   }
 
   private handleSocialConnect(provider: IdentityProviderOption): void {
     // Navigate to social connect endpoint which handles the OAuth flow
     window.location.href = `/api/profile/identities/social/connect?provider=${provider.id}`;
-  }
-
-  private startResendCooldown(): void {
-    this.clearCooldown();
-    this.resendCooldown.set(60);
-
-    this.cooldownInterval = setInterval(() => {
-      const current = this.resendCooldown();
-      if (current <= 1) {
-        this.resendCooldown.set(0);
-        this.clearCooldown();
-      } else {
-        this.resendCooldown.set(current - 1);
-      }
-    }, 1000);
-
-    this.destroyRef.onDestroy(() => this.clearCooldown());
-  }
-
-  private clearCooldown(): void {
-    if (this.cooldownInterval) {
-      clearInterval(this.cooldownInterval);
-      this.cooldownInterval = null;
-    }
   }
 }

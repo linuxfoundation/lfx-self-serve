@@ -1,12 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, DestroyRef, inject, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { FormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { IDENTITY_PROVIDER_LABELS } from '@lfx-one/shared/constants';
 import { ConnectedIdentityFull, VerifyIdentityDialogData } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
+import { useResendCooldown } from '@shared/utils/resend-cooldown';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { InputOtp } from 'primeng/inputotp';
 
@@ -24,6 +25,7 @@ import { InputOtp } from 'primeng/inputotp';
       }
     `,
   ],
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class VerifyIdentityDialogComponent {
   private readonly ref = inject(DynamicDialogRef);
@@ -40,9 +42,9 @@ export class VerifyIdentityDialogComponent {
   public verificationError = signal('');
   public isSendingCode = signal(false);
   public isVerifying = signal(false);
-  public resendCooldown = signal(0);
 
-  private cooldownInterval: ReturnType<typeof setInterval> | null = null;
+  private readonly resendCooldownUtil = useResendCooldown(this.destroyRef);
+  public readonly resendCooldown = this.resendCooldownUtil.cooldown;
 
   public onSendCode(): void {
     this.isSendingCode.set(true);
@@ -52,7 +54,7 @@ export class VerifyIdentityDialogComponent {
       next: (response) => {
         if (response.success) {
           this.codeSent.set(true);
-          this.startResendCooldown();
+          this.resendCooldownUtil.start();
         } else {
           this.verificationError.set(response.error || response.message || 'Failed to send verification code');
         }
@@ -109,7 +111,7 @@ export class VerifyIdentityDialogComponent {
           this.verificationError.set(response.error || response.message || 'Failed to resend code');
         }
         this.isSendingCode.set(false);
-        this.startResendCooldown();
+        this.resendCooldownUtil.start();
       },
       error: (err) => {
         this.verificationError.set(err.error?.message || err.error?.error || 'Failed to resend code');
@@ -124,31 +126,7 @@ export class VerifyIdentityDialogComponent {
   }
 
   public onCancel(): void {
-    this.clearCooldown();
+    this.resendCooldownUtil.clear();
     this.ref.close(null);
-  }
-
-  private startResendCooldown(): void {
-    this.clearCooldown();
-    this.resendCooldown.set(60);
-
-    this.cooldownInterval = setInterval(() => {
-      const current = this.resendCooldown();
-      if (current <= 1) {
-        this.resendCooldown.set(0);
-        this.clearCooldown();
-      } else {
-        this.resendCooldown.set(current - 1);
-      }
-    }, 1000);
-
-    this.destroyRef.onDestroy(() => this.clearCooldown());
-  }
-
-  private clearCooldown(): void {
-    if (this.cooldownInterval) {
-      clearInterval(this.cooldownInterval);
-      this.cooldownInterval = null;
-    }
   }
 }

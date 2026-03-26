@@ -1202,7 +1202,8 @@ export class ProfileController {
       return;
     }
 
-    const returnTo = (req.query['returnTo'] as string) || '/profile';
+    const rawReturnTo = (req.query['returnTo'] as string) || '/profile';
+    const returnTo = rawReturnTo.startsWith('/') && !rawReturnTo.startsWith('//') ? rawReturnTo : '/profile';
     const authorizeUrl = this.profileAuthService.getAuthorizationUrl(req, returnTo);
 
     logger.success(req, 'profile_auth_start', startTime, {
@@ -1222,7 +1223,8 @@ export class ProfileController {
     const code = req.query['code'] as string;
     const state = req.query['state'] as string;
     const error = req.query['error'] as string;
-    const returnTo = (req.appSession?.['profileAuthReturnTo'] as string) || '/profile';
+    const rawReturnTo = (req.appSession?.['profileAuthReturnTo'] as string) || '/profile';
+    const returnTo = rawReturnTo.startsWith('/') && !rawReturnTo.startsWith('//') ? rawReturnTo : '/profile';
 
     if (error) {
       logger.error(req, 'profile_auth_callback', startTime, new Error(`Auth0 returned error: ${error}`), {

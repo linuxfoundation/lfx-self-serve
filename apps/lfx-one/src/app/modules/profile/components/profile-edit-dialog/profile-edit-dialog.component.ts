@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, inject, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -20,6 +20,7 @@ import { finalize } from 'rxjs';
   selector: 'lfx-profile-edit-dialog',
   imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, ButtonComponent],
   templateUrl: './profile-edit-dialog.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfileEditDialogComponent {
   // Private injections

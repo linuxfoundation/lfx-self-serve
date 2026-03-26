@@ -121,13 +121,15 @@
                 </div>
                 @if (!identity.isPrimary) {
                   <div class="relative inline-block">
-                    <button
-                      class="flex h-7 w-7 cursor-pointer items-center justify-center rounded-full text-slate-400 transition-colors hover:bg-slate-100 hover:text-slate-600"
-                      (click)="actionMenu.toggle($event)"
-                      [attr.data-testid]="'identity-menu-' + identity.id">
-                      <i class="fa-solid fa-ellipsis-vertical text-xs"></i>
-                    </button>
-                    <lfx-menu #actionMenu [model]="getMenuItems(identity)" [popup]="true" appendTo="body" />
+                    <lfx-button
+                      icon="fa-solid fa-ellipsis-vertical"
+                      [text]="true"
+                      [rounded]="true"
+                      size="small"
+                      styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
+                      (onClick)="actionMenu.toggle($event)"
+                      [attr.data-testid]="'identity-menu-' + identity.id" />
+                    <lfx-menu #actionMenu [model]="menuItemsMap().get(identity.id) ?? []" [popup]="true" appendTo="body" />
                   </div>
                 }
               </div>

@@ -24,11 +24,7 @@
           <div class="flex flex-1 flex-col gap-0.5">
             <div class="flex items-center gap-2">
               <span class="text-base font-bold text-slate-900">{{ update.organization }}</span>
-              <span
-                class="rounded-full px-2 py-0.5 text-[10px] font-semibold"
-                [class]="update.status === 'New' ? 'bg-[#0094FF] text-white' : 'border border-amber-200 bg-amber-100 text-amber-700'">
-                {{ update.status }}
-              </span>
+              <lfx-tag [value]="update.status" [severity]="update.status === 'New' ? 'info' : 'warn'" />
             </div>
             <span class="text-sm text-slate-600">{{ update.jobTitle }}</span>
             <span class="text-xs text-slate-500">{{ update.startDate }} → {{ update.endDate || 'Present' }}</span>

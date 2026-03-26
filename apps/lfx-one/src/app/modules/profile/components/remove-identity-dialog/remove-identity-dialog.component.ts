@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
@@ -13,6 +13,7 @@ import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
   selector: 'lfx-remove-identity-dialog',
   imports: [ButtonComponent, CheckboxComponent, ReactiveFormsModule],
   templateUrl: './remove-identity-dialog.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class RemoveIdentityDialogComponent {
   private readonly ref = inject(DynamicDialogRef);

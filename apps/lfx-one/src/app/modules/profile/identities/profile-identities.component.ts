@@ -56,6 +56,7 @@ export class ProfileIdentitiesComponent implements OnInit {
   public readonly unverifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'unverified'));
   public readonly verifiedIdentities: Signal<ConnectedIdentityFull[]> = computed(() => this.identities().filter((i) => i.state === 'verified'));
   public readonly hasUnverified: Signal<boolean> = computed(() => this.unverifiedIdentities().length > 0);
+  public readonly menuItemsMap: Signal<Map<string, MenuItem[]>> = this.initMenuItemsMap();
 
   private readonly refreshTrigger$ = new Subject<void>();
   private readonly identitiesState: Signal<IdentitiesState> = this.initIdentitiesState();
@@ -134,10 +135,6 @@ export class ProfileIdentitiesComponent implements OnInit {
     });
   }
 
-  public getMenuItems(identity: ConnectedIdentityFull): MenuItem[] {
-    return [{ label: 'Remove', icon: 'fa-light fa-trash', command: () => this.onRemove(identity) }];
-  }
-
   private openRemoveDialog(identity: ConnectedIdentityFull): void {
     const dialogRef = this.dialogService.open(RemoveIdentityDialogComponent, {
       header: identity.state === 'verified' ? 'Remove verified identity' : 'Remove unverified identity',
@@ -177,6 +174,16 @@ export class ProfileIdentitiesComponent implements OnInit {
       isPrimary: false,
       ...(enriched.auth0UserId ? { auth0UserId: enriched.auth0UserId } : {}),
     };
+  }
+
+  private initMenuItemsMap(): Signal<Map<string, MenuItem[]>> {
+    return computed(() => {
+      const map = new Map<string, MenuItem[]>();
+      for (const identity of this.identities()) {
+        map.set(identity.id, [{ label: 'Remove', icon: 'fa-light fa-trash', command: () => this.onRemove(identity) }]);
+      }
+      return map;
+    });
   }
 
   private initIdentitiesState(): Signal<IdentitiesState> {

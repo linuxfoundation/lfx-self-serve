@@ -3,6 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { MessageService } from 'primeng/api';
 import {
   AddEmailRequest,
   CdpProjectAffiliation,
@@ -33,6 +34,7 @@ import { catchError, Observable, of, take } from 'rxjs';
 })
 export class UserService {
   private readonly http = inject(HttpClient);
+  private readonly messageService = inject(MessageService);
 
   public authenticated: WritableSignal<boolean> = signal<boolean>(false);
   public user: WritableSignal<User | null> = signal<User | null>(null);
@@ -164,14 +166,24 @@ export class UserService {
    * Get user's work experiences from CDP
    */
   public getWorkExperiences(): Observable<WorkExperienceEntry[]> {
-    return this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(catchError(() => of([])));
+    return this.http.get<WorkExperienceEntry[]>('/api/profile/work-experiences').pipe(
+      catchError(() => {
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load work experiences.' });
+        return of([]);
+      })
+    );
   }
 
   /**
    * Get user's CDP project affiliations (projects with org affiliations and roles)
    */
   public getCdpProjectAffiliations(): Observable<CdpProjectAffiliation[]> {
-    return this.http.get<CdpProjectAffiliation[]>('/api/profile/project-affiliations').pipe(catchError(() => of([])));
+    return this.http.get<CdpProjectAffiliation[]>('/api/profile/project-affiliations').pipe(
+      catchError(() => {
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load project affiliations.' });
+        return of([]);
+      })
+    );
   }
 
   /**
@@ -185,7 +197,12 @@ export class UserService {
    * Get user's enriched identities (CDP cross-referenced with Auth0)
    */
   public getIdentities(): Observable<EnrichedIdentity[]> {
-    return this.http.get<EnrichedIdentity[]>('/api/profile/identities').pipe(catchError(() => of([] as EnrichedIdentity[])));
+    return this.http.get<EnrichedIdentity[]>('/api/profile/identities').pipe(
+      catchError(() => {
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load identities.' });
+        return of([] as EnrichedIdentity[]);
+      })
+    );
   }
 
   /**

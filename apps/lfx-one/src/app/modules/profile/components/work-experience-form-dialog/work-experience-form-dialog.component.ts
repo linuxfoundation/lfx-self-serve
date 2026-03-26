@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, signal, ViewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, inject, signal, ViewChild } from '@angular/core';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
@@ -18,6 +18,7 @@ import { OrganizationSearchComponent } from '../../../../shared/components/organ
   selector: 'lfx-work-experience-form-dialog',
   imports: [ReactiveFormsModule, ButtonComponent, CheckboxComponent, InputTextComponent, SelectComponent, OrganizationSearchComponent],
   templateUrl: './work-experience-form-dialog.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class WorkExperienceFormDialogComponent {
   @ViewChild(OrganizationSearchComponent) public orgSearch?: OrganizationSearchComponent;

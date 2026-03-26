@@ -162,6 +162,18 @@ export interface ProjectGroup {
 }
 
 /**
+ * Flattened row for rendering affiliations in lfx-table.
+ * Each row represents one segment with metadata about its position within the group.
+ */
+export interface FlatAffiliationRow {
+  group: ProjectGroup;
+  segment: AffiliationSegment;
+  isFirstSegment: boolean;
+  isLastSegmentInGroup: boolean;
+  isLastGroup: boolean;
+}
+
+/**
  * Work experience entry with source tracking
  */
 export interface WorkExperienceEntry {

@@ -83,7 +83,7 @@
 
               <!-- Start Year -->
               <p-select
-                [options]="getAvailableYears(org)"
+                [options]="availableYearsMap().get(org.organization) ?? yearOptions"
                 [ngModel]="period.startYear"
                 (ngModelChange)="updatePeriodField(org.organization, period.id, 'startYear', $event)"
                 optionLabel="label"
@@ -115,7 +115,7 @@
 
                 <!-- End Year -->
                 <p-select
-                  [options]="getAvailableYears(org)"
+                  [options]="availableYearsMap().get(org.organization) ?? yearOptions"
                   [ngModel]="period.endYear"
                   (ngModelChange)="updatePeriodField(org.organization, period.id, 'endYear', $event)"
                   optionLabel="label"
@@ -147,7 +147,7 @@
                 </button>
               }
             </div>
-            @if (getPeriodErrors(org, period); as errors) {
+            @if (periodErrorsMap().get(period.id); as errors) {
               @if (errors.startAfterEnd) {
                 <div class="flex items-center gap-1.5 text-xs text-red-500" [attr.data-testid]="'period-error-start-after-end-' + period.id">
                   <i class="fa-light fa-circle-exclamation"></i>
