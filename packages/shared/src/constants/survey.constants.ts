@@ -267,14 +267,11 @@ export const SURVEY_EMAIL_TEMPLATE_VARIABLES = {
 /**
  * Survey template options (NPS surveys)
  * @description Available NPS survey templates for selection
- * TODO: Replace with API-driven templates in the future
+ * TEMPORARY: Dev-only SurveyMonkey IDs — see LFXV2-1332 for dynamic template fetch via ITX v1 endpoint
  */
 export const SURVEY_TEMPLATE_OPTIONS = [
-  { label: 'Governing Board NPS Survey', value: 'governing-board-nps' },
-  { label: 'Maintainer Survey', value: 'maintainer-survey' },
-  { label: 'Foundation-Wide Survey', value: 'foundation-wide-survey' },
-  { label: 'Committee Effectiveness Survey', value: 'committee-effectiveness-survey' },
-  { label: 'Working Group Survey', value: 'working-group-survey' },
-  { label: 'Event Feedback Survey', value: 'event-feedback-survey' },
-  { label: 'Community Feedback Survey', value: 'community-feedback-survey' },
+  { label: 'Board Satisfaction Survey', value: '514744416' },
+  { label: 'Maintainer Survey', value: '519292663' },
+  { label: 'General Survey', value: '521721013' },
+  { label: 'Board Survey (May 2024)', value: '514467737' },
 ] as const;

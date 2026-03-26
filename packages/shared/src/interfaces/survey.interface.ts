@@ -160,6 +160,46 @@ export interface SurveyResultsDetail extends Survey {
 export type NpsGaugeSize = 'small' | 'medium' | 'large';
 
 // ============================================================================
+// Survey API Request Interfaces
+// ============================================================================
+
+/**
+ * Request body for creating a survey
+ * @description Aligns with LFX v2 survey service API contract
+ * @see https://github.com/linuxfoundation/lfx-v2-survey-service
+ */
+export interface CreateSurveyRequest {
+  /** SurveyMonkey template ID (required) */
+  survey_monkey_id: string;
+  /** Survey title (required) */
+  survey_title: string;
+  /** Whether to send immediately (required) */
+  send_immediately: boolean;
+  /** Scheduled send date in ISO 8601 format (required when send_immediately is false) */
+  survey_send_date: string;
+  /** Survey cutoff/close date in ISO 8601 format (required) */
+  survey_cutoff_date: string;
+  /** Reminder frequency in days (required) */
+  survey_reminder_rate_days: number;
+  /** Email subject line (required) */
+  email_subject: string;
+  /** HTML email body (required) */
+  email_body: string;
+  /** Plain text email body (required) */
+  email_body_text: string;
+  /** V2 committee UID (required) */
+  committee_uid: string;
+  /** Whether committee voting members are eligible (required) */
+  committee_voting_enabled: boolean;
+  /** Username of the creator (enriched server-side from OIDC session) */
+  creator_username?: string;
+  /** Display name of the creator (enriched server-side from OIDC session) */
+  creator_name?: string;
+  /** Auth0 user ID of the creator (enriched server-side from OIDC session) */
+  creator_id?: string;
+}
+
+// ============================================================================
 // Survey Manage Form Interfaces
 // ============================================================================
 
