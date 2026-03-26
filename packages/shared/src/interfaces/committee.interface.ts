@@ -139,7 +139,7 @@ export interface Committee {
   /** Associated SSO group name for membership sync */
   sso_group_name?: string;
   /** Committee website URL */
-  website?: string;
+  website?: string | null;
   /** Whether committee membership requires review */
   requires_review?: boolean;
   /** Timestamp when committee was created */
@@ -230,7 +230,7 @@ export interface CommitteeCreateData {
   /** SSO group name for membership sync */
   sso_group_name?: string;
   /** Committee website URL */
-  website?: string;
+  website?: string | null;
   /** Associated project UID */
   project_uid?: string;
   /** How users can join this group */

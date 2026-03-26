@@ -1,0 +1,163 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="paid-social-reach-drawer">
+  <!-- Header -->
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full" data-testid="paid-social-reach-drawer-header">
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="paid-social-reach-drawer-title">Paid Social Reach</h2>
+        <p class="text-sm text-gray-500">Executive Director · Marketing view</p>
+      </div>
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
+        aria-label="Close panel"
+        data-testid="paid-social-reach-drawer-close">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  <!-- Content -->
+  <div class="flex flex-col gap-6 pb-2" data-testid="paid-social-reach-drawer-content">
+    <!-- Summary Stats -->
+    <div class="flex gap-4" data-testid="paid-social-reach-drawer-stats">
+      @if (data().roas > 0) {
+        <div class="flex-1 flex flex-col gap-1 p-4 border border-gray-200 rounded-lg">
+          <span class="text-sm text-gray-500">ROAS</span>
+          <div class="flex items-center gap-2">
+            <span class="text-2xl font-semibold text-gray-900">{{ data().roas.toFixed(2) }}x</span>
+            @if (data().changePercentage !== 0) {
+              <span class="text-sm font-medium" [class]="data().trend === 'up' ? 'text-green-600' : 'text-red-600'">
+                <i [class]="data().trend === 'up' ? 'fa-light fa-arrow-up' : 'fa-light fa-arrow-down'"></i>
+                {{ data().changePercentage > 0 ? '+' : '' }}{{ data().changePercentage }}%
+              </span>
+            }
+          </div>
+        </div>
+        <div class="flex-1 flex flex-col gap-1 p-4 border border-gray-200 rounded-lg">
+          <span class="text-sm text-gray-500">Total Impressions</span>
+          <span class="text-2xl font-semibold text-gray-900">{{ formatNumber(data().totalReach) }}</span>
+        </div>
+      } @else {
+        <div class="flex-1 flex flex-col gap-1 p-4 border border-gray-200 rounded-lg">
+          <span class="text-sm text-gray-500">Total Impressions</span>
+          <span class="text-2xl font-semibold text-gray-900">{{ formatNumber(data().totalReach) }}</span>
+        </div>
+        <div class="flex-1 flex flex-col gap-1 p-4 border border-gray-200 rounded-lg">
+          <span class="text-sm text-gray-500">Month-over-Month</span>
+          <div class="flex items-center gap-2">
+            <span class="text-2xl font-semibold" [class]="data().trend === 'up' ? 'text-green-600' : 'text-red-600'">
+              {{ data().changePercentage > 0 ? '+' : '' }}{{ data().changePercentage }}%
+            </span>
+            <i class="text-sm" [class]="data().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
+          </div>
+        </div>
+      }
+    </div>
+
+    <!-- Recommended Actions -->
+    @if (recommendedActions.length > 0) {
+      <div class="flex flex-col gap-3" data-testid="paid-social-reach-drawer-actions">
+        <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
+          <i class="fa-light fa-lightbulb text-amber-500"></i>
+          Recommended Actions
+        </h3>
+        @for (action of recommendedActions; track action.title) {
+          <div class="flex items-start gap-3 p-4 border border-gray-200 rounded-lg">
+            <div class="flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 flex-shrink-0 mt-0.5">
+              <i [class]="action.iconClass + ' text-gray-600'"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+                <span
+                  class="text-xs font-medium px-2.5 py-0.5 rounded-full flex-shrink-0"
+                  [class]="
+                    action.priority === 'high'
+                      ? 'bg-red-100 text-red-700'
+                      : action.priority === 'medium'
+                        ? 'bg-gray-100 text-gray-700'
+                        : 'bg-blue-100 text-blue-700'
+                  ">
+                  {{ action.priority === 'high' ? 'High Priority' : action.priority === 'medium' ? 'Medium Priority' : 'Low Priority' }}
+                </span>
+              </div>
+              <p class="text-sm text-gray-500 mt-0.5">{{ action.description }}</p>
+              <p class="text-xs text-gray-400 mt-1">Due: {{ action.dueLabel }}</p>
+            </div>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Key Insights -->
+    @if (keyInsights.length > 0) {
+      <div class="flex flex-col gap-3 p-4 bg-gray-50 rounded-lg" data-testid="paid-social-reach-drawer-insights">
+        <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
+          <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
+          Key Insights
+        </h3>
+        @for (insight of keyInsights; track insight.text) {
+          <div class="flex items-center gap-2 text-sm">
+            @if (insight.type === 'driver') {
+              <i class="fa-light fa-bullseye text-gray-500"></i>
+            } @else if (insight.type === 'warning') {
+              <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
+            } @else {
+              <i class="fa-light fa-circle-info text-blue-500"></i>
+            }
+            <span class="text-gray-700">{{ insight.text }}</span>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- ROAS Trend Chart -->
+    @if (data().monthlyRoas && data().monthlyRoas.length > 0) {
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-roas-chart-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Monthly ROAS Trend</h3>
+          <p class="text-sm text-gray-600">Return on ad spend across all channels over the last 6 months</p>
+        </div>
+        <div class="h-[240px]" data-testid="paid-social-reach-drawer-roas-chart">
+          <lfx-chart type="bar" [data]="roasChartData()" [options]="roasChartOptions" height="100%"></lfx-chart>
+        </div>
+      </div>
+    }
+
+    <!-- Monthly Impressions Chart -->
+    @if (data().monthlyData.length > 0) {
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-chart-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Monthly Paid Impressions</h3>
+          <p class="text-sm text-gray-600">Paid ad impressions across all channels over the last 6 months</p>
+        </div>
+        <div class="h-[240px]" data-testid="paid-social-reach-drawer-chart">
+          <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
+        </div>
+      </div>
+    }
+
+    <!-- Channel Breakdown -->
+    @if (data().channelGroups.length > 1) {
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-channels-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Impressions by Channel</h3>
+          <p class="text-sm text-gray-600">Paid ad distribution across channels over the last 6 months</p>
+        </div>
+        <div class="h-[240px]" data-testid="paid-social-reach-drawer-channels-chart">
+          <lfx-chart type="bar" [data]="channelChartData()" [options]="channelChartOptions" height="100%"></lfx-chart>
+        </div>
+      </div>
+    }
+  </div>
+</p-drawer>

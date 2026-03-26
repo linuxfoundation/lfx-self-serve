@@ -29,7 +29,34 @@
   <!-- Carousel Container -->
   <div class="relative overflow-hidden">
     <div lfxScrollShadow [scrollDistance]="320" class="flex gap-4 overflow-x-auto hide-scrollbar scroll-smooth" data-testid="marketing-overview-carousel">
-      @for (card of marketingCards; track card.testId) {
+      <!-- Marketing Metrics Key Insights Card -->
+      <div
+        class="p-4 bg-white border border-gray-200 rounded-lg flex-shrink-0 w-[calc(100vw-3rem)] md:w-80 h-full flex flex-col"
+        data-testid="marketing-overview-key-insights">
+        <div class="flex items-center gap-2 mb-3">
+          <i class="fa-light fa-lightbulb w-4 h-4 text-gray-500 flex-shrink-0"></i>
+          <h5 class="text-sm font-medium">Marketing Metrics</h5>
+        </div>
+        <div class="flex-1 flex flex-col gap-1.5 p-3 bg-gray-50 rounded-lg">
+          <h6 class="flex items-center gap-1.5 text-xs font-semibold text-gray-900 mb-1">
+            <i class="fa-light fa-lightbulb text-gray-400"></i>
+            Key Insights
+          </h6>
+          @for (insight of marketingInsights(); track insight) {
+            <div class="flex items-start gap-1.5 text-xs text-gray-700 leading-snug">
+              <span class="mt-1.5 w-1 h-1 rounded-full bg-gray-400 flex-shrink-0"></span>
+              <span>{{ insight }}</span>
+            </div>
+          }
+        </div>
+        <div class="mt-2 text-right">
+          <button type="button" class="text-xs text-blue-500 hover:text-blue-600 font-medium" (click)="handleCardClick(DashboardDrawerType.MarketingEmailCtr)">
+            View details
+          </button>
+        </div>
+      </div>
+
+      @for (card of marketingCards(); track card.testId) {
         <lfx-metric-card
           [title]="card.title"
           [icon]="card.icon"
@@ -40,7 +67,10 @@
           [value]="card.value"
           [subtitle]="card.subtitle"
           [trend]="card.trend"
-          [changePercentage]="card.changePercentage"></lfx-metric-card>
+          [changePercentage]="card.changePercentage"
+          [loading]="card.loading"
+          [clickable]="!!card.drawerType"
+          (cardClick)="handleCardClick(card.drawerType!)"></lfx-metric-card>
       }
     </div>
 
@@ -61,3 +91,24 @@
     }
   </div>
 </section>
+
+<!-- Drill-Down Drawers -->
+<lfx-website-visits-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.MarketingWebsiteVisits"
+  (visibleChange)="handleDrawerClose()"
+  [data]="marketingData().webActivities"></lfx-website-visits-drawer>
+
+<lfx-email-ctr-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.MarketingEmailCtr"
+  (visibleChange)="handleDrawerClose()"
+  [data]="marketingData().emailCtr"></lfx-email-ctr-drawer>
+
+<lfx-paid-social-reach-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.MarketingPaidSocialReach"
+  (visibleChange)="handleDrawerClose()"
+  [data]="marketingData().socialReach"></lfx-paid-social-reach-drawer>
+
+<lfx-social-media-drawer
+  [visible]="activeDrawer() === DashboardDrawerType.MarketingSocialMedia"
+  (visibleChange)="handleDrawerClose()"
+  [data]="marketingData().socialMedia"></lfx-social-media-drawer>
