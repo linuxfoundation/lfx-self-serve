@@ -17,6 +17,7 @@ import { customErrorSerializer } from './helpers/error-serializer';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { authMiddleware } from './middleware/auth.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
+import { apiRateLimiter } from './middleware/rate-limit.middleware';
 import analyticsRouter from './routes/analytics.route';
 import committeesRouter from './routes/committees.route';
 import lensRouter from './routes/lens.route';
@@ -157,6 +158,12 @@ app.use('/login', (req: Request, res: Response) => {
 
 // Apply authentication middleware to all routes
 app.use(authMiddleware);
+
+// Apply rate limiting to all API and auth routes
+app.use('/api/', apiRateLimiter);
+app.use('/login', apiRateLimiter);
+app.use('/passwordless/', apiRateLimiter);
+app.use('/social/', apiRateLimiter);
 
 // Mount API routes after authentication middleware
 // Public API routes

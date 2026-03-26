@@ -102,7 +102,12 @@
                     <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1">
                       <i class="fa-light fa-envelope w-3" aria-hidden="true"></i> Mailing List
                     </p>
-                    <a [href]="'mailto:' + mailingList" class="text-xs text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block" [title]="mailingList">{{ mailingList }}</a>
+                    <a
+                      [href]="'mailto:' + mailingList"
+                      class="text-xs text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block"
+                      [title]="mailingList"
+                      >{{ mailingList }}</a
+                    >
                   </div>
                 }
                 @if (committee()?.chat_channel; as chatChannel) {
@@ -111,7 +116,14 @@
                       <i [class]="chatPlatformIcon() + ' w-3'" aria-hidden="true"></i> {{ chatPlatformLabel() }}
                     </p>
                     @if (chatChannel.startsWith('http')) {
-                      <a [href]="chatChannel" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block" [title]="chatChannel">{{ chatChannel }}</a>
+                      <a
+                        [href]="chatChannel"
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="text-xs text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block"
+                        [title]="chatChannel"
+                        >{{ chatChannel }}</a
+                      >
                     } @else {
                       <span class="text-xs text-gray-900 truncate block">{{ chatChannel }}</span>
                     }
@@ -122,7 +134,14 @@
                     <p class="text-[11px] font-semibold text-gray-400 uppercase tracking-wide flex items-center gap-1">
                       <i [class]="repoPlatformIcon() + ' w-3'" aria-hidden="true"></i> {{ repoPlatformLabel() }}
                     </p>
-                    <a [href]="website" target="_blank" rel="noopener noreferrer" class="text-xs text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block" [title]="website">{{ website }}</a>
+                    <a
+                      [href]="website"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="text-xs text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block"
+                      [title]="website"
+                      >{{ website }}</a
+                    >
                   </div>
                 }
                 @if (!committee()?.mailing_list && !committee()?.chat_channel && !committee()?.website) {
