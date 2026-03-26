@@ -162,8 +162,6 @@ app.use(authMiddleware);
 // Apply rate limiting to all API and auth routes
 app.use('/api/', apiRateLimiter);
 app.use('/login', apiRateLimiter);
-app.use('/passwordless/', apiRateLimiter);
-app.use('/social/', apiRateLimiter);
 
 // Mount API routes after authentication middleware
 // Public API routes
@@ -189,10 +187,10 @@ app.use('/api/*', apiErrorHandler);
 
 // Flow C: Profile auth callback at /passwordless/callback (registered in Auth0 Profile Client)
 const profileCallbackController = new ProfileController();
-app.get('/passwordless/callback', (req, res) => profileCallbackController.handleProfileAuthCallback(req, res));
+app.get('/passwordless/callback', apiRateLimiter, (req, res) => profileCallbackController.handleProfileAuthCallback(req, res));
 
 // Social identity verification callback (GitHub/LinkedIn OAuth redirect)
-app.get('/social/callback', (req, res) => profileCallbackController.handleSocialCallback(req, res));
+app.get('/social/callback', apiRateLimiter, (req, res) => profileCallbackController.handleSocialCallback(req, res));
 
 /**
  * Handle all other requests by rendering the Angular application.
