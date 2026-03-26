@@ -15,66 +15,85 @@
         <h2 class="text-lg font-semibold text-gray-900" data-testid="social-media-drawer-title">Social Media</h2>
         <p class="text-sm text-gray-500">Executive Director · Marketing view</p>
       </div>
-      <button
-        type="button"
-        (click)="onClose()"
-        class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
-        aria-label="Close panel"
-        data-testid="social-media-drawer-close">
-        <i class="fa-light fa-xmark text-xl"></i>
-      </button>
+      <lfx-button
+        icon="fa-light fa-xmark"
+        [text]="true"
+        [rounded]="true"
+        severity="secondary"
+        ariaLabel="Close panel"
+        (onClick)="onClose()"
+        data-testid="social-media-drawer-close" />
     </div>
   </ng-template>
 
   <!-- Content -->
   <div class="flex flex-col gap-6 pb-2" data-testid="social-media-drawer-content">
+    @if (drawerLoading()) {
+      <div class="flex flex-col gap-4">
+        <div class="flex gap-4">
+          <p-skeleton width="100%" height="4rem" />
+          <p-skeleton width="100%" height="4rem" />
+        </div>
+        <p-skeleton width="100%" height="12rem" />
+        <p-skeleton width="100%" height="12rem" />
+        <p-skeleton width="60%" height="1rem" />
+      </div>
+    } @else {
     <!-- Summary Stats -->
     <div class="flex gap-4" data-testid="social-media-drawer-stats">
-      <div class="flex-1 flex flex-col gap-1 p-4 border border-gray-200 rounded-lg">
-        <span class="text-sm text-gray-500">Total Followers</span>
-        <span class="text-2xl font-semibold text-gray-900">{{ formatNumber(data().totalFollowers) }}</span>
-      </div>
-      <div class="flex-1 flex flex-col gap-1 p-4 border border-gray-200 rounded-lg">
-        <span class="text-sm text-gray-500">Platforms Active</span>
-        <span class="text-2xl font-semibold text-gray-900">{{ data().totalPlatforms }}</span>
-      </div>
-      <div class="flex-1 flex flex-col gap-1 p-4 border border-gray-200 rounded-lg">
-        <span class="text-sm text-gray-500">Follower Growth</span>
-        <div class="flex items-center gap-2">
-          <span class="text-2xl font-semibold" [class]="data().trend === 'up' ? 'text-green-600' : 'text-red-600'">
-            {{ data().changePercentage > 0 ? '+' : '' }}{{ data().changePercentage }}%
-          </span>
-          <i class="text-sm" [class]="data().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
+      <lfx-card styleClass="flex-1">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm text-gray-500">Total Followers</span>
+          <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalFollowers() }}</span>
         </div>
-      </div>
+      </lfx-card>
+      <lfx-card styleClass="flex-1">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm text-gray-500">Platforms Active</span>
+          <span class="text-2xl font-semibold text-gray-900">{{ drawerData().totalPlatforms }}</span>
+        </div>
+      </lfx-card>
+      <lfx-card styleClass="flex-1">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm text-gray-500">Follower Growth</span>
+          @if (drawerData().changePercentage !== 0) {
+            <div class="flex items-center gap-2">
+              <span class="text-2xl font-semibold" [class]="drawerData().trend === 'up' ? 'text-green-600' : 'text-red-600'">
+                {{ drawerData().changePercentage > 0 ? '+' : '' }}{{ drawerData().changePercentage }}%
+              </span>
+              <i class="text-sm" [class]="drawerData().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
+            </div>
+          } @else {
+            <span class="text-2xl font-semibold text-gray-500">0%</span>
+          }
+        </div>
+      </lfx-card>
     </div>
 
     <!-- Recommended Actions -->
-    @if (recommendedActions.length > 0) {
+    @if (recommendedActions().length > 0) {
       <div class="flex flex-col gap-3" data-testid="social-media-drawer-actions">
-        <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
-          <i class="fa-light fa-lightbulb text-amber-500"></i>
-          Recommended Actions
-        </h3>
-        @for (action of recommendedActions; track action.title) {
+        <div class="flex items-center gap-2">
+          <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <i class="fa-light fa-lightbulb text-amber-500"></i>
+            Recommended Actions
+          </h3>
+        </div>
+        @for (action of recommendedActions(); track action.title) {
           <div class="flex items-start gap-3 p-4 border border-gray-200 rounded-lg">
             <div class="flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 flex-shrink-0 mt-0.5">
-              <i [class]="action.iconClass + ' text-gray-600'"></i>
+              <i [class]="actionIcon(action.actionType) + ' text-gray-600'"></i>
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between gap-2">
                 <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
-                <span
-                  class="text-xs font-medium px-2.5 py-0.5 rounded-full flex-shrink-0"
-                  [class]="
-                    action.priority === 'high'
-                      ? 'bg-red-100 text-red-700'
-                      : action.priority === 'medium'
-                        ? 'bg-gray-100 text-gray-700'
-                        : 'bg-blue-100 text-blue-700'
-                  ">
-                  {{ action.priority === 'high' ? 'High Priority' : action.priority === 'medium' ? 'Medium Priority' : 'Low Priority' }}
-                </span>
+                @if (action.priority === 'high') {
+                  <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
+                } @else if (action.priority === 'medium') {
+                  <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
+                } @else {
+                  <lfx-tag value="Low Priority" severity="info" [rounded]="true" />
+                }
               </div>
               <p class="text-sm text-gray-500 mt-0.5">{{ action.description }}</p>
               <p class="text-xs text-gray-400 mt-1">Due: {{ action.dueLabel }}</p>
@@ -85,13 +104,15 @@
     }
 
     <!-- Key Insights -->
-    @if (keyInsights.length > 0) {
+    @if (keyInsights().length > 0) {
       <div class="flex flex-col gap-3 p-4 bg-gray-50 rounded-lg" data-testid="social-media-drawer-insights">
-        <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
-          <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
-          Key Insights
-        </h3>
-        @for (insight of keyInsights; track insight.text) {
+        <div class="flex items-center gap-2">
+          <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
+            <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
+            Key Insights
+          </h3>
+        </div>
+        @for (insight of keyInsights(); track insight.text) {
           <div class="flex items-center gap-2 text-sm">
             @if (insight.type === 'driver') {
               <i class="fa-light fa-bullseye text-gray-500"></i>
@@ -107,68 +128,91 @@
     }
 
     <!-- Platform Breakdown Table -->
-    @if (data().platforms.length > 0) {
-      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="social-media-drawer-platforms-section">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">Platform Breakdown</h3>
-          <p class="text-sm text-gray-600">Followers and engagement across active social platforms</p>
-        </div>
-        <div class="overflow-x-auto">
-          <table class="w-full text-sm">
-            <thead>
-              <tr class="border-b border-gray-200">
-                <th class="text-left py-2 px-3 text-gray-500 font-medium">Platform</th>
-                <th class="text-right py-2 px-3 text-gray-500 font-medium">Followers</th>
-                <th class="text-right py-2 px-3 text-gray-500 font-medium">Engagement Rate</th>
-                <th class="text-right py-2 px-3 text-gray-500 font-medium">Posts (30d)</th>
-                <th class="text-right py-2 px-3 text-gray-500 font-medium">Impressions</th>
-              </tr>
-            </thead>
-            <tbody>
-              @for (platform of data().platforms; track platform.platform) {
-                <tr class="border-b border-gray-100 last:border-b-0">
-                  <td class="py-2.5 px-3">
-                    <div class="flex items-center gap-2">
-                      <i [class]="platform.iconClass + ' text-gray-600'"></i>
-                      <span class="text-gray-900 font-medium">{{ platform.platform }}</span>
-                    </div>
-                  </td>
-                  <td class="text-right py-2.5 px-3 text-gray-900">{{ formatNumber(platform.followers) }}</td>
-                  <td class="text-right py-2.5 px-3 text-gray-900">{{ platform.engagementRate }}%</td>
-                  <td class="text-right py-2.5 px-3 text-gray-900">{{ platform.postsLast30Days }}</td>
-                  <td class="text-right py-2.5 px-3 text-gray-900">{{ formatNumber(platform.impressions) }}</td>
-                </tr>
-              }
-            </tbody>
-          </table>
-        </div>
+    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="social-media-drawer-platforms-section">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-semibold text-gray-900">Platform Breakdown</h3>
+        <p class="text-sm text-gray-600">Followers and engagement across active social platforms</p>
       </div>
-    }
+      @if (drawerData().platforms.length > 0) {
+        <lfx-table [value]="drawerData().platforms" styleClass="p-datatable-sm" data-testid="social-media-drawer-platforms-table">
+          <ng-template #header>
+            <tr>
+              <th class="text-left">
+                <span class="text-sm font-sans text-gray-500">Platform</span>
+              </th>
+              <th class="text-right">
+                <span class="text-sm font-sans text-gray-500">Followers</span>
+              </th>
+              <th class="text-right">
+                <span class="text-sm font-sans text-gray-500">Engagement Rate</span>
+              </th>
+              <th class="text-right">
+                <span class="text-sm font-sans text-gray-500">Posts (30d)</span>
+              </th>
+              <th class="text-right">
+                <span class="text-sm font-sans text-gray-500">Impressions</span>
+              </th>
+            </tr>
+          </ng-template>
+
+          <ng-template #body let-platform>
+            <tr>
+              <td class="py-2.5 px-3">
+                <div class="flex items-center gap-2">
+                  <i [class]="getIconClass(platform.platform) + ' text-gray-600'"></i>
+                  <span class="text-gray-900 font-medium">{{ platform.platform }}</span>
+                </div>
+              </td>
+              <td class="text-right py-2.5 px-3 text-gray-900">{{ formatNumber(platform.followers) }}</td>
+              <td class="text-right py-2.5 px-3 text-gray-900">{{ platform.engagementRate }}%</td>
+              <td class="text-right py-2.5 px-3 text-gray-900">{{ platform.postsLast30Days }}</td>
+              <td class="text-right py-2.5 px-3 text-gray-900">{{ formatNumber(platform.impressions) }}</td>
+            </tr>
+          </ng-template>
+        </lfx-table>
+      } @else {
+        <div class="text-center py-8 border border-slate-200 rounded-lg">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No platform data available</p>
+        </div>
+      }
+    </div>
 
     <!-- Follower Trend Chart -->
-    @if (data().monthlyData.length > 1) {
-      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="social-media-drawer-trend-section">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">Follower Growth Trend</h3>
-          <p class="text-sm text-gray-600">Total followers across all platforms over the last 6 months</p>
-        </div>
+    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="social-media-drawer-trend-section">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-semibold text-gray-900">Follower Growth Trend</h3>
+        <p class="text-sm text-gray-600">Total followers across all platforms over the last 6 months</p>
+      </div>
+      @if (drawerData().monthlyData.length > 1) {
         <div class="h-[200px]" data-testid="social-media-drawer-trend-chart">
           <lfx-chart type="line" [data]="followerTrendChartData()" [options]="followerTrendChartOptions" height="100%"></lfx-chart>
         </div>
-      </div>
-    }
+      } @else {
+        <div class="text-center py-8 border border-slate-200 rounded-lg">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No follower trend data available</p>
+        </div>
+      }
+    </div>
 
     <!-- Followers by Platform Chart -->
-    @if (data().platforms.length > 1) {
-      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="social-media-drawer-platform-chart-section">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">Followers by Platform</h3>
-          <p class="text-sm text-gray-600">Distribution of followers across social media platforms</p>
-        </div>
+    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="social-media-drawer-platform-chart-section">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-semibold text-gray-900">Followers by Platform</h3>
+        <p class="text-sm text-gray-600">Distribution of followers across social media platforms</p>
+      </div>
+      @if (drawerData().platforms.length > 1) {
         <div class="h-[240px]" data-testid="social-media-drawer-platform-chart">
           <lfx-chart type="bar" [data]="platformChartData()" [options]="platformChartOptions" height="100%"></lfx-chart>
         </div>
-      </div>
+      } @else {
+        <div class="text-center py-8 border border-slate-200 rounded-lg">
+          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+          <p class="text-sm text-gray-500">No platform breakdown available</p>
+        </div>
+      }
+    </div>
     }
   </div>
 </p-drawer>

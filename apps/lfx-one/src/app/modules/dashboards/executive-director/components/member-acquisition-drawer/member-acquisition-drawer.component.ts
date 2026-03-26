@@ -1,18 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, model, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, model, Signal } from '@angular/core';
+import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
-import { lfxColors } from '@lfx-one/shared/constants';
+import { TagComponent } from '@components/tag/tag.component';
+import { createBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors, MARKETING_ACTION_ICON_MAP } from '@lfx-one/shared/constants';
+import { formatNumber, hexToRgba } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type { MemberAcquisitionResponse, MarketingRecommendedAction, MarketingKeyInsight } from '@lfx-one/shared/interfaces';
+import type {
+  MemberAcquisitionResponse,
+  MemberRetentionResponse,
+  MarketingRecommendedAction,
+  MarketingKeyInsight,
+  MarketingActionType,
+} from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-member-acquisition-drawer',
-  imports: [DrawerModule, ChartComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [ButtonComponent, CardComponent, DrawerModule, ChartComponent, TagComponent],
   templateUrl: './member-acquisition-drawer.component.html',
+  styleUrl: './member-acquisition-drawer.component.scss',
 })
 export class MemberAcquisitionDrawerComponent {
   // === Model Signals (two-way binding) ===
@@ -20,68 +32,70 @@ export class MemberAcquisitionDrawerComponent {
 
   // === Inputs ===
   public readonly data = input<MemberAcquisitionResponse>({
+    totalMembers: 0,
+    totalMembersMonthlyData: [],
+    totalMembersMonthlyLabels: [],
     newMembersThisQuarter: 0,
-    costPerAcquisition: 0,
+    newMemberRevenue: 0,
     changePercentage: 0,
     trend: 'up',
     quarterlyData: [],
   });
 
+  public readonly retentionData = input<MemberRetentionResponse>({
+    renewalRate: 0,
+    netRevenueRetention: 0,
+    changePercentage: 0,
+    trend: 'up',
+    target: 85,
+    monthlyData: [],
+  });
+
   // === Computed Signals ===
+  protected readonly formattedTotalMembers: Signal<string> = computed(() => formatNumber(this.data().totalMembers));
+  protected readonly formattedNewMemberRevenue: Signal<string> = computed(() => '$' + formatNumber(this.data().newMemberRevenue));
+  protected readonly totalMembersChartData: Signal<ChartData<'line'>> = this.initTotalMembersChartData();
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
+  protected readonly retentionActions: Signal<MarketingRecommendedAction[]> = this.initRetentionActions();
+  protected readonly retentionInsights: Signal<MarketingKeyInsight[]> = this.initRetentionInsights();
+  protected readonly attentionActions: Signal<MarketingRecommendedAction[]> = computed(() => [
+    ...this.recommendedActions().filter((a) => a.priority === 'high' || a.priority === 'medium'),
+    ...this.retentionActions().filter((a) => a.priority === 'high' || a.priority === 'medium'),
+  ]);
+  protected readonly attentionInsights: Signal<MarketingKeyInsight[]> = computed(() => [
+    ...this.keyInsights().filter((i) => i.type === 'warning'),
+    ...this.retentionInsights().filter((i) => i.type === 'warning'),
+  ]);
+  protected readonly performingActions: Signal<MarketingRecommendedAction[]> = computed(() => [
+    ...this.recommendedActions().filter((a) => a.priority === 'low'),
+    ...this.retentionActions().filter((a) => a.priority === 'low'),
+  ]);
+  protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => [
+    ...this.keyInsights().filter((i) => i.type === 'driver' || i.type === 'info'),
+    ...this.retentionInsights().filter((i) => i.type === 'driver' || i.type === 'info'),
+  ]);
   protected readonly acquisitionChartData: Signal<ChartData<'bar'>> = this.initAcquisitionChartData();
-  protected readonly cacChartData: Signal<ChartData<'line'>> = this.initCacChartData();
 
-  protected readonly acquisitionChartOptions: ChartOptions<'bar'> = {
-    responsive: true,
-    maintainAspectRatio: false,
+  protected readonly acquisitionChartOptions: ChartOptions<'bar'> = createBarChartOptions({
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-        titleColor: lfxColors.gray[900],
-        bodyColor: lfxColors.gray[600],
-        borderColor: lfxColors.gray[200],
-        borderWidth: 1,
-        padding: 10,
-        cornerRadius: 6,
+        ...DASHBOARD_TOOLTIP_CONFIG,
         callbacks: {
           label: (ctx) => ` ${ctx.parsed.y} new members`,
         },
       },
     },
-    scales: {
-      x: {
-        display: true,
-        grid: { display: false },
-        border: { display: true, color: lfxColors.gray[300] },
-        ticks: { color: lfxColors.gray[500], font: { size: 11 } },
-      },
-      y: {
-        display: true,
-        grid: { color: lfxColors.gray[200], lineWidth: 1 },
-        border: { display: false },
-        ticks: { color: lfxColors.gray[500], font: { size: 11 } },
-      },
-    },
-  };
+  });
 
-  protected readonly cacChartOptions: ChartOptions<'line'> = {
-    responsive: true,
-    maintainAspectRatio: false,
+  protected readonly totalMembersChartOptions: ChartOptions<'line'> = createLineChartOptions({
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-        titleColor: lfxColors.gray[900],
-        bodyColor: lfxColors.gray[600],
-        borderColor: lfxColors.gray[200],
-        borderWidth: 1,
-        padding: 10,
-        cornerRadius: 6,
+        ...DASHBOARD_TOOLTIP_CONFIG,
         callbacks: {
-          label: (ctx) => ` $${this.formatNumber(ctx.parsed.y ?? 0)} CAC`,
+          label: (ctx) => ` ${formatNumber(ctx.parsed.y ?? 0)} members`,
         },
       },
     },
@@ -99,46 +113,79 @@ export class MemberAcquisitionDrawerComponent {
         ticks: {
           color: lfxColors.gray[500],
           font: { size: 11 },
-          callback: (value) => `$${Number(value).toLocaleString()}`,
+          callback: (value) => formatNumber(Number(value)),
         },
       },
     },
-  };
+  });
+
+  protected readonly formatNumber = formatNumber;
 
   // === Protected Methods ===
   protected onClose(): void {
     this.visible.set(false);
   }
 
-  protected formatNumber(num: number): string {
-    if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
-    if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
-    return num.toLocaleString();
+  protected actionIcon(type: MarketingActionType): string {
+    return MARKETING_ACTION_ICON_MAP[type];
   }
 
   // === Private Initializers ===
+  private initTotalMembersChartData(): Signal<ChartData<'line'>> {
+    return computed(() => {
+      const { totalMembersMonthlyData, totalMembersMonthlyLabels } = this.data();
+      return {
+        labels: totalMembersMonthlyLabels,
+        datasets: [
+          {
+            data: totalMembersMonthlyData,
+            borderColor: lfxColors.blue[500],
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
+            fill: true,
+            tension: 0.4,
+            borderWidth: 2,
+            pointRadius: 3,
+            pointBackgroundColor: lfxColors.blue[500],
+          },
+        ],
+      };
+    });
+  }
+
   private initRecommendedActions(): Signal<MarketingRecommendedAction[]> {
     return computed(() => {
-      const { newMembersThisQuarter, costPerAcquisition, changePercentage, quarterlyData } = this.data();
+      const { newMembersThisQuarter, newMemberRevenue, changePercentage, quarterlyData } = this.data();
       const actions: MarketingRecommendedAction[] = [];
 
       if (newMembersThisQuarter === 0 && quarterlyData.length === 0) {
         return actions;
       }
 
-      // Check if CAC is increasing
+      // Check if revenue per new member is declining (only flag if decline > 5%)
       if (quarterlyData.length >= 2) {
         const recent = quarterlyData[quarterlyData.length - 1];
         const previous = quarterlyData[quarterlyData.length - 2];
-        if (recent.cac > previous.cac && recent.cac > 0) {
-          const cacIncrease = (((recent.cac - previous.cac) / previous.cac) * 100).toFixed(0);
-          actions.push({
-            title: 'Reduce cost per acquisition',
-            description: `CAC increased ${cacIncrease}% to $${this.formatNumber(recent.cac)} — review channel efficiency and referral programs`,
-            priority: 'high',
-            dueLabel: 'This quarter',
-            iconClass: 'fa-light fa-money-bill-trend-up',
-          });
+        const recentPerMember = recent.newMembers > 0 ? recent.revenue / recent.newMembers : 0;
+        const previousPerMember = previous.newMembers > 0 ? previous.revenue / previous.newMembers : 0;
+        if (previousPerMember > 0) {
+          const declinePct = ((previousPerMember - recentPerMember) / previousPerMember) * 100;
+          if (declinePct > 15) {
+            actions.push({
+              title: 'Improve revenue per new member',
+              description: `Revenue per new member declined ${declinePct.toFixed(0)}% — review membership tier mix and onboarding`,
+              priority: 'high',
+              dueLabel: 'This quarter',
+              actionType: 'revenue',
+            });
+          } else if (declinePct > 5) {
+            actions.push({
+              title: 'Monitor revenue per new member',
+              description: `Revenue per new member declined ${declinePct.toFixed(0)}% — watch tier mix trends`,
+              priority: 'medium',
+              dueLabel: 'Next quarter',
+              actionType: 'revenue',
+            });
+          }
         }
       }
 
@@ -149,22 +196,22 @@ export class MemberAcquisitionDrawerComponent {
           description: `New member signups dropped ${Math.abs(changePercentage)}% — review marketing funnel and conversion paths`,
           priority: 'high',
           dueLabel: 'This month',
-          iconClass: 'fa-light fa-chart-line-down',
+          actionType: 'decline',
         });
       }
 
-      // Check CAC trend over 3+ quarters
+      // Check revenue growth trend over 3+ quarters
       if (quarterlyData.length >= 3) {
         const recent3 = quarterlyData.slice(-3);
-        const cacDecreasing = recent3[0].cac > recent3[1].cac && recent3[1].cac > recent3[2].cac;
-        if (cacDecreasing && recent3[2].cac > 0) {
-          const totalDrop = (((recent3[0].cac - recent3[2].cac) / recent3[0].cac) * 100).toFixed(0);
+        const revenueGrowing = recent3[0].revenue < recent3[1].revenue && recent3[1].revenue < recent3[2].revenue;
+        if (revenueGrowing && recent3[2].revenue > 0) {
+          const totalGrowth = (((recent3[2].revenue - recent3[0].revenue) / recent3[0].revenue) * 100).toFixed(0);
           actions.push({
             title: 'Scale current acquisition channels',
-            description: `CAC decreased ${totalDrop}% over 3 quarters — room to increase spend in efficient channels`,
+            description: `New member revenue grew ${totalGrowth}% over 3 quarters — room to increase investment in efficient channels`,
             priority: 'medium',
             dueLabel: 'Next quarter',
-            iconClass: 'fa-light fa-chart-line-up',
+            actionType: 'growth',
           });
         }
       }
@@ -172,10 +219,10 @@ export class MemberAcquisitionDrawerComponent {
       if (actions.length === 0) {
         actions.push({
           title: 'Monitor acquisition performance',
-          description: `${newMembersThisQuarter} new members this quarter at $${this.formatNumber(costPerAcquisition)} CAC`,
+          description: `${newMembersThisQuarter} new members this quarter with $${formatNumber(newMemberRevenue)} in new revenue`,
           priority: 'low',
           dueLabel: 'Ongoing',
-          iconClass: 'fa-light fa-chart-line-up',
+          actionType: 'growth',
         });
       }
 
@@ -201,15 +248,15 @@ export class MemberAcquisitionDrawerComponent {
         insights.push({ text: `Acquisition ${changePercentage > 0 ? 'up' : 'down'} ${Math.abs(changePercentage)}% — relatively stable`, type: 'info' });
       }
 
-      // CAC trend
+      // Revenue trend
       if (quarterlyData.length >= 2) {
         const recent = quarterlyData[quarterlyData.length - 1];
         const previous = quarterlyData[quarterlyData.length - 2];
-        if (previous.cac > 0 && recent.cac < previous.cac) {
-          const improvement = (((previous.cac - recent.cac) / previous.cac) * 100).toFixed(0);
-          insights.push({ text: `CAC improved ${improvement}% to $${this.formatNumber(recent.cac)} — marketing efficiency increasing`, type: 'driver' });
-        } else if (previous.cac > 0 && recent.cac > previous.cac) {
-          insights.push({ text: `CAC rose to $${this.formatNumber(recent.cac)} — acquisition becoming more expensive`, type: 'warning' });
+        if (previous.revenue > 0 && recent.revenue > previous.revenue) {
+          const growth = (((recent.revenue - previous.revenue) / previous.revenue) * 100).toFixed(0);
+          insights.push({ text: `New member revenue grew ${growth}% to $${formatNumber(recent.revenue)} — acquisition efficiency increasing`, type: 'driver' });
+        } else if (previous.revenue > 0 && recent.revenue < previous.revenue) {
+          insights.push({ text: `New member revenue declined to $${formatNumber(recent.revenue)} — review membership tier mix`, type: 'warning' });
         }
       }
 
@@ -252,24 +299,86 @@ export class MemberAcquisitionDrawerComponent {
     });
   }
 
-  private initCacChartData(): Signal<ChartData<'line'>> {
+  private initRetentionInsights(): Signal<MarketingKeyInsight[]> {
     return computed(() => {
-      const { quarterlyData } = this.data();
-      return {
-        labels: quarterlyData.map((d) => d.quarter),
-        datasets: [
-          {
-            data: quarterlyData.map((d) => d.cac),
-            borderColor: lfxColors.blue[500],
-            backgroundColor: `${lfxColors.blue[500]}1A`,
-            fill: true,
-            tension: 0.4,
-            borderWidth: 2,
-            pointRadius: 3,
-            pointBackgroundColor: lfxColors.blue[500],
-          },
-        ],
-      };
+      const { renewalRate, netRevenueRetention, monthlyData } = this.retentionData();
+      const insights: MarketingKeyInsight[] = [];
+
+      if (renewalRate === 0 && monthlyData.length === 0) {
+        return insights;
+      }
+
+      if (netRevenueRetention > 100) {
+        insights.push({ text: `NRR above 100% at ${netRevenueRetention}% — successful upsell to higher tiers`, type: 'driver' });
+      } else if (netRevenueRetention > 0 && netRevenueRetention < 100) {
+        insights.push({ text: `NRR at ${netRevenueRetention}% — revenue declining from existing members`, type: 'warning' });
+      }
+
+      if (monthlyData.length >= 3) {
+        const recent3 = monthlyData.slice(-3);
+        const isGrowing = recent3[0].value < recent3[1].value && recent3[1].value < recent3[2].value;
+        const isShrinking = recent3[0].value > recent3[1].value && recent3[1].value > recent3[2].value;
+        if (isGrowing) {
+          insights.push({ text: 'Renewal rate improving for 3 consecutive months', type: 'driver' });
+        } else if (isShrinking) {
+          insights.push({ text: 'Renewal rate declining for 3 consecutive months', type: 'warning' });
+        } else {
+          insights.push({ text: 'Steady retention trend — no significant churn spikes detected', type: 'info' });
+        }
+      }
+
+      return insights;
+    });
+  }
+
+  private initRetentionActions(): Signal<MarketingRecommendedAction[]> {
+    return computed(() => {
+      const { renewalRate, netRevenueRetention, changePercentage, monthlyData } = this.retentionData();
+      const actions: MarketingRecommendedAction[] = [];
+
+      if (renewalRate === 0 && monthlyData.length === 0) {
+        return actions;
+      }
+
+      if (netRevenueRetention > 0 && netRevenueRetention < 90) {
+        actions.push({
+          title: 'Improve net revenue retention',
+          description: `NRR at ${netRevenueRetention}% — significant revenue loss from existing members. Review downgrades and churn`,
+          priority: 'high',
+          dueLabel: 'This quarter',
+          actionType: 'revenue',
+        });
+      } else if (netRevenueRetention >= 90 && netRevenueRetention < 98) {
+        actions.push({
+          title: 'Monitor net revenue retention',
+          description: `NRR at ${netRevenueRetention}% — revenue contraction from existing members. Explore upsell opportunities`,
+          priority: 'medium',
+          dueLabel: 'Next quarter',
+          actionType: 'revenue',
+        });
+      }
+
+      if (changePercentage < -3) {
+        actions.push({
+          title: 'Address retention decline',
+          description: `Renewal rate dropped ${Math.abs(changePercentage)}% — review member satisfaction and renewal outreach timing`,
+          priority: 'high',
+          dueLabel: 'This month',
+          actionType: 'decline',
+        });
+      }
+
+      if (actions.length === 0) {
+        actions.push({
+          title: 'Maintain retention excellence',
+          description: `${renewalRate}% renewal rate${netRevenueRetention > 100 ? ` with ${netRevenueRetention}% NRR` : ''}`,
+          priority: 'low',
+          dueLabel: 'Ongoing',
+          actionType: 'growth',
+        });
+      }
+
+      return actions;
     });
   }
 }

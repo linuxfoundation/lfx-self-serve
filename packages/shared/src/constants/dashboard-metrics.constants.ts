@@ -1,12 +1,34 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DashboardDrawerType } from '../interfaces';
+import { DashboardDrawerType, MarketingActionType } from '../interfaces';
 import { hexToRgba } from '../utils';
 import { EMPTY_CHART_DATA, NO_TOOLTIP_CHART_OPTIONS } from './chart-options.constants';
 import { lfxColors } from './colors.constants';
 
 import type { DashboardMetricCard } from '../interfaces';
+// ============================================
+// Marketing Action Icon Map
+// ============================================
+
+/**
+ * Maps semantic action types to Font Awesome icon classes.
+ * Keeps presentation out of data interfaces.
+ */
+export const MARKETING_ACTION_ICON_MAP: Record<MarketingActionType, string> = {
+  decline: 'fa-light fa-chart-line-down',
+  growth: 'fa-light fa-chart-line-up',
+  target: 'fa-light fa-bullseye-arrow',
+  revenue: 'fa-light fa-money-bill-trend-up',
+  engagement: 'fa-light fa-user-group',
+  conversion: 'fa-light fa-arrow-progress',
+  content: 'fa-light fa-envelope-open-text',
+  diversify: 'fa-light fa-arrows-split-up-and-left',
+  optimize: 'fa-light fa-bullseye-pointer',
+  investigate: 'fa-light fa-magnifying-glass-chart',
+  monitor: 'fa-light fa-circle-info',
+};
+
 // ============================================
 // Foundation Health Metrics
 // ============================================
@@ -211,7 +233,7 @@ export const MARKETING_OVERVIEW_METRICS: DashboardMetricCard[] = [
 
 /**
  * North Star KPI metrics for executive director dashboard
- * UI configuration templates (icons, categories, drawer types). Data values populated at runtime from mock data
+ * UI configuration templates (icons, categories, drawer types). Data values populated at runtime
  * until Snowflake tables for membership/financial data are available.
  */
 export const NORTH_STAR_METRICS: DashboardMetricCard[] = [

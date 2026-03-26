@@ -2295,7 +2295,7 @@ export interface TrainingEnrollmentsResponse {
 // ============================================
 
 /**
- * Raw Snowflake row from PLATINUM.FOUNDATION_TOTAL_PROJECTS_DETAIL
+ * Raw Snowflake row from ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_DETAIL
  */
 export interface FoundationProjectsDetailRow {
   FOUNDATION_SEGMENT_ID: string;
@@ -2624,7 +2624,7 @@ export interface OrgCertifiedEmployeesDistributionResponse {
 // ============================================
 
 /**
- * Web Activities summary row from Snowflake PLATINUM.WEB_ACTIVITIES_SUMMARY
+ * Web Activities summary row from Snowflake ANALYTICS.PLATINUM_LFX_ONE.WEB_ACTIVITIES_SUMMARY
  * Represents session/page view totals grouped by domain classification
  */
 export interface WebActivitiesSummaryRow {
@@ -2660,12 +2660,25 @@ export interface WebActivitiesSummaryResponse {
 /**
  * Recommended action for marketing drawers
  */
+export type MarketingActionType =
+  | 'decline'
+  | 'growth'
+  | 'target'
+  | 'revenue'
+  | 'engagement'
+  | 'conversion'
+  | 'content'
+  | 'diversify'
+  | 'optimize'
+  | 'investigate'
+  | 'monitor';
+
 export interface MarketingRecommendedAction {
   title: string;
   description: string;
   priority: 'high' | 'medium' | 'low';
   dueLabel: string;
-  iconClass: string;
+  actionType: MarketingActionType;
 }
 
 /**
@@ -2681,7 +2694,7 @@ export interface MarketingKeyInsight {
 // ============================================
 
 /**
- * Social Reach row from Snowflake PLATINUM.PAID_ADS_BY_CAMPAIGN_CHANNEL_MONTH
+ * Social Reach row from Snowflake ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_MONTH
  * Monthly paid ad impressions aggregated per foundation
  */
 export interface SocialReachRow {
@@ -2690,7 +2703,7 @@ export interface SocialReachRow {
 }
 
 /**
- * Social Reach channel row from Snowflake PLATINUM.PAID_ADS_BY_CAMPAIGN_CHANNEL_MONTH
+ * Social Reach channel row from Snowflake ANALYTICS.PLATINUM_LFX_ONE.PAID_SOCIAL_REACH_BY_PROJECT_CHANNEL_MONTH
  * Channel-level paid ad impressions aggregated per foundation
  */
 export interface SocialReachChannelRow {
@@ -2704,9 +2717,6 @@ export interface SocialReachChannelRow {
 export interface SocialReachChannelGroup {
   channel: string;
   totalImpressions: number;
-  totalSpend: number;
-  totalRevenue: number;
-  roas: number;
 }
 
 /**
@@ -2738,7 +2748,6 @@ export interface SocialMediaPlatform {
   engagementRate: number;
   postsLast30Days: number;
   impressions: number;
-  iconClass: string;
 }
 
 /**
@@ -2766,7 +2775,7 @@ export interface SocialMediaResponse {
 // ============================================
 
 /**
- * Email CTR row from Snowflake PLATINUM.EMAIL_MARKETING_OVERALL_KPIS
+ * Email CTR row from Snowflake ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_BY_MONTH
  * Represents monthly email click-through rate data
  */
 export interface EmailCtrRow {
@@ -2778,7 +2787,7 @@ export interface EmailCtrRow {
 }
 
 /**
- * Email CTR campaign row from Snowflake PLATINUM.EMAIL_MARKETING_OVERALL_KPIS
+ * Email CTR campaign row from Snowflake ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_SUMMARY
  * Campaign-level email metrics aggregated over the period
  */
 export interface EmailCtrCampaignRow {
@@ -2825,7 +2834,7 @@ export interface NorthStarMonthlyDataPoint {
 
 /**
  * API response for Engaged Community Size metric
- * Newsletter + community + WG members (deduplicated)
+ * Newsletter + community + WG + certified individuals (deduplicated)
  */
 export interface EngagedCommunitySizeResponse {
   totalMembers: number;
@@ -2835,23 +2844,27 @@ export interface EngagedCommunitySizeResponse {
     newsletterSubscribers: number;
     communityMembers: number;
     workingGroupMembers: number;
+    certifiedIndividuals: number;
   };
   monthlyData: NorthStarMonthlyDataPoint[];
 }
 
 /**
- * API response for Member Acquisition Rate & CAC metric
- * New paying members/quarter + cost per acquisition
+ * API response for Member Acquisition Rate metric
+ * New paying members/quarter + new member revenue (CAC not available in Snowflake)
  */
 export interface MemberAcquisitionResponse {
+  totalMembers: number;
+  totalMembersMonthlyData: number[];
+  totalMembersMonthlyLabels: string[];
   newMembersThisQuarter: number;
-  costPerAcquisition: number;
+  newMemberRevenue: number;
   changePercentage: number;
   trend: 'up' | 'down';
   quarterlyData: {
     quarter: string;
     newMembers: number;
-    cac: number;
+    revenue: number;
   }[];
 }
 

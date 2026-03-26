@@ -15,14 +15,14 @@
         <h2 class="text-lg font-semibold text-gray-900" data-testid="engaged-community-drawer-title">Engaged Community Size</h2>
         <p class="text-sm text-gray-500">Executive Director · North Star Metric</p>
       </div>
-      <button
-        type="button"
-        (click)="onClose()"
-        class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
-        aria-label="Close panel"
-        data-testid="engaged-community-drawer-close">
-        <i class="fa-light fa-xmark text-xl"></i>
-      </button>
+      <lfx-button
+        icon="fa-light fa-xmark"
+        [text]="true"
+        [rounded]="true"
+        severity="secondary"
+        ariaLabel="Close panel"
+        (onClick)="onClose()"
+        data-testid="engaged-community-drawer-close" />
     </div>
   </ng-template>
 
@@ -30,48 +30,51 @@
   <div class="flex flex-col gap-6 pb-2" data-testid="engaged-community-drawer-content">
     <!-- Summary Stats -->
     <div class="flex gap-4" data-testid="engaged-community-drawer-stats">
-      <div class="flex-1 flex flex-col gap-1 p-4 border border-gray-200 rounded-lg">
-        <span class="text-sm text-gray-500">Total Members</span>
-        <span class="text-2xl font-semibold text-gray-900">{{ formatNumber(data().totalMembers) }}</span>
-      </div>
-      <div class="flex-1 flex flex-col gap-1 p-4 border border-gray-200 rounded-lg">
-        <span class="text-sm text-gray-500">Newsletter</span>
-        <span class="text-2xl font-semibold text-gray-900">{{ formatNumber(data().breakdown.newsletterSubscribers) }}</span>
-      </div>
-      <div class="flex-1 flex flex-col gap-1 p-4 border border-gray-200 rounded-lg">
-        <span class="text-sm text-gray-500">Growth</span>
-        <div class="flex items-center gap-2">
-          <span class="text-2xl font-semibold" [class]="data().trend === 'up' ? 'text-green-600' : 'text-red-600'">
-            {{ data().changePercentage > 0 ? '+' : '' }}{{ data().changePercentage }}%
-          </span>
-          <i class="text-sm" [class]="data().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
+      <lfx-card styleClass="flex-1">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm text-gray-500">Total Engaged</span>
+          <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalMembers() }}</span>
         </div>
-      </div>
+      </lfx-card>
+      <lfx-card styleClass="flex-1">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm text-gray-500">Growth</span>
+          @if (data().changePercentage !== 0) {
+            <div class="flex items-center gap-2">
+              <span class="text-2xl font-semibold" [class]="data().trend === 'up' ? 'text-green-600' : 'text-red-600'">
+                {{ data().changePercentage > 0 ? '+' : '' }}{{ data().changePercentage }}%
+              </span>
+              <i class="text-sm" [class]="data().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
+            </div>
+          } @else {
+            <span class="text-2xl font-semibold text-gray-500">0%</span>
+          }
+        </div>
+      </lfx-card>
     </div>
 
-    <!-- Recommended Actions -->
-    @if (recommendedActions().length > 0) {
-      <div class="flex flex-col gap-3" data-testid="engaged-community-drawer-actions">
+    <!-- FIRST FOLD: Needs Your Attention -->
+    @if (attentionActions().length > 0 || attentionInsights().length > 0) {
+      <div class="flex flex-col gap-4 p-4 bg-red-50 border border-red-200 rounded-lg" data-testid="engaged-community-drawer-attention">
         <div class="flex items-center gap-2">
-          <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <i class="fa-light fa-lightbulb text-amber-500"></i>
-            Recommended Actions
+          <h3 class="flex items-center gap-2 text-sm font-semibold text-red-800">
+            <i class="fa-light fa-triangle-exclamation text-red-500"></i>
+            Needs Your Attention
           </h3>
         </div>
-        @for (action of recommendedActions(); track action.title) {
-          <div class="flex items-start gap-3 p-4 border border-gray-200 rounded-lg">
-            <div class="flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 flex-shrink-0 mt-0.5">
-              <i [class]="action.iconClass + ' text-gray-600'"></i>
+
+        @for (action of attentionActions(); track action.title) {
+          <div class="flex items-start gap-3 p-4 bg-white border border-red-200 rounded-lg">
+            <div class="flex items-center justify-center w-9 h-9 rounded-full bg-red-100 flex-shrink-0 mt-0.5">
+              <i [class]="actionIcon(action.actionType) + ' text-red-600'"></i>
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between gap-2">
                 <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
                 @if (action.priority === 'high') {
-                  <span class="text-xs font-medium px-2.5 py-0.5 rounded-full flex-shrink-0 bg-red-100 text-red-700">High Priority</span>
-                } @else if (action.priority === 'medium') {
-                  <span class="text-xs font-medium px-2.5 py-0.5 rounded-full flex-shrink-0 bg-gray-100 text-gray-700">Medium Priority</span>
+                  <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
                 } @else {
-                  <span class="text-xs font-medium px-2.5 py-0.5 rounded-full flex-shrink-0 bg-blue-100 text-blue-700">Low Priority</span>
+                  <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
                 }
               </div>
               <p class="text-sm text-gray-500 mt-0.5">{{ action.description }}</p>
@@ -79,28 +82,46 @@
             </div>
           </div>
         }
+
+        @for (insight of attentionInsights(); track insight.text) {
+          <div class="flex items-center gap-2 text-sm px-1">
+            <i class="fa-light fa-triangle-exclamation text-red-500"></i>
+            <span class="text-red-800">{{ insight.text }}</span>
+          </div>
+        }
       </div>
     }
 
-    <!-- Key Insights -->
-    @if (keyInsights().length > 0) {
-      <div class="flex flex-col gap-3 p-4 bg-gray-50 rounded-lg" data-testid="engaged-community-drawer-insights">
+    <!-- SECOND FOLD: Performing Well -->
+    @if (performingActions().length > 0 || performingInsights().length > 0) {
+      <div class="flex flex-col gap-4 p-4 bg-green-50 border border-green-200 rounded-lg" data-testid="engaged-community-drawer-performing">
         <div class="flex items-center gap-2">
-          <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
-            Key Insights
+          <h3 class="flex items-center gap-2 text-sm font-semibold text-green-800">
+            <i class="fa-light fa-check-circle text-green-500"></i>
+            Performing Well
           </h3>
         </div>
-        @for (insight of keyInsights(); track insight.text) {
-          <div class="flex items-center gap-2 text-sm">
+
+        @for (action of performingActions(); track action.title) {
+          <div class="flex items-start gap-3 p-4 bg-white border border-green-200 rounded-lg">
+            <div class="flex items-center justify-center w-9 h-9 rounded-full bg-green-100 flex-shrink-0 mt-0.5">
+              <i [class]="actionIcon(action.actionType) + ' text-green-600'"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+              <p class="text-sm text-gray-500 mt-0.5">{{ action.description }}</p>
+            </div>
+          </div>
+        }
+
+        @for (insight of performingInsights(); track insight.text) {
+          <div class="flex items-center gap-2 text-sm px-1">
             @if (insight.type === 'driver') {
-              <i class="fa-light fa-bullseye text-gray-500"></i>
-            } @else if (insight.type === 'warning') {
-              <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
+              <i class="fa-light fa-bullseye text-green-500"></i>
             } @else {
               <i class="fa-light fa-circle-info text-blue-500"></i>
             }
-            <span class="text-gray-700">{{ insight.text }}</span>
+            <span class="text-green-800">{{ insight.text }}</span>
           </div>
         }
       </div>

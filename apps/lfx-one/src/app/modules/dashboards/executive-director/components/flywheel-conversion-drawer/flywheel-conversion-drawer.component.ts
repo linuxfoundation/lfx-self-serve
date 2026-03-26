@@ -1,18 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, model, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, model, Signal } from '@angular/core';
+import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
-import { lfxColors } from '@lfx-one/shared/constants';
+import { TagComponent } from '@components/tag/tag.component';
+import {
+  createHorizontalBarChartOptions,
+  createLineChartOptions,
+  DASHBOARD_TOOLTIP_CONFIG,
+  lfxColors,
+  MARKETING_ACTION_ICON_MAP,
+} from '@lfx-one/shared/constants';
+import { formatNumber, hexToRgba } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type { FlywheelConversionResponse, MarketingRecommendedAction, MarketingKeyInsight } from '@lfx-one/shared/interfaces';
+import type { FlywheelConversionResponse, MarketingActionType, MarketingRecommendedAction, MarketingKeyInsight } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-flywheel-conversion-drawer',
-  imports: [DrawerModule, ChartComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [ButtonComponent, CardComponent, DrawerModule, ChartComponent, TagComponent],
   templateUrl: './flywheel-conversion-drawer.component.html',
+  styleUrl: './flywheel-conversion-drawer.component.scss',
 })
 export class FlywheelConversionDrawerComponent {
   // === Model Signals (two-way binding) ===
@@ -28,24 +40,25 @@ export class FlywheelConversionDrawerComponent {
   });
 
   // === Computed Signals ===
+  protected readonly formattedEventAttendees: Signal<string> = computed(() => formatNumber(this.data().funnel.eventAttendees));
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
+  protected readonly attentionActions: Signal<MarketingRecommendedAction[]> = computed(() =>
+    this.recommendedActions().filter((a) => a.priority === 'high' || a.priority === 'medium')
+  );
+  protected readonly attentionInsights: Signal<MarketingKeyInsight[]> = computed(() => this.keyInsights().filter((i) => i.type === 'warning'));
+  protected readonly performingActions: Signal<MarketingRecommendedAction[]> = computed(() => this.recommendedActions().filter((a) => a.priority === 'low'));
+  protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() =>
+    this.keyInsights().filter((i) => i.type === 'driver' || i.type === 'info')
+  );
   protected readonly trendChartData: Signal<ChartData<'line'>> = this.initTrendChartData();
   protected readonly funnelChartData: Signal<ChartData<'bar'>> = this.initFunnelChartData();
 
-  protected readonly trendChartOptions: ChartOptions<'line'> = {
-    responsive: true,
-    maintainAspectRatio: false,
+  protected readonly trendChartOptions: ChartOptions<'line'> = createLineChartOptions({
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-        titleColor: lfxColors.gray[900],
-        bodyColor: lfxColors.gray[600],
-        borderColor: lfxColors.gray[200],
-        borderWidth: 1,
-        padding: 10,
-        cornerRadius: 6,
+        ...DASHBOARD_TOOLTIP_CONFIG,
         callbacks: {
           label: (ctx) => ` ${(ctx.parsed.y ?? 0).toFixed(1)}% conversion rate`,
         },
@@ -65,28 +78,19 @@ export class FlywheelConversionDrawerComponent {
         ticks: {
           color: lfxColors.gray[500],
           font: { size: 11 },
-          callback: (value) => `${value}%`,
+          callback: (value) => `${Number(value).toFixed(1)}%`,
         },
       },
     },
-  };
+  });
 
-  protected readonly funnelChartOptions: ChartOptions<'bar'> = {
-    indexAxis: 'y',
-    responsive: true,
-    maintainAspectRatio: false,
+  protected readonly funnelChartOptions: ChartOptions<'bar'> = createHorizontalBarChartOptions({
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-        titleColor: lfxColors.gray[900],
-        bodyColor: lfxColors.gray[600],
-        borderColor: lfxColors.gray[200],
-        borderWidth: 1,
-        padding: 10,
-        cornerRadius: 6,
+        ...DASHBOARD_TOOLTIP_CONFIG,
         callbacks: {
-          label: (ctx) => ` ${this.formatNumber(ctx.parsed.x ?? 0)} people`,
+          label: (ctx) => ` ${formatNumber(ctx.parsed.x ?? 0)} people`,
         },
       },
     },
@@ -112,20 +116,17 @@ export class FlywheelConversionDrawerComponent {
         ticks: { color: lfxColors.gray[600], font: { size: 12 } },
       },
     },
-    datasets: {
-      bar: { barPercentage: 0.8, categoryPercentage: 1.0 },
-    },
-  };
+  });
+
+  protected readonly formatNumber = formatNumber;
 
   // === Protected Methods ===
   protected onClose(): void {
     this.visible.set(false);
   }
 
-  protected formatNumber(num: number): string {
-    if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
-    if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
-    return num.toLocaleString();
+  protected actionIcon(type: MarketingActionType): string {
+    return MARKETING_ACTION_ICON_MAP[type];
   }
 
   // === Private Initializers ===
@@ -138,17 +139,17 @@ export class FlywheelConversionDrawerComponent {
         return actions;
       }
 
-      // Low WG conversion
-      if (funnel.eventAttendees > 0 && funnel.convertedToWorkingGroup > 0) {
+      // Low WG conversion relative to community conversion
+      if (funnel.eventAttendees > 0 && funnel.convertedToWorkingGroup > 0 && funnel.convertedToCommunity > 0) {
         const wgRate = (funnel.convertedToWorkingGroup / funnel.eventAttendees) * 100;
-        const nlRate = funnel.convertedToNewsletter > 0 ? (funnel.convertedToNewsletter / funnel.eventAttendees) * 100 : 0;
-        if (wgRate < nlRate * 0.5 && nlRate > 0) {
+        const communityRate = (funnel.convertedToCommunity / funnel.eventAttendees) * 100;
+        if (wgRate < communityRate * 0.5) {
           actions.push({
             title: 'Improve working group conversion path',
-            description: `WG conversion at ${wgRate.toFixed(1)}% vs ${nlRate.toFixed(1)}% for newsletter — attendees need clearer path to participate`,
+            description: `WG conversion at ${wgRate.toFixed(1)}% vs ${communityRate.toFixed(1)}% for community — attendees need clearer path to participate`,
             priority: 'high',
             dueLabel: 'This quarter',
-            iconClass: 'fa-light fa-arrow-progress',
+            actionType: 'conversion',
           });
         }
       }
@@ -160,7 +161,7 @@ export class FlywheelConversionDrawerComponent {
           description: `Flywheel conversion dropped ${Math.abs(changePercentage)}% — review post-event follow-up effectiveness`,
           priority: 'high',
           dueLabel: 'This month',
-          iconClass: 'fa-light fa-chart-line-down',
+          actionType: 'decline',
         });
       }
 
@@ -168,20 +169,20 @@ export class FlywheelConversionDrawerComponent {
       if (conversionRate > 0 && conversionRate < 10 && funnel.eventAttendees > 0) {
         actions.push({
           title: 'Add post-event engagement CTAs',
-          description: `Only ${conversionRate}% overall conversion — add newsletter signup and community join prompts to event follow-ups`,
+          description: `Only ${conversionRate}% overall conversion — add community join and working group prompts to event follow-ups`,
           priority: 'medium',
           dueLabel: 'Next event',
-          iconClass: 'fa-light fa-envelope-circle-check',
+          actionType: 'content',
         });
       }
 
       if (actions.length === 0) {
         actions.push({
           title: 'Continue flywheel optimization',
-          description: `${conversionRate}% conversion rate${changePercentage > 0 ? ` — improving ${changePercentage}%` : ''} across ${this.formatNumber(funnel.eventAttendees)} attendees`,
+          description: `${conversionRate}% conversion rate${changePercentage > 0 ? ` — improving ${changePercentage}%` : ''} across ${formatNumber(funnel.eventAttendees)} attendees`,
           priority: 'low',
           dueLabel: 'Ongoing',
-          iconClass: 'fa-light fa-chart-line-up',
+          actionType: 'growth',
         });
       }
 
@@ -201,7 +202,6 @@ export class FlywheelConversionDrawerComponent {
       // Best conversion path
       if (funnel.eventAttendees > 0) {
         const paths = [
-          { name: 'Newsletter', value: funnel.convertedToNewsletter },
           { name: 'Community', value: funnel.convertedToCommunity },
           { name: 'Working group', value: funnel.convertedToWorkingGroup },
         ]
@@ -252,7 +252,7 @@ export class FlywheelConversionDrawerComponent {
           {
             data: monthlyData.map((d) => d.value),
             borderColor: lfxColors.blue[500],
-            backgroundColor: `${lfxColors.blue[500]}1A`,
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -268,10 +268,10 @@ export class FlywheelConversionDrawerComponent {
     return computed(() => {
       const { funnel } = this.data();
       return {
-        labels: ['Event Attendees', 'Converted to Newsletter', 'Converted to Community', 'Converted to WG'],
+        labels: ['Event Attendees', 'Converted to Community', 'Converted to WG'],
         datasets: [
           {
-            data: [funnel.eventAttendees, funnel.convertedToNewsletter, funnel.convertedToCommunity, funnel.convertedToWorkingGroup],
+            data: [funnel.eventAttendees, funnel.convertedToCommunity, funnel.convertedToWorkingGroup],
             backgroundColor: [lfxColors.blue[700], lfxColors.blue[500], lfxColors.blue[400], lfxColors.blue[300]],
             borderRadius: { topLeft: 0, bottomLeft: 0, topRight: 4, bottomRight: 4 },
             borderSkipped: 'start',

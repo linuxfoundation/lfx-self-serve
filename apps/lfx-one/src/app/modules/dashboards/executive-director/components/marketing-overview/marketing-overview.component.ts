@@ -1,39 +1,57 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, Component, computed, inject, signal, Signal, ViewChild } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, inject, signal, Signal, ViewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
+
 import { MARKETING_OVERVIEW_METRICS, NO_TOOLTIP_CHART_OPTIONS } from '@lfx-one/shared/constants';
 import { lfxColors } from '@lfx-one/shared/constants';
 import {
   DashboardDrawerType,
   DashboardMetricCard,
   EmailCtrResponse,
+  EngagedCommunitySizeResponse,
+  FlywheelConversionResponse,
+  MemberAcquisitionResponse,
+  MemberRetentionResponse,
   SocialMediaResponse,
   SocialReachResponse,
   WebActivitiesSummaryResponse,
 } from '@lfx-one/shared/interfaces';
-import { hexToRgba } from '@lfx-one/shared/utils';
+import { formatNumber, hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
-import { catchError, combineLatest, filter, forkJoin, map, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, filter, finalize, forkJoin, map, of, switchMap, tap } from 'rxjs';
 
 import { EmailCtrDrawerComponent } from '../email-ctr-drawer/email-ctr-drawer.component';
+import { EngagedCommunityDrawerComponent } from '../engaged-community-drawer/engaged-community-drawer.component';
+import { FlywheelConversionDrawerComponent } from '../flywheel-conversion-drawer/flywheel-conversion-drawer.component';
+import { MemberAcquisitionDrawerComponent } from '../member-acquisition-drawer/member-acquisition-drawer.component';
 import { PaidSocialReachDrawerComponent } from '../paid-social-reach-drawer/paid-social-reach-drawer.component';
 import { SocialMediaDrawerComponent } from '../social-media-drawer/social-media-drawer.component';
 import { WebsiteVisitsDrawerComponent } from '../website-visits-drawer/website-visits-drawer.component';
 
 @Component({
   selector: 'lfx-marketing-overview',
+  changeDetection: ChangeDetectionStrategy.OnPush,
   imports: [
+    ButtonComponent,
+    CardComponent,
     MetricCardComponent,
     ScrollShadowDirective,
+
     WebsiteVisitsDrawerComponent,
     EmailCtrDrawerComponent,
     PaidSocialReachDrawerComponent,
     SocialMediaDrawerComponent,
+    EngagedCommunityDrawerComponent,
+    MemberAcquisitionDrawerComponent,
+    FlywheelConversionDrawerComponent,
   ],
   templateUrl: './marketing-overview.component.html',
   styleUrl: './marketing-overview.component.scss',
@@ -46,7 +64,7 @@ export class MarketingOverviewComponent {
   private readonly projectContextService = inject(ProjectContextService);
 
   // === WritableSignals ===
-  private readonly marketingDataLoading = signal(true);
+  protected readonly marketingDataLoading = signal(true);
   private readonly browserReady = signal(false);
   public readonly activeDrawer = signal<DashboardDrawerType | null>(null);
 
@@ -65,8 +83,72 @@ export class MarketingOverviewComponent {
     emailCtr: EmailCtrResponse;
     socialReach: SocialReachResponse;
     socialMedia: SocialMediaResponse;
+    memberRetention: MemberRetentionResponse;
+    memberAcquisition: MemberAcquisitionResponse;
+    engagedCommunity: EngagedCommunitySizeResponse;
+    flywheelConversion: FlywheelConversionResponse;
   }> = this.initMarketingData();
   protected readonly marketingCards: Signal<DashboardMetricCard[]> = this.initMarketingCards();
+  protected readonly formatNumber = formatNumber;
+  protected readonly noTooltipChartOptions = NO_TOOLTIP_CHART_OPTIONS;
+
+  // North Star sparkline chart data
+  protected readonly memberGrowthChartData = computed(() => {
+    const { totalMembersMonthlyData, totalMembersMonthlyLabels } = this.marketingData().memberAcquisition;
+    if (totalMembersMonthlyData.length === 0) return undefined;
+    return {
+      labels: totalMembersMonthlyLabels,
+      datasets: [
+        {
+          data: totalMembersMonthlyData,
+          borderColor: lfxColors.blue[500],
+          backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+        },
+      ],
+    };
+  });
+
+  protected readonly flywheelChartData = computed(() => {
+    const { monthlyData } = this.marketingData().flywheelConversion;
+    if (monthlyData.length === 0) return undefined;
+    return {
+      labels: monthlyData.map((d) => d.month),
+      datasets: [
+        {
+          data: monthlyData.map((d) => d.value),
+          borderColor: lfxColors.blue[500],
+          backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+        },
+      ],
+    };
+  });
+
+  protected readonly engagedCommunityChartData = computed(() => {
+    const { monthlyData } = this.marketingData().engagedCommunity;
+    if (monthlyData.length === 0) return undefined;
+    return {
+      labels: monthlyData.map((d) => d.month),
+      datasets: [
+        {
+          data: monthlyData.map((d) => d.value),
+          borderColor: lfxColors.blue[500],
+          backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
+          fill: true,
+          tension: 0.4,
+          borderWidth: 2,
+          pointRadius: 0,
+        },
+      ],
+    };
+  });
 
   public constructor() {
     afterNextRender(() => {
@@ -90,19 +172,18 @@ export class MarketingOverviewComponent {
       const loading = this.marketingDataLoading();
 
       return MARKETING_OVERVIEW_METRICS.map((card) => {
-        if (card.title === 'Website Visits') {
-          return this.transformWebsiteVisits(card, webActivities, loading);
+        switch (card.drawerType) {
+          case DashboardDrawerType.MarketingWebsiteVisits:
+            return this.transformWebsiteVisits(card, webActivities, loading);
+          case DashboardDrawerType.MarketingEmailCtr:
+            return this.transformEmailCtr(card, emailCtr, loading);
+          case DashboardDrawerType.MarketingPaidSocialReach:
+            return this.transformSocialReach(card, socialReach, loading);
+          case DashboardDrawerType.MarketingSocialMedia:
+            return this.transformSocialMedia(card, socialMedia, loading);
+          default:
+            return card;
         }
-        if (card.title === 'Email CTR') {
-          return this.transformEmailCtr(card, emailCtr, loading);
-        }
-        if (card.title === 'Paid Social Reach') {
-          return this.transformSocialReach(card, socialReach, loading);
-        }
-        if (card.title === 'Social Media') {
-          return this.transformSocialMedia(card, socialMedia, loading);
-        }
-        return card;
       });
     });
   }
@@ -112,6 +193,10 @@ export class MarketingOverviewComponent {
     emailCtr: EmailCtrResponse;
     socialReach: SocialReachResponse;
     socialMedia: SocialMediaResponse;
+    memberRetention: MemberRetentionResponse;
+    memberAcquisition: MemberAcquisitionResponse;
+    engagedCommunity: EngagedCommunitySizeResponse;
+    flywheelConversion: FlywheelConversionResponse;
   }> {
     const defaultWebActivities: WebActivitiesSummaryResponse = {
       totalSessions: 0,
@@ -154,11 +239,61 @@ export class MarketingOverviewComponent {
       monthlyData: [],
     };
 
+    const defaultMemberRetention: MemberRetentionResponse = {
+      renewalRate: 0,
+      netRevenueRetention: 0,
+      changePercentage: 0,
+      trend: 'up',
+      target: 85,
+      monthlyData: [],
+    };
+
+    const defaultMemberAcquisition: MemberAcquisitionResponse = {
+      totalMembers: 0,
+      totalMembersMonthlyData: [],
+      totalMembersMonthlyLabels: [],
+      newMembersThisQuarter: 0,
+      newMemberRevenue: 0,
+      changePercentage: 0,
+      trend: 'up',
+      quarterlyData: [],
+    };
+
+    const defaultEngagedCommunity: EngagedCommunitySizeResponse = {
+      totalMembers: 0,
+      changePercentage: 0,
+      trend: 'up',
+      breakdown: {
+        newsletterSubscribers: 0,
+        communityMembers: 0,
+        workingGroupMembers: 0,
+        certifiedIndividuals: 0,
+      },
+      monthlyData: [],
+    };
+
+    const defaultFlywheelConversion: FlywheelConversionResponse = {
+      conversionRate: 0,
+      changePercentage: 0,
+      trend: 'up',
+      funnel: {
+        eventAttendees: 0,
+        convertedToNewsletter: 0,
+        convertedToCommunity: 0,
+        convertedToWorkingGroup: 0,
+      },
+      monthlyData: [],
+    };
+
     const defaultValue = {
       webActivities: defaultWebActivities,
       emailCtr: defaultEmailCtr,
       socialReach: defaultSocialReach,
       socialMedia: defaultSocialMedia,
+      memberRetention: defaultMemberRetention,
+      memberAcquisition: defaultMemberAcquisition,
+      engagedCommunity: defaultEngagedCommunity,
+      flywheelConversion: defaultFlywheelConversion,
     };
 
     return toSignal(
@@ -171,18 +306,17 @@ export class MarketingOverviewComponent {
         }),
         switchMap((foundation) =>
           forkJoin({
-            webActivities: this.analyticsService.getWebActivitiesSummary(foundation.slug),
-            emailCtr: this.analyticsService.getEmailCtr(foundation.name),
-            socialReach: this.analyticsService.getSocialReach(foundation.name),
-            socialMedia: this.analyticsService.getSocialMedia(foundation.name),
-          }).pipe(
-            tap(() => this.marketingDataLoading.set(false)),
-            catchError(() => {
-              this.marketingDataLoading.set(false);
-              return of(defaultValue);
-            })
-          )
-        )
+            webActivities: this.analyticsService.getWebActivitiesSummary(foundation.slug).pipe(catchError(() => of(defaultWebActivities))),
+            emailCtr: this.analyticsService.getEmailCtr(foundation.name).pipe(catchError(() => of(defaultEmailCtr))),
+            socialReach: this.analyticsService.getSocialReach(foundation.name).pipe(catchError(() => of(defaultSocialReach))),
+            socialMedia: this.analyticsService.getSocialMedia(foundation.name).pipe(catchError(() => of(defaultSocialMedia))),
+            memberRetention: this.analyticsService.getMemberRetention(foundation.slug).pipe(catchError(() => of(defaultMemberRetention))),
+            memberAcquisition: this.analyticsService.getMemberAcquisition(foundation.slug).pipe(catchError(() => of(defaultMemberAcquisition))),
+            engagedCommunity: this.analyticsService.getEngagedCommunity(foundation.slug).pipe(catchError(() => of(defaultEngagedCommunity))),
+            flywheelConversion: this.analyticsService.getFlywheelConversion(foundation.slug).pipe(catchError(() => of(defaultFlywheelConversion))),
+          }).pipe(tap(() => this.marketingDataLoading.set(false)))
+        ),
+        finalize(() => this.marketingDataLoading.set(false))
       ),
       { initialValue: defaultValue }
     );
@@ -190,37 +324,76 @@ export class MarketingOverviewComponent {
 
   private initMarketingInsights(): Signal<string[]> {
     return computed(() => {
-      const { webActivities, emailCtr } = this.marketingData();
-      const loading = this.marketingDataLoading();
+      const data = this.marketingData();
+      if (this.marketingDataLoading()) {
+        return [];
+      }
+
+      // Collect all metrics that have meaningful data and a change percentage
+      const signals: { label: string; change: number; detail: string }[] = [];
+
+      if (data.socialMedia.totalFollowers > 0) {
+        signals.push({
+          label: 'Social followers',
+          change: data.socialMedia.changePercentage,
+          detail: formatNumber(data.socialMedia.totalFollowers),
+        });
+      }
+
+      if (data.socialReach.totalReach > 0) {
+        signals.push({
+          label: 'Paid social reach',
+          change: data.socialReach.changePercentage,
+          detail: formatNumber(data.socialReach.totalReach),
+        });
+      }
+
+      if (data.engagedCommunity.totalMembers > 0) {
+        signals.push({
+          label: 'Engaged community',
+          change: data.engagedCommunity.changePercentage,
+          detail: formatNumber(data.engagedCommunity.totalMembers),
+        });
+      }
+
+      if (data.memberAcquisition.totalMembers > 0) {
+        signals.push({
+          label: 'Member base',
+          change: data.memberAcquisition.changePercentage,
+          detail: formatNumber(data.memberAcquisition.totalMembers),
+        });
+      }
+
+      if (data.flywheelConversion.conversionRate > 0) {
+        signals.push({
+          label: 'Flywheel conversion',
+          change: data.flywheelConversion.changePercentage,
+          detail: `${data.flywheelConversion.conversionRate}%`,
+        });
+      }
+
+      if (data.memberRetention.renewalRate > 0) {
+        signals.push({
+          label: 'Member retention',
+          change: data.memberRetention.changePercentage,
+          detail: `${data.memberRetention.renewalRate}%`,
+        });
+      }
+
+      // Sort by absolute change magnitude — biggest movers first
+      const sorted = signals.filter((s) => s.change !== 0).sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
+
       const insights: string[] = [];
 
-      if (loading) {
-        return insights;
+      // Top movers — up to 3, biggest changes across all metrics
+      for (const signal of sorted.slice(0, 3)) {
+        const direction = signal.change > 0 ? 'up' : 'down';
+        insights.push(`${signal.label} is ${direction} ${Math.abs(signal.change)}% — now at ${signal.detail}`);
       }
 
-      // Email CTR insight
-      if (emailCtr.currentCtr > 0) {
-        if (emailCtr.changePercentage < 0) {
-          insights.push(`Email CTR declined ${Math.abs(emailCtr.changePercentage)}% to ${emailCtr.currentCtr.toFixed(1)}% — review newsletter engagement`);
-        } else if (emailCtr.changePercentage > 0) {
-          insights.push(`Email CTR grew ${emailCtr.changePercentage}% to ${emailCtr.currentCtr.toFixed(1)}% — content strategy is working`);
-        } else {
-          insights.push(`Email CTR steady at ${emailCtr.currentCtr.toFixed(1)}%`);
-        }
-      }
-
-      // Website visits insight
-      if (webActivities.totalSessions > 0) {
-        const pagesPerSession = webActivities.totalPageViews / webActivities.totalSessions;
-        insights.push(`${this.formatNumber(webActivities.totalSessions)} website sessions with ${pagesPerSession.toFixed(1)} pages per visit`);
-      }
-
-      // Domain concentration insight
-      if (webActivities.domainGroups.length > 1 && webActivities.totalSessions > 0) {
-        const sorted = [...webActivities.domainGroups].sort((a, b) => b.totalSessions - a.totalSessions);
-        const topDomain = sorted[0];
-        const topShare = (topDomain.totalSessions / webActivities.totalSessions) * 100;
-        insights.push(`${topDomain.domainGroup} drives ${topShare.toFixed(0)}% of web traffic`);
+      // If fewer than 2 insights from movers, add a steady-state summary
+      if (insights.length < 2 && data.webActivities.totalSessions > 0) {
+        insights.push(`${formatNumber(data.webActivities.totalSessions)} website sessions in the last 30 days`);
       }
 
       return insights;
@@ -232,8 +405,8 @@ export class MarketingOverviewComponent {
     return {
       ...card,
       loading,
-      value: data.totalSessions > 0 ? this.formatNumber(data.totalSessions) : undefined,
-      subtitle: data.totalSessions > 0 ? `Last 30 days · ${this.formatNumber(data.totalPageViews)} page views` : undefined,
+      value: data.totalSessions > 0 ? formatNumber(data.totalSessions) : undefined,
+      subtitle: data.totalSessions > 0 ? `Last 30 days · ${formatNumber(data.totalPageViews)} page views` : undefined,
       chartData:
         data.dailyData.length > 0
           ? {
@@ -317,7 +490,7 @@ export class MarketingOverviewComponent {
     return {
       ...card,
       loading,
-      value: data.totalFollowers > 0 ? this.formatNumber(data.totalFollowers) : undefined,
+      value: data.totalFollowers > 0 ? formatNumber(data.totalFollowers) : undefined,
       subtitle: data.totalFollowers > 0 ? `${data.totalPlatforms} platforms · Last 6 months` : undefined,
       changePercentage: data.changePercentage !== 0 ? `${data.changePercentage > 0 ? '+' : ''}${data.changePercentage}%` : undefined,
       trend: data.trend,
@@ -344,7 +517,7 @@ export class MarketingOverviewComponent {
 
   private getSocialReachValue(data: SocialReachResponse): string | undefined {
     if (data.roas > 0) return `${data.roas.toFixed(2)}x`;
-    if (data.totalReach > 0) return this.formatNumber(data.totalReach);
+    if (data.totalReach > 0) return formatNumber(data.totalReach);
     return undefined;
   }
 
@@ -352,15 +525,5 @@ export class MarketingOverviewComponent {
     if (data.roas > 0) return 'ROAS · Last 6 months';
     if (data.totalReach > 0) return 'Last 6 months';
     return undefined;
-  }
-
-  private formatNumber(num: number): string {
-    if (num >= 1_000_000) {
-      return `${(num / 1_000_000).toFixed(1)}M`;
-    }
-    if (num >= 1_000) {
-      return `${(num / 1_000).toFixed(1)}K`;
-    }
-    return num.toLocaleString();
   }
 }

@@ -26,8 +26,19 @@ export class AuthHelper {
     await page.waitForSelector('button:has-text("SIGN IN"):not([disabled])', { timeout: 5000 });
     await page.getByRole('button', { name: 'SIGN IN' }).click();
 
+    // Handle consent page if it appears (Auth0 may show /u/consent after login)
+    try {
+      await page.waitForURL(/\/u\/consent/, { timeout: 5000 });
+      // Click the accept/authorize button on the consent page
+      const acceptBtn =
+        page.getByRole('button', { name: /accept/i }) || page.getByRole('button', { name: /authorize/i }) || page.getByRole('button', { name: /allow/i });
+      await acceptBtn.click();
+    } catch {
+      // Consent page didn't appear — proceed directly
+    }
+
     // Wait for redirect back to the app
-    await page.waitForURL(/^(?!.*auth0\.com).*$/, { timeout: 15000 });
+    await page.waitForURL(/^(?!.*auth0\.com).*$/, { timeout: 30000 });
   }
 
   /**

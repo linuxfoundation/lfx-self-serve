@@ -1,55 +1,61 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, model, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, model, signal, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
-import { lfxColors } from '@lfx-one/shared/constants';
+import { TagComponent } from '@components/tag/tag.component';
+import {
+  createBarChartOptions,
+  createHorizontalBarChartOptions,
+  DASHBOARD_TOOLTIP_CONFIG,
+  lfxColors,
+  MARKETING_ACTION_ICON_MAP,
+} from '@lfx-one/shared/constants';
+import { AnalyticsService } from '@services/analytics.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { MessageService } from 'primeng/api';
+import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
+import { SkeletonModule } from 'primeng/skeleton';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type { EmailCtrResponse, MarketingKeyInsight, MarketingRecommendedAction } from '@lfx-one/shared/interfaces';
+import type { EmailCtrResponse, MarketingActionType, MarketingKeyInsight, MarketingRecommendedAction } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-email-ctr-drawer',
-  imports: [DrawerModule, ChartComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [ButtonComponent, CardComponent, DrawerModule, ChartComponent, SkeletonModule, TagComponent],
   templateUrl: './email-ctr-drawer.component.html',
+  styleUrl: './email-ctr-drawer.component.scss',
 })
 export class EmailCtrDrawerComponent {
+  // === Services ===
+  private readonly analyticsService = inject(AnalyticsService);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly messageService = inject(MessageService);
+
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
-  // === Inputs ===
-  public readonly data = input<EmailCtrResponse>({
-    currentCtr: 0,
-    changePercentage: 0,
-    trend: 'up',
-    monthlyData: [],
-    monthlyLabels: [],
-    campaignGroups: [],
-    monthlySends: [],
-    monthlyOpens: [],
-  });
+  // === WritableSignals ===
+  protected readonly drawerLoading = signal(false);
 
-  // === Computed Signals ===
+  // === Computed Signals (lazy-loaded data) ===
+  protected readonly drawerData: Signal<EmailCtrResponse> = this.initDrawerData();
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
   protected readonly chartData: Signal<ChartData<'bar'>> = this.initChartData();
   protected readonly campaignChartData: Signal<ChartData<'bar'>> = this.initCampaignChartData();
   protected readonly reachVsOpensChartData: Signal<ChartData<'bar'>> = this.initReachVsOpensChartData();
 
-  protected readonly chartOptions: ChartOptions<'bar'> = {
-    responsive: true,
-    maintainAspectRatio: false,
+  protected readonly chartOptions: ChartOptions<'bar'> = createBarChartOptions({
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-        titleColor: lfxColors.gray[900],
-        bodyColor: lfxColors.gray[600],
-        borderColor: lfxColors.gray[200],
-        borderWidth: 1,
-        padding: 10,
-        cornerRadius: 6,
+        ...DASHBOARD_TOOLTIP_CONFIG,
         callbacks: {
           label: (ctx) => ` ${(ctx.parsed.y ?? 0).toFixed(2)}% CTR`,
         },
@@ -69,29 +75,20 @@ export class EmailCtrDrawerComponent {
         ticks: {
           color: lfxColors.gray[500],
           font: { size: 11 },
-          callback: (value) => `${value}%`,
+          callback: (value) => `${Number(value).toFixed(1)}%`,
         },
       },
     },
     datasets: {
       bar: { barPercentage: 0.7, categoryPercentage: 0.9 },
     },
-  };
+  });
 
-  protected readonly campaignChartOptions: ChartOptions<'bar'> = {
-    indexAxis: 'y',
-    responsive: true,
-    maintainAspectRatio: false,
+  protected readonly campaignChartOptions: ChartOptions<'bar'> = createHorizontalBarChartOptions({
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-        titleColor: lfxColors.gray[900],
-        bodyColor: lfxColors.gray[600],
-        borderColor: lfxColors.gray[200],
-        borderWidth: 1,
-        padding: 10,
-        cornerRadius: 6,
+        ...DASHBOARD_TOOLTIP_CONFIG,
         callbacks: {
           label: (ctx) => ` ${(ctx.parsed.x ?? 0).toFixed(2)}% CTR`,
         },
@@ -105,7 +102,7 @@ export class EmailCtrDrawerComponent {
         ticks: {
           color: lfxColors.gray[500],
           font: { size: 11 },
-          callback: (value) => `${value}%`,
+          callback: (value) => `${Number(value).toFixed(1)}%`,
         },
       },
       y: {
@@ -115,14 +112,9 @@ export class EmailCtrDrawerComponent {
         ticks: { color: lfxColors.gray[600], font: { size: 12 } },
       },
     },
-    datasets: {
-      bar: { barPercentage: 0.8, categoryPercentage: 1.0 },
-    },
-  };
+  });
 
-  protected readonly reachVsOpensChartOptions: ChartOptions<'bar'> = {
-    responsive: true,
-    maintainAspectRatio: false,
+  protected readonly reachVsOpensChartOptions: ChartOptions<'bar'> = createBarChartOptions({
     plugins: {
       legend: {
         display: true,
@@ -130,13 +122,7 @@ export class EmailCtrDrawerComponent {
         labels: { color: lfxColors.gray[600], font: { size: 11 }, boxWidth: 12, padding: 16 },
       },
       tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-        titleColor: lfxColors.gray[900],
-        bodyColor: lfxColors.gray[600],
-        borderColor: lfxColors.gray[200],
-        borderWidth: 1,
-        padding: 10,
-        cornerRadius: 6,
+        ...DASHBOARD_TOOLTIP_CONFIG,
         callbacks: {
           label: (ctx) => ` ${ctx.dataset.label}: ${(ctx.parsed.y ?? 0).toLocaleString()}`,
         },
@@ -158,7 +144,7 @@ export class EmailCtrDrawerComponent {
           font: { size: 11 },
           callback: (value) => {
             const num = Number(value);
-            if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
+            if (num >= 999_950) return `${(num / 1_000_000).toFixed(1)}M`;
             if (num >= 1_000) return `${(num / 1_000).toFixed(0)}K`;
             return String(num);
           },
@@ -168,17 +154,60 @@ export class EmailCtrDrawerComponent {
     datasets: {
       bar: { barPercentage: 0.7, categoryPercentage: 0.9 },
     },
-  };
+  });
 
   // === Protected Methods ===
   protected onClose(): void {
     this.visible.set(false);
   }
 
+  protected actionIcon(type: MarketingActionType): string {
+    return MARKETING_ACTION_ICON_MAP[type];
+  }
+
   // === Private Initializers ===
+  private initDrawerData(): Signal<EmailCtrResponse> {
+    const defaultValue: EmailCtrResponse = {
+      currentCtr: 0,
+      changePercentage: 0,
+      trend: 'up',
+      monthlyData: [],
+      monthlyLabels: [],
+      campaignGroups: [],
+      monthlySends: [],
+      monthlyOpens: [],
+    };
+
+    const visible$ = toObservable(this.visible);
+    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.name || ''));
+
+    return toSignal(
+      combineLatest([visible$, foundation$]).pipe(
+        filter(([isVisible, name]) => isVisible && !!name),
+        map(([, name]) => name),
+        tap(() => this.drawerLoading.set(true)),
+        switchMap((foundationName) =>
+          this.analyticsService.getEmailCtr(foundationName).pipe(
+            tap(() => this.drawerLoading.set(false)),
+            catchError(() => {
+              this.drawerLoading.set(false);
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'Failed to load email CTR details.',
+              });
+              return of(defaultValue);
+            })
+          )
+        )
+      ),
+      { initialValue: defaultValue }
+    );
+  }
+
   private initChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
-      const { monthlyData, monthlyLabels } = this.data();
+      const { monthlyData, monthlyLabels } = this.drawerData();
       return {
         labels: monthlyLabels,
         datasets: [
@@ -194,7 +223,7 @@ export class EmailCtrDrawerComponent {
 
   private initCampaignChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
-      const { campaignGroups } = this.data();
+      const { campaignGroups } = this.drawerData();
       const sorted = [...campaignGroups].sort((a, b) => b.avgCtr - a.avgCtr);
       return {
         labels: sorted.map((c) => c.campaignName),
@@ -212,7 +241,7 @@ export class EmailCtrDrawerComponent {
 
   private initRecommendedActions(): Signal<MarketingRecommendedAction[]> {
     return computed(() => {
-      const { changePercentage, campaignGroups, monthlySends, monthlyOpens } = this.data();
+      const { changePercentage, campaignGroups, monthlySends, monthlyOpens } = this.drawerData();
       const actions: MarketingRecommendedAction[] = [];
 
       if (changePercentage < 0) {
@@ -221,7 +250,7 @@ export class EmailCtrDrawerComponent {
           description: `CTR dropped ${Math.abs(changePercentage)}% — experiment with button placement and copy in the next send`,
           priority: 'high',
           dueLabel: 'Next send',
-          iconClass: 'fa-light fa-bullseye-pointer',
+          actionType: 'optimize',
         });
       }
 
@@ -236,7 +265,7 @@ export class EmailCtrDrawerComponent {
             description: `Open rate declined from ${prevOpenRate.toFixed(1)}% to ${latestOpenRate.toFixed(1)}% — A/B test subject lines`,
             priority: latestOpenRate < prevOpenRate * 0.9 ? 'high' : 'medium',
             dueLabel: 'Next send',
-            iconClass: 'fa-light fa-envelope-open-text',
+            actionType: 'content',
           });
         }
       }
@@ -251,7 +280,7 @@ export class EmailCtrDrawerComponent {
             description: `Top campaign has ${best.avgCtr.toFixed(1)}% CTR vs ${worst.avgCtr.toFixed(1)}% for "${worst.campaignName}" — apply winning format`,
             priority: 'medium',
             dueLabel: 'This month',
-            iconClass: 'fa-light fa-copy',
+            actionType: 'optimize',
           });
         }
       }
@@ -262,7 +291,7 @@ export class EmailCtrDrawerComponent {
           description: `CTR is trending up (+${changePercentage}%) — continue current content strategy`,
           priority: 'low',
           dueLabel: 'Ongoing',
-          iconClass: 'fa-light fa-chart-line-up',
+          actionType: 'growth',
         });
       }
 
@@ -272,7 +301,7 @@ export class EmailCtrDrawerComponent {
 
   private initKeyInsights(): Signal<MarketingKeyInsight[]> {
     return computed(() => {
-      const { currentCtr, changePercentage, monthlyData, campaignGroups, monthlySends, monthlyOpens } = this.data();
+      const { currentCtr, changePercentage, monthlyData, campaignGroups, monthlySends, monthlyOpens } = this.drawerData();
       const insights: MarketingKeyInsight[] = [];
 
       if (currentCtr === 0 && monthlyData.length === 0) {
@@ -281,13 +310,13 @@ export class EmailCtrDrawerComponent {
 
       // CTR trend insight
       if (changePercentage < -10) {
-        insights.push({ text: `CTR dropped ${Math.abs(changePercentage)}% vs last month — significant decline`, type: 'warning' });
+        insights.push({ text: `CTR dropped ${Math.abs(changePercentage)}% vs 6-month avg — significant decline`, type: 'warning' });
       } else if (changePercentage < 0) {
-        insights.push({ text: `CTR declined ${Math.abs(changePercentage)}% vs last month`, type: 'warning' });
+        insights.push({ text: `CTR declined ${Math.abs(changePercentage)}% vs 6-month avg`, type: 'warning' });
       } else if (changePercentage > 10) {
-        insights.push({ text: `CTR grew ${changePercentage}% vs last month — strong improvement`, type: 'driver' });
+        insights.push({ text: `CTR grew ${changePercentage}% vs 6-month avg — strong improvement`, type: 'driver' });
       } else if (changePercentage > 0) {
-        insights.push({ text: `CTR up ${changePercentage}% vs last month`, type: 'info' });
+        insights.push({ text: `CTR up ${changePercentage}% vs 6-month avg`, type: 'info' });
       }
 
       // Open rate insight
@@ -330,7 +359,7 @@ export class EmailCtrDrawerComponent {
 
   private initReachVsOpensChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
-      const { monthlySends, monthlyOpens, monthlyLabels } = this.data();
+      const { monthlySends, monthlyOpens, monthlyLabels } = this.drawerData();
       return {
         labels: monthlyLabels,
         datasets: [

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal } from '@angular/core';
+import { Component, inject, Signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { NavigationEnd, Router } from '@angular/router';
@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { ACCOUNTS, PERSONA_OPTIONS } from '@lfx-one/shared/constants';
-import { Account, PersonaType } from '@lfx-one/shared/interfaces';
+import { Account, isBoardScopedPersona, PersonaType } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { CookieRegistryService } from '@services/cookie-registry.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -41,10 +41,8 @@ export class DevToolbarComponent {
   // Persona options for SelectButton
   protected readonly personaOptions = PERSONA_OPTIONS;
 
-  // Board member project override
-  protected readonly isBoardMember = computed(
-    () => this.personaService.currentPersona() === 'board-member' || this.personaService.currentPersona() === 'executive-director'
-  );
+  // Board member project override — delegates to centralized isBoardScoped signal
+  protected readonly isBoardMember = this.personaService.isBoardScoped;
 
   // Check if we're on the board dashboard page
   protected readonly isOnBoardDashboard: Signal<boolean> = this.initIsOnBoardDashboard();
@@ -64,7 +62,7 @@ export class DevToolbarComponent {
       .get('persona')
       ?.valueChanges.pipe(takeUntilDestroyed())
       .subscribe((value: PersonaType) => {
-        if (value === 'board-member' || value === 'executive-director') {
+        if (isBoardScopedPersona(value)) {
           // TODO: DEMO - Remove when proper permissions are implemented
           const tlfProject = this.projectContextService.availableProjects.find((p) => p.slug === 'tlf');
           if (tlfProject) {

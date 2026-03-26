@@ -143,4 +143,10 @@ router.get('/social-reach', (req, res, next) => analyticsController.getSocialRea
 // Social media endpoint (marketing dashboard)
 router.get('/social-media', (req, res, next) => analyticsController.getSocialMedia(req, res, next));
 
+// North Star metrics endpoints (executive director dashboard)
+router.get('/member-retention', (req, res, next) => analyticsController.getMemberRetention(req, res, next));
+router.get('/member-acquisition', (req, res, next) => analyticsController.getMemberAcquisition(req, res, next));
+router.get('/engaged-community', (req, res, next) => analyticsController.getEngagedCommunity(req, res, next));
+router.get('/flywheel-conversion', (req, res, next) => analyticsController.getFlywheelConversion(req, res, next));
+
 export default router;
