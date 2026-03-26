@@ -1,9 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { CreateSurveyRequest } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
-import { validateUidParameter } from '../helpers/validation.helper';
+import { validateRequiredParameter, validateUidParameter } from '../helpers/validation.helper';
 import { logger } from '../services/logger.service';
 import { SurveyService } from '../services/survey.service';
 
@@ -12,6 +13,37 @@ import { SurveyService } from '../services/survey.service';
  */
 export class SurveyController {
   private surveyService: SurveyService = new SurveyService();
+
+  /**
+   * POST /surveys - create a new survey
+   */
+  public async createSurvey(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const surveyData: CreateSurveyRequest = req.body;
+    const startTime = logger.startOperation(req, 'create_survey', {
+      survey_title: surveyData?.survey_title,
+      committee_uid: surveyData?.committee_uid,
+      body_size: JSON.stringify(req.body).length,
+    });
+
+    try {
+      const validationContext = { operation: 'create_survey', service: 'survey_controller' };
+
+      if (!validateRequiredParameter(surveyData?.survey_monkey_id, 'survey_monkey_id', req, next, validationContext)) return;
+      if (!validateRequiredParameter(surveyData?.committee_uid, 'committee_uid', req, next, validationContext)) return;
+      if (!validateRequiredParameter(surveyData?.survey_title, 'survey_title', req, next, validationContext)) return;
+
+      const survey = await this.surveyService.createSurvey(req, surveyData);
+
+      logger.success(req, 'create_survey', startTime, {
+        survey_uid: survey.uid,
+        title: survey.survey_title,
+      });
+
+      res.status(201).json(survey);
+    } catch (error) {
+      next(error);
+    }
+  }
 
   /**
    * GET /surveys

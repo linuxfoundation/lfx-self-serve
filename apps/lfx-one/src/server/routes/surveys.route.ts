@@ -9,6 +9,9 @@ const router = Router();
 
 const surveyController = new SurveyController();
 
+// POST /surveys - create a new survey
+router.post('/', (req, res, next) => surveyController.createSurvey(req, res, next));
+
 // GET /surveys - get all surveys
 router.get('/', (req, res, next) => surveyController.getSurveys(req, res, next));
 
