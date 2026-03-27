@@ -1879,6 +1879,7 @@ export class ProfileController {
         .createIdentityForUser(req, [lfid], {
           value,
           platform: cdpPostPlatform,
+          type: cdpPlatform === 'email' ? 'email' : 'username',
           source: 'lfxOne',
           verified: true,
           verifiedBy: lfid,

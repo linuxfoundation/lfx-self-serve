@@ -477,6 +477,7 @@ export interface CdpIdentitiesResponse {
 export interface CdpCreateIdentityRequest {
   value: string;
   platform: string;
+  type: string;
   source: string;
   verified: boolean;
   verifiedBy: string;
