@@ -272,7 +272,7 @@ export class SurveyManageComponent {
         this.submitting.set(false);
         this.navigateBack();
       },
-      error: (error: unknown) => {
+      error: () => {
         this.messageService.add({
           severity: 'error',
           summary: 'Error',

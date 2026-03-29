@@ -35,8 +35,8 @@ import {
   PastMeetingSummary,
   TagSeverity,
 } from '@lfx-one/shared';
-import { RecordingModalComponent } from '@modules/meetings/components/recording-modal/recording-modal.component';
-import { SummaryModalComponent } from '@modules/meetings/components/summary-modal/summary-modal.component';
+import { RecordingModalComponent } from '@components/recording-modal/recording-modal.component';
+import { SummaryModalComponent } from '@components/summary-modal/summary-modal.component';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
@@ -315,9 +315,9 @@ export class MeetingCardComponent implements OnInit {
     const ref = this.dialogService.open(SummaryModalComponent, {
       header: 'Meeting Summary',
       width: '800px',
-      modal: false,
-      closable: false,
-      dismissableMask: false,
+      modal: true,
+      closable: true,
+      dismissableMask: true,
       data: {
         summaryContent: this.summaryContent(),
         summaryUid: this.summary()?.uid,

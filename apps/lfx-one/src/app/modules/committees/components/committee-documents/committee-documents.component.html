@@ -2,10 +2,10 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col gap-4 pt-2" data-testid="committee-documents-tab">
-  @if (loading() || filteredAttachments().length > 0 || allAttachments().length > 0) {
+  @if (loading() || filteredDocuments().length > 0 || allDocuments().length > 0) {
     <lfx-card>
       <!-- Search & Filters -->
-      @if (!loading() && allAttachments().length > 0) {
+      @if (!loading() && allDocuments().length > 0) {
         <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 pb-2 mb-2">
           <div class="flex-1">
             <lfx-input-text
@@ -31,14 +31,14 @@
       }
 
       <!-- Table -->
-      @if (loading() || filteredAttachments().length > 0) {
+      @if (loading() || filteredDocuments().length > 0) {
         <lfx-table
-          [value]="filteredAttachments()"
+          [value]="filteredDocuments()"
           [loading]="loading()"
           [skeletonColumns]="6"
           [skeletonRows]="3"
           [rowHover]="true"
-          dataKey="attachment.uid"
+          dataKey="id"
           data-testid="committee-documents-table">
           <ng-template #header>
             <tr>
@@ -55,20 +55,16 @@
               <!-- Name -->
               <td>
                 <div class="flex items-center gap-2">
-                  @if (item.attachment.type === 'link') {
-                    <i class="fa-light fa-link text-blue-500 flex-shrink-0" aria-hidden="true"></i>
-                  } @else {
-                    <i class="fa-light fa-file text-red-400 flex-shrink-0" aria-hidden="true"></i>
-                  }
+                  <i [class]="(item.source | documentSourceIcon) + ' flex-shrink-0'" aria-hidden="true"></i>
                   <div class="min-w-0">
                     <a
                       role="button"
                       class="text-sm font-medium text-blue-600 hover:text-blue-800 truncate block max-w-xs cursor-pointer"
-                      (click)="openAttachment(item)"
-                      (keydown.enter)="openAttachment(item)"
-                      (keydown.space)="openAttachment(item); $event.preventDefault()"
+                      (click)="openDocument(item)"
+                      (keydown.enter)="openDocument(item)"
+                      (keydown.space)="openDocument(item); $event.preventDefault()"
                       tabindex="0">
-                      {{ item.attachment.name }}
+                      {{ item.name }}
                     </a>
                     <p class="text-[11px] text-gray-400 truncate">From: {{ item.meetingTitle }} · {{ item.meetingDate | date: 'MMM d, y' }}</p>
                   </div>
@@ -77,33 +73,33 @@
               <!-- Source -->
               <td>
                 <lfx-tag
-                  [value]="item.attachment.type === 'link' ? 'Link' : 'Meeting'"
-                  [severity]="item.attachment.type === 'link' ? 'success' : 'warn'"
-                  [icon]="item.attachment.type === 'link' ? 'fa-light fa-link' : 'fa-light fa-video'"></lfx-tag>
+                  [value]="item.source | documentSourceTag: 'value'"
+                  [severity]="item.source | documentSourceTag: 'severity'"
+                  [icon]="item.source | documentSourceTag: 'icon'"></lfx-tag>
               </td>
               <!-- Added By -->
               <td class="text-gray-600">
-                {{ item.attachment.created_by?.name || '—' }}
+                {{ item.addedBy || '—' }}
               </td>
               <!-- Date -->
               <td class="text-gray-500">
-                {{ item.attachment.created_at | date: 'MMM d, y' }}
+                {{ item.date | date: 'MMM d, y' }}
               </td>
               <!-- Size -->
               <td class="text-gray-500">
-                {{ item.attachment.file_size | fileSize }}
+                {{ item.fileSize !== null ? (item.fileSize | fileSize) : '—' }}
               </td>
               <!-- Actions -->
               <td class="text-right">
                 <div class="flex gap-1 justify-end">
                   <lfx-button
-                    icon="fa-light fa-download"
+                    [icon]="item.source | documentSourceAction: 'icon'"
                     [text]="true"
                     [rounded]="true"
                     size="small"
                     severity="secondary"
-                    tooltip="Download"
-                    (onClick)="openAttachment(item)"></lfx-button>
+                    [tooltip]="item.source | documentSourceAction: 'tooltip'"
+                    (onClick)="openDocument(item)"></lfx-button>
                 </div>
               </td>
             </tr>
@@ -120,8 +116,8 @@
     </lfx-card>
 
     <!-- Count -->
-    @if (!loading() && filteredAttachments().length > 0) {
-      <p class="text-xs text-gray-400 px-1">Showing {{ filteredAttachments().length }} document{{ filteredAttachments().length !== 1 ? 's' : '' }}</p>
+    @if (!loading() && filteredDocuments().length > 0) {
+      <p class="text-xs text-gray-400 px-1">Showing {{ filteredDocuments().length }} document{{ filteredDocuments().length !== 1 ? 's' : '' }}</p>
     }
   } @else {
     <!-- Empty state -->
@@ -129,7 +125,7 @@
       <div class="flex flex-col items-center py-12">
         <i class="fa-light fa-folder-open text-3xl text-gray-300 mb-3" aria-hidden="true"></i>
         <p class="text-sm font-medium text-gray-500">No documents yet</p>
-        <p class="text-xs text-gray-400 mt-1">Meeting attachments for this group will appear here.</p>
+        <p class="text-xs text-gray-400 mt-1">Meeting documents, recordings, and summaries for this group will appear here.</p>
       </div>
     </lfx-card>
   }

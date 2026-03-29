@@ -451,3 +451,54 @@ export interface CommitteeDocument {
   updated_at?: string;
   uploaded_by?: string;
 }
+
+/**
+ * Source category for a committee document entry in the Documents tab.
+ * @description Distinguishes between attachments, recordings, transcripts, and AI summaries.
+ */
+export type CommitteeDocumentSource = 'link' | 'file' | 'recording' | 'transcript' | 'summary';
+
+/**
+ * Unified document item for the committee Documents tab.
+ * @description Represents attachments, recording files, transcripts, and AI summaries
+ * in a single shape suitable for table display.
+ */
+export interface CommitteeDocumentItem {
+  /** Unique key for table dataKey (combination of source + id) */
+  id: string;
+  /** Display name shown in the Name column */
+  name: string;
+  /** Source type for filtering and icon selection */
+  source: CommitteeDocumentSource;
+  /** Person who created/added the item (display name or null) */
+  addedBy: string | null;
+  /** ISO date string for the Date column */
+  date: string;
+  /** File size in bytes (null for links and summaries) */
+  fileSize: number | null;
+  /** Meeting title for the "From: ..." subtitle */
+  meetingTitle: string;
+  /** Meeting date for the "From: ..." subtitle */
+  meetingDate: string;
+  /** Meeting UID — needed for attachment download APIs on upcoming meetings */
+  meetingId: string;
+  /** Past meeting UID — needed for past meeting APIs (null for upcoming meetings) */
+  pastMeetingId: string | null;
+
+  /** For source='link': the external URL */
+  linkUrl?: string;
+  /** For source='file': the attachment UID for download API */
+  attachmentUid?: string;
+  /** For source='recording': play URL from RecordingFile */
+  playUrl?: string;
+  /** For source='recording'|'transcript': download URL from RecordingFile */
+  downloadUrl?: string;
+  /** For source='recording': share URL from the largest RecordingSession */
+  shareUrl?: string;
+  /** For source='summary': data needed to open SummaryModal */
+  summaryData?: {
+    uid: string;
+    content: string;
+    approved: boolean;
+  };
+}

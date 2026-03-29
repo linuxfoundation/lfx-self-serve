@@ -36,3 +36,4 @@ export * from './active-contributors-drawer.constants';
 export * from './maintainers-drawer.constants';
 export * from './events-drawer.constants';
 export * from './lens.constants';
+export * from './committee-documents.constants';
