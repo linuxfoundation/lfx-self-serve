@@ -19,6 +19,7 @@ const DOCUMENT_SOURCE_ACTIONS: Record<CommitteeDocumentSource, DocumentAction> =
 
 @Pipe({
   name: 'documentSourceAction',
+  standalone: true,
   pure: true,
 })
 export class DocumentSourceActionPipe implements PipeTransform {

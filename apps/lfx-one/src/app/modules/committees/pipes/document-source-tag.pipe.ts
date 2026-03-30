@@ -7,6 +7,7 @@ import { DOCUMENT_SOURCE_TAGS } from '@lfx-one/shared/constants';
 
 @Pipe({
   name: 'documentSourceTag',
+  standalone: true,
   pure: true,
 })
 export class DocumentSourceTagPipe implements PipeTransform {

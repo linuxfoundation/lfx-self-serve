@@ -3,6 +3,7 @@
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { MeetingAttachment } from './meeting-attachment.interface';
 
 // ── v2.0 Taxonomy Types ─────────────────────────────────────────────────────
 
@@ -432,7 +433,10 @@ export interface CommitteeEngagementMetrics {
 }
 
 /** Type of a committee document entry */
-export type CommitteeDocumentType = 'file' | 'link';
+export type CommitteeDocumentType = 'file' | 'link' | 'folder';
+
+/** Subset of document types that can be created via the BFF (excludes 'file' — meeting attachments only) */
+export type CreateCommitteeDocumentType = 'link' | 'folder';
 
 /**
  * A document or resource link associated with a committee.
@@ -443,13 +447,70 @@ export interface CommitteeDocument {
   name: string;
   /** URL for links; download URL for files */
   url?: string;
+  /** Optional description */
+  description?: string;
   /** MIME type or file extension (files only) */
   mime_type?: string;
   /** File size in bytes (files only) */
   file_size?: number;
+  /** ISO date string of creation */
+  created_at?: string;
   /** ISO date string of last update */
   updated_at?: string;
+  /** UID of the user who created the document */
+  created_by?: string;
   uploaded_by?: string;
+  /** Parent folder UID (for nested documents) */
+  parent_uid?: string;
+  /** Committee UID this document belongs to */
+  committee_uid?: string;
+}
+
+/** Request body for creating a committee document */
+export interface CreateCommitteeDocumentRequest {
+  type: CreateCommitteeDocumentType;
+  name: string;
+  /** Required for type 'link' */
+  url?: string;
+  description?: string;
+  /** Parent folder UID (to place a link inside a folder) */
+  parent_uid?: string;
+  /** Display name of the creator (populated by BFF from session) */
+  created_by_name?: string;
+}
+
+/** Attachment enriched with meeting context for display. */
+export interface MeetingAttachmentWithContext {
+  attachment: MeetingAttachment;
+  meetingTitle: string;
+  meetingDate: string;
+  meetingId: string;
+}
+
+/** Unified display item that covers both meeting attachments and standalone documents. */
+export interface DocumentDisplayItem {
+  uid: string;
+  name: string;
+  type: CommitteeDocumentType;
+  url?: string;
+  description?: string;
+  addedBy?: string;
+  date?: string;
+  fileSize?: number;
+  /** Source for filtering: 'meeting', 'link', 'folder', or 'file' */
+  source: CommitteeDocumentType | 'meeting';
+  /** Whether this is a standalone document (supports edit/delete) */
+  isStandalone: boolean;
+  /** Original meeting attachment data (for download) */
+  meetingAttachment?: MeetingAttachmentWithContext;
+  /** Original committee document data (for edit/delete) */
+  committeeDocument?: CommitteeDocument;
+  /** Parent folder UID (for hierarchy display) */
+  parentUid?: string;
+  /** Number of child links inside this folder */
+  childCount?: number;
+  /** Whether this item is a child inside a folder (indent in table) */
+  isChild?: boolean;
 }
 
 /**

@@ -1,0 +1,90 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form" (ngSubmit)="onSubmit()" class="flex flex-col gap-4">
+  @if (isLink()) {
+    <!-- Link URL -->
+    <div>
+      <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Link URL <span class="text-red-500">*</span></label>
+      <lfx-input-text
+        size="small"
+        [form]="form"
+        control="url"
+        placeholder="https://docs.google.com/... or any URL"
+        styleClass="w-full"
+        dataTest="document-form-url"></lfx-input-text>
+      @if (form.get('url')?.errors?.['required'] && form.get('url')?.touched) {
+        <p class="mt-1 text-xs text-red-600">Link URL is required</p>
+      } @else if (form.get('url')?.errors?.['invalidUrl'] && form.get('url')?.touched) {
+        <p class="mt-1 text-xs text-red-600">Please enter a valid URL starting with http:// or https://</p>
+      }
+    </div>
+
+    <!-- Title -->
+    <div>
+      <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Title <span class="text-red-500">*</span></label>
+      <lfx-input-text
+        size="small"
+        [form]="form"
+        control="name"
+        placeholder="Display name for the link"
+        styleClass="w-full"
+        dataTest="document-form-name"></lfx-input-text>
+      @if (form.get('name')?.errors?.['required'] && form.get('name')?.touched) {
+        <p class="mt-1 text-xs text-red-600">Title is required</p>
+      }
+    </div>
+
+    <!-- Folder (optional) -->
+    @if (folderOptions.length > 0) {
+      <div>
+        <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Folder (optional)</label>
+        <lfx-select
+          size="small"
+          [form]="form"
+          control="parent_uid"
+          [options]="folderOptions"
+          placeholder="No folder"
+          [showClear]="true"
+          styleClass="w-full"
+          data-testid="document-form-folder"></lfx-select>
+        <p class="mt-1 text-[11px] text-gray-400">Place this link inside a folder</p>
+      </div>
+    }
+  } @else {
+    <!-- Folder Name -->
+    <div>
+      <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Folder Name <span class="text-red-500">*</span></label>
+      <lfx-input-text
+        size="small"
+        [form]="form"
+        control="name"
+        placeholder="e.g. Shared Drives, Architecture Docs, References..."
+        styleClass="w-full"
+        dataTest="document-form-name"></lfx-input-text>
+      @if (form.get('name')?.errors?.['required'] && form.get('name')?.touched) {
+        <p class="mt-1 text-xs text-red-600">Folder name is required</p>
+      }
+    </div>
+  }
+
+  <!-- Description (both modes) -->
+  <div>
+    <label class="block text-[11px] font-semibold text-gray-500 uppercase tracking-wide mb-1">Description (optional)</label>
+    <lfx-textarea
+      [form]="form"
+      control="description"
+      [rows]="3"
+      [maxlength]="500"
+      [placeholder]="isLink() ? 'Brief description' : 'Brief description of what this folder contains'"
+      [autoResize]="true"
+      styleClass="!w-full"
+      dataTest="document-form-description"></lfx-textarea>
+  </div>
+
+  <!-- Form Actions -->
+  <div class="flex justify-end gap-3 pt-4 border-t">
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" (onClick)="onCancel()" size="small" type="button"></lfx-button>
+    <lfx-button [label]="submitLabel()" [loading]="submitting()" [disabled]="submitting()" type="submit" size="small"></lfx-button>
+  </div>
+</form>
