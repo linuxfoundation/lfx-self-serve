@@ -40,7 +40,7 @@ interface CachedToken {
 
 /**
  * Service for interacting with the CDP (Community Data Platform) API
- * Handles OAuth token management, member resolution, and identity fetching
+ * Uses PCC Auth0 client credentials with CDP audience for authentication
  */
 export class CdpService {
   private cachedToken: CachedToken | null = null;
@@ -53,14 +53,14 @@ export class CdpService {
 
   public constructor() {
     this.cdpApiUrl = (process.env['CDP_API_URL'] || CDP_CONFIG.DEFAULT_STAGING_URL).replace(/\/+$/, '');
-    this.issuerBaseUrl = (process.env['CDP_AUTH0_ISSUER_BASE_URL'] || '').replace(/\/+$/, '');
-    this.audience = process.env['CDP_AUTH0_AUDIENCE'] || '';
-    this.clientId = process.env['CDP_AUTH0_CLIENT_ID'] || '';
-    this.clientSecret = process.env['CDP_AUTH0_CLIENT_SECRET'] || '';
+    this.issuerBaseUrl = (process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '').replace(/\/+$/, '');
+    this.audience = process.env['CDP_AUDIENCE'] || '';
+    this.clientId = process.env['PCC_AUTH0_CLIENT_ID'] || '';
+    this.clientSecret = process.env['PCC_AUTH0_CLIENT_SECRET'] || '';
   }
 
   /**
-   * Get a valid CDP access token, using cache when possible
+   * Get a valid CDP access token using PCC client credentials with CDP audience
    */
   public async generateToken(req: Request | undefined): Promise<string> {
     if (this.cachedToken && Date.now() < this.cachedToken.expiresAt) {
