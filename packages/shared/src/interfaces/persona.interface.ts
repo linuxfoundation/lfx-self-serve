@@ -7,6 +7,14 @@
  */
 export type PersonaType = 'core-developer' | 'maintainer' | 'projects' | 'board-member' | 'executive-director';
 
+/** Board-scoped personas that see foundation-level dashboards */
+export const BOARD_SCOPED_PERSONAS: ReadonlySet<PersonaType> = new Set(['board-member', 'executive-director']);
+
+/** Check if a persona value is board-scoped (sees foundation-level dashboards) */
+export function isBoardScopedPersona(persona: PersonaType): boolean {
+  return BOARD_SCOPED_PERSONAS.has(persona);
+}
+
 /**
  * Persona option configuration
  * @description Structure for persona selection dropdown options

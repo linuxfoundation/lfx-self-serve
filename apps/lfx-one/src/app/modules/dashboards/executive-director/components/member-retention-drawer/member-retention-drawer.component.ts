@@ -1,18 +1,21 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, model, Signal } from '@angular/core';
-import { ChartComponent } from '@components/chart/chart.component';
-import { lfxColors } from '@lfx-one/shared/constants';
+import { ChangeDetectionStrategy, Component, computed, input, model, Signal } from '@angular/core';
+import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { DrawerModule } from 'primeng/drawer';
 
-import type { ChartData, ChartOptions } from 'chart.js';
-import type { MemberRetentionResponse, MarketingRecommendedAction, MarketingKeyInsight } from '@lfx-one/shared/interfaces';
+import { MARKETING_ACTION_ICON_MAP } from '@lfx-one/shared/constants';
+import type { MemberRetentionResponse, MarketingRecommendedAction, MarketingKeyInsight, MarketingActionType } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-member-retention-drawer',
-  imports: [DrawerModule, ChartComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [ButtonComponent, CardComponent, DrawerModule, TagComponent],
   templateUrl: './member-retention-drawer.component.html',
+  styleUrl: './member-retention-drawer.component.scss',
 })
 export class MemberRetentionDrawerComponent {
   // === Model Signals (two-way binding) ===
@@ -31,81 +34,50 @@ export class MemberRetentionDrawerComponent {
   // === Computed Signals ===
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
-  protected readonly retentionChartData: Signal<ChartData<'line'>> = this.initRetentionChartData();
-
-  protected readonly retentionChartOptions: ChartOptions<'line'> = {
-    responsive: true,
-    maintainAspectRatio: false,
-    plugins: {
-      legend: { display: false },
-      tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-        titleColor: lfxColors.gray[900],
-        bodyColor: lfxColors.gray[600],
-        borderColor: lfxColors.gray[200],
-        borderWidth: 1,
-        padding: 10,
-        cornerRadius: 6,
-        callbacks: {
-          label: (ctx) => ` ${(ctx.parsed.y ?? 0).toFixed(1)}% renewal rate`,
-        },
-      },
-    },
-    scales: {
-      x: {
-        display: true,
-        grid: { display: false },
-        border: { display: true, color: lfxColors.gray[300] },
-        ticks: { color: lfxColors.gray[500], font: { size: 11 } },
-      },
-      y: {
-        display: true,
-        grid: { color: lfxColors.gray[200], lineWidth: 1 },
-        border: { display: false },
-        ticks: {
-          color: lfxColors.gray[500],
-          font: { size: 11 },
-          callback: (value) => `${value}%`,
-        },
-      },
-    },
-  };
+  protected readonly attentionActions: Signal<MarketingRecommendedAction[]> = computed(() =>
+    this.recommendedActions().filter((a) => a.priority === 'high' || a.priority === 'medium')
+  );
+  protected readonly attentionInsights: Signal<MarketingKeyInsight[]> = computed(() => this.keyInsights().filter((i) => i.type === 'warning'));
+  protected readonly performingActions: Signal<MarketingRecommendedAction[]> = computed(() => this.recommendedActions().filter((a) => a.priority === 'low'));
+  protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() =>
+    this.keyInsights().filter((i) => i.type === 'driver' || i.type === 'info')
+  );
 
   // === Protected Methods ===
   protected onClose(): void {
     this.visible.set(false);
   }
 
+  protected actionIcon(type: MarketingActionType): string {
+    return MARKETING_ACTION_ICON_MAP[type];
+  }
+
   // === Private Initializers ===
   private initRecommendedActions(): Signal<MarketingRecommendedAction[]> {
     return computed(() => {
-      const { renewalRate, netRevenueRetention, changePercentage, target, monthlyData } = this.data();
+      const { renewalRate, netRevenueRetention, changePercentage, monthlyData } = this.data();
       const actions: MarketingRecommendedAction[] = [];
 
       if (renewalRate === 0 && monthlyData.length === 0) {
         return actions;
       }
 
-      // Below target
-      if (renewalRate > 0 && renewalRate < target) {
-        const gap = (target - renewalRate).toFixed(1);
-        actions.push({
-          title: 'Close retention gap to target',
-          description: `Renewal rate is ${renewalRate}% vs ${target}% target — ${gap} points below. Focus on at-risk member engagement`,
-          priority: 'high',
-          dueLabel: 'This quarter',
-          iconClass: 'fa-light fa-bullseye-arrow',
-        });
-      }
-
-      // NRR below 100% means revenue shrinking
-      if (netRevenueRetention > 0 && netRevenueRetention < 100) {
+      // NRR below 98% means meaningful revenue shrinking — ignore noise above 98%
+      if (netRevenueRetention > 0 && netRevenueRetention < 90) {
         actions.push({
           title: 'Improve net revenue retention',
-          description: `NRR at ${netRevenueRetention}% — revenue shrinking from existing members. Explore upsell opportunities`,
+          description: `NRR at ${netRevenueRetention}% — significant revenue loss from existing members. Review downgrades and churn`,
           priority: 'high',
           dueLabel: 'This quarter',
-          iconClass: 'fa-light fa-money-bill-trend-up',
+          actionType: 'revenue',
+        });
+      } else if (netRevenueRetention >= 90 && netRevenueRetention < 98) {
+        actions.push({
+          title: 'Monitor net revenue retention',
+          description: `NRR at ${netRevenueRetention}% — revenue contraction from existing members. Explore upsell opportunities`,
+          priority: 'medium',
+          dueLabel: 'Next quarter',
+          actionType: 'revenue',
         });
       }
 
@@ -116,17 +88,17 @@ export class MemberRetentionDrawerComponent {
           description: `Renewal rate dropped ${Math.abs(changePercentage)}% — review member satisfaction and renewal outreach timing`,
           priority: 'high',
           dueLabel: 'This month',
-          iconClass: 'fa-light fa-chart-line-down',
+          actionType: 'decline',
         });
       }
 
       if (actions.length === 0) {
         actions.push({
           title: 'Maintain retention excellence',
-          description: `${renewalRate}% renewal rate${renewalRate >= target ? ` exceeds ${target}% target` : ''}${netRevenueRetention > 100 ? ` with ${netRevenueRetention}% NRR` : ''}`,
+          description: `${renewalRate}% renewal rate${netRevenueRetention > 100 ? ` with ${netRevenueRetention}% NRR` : ''}`,
           priority: 'low',
           dueLabel: 'Ongoing',
-          iconClass: 'fa-light fa-chart-line-up',
+          actionType: 'growth',
         });
       }
 
@@ -136,18 +108,11 @@ export class MemberRetentionDrawerComponent {
 
   private initKeyInsights(): Signal<MarketingKeyInsight[]> {
     return computed(() => {
-      const { renewalRate, netRevenueRetention, target, monthlyData } = this.data();
+      const { renewalRate, netRevenueRetention, monthlyData } = this.data();
       const insights: MarketingKeyInsight[] = [];
 
       if (renewalRate === 0 && monthlyData.length === 0) {
         return insights;
-      }
-
-      // Target comparison
-      if (renewalRate >= target) {
-        insights.push({ text: `Renewal rate at ${renewalRate}% exceeds ${target}% target`, type: 'driver' });
-      } else if (renewalRate > 0) {
-        insights.push({ text: `Renewal rate at ${renewalRate}% is below ${target}% target`, type: 'warning' });
       }
 
       // NRR insight
@@ -172,37 +137,6 @@ export class MemberRetentionDrawerComponent {
       }
 
       return insights;
-    });
-  }
-
-  private initRetentionChartData(): Signal<ChartData<'line'>> {
-    return computed(() => {
-      const { monthlyData, target } = this.data();
-      return {
-        labels: monthlyData.map((d) => d.month),
-        datasets: [
-          {
-            label: 'Renewal Rate',
-            data: monthlyData.map((d) => d.value),
-            borderColor: lfxColors.blue[500],
-            backgroundColor: `${lfxColors.blue[500]}1A`,
-            fill: true,
-            tension: 0.4,
-            borderWidth: 2,
-            pointRadius: 3,
-            pointBackgroundColor: lfxColors.blue[500],
-          },
-          {
-            label: 'Target',
-            data: monthlyData.map(() => target),
-            borderColor: lfxColors.gray[400],
-            borderDash: [5, 5],
-            borderWidth: 1,
-            pointRadius: 0,
-            fill: false,
-          },
-        ],
-      };
     });
   }
 }

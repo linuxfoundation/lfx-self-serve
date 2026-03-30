@@ -6,7 +6,7 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
 import { PERSONA_OPTIONS } from '@lfx-one/shared/constants';
-import { PersonaType } from '@lfx-one/shared/interfaces';
+import { isBoardScopedPersona, PersonaType } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -43,7 +43,7 @@ export class PersonaSelectorComponent {
       .subscribe((value: PersonaType) => {
         // TODO: DEMO - Remove when proper permissions are implemented
         // Set foundation before persona so navigation in setPersona() has correct context
-        if (value === 'board-member' || value === 'executive-director') {
+        if (isBoardScopedPersona(value)) {
           const tlfProject = this.projectContextService.availableProjects.find((p) => p.slug === 'tlf');
           if (tlfProject) {
             this.projectContextService.setFoundation({

@@ -52,6 +52,7 @@ export class MeetingController {
 
     try {
       const skipRegistrants = req.query['skip_registrants'] === 'true';
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional destructuring to strip skip_registrants from query params
       const { skip_registrants: _, ...queryParams } = req.query as Record<string, any>;
       const { data: meetings, page_token } = await this.meetingService.getMeetings(req, queryParams, 'v1_meeting', true);
 

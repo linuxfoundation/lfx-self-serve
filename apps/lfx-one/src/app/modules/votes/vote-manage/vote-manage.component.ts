@@ -124,16 +124,6 @@ export class VoteManageComponent {
     this.navigateBack();
   }
 
-  /** Navigates back to the committee votes tab or the main votes page. */
-  private navigateBack(): void {
-    const ctx = this.committeeContext();
-    if (ctx) {
-      this.router.navigate(['/groups', ctx.uid], { queryParams: { tab: 'votes' } });
-    } else {
-      this.router.navigate(['/votes']);
-    }
-  }
-
   public onSaveAsDraft(): void {
     if (this.form().invalid) {
       this.markAllFormControlsAsTouched();
@@ -245,6 +235,17 @@ export class VoteManageComponent {
   }
 
   // Private methods
+
+  /** Navigates back to the committee votes tab or the main votes page. */
+  private navigateBack(): void {
+    const ctx = this.committeeContext();
+    if (ctx) {
+      this.router.navigate(['/groups', ctx.uid], { queryParams: { tab: 'votes' } });
+    } else {
+      this.router.navigate(['/votes']);
+    }
+  }
+
   private submitVote(): void {
     const project = this.project();
     if (!project?.uid) {

@@ -2,7 +2,8 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div
-  class="p-4 bg-white border border-gray-200 hover:border-blue-500 rounded-lg flex-shrink-0 w-[calc(100vw-3rem)] md:w-80 h-full"
+  class="p-4 bg-white border border-gray-200 hover:border-blue-500 rounded-lg flex-shrink-0 h-full"
+  [ngClass]="styleClass() || 'w-[calc(100vw-3rem)] md:w-80'"
   [class.cursor-pointer]="clickable()"
   [attr.data-testid]="testId()"
   (click)="handleClick()">
@@ -32,9 +33,11 @@
       <!-- Body: Chart or Custom Content -->
       @if (customContentTemplate) {
         <ng-container [ngTemplateOutlet]="customContentTemplate"></ng-container>
-      } @else if (chartData()) {
+      } @else {
         <div class="mt-3 w-full h-16">
-          <lfx-chart [type]="chartType()" [data]="chartData()!" [options]="chartOptions()" height="100%"></lfx-chart>
+          @if (chartData()) {
+            <lfx-chart [type]="chartType()" [data]="chartData()!" [options]="chartOptions()" height="100%"></lfx-chart>
+          }
         </div>
       }
 

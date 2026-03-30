@@ -1,12 +1,23 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import fs from 'fs';
+import path from 'path';
 import { chromium, FullConfig } from '@playwright/test';
-import { AuthHelper, TEST_CREDENTIALS } from './auth.helper';
+import dotenv from 'dotenv';
+import { AuthHelper } from './auth.helper';
+
+// Ensure .env is loaded before reading credentials
+dotenv.config({ path: path.resolve(__dirname, '../../.env') });
 
 async function globalSetup(config: FullConfig) {
+  const credentials = {
+    username: process.env.TEST_USERNAME || '',
+    password: process.env.TEST_PASSWORD || '',
+  };
+
   // Skip authentication if no credentials are provided
-  if (!TEST_CREDENTIALS.username || !TEST_CREDENTIALS.password) {
+  if (!credentials.username || !credentials.password) {
     console.log('⚠️  No test credentials provided. Tests requiring authentication will be skipped.');
     console.log('   Set TEST_USERNAME and TEST_PASSWORD environment variables to enable authenticated tests.');
     return;
@@ -29,10 +40,14 @@ async function globalSetup(config: FullConfig) {
     await page.goto(`${url}/logout`);
 
     // Perform authentication
-    await AuthHelper.loginWithAuth0(page, TEST_CREDENTIALS);
+    await AuthHelper.loginWithAuth0(page, credentials);
 
     // Save authentication state
-    await context.storageState({ path: 'playwright/.auth/user.json' });
+    const authDir = 'playwright/.auth';
+    if (!fs.existsSync(authDir)) {
+      fs.mkdirSync(authDir, { recursive: true });
+    }
+    await context.storageState({ path: `${authDir}/user.json` });
     console.log('✅ Authentication successful. State saved.');
   } catch (error) {
     console.error('❌ Authentication failed:', error);

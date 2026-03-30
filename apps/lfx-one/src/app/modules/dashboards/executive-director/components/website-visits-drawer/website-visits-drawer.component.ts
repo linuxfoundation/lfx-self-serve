@@ -1,51 +1,63 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, model, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, model, signal, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
-import { lfxColors } from '@lfx-one/shared/constants';
+import { TagComponent } from '@components/tag/tag.component';
+import {
+  createHorizontalBarChartOptions,
+  createLineChartOptions,
+  DASHBOARD_TOOLTIP_CONFIG,
+  lfxColors,
+  MARKETING_ACTION_ICON_MAP,
+} from '@lfx-one/shared/constants';
+import { formatNumber, hexToRgba } from '@lfx-one/shared/utils';
+import { AnalyticsService } from '@services/analytics.service';
+import { ProjectContextService } from '@services/project-context.service';
+import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
+import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
+import { SkeletonModule } from 'primeng/skeleton';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type { WebActivitiesSummaryResponse, MarketingRecommendedAction, MarketingKeyInsight } from '@lfx-one/shared/interfaces';
+import type { WebActivitiesSummaryResponse, MarketingRecommendedAction, MarketingKeyInsight, MarketingActionType } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-website-visits-drawer',
-  imports: [DrawerModule, ChartComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [ButtonComponent, CardComponent, DrawerModule, ChartComponent, SkeletonModule, TagComponent],
   templateUrl: './website-visits-drawer.component.html',
+  styleUrl: './website-visits-drawer.component.scss',
 })
 export class WebsiteVisitsDrawerComponent {
+  // === Services ===
+  private readonly analyticsService = inject(AnalyticsService);
+  private readonly messageService = inject(MessageService);
+  private readonly projectContextService = inject(ProjectContextService);
+
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
 
-  // === Inputs ===
-  public readonly data = input<WebActivitiesSummaryResponse>({
-    totalSessions: 0,
-    totalPageViews: 0,
-    domainGroups: [],
-    dailyData: [],
-    dailyLabels: [],
-  });
+  // === WritableSignals ===
+  protected readonly drawerLoading = signal(false);
 
-  // === Computed Signals ===
+  // === Computed Signals (lazy-loaded data) ===
+  protected readonly drawerData: Signal<WebActivitiesSummaryResponse> = this.initDrawerData();
+  protected readonly formattedTotalSessions: Signal<string> = computed(() => formatNumber(this.drawerData().totalSessions));
+  protected readonly formattedTotalPageViews: Signal<string> = computed(() => formatNumber(this.drawerData().totalPageViews));
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
   protected readonly trendChartData: Signal<ChartData<'line'>> = this.initTrendChartData();
   protected readonly domainChartData: Signal<ChartData<'bar'>> = this.initDomainChartData();
 
-  protected readonly trendChartOptions: ChartOptions<'line'> = {
-    responsive: true,
-    maintainAspectRatio: false,
+  protected readonly trendChartOptions: ChartOptions<'line'> = createLineChartOptions({
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-        titleColor: lfxColors.gray[900],
-        bodyColor: lfxColors.gray[600],
-        borderColor: lfxColors.gray[200],
-        borderWidth: 1,
-        padding: 10,
-        cornerRadius: 6,
+        ...DASHBOARD_TOOLTIP_CONFIG,
         callbacks: {
           label: (ctx) => ` ${(ctx.parsed.y ?? 0).toLocaleString()} sessions`,
         },
@@ -67,29 +79,20 @@ export class WebsiteVisitsDrawerComponent {
           font: { size: 11 },
           callback: (value) => {
             const num = Number(value);
-            if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
+            if (num >= 999_950) return `${(num / 1_000_000).toFixed(1)}M`;
             if (num >= 1_000) return `${(num / 1_000).toFixed(0)}K`;
             return String(num);
           },
         },
       },
     },
-  };
+  });
 
-  protected readonly domainChartOptions: ChartOptions<'bar'> = {
-    indexAxis: 'y',
-    responsive: true,
-    maintainAspectRatio: false,
+  protected readonly domainChartOptions: ChartOptions<'bar'> = createHorizontalBarChartOptions({
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-        titleColor: lfxColors.gray[900],
-        bodyColor: lfxColors.gray[600],
-        borderColor: lfxColors.gray[200],
-        borderWidth: 1,
-        padding: 10,
-        cornerRadius: 6,
+        ...DASHBOARD_TOOLTIP_CONFIG,
         callbacks: {
           label: (ctx) => ` ${(ctx.parsed.x ?? 0).toLocaleString()} sessions`,
         },
@@ -105,7 +108,7 @@ export class WebsiteVisitsDrawerComponent {
           font: { size: 11 },
           callback: (value) => {
             const num = Number(value);
-            if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
+            if (num >= 999_950) return `${(num / 1_000_000).toFixed(1)}M`;
             if (num >= 1_000) return `${(num / 1_000).toFixed(0)}K`;
             return String(num);
           },
@@ -118,26 +121,59 @@ export class WebsiteVisitsDrawerComponent {
         ticks: { color: lfxColors.gray[600], font: { size: 12 } },
       },
     },
-    datasets: {
-      bar: { barPercentage: 0.8, categoryPercentage: 1.0 },
-    },
-  };
+  });
+
+  protected readonly formatNumber = formatNumber;
 
   // === Protected Methods ===
   protected onClose(): void {
     this.visible.set(false);
   }
 
-  protected formatNumber(num: number): string {
-    if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
-    if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
-    return num.toLocaleString();
+  protected actionIcon(type: MarketingActionType): string {
+    return MARKETING_ACTION_ICON_MAP[type];
   }
 
   // === Private Initializers ===
+  private initDrawerData(): Signal<WebActivitiesSummaryResponse> {
+    const defaultValue: WebActivitiesSummaryResponse = {
+      totalSessions: 0,
+      totalPageViews: 0,
+      domainGroups: [],
+      dailyData: [],
+      dailyLabels: [],
+    };
+
+    const visible$ = toObservable(this.visible);
+    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.slug || ''));
+
+    return toSignal(
+      combineLatest([visible$, foundation$]).pipe(
+        filter(([isVisible, slug]) => isVisible && !!slug),
+        map(([, slug]) => slug),
+        tap(() => this.drawerLoading.set(true)),
+        switchMap((foundationSlug) =>
+          this.analyticsService.getWebActivitiesSummary(foundationSlug).pipe(
+            tap(() => this.drawerLoading.set(false)),
+            catchError(() => {
+              this.drawerLoading.set(false);
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'Failed to load website visit details.',
+              });
+              return of(defaultValue);
+            })
+          )
+        )
+      ),
+      { initialValue: defaultValue }
+    );
+  }
+
   private initRecommendedActions(): Signal<MarketingRecommendedAction[]> {
     return computed(() => {
-      const { totalSessions, totalPageViews, domainGroups, dailyData } = this.data();
+      const { totalSessions, totalPageViews, domainGroups, dailyData } = this.drawerData();
       const actions: MarketingRecommendedAction[] = [];
 
       if (totalSessions === 0 && dailyData.length === 0) {
@@ -157,7 +193,7 @@ export class WebsiteVisitsDrawerComponent {
             description: `Sessions dropped ~${decline}% in the recent period — review traffic sources and content changes`,
             priority: 'high',
             dueLabel: 'This week',
-            iconClass: 'fa-light fa-chart-line-down',
+            actionType: 'decline',
           });
         }
       }
@@ -172,7 +208,7 @@ export class WebsiteVisitsDrawerComponent {
             description: `${topShare.toFixed(0)}% of sessions come from a single domain — expand content across other properties`,
             priority: 'medium',
             dueLabel: 'This month',
-            iconClass: 'fa-light fa-diagram-project',
+            actionType: 'diversify',
           });
         }
       }
@@ -186,7 +222,7 @@ export class WebsiteVisitsDrawerComponent {
             description: `Only ${pagesPerSession.toFixed(1)} pages per session — add cross-links to increase engagement`,
             priority: 'medium',
             dueLabel: 'This month',
-            iconClass: 'fa-light fa-link',
+            actionType: 'optimize',
           });
         }
       }
@@ -194,10 +230,10 @@ export class WebsiteVisitsDrawerComponent {
       if (actions.length === 0) {
         actions.push({
           title: 'Continue current strategy',
-          description: `${this.formatNumber(totalSessions)} sessions with healthy traffic distribution`,
+          description: `${formatNumber(totalSessions)} sessions with healthy traffic distribution`,
           priority: 'low',
           dueLabel: 'Ongoing',
-          iconClass: 'fa-light fa-chart-line-up',
+          actionType: 'growth',
         });
       }
 
@@ -207,7 +243,7 @@ export class WebsiteVisitsDrawerComponent {
 
   private initKeyInsights(): Signal<MarketingKeyInsight[]> {
     return computed(() => {
-      const { totalSessions, totalPageViews, domainGroups, dailyData } = this.data();
+      const { totalSessions, totalPageViews, domainGroups, dailyData } = this.drawerData();
       const insights: MarketingKeyInsight[] = [];
 
       if (totalSessions === 0 && dailyData.length === 0) {
@@ -218,7 +254,7 @@ export class WebsiteVisitsDrawerComponent {
       if (totalSessions > 0) {
         const pagesPerSession = totalPageViews / totalSessions;
         insights.push({
-          text: `${pagesPerSession.toFixed(1)} pages per session across ${this.formatNumber(totalSessions)} visits`,
+          text: `${pagesPerSession.toFixed(1)} pages per session across ${formatNumber(totalSessions)} visits`,
           type: pagesPerSession >= 2 ? 'driver' : 'info',
         });
       }
@@ -257,14 +293,14 @@ export class WebsiteVisitsDrawerComponent {
 
   private initTrendChartData(): Signal<ChartData<'line'>> {
     return computed(() => {
-      const { dailyData, dailyLabels } = this.data();
+      const { dailyData, dailyLabels } = this.drawerData();
       return {
         labels: dailyLabels,
         datasets: [
           {
             data: dailyData,
             borderColor: lfxColors.blue[500],
-            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -278,7 +314,7 @@ export class WebsiteVisitsDrawerComponent {
 
   private initDomainChartData(): Signal<ChartData<'bar'>> {
     return computed(() => {
-      const { domainGroups } = this.data();
+      const { domainGroups } = this.drawerData();
       const sorted = [...domainGroups].sort((a, b) => b.totalSessions - a.totalSessions);
       return {
         labels: sorted.map((d) => d.domainGroup),

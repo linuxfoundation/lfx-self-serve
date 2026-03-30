@@ -1,18 +1,30 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, model, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, input, model, Signal } from '@angular/core';
+import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
-import { lfxColors } from '@lfx-one/shared/constants';
+import { TagComponent } from '@components/tag/tag.component';
+import {
+  createHorizontalBarChartOptions,
+  createLineChartOptions,
+  DASHBOARD_TOOLTIP_CONFIG,
+  lfxColors,
+  MARKETING_ACTION_ICON_MAP,
+} from '@lfx-one/shared/constants';
+import { formatNumber, hexToRgba } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type { EngagedCommunitySizeResponse, MarketingRecommendedAction, MarketingKeyInsight } from '@lfx-one/shared/interfaces';
+import type { EngagedCommunitySizeResponse, MarketingActionType, MarketingRecommendedAction, MarketingKeyInsight } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-engaged-community-drawer',
-  imports: [DrawerModule, ChartComponent],
+  changeDetection: ChangeDetectionStrategy.OnPush,
+  imports: [ButtonComponent, CardComponent, DrawerModule, ChartComponent, TagComponent],
   templateUrl: './engaged-community-drawer.component.html',
+  styleUrl: './engaged-community-drawer.component.scss',
 })
 export class EngagedCommunityDrawerComponent {
   // === Model Signals (two-way binding) ===
@@ -23,31 +35,31 @@ export class EngagedCommunityDrawerComponent {
     totalMembers: 0,
     changePercentage: 0,
     trend: 'up',
-    breakdown: { newsletterSubscribers: 0, communityMembers: 0, workingGroupMembers: 0 },
+    breakdown: { newsletterSubscribers: 0, communityMembers: 0, workingGroupMembers: 0, certifiedIndividuals: 0 },
     monthlyData: [],
   });
-
   // === Computed Signals ===
+  protected readonly formattedTotalMembers: Signal<string> = computed(() => formatNumber(this.data().totalMembers));
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
+  protected readonly attentionActions: Signal<MarketingRecommendedAction[]> = computed(() =>
+    this.recommendedActions().filter((a) => a.priority === 'high' || a.priority === 'medium')
+  );
+  protected readonly attentionInsights: Signal<MarketingKeyInsight[]> = computed(() => this.keyInsights().filter((i) => i.type === 'warning'));
+  protected readonly performingActions: Signal<MarketingRecommendedAction[]> = computed(() => this.recommendedActions().filter((a) => a.priority === 'low'));
+  protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() =>
+    this.keyInsights().filter((i) => i.type === 'driver' || i.type === 'info')
+  );
   protected readonly trendChartData: Signal<ChartData<'line'>> = this.initTrendChartData();
   protected readonly breakdownChartData: Signal<ChartData<'bar'>> = this.initBreakdownChartData();
 
-  protected readonly trendChartOptions: ChartOptions<'line'> = {
-    responsive: true,
-    maintainAspectRatio: false,
+  protected readonly trendChartOptions: ChartOptions<'line'> = createLineChartOptions({
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-        titleColor: lfxColors.gray[900],
-        bodyColor: lfxColors.gray[600],
-        borderColor: lfxColors.gray[200],
-        borderWidth: 1,
-        padding: 10,
-        cornerRadius: 6,
+        ...DASHBOARD_TOOLTIP_CONFIG,
         callbacks: {
-          label: (ctx) => ` ${this.formatNumber(ctx.parsed.y ?? 0)} members`,
+          label: (ctx) => ` ${formatNumber(ctx.parsed.y ?? 0)} members`,
         },
       },
     },
@@ -73,24 +85,15 @@ export class EngagedCommunityDrawerComponent {
         },
       },
     },
-  };
+  });
 
-  protected readonly breakdownChartOptions: ChartOptions<'bar'> = {
-    indexAxis: 'y',
-    responsive: true,
-    maintainAspectRatio: false,
+  protected readonly breakdownChartOptions: ChartOptions<'bar'> = createHorizontalBarChartOptions({
     plugins: {
       legend: { display: false },
       tooltip: {
-        backgroundColor: 'rgba(255, 255, 255, 0.98)',
-        titleColor: lfxColors.gray[900],
-        bodyColor: lfxColors.gray[600],
-        borderColor: lfxColors.gray[200],
-        borderWidth: 1,
-        padding: 10,
-        cornerRadius: 6,
+        ...DASHBOARD_TOOLTIP_CONFIG,
         callbacks: {
-          label: (ctx) => ` ${this.formatNumber(ctx.parsed.x ?? 0)} members`,
+          label: (ctx) => ` ${formatNumber(ctx.parsed.x ?? 0)} members`,
         },
       },
     },
@@ -116,20 +119,17 @@ export class EngagedCommunityDrawerComponent {
         ticks: { color: lfxColors.gray[600], font: { size: 12 } },
       },
     },
-    datasets: {
-      bar: { barPercentage: 0.8, categoryPercentage: 1.0 },
-    },
-  };
+  });
+
+  protected readonly formatNumber = formatNumber;
 
   // === Protected Methods ===
   protected onClose(): void {
     this.visible.set(false);
   }
 
-  protected formatNumber(num: number): string {
-    if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(1)}M`;
-    if (num >= 1_000) return `${(num / 1_000).toFixed(1)}K`;
-    return num.toLocaleString();
+  protected actionIcon(type: MarketingActionType): string {
+    return MARKETING_ACTION_ICON_MAP[type];
   }
 
   // === Private Initializers ===
@@ -146,10 +146,10 @@ export class EngagedCommunityDrawerComponent {
       if (totalMembers > 0 && breakdown.workingGroupMembers < totalMembers * 0.1) {
         actions.push({
           title: 'Increase working group participation',
-          description: `Working group members are only ${((breakdown.workingGroupMembers / totalMembers) * 100).toFixed(0)}% of total — convert newsletter subscribers through targeted outreach`,
+          description: `Working group members are only ${((breakdown.workingGroupMembers / totalMembers) * 100).toFixed(0)}% of total — improve outreach to convert community members into active participants`,
           priority: 'high',
           dueLabel: 'This quarter',
-          iconClass: 'fa-light fa-user-group',
+          actionType: 'engagement',
         });
       }
 
@@ -160,28 +160,17 @@ export class EngagedCommunityDrawerComponent {
           description: `Community size dropped ${Math.abs(changePercentage)}% — review engagement programs and onboarding flow`,
           priority: 'high',
           dueLabel: 'This month',
-          iconClass: 'fa-light fa-chart-line-down',
-        });
-      }
-
-      // Check if newsletter dominates (concentration risk)
-      if (totalMembers > 0 && breakdown.newsletterSubscribers > totalMembers * 0.7) {
-        actions.push({
-          title: 'Diversify engagement beyond newsletter',
-          description: `${((breakdown.newsletterSubscribers / totalMembers) * 100).toFixed(0)}% of community is newsletter-only — create pathways to deeper participation`,
-          priority: 'medium',
-          dueLabel: 'Next quarter',
-          iconClass: 'fa-light fa-arrows-split-up-and-left',
+          actionType: 'decline',
         });
       }
 
       if (actions.length === 0) {
         actions.push({
           title: 'Continue community growth strategy',
-          description: `${this.formatNumber(totalMembers)} engaged members${changePercentage > 0 ? ` — growing ${changePercentage}%` : ''}`,
+          description: `${formatNumber(totalMembers)} engaged members${changePercentage > 0 ? ` — growing ${changePercentage}%` : ''}`,
           priority: 'low',
           dueLabel: 'Ongoing',
-          iconClass: 'fa-light fa-chart-line-up',
+          actionType: 'growth',
         });
       }
 
@@ -210,12 +199,12 @@ export class EngagedCommunityDrawerComponent {
       // Largest segment
       if (totalMembers > 0) {
         const segments = [
-          { name: 'Newsletter subscribers', value: breakdown.newsletterSubscribers },
           { name: 'Community members', value: breakdown.communityMembers },
           { name: 'Working group members', value: breakdown.workingGroupMembers },
+          { name: 'Certified individuals', value: breakdown.certifiedIndividuals },
         ].sort((a, b) => b.value - a.value);
         const topShare = (segments[0].value / totalMembers) * 100;
-        insights.push({ text: `${segments[0].name} are the largest segment at ${topShare.toFixed(0)}% of total`, type: topShare > 70 ? 'warning' : 'info' });
+        insights.push({ text: `${segments[0].name} are the largest segment at ${topShare.toFixed(0)}% of total`, type: 'info' });
       }
 
       // Monthly trend consistency
@@ -243,7 +232,7 @@ export class EngagedCommunityDrawerComponent {
           {
             data: monthlyData.map((d) => d.value),
             borderColor: lfxColors.blue[500],
-            backgroundColor: `${lfxColors.blue[500]}1A`,
+            backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
             fill: true,
             tension: 0.4,
             borderWidth: 2,
@@ -259,11 +248,11 @@ export class EngagedCommunityDrawerComponent {
     return computed(() => {
       const { breakdown } = this.data();
       return {
-        labels: ['Newsletter', 'Community', 'Working Groups'],
+        labels: ['Community', 'Working Groups', 'Certified'],
         datasets: [
           {
-            data: [breakdown.newsletterSubscribers, breakdown.communityMembers, breakdown.workingGroupMembers],
-            backgroundColor: [lfxColors.blue[700], lfxColors.blue[500], lfxColors.blue[300]],
+            data: [breakdown.communityMembers, breakdown.workingGroupMembers, breakdown.certifiedIndividuals],
+            backgroundColor: [lfxColors.blue[500], lfxColors.blue[300], lfxColors.blue[200]],
             borderRadius: { topLeft: 0, bottomLeft: 0, topRight: 4, bottomRight: 4 },
             borderSkipped: 'start',
           },

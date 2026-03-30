@@ -3,6 +3,7 @@
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { MeetingAttachment } from './meeting-attachment.interface';
 
 // ── v2.0 Taxonomy Types ─────────────────────────────────────────────────────
 
@@ -432,7 +433,10 @@ export interface CommitteeEngagementMetrics {
 }
 
 /** Type of a committee document entry */
-export type CommitteeDocumentType = 'file' | 'link';
+export type CommitteeDocumentType = 'file' | 'link' | 'folder';
+
+/** Subset of document types that can be created via the BFF (excludes 'file' — meeting attachments only) */
+export type CreateCommitteeDocumentType = 'link' | 'folder';
 
 /**
  * A document or resource link associated with a committee.
@@ -443,11 +447,119 @@ export interface CommitteeDocument {
   name: string;
   /** URL for links; download URL for files */
   url?: string;
+  /** Optional description */
+  description?: string;
   /** MIME type or file extension (files only) */
   mime_type?: string;
   /** File size in bytes (files only) */
   file_size?: number;
+  /** ISO date string of creation */
+  created_at?: string;
   /** ISO date string of last update */
   updated_at?: string;
+  /** UID of the user who created the document */
+  created_by?: string;
   uploaded_by?: string;
+  /** Parent folder UID (for nested documents) */
+  parent_uid?: string;
+  /** Committee UID this document belongs to */
+  committee_uid?: string;
+}
+
+/** Request body for creating a committee document */
+export interface CreateCommitteeDocumentRequest {
+  type: CreateCommitteeDocumentType;
+  name: string;
+  /** Required for type 'link' */
+  url?: string;
+  description?: string;
+  /** Parent folder UID (to place a link inside a folder) */
+  parent_uid?: string;
+  /** Display name of the creator (populated by BFF from session) */
+  created_by_name?: string;
+}
+
+/** Attachment enriched with meeting context for display. */
+export interface MeetingAttachmentWithContext {
+  attachment: MeetingAttachment;
+  meetingTitle: string;
+  meetingDate: string;
+  meetingId: string;
+}
+
+/** Unified display item that covers both meeting attachments and standalone documents. */
+export interface DocumentDisplayItem {
+  uid: string;
+  name: string;
+  type: CommitteeDocumentType;
+  url?: string;
+  description?: string;
+  addedBy?: string;
+  date?: string;
+  fileSize?: number;
+  /** Source for filtering: 'meeting', 'link', 'folder', or 'file' */
+  source: CommitteeDocumentType | 'meeting';
+  /** Whether this is a standalone document (supports edit/delete) */
+  isStandalone: boolean;
+  /** Original meeting attachment data (for download) */
+  meetingAttachment?: MeetingAttachmentWithContext;
+  /** Original committee document data (for edit/delete) */
+  committeeDocument?: CommitteeDocument;
+  /** Parent folder UID (for hierarchy display) */
+  parentUid?: string;
+  /** Number of child links inside this folder */
+  childCount?: number;
+  /** Whether this item is a child inside a folder (indent in table) */
+  isChild?: boolean;
+}
+
+/**
+ * Source category for a committee document entry in the Documents tab.
+ * @description Distinguishes between attachments, recordings, transcripts, and AI summaries.
+ */
+export type CommitteeDocumentSource = 'link' | 'file' | 'recording' | 'transcript' | 'summary';
+
+/**
+ * Unified document item for the committee Documents tab.
+ * @description Represents attachments, recording files, transcripts, and AI summaries
+ * in a single shape suitable for table display.
+ */
+export interface CommitteeDocumentItem {
+  /** Unique key for table dataKey (combination of source + id) */
+  id: string;
+  /** Display name shown in the Name column */
+  name: string;
+  /** Source type for filtering and icon selection */
+  source: CommitteeDocumentSource;
+  /** Person who created/added the item (display name or null) */
+  addedBy: string | null;
+  /** ISO date string for the Date column */
+  date: string;
+  /** File size in bytes (null for links and summaries) */
+  fileSize: number | null;
+  /** Meeting title for the "From: ..." subtitle */
+  meetingTitle: string;
+  /** Meeting date for the "From: ..." subtitle */
+  meetingDate: string;
+  /** Meeting UID — needed for attachment download APIs on upcoming meetings */
+  meetingId: string;
+  /** Past meeting UID — needed for past meeting APIs (null for upcoming meetings) */
+  pastMeetingId: string | null;
+
+  /** For source='link': the external URL */
+  linkUrl?: string;
+  /** For source='file': the attachment UID for download API */
+  attachmentUid?: string;
+  /** For source='recording': play URL from RecordingFile */
+  playUrl?: string;
+  /** For source='recording'|'transcript': download URL from RecordingFile */
+  downloadUrl?: string;
+  /** For source='recording': share URL from the largest RecordingSession */
+  shareUrl?: string;
+  /** For source='summary': data needed to open SummaryModal */
+  summaryData?: {
+    uid: string;
+    content: string;
+    approved: boolean;
+  };
 }

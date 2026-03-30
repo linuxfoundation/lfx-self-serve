@@ -3,7 +3,16 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable, signal, WritableSignal } from '@angular/core';
-import { Committee, CommitteeMember, CreateCommitteeMemberRequest, MyCommittee, QueryServiceCountResponse } from '@lfx-one/shared/interfaces';
+import {
+  Committee,
+  CommitteeDocument,
+  CommitteeDocumentType,
+  CommitteeMember,
+  CreateCommitteeDocumentRequest,
+  CreateCommitteeMemberRequest,
+  MyCommittee,
+  QueryServiceCountResponse,
+} from '@lfx-one/shared/interfaces';
 import { catchError, map, Observable, of, take, tap, throwError } from 'rxjs';
 
 @Injectable({
@@ -15,12 +24,7 @@ export class CommitteeService {
   private readonly http = inject(HttpClient);
 
   public getCommittees(params?: HttpParams): Observable<Committee[]> {
-    return this.http.get<Committee[]>('/api/committees', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to load committees:', error);
-        return of([]);
-      })
-    );
+    return this.http.get<Committee[]>('/api/committees', { params }).pipe(catchError(() => of([])));
   }
 
   public getCommitteesByProject(uid: string): Observable<Committee[]> {
@@ -91,6 +95,21 @@ export class CommitteeService {
     return this.http.delete<void>(`/api/committees/${committeeId}/leave`).pipe(take(1));
   }
 
+  // ── Committee Documents ─────────────────────────────────────────────────
+
+  public getCommitteeDocuments(committeeId: string): Observable<CommitteeDocument[]> {
+    return this.http.get<CommitteeDocument[]>(`/api/committees/${committeeId}/documents`).pipe(catchError(() => of([])));
+  }
+
+  public createCommitteeDocument(committeeId: string, data: CreateCommitteeDocumentRequest): Observable<CommitteeDocument> {
+    return this.http.post<CommitteeDocument>(`/api/committees/${committeeId}/documents`, data).pipe(take(1));
+  }
+
+  public deleteCommitteeDocument(committeeId: string, documentId: string, documentType: CommitteeDocumentType): Observable<void> {
+    const params = new HttpParams().set('type', documentType);
+    return this.http.delete<void>(`/api/committees/${committeeId}/documents/${documentId}`, { params }).pipe(take(1));
+  }
+
   // ── My Committees ─────────────────────────────────────────────────────────
 
   /** Get committees for the current user, optionally scoped to a project */
@@ -99,11 +118,6 @@ export class CommitteeService {
     if (projectUid) {
       params = params.set('project_uid', projectUid);
     }
-    return this.http.get<MyCommittee[]>('/api/committees/my-committees', { params }).pipe(
-      catchError((error) => {
-        console.error('Failed to load my committees:', error);
-        return of([]);
-      })
-    );
+    return this.http.get<MyCommittee[]>('/api/committees/my-committees', { params }).pipe(catchError(() => of([])));
   }
 }
