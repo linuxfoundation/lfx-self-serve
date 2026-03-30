@@ -47,6 +47,10 @@ const browserDistFolder = resolve(serverDistFolder, '../browser');
 const angularApp = new AngularNodeAppEngine();
 const app = express();
 
+// Trust the first proxy (load balancer) so express-rate-limit and req.ip
+// correctly resolve client IPs from the X-Forwarded-For header
+app.set('trust proxy', 1);
+
 /**
  * Enable gzip/deflate compression for all responses.
  *
