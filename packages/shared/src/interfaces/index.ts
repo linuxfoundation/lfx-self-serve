@@ -83,6 +83,9 @@ export * from './my-activity.interface';
 // Filter interfaces
 export * from './filter.interface';
 
+// Profile interfaces
+export * from './profile.interface';
+
 // Lens interfaces
 export * from './lens.interface';
 

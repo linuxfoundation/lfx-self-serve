@@ -3,34 +3,73 @@
 
 <div class="organization-search-container">
   @if (!manualMode()) {
-    <lfx-autocomplete
-      [form]="organizationForm"
-      control="organizationSearch"
-      [placeholder]="placeholder()"
-      [suggestions]="suggestions()"
-      [styleClass]="styleClass()"
-      [inputStyleClass]="inputStyleClass()"
-      [panelStyleClass]="panelStyleClass()"
-      [dataTestId]="dataTestId()"
-      optionLabel="name"
-      optionValue="name"
-      appendTo="body"
-      (completeMethod)="onSearchComplete($event)"
-      (onSelect)="onOrganizationSelected($event)"
-      (onClear)="onSearchClear()">
-      <!-- Empty template -->
-      <ng-template #empty>
-        <div class="p-3 text-center">
-          <p class="text-sm text-gray-600 mb-2">No organizations found</p>
-          <button type="button" class="text-sm text-primary hover:underline" (click)="switchToManualMode()">Enter details manually</button>
-        </div>
-      </ng-template>
-    </lfx-autocomplete>
+    <div class="flex items-center gap-2">
+      @if (resolvedOrg(); as resolved) {
+        @if (resolved.logo) {
+          <img [src]="resolved.logo" [alt]="resolved.name" class="h-8 w-8 shrink-0 rounded" data-testid="org-search-resolved-logo" />
+        }
+      }
+      <lfx-autocomplete
+        [form]="organizationForm"
+        control="organizationSearch"
+        [placeholder]="placeholder()"
+        [suggestions]="suggestions()"
+        [styleClass]="styleClass()"
+        [inputStyleClass]="inputStyleClass()"
+        [panelStyleClass]="panelStyleClass()"
+        [dataTestId]="dataTestId()"
+        optionLabel="name"
+        optionValue="name"
+        appendTo="body"
+        (completeMethod)="onSearchComplete($event)"
+        (onSelect)="onOrganizationSelected($event)"
+        (onClear)="onSearchClear()">
+        <!-- Item template: show name + domain -->
+        <ng-template #item let-org>
+          <div class="flex flex-col gap-0.5" data-testid="org-search-item">
+            <span class="text-sm font-medium">{{ org.name }}</span>
+            @if (org.domain) {
+              <span class="text-2xs text-slate-400">{{ org.domain }}</span>
+            }
+          </div>
+        </ng-template>
+
+        <!-- Empty template -->
+        <ng-template #empty>
+          <div class="p-3 text-center">
+            <p class="text-sm text-gray-600">No organizations found</p>
+          </div>
+        </ng-template>
+
+        <!-- Footer template: "I want to create" button -->
+        @if (searchTerm()) {
+          <ng-template #footer>
+            <div class="border-t border-slate-100 p-2">
+              <button
+                type="button"
+                class="w-full rounded px-3 py-2 text-left text-sm text-primary hover:bg-slate-50"
+                (click)="switchToManualMode()"
+                data-testid="org-search-create-btn">
+                I want to create '<strong>{{ searchTerm() }}</strong
+                >'
+              </button>
+            </div>
+          </ng-template>
+        }
+      </lfx-autocomplete>
+    </div>
   } @else {
     <!-- Manual entry mode -->
     <div class="flex flex-col gap-3">
       @if (nameControl()) {
-        <lfx-input-text [form]="form()" [control]="nameControl()!" placeholder="Enter organization name" styleClass="w-full" size="small" />
+        <div class="flex items-center gap-2">
+          @if (resolvedOrg(); as resolved) {
+            @if (resolved.logo) {
+              <img [src]="resolved.logo" [alt]="resolved.name" class="h-8 w-8 shrink-0 rounded" data-testid="org-search-resolved-logo" />
+            }
+          }
+          <lfx-input-text [form]="form()" [control]="nameControl()!" placeholder="Enter organization name" styleClass="w-full" size="small" />
+        </div>
       }
 
       @if (domainControl()) {

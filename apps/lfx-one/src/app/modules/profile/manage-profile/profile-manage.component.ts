@@ -12,30 +12,21 @@ import { SelectComponent } from '@components/select/select.component';
 import { COUNTRIES, markFormControlsAsTouched, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared';
 import { CombinedProfile, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
+import { HttpErrorResponse } from '@angular/common/http';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, finalize, of, switchMap, tap } from 'rxjs';
 
-import { ProfileNavComponent } from '../components/profile-nav/profile-nav.component';
-
 @Component({
   selector: 'lfx-profile-manage',
-  imports: [
-    ReactiveFormsModule,
-    CardComponent,
-    InputTextComponent,
-    MessageComponent,
-    SelectComponent,
-    ButtonComponent,
-    ToastModule,
-    TooltipModule,
-    ProfileNavComponent,
-  ],
+  imports: [ReactiveFormsModule, CardComponent, InputTextComponent, MessageComponent, SelectComponent, ButtonComponent, ToastModule, TooltipModule],
   providers: [MessageService],
   templateUrl: './profile-manage.component.html',
 })
 export class ProfileManageComponent implements OnInit {
+  private static readonly formStateKey = 'lfx_profile_pending_save';
+
   private readonly fb = inject(FormBuilder);
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
@@ -99,6 +90,7 @@ export class ProfileManageComponent implements OnInit {
 
   public constructor() {
     this.profileData = this.initializeProfileData();
+
     // Subscribe to country field changes to update the signal
     this.profileForm
       .get('country')
@@ -172,8 +164,14 @@ export class ProfileManageComponent implements OnInit {
           // Reload profile data
           this.refresh.next();
         },
-        error: (error) => {
-          console.error('Error saving profile:', error);
+        error: (error: HttpErrorResponse) => {
+          // Flow C: Management token required — save form state and redirect to authorize
+          if (error.status === 403 && error.error?.error === 'management_token_required') {
+            sessionStorage.setItem(ProfileManageComponent.formStateKey, JSON.stringify(this.profileForm.value));
+            window.location.href = error.error.authorize_url;
+            return;
+          }
+
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
@@ -200,8 +198,7 @@ export class ProfileManageComponent implements OnInit {
             tap((profile) => {
               this.populateForm(profile);
             }),
-            catchError((error) => {
-              console.error('Error loading profile:', error);
+            catchError(() => {
               this.messageService.add({
                 severity: 'error',
                 summary: 'Error',

@@ -74,7 +74,7 @@ The server employs a **carefully orchestrated middleware pipeline** that process
 5. **API Routes** - Business logic endpoints with bearer token validation
 6. **Angular SSR** - Universal rendering for all remaining routes
 
-### Authentication Architecture
+### Selective Authentication
 
 The server implements selective authentication using Auth0/Authelia:
 

@@ -8,7 +8,7 @@ The testing architecture is designed to ensure code quality and reliability acro
 
 ### Testing Approach
 
-- **End-to-End Tests**: Full application workflows with comprehensive coverage (85+ tests)
+- **End-to-End Tests**: Full application workflow testing with Playwright
 - **Dual Architecture**: Content-based tests for user experience + Structural tests for technical validation
 
 ### Key Principles
@@ -46,8 +46,7 @@ Complete guide to testing patterns, data-testid conventions, responsive testing,
 - **Responsive Testing**: Multi-viewport validation
 - **Angular Integration**: Signals, components, and framework-specific validation
 
-## 🔗 Quick Links
+## Quick Links
 
-- [Angular Testing Guide](https://angular.io/guide/testing)
-- [Jest Documentation](https://jestjs.io/docs/getting-started)
+- [Angular Testing Guide](https://angular.dev/guide/testing)
 - [Playwright Documentation](https://playwright.dev/)

@@ -4,10 +4,10 @@
 import { Component, effect, inject, input, output, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { normalizeToUrl, OrganizationSuggestion } from '@lfx-one/shared';
+import { normalizeToUrl, OrganizationResolveResult, OrganizationSuggestion } from '@lfx-one/shared';
 import { OrganizationService } from '@services/organization.service';
 import { AutoCompleteCompleteEvent, AutoCompleteSelectEvent } from 'primeng/autocomplete';
-import { catchError, debounceTime, distinctUntilChanged, of, startWith, switchMap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, map, Observable, of, startWith, switchMap, take } from 'rxjs';
 
 import { AutocompleteComponent } from '../autocomplete/autocomplete.component';
 import { InputTextComponent } from '../input-text/input-text.component';
@@ -31,9 +31,17 @@ export class OrganizationSearchComponent {
   public disabled = input<boolean>(false);
 
   public readonly onOrganizationSelect = output<OrganizationSuggestion>();
+  public readonly onOrganizationResolved = output<OrganizationResolveResult>();
 
   // Track manual mode state
   public manualMode = signal<boolean>(false);
+
+  // Resolve state signals
+  public resolvingOrg = signal(false);
+  public resolvedOrg = signal<OrganizationResolveResult | null>(null);
+
+  // Search term signal for footer "create" button
+  public searchTerm = signal('');
 
   // Internal form for the search input
   protected readonly organizationForm = new FormGroup({
@@ -44,8 +52,15 @@ export class OrganizationSearchComponent {
   protected suggestions: Signal<OrganizationSuggestion[]>;
 
   public constructor() {
+    const searchControl = this.organizationForm.get('organizationSearch')!;
+
+    // Track search term for footer display
+    searchControl.valueChanges.pipe(startWith('')).subscribe((value: string | null) => {
+      this.searchTerm.set(value?.trim() || '');
+    });
+
     // Initialize suggestions signal that reacts to search query changes
-    const searchResults$ = this.organizationForm.get('organizationSearch')!.valueChanges.pipe(
+    const searchResults$ = searchControl.valueChanges.pipe(
       startWith(''),
       distinctUntilChanged(),
       debounceTime(300),
@@ -59,10 +74,7 @@ export class OrganizationSearchComponent {
 
         return this.organizationService.searchOrganizations(trimmedTerm);
       }),
-      catchError((error) => {
-        console.error('Error searching organizations:', error);
-        return of([]);
-      })
+      catchError(() => of([]))
     );
 
     this.suggestions = toSignal(searchResults$, {
@@ -78,7 +90,7 @@ export class OrganizationSearchComponent {
         const nameControlValue = parentForm.get(nameControlName)?.value;
 
         if (nameControlValue && nameControlValue.trim()) {
-          this.organizationForm.get('organizationSearch')?.setValue(nameControlValue, { emitEvent: false });
+          searchControl.setValue(nameControlValue, { emitEvent: false });
         }
       }
     });
@@ -109,10 +121,14 @@ export class OrganizationSearchComponent {
     }
 
     this.onOrganizationSelect.emit(selectedOrganization);
+
+    // Resolve the organization via CDP
+    this.resolveOrg(selectedOrganization.name, selectedOrganization.domain);
   }
 
   public onSearchClear(): void {
     this.organizationForm.get('organizationSearch')?.setValue('');
+    this.clearResolveState();
 
     // Clear form controls if they are specified
     const parentForm = this.form();
@@ -131,11 +147,14 @@ export class OrganizationSearchComponent {
 
   public switchToManualMode(): void {
     this.manualMode.set(true);
+    this.clearResolveState();
 
     const nameControlName = this.nameControl();
 
     if (nameControlName && this.form().get(nameControlName)) {
-      this.form().get(nameControlName)?.setValue(this.organizationForm.get('organizationSearch')?.value);
+      this.form()
+        .get(nameControlName)
+        ?.setValue(this.organizationForm.get('organizationSearch')?.value || this.searchTerm());
     }
 
     // Clear search field when switching to manual
@@ -144,6 +163,8 @@ export class OrganizationSearchComponent {
 
   public switchToSearchMode(): void {
     this.manualMode.set(false);
+    this.clearResolveState();
+
     // Clear any touched state on the form controls
     const parentForm = this.form();
     const nameControlName = this.nameControl();
@@ -156,5 +177,92 @@ export class OrganizationSearchComponent {
     if (domainControlName && parentForm.get(domainControlName)) {
       parentForm.get(domainControlName)?.markAsUntouched();
     }
+  }
+
+  /**
+   * Resolve the current entry (for use by parent components on submit)
+   * Returns an Observable so the parent can subscribe and wait for the result
+   */
+  public resolveCurrentEntry(): Observable<OrganizationResolveResult | null> {
+    const parentForm = this.form();
+    const nameControlName = this.nameControl();
+    const domainControlName = this.domainControl();
+
+    const name = nameControlName ? parentForm.get(nameControlName)?.value : '';
+    const domain = domainControlName ? parentForm.get(domainControlName)?.value : '';
+
+    if (!name && !domain) {
+      return of(null);
+    }
+
+    this.resolvingOrg.set(true);
+
+    return this.organizationService.resolveOrganization(name || '', domain || '').pipe(
+      take(1),
+      map((cdpOrg) => {
+        const result: OrganizationResolveResult = {
+          id: cdpOrg.id,
+          name: cdpOrg.name,
+          logo: cdpOrg.logo,
+          originalName: name || '',
+          nameChanged: cdpOrg.name.toLowerCase() !== (name || '').toLowerCase(),
+        };
+        this.resolvedOrg.set(result);
+        this.resolvingOrg.set(false);
+        this.onOrganizationResolved.emit(result);
+
+        // Update field text to the resolved name
+        this.organizationForm.get('organizationSearch')?.setValue(cdpOrg.name, { emitEvent: false });
+        const nameCtrl = this.nameControl();
+        if (nameCtrl && this.form().get(nameCtrl)) {
+          this.form().get(nameCtrl)?.setValue(cdpOrg.name);
+        }
+        return result;
+      }),
+      catchError(() => {
+        this.resolvingOrg.set(false);
+        this.resolvedOrg.set(null);
+        return of(null);
+      })
+    );
+  }
+
+  private resolveOrg(name: string, domain: string): void {
+    this.resolvingOrg.set(true);
+    this.resolvedOrg.set(null);
+
+    this.organizationService
+      .resolveOrganization(name, domain)
+      .pipe(take(1))
+      .subscribe({
+        next: (cdpOrg) => {
+          const result: OrganizationResolveResult = {
+            id: cdpOrg.id,
+            name: cdpOrg.name,
+            logo: cdpOrg.logo,
+            originalName: name,
+            nameChanged: cdpOrg.name.toLowerCase() !== name.toLowerCase(),
+          };
+          this.resolvedOrg.set(result);
+          this.resolvingOrg.set(false);
+          this.onOrganizationResolved.emit(result);
+
+          // Update field text to the resolved name
+          this.organizationForm.get('organizationSearch')?.setValue(cdpOrg.name, { emitEvent: false });
+          const nameControlName = this.nameControl();
+          if (nameControlName && this.form().get(nameControlName)) {
+            this.form().get(nameControlName)?.setValue(cdpOrg.name);
+          }
+        },
+        error: () => {
+          this.resolvedOrg.set(null);
+          this.resolvingOrg.set(false);
+        },
+      });
+  }
+
+  private clearResolveState(): void {
+    this.resolvedOrg.set(null);
+    this.resolvingOrg.set(false);
   }
 }

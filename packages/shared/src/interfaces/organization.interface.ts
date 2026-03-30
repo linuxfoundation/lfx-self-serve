@@ -20,3 +20,45 @@ export interface OrganizationSuggestionsResponse {
   /** Array of organization suggestions */
   suggestions: OrganizationSuggestion[];
 }
+
+/**
+ * Organization record from the CDP (Community Data Platform)
+ * @description Returned when finding or creating an organization via CDP API
+ */
+export interface CdpOrganization {
+  /** CDP organization ID */
+  id: string;
+  /** Organization display name */
+  name: string;
+  /** Organization logo URL */
+  logo: string;
+}
+
+/**
+ * Result of resolving an organization through CDP
+ * @description Contains the resolved organization details and whether the display name changed
+ */
+export interface OrganizationResolveResult {
+  /** CDP organization ID */
+  id: string;
+  /** CDP display name (may differ from what the user searched) */
+  name: string;
+  /** Organization logo URL */
+  logo: string;
+  /** The name the user originally searched/selected */
+  originalName: string;
+  /** Whether the CDP display name differs from the original search name */
+  nameChanged: boolean;
+}
+
+/**
+ * Request body for creating an organization in CDP
+ */
+export interface CdpOrganizationCreateRequest {
+  /** Organization name */
+  name: string;
+  /** Organization domain */
+  domain: string;
+  /** Source system that created this record */
+  source: string;
+}

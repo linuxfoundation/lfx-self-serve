@@ -1,0 +1,36 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col items-center gap-5 px-2 py-4" data-testid="maintainer-confirmation-dialog">
+  <!-- Icon -->
+  <div class="flex h-14 w-14 items-center justify-center rounded-full bg-blue-50">
+    <i class="fa-light fa-badge-check text-2xl text-blue-500"></i>
+  </div>
+
+  <!-- Title & Description -->
+  <div class="flex flex-col items-center gap-2 text-center">
+    <h3 class="text-base font-semibold text-slate-900">Verify maintainer role</h3>
+    <p class="text-sm text-slate-500">
+      Our system detected that you may be a maintainer on
+      <span class="font-semibold text-slate-700">{{ data.projectName }}</span>
+      . Can you confirm your role?
+    </p>
+  </div>
+
+  <!-- Actions -->
+  <div class="flex w-full flex-col gap-3">
+    <lfx-button
+      label="Yes, I'm a maintainer"
+      severity="primary"
+      styleClass="w-full justify-center !rounded-full"
+      (onClick)="confirmMaintainer()"
+      data-testid="confirm-maintainer-btn" />
+    <lfx-button
+      label="No, I'm a contributor"
+      severity="secondary"
+      [outlined]="true"
+      styleClass="w-full justify-center !rounded-full"
+      (onClick)="confirmContributor()"
+      data-testid="confirm-contributor-btn" />
+  </div>
+</div>

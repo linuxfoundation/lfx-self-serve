@@ -12,12 +12,9 @@ import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { finalize } from 'rxjs';
 
-import { ProfileNavComponent } from '../components/profile-nav/profile-nav.component';
-
 @Component({
   selector: 'lfx-profile-developer',
-  imports: [ButtonComponent, CardComponent, MessageComponent, ToastModule, ProfileNavComponent],
-  providers: [],
+  imports: [ButtonComponent, CardComponent, MessageComponent, ToastModule],
   templateUrl: './profile-developer.component.html',
 })
 export class ProfileDeveloperComponent {

@@ -17,8 +17,6 @@ import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, finalize, of, switchMap } from 'rxjs';
 
-import { ProfileNavComponent } from '../components/profile-nav/profile-nav.component';
-
 @Component({
   selector: 'lfx-profile-password',
   imports: [
@@ -32,7 +30,6 @@ import { ProfileNavComponent } from '../components/profile-nav/profile-nav.compo
     ButtonComponent,
     ToastModule,
     TooltipModule,
-    ProfileNavComponent,
   ],
   providers: [MessageService],
   templateUrl: './profile-password.component.html',
@@ -139,7 +136,6 @@ export class ProfilePasswordComponent implements OnInit {
           });
         },
         error: (error) => {
-          console.error('Error changing password:', error);
           const message = error.error?.message || 'Failed to change password. Please try again.';
           this.messageService.add({
             severity: 'error',
@@ -165,7 +161,6 @@ export class ProfilePasswordComponent implements OnInit {
           });
         },
         error: (error) => {
-          console.error('Error sending password reset:', error);
           const message = error.error?.message || 'Failed to send password reset email. Please try again.';
           this.messageService.add({
             severity: 'error',

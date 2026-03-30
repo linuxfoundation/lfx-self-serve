@@ -69,6 +69,7 @@ The `customPreset` shown above is built from LFX UI Core design tokens via `defi
 
 ```typescript
 // Colors imported from @lfx-one/shared package
+// Defined in packages/shared/src/constants/colors.constants.ts
 import { lfxColors } from '@lfx-one/shared/constants';
 ```
 
@@ -113,7 +114,7 @@ Fonts are loaded via Google Fonts for optimal performance:
 ### Custom Font Sizes
 
 ```typescript
-// src/app/config/styles/font-size.ts
+// packages/shared/src/constants/font-sizes.constants.ts (imported via @lfx-one/shared)
 export const lfxFontSizes = {
   '2xs': ['0.625rem', { lineHeight: '0.75rem' }],
   xs: ['0.75rem', { lineHeight: '1rem' }],
@@ -148,6 +149,10 @@ export default {
   plugins: [PrimeUI],
 };
 ```
+
+> **Note**: Colors and font sizes are imported from `@lfx-one/shared` package, not local config files. The Tailwind config uses ESM syntax (`export default`).
+>
+> **Note**: While Open Sans is the declared `sans` font, `Inter` is explicitly applied to body text elements (h1-h6, p, label, button, input) in `styles.scss` and is the primary visible font. The `inter` font family utility class is available via Tailwind.
 
 ### PrimeUI Plugin Integration
 

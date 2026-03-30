@@ -6,26 +6,55 @@ The project follows a modular file organization pattern where components are org
 
 ### Module Structure
 
+Feature modules live as top-level directories under `apps/lfx-one/src/app/modules/` (not nested under a `project/` parent):
+
 ```text
 apps/lfx-one/src/app/modules/
 ├── committees/                 # Committee management
 │   ├── committee-dashboard/    # Main committees route component
 │   ├── committee-view/         # Committee detail route component
+│   ├── committee-manage/       # Committee create/edit
 │   └── components/             # Committee-specific components
 ├── dashboards/                 # Role-based dashboards
+│   ├── board-member/           # Board member dashboard
+│   ├── core-developer/         # Core developer dashboard
+│   ├── maintainer/             # Maintainer dashboard
 │   └── components/             # Dashboard-specific components (drawers, cards)
-├── mailing-lists/              # Mailing lists section
-│   └── mailing-list-dashboard/ # Main mailing lists route component
-├── meetings/                   # Meetings management section
-│   ├── meeting-dashboard/      # Main meetings route component
+├── meetings/                   # Meetings management
+│   ├── meetings-dashboard/     # Main meetings route component
+│   ├── meeting-manage/         # Meeting create/edit
+│   ├── meeting-join/           # Public meeting join page
+│   ├── meeting-not-found/      # Meeting 404 page
 │   └── components/             # Meeting-specific components
+├── mailing-lists/              # Mailing lists
+│   ├── mailing-list-dashboard/ # Main mailing lists route component
+│   ├── mailing-list-view/      # Mailing list detail
+│   ├── mailing-list-manage/    # Mailing list create/edit
+│   └── components/             # Mailing list components
+├── votes/                      # Voting system
+│   ├── votes-dashboard/        # Main votes route component
+│   ├── vote-manage/            # Vote create/edit
+│   └── components/             # Vote-specific components
+├── surveys/                    # Survey management
+│   ├── surveys-dashboard/      # Main surveys route component
+│   ├── survey-manage/          # Survey create/edit
+│   └── components/             # Survey-specific components
 ├── my-activity/                # User activity tracking
+│   ├── my-activity-dashboard/  # Main activity route component
+│   └── components/             # Activity components
 ├── profile/                    # User profile management
+│   ├── profile-overview/       # Profile overview tab
+│   ├── manage-profile/         # Profile editing
+│   ├── affiliations/           # User affiliations
+│   ├── developer/              # Developer settings
+│   ├── email/                  # Email management
+│   ├── password/               # Password management
+│   └── components/             # Profile components
 ├── settings/                   # Application settings
 │   ├── settings-dashboard/     # Main settings route component
 │   └── components/             # Settings-specific components
-├── surveys/                    # Survey management
-└── votes/                      # Voting system
+└── pages/                      # Static pages
+    └── home/                   # Home/projects listing
 ```
 
 > **Note**: Routes are FLAT under `MainLayoutComponent` — there is no `/project/:slug` nesting.
@@ -344,6 +373,36 @@ protected handleSelectionChange(event: SelectionChangeEvent): void {
 - [ ] **Accessibility**: Include ARIA labels and roles where applicable
 - [ ] **Nested Testing**: Test component works when nested with other wrappers
 - [ ] **Build Verification**: Ensure build passes and no TypeScript errors
+- [ ] **Documentation**: Update this documentation with usage examples
+
+### Integration
+
+- [ ] **Shared Interfaces**: Add any new interfaces to `@lfx-one/shared/interfaces`
+- [ ] **Export Path**: Ensure component is exported correctly
+- [ ] **Usage Guidelines**: Update project documentation
+- [ ] **Component Hierarchy**: Verify component fits properly in app structure
+
+## Component Hierarchy
+
+```text
+AppComponent
+└── RouterOutlet
+    └── MainLayoutComponent (authGuard protected, provides header + sidebar + content area)
+        ├── /                    → DashboardComponent (role-based dashboard)
+        ├── /projects            → HomeComponent (project listing)
+        ├── /meetings            → MeetingsDashboardComponent (lazy loaded)
+        ├── /groups              → CommitteeDashboardComponent (lazy loaded)
+        ├── /mailing-lists       → MailingListDashboardComponent (lazy loaded)
+        ├── /my-activity         → MyActivityDashboardComponent (lazy loaded)
+        ├── /votes               → VotesDashboardComponent (lazy loaded)
+        ├── /surveys             → SurveysDashboardComponent (lazy loaded)
+        ├── /settings            → SettingsDashboardComponent (lazy loaded)
+        └── /profile             → ProfileOverviewComponent (lazy loaded)
+
+    Standalone routes (outside MainLayoutComponent):
+    ├── /meetings/not-found      → MeetingNotFoundComponent
+    └── /meetings/:id            → MeetingJoinComponent (public meeting join)
+```
 
 ## 🎯 Usage Guidelines
 

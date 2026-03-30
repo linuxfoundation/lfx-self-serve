@@ -1,0 +1,304 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-8" data-testid="profile-edit-dialog">
+  <!-- Description -->
+  <p class="text-sm text-slate-500" data-testid="profile-edit-dialog-description">
+    A complete profile helps community members identify and connect with you, enables event organizers to plan in-person meetups, and ensures you receive
+    contributor recognition and swag.
+  </p>
+
+  <form [formGroup]="profileForm" (ngSubmit)="onSubmit()" class="flex flex-col gap-8">
+    <!-- Personal Information Section -->
+    <div data-testid="profile-edit-dialog-personal-section">
+      <h3 class="text-base font-semibold text-slate-900 mb-4" data-testid="profile-edit-dialog-personal-heading">Personal Information</h3>
+
+      <div class="flex flex-col gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- First Name -->
+          <div>
+            <label for="edit-first-name" class="block text-sm text-slate-900 mb-2">First Name</label>
+            <lfx-input-text
+              size="small"
+              [form]="profileForm"
+              control="given_name"
+              id="edit-first-name"
+              placeholder="Enter your first name"
+              styleClass="w-full"
+              data-testid="profile-edit-dialog-first-name">
+            </lfx-input-text>
+          </div>
+
+          <!-- Last Name -->
+          <div>
+            <label for="edit-last-name" class="block text-sm text-slate-900 mb-2">Last Name</label>
+            <lfx-input-text
+              size="small"
+              [form]="profileForm"
+              control="family_name"
+              id="edit-last-name"
+              placeholder="Enter your last name"
+              styleClass="w-full"
+              data-testid="profile-edit-dialog-last-name">
+            </lfx-input-text>
+          </div>
+        </div>
+
+        <!-- Username -->
+        <div>
+          <label for="edit-username" class="block text-sm text-slate-900 mb-2">Username (read-only)</label>
+          <lfx-input-text
+            size="small"
+            [form]="profileForm"
+            control="username"
+            id="edit-username"
+            styleClass="w-full"
+            data-testid="profile-edit-dialog-username">
+          </lfx-input-text>
+        </div>
+
+        <!-- Job Title & Organization -->
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div>
+            <label for="edit-job-title" class="block text-sm text-slate-900 mb-2">Job Title</label>
+            <lfx-input-text
+              size="small"
+              [form]="profileForm"
+              control="job_title"
+              id="edit-job-title"
+              placeholder="Enter your job title"
+              styleClass="w-full"
+              data-testid="profile-edit-dialog-job-title">
+            </lfx-input-text>
+          </div>
+          <div>
+            <label for="edit-organization" class="block text-sm text-slate-900 mb-2">Organization</label>
+            <lfx-input-text
+              size="small"
+              [form]="profileForm"
+              control="organization"
+              id="edit-organization"
+              placeholder="Enter your organization"
+              styleClass="w-full"
+              data-testid="profile-edit-dialog-organization">
+            </lfx-input-text>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Primary Email Address Section -->
+    <div data-testid="profile-edit-dialog-email-section">
+      <h3 class="text-base font-semibold text-slate-900 mb-4" data-testid="profile-edit-dialog-email-heading">Primary Email Address</h3>
+
+      @if (loadingEmails()) {
+        <div class="flex items-center gap-2 text-sm text-slate-500" data-testid="profile-edit-dialog-email-loading">
+          <i class="pi pi-spinner pi-spin"></i>
+          <span>Loading emails...</span>
+        </div>
+      } @else if (!hasManagedEmails()) {
+        <!-- Auth email fallback when no managed emails exist -->
+        <div class="flex flex-col gap-3" data-testid="profile-edit-dialog-email-fallback">
+          <div class="flex items-center gap-3 p-3 border rounded-md border-blue-500 bg-blue-50" data-testid="profile-edit-dialog-email-fallback-row">
+            <div class="flex items-center justify-center w-4 h-4">
+              <div class="w-3 h-3 rounded-full bg-blue-600"></div>
+            </div>
+            <div class="flex flex-col gap-0.5 flex-1 min-w-0">
+              <div class="flex items-center gap-2">
+                <span class="text-sm text-slate-900 truncate">{{ authEmail }}</span>
+                <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-blue-700 bg-blue-100 rounded"> Primary </span>
+              </div>
+              <span class="text-xs text-slate-500">Used for notifications and account communications</span>
+            </div>
+          </div>
+        </div>
+      } @else {
+        <div class="flex flex-col gap-3">
+          @for (email of verifiedEmails(); track email.id) {
+            <label
+              class="flex items-center gap-3 p-3 border rounded-md cursor-pointer hover:bg-slate-50 transition-colors"
+              [class.border-blue-500]="selectedPrimaryEmailId() === email.id"
+              [class.bg-blue-50]="selectedPrimaryEmailId() === email.id"
+              [class.border-slate-300]="selectedPrimaryEmailId() !== email.id"
+              [attr.data-testid]="'profile-edit-dialog-email-row-' + email.id">
+              <input
+                type="radio"
+                name="primaryEmail"
+                [value]="email.id"
+                [checked]="selectedPrimaryEmailId() === email.id"
+                [disabled]="savingPrimaryEmail()"
+                (change)="onPrimaryEmailChange(email.id)"
+                class="accent-blue-600 w-4 h-4 cursor-pointer"
+                [attr.data-testid]="'profile-edit-dialog-email-radio-' + email.id" />
+              <div class="flex flex-col gap-0.5 flex-1 min-w-0">
+                <div class="flex items-center gap-2">
+                  <span class="text-sm text-slate-900 truncate">{{ email.email }}</span>
+                  <span class="inline-flex items-center gap-1 px-1.5 py-0.5 text-xs font-medium text-green-700 bg-green-100 rounded">
+                    <i class="pi pi-check text-[10px]"></i>
+                    Verified
+                  </span>
+                </div>
+                @if (selectedPrimaryEmailId() === email.id) {
+                  <span class="text-xs text-slate-500">Used for notifications and account communications</span>
+                }
+              </div>
+              @if (savingPrimaryEmail() && selectedPrimaryEmailId() === email.id) {
+                <i class="pi pi-spinner pi-spin text-blue-500 text-sm"></i>
+              }
+            </label>
+          }
+        </div>
+      }
+    </div>
+
+    <!-- Location Information Section -->
+    <div data-testid="profile-edit-dialog-location-section">
+      <h3 class="text-base font-semibold text-slate-900 mb-4" data-testid="profile-edit-dialog-location-heading">Location Information</h3>
+
+      <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <!-- Country -->
+        <div>
+          <label for="edit-country" class="block text-sm text-slate-900 mb-2">Country</label>
+          <lfx-select
+            size="small"
+            [form]="profileForm"
+            control="country"
+            [options]="countryOptions"
+            id="edit-country"
+            placeholder="Select your country"
+            styleClass="w-full"
+            [filter]="true"
+            data-testid="profile-edit-dialog-country">
+          </lfx-select>
+        </div>
+
+        <!-- State/Province -->
+        <div>
+          <label class="block text-sm text-slate-900 mb-2">State/Province</label>
+          @if (isUSA()) {
+            <lfx-select
+              size="small"
+              [form]="profileForm"
+              control="state_province"
+              [options]="stateOptions"
+              id="edit-state-select"
+              placeholder="Select your state"
+              styleClass="w-full"
+              [filter]="true"
+              data-testid="profile-edit-dialog-state-select">
+            </lfx-select>
+          } @else {
+            <lfx-input-text
+              size="small"
+              [form]="profileForm"
+              control="state_province"
+              id="edit-state-input"
+              placeholder="Enter your state or province"
+              styleClass="w-full"
+              data-testid="profile-edit-dialog-state-input">
+            </lfx-input-text>
+          }
+        </div>
+
+        <!-- City -->
+        <div>
+          <label for="edit-city" class="block text-sm text-slate-900 mb-2">City</label>
+          <lfx-input-text
+            size="small"
+            [form]="profileForm"
+            control="city"
+            id="edit-city"
+            placeholder="Enter your city"
+            styleClass="w-full"
+            data-testid="profile-edit-dialog-city">
+          </lfx-input-text>
+        </div>
+
+        <!-- Address -->
+        <div>
+          <label for="edit-address" class="block text-sm text-slate-900 mb-2">Address</label>
+          <lfx-input-text
+            size="small"
+            [form]="profileForm"
+            control="address"
+            id="edit-address"
+            placeholder="Enter your address"
+            styleClass="w-full"
+            data-testid="profile-edit-dialog-address">
+          </lfx-input-text>
+        </div>
+
+        <!-- Postal/Zip Code -->
+        <div>
+          <label for="edit-zipcode" class="block text-sm text-slate-900 mb-2">Postal/Zip Code</label>
+          <lfx-input-text
+            size="small"
+            [form]="profileForm"
+            control="postal_code"
+            id="edit-zipcode"
+            placeholder="Enter your postal or zip code"
+            styleClass="w-full"
+            data-testid="profile-edit-dialog-zipcode">
+          </lfx-input-text>
+        </div>
+
+        <!-- Phone Number -->
+        <div>
+          <label for="edit-phone" class="block text-sm text-slate-900 mb-2">Phone Number</label>
+          <lfx-input-text
+            size="small"
+            [form]="profileForm"
+            control="phone_number"
+            id="edit-phone"
+            placeholder="Enter your phone number"
+            styleClass="w-full"
+            data-testid="profile-edit-dialog-phone">
+          </lfx-input-text>
+          <p class="text-xs text-gray-500 mt-1">Optional - Only used for urgent event notifications and swag delivery</p>
+        </div>
+      </div>
+    </div>
+
+    <!-- T-shirt Size Section -->
+    <div data-testid="profile-edit-dialog-additional-section">
+      <h3 class="text-base font-semibold text-slate-900 mb-4" data-testid="profile-edit-dialog-additional-heading">T-shirt Size</h3>
+
+      <div class="max-w-[50%]">
+        <label for="edit-tshirt-size" class="block text-sm text-slate-900 mb-2">T-shirt Size</label>
+        <lfx-select
+          size="small"
+          [form]="profileForm"
+          control="t_shirt_size"
+          [options]="tshirtSizeOptions"
+          id="edit-tshirt-size"
+          placeholder="Select your t-shirt size"
+          styleClass="w-full"
+          data-testid="profile-edit-dialog-tshirt-size">
+        </lfx-select>
+      </div>
+    </div>
+
+    <!-- Action Buttons -->
+    <div class="flex justify-end gap-3 border-t border-slate-200 pt-6 mt-2" data-testid="profile-edit-dialog-actions">
+      <lfx-button
+        type="button"
+        variant="outlined"
+        label="Reset"
+        (onClick)="onReset()"
+        [disabled]="!hasChanges()"
+        size="small"
+        data-testid="profile-edit-dialog-reset-button">
+      </lfx-button>
+
+      <lfx-button
+        type="submit"
+        severity="info"
+        [label]="saving() ? 'Saving...' : 'Save Changes'"
+        [loading]="saving()"
+        [disabled]="!hasChanges() || saving()"
+        size="small"
+        data-testid="profile-edit-dialog-save-button">
+      </lfx-button>
+    </div>
+  </form>
+</div>

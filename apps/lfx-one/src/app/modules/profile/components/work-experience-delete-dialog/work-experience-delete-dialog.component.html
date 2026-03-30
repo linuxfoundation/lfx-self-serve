@@ -1,0 +1,29 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="work-experience-delete-dialog">
+  <!-- Description -->
+  <p class="text-sm font-medium text-slate-500">Are you sure you want to delete this work experience? This action cannot be undone.</p>
+
+  <!-- Experience detail card -->
+  <div class="border-t border-slate-100 pt-4">
+    <div class="flex items-start gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+      <div class="flex h-12 w-12 shrink-0 items-center justify-center rounded-xl border border-slate-100 bg-white">
+        <i class="fa-light fa-building text-lg text-slate-400"></i>
+      </div>
+      <div class="flex flex-col gap-0.5">
+        <p class="font-medium text-slate-900">{{ experience.organization }}</p>
+        @if (experience.role) {
+          <p class="text-sm text-slate-600">{{ experience.role }}</p>
+        }
+        <p class="text-sm text-slate-500">{{ experience.startDate }} – {{ experience.endDate || 'Present' }}</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- Footer -->
+  <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="onCancel()" data-testid="delete-we-cancel" />
+    <lfx-button label="Delete experience" severity="danger" size="small" (onClick)="onConfirm()" data-testid="delete-we-confirm" />
+  </div>
+</div>

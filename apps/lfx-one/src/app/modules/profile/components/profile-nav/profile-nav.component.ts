@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component } from '@angular/core';
+import { ChangeDetectionStrategy, Component } from '@angular/core';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
 
@@ -9,5 +9,6 @@ import { ButtonComponent } from '@app/shared/components/button/button.component'
   selector: 'lfx-profile-nav',
   imports: [RouterLink, ButtonComponent],
   templateUrl: './profile-nav.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class ProfileNavComponent {}

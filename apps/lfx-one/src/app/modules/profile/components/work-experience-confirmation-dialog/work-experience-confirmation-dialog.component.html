@@ -1,0 +1,76 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-5" data-testid="work-experience-confirmation-dialog">
+  <!-- Description -->
+  <p class="text-sm text-slate-500">Please review the latest work experiences we've detected. These updates may affect project affiliations.</p>
+
+  <!-- Update Cards -->
+  <div class="flex flex-col gap-4">
+    @for (update of updates(); track update.id) {
+      <div class="rounded-lg border border-slate-200 bg-white p-4" [attr.data-testid]="'we-update-card-' + update.id">
+        <!-- Update Header -->
+        <div class="flex items-start gap-3">
+          @if (update.organizationLogo) {
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-white shadow-sm">
+              <img [src]="update.organizationLogo" [alt]="update.organization" class="h-6 w-6 object-contain" loading="lazy" />
+            </div>
+          } @else {
+            <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-white shadow-sm">
+              <i class="fa-light fa-building text-slate-400"></i>
+            </div>
+          }
+
+          <div class="flex flex-1 flex-col gap-0.5">
+            <div class="flex items-center gap-2">
+              <span class="text-base font-bold text-slate-900">{{ update.organization }}</span>
+              <lfx-tag [value]="update.status" [severity]="update.status === 'New' ? 'info' : 'warn'" />
+            </div>
+            <span class="text-sm text-slate-600">{{ update.jobTitle }}</span>
+            <span class="text-xs text-slate-500">{{ update.startDate }} → {{ update.endDate || 'Present' }}</span>
+          </div>
+        </div>
+
+        <!-- Project Affiliations -->
+        @if (update.projectAffiliations.length > 0) {
+          <div class="mt-4 flex flex-col gap-3 border-t border-slate-100 pt-3">
+            <p class="text-xs font-medium text-slate-500">Project affiliations</p>
+            @for (pa of update.projectAffiliations; track pa.id) {
+              <div class="flex items-center justify-between" [attr.data-testid]="'we-update-affiliation-' + pa.id">
+                <div class="flex items-center gap-3">
+                  @if (pa.projectLogo) {
+                    <img [src]="pa.projectLogo" [alt]="pa.projectName" class="h-6 w-6 rounded object-contain" loading="lazy" />
+                  } @else {
+                    <div class="flex h-6 w-6 items-center justify-center rounded bg-slate-100">
+                      <i class="fa-light fa-code text-xs text-slate-400"></i>
+                    </div>
+                  }
+                  <div class="flex flex-col">
+                    <span class="text-xs font-medium text-slate-700">{{ pa.projectName }}</span>
+                    <span class="text-[10px] text-slate-400">Detected role: {{ pa.detectedRole }}</span>
+                  </div>
+                </div>
+                <p-toggleswitch
+                  [ngModel]="pa.enabled"
+                  (ngModelChange)="toggleAffiliation(update.id, pa.id)"
+                  [attr.data-testid]="'toggle-affiliation-' + pa.id" />
+              </div>
+            }
+            @if (hasDisabledAffiliation(update)) {
+              <p class="text-2xs text-slate-400 italic">Toggled-off projects will not be affiliated with this organization.</p>
+            }
+          </div>
+        }
+      </div>
+    }
+  </div>
+
+  <!-- Footer -->
+  <div class="flex flex-col gap-2 border-t border-slate-100 pt-4 sm:flex-row">
+    <p class="flex-1 text-2xs text-slate-400">Your choice helps us refine and improve affiliation accuracy.</p>
+    <div class="flex justify-end gap-2">
+      <lfx-button label="Reject work experience" severity="secondary" [outlined]="true" size="small" (onClick)="reject()" data-testid="we-confirm-reject" />
+      <lfx-button label="Confirm updates" severity="primary" size="small" (onClick)="confirm()" data-testid="we-confirm-submit" />
+    </div>
+  </div>
+</div>

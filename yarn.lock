@@ -9516,6 +9516,17 @@ __metadata:
   languageName: node
   linkType: hard
 
+"express-rate-limit@npm:^8.3.1":
+  version: 8.3.1
+  resolution: "express-rate-limit@npm:8.3.1"
+  dependencies:
+    ip-address: "npm:10.1.0"
+  peerDependencies:
+    express: ">= 4.11"
+  checksum: 10c0/e3229938457cec617460c54ef4e90c8c254facc884729325d20ea35e3838bd273e4c611fc1f4a76f6d14c411e30d31b15e88eb4be87408615ff0aacc142511a2
+  languageName: node
+  linkType: hard
+
 "express@npm:^4.18.2, express@npm:^4.21.2":
   version: 4.21.2
   resolution: "express@npm:4.21.2"
@@ -10797,6 +10808,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"ip-address@npm:10.1.0":
+  version: 10.1.0
+  resolution: "ip-address@npm:10.1.0"
+  checksum: 10c0/0103516cfa93f6433b3bd7333fa876eb21263912329bfa47010af5e16934eeeff86f3d2ae700a3744a137839ddfad62b900c7a445607884a49b5d1e32a3d7566
+  languageName: node
+  linkType: hard
+
 "ip-address@npm:^9.0.5":
   version: 9.0.5
   resolution: "ip-address@npm:9.0.5"
@@ -11526,6 +11544,7 @@ __metadata:
     eslint: "npm:^9.39.1"
     express: "npm:^4.18.2"
     express-openid-connect: "npm:^2.19.2"
+    express-rate-limit: "npm:^8.3.1"
     launchdarkly-js-client-sdk: "npm:^3.9.0"
     marked: "npm:^17.0.4"
     nats: "npm:^2.29.3"

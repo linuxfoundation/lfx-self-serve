@@ -1,0 +1,116 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="work-experience-form-dialog">
+  <!-- Description -->
+  @if (data.mode === 'add') {
+    <p class="text-sm text-slate-500">Add your work experience to ensure your contributions are attributed to the correct organization over time.</p>
+  } @else {
+    <p class="text-sm text-slate-500">Update your work experience to ensure your contributions are attributed to the correct organization over time.</p>
+  }
+
+  <div class="flex flex-col gap-4 border-t border-slate-100 pt-4">
+    <!-- Organization (search) -->
+    <div class="flex flex-col gap-1">
+      <label class="text-xs font-bold text-slate-700">Organization *</label>
+      <lfx-organization-search
+        [form]="form"
+        nameControl="organization"
+        placeholder="e.g. Google, Red Hat"
+        domainControl="domain"
+        dataTestId="we-form-organization"
+        (onOrganizationResolved)="onOrganizationResolved($event)" />
+    </div>
+
+    <!-- Role -->
+    <div class="flex flex-col gap-1">
+      <label class="text-xs font-bold text-slate-700">Role</label>
+      <lfx-input-text [form]="form" control="role" placeholder="e.g. Senior Software Engineer" size="small" data-testid="we-form-role" />
+    </div>
+
+    <!-- Dates: Two-column grid -->
+    <div class="grid grid-cols-2 gap-4">
+      <!-- Start Date -->
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-bold text-slate-700">Start Date *</label>
+        <div class="flex items-center gap-2">
+          <lfx-select
+            [form]="form"
+            control="startMonth"
+            [options]="monthOptions"
+            placeholder="Month"
+            styleClass="flex-1"
+            size="small"
+            appendTo="body"
+            data-testid="we-form-start-month" />
+          <lfx-select
+            [form]="form"
+            control="startYear"
+            [options]="yearOptions"
+            placeholder="Year"
+            styleClass="flex-1"
+            size="small"
+            appendTo="body"
+            data-testid="we-form-start-year" />
+        </div>
+      </div>
+
+      <!-- End Date -->
+      <div class="flex flex-col gap-1">
+        <label class="text-xs font-bold text-slate-700">End Date</label>
+        @if (!form.controls.currentlyWorkHere.value) {
+          <div class="flex items-center gap-2">
+            <lfx-select
+              [form]="form"
+              control="endMonth"
+              [options]="monthOptions"
+              placeholder="Month"
+              styleClass="flex-1"
+              size="small"
+              appendTo="body"
+              data-testid="we-form-end-month" />
+            <lfx-select
+              [form]="form"
+              control="endYear"
+              [options]="yearOptions"
+              placeholder="Year"
+              styleClass="flex-1"
+              size="small"
+              appendTo="body"
+              data-testid="we-form-end-year" />
+          </div>
+        } @else {
+          <div class="flex h-9 items-center text-sm text-slate-400">Present</div>
+        }
+      </div>
+    </div>
+
+    <!-- Currently work here checkbox -->
+    <lfx-checkbox [form]="form" control="currentlyWorkHere" label="I currently work here" data-testid="we-form-currently" />
+  </div>
+
+  <!-- Footer -->
+  <div class="flex items-center justify-between gap-4 border-t border-slate-100 pt-4">
+    <p class="text-2xs text-slate-400">This information will be used to compute your project affiliations.</p>
+    <div class="flex items-center gap-3">
+      <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="onCancel()" data-testid="we-form-cancel" />
+      @if (data.mode === 'add') {
+        <lfx-button
+          label="Add experience"
+          severity="primary"
+          size="small"
+          [disabled]="submitting() || orgSearch?.resolvingOrg()"
+          (onClick)="onSubmit()"
+          data-testid="we-form-submit" />
+      } @else {
+        <lfx-button
+          label="Save changes"
+          severity="primary"
+          size="small"
+          [disabled]="submitting() || orgSearch?.resolvingOrg()"
+          (onClick)="onSubmit()"
+          data-testid="we-form-submit" />
+      }
+    </div>
+  </div>
+</div>

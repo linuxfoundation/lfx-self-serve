@@ -41,3 +41,20 @@ export const NATS_CONFIG = {
    */
   REQUEST_TIMEOUT: 5000,
 } as const;
+
+/**
+ * CDP (Community Data Platform) configuration constants
+ * @description Configuration for CDP API used for identity and work history data
+ */
+export const CDP_CONFIG = {
+  DEFAULT_STAGING_URL: 'https://lf-staging.crowd.dev/api',
+  DEFAULT_PRODUCTION_URL: 'https://cm.lfx.dev/api',
+  ENDPOINTS: {
+    RESOLVE_MEMBER: '/v1/members/resolve',
+    MEMBER_IDENTITIES: (memberId: string) => `/v1/members/${memberId}/identities`,
+    MEMBER_WORK_EXPERIENCES: (memberId: string) => `/v1/members/${memberId}/work-experiences`,
+    MEMBER_PROJECT_AFFILIATIONS: (memberId: string) => `/v1/members/${memberId}/project-affiliations`,
+    MEMBER_PROJECT_AFFILIATION: (memberId: string, projectId: string) => `/v1/members/${memberId}/project-affiliations/${projectId}`,
+    ORGANIZATIONS: '/v1/organizations',
+  },
+} as const;

@@ -1,0 +1,202 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-5" data-testid="affiliation-timeline-dialog">
+  <!-- Description -->
+  @if (hasNoWorkExperience()) {
+    <p class="text-sm text-slate-500" data-testid="no-work-experience-message">
+      To affiliate your contributions with an organization, first add your work history in the Work Experience section. Organizations from your work history
+      will appear here for affiliation.
+    </p>
+  } @else {
+    <p class="text-sm text-slate-500">
+      Your contributions may only be affiliated with one organization at a time. Toggle organizations on or off and set affiliation period dates below.
+    </p>
+
+    <!-- Overlap Warning -->
+    @if (hasOverlap()) {
+      <div class="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5" data-testid="overlap-warning">
+        <i class="fa-light fa-triangle-exclamation text-sm text-amber-600"></i>
+        <span class="text-xs text-amber-700">Affiliation periods overlap. Contributions can only be affiliated with one organization at a time.</span>
+      </div>
+    }
+  }
+
+  <!-- Company Organization Cards -->
+  @for (org of companyOrgs(); track org.organization) {
+    <div class="overflow-hidden rounded-lg border border-slate-200" [attr.data-testid]="'org-card-' + org.organization">
+      <!-- Card Header -->
+      <div
+        class="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50"
+        (click)="toggleOrganization(org.organization)"
+        [attr.data-testid]="'org-header-' + org.organization">
+        <p-toggleSwitch
+          [ngModel]="org.enabled"
+          (ngModelChange)="toggleOrganization(org.organization)"
+          (click)="$event.stopPropagation()"
+          [attr.data-testid]="'org-toggle-' + org.organization" />
+        @if (org.organizationLogo) {
+          <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-white">
+            <img [src]="org.organizationLogo" [alt]="org.organization" class="h-4 w-4 object-contain" loading="lazy" />
+          </div>
+        } @else {
+          <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-white">
+            <i class="fa-light fa-building text-xs text-slate-400"></i>
+          </div>
+        }
+        <div class="flex flex-1 items-center gap-2">
+          <span class="text-sm font-medium text-slate-700">{{ org.organization }}</span>
+          @if (org.weStartDate) {
+            <span class="text-xs text-slate-400">({{ org.weStartDate }} – {{ org.weEndDate || 'Present' }})</span>
+          }
+        </div>
+      </div>
+
+      <!-- Expanded Content -->
+      @if (org.enabled) {
+        <div class="flex flex-col gap-3 border-t border-slate-100 px-4 py-3" [attr.data-testid]="'org-periods-' + org.organization">
+          <span class="text-xs font-semibold text-slate-600">Affiliation period(s):</span>
+
+          @for (period of org.periods; track period.id) {
+            @let isOverlapping = overlappingPeriodIds().has(period.id);
+            <div
+              class="flex items-center gap-2"
+              [class.rounded-md]="isOverlapping"
+              [class.border]="isOverlapping"
+              [class.border-amber-300]="isOverlapping"
+              [class.bg-amber-50]="isOverlapping"
+              [class.px-2]="isOverlapping"
+              [class.py-1]="isOverlapping"
+              [attr.data-testid]="'period-row-' + period.id">
+              <!-- Start Month -->
+              <p-select
+                [options]="monthOptions"
+                [ngModel]="period.startMonth"
+                (ngModelChange)="updatePeriodField(org.organization, period.id, 'startMonth', $event)"
+                optionLabel="label"
+                optionValue="value"
+                placeholder="Month"
+                [style]="{ width: '110px' }"
+                size="small"
+                appendTo="body"
+                [attr.data-testid]="'period-start-month-' + period.id" />
+
+              <!-- Start Year -->
+              <p-select
+                [options]="availableYearsMap().get(org.organization) ?? yearOptions"
+                [ngModel]="period.startYear"
+                (ngModelChange)="updatePeriodField(org.organization, period.id, 'startYear', $event)"
+                optionLabel="label"
+                optionValue="value"
+                placeholder="Year"
+                [style]="{ width: '100px' }"
+                size="small"
+                appendTo="body"
+                [attr.data-testid]="'period-start-year-' + period.id" />
+
+              <span class="text-xs text-slate-400">–</span>
+
+              <!-- End Date or Present -->
+              @if (period.isPresent) {
+                <span class="text-xs font-medium text-slate-500">Present</span>
+              } @else {
+                <!-- End Month -->
+                <p-select
+                  [options]="monthOptions"
+                  [ngModel]="period.endMonth"
+                  (ngModelChange)="updatePeriodField(org.organization, period.id, 'endMonth', $event)"
+                  optionLabel="label"
+                  optionValue="value"
+                  placeholder="Month"
+                  [style]="{ width: '110px' }"
+                  size="small"
+                  appendTo="body"
+                  [attr.data-testid]="'period-end-month-' + period.id" />
+
+                <!-- End Year -->
+                <p-select
+                  [options]="availableYearsMap().get(org.organization) ?? yearOptions"
+                  [ngModel]="period.endYear"
+                  (ngModelChange)="updatePeriodField(org.organization, period.id, 'endYear', $event)"
+                  optionLabel="label"
+                  optionValue="value"
+                  placeholder="Year"
+                  [style]="{ width: '100px' }"
+                  size="small"
+                  appendTo="body"
+                  [attr.data-testid]="'period-end-year-' + period.id" />
+              }
+
+              <!-- Present Checkbox -->
+              <div class="flex items-center gap-1.5">
+                <p-checkbox
+                  [ngModel]="period.isPresent"
+                  (ngModelChange)="updatePeriodField(org.organization, period.id, 'isPresent', $event)"
+                  [binary]="true"
+                  [attr.data-testid]="'period-present-' + period.id" />
+                <span class="text-xs font-medium text-slate-600">Present</span>
+              </div>
+
+              <!-- Remove Period -->
+              @if (org.periods.length > 1) {
+                <button
+                  class="ml-auto flex h-7 w-7 cursor-pointer items-center justify-center rounded text-slate-400 transition-colors hover:bg-red-50 hover:text-red-500"
+                  (click)="removePeriod(org.organization, period.id)"
+                  [attr.data-testid]="'period-remove-' + period.id">
+                  <i class="fa-light fa-trash-can text-xs"></i>
+                </button>
+              }
+            </div>
+            @if (periodErrorsMap().get(period.id); as errors) {
+              @if (errors.startAfterEnd) {
+                <div class="flex items-center gap-1.5 text-xs text-red-500" [attr.data-testid]="'period-error-start-after-end-' + period.id">
+                  <i class="fa-light fa-circle-exclamation"></i>
+                  <span>Start date must be before end date</span>
+                </div>
+              }
+              @if (errors.startBeforeWeStart) {
+                <div class="flex items-center gap-1.5 text-xs text-red-500" [attr.data-testid]="'period-error-before-we-start-' + period.id">
+                  <i class="fa-light fa-circle-exclamation"></i>
+                  <span>Start date cannot be before {{ org.weStartDate }}</span>
+                </div>
+              }
+              @if (errors.endAfterWeEnd) {
+                <div class="flex items-center gap-1.5 text-xs text-red-500" [attr.data-testid]="'period-error-after-we-end-' + period.id">
+                  <i class="fa-light fa-circle-exclamation"></i>
+                  <span>End date cannot be after {{ org.weEndDate }}</span>
+                </div>
+              }
+            }
+          }
+
+          <!-- Add Period Button -->
+          <button
+            class="flex w-fit cursor-pointer items-center gap-1.5 text-xs font-medium text-blue-600 transition-colors hover:text-blue-700 disabled:cursor-not-allowed disabled:text-slate-300"
+            [disabled]="!areAllPeriodsComplete(org.organization)"
+            (click)="addPeriod(org.organization)"
+            [attr.data-testid]="'add-period-' + org.organization">
+            <i class="fa-light fa-plus text-[10px]"></i>
+            Add affiliation period
+          </button>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- Helper Text -->
+  @if (!hasNoWorkExperience()) {
+    <p class="text-[11px] text-slate-400">Time periods without an organization are treated as independent contributions.</p>
+  }
+
+  <!-- Footer -->
+  <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancel()" data-testid="timeline-cancel" />
+    <lfx-button
+      label="Save changes"
+      severity="primary"
+      size="small"
+      [disabled]="hasNoWorkExperience() || hasOverlap() || hasValidationErrors()"
+      (onClick)="save()"
+      data-testid="timeline-save" />
+  </div>
+</div>

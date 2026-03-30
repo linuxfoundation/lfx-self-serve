@@ -118,10 +118,6 @@ export class UserService {
         throw new Error('Username is required');
       }
 
-      if (!updates.token) {
-        throw new Error('Authentication token is required');
-      }
-
       // Send the request via NATS
       const response = await this.sendUserMetadataUpdate(req, updates);
 

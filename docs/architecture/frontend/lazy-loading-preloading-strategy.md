@@ -24,56 +24,63 @@ Initial Load (Home) → Smart Preloading → User Navigation (Instant)
 
 ## Lazy Loading Architecture
 
-### Component-Level Lazy Loading
+### Route Architecture
 
-All major application sections use `loadComponent` for granular lazy loading:
+All routes are flat children of `MainLayoutComponent` (no nested `project/:slug` pattern):
 
 ```typescript
-// Main route configuration
+// app.routes.ts - Main route configuration
 {
   path: '',
-  loadComponent: () => import('./modules/pages/home/home.component')
-    .then(m => m.HomeComponent),
-},
-{
-  path: 'project/:slug',
-  loadComponent: () => import('./layouts/project-layout/project-layout.component')
-    .then(m => m.ProjectLayoutComponent),
-  loadChildren: () => import('./modules/project/project.routes')
-    .then(m => m.PROJECT_ROUTES),
+  canActivate: [authGuard],
+  loadComponent: () => import('./layouts/main-layout/main-layout.component')
+    .then(m => m.MainLayoutComponent),
+  children: [
+    { path: '', loadComponent: () => import('./modules/dashboards/dashboard.component').then(m => m.DashboardComponent) },
+    { path: 'projects', loadComponent: () => import('./modules/pages/home/home.component').then(m => m.HomeComponent) },
+    { path: 'meetings', loadChildren: () => import('./modules/meetings/meetings.routes').then(m => m.MEETING_ROUTES) },
+    { path: 'groups', loadChildren: () => import('./modules/committees/committees.routes').then(m => m.COMMITTEE_ROUTES) },
+    { path: 'mailing-lists', loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then(m => m.MAILING_LIST_ROUTES) },
+    { path: 'my-activity', loadChildren: () => import('./modules/my-activity/my-activity.routes').then(m => m.MY_ACTIVITY_ROUTES) },
+    { path: 'votes', loadChildren: () => import('./modules/votes/votes.routes').then(m => m.VOTE_ROUTES) },
+    { path: 'surveys', loadChildren: () => import('./modules/surveys/surveys.routes').then(m => m.SURVEY_ROUTES) },
+    { path: 'settings', loadChildren: () => import('./modules/settings/settings.routes').then(m => m.SETTINGS_ROUTES) },
+    { path: 'profile', loadChildren: () => import('./modules/profile/profile.routes').then(m => m.PROFILE_ROUTES) },
+  ],
 }
 ```
 
 ### Feature Module Lazy Loading
 
-Major features are split into separate route modules:
+Each feature module defines its own routes with preloading configuration:
 
 ```typescript
-// Project routes with nested lazy loading
-export const PROJECT_ROUTES: Routes = [
+// Example: meetings.routes.ts
+export const MEETING_ROUTES: Routes = [
   {
-    path: 'meetings',
-    loadChildren: () => import('./meetings/meetings.routes').then((m) => m.MEETINGS_ROUTES),
+    path: '',
+    loadComponent: () => import('./meetings-dashboard/meetings-dashboard.component').then((m) => m.MeetingsDashboardComponent),
+    data: { preload: true, preloadDelay: 500 },
   },
-  {
-    path: 'committees',
-    loadChildren: () => import('./committees/committees.routes').then((m) => m.COMMITTEES_ROUTES),
-  },
-  // ... additional feature modules
+  // ... additional child routes
 ];
 ```
 
 ### Bundle Splitting Strategy
 
-| Route Segment      | Loading Strategy      | Bundle Size Est. | Priority |
-| ------------------ | --------------------- | ---------------- | -------- |
-| **Core App**       | Eager                 | ~1.5MB           | Critical |
-| **Home**           | Lazy + Immediate      | ~200KB           | High     |
-| **Project Layout** | Lazy + Preload        | ~300KB           | High     |
-| **Meetings**       | Lazy + Fast Preload   | ~800KB           | High     |
-| **Committees**     | Lazy + Medium Preload | ~600KB           | Medium   |
-| **Mailing Lists**  | Lazy + Slow Preload   | ~400KB           | Low      |
-| **Settings**       | Lazy + No Preload     | ~300KB           | Low      |
+| Route Segment     | Loading Strategy               | Priority |
+| ----------------- | ------------------------------ | -------- |
+| **Core App**      | Eager                          | Critical |
+| **Dashboard**     | Lazy + Immediate               | High     |
+| **Home/Projects** | Lazy + On-demand               | High     |
+| **Meetings**      | Lazy + Fast Preload (500ms)    | High     |
+| **Committees**    | Lazy + Medium Preload (1500ms) | Medium   |
+| **Mailing Lists** | Lazy + Medium Preload (1500ms) | Medium   |
+| **Votes**         | Lazy + Medium Preload (1500ms) | Medium   |
+| **Surveys**       | Lazy + Medium Preload (1500ms) | Medium   |
+| **Settings**      | Lazy + On-demand               | Low      |
+| **Profile**       | Lazy + On-demand               | Low      |
+| **My Activity**   | Lazy + On-demand               | Low      |
 
 ---
 
@@ -112,35 +119,28 @@ export class CustomPreloadingStrategy implements PreloadingStrategy {
 
 ### Preloading Configuration
 
-Routes are configured with priority-based preloading metadata:
+Routes are configured with priority-based preloading metadata in each feature's route file:
+
+| Route         | Preload                 | Delay  | Priority |
+| ------------- | ----------------------- | ------ | -------- |
+| Meetings      | `true`                  | 500ms  | High     |
+| Committees    | `true`                  | 1500ms | Medium   |
+| Mailing Lists | `true`                  | 1500ms | Medium   |
+| Votes         | `true` (dashboard only) | 1500ms | Medium   |
+| Surveys       | `true`                  | 1500ms | Medium   |
+| Settings      | No preload data         | -      | Low      |
+| Profile       | No preload data         | -      | Low      |
+| My Activity   | No preload data         | -      | Low      |
 
 ```typescript
-// High-priority route (fast preload)
-{
-  path: 'meetings',
-  loadChildren: () => import('./meetings/meetings.routes'),
-  data: {
-    preload: true,
-    preloadDelay: 500  // 500ms delay
-  }
-}
+// High-priority route (fast preload) - meetings.routes.ts
+data: { preload: true, preloadDelay: 500 }
 
-// Low-priority route (slow preload)
-{
-  path: 'mailing-lists',
-  loadChildren: () => import('./mailing-lists/mailing-lists.routes'),
-  data: {
-    preload: true,
-    preloadDelay: 3000  // 3s delay
-  }
-}
+// Medium-priority route - committees.routes.ts, mailing-lists.routes.ts, votes.routes.ts, surveys.routes.ts
+data: { preload: true, preloadDelay: 1500 }
 
-// No preloading (load on demand only)
-{
-  path: 'settings',
-  loadComponent: () => import('./settings/settings-dashboard.component'),
-  data: { preload: false }
-}
+// On-demand only (no preload) - settings, profile, my-activity
+// No data attribute or data: { preload: false }
 ```
 
 ---

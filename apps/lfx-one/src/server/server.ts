@@ -12,10 +12,12 @@ import { dirname, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import pinoHttp from 'pino-http';
 
+import { ProfileController } from './controllers/profile.controller';
 import { customErrorSerializer } from './helpers/error-serializer';
 import { validateAndSanitizeUrl } from './helpers/url-validation';
 import { authMiddleware } from './middleware/auth.middleware';
 import { apiErrorHandler } from './middleware/error-handler.middleware';
+import { apiRateLimiter } from './middleware/rate-limit.middleware';
 import analyticsRouter from './routes/analytics.route';
 import committeesRouter from './routes/committees.route';
 import lensRouter from './routes/lens.route';
@@ -157,6 +159,10 @@ app.use('/login', (req: Request, res: Response) => {
 // Apply authentication middleware to all routes
 app.use(authMiddleware);
 
+// Apply rate limiting to all API and auth routes
+app.use('/api/', apiRateLimiter);
+app.use('/login', apiRateLimiter);
+
 // Mount API routes after authentication middleware
 // Public API routes
 app.use('/public/api/meetings', publicMeetingsRouter);
@@ -178,6 +184,13 @@ app.use('/api/lens', lensRouter);
 
 // Add API error handler middleware
 app.use('/api/*', apiErrorHandler);
+
+// Flow C: Profile auth callback at /passwordless/callback (registered in Auth0 Profile Client)
+const profileCallbackController = new ProfileController();
+app.get('/passwordless/callback', apiRateLimiter, (req, res) => profileCallbackController.handleProfileAuthCallback(req, res));
+
+// Social identity verification callback (GitHub/LinkedIn OAuth redirect)
+app.get('/social/callback', apiRateLimiter, (req, res) => profileCallbackController.handleSocialCallback(req, res));
 
 /**
  * Handle all other requests by rendering the Angular application.

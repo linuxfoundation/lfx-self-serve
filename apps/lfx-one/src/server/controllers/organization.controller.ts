@@ -4,6 +4,7 @@
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { CdpService } from '../services/cdp.service';
 import { OrganizationService } from '../services/organization.service';
 import { logger } from '../services/logger.service';
 
@@ -12,6 +13,7 @@ import { logger } from '../services/logger.service';
  */
 export class OrganizationController {
   private organizationService: OrganizationService = new OrganizationService();
+  private cdpService: CdpService = new CdpService();
 
   /**
    * GET /organizations/search
@@ -48,6 +50,42 @@ export class OrganizationController {
       res.json({ suggestions });
     } catch (error) {
       // Error handler will log - just propagate
+      next(error);
+    }
+  }
+
+  /**
+   * POST /organizations/resolve
+   * Find or create an organization in CDP by name and domain
+   */
+  public async resolveOrganization(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { name, domain } = req.body;
+    const startTime = logger.startOperation(req, 'resolve_organization', {
+      has_name: !!name,
+      has_domain: !!domain,
+    });
+
+    try {
+      if (!name || typeof name !== 'string') {
+        const validationError = ServiceValidationError.forField('name', 'Organization name is required and must be a string', {
+          operation: 'resolve_organization',
+          service: 'organization_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const org = await this.cdpService.resolveOrganization(req, name, domain || '');
+
+      logger.success(req, 'resolve_organization', startTime, {
+        organization_id: org.id,
+        organization_name: org.name,
+      });
+
+      res.json(org);
+    } catch (error) {
       next(error);
     }
   }

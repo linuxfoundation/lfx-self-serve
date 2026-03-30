@@ -1,0 +1,14 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+// Hide scrollbar for horizontal tab scroll while maintaining functionality
+:host {
+  [data-testid='profile-tabs-desktop'] {
+    scrollbar-width: none; // Firefox
+    -ms-overflow-style: none; // IE/Edge
+
+    &::-webkit-scrollbar {
+      display: none; // Chrome/Safari
+    }
+  }
+}

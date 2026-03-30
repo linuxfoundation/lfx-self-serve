@@ -1,0 +1,44 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="remove-identity-dialog">
+  <!-- Description -->
+  <p class="text-sm text-slate-600">Are you sure you want to remove this identity? You can't undo this action.</p>
+
+  <!-- Identity detail card -->
+  <div class="flex items-center gap-3 rounded-lg border border-slate-200 bg-slate-50 p-4">
+    <div class="flex h-10 w-10 shrink-0 items-center justify-center rounded-xl border border-slate-100 bg-white shadow-sm">
+      <i [class]="identity.icon + ' text-lg text-slate-600'"></i>
+    </div>
+    <div class="flex flex-col gap-0.5">
+      <span class="text-sm font-bold text-slate-900">{{ providerLabel }}</span>
+      <span class="text-xs text-slate-500">{{ identity.identifier }}</span>
+    </div>
+  </div>
+
+  <!-- Info notice -->
+  <div class="flex items-start gap-2 rounded-lg border border-slate-200 bg-slate-50 p-3">
+    <i class="fa-light fa-circle-info mt-0.5 text-sm text-slate-500"></i>
+    <p class="text-xs text-slate-600">Identity information may be retained to help improve our services and support project insights.</p>
+  </div>
+
+  <!-- Acknowledgment checkbox for verified identities -->
+  @if (isVerified) {
+    <lfx-checkbox
+      [form]="form"
+      control="acknowledged"
+      label="I understand that removing this verified identity may affect my contribution attribution"
+      labelClass="text-sm text-slate-600 leading-3"
+      data-testid="remove-acknowledge-checkbox" />
+  }
+
+  <!-- Footer -->
+  <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="onCancel()" data-testid="remove-cancel" />
+    @if (isVerified) {
+      <lfx-button label="Remove identity" severity="danger" size="small" [disabled]="!canConfirm" (onClick)="onConfirm()" data-testid="remove-confirm" />
+    } @else {
+      <lfx-button label="Remove" severity="danger" size="small" (onClick)="onConfirm()" data-testid="remove-confirm" />
+    }
+  </div>
+</div>
