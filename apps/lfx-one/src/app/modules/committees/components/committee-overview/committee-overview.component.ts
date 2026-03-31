@@ -4,6 +4,7 @@
 import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, NgClass } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Dialog } from 'primeng/dialog';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -23,6 +24,7 @@ import { VoteService } from '@services/vote.service';
 import { SurveyService } from '@services/survey.service';
 import { MessageService } from 'primeng/api';
 import { catchError, filter, finalize, forkJoin, of, switchMap } from 'rxjs';
+import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 @Component({
   selector: 'lfx-committee-overview',
@@ -135,43 +137,57 @@ export class CommitteeOverviewComponent {
 
   public joinButtonLabel: Signal<string> = computed(() => {
     const mode = this.committee().join_mode;
-    if (mode === 'open') {
-      return 'Join';
-    }
-    if (mode === 'application') {
-      return 'Request to Join';
-    }
-    return 'Request Invite';
+    if (mode === 'open') return 'Join Group';
+    if (mode === 'application') return 'Request to Join';
+    if (mode === 'invite_only') return 'Request Access';
+    return 'Contact Admin';
+  });
+
+  /** Icon for the CTA button — matches the header button icon */
+  public joinButtonIcon: Signal<string> = computed(() => {
+    const mode = this.committee().join_mode;
+    if (mode === 'open') return 'fa-light fa-user-plus';
+    if (mode === 'invite_only' || mode === 'application') return 'fa-light fa-paper-plane';
+    return 'fa-light fa-envelope';
+  });
+
+  /** Large illustrative icon above the CTA card title */
+  public joinCtaIcon: Signal<string> = computed(() => {
+    const mode = this.committee().join_mode;
+    if (mode === 'application' || mode === 'invite_only') return 'fa-light fa-paper-plane';
+    return 'fa-light fa-users';
+  });
+
+  public joinBannerText: Signal<string> = computed(() => {
+    const mode = this.committee().join_mode;
+    const name = this.committee().name;
+    if (mode === 'open') return `Interested in ${name}? Click Join Group above to become a member.`;
+    if (mode === 'application') return `Interested in ${name}? Click Request to Join above to submit your application for admin review.`;
+    if (mode === 'invite_only') return `Interested in ${name}? Click Request Access above to submit a membership request for admin review.`;
+    return `${name} is closed to new members. Contact a group admin for access.`;
+  });
+
+  public joinCtaTitle: Signal<string> = computed(() => {
+    const mode = this.committee().join_mode;
+    const name = this.committee().name;
+    if (mode === 'application') return `Apply to join ${name}`;
+    if (mode === 'invite_only') return `Request access to ${name}`;
+    return `Join ${name}`;
+  });
+
+  public joinCtaDescription: Signal<string> = computed(() => {
+    const mode = this.committee().join_mode;
+    if (mode === 'application') return 'Submit a request and a group admin will review your application.';
+    if (mode === 'invite_only') return 'Submit a request and a group admin will review and send you an invitation if approved.';
+    return 'Participate in meetings, vote on proposals, access resources, and collaborate with the group.';
   });
 
   public pendingVotes: Signal<Vote[]> = computed(() => this.votes().filter((v) => v.status === PollStatus.ACTIVE));
   public pendingSurveys: Signal<Survey[]> = computed(() => this.surveys().filter((s) => s.survey_status === 'open' || s.survey_status === 'sent'));
   public hasPendingActions: Signal<boolean> = computed(() => this.pendingVotes().length > 0 || this.pendingSurveys().length > 0);
 
-  public pendingActionItems: Signal<PendingActionItem[]> = computed(() => {
-    const voteItems: PendingActionItem[] = this.pendingVotes().map((vote) => ({
-      type: 'Cast Vote',
-      badge: this.committee().name,
-      text: vote.name,
-      icon: 'fa-light fa-check-to-slot',
-      severity: 'warn' as const,
-      buttonText: 'Review and Vote',
-      buttonLink: vote.uid,
-      date: vote.end_time ? `Deadline: ${new Date(vote.end_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}` : undefined,
-    }));
-    const surveyItems: PendingActionItem[] = this.pendingSurveys().map((survey) => ({
-      type: 'Submit Feedback',
-      badge: this.committee().name,
-      text: survey.survey_title,
-      icon: 'fa-light fa-chart-simple',
-      severity: 'warn' as const,
-      buttonText: 'Submit Survey',
-      date: survey.survey_cutoff_date
-        ? `Deadline: ${new Date(survey.survey_cutoff_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
-        : undefined,
-    }));
-    return [...voteItems, ...surveyItems];
-  });
+  public pendingActionItems: Signal<PendingActionItem[]> = this.initPendingActionItems();
+  public pendingActionsViewAllTab: Signal<'votes' | 'surveys'> = this.initPendingActionsViewAllTab();
   public categoryLabel: Signal<string> = computed(() => (this.committee().category || 'Group').toLowerCase());
 
   public nextMeeting: Signal<Meeting | null> = computed(() => {
@@ -274,9 +290,12 @@ export class CommitteeOverviewComponent {
           this.showChairsModal.set(false);
           this.committeeUpdated.emit();
         },
-        error: (err: { error?: { message?: string }; message?: string }) => {
-          const detail = err?.error?.message || err?.message || 'Failed to update chairs';
-          this.messageService.add({ severity: 'error', summary: 'Error', detail });
+        error: (err: HttpErrorResponse) => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Unable to Save',
+            detail: getHttpErrorDetail(err, 'Failed to update chairs. Please try again.'),
+          });
         },
       });
   }
@@ -353,6 +372,43 @@ export class CommitteeOverviewComponent {
       ),
       { initialValue: [] }
     );
+  }
+
+  private initPendingActionItems(): Signal<PendingActionItem[]> {
+    return computed(() => {
+      const voteItems: PendingActionItem[] = this.pendingVotes().map((vote) => ({
+        type: 'Cast Vote',
+        badge: this.committee().name,
+        text: vote.name,
+        icon: 'fa-light fa-check-to-slot',
+        severity: 'warn' as const,
+        buttonText: 'Review and Vote',
+        buttonLink: vote.uid,
+        date: vote.end_time
+          ? `Deadline: ${new Date(vote.end_time).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+          : undefined,
+      }));
+      const surveyItems: PendingActionItem[] = this.pendingSurveys().map((survey) => ({
+        type: 'Submit Feedback',
+        badge: this.committee().name,
+        text: survey.survey_title,
+        icon: 'fa-light fa-chart-simple',
+        severity: 'warn' as const,
+        buttonText: 'Submit Survey',
+        date: survey.survey_cutoff_date
+          ? `Deadline: ${new Date(survey.survey_cutoff_date).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}`
+          : undefined,
+      }));
+      return [...voteItems, ...surveyItems];
+    });
+  }
+
+  private initPendingActionsViewAllTab(): Signal<'votes' | 'surveys'> {
+    return computed(() => {
+      const overflow = this.pendingActionItems().slice(2);
+      const hasVotes = overflow.some((item) => item.type === 'Cast Vote');
+      return hasVotes ? 'votes' : 'surveys';
+    });
   }
 
   private initSurveys(): Signal<Survey[]> {

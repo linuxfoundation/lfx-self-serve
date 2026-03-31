@@ -40,32 +40,72 @@
           @if (!committee()?.public) {
             <i class="fa-light fa-lock w-4 h-4 text-gray-400"></i>
           }
-        </div>
-        @if (committee()?.description) {
-          <div class="flex items-start gap-2 max-w-2xl" data-testid="committee-view-description">
-            <p class="text-gray-500 line-clamp-2 flex-1">{{ committee()?.description }}</p>
-            <lfx-button
-              label="more"
-              [text]="true"
-              size="small"
-              severity="info"
-              styleClass="!text-xs !p-0 whitespace-nowrap"
-              (onClick)="showDescriptionDialog.set(true)"></lfx-button>
+          <!-- Join / Request to Join / Contact Admin / Leave actions -->
+          <div class="ml-auto flex items-center gap-2">
+            @if (isVisitor()) {
+              <lfx-button
+                [label]="joinButtonLabel()"
+                [icon]="joinButtonIcon()"
+                [severity]="joinButtonSeverity()"
+                [outlined]="joinButtonOutlined()"
+                size="small"
+                [loading]="joiningOrLeaving()"
+                (onClick)="handleJoinRequest()"
+                [attr.data-testid]="joinButtonTestId()" />
+            } @else if (isMemberOrAdmin() && !canEdit()) {
+              <lfx-button
+                label="Leave Group"
+                icon="fa-light fa-arrow-right-from-bracket"
+                severity="secondary"
+                [outlined]="true"
+                size="small"
+                [loading]="joiningOrLeaving()"
+                (onClick)="handleLeaveRequest()"
+                data-testid="committee-view-leave-btn" />
+            }
             @if (canEdit()) {
               <lfx-button
-                icon="fa-light fa-pen-to-square"
+                icon="fa-light fa-gear"
                 [text]="true"
                 [rounded]="true"
                 size="small"
                 severity="secondary"
-                tooltip="Edit description"
-                (onClick)="openEditDescription()"></lfx-button>
+                tooltip="Group Settings"
+                (onClick)="activeTab.set('settings')"
+                data-testid="committee-view-settings-btn" />
             }
           </div>
-        }
-        <!-- Tags + Channels row -->
-        <div class="flex justify-between items-start">
-          <div class="flex flex-col gap-3">
+        </div>
+        <!-- Description + Channels card side by side -->
+        <div class="flex flex-col lg:flex-row justify-between items-start gap-6">
+          <!-- Left column -->
+          <div class="flex flex-col gap-3 flex-1 min-w-0">
+            @if (committee()?.description || canEdit()) {
+              <div class="flex items-start gap-2 max-w-2xl" data-testid="committee-view-description">
+                @if (committee()?.description) {
+                  <p class="text-gray-500 line-clamp-2 flex-1">{{ committee()?.description }}</p>
+                  <lfx-button
+                    label="more"
+                    [text]="true"
+                    size="small"
+                    severity="info"
+                    styleClass="!text-xs !p-0 whitespace-nowrap"
+                    (onClick)="showDescriptionDialog.set(true)"></lfx-button>
+                } @else if (canEdit()) {
+                  <span class="text-gray-400 text-sm italic flex-1">No description yet.</span>
+                }
+                @if (canEdit()) {
+                  <lfx-button
+                    icon="fa-light fa-pen-to-square"
+                    [text]="true"
+                    [rounded]="true"
+                    size="small"
+                    severity="secondary"
+                    tooltip="Edit description"
+                    (onClick)="openEditDescription()"></lfx-button>
+                }
+              </div>
+            }
             <div class="flex items-center gap-3 flex-wrap">
               @if (committee()?.category) {
                 <lfx-tag [value]="committee()!.category" [severity]="categorySeverity()"></lfx-tag>
@@ -77,12 +117,74 @@
                 <lfx-tag [value]="committee()!.join_mode! | joinModeLabel" severity="secondary"></lfx-tag>
               }
             </div>
-            @if (committee()?.project_name || committee()?.foundation_name) {
-              <div class="flex items-center gap-1.5">
-                <span class="text-xs font-medium text-gray-500">Parent Project:</span>
-                <span class="text-xs text-gray-700">{{ committee()?.project_name || committee()?.foundation_name }}</span>
-              </div>
-            }
+            <div class="flex items-center gap-4 flex-wrap">
+              @if (committee()?.project_name || committee()?.foundation_name) {
+                <div class="flex items-center gap-1.5">
+                  <span class="text-xs font-medium text-gray-500">Parent Project:</span>
+                  <span class="text-xs text-gray-700">{{ committee()?.project_name || committee()?.foundation_name }}</span>
+                </div>
+              }
+              @if (parentGroup(); as parent) {
+                <button
+                  class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
+                  (click)="navigateToParentGroup()"
+                  data-testid="committee-view-parent-group-link">
+                  <i class="fa-light fa-sitemap text-[11px]"></i>
+                  <span>Parent Group:</span>
+                  <span>{{ parent.name }}</span>
+                  <i class="fa-light fa-chevron-right text-[10px]"></i>
+                </button>
+              }
+              @if (subGroupsLoading()) {
+                <p-skeleton width="120px" height="16px" borderRadius="4px" />
+              } @else if (subGroups().length === 1) {
+                <!-- Single sub-group: inline link, no dropdown -->
+                <button
+                  class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
+                  (click)="navigateToSubGroup(subGroups()[0])"
+                  data-testid="committee-view-sub-group-link">
+                  <i class="fa-light fa-sitemap text-[11px]"></i>
+                  <span>Sub-Group:</span>
+                  <span>{{ subGroups()[0].name }}</span>
+                  <i class="fa-light fa-chevron-right text-[10px]"></i>
+                </button>
+              } @else if (subGroups().length > 1) {
+                <!-- Multiple sub-groups: dropdown popover -->
+                <div class="relative">
+                  <button
+                    class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
+                    (click)="subGroupsPopover.toggle($event)"
+                    data-testid="committee-view-sub-groups-trigger">
+                    <i class="fa-light fa-sitemap text-[11px]"></i>
+                    <span>Sub-Groups</span>
+                    <lfx-tag [value]="'' + subGroups().length" [rounded]="true" severity="info" styleClass="!text-[10px] !px-1.5 !py-0" />
+                    <i class="fa-light fa-chevron-down text-[10px]"></i>
+                  </button>
+                  <p-popover #subGroupsPopover [style]="{ width: '360px' }" data-testid="committee-view-sub-groups-popover">
+                    <div class="flex flex-col">
+                      <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-3 pt-2 pb-1.5">Sub-Groups</div>
+                      @for (sg of subGroups(); track sg.uid) {
+                        <button
+                          class="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors cursor-pointer w-full text-left"
+                          (click)="navigateToSubGroup(sg); subGroupsPopover.hide()"
+                          data-testid="committee-view-sub-group-item">
+                          <div
+                            class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0"
+                            [ngClass]="sg.category | categoryAvatarColor">
+                            {{ sg.name | initials }}
+                          </div>
+                          <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+                            <span class="text-sm font-medium text-gray-900 truncate">{{ sg.name }}</span>
+                            <span class="text-xs text-gray-500">{{ sg.category }} &middot; {{ sg.total_members }} members</span>
+                          </div>
+                          <i class="fa-light fa-chevron-right text-xs text-gray-400 shrink-0"></i>
+                        </button>
+                      }
+                    </div>
+                  </p-popover>
+                </div>
+              }
+            </div>
             <div class="flex items-center gap-1">
               <span class="text-xs text-gray-400">Created {{ committee()?.created_at | date: 'MMM d, y' }}</span>
               @if (committee()?.updated_at) {
@@ -90,16 +192,18 @@
               }
             </div>
           </div>
-          <!-- Inline Channels card -->
+          <!-- Right: Channels card -->
           @if (hasChannels()) {
             <div
-              class="relative bg-gray-50 border border-gray-200 hover:border-blue-500 transition-colors rounded-lg py-2.5 px-3.5 pr-9 text-left text-[12.5px] leading-[1.7] text-gray-600 max-w-[360px] overflow-hidden flex-shrink-0"
+              class="relative bg-gray-50 border border-gray-200 hover:border-blue-500 transition-colors rounded-lg py-2.5 px-3.5 pr-9 text-left text-[12.5px] leading-[1.7] text-gray-600 w-full lg:max-w-[360px] overflow-hidden flex-shrink-0 self-start"
               data-testid="committee-view-channels-card">
               <!-- Channel values -->
               <div class="flex flex-col gap-1.5" [attr.inert]="isVisitor() || null">
                 @if (committee()?.mailing_list; as mailingList) {
                   <div class="flex items-baseline gap-1.5 justify-end overflow-hidden">
-                    <span class="text-xs text-gray-500 whitespace-nowrap">Mailing List :</span>
+                    <span class="text-xs text-gray-500 whitespace-nowrap flex items-center gap-1">
+                      <i class="fa-light fa-envelope" aria-hidden="true"></i> Mailing List :
+                    </span>
                     <a
                       [href]="'mailto:' + mailingList"
                       class="text-xs text-blue-600 hover:text-blue-800 hover:underline no-underline truncate"
@@ -110,8 +214,10 @@
                 }
                 @if (committee()?.chat_channel; as chatChannel) {
                   <div class="flex items-baseline gap-1.5 justify-end overflow-hidden">
-                    <span class="text-xs text-gray-500 whitespace-nowrap">{{ chatPlatformLabel() }} :</span>
-                    @if (chatChannel.startsWith('http')) {
+                    <span class="text-xs text-gray-500 whitespace-nowrap flex items-center gap-1">
+                      <i [class]="chatPlatformIcon()" aria-hidden="true"></i> {{ chatPlatformLabel() }} :
+                    </span>
+                    @if (chatChannel.startsWith('http://') || chatChannel.startsWith('https://')) {
                       <a
                         [href]="chatChannel"
                         target="_blank"
@@ -127,10 +233,12 @@
                 }
                 @if (committee()?.website; as website) {
                   <div class="flex items-baseline gap-1.5 justify-end overflow-hidden">
-                    <span class="text-xs text-gray-500 whitespace-nowrap">{{ repoPlatformLabel() }} :</span>
-                    @if (website.startsWith('http')) {
+                    <span class="text-xs text-gray-500 whitespace-nowrap flex items-center gap-1">
+                      <i [class]="repoPlatformIcon()" aria-hidden="true"></i> {{ repoPlatformLabel() }} :
+                    </span>
+                    @if (website | safeUrl; as safeUrl) {
                       <a
-                        [href]="website"
+                        [href]="safeUrl"
                         target="_blank"
                         rel="noopener noreferrer"
                         class="text-xs text-blue-600 hover:text-blue-800 hover:underline no-underline truncate"
@@ -138,7 +246,7 @@
                         >{{ website }}</a
                       >
                     } @else {
-                      <span class="text-xs text-gray-900 truncate">{{ website }}</span>
+                      <span class="text-xs text-gray-900 truncate" [title]="website">{{ website }}</span>
                     }
                   </div>
                 }
@@ -175,22 +283,24 @@
       <!-- Tabs -->
       <div class="flex gap-1 border-b" data-testid="committee-view-tabs">
         @for (tab of visibleTabs(); track tab.key) {
-          <button
-            (click)="activeTab.set(tab.key)"
-            class="px-4 py-2 text-sm font-medium transition-colors"
-            [ngClass]="{
-              'border-b-2 border-blue-600 text-blue-600': activeTab() === tab.key,
-              'text-gray-500': activeTab() !== tab.key,
-            }">
-            <i class="fa-light {{ tab.icon }} mr-2"></i>{{ tab.label }}
-            @if (tab.badge && tab.badge() !== null) {
-              <lfx-tag
-                [value]="'' + tab.badge()"
-                [rounded]="true"
-                [severity]="activeTab() === tab.key ? 'info' : 'secondary'"
-                styleClass="ml-1 !text-[10px] !px-1.5 !py-0.5" />
-            }
-          </button>
+          @if (tab.key !== 'settings') {
+            <button
+              (click)="activeTab.set(tab.key)"
+              class="px-4 py-2 text-sm font-medium transition-colors"
+              [ngClass]="{
+                'border-b-2 border-blue-600 text-blue-600': activeTab() === tab.key,
+                'text-gray-500': activeTab() !== tab.key,
+              }">
+              <i class="fa-light {{ tab.icon }} mr-2"></i>{{ tab.label }}
+              @if (tab.badge && tab.badge() !== null) {
+                <lfx-tag
+                  [value]="'' + tab.badge()"
+                  [rounded]="true"
+                  [severity]="activeTab() === tab.key ? 'info' : 'secondary'"
+                  styleClass="ml-1 !text-[10px] !px-1.5 !py-0.5" />
+              }
+            </button>
+          }
         }
       </div>
 
@@ -205,6 +315,7 @@
             [myRole]="myRole()"
             [myMemberUid]="myMemberUid()"
             [myRoleLoading]="myRoleLoading()"
+            (joinRequested)="handleJoinRequest()"
             (tabNavigated)="handleTabNavigation($event)"
             (committeeUpdated)="refreshMembers()" />
         }
@@ -229,7 +340,17 @@
         }
         @case ('settings') {
           @if (canEdit()) {
-            <lfx-committee-settings-tab [committee]="committee()!" (committeeUpdated)="refreshCommittee()" />
+            <div class="flex flex-col gap-4">
+              <button
+                type="button"
+                class="inline-flex items-center gap-1.5 text-sm font-medium text-blue-600 hover:text-blue-700 w-fit"
+                (click)="activeTab.set('overview')"
+                data-testid="committee-view-settings-back-btn">
+                <i class="fa-light fa-arrow-left text-xs" aria-hidden="true"></i>
+                Back to Overview
+              </button>
+              <lfx-committee-settings-tab [committee]="committee()!" (committeeUpdated)="refreshCommittee()" />
+            </div>
           }
         }
       }

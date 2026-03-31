@@ -5,10 +5,12 @@ import {
   Committee,
   CommitteeCreateData,
   CommitteeDocument,
+  CommitteeJoinApplication,
   CommitteeMember,
   CommitteeSettingsData,
   CommitteeUpdateData,
   CreateCommitteeDocumentRequest,
+  CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
   MyCommittee,
   QueryServiceCountResponse,
@@ -87,25 +89,27 @@ export class CommitteeService {
       })
     );
 
-    // Batch access check: the query service returns ALL committees but not all are accessible
-    // to the current user. Use viewer access to filter out committees the user cannot see,
-    // then addAccessToResources adds the writer field for edit permissions.
-    const accessMap = await this.accessCheckService.checkAccess(
-      req,
-      committees.map((c) => ({ resource: 'committee' as const, id: c.uid, access: 'viewer' as const }))
-    );
+    // Add writer access field so the filter below can use it
+    committees = await this.accessCheckService.addAccessToResources(req, committees, 'committee');
 
-    const accessibleCommittees = committees.filter((c) => accessMap.get(c.uid));
+    // Visibility filter: only show committees the current user can actually open.
+    // The query service may return committees the committee service will reject (403/404),
+    // so we filter to: public committees, committees the user has write access to,
+    // or committees the user is an explicit member of.
+    const myCommittees = await this.getMyCommittees(req);
+    const myUids = new Set(myCommittees.map((c) => c.uid));
+    const totalBefore = committees.length;
 
-    if (accessibleCommittees.length < committees.length) {
-      logger.debug(req, 'get_committees', 'Filtered inaccessible committees', {
-        filtered_count: committees.length - accessibleCommittees.length,
-        total: committees.length,
+    committees = committees.filter((c) => c.public || c.writer === true || myUids.has(c.uid));
+
+    if (committees.length < totalBefore) {
+      logger.debug(req, 'get_committees', 'Filtered non-visible committees', {
+        filtered_count: totalBefore - committees.length,
+        total: totalBefore,
       });
     }
 
-    // Add writer access field to accessible committees
-    return await this.accessCheckService.addAccessToResources(req, accessibleCommittees, 'committee');
+    return committees;
   }
 
   /**
@@ -526,13 +530,16 @@ export class CommitteeService {
     await this.microserviceProxy.proxyRequest(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/leave`, 'DELETE');
   }
 
-  // ── Committee Documents (Folders + Links) ──────────────────────────────
-  // Upstream API uses separate /folders and /links endpoints.
-  // This BFF merges them into a unified CommitteeDocument[] for the frontend.
-
   /**
-   * Fetches all folders and links for a committee, merged into a unified list.
+   * Submits a join application for a committee with join_mode 'application'.
    */
+  public async submitApplication(req: Request, committeeId: string, body: CreateCommitteeJoinApplicationRequest): Promise<CommitteeJoinApplication> {
+    logger.debug(req, 'submit_committee_application', 'Submitting join application', { committee_uid: committeeId });
+    return this.microserviceProxy.proxyRequest<CommitteeJoinApplication>(req, 'LFX_V2_SERVICE', `/committees/${committeeId}/applications`, 'POST', {}, body);
+  }
+
+  // ── Committee Documents ────────────────────────────────────────────────────
+
   public async getCommitteeDocuments(req: Request, committeeId: string): Promise<CommitteeDocument[]> {
     logger.debug(req, 'get_committee_documents', 'Fetching committee folders and links', {
       committee_uid: committeeId,

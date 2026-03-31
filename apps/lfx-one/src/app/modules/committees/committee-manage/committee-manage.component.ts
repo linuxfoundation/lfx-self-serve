@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, DestroyRef, effect, inject, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
@@ -14,6 +15,7 @@ import { MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { StepperModule } from 'primeng/stepper';
 import { BehaviorSubject, catchError, concat, filter, finalize, forkJoin, Observable, of, switchMap, take, toArray } from 'rxjs';
+import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 import { CommitteeBasicInfoComponent } from '../components/committee-basic-info/committee-basic-info.component';
 import { CommitteeCategorySelectionComponent } from '../components/committee-category-selection/committee-category-selection.component';
@@ -208,13 +210,13 @@ export class CommitteeManageComponent {
       // Update existing committee
       this.committeeService.updateCommittee(this.committeeId()!, committeeData).subscribe({
         next: () => this.handleCommitteeSuccess('updated'),
-        error: () => this.handleCommitteeError('update'),
+        error: (err: HttpErrorResponse) => this.handleCommitteeError('update', err),
       });
     } else {
       // Create new committee
       this.committeeService.createCommittee(committeeData).subscribe({
         next: (committee) => this.handleCreateSuccess(committee),
-        error: () => this.handleCommitteeError('create'),
+        error: (err: HttpErrorResponse) => this.handleCommitteeError('create', err),
       });
     }
   }
@@ -246,11 +248,11 @@ export class CommitteeManageComponent {
           this.showMemberOperationToast(totalSuccess, totalFailed, totalSuccess + totalFailed);
           this.router.navigate(['/groups']);
         },
-        error: () => {
+        error: (err: HttpErrorResponse) => {
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
-            detail: 'Failed to save member changes',
+            detail: getHttpErrorDetail(err, 'Failed to save member changes'),
           });
           this.router.navigate(['/groups']);
         },
@@ -332,11 +334,11 @@ export class CommitteeManageComponent {
           // Navigate back to committees list
           this.router.navigate(['/groups']);
         },
-        error: () => {
+        error: (err: HttpErrorResponse) => {
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
-            detail: `Failed to update ${this.committeeLabel.toLowerCase()}. Please try again.`,
+            detail: getHttpErrorDetail(err, `Failed to update ${this.committeeLabel.toLowerCase()}. Please try again.`),
           });
         },
       });
@@ -453,13 +455,13 @@ export class CommitteeManageComponent {
     }
   }
 
-  private handleCommitteeError(operation: 'create' | 'update'): void {
+  private handleCommitteeError(operation: 'create' | 'update', err: HttpErrorResponse): void {
     this.submitting.set(false);
 
     this.messageService.add({
       severity: 'error',
       summary: 'Error',
-      detail: `Failed to ${operation} ${this.committeeLabel.toLowerCase()}. Please try again.`,
+      detail: getHttpErrorDetail(err, `Failed to ${operation} ${this.committeeLabel.toLowerCase()}. Please try again.`),
     });
   }
 

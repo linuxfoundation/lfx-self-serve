@@ -7,15 +7,11 @@
     @switch (bannerType()) {
       @case ('visitor') {
         @if (canJoin()) {
-          <lfx-message severity="info" icon="fa-light fa-right-to-bracket" data-testid="committee-overview-visitor-banner">
-            <div class="flex items-center justify-between w-full">
-              <div class="flex flex-col gap-1">
-                <h4 class="text-sm font-semibold">Interested in this {{ categoryLabel() }}?</h4>
-                <p class="text-sm">Join to participate in meetings, votes, and surveys.</p>
-              </div>
-              <lfx-button [label]="joinButtonLabel()" severity="info" size="small" icon="fa-light fa-right-to-bracket" (onClick)="onJoinClick()"></lfx-button>
-            </div>
-          </lfx-message>
+          <lfx-message
+            severity="info"
+            icon="fa-light fa-right-to-bracket"
+            [text]="joinBannerText()"
+            data-testid="committee-overview-visitor-banner"></lfx-message>
         }
       }
       @case ('member') {
@@ -225,10 +221,21 @@
 
     <!-- My Pending Actions -->
     <div class="flex flex-col gap-2">
-      <h2 class="text-base font-normal text-gray-900 flex items-center gap-2">
-        <i class="fa-light fa-list-check text-gray-400"></i>
-        My Pending Actions
-      </h2>
+      <div class="flex items-center justify-between">
+        <h2 class="text-base font-normal text-gray-900 flex items-center gap-2">
+          <i class="fa-light fa-list-check text-gray-400"></i>
+          My Pending Actions
+        </h2>
+        @if (pendingActionItems().length > 2) {
+          <lfx-button
+            label="View All"
+            [text]="true"
+            size="small"
+            severity="info"
+            styleClass="!text-xs"
+            (onClick)="navigateToTab(pendingActionsViewAllTab())"></lfx-button>
+        }
+      </div>
       @if (votesLoading() || surveysLoading()) {
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
           <lfx-card>
@@ -248,7 +255,7 @@
         </div>
       } @else if (pendingActionItems().length > 0) {
         <div class="grid grid-cols-1 lg:grid-cols-2 gap-3">
-          @for (item of pendingActionItems(); track item.type + item.text) {
+          @for (item of pendingActionItems().slice(0, 2); track item.type + item.text) {
             <div
               class="p-4 flex flex-col gap-3 border rounded-xl shadow-md transition-all cursor-pointer"
               [ngClass]="{
@@ -301,10 +308,10 @@
     @if (canJoin()) {
       <div class="rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-6 text-center" data-testid="committee-overview-visitor-cta">
         <div class="flex flex-col gap-3 items-center">
-          <i class="fa-light fa-users text-2xl text-blue-500"></i>
-          <h3 class="text-base font-semibold text-gray-900">Join this {{ categoryLabel() }}</h3>
-          <p class="text-sm text-gray-600 max-w-md">Become a member to participate in meetings, votes, surveys, and collaborate with the group.</p>
-          <lfx-button [label]="joinButtonLabel()" severity="info" size="small" icon="fa-light fa-right-to-bracket" (onClick)="onJoinClick()"></lfx-button>
+          <i [class]="joinCtaIcon() + ' text-2xl text-blue-500'"></i>
+          <h3 class="text-base font-semibold text-gray-900">{{ joinCtaTitle() }}</h3>
+          <p class="text-sm text-gray-600 max-w-md">{{ joinCtaDescription() }}</p>
+          <lfx-button [label]="joinButtonLabel()" severity="info" size="small" [icon]="joinButtonIcon()" (onClick)="onJoinClick()"></lfx-button>
         </div>
       </div>
     }

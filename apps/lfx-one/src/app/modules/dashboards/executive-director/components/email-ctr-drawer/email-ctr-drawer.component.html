@@ -39,141 +39,141 @@
         <p-skeleton width="60%" height="1rem" />
       </div>
     } @else {
-    <!-- Summary Stats -->
-    <div class="flex gap-4" data-testid="email-ctr-drawer-stats">
-      <lfx-card styleClass="flex-1">
-        <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Current CTR</span>
-          <span class="text-2xl font-semibold text-gray-900">{{ drawerData().currentCtr.toFixed(2) }}%</span>
-        </div>
-      </lfx-card>
-      <lfx-card styleClass="flex-1">
-        <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">vs 6-Month Avg</span>
-          @if (drawerData().changePercentage !== 0) {
-            <div class="flex items-center gap-2">
-              <span class="text-2xl font-semibold" [class]="drawerData().trend === 'up' ? 'text-green-600' : 'text-red-600'">
-                {{ drawerData().changePercentage > 0 ? '+' : '' }}{{ drawerData().changePercentage }}%
-              </span>
-              <i class="text-sm" [class]="drawerData().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
+      <!-- Summary Stats -->
+      <div class="flex gap-4" data-testid="email-ctr-drawer-stats">
+        <lfx-card styleClass="flex-1">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">Current CTR</span>
+            <span class="text-2xl font-semibold text-gray-900">{{ drawerData().currentCtr.toFixed(2) }}%</span>
+          </div>
+        </lfx-card>
+        <lfx-card styleClass="flex-1">
+          <div class="flex flex-col gap-1">
+            <span class="text-sm text-gray-500">vs 6-Month Avg</span>
+            @if (drawerData().changePercentage !== 0) {
+              <div class="flex items-center gap-2">
+                <span class="text-2xl font-semibold" [class]="drawerData().trend === 'up' ? 'text-green-600' : 'text-red-600'">
+                  {{ drawerData().changePercentage > 0 ? '+' : '' }}{{ drawerData().changePercentage }}%
+                </span>
+                <i class="text-sm" [class]="drawerData().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
+              </div>
+            } @else {
+              <span class="text-2xl font-semibold text-gray-500">0%</span>
+            }
+          </div>
+        </lfx-card>
+      </div>
+
+      <!-- Recommended Actions -->
+      @if (recommendedActions().length > 0) {
+        <div class="flex flex-col gap-3" data-testid="email-ctr-drawer-actions">
+          <div class="flex items-center gap-2">
+            <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <i class="fa-light fa-lightbulb text-amber-500"></i>
+              Recommended Actions
+            </h3>
+          </div>
+          @for (action of recommendedActions(); track action.title) {
+            <div class="flex items-start gap-3 p-4 border border-gray-200 rounded-lg">
+              <div class="flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 flex-shrink-0 mt-0.5">
+                <i [class]="actionIcon(action.actionType) + ' text-gray-600'"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+                  @if (action.priority === 'high') {
+                    <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
+                  } @else if (action.priority === 'medium') {
+                    <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
+                  } @else {
+                    <lfx-tag value="Low Priority" severity="info" [rounded]="true" />
+                  }
+                </div>
+                <p class="text-sm text-gray-500 mt-0.5">{{ action.description }}</p>
+                <p class="text-xs text-gray-400 mt-1">Due: {{ action.dueLabel }}</p>
+              </div>
             </div>
-          } @else {
-            <span class="text-2xl font-semibold text-gray-500">0%</span>
           }
         </div>
-      </lfx-card>
-    </div>
+      }
 
-    <!-- Recommended Actions -->
-    @if (recommendedActions().length > 0) {
-      <div class="flex flex-col gap-3" data-testid="email-ctr-drawer-actions">
-        <div class="flex items-center gap-2">
-          <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <i class="fa-light fa-lightbulb text-amber-500"></i>
-            Recommended Actions
-          </h3>
-        </div>
-        @for (action of recommendedActions(); track action.title) {
-          <div class="flex items-start gap-3 p-4 border border-gray-200 rounded-lg">
-            <div class="flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 flex-shrink-0 mt-0.5">
-              <i [class]="actionIcon(action.actionType) + ' text-gray-600'"></i>
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
-                @if (action.priority === 'high') {
-                  <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
-                } @else if (action.priority === 'medium') {
-                  <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
-                } @else {
-                  <lfx-tag value="Low Priority" severity="info" [rounded]="true" />
-                }
-              </div>
-              <p class="text-sm text-gray-500 mt-0.5">{{ action.description }}</p>
-              <p class="text-xs text-gray-400 mt-1">Due: {{ action.dueLabel }}</p>
-            </div>
-          </div>
-        }
-      </div>
-    }
-
-    <!-- Key Insights -->
-    @if (keyInsights().length > 0) {
-      <div class="flex flex-col gap-3 p-4 bg-gray-50 rounded-lg" data-testid="email-ctr-drawer-insights">
-        <div class="flex items-center gap-2">
-          <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
-            Key Insights
-          </h3>
-        </div>
-        @for (insight of keyInsights(); track insight.text) {
-          <div class="flex items-center gap-2 text-sm">
-            @if (insight.type === 'driver') {
-              <i class="fa-light fa-bullseye text-gray-500"></i>
-            } @else if (insight.type === 'warning') {
+      <!-- Key Insights -->
+      @if (keyInsights().length > 0) {
+        <div class="flex flex-col gap-3 p-4 bg-gray-50 rounded-lg" data-testid="email-ctr-drawer-insights">
+          <div class="flex items-center gap-2">
+            <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
               <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
-            } @else {
-              <i class="fa-light fa-circle-info text-blue-500"></i>
-            }
-            <span class="text-gray-700">{{ insight.text }}</span>
+              Key Insights
+            </h3>
+          </div>
+          @for (insight of keyInsights(); track insight.text) {
+            <div class="flex items-center gap-2 text-sm">
+              @if (insight.type === 'driver') {
+                <i class="fa-light fa-bullseye text-gray-500"></i>
+              } @else if (insight.type === 'warning') {
+                <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
+              } @else {
+                <i class="fa-light fa-circle-info text-blue-500"></i>
+              }
+              <span class="text-gray-700">{{ insight.text }}</span>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- Monthly Trend Chart -->
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-chart-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Monthly CTR Trend</h3>
+          <p class="text-sm text-gray-600">Email click-through rate over the last 6 months</p>
+        </div>
+        @if (drawerData().monthlyData.length > 0) {
+          <div class="h-[240px]" data-testid="email-ctr-drawer-chart">
+            <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
+          </div>
+        } @else {
+          <div class="text-center py-8 border border-slate-200 rounded-lg">
+            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+            <p class="text-sm text-gray-500">No CTR data available</p>
           </div>
         }
       </div>
-    }
 
-    <!-- Monthly Trend Chart -->
-    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-chart-section">
-      <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Monthly CTR Trend</h3>
-        <p class="text-sm text-gray-600">Email click-through rate over the last 6 months</p>
+      <!-- Campaign Breakdown -->
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-campaigns-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">CTR by Campaign</h3>
+          <p class="text-sm text-gray-600">Average click-through rate per campaign over the last 6 months</p>
+        </div>
+        @if (drawerData().campaignGroups.length > 1) {
+          <div class="h-[240px]" data-testid="email-ctr-drawer-campaigns-chart">
+            <lfx-chart type="bar" [data]="campaignChartData()" [options]="campaignChartOptions" height="100%"></lfx-chart>
+          </div>
+        } @else {
+          <div class="text-center py-8 border border-slate-200 rounded-lg">
+            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+            <p class="text-sm text-gray-500">No campaign breakdown available</p>
+          </div>
+        }
       </div>
-      @if (drawerData().monthlyData.length > 0) {
-        <div class="h-[240px]" data-testid="email-ctr-drawer-chart">
-          <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
-        </div>
-      } @else {
-        <div class="text-center py-8 border border-slate-200 rounded-lg">
-          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-          <p class="text-sm text-gray-500">No CTR data available</p>
-        </div>
-      }
-    </div>
 
-    <!-- Campaign Breakdown -->
-    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-campaigns-section">
-      <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">CTR by Campaign</h3>
-        <p class="text-sm text-gray-600">Average click-through rate per campaign over the last 6 months</p>
+      <!-- Reach vs Opens -->
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-reach-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Campaign Reach vs Opens</h3>
+          <p class="text-sm text-gray-600">Monthly email sends compared to opens over the last 6 months</p>
+        </div>
+        @if (drawerData().monthlySends.length > 0) {
+          <div class="h-[240px]" data-testid="email-ctr-drawer-reach-chart">
+            <lfx-chart type="bar" [data]="reachVsOpensChartData()" [options]="reachVsOpensChartOptions" height="100%"></lfx-chart>
+          </div>
+        } @else {
+          <div class="text-center py-8 border border-slate-200 rounded-lg">
+            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+            <p class="text-sm text-gray-500">No reach data available</p>
+          </div>
+        }
       </div>
-      @if (drawerData().campaignGroups.length > 1) {
-        <div class="h-[240px]" data-testid="email-ctr-drawer-campaigns-chart">
-          <lfx-chart type="bar" [data]="campaignChartData()" [options]="campaignChartOptions" height="100%"></lfx-chart>
-        </div>
-      } @else {
-        <div class="text-center py-8 border border-slate-200 rounded-lg">
-          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-          <p class="text-sm text-gray-500">No campaign breakdown available</p>
-        </div>
-      }
-    </div>
-
-    <!-- Reach vs Opens -->
-    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-reach-section">
-      <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Campaign Reach vs Opens</h3>
-        <p class="text-sm text-gray-600">Monthly email sends compared to opens over the last 6 months</p>
-      </div>
-      @if (drawerData().monthlySends.length > 0) {
-        <div class="h-[240px]" data-testid="email-ctr-drawer-reach-chart">
-          <lfx-chart type="bar" [data]="reachVsOpensChartData()" [options]="reachVsOpensChartOptions" height="100%"></lfx-chart>
-        </div>
-      } @else {
-        <div class="text-center py-8 border border-slate-200 rounded-lg">
-          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-          <p class="text-sm text-gray-500">No reach data available</p>
-        </div>
-      }
-    </div>
     }
   </div>
 </p-drawer>

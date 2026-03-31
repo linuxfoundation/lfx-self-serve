@@ -79,7 +79,7 @@ export class VoteManageComponent {
   public readonly isLastStep: Signal<boolean> = this.initIsLastStep();
   public currentStep: Signal<number> = this.initCurrentStep();
 
-  constructor() {
+  public constructor() {
     this.initCommitteeContext();
   }
 

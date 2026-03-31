@@ -51,8 +51,7 @@ export class CommitteeSurveysComponent {
         tap(() => this.loading.set(true)),
         switchMap((c) =>
           this.surveyService.getSurveysByCommittee(c.uid, undefined, 'last_modified_at.desc').pipe(
-            catchError((error) => {
-              console.error('Failed to load committee surveys:', error);
+            catchError(() => {
               this.messageService.add({
                 severity: 'error',
                 summary: 'Error',

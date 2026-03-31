@@ -52,8 +52,7 @@ export class CommitteeVotesComponent {
         switchMap((c) => {
           this.loading.set(true);
           return this.voteService.getVotesByCommittee(c.uid, 'updated_at.desc').pipe(
-            catchError((error) => {
-              console.error('Failed to load committee votes:', error);
+            catchError(() => {
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to load votes. Please try again.' });
               return of([]);
             }),

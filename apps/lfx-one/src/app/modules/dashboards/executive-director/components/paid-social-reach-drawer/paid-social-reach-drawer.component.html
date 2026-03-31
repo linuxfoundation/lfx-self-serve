@@ -39,127 +39,127 @@
         <p-skeleton width="60%" height="1rem" />
       </div>
     } @else {
-    <!-- Summary Stats -->
-    <div class="flex gap-4" data-testid="paid-social-reach-drawer-stats">
-      <lfx-card styleClass="flex-1">
-        <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Total Impressions</span>
-          <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalReach() }}</span>
-        </div>
-      </lfx-card>
-      @if (drawerData().roas > 0) {
+      <!-- Summary Stats -->
+      <div class="flex gap-4" data-testid="paid-social-reach-drawer-stats">
         <lfx-card styleClass="flex-1">
           <div class="flex flex-col gap-1">
-            <span class="text-sm text-gray-500">ROAS</span>
-            <div class="flex items-center gap-2">
-              <span class="text-2xl font-semibold text-gray-900">{{ drawerData().roas.toFixed(2) }}x</span>
-              @if (drawerData().changePercentage !== 0) {
-                <span class="text-sm font-medium" [class]="drawerData().trend === 'up' ? 'text-green-600' : 'text-red-600'">
-                  <i [class]="drawerData().trend === 'up' ? 'fa-light fa-arrow-up' : 'fa-light fa-arrow-down'"></i>
-                  {{ drawerData().changePercentage > 0 ? '+' : '' }}{{ drawerData().changePercentage }}%
-                </span>
-              }
-            </div>
+            <span class="text-sm text-gray-500">Total Impressions</span>
+            <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalReach() }}</span>
           </div>
         </lfx-card>
-        <lfx-card styleClass="flex-1">
-          <div class="flex flex-col gap-1">
-            <span class="text-sm text-gray-500">Revenue</span>
-            <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalRevenue() }}</span>
-          </div>
-        </lfx-card>
-      }
-    </div>
-
-    <!-- Recommended Actions -->
-    @if (recommendedActions().length > 0) {
-      <div class="flex flex-col gap-3" data-testid="paid-social-reach-drawer-actions">
-        <div class="flex items-center gap-2">
-          <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <i class="fa-light fa-lightbulb text-amber-500"></i>
-            Recommended Actions
-          </h3>
-        </div>
-        @for (action of recommendedActions(); track action.title) {
-          <div class="flex items-start gap-3 p-4 border border-gray-200 rounded-lg">
-            <div class="flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 flex-shrink-0 mt-0.5">
-              <i [class]="actionIcon(action.actionType) + ' text-gray-600'"></i>
-            </div>
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center justify-between gap-2">
-                <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
-                @if (action.priority === 'high') {
-                  <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
-                } @else if (action.priority === 'medium') {
-                  <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
-                } @else {
-                  <lfx-tag value="Low Priority" severity="info" [rounded]="true" />
+        @if (drawerData().roas > 0) {
+          <lfx-card styleClass="flex-1">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">ROAS</span>
+              <div class="flex items-center gap-2">
+                <span class="text-2xl font-semibold text-gray-900">{{ drawerData().roas.toFixed(2) }}x</span>
+                @if (drawerData().changePercentage !== 0) {
+                  <span class="text-sm font-medium" [class]="drawerData().trend === 'up' ? 'text-green-600' : 'text-red-600'">
+                    <i [class]="drawerData().trend === 'up' ? 'fa-light fa-arrow-up' : 'fa-light fa-arrow-down'"></i>
+                    {{ drawerData().changePercentage > 0 ? '+' : '' }}{{ drawerData().changePercentage }}%
+                  </span>
                 }
               </div>
-              <p class="text-sm text-gray-500 mt-0.5">{{ action.description }}</p>
-              <p class="text-xs text-gray-400 mt-1">Due: {{ action.dueLabel }}</p>
             </div>
-          </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Revenue</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalRevenue() }}</span>
+            </div>
+          </lfx-card>
         }
       </div>
-    }
 
-    <!-- Key Insights -->
-    @if (keyInsights().length > 0) {
-      <div class="flex flex-col gap-3 p-4 bg-gray-50 rounded-lg" data-testid="paid-social-reach-drawer-insights">
-        <div class="flex items-center gap-2">
-          <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
-            <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
-            Key Insights
-          </h3>
-        </div>
-        @for (insight of keyInsights(); track insight.text) {
-          <div class="flex items-center gap-2 text-sm">
-            @if (insight.type === 'driver') {
-              <i class="fa-light fa-bullseye text-gray-500"></i>
-            } @else if (insight.type === 'warning') {
-              <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
-            } @else {
-              <i class="fa-light fa-circle-info text-blue-500"></i>
-            }
-            <span class="text-gray-700">{{ insight.text }}</span>
+      <!-- Recommended Actions -->
+      @if (recommendedActions().length > 0) {
+        <div class="flex flex-col gap-3" data-testid="paid-social-reach-drawer-actions">
+          <div class="flex items-center gap-2">
+            <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <i class="fa-light fa-lightbulb text-amber-500"></i>
+              Recommended Actions
+            </h3>
           </div>
-        }
-      </div>
-    }
-
-    <!-- ROAS Trend Chart (only shown when ROAS data exists) -->
-    @if (hasRoasData()) {
-      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-roas-chart-section">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">Monthly ROAS Trend</h3>
-          <p class="text-sm text-gray-600">Return on ad spend across all channels over the last 6 months</p>
-        </div>
-        <div class="h-[240px]" data-testid="paid-social-reach-drawer-roas-chart">
-          <lfx-chart type="bar" [data]="roasChartData()" [options]="roasChartOptions" height="100%"></lfx-chart>
-        </div>
-      </div>
-    }
-
-    <!-- Monthly Impressions Chart -->
-    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-chart-section">
-      <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Monthly Paid Impressions</h3>
-        <p class="text-sm text-gray-600">Paid ad impressions across all channels over the last 6 months</p>
-      </div>
-      @if (drawerData().monthlyData.length > 0) {
-        <div class="h-[240px]" data-testid="paid-social-reach-drawer-chart">
-          <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
-        </div>
-      } @else {
-        <div class="text-center py-8 border border-slate-200 rounded-lg">
-          <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-          <p class="text-sm text-gray-500">No impression data available</p>
+          @for (action of recommendedActions(); track action.title) {
+            <div class="flex items-start gap-3 p-4 border border-gray-200 rounded-lg">
+              <div class="flex items-center justify-center w-9 h-9 rounded-full bg-gray-100 flex-shrink-0 mt-0.5">
+                <i [class]="actionIcon(action.actionType) + ' text-gray-600'"></i>
+              </div>
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center justify-between gap-2">
+                  <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+                  @if (action.priority === 'high') {
+                    <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
+                  } @else if (action.priority === 'medium') {
+                    <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
+                  } @else {
+                    <lfx-tag value="Low Priority" severity="info" [rounded]="true" />
+                  }
+                </div>
+                <p class="text-sm text-gray-500 mt-0.5">{{ action.description }}</p>
+                <p class="text-xs text-gray-400 mt-1">Due: {{ action.dueLabel }}</p>
+              </div>
+            </div>
+          }
         </div>
       }
-    </div>
 
-    <!-- Channel Breakdown (hidden until data quality is validated) -->
+      <!-- Key Insights -->
+      @if (keyInsights().length > 0) {
+        <div class="flex flex-col gap-3 p-4 bg-gray-50 rounded-lg" data-testid="paid-social-reach-drawer-insights">
+          <div class="flex items-center gap-2">
+            <h3 class="flex items-center gap-2 text-sm font-semibold text-gray-900">
+              <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
+              Key Insights
+            </h3>
+          </div>
+          @for (insight of keyInsights(); track insight.text) {
+            <div class="flex items-center gap-2 text-sm">
+              @if (insight.type === 'driver') {
+                <i class="fa-light fa-bullseye text-gray-500"></i>
+              } @else if (insight.type === 'warning') {
+                <i class="fa-light fa-triangle-exclamation text-amber-500"></i>
+              } @else {
+                <i class="fa-light fa-circle-info text-blue-500"></i>
+              }
+              <span class="text-gray-700">{{ insight.text }}</span>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- ROAS Trend Chart (only shown when ROAS data exists) -->
+      @if (hasRoasData()) {
+        <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-roas-chart-section">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-semibold text-gray-900">Monthly ROAS Trend</h3>
+            <p class="text-sm text-gray-600">Return on ad spend across all channels over the last 6 months</p>
+          </div>
+          <div class="h-[240px]" data-testid="paid-social-reach-drawer-roas-chart">
+            <lfx-chart type="bar" [data]="roasChartData()" [options]="roasChartOptions" height="100%"></lfx-chart>
+          </div>
+        </div>
+      }
+
+      <!-- Monthly Impressions Chart -->
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="paid-social-reach-drawer-chart-section">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Monthly Paid Impressions</h3>
+          <p class="text-sm text-gray-600">Paid ad impressions across all channels over the last 6 months</p>
+        </div>
+        @if (drawerData().monthlyData.length > 0) {
+          <div class="h-[240px]" data-testid="paid-social-reach-drawer-chart">
+            <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
+          </div>
+        } @else {
+          <div class="text-center py-8 border border-slate-200 rounded-lg">
+            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
+            <p class="text-sm text-gray-500">No impression data available</p>
+          </div>
+        }
+      </div>
+
+      <!-- Channel Breakdown (hidden until data quality is validated) -->
     }
   </div>
 </p-drawer>

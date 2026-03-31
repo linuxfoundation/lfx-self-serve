@@ -15,6 +15,7 @@ import { formatDateToISOString, parseISODateString } from '@lfx-one/shared/utils
 import { CommitteeService } from '@services/committee.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 @Component({
   selector: 'lfx-member-form',
@@ -155,7 +156,7 @@ export class MemberFormComponent {
             this.messageService.add({
               severity: 'error',
               summary: 'Error',
-              detail: `Failed to ${this.isEditing ? 'update' : 'create'} member`,
+              detail: getHttpErrorDetail(err, `Failed to ${this.isEditing ? 'update' : 'create'} member. Please try again.`),
             });
           }
         },

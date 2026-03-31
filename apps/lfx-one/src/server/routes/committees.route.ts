@@ -25,13 +25,17 @@ router.post('/:id/members', (req, res, next) => committeeController.createCommit
 router.put('/:id/members/:memberId', (req, res, next) => committeeController.updateCommitteeMember(req, res, next));
 router.delete('/:id/members/:memberId', (req, res, next) => committeeController.deleteCommitteeMember(req, res, next));
 
+// ── Sub-groups route ───────────────────────────────────────────────────────
+router.get('/:id/children', (req, res, next) => committeeController.getCommitteeChildren(req, res, next));
+
 // ── Document routes (folders + links) ─────────────────────────────────────
 router.get('/:id/documents', (req, res, next) => committeeController.getCommitteeDocuments(req, res, next));
 router.post('/:id/documents', (req, res, next) => committeeController.createCommitteeDocument(req, res, next));
 router.delete('/:id/documents/:documentId', (req, res, next) => committeeController.deleteCommitteeDocument(req, res, next));
 
-// ── Join / Leave routes ────────────────────────────────────────────────────
+// ── Join / Leave / Application routes ────────────────────────────────────────
 router.post('/:id/join', (req, res, next) => committeeController.joinCommittee(req, res, next));
 router.delete('/:id/leave', (req, res, next) => committeeController.leaveCommittee(req, res, next));
+router.post('/:id/applications', (req, res, next) => committeeController.submitApplication(req, res, next));
 
 export default router;

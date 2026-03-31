@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { TitleCasePipe } from '@angular/common';
+import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, OnInit, output, signal, Signal } from '@angular/core';
 import { FullNamePipe } from '@pipes/full-name.pipe';
 import { toSignal } from '@angular/core/rxjs-interop';
@@ -20,6 +21,7 @@ import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { Skeleton } from 'primeng/skeleton';
 import { debounceTime, distinctUntilChanged, startWith, take } from 'rxjs';
+import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 import { MemberFormComponent } from '../member-form/member-form.component';
 
@@ -201,13 +203,13 @@ export class CommitteeMembersComponent implements OnInit {
         // Refresh members list by re-fetching
         this.refreshMembers();
       },
-      error: () => {
+      error: (err: HttpErrorResponse) => {
         this.isDeleting.set(false);
 
         this.messageService.add({
           severity: 'error',
-          summary: 'Error',
-          detail: 'Failed to remove member. Please try again.',
+          summary: 'Unable to Remove',
+          detail: getHttpErrorDetail(err, 'Failed to remove member. Please try again.'),
         });
       },
     });

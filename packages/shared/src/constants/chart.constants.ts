@@ -60,7 +60,7 @@ export function createBarChartOptions(overrides?: Partial<ChartOptions<'bar'>>):
       },
     },
   };
-  return overrides ? deepMerge(defaults, overrides as Record<string, unknown>) as ChartOptions<'bar'> : defaults;
+  return overrides ? (deepMerge(defaults, overrides as Record<string, unknown>) as ChartOptions<'bar'>) : defaults;
 }
 
 /** Create line chart options with standard dashboard styling */
@@ -87,7 +87,7 @@ export function createLineChartOptions(overrides?: Partial<ChartOptions<'line'>>
       },
     },
   };
-  return overrides ? deepMerge(defaults, overrides as Record<string, unknown>) as ChartOptions<'line'> : defaults;
+  return overrides ? (deepMerge(defaults, overrides as Record<string, unknown>) as ChartOptions<'line'>) : defaults;
 }
 
 /** Create horizontal bar chart options with standard dashboard styling */
@@ -118,5 +118,5 @@ export function createHorizontalBarChartOptions(overrides?: Partial<ChartOptions
       bar: { barPercentage: 0.8, categoryPercentage: 1.0 },
     },
   };
-  return overrides ? deepMerge(defaults, overrides as Record<string, unknown>) as ChartOptions<'bar'> : defaults;
+  return overrides ? (deepMerge(defaults, overrides as Record<string, unknown>) as ChartOptions<'bar'>) : defaults;
 }

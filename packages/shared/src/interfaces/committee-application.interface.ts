@@ -25,5 +25,6 @@ export interface CommitteeJoinApplication {
  * Request payload to create a committee join application
  */
 export interface CreateCommitteeJoinApplicationRequest {
-  reason?: string;
+  /** Optional message from the applicant (max 2000 chars) */
+  message?: string;
 }
