@@ -23,6 +23,7 @@ import { Skeleton } from 'primeng/skeleton';
 import { debounceTime, distinctUntilChanged, startWith, take } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
+import { AddMemberDialogComponent } from '../add-member-dialog/add-member-dialog.component';
 import { MemberFormComponent } from '../member-form/member-form.component';
 
 @Component({
@@ -112,6 +113,27 @@ export class CommitteeMembersComponent implements OnInit {
   }
 
   public openAddMemberDialog(): void {
+    const dialogRef = this.dialogService.open(AddMemberDialogComponent, {
+      header: 'Add Member',
+      width: '540px',
+      modal: true,
+      closable: true,
+      data: {
+        committee: this.committee(),
+        existingMembers: this.members(),
+      },
+    });
+
+    dialogRef?.onClose.pipe(take(1)).subscribe((result: boolean | string | undefined) => {
+      if (result === true) {
+        this.refreshMembers();
+      } else if (result === 'manual') {
+        this.openManualMemberForm();
+      }
+    });
+  }
+
+  private openManualMemberForm(): void {
     const dialogRef = this.dialogService.open(MemberFormComponent, {
       header: 'Add Member',
       width: '700px',
@@ -120,9 +142,6 @@ export class CommitteeMembersComponent implements OnInit {
       data: {
         isEditing: false,
         committee: this.committee(),
-        onCancel: () => {
-          // Dialog will close itself
-        },
       },
     });
 

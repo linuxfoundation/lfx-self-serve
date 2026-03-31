@@ -1,0 +1,240 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-0" data-testid="add-member-dialog">
+  <!-- ── STEP 1: Search ───────────────────────────────────────────────────── -->
+  @if (mode() === 'search') {
+    <div class="flex flex-col gap-4 px-1">
+      <!-- Search input -->
+      <div>
+        <label class="block text-sm font-medium text-gray-700 mb-1">Search by name or email</label>
+        <lfx-input-text
+          [form]="searchForm"
+          control="query"
+          placeholder="Type at least 2 characters…"
+          icon="fa-light fa-search"
+          styleClass="w-full"
+          size="small"
+          dataTest="add-member-search-input"></lfx-input-text>
+      </div>
+
+      <!-- Loading skeletons -->
+      @if (searchLoading()) {
+        <div class="flex flex-col gap-2" data-testid="add-member-search-loading">
+          @for (_ of [1, 2, 3]; track _) {
+            <div class="flex items-center gap-3 p-3 rounded-lg border border-gray-100">
+              <p-skeleton shape="circle" size="2.25rem" />
+              <div class="flex flex-col gap-1.5 flex-1">
+                <p-skeleton width="40%" height="0.875rem" />
+                <p-skeleton width="60%" height="0.75rem" />
+              </div>
+            </div>
+          }
+        </div>
+      }
+
+      <!-- Results list -->
+      @if (!searchLoading() && searchResults().length > 0) {
+        <ul class="flex flex-col gap-1 max-h-72 overflow-y-auto" role="listbox" aria-label="Search results" data-testid="add-member-results">
+          @for (result of searchResults(); track result.email) {
+            <li
+              role="option"
+              [attr.aria-disabled]="result.alreadyMember"
+              [attr.aria-selected]="false"
+              (click)="!result.alreadyMember && selectUser(result)"
+              (keydown.enter)="!result.alreadyMember && selectUser(result)"
+              (keydown.space)="$event.preventDefault(); !result.alreadyMember && selectUser(result)"
+              [tabindex]="result.alreadyMember ? -1 : 0"
+              class="flex items-center gap-3 px-3 py-2.5 rounded-lg border transition-colors"
+              [ngClass]="
+                result.alreadyMember
+                  ? 'border-gray-100 bg-gray-50 opacity-60 cursor-not-allowed'
+                  : 'border-gray-200 bg-white hover:bg-blue-50 hover:border-blue-200 cursor-pointer focus:outline-none focus:ring-2 focus:ring-blue-400'
+              "
+              [attr.data-testid]="'add-member-result-' + result.email">
+              <!-- Avatar initials -->
+              <div
+                class="flex-none w-9 h-9 rounded-full flex items-center justify-center text-white text-sm font-semibold select-none"
+                [ngClass]="result | userAvatarColor"
+                aria-hidden="true">
+                {{ result | userInitials }}
+              </div>
+
+              <!-- Name + email + org -->
+              <div class="flex flex-col gap-0.5 flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-sm font-medium text-gray-900 truncate">{{ result.first_name }} {{ result.last_name }}</span>
+                  <!-- LF Account badge -->
+                  @if (result.username) {
+                    <span class="inline-flex items-center gap-1 text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5">
+                      <i class="fa-light fa-shield-check text-[10px]" aria-hidden="true"></i> LF Account
+                    </span>
+                  }
+                  @if (result.alreadyMember) {
+                    <span class="text-xs text-gray-400 font-medium">Already member</span>
+                  }
+                </div>
+                <span class="text-xs text-gray-500 truncate">{{ result.email }}</span>
+                @if (result.organization?.name) {
+                  <span class="text-xs text-gray-400 truncate">{{ result.organization?.name }}</span>
+                }
+              </div>
+            </li>
+          }
+        </ul>
+      }
+
+      <!-- Empty state: query typed but no results -->
+      @if (!searchLoading() && searchResults().length === 0 && queryValue().length >= 2) {
+        <div class="flex flex-col items-center gap-3 py-8 text-center" data-testid="add-member-empty-state">
+          <i class="fa-light fa-user-magnifying-glass text-3xl text-gray-300" aria-hidden="true"></i>
+          <div>
+            <p class="text-sm font-medium text-gray-600">No LF accounts found</p>
+            <p class="text-xs text-gray-400 mt-0.5">No match for "{{ queryValue() }}"</p>
+          </div>
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 text-sm font-medium text-blue-600 hover:text-blue-700 underline-offset-2 hover:underline"
+            (click)="showManualForm()"
+            data-testid="add-member-manual-btn">
+            <i class="fa-light fa-user-pen" aria-hidden="true"></i> Add manually
+          </button>
+        </div>
+      }
+
+      <!-- Hint: before user types -->
+      @if (!searchLoading() && queryValue().length < 2) {
+        <p class="text-xs text-gray-400 text-center py-6">Start typing to search for LF accounts</p>
+      }
+    </div>
+  }
+
+  <!-- ── STEP 2: Configure ─────────────────────────────────────────────────── -->
+  @if (mode() === 'configure') {
+    <div class="flex flex-col gap-5 px-1" data-testid="add-member-configure">
+      <!-- Selected person card -->
+      @if (selectedUser(); as user) {
+        <div class="flex items-center gap-3 p-3 rounded-lg border border-blue-200 bg-blue-50" data-testid="add-member-selected-card">
+          <div
+            class="flex-none w-10 h-10 rounded-full flex items-center justify-center text-white text-sm font-semibold select-none"
+            [ngClass]="user | userAvatarColor"
+            aria-hidden="true">
+            {{ user | userInitials }}
+          </div>
+          <div class="flex flex-col gap-0.5 flex-1 min-w-0">
+            <div class="flex items-center gap-2 flex-wrap">
+              <span class="text-sm font-semibold text-gray-900">{{ user.first_name }} {{ user.last_name }}</span>
+              @if (user.username) {
+                <span class="inline-flex items-center gap-1 text-xs font-medium bg-blue-100 text-blue-700 border border-blue-200 rounded px-1.5 py-0.5">
+                  <i class="fa-light fa-shield-check text-[10px]" aria-hidden="true"></i> LF Account
+                </span>
+              }
+            </div>
+            <span class="text-xs text-gray-500 truncate">{{ user.email }}</span>
+            @if (user.organization?.name) {
+              <span class="text-xs text-gray-400 truncate">{{ user.organization?.name }}</span>
+            }
+          </div>
+          <!-- Clear / back to search -->
+          <button
+            type="button"
+            class="flex-none p-1.5 text-gray-400 hover:text-gray-600 rounded transition-colors"
+            (click)="clearSelection()"
+            aria-label="Remove selection and go back to search"
+            data-testid="add-member-clear-selection">
+            <i class="fa-light fa-xmark text-sm" aria-hidden="true"></i>
+          </button>
+        </div>
+      }
+
+      <!-- Configuration fields -->
+      <div class="flex flex-col gap-4">
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Role -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Role</label>
+            <lfx-select
+              [form]="configForm"
+              control="role"
+              [options]="roleOptions"
+              placeholder="Select role"
+              size="small"
+              [showClear]="true"
+              styleClass="w-full"
+              appendTo="body"
+              data-testid="add-member-role"></lfx-select>
+          </div>
+
+          <!-- Voting Status -->
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Voting Status</label>
+            <lfx-select
+              [form]="configForm"
+              control="voting_status"
+              [options]="votingStatusOptions"
+              placeholder="Select voting status"
+              size="small"
+              [showClear]="true"
+              styleClass="w-full"
+              appendTo="body"
+              data-testid="add-member-voting-status"></lfx-select>
+          </div>
+        </div>
+
+        <!-- Organization -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">
+            Organization
+            @if (requiresOrg()) {
+              <span class="text-red-500 ml-0.5">*</span>
+            }
+          </label>
+          <lfx-organization-search
+            [form]="configForm"
+            nameControl="org_name"
+            domainControl="org_domain"
+            placeholder="Search for organization…"
+            styleClass="w-full"
+            inputStyleClass="text-sm w-full"
+            panelStyleClass="text-sm w-full"
+            dataTestId="add-member-org-search">
+          </lfx-organization-search>
+        </div>
+
+        <!-- Mailing list subscription -->
+        @if (hasMailingList()) {
+          <div class="flex items-start gap-2 p-3 rounded-lg bg-gray-50 border border-gray-200">
+            <lfx-checkbox [form]="configForm" control="subscribe_mailing_list" data-testid="add-member-subscribe-ml"></lfx-checkbox>
+            <div class="flex flex-col gap-0.5">
+              <span class="text-sm font-medium text-gray-700">Auto-subscribe to mailing list</span>
+              <span class="text-xs text-gray-400">The member will receive group announcements and discussions.</span>
+            </div>
+          </div>
+        }
+      </div>
+    </div>
+  }
+
+  <!-- ── Footer ─────────────────────────────────────────────────────────────── -->
+  <div class="flex justify-end gap-3 pt-6 mt-4 border-t border-gray-100">
+    <lfx-button
+      label="Cancel"
+      severity="secondary"
+      [outlined]="true"
+      (onClick)="onCancel()"
+      [disabled]="submitting()"
+      size="small"
+      type="button"
+      data-testid="add-member-cancel"></lfx-button>
+
+    <lfx-button
+      label="Add to Group"
+      icon="fa-light fa-user-plus"
+      [loading]="submitting()"
+      [disabled]="!canSubmit() || submitting()"
+      (onClick)="onSubmit()"
+      size="small"
+      type="button"
+      data-testid="add-member-submit"></lfx-button>
+  </div>
+</div>

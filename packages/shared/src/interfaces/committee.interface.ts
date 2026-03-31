@@ -563,3 +563,6 @@ export interface CommitteeDocumentItem {
     approved: boolean;
   };
 }
+
+/** Dialog step for the Add Member search-first flow. */
+export type DialogMode = 'search' | 'configure';

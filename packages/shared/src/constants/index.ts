@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 export * from './ai.constants';
+export * from './avatar.constants';
 export * from './api.constants';
 export * from './colors.constants';
 export * from './tag.constants';

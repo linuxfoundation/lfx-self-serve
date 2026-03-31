@@ -15,16 +15,7 @@ import { InputOtp } from 'primeng/inputotp';
   selector: 'lfx-verify-identity-dialog',
   imports: [ButtonComponent, FormsModule, InputOtp],
   templateUrl: './verify-identity-dialog.component.html',
-  styles: [
-    `
-      ::ng-deep .p-inputotp .p-inputtext {
-        height: 4rem;
-        font-size: 1.25rem;
-        font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
-        text-align: center;
-      }
-    `,
-  ],
+  styleUrl: './verify-identity-dialog.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class VerifyIdentityDialogComponent {
