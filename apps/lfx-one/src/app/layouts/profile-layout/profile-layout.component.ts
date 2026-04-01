@@ -1,7 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, inject, PLATFORM_ID, Signal, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
@@ -40,6 +41,7 @@ export class ProfileLayoutComponent {
   private readonly fb = inject(NonNullableFormBuilder);
   private readonly dialogService = inject(DialogService);
   private readonly messageService = inject(MessageService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   // Refresh trigger for profile data
   private readonly refreshProfile$ = new BehaviorSubject<void>(undefined);
@@ -163,6 +165,10 @@ export class ProfileLayoutComponent {
    * After returning from Flow C authorization, restore saved form state and auto-save
    */
   private handleProfileAuthReturn(): void {
+    if (!isPlatformBrowser(this.platformId)) {
+      return;
+    }
+
     const savedState = sessionStorage.getItem(ProfileLayoutComponent.formStateKey);
     if (!savedState) {
       return;

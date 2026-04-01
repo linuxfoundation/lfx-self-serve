@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { ChangeDetectionStrategy, Component, inject, signal, ViewChild } from '@angular/core';
-import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { NonNullableFormBuilder, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -38,7 +38,7 @@ export class WorkExperienceFormDialogComponent {
     organization: [''],
     organizationId: [''],
     domain: [''],
-    role: [''],
+    role: ['', [Validators.required]],
     startMonth: [''],
     startYear: [''],
     endMonth: [''],
