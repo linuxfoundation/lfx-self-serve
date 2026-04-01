@@ -130,19 +130,21 @@
     <!-- Action buttons -->
     <div class="flex gap-2">
       <!-- See Meeting button - full width when alone, flex-1 when both buttons present -->
-      <lfx-button
-        class="w-full"
-        severity="secondary"
-        size="small"
-        styleClass="w-full"
-        label="See Meeting Details"
-        [href]="meetingDetailUrl()"
-        target="_blank"
-        type="button"
-        rel="noopener noreferrer"
-        [outlined]="true"
-        icon="fa-light fa-up-right-from-square text-xs"
-        data-testid="dashboard-meeting-card-see-button" />
+      @if (showDetailsButton()) {
+        <lfx-button
+          class="w-full"
+          severity="secondary"
+          size="small"
+          styleClass="w-full"
+          label="See Meeting Details"
+          [href]="meetingDetailUrl()"
+          target="_blank"
+          type="button"
+          rel="noopener noreferrer"
+          [outlined]="true"
+          icon="fa-light fa-up-right-from-square text-xs"
+          data-testid="dashboard-meeting-card-see-button" />
+      }
 
       <!-- Join Meeting button - right side when present -->
       @if (canJoinMeeting()) {

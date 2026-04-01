@@ -36,6 +36,10 @@ export class DashboardMeetingCardComponent {
 
   public readonly meeting = input.required<Meeting>();
   public readonly occurrence = input<MeetingOccurrence | null>(null);
+  /** Optional override for the "See Meeting Details" URL. If not provided, defaults to /meetings/{meeting.id}. */
+  public readonly detailUrl = input<string | null>(null);
+  /** Set to false to hide the "See Meeting Details" button (e.g. for past meetings where the detail page is inaccessible). */
+  public readonly showDetailsButton = input<boolean>(true);
 
   public readonly attachments: Signal<MeetingAttachment[]> = this.initAttachments();
   public readonly joinUrl: Signal<string | null>;
@@ -253,6 +257,11 @@ export class DashboardMeetingCardComponent {
 
   private initMeetingDetailUrl(): Signal<string> {
     return computed(() => {
+      const override = this.detailUrl();
+      if (override) {
+        return override;
+      }
+
       const meeting = this.meeting();
       const params = new URLSearchParams();
 

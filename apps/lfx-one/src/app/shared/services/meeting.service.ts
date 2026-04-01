@@ -67,7 +67,7 @@ export class MeetingService {
     let params = new HttpParams().set('tags', `project_uid:${uid}`);
 
     if (limit) {
-      params = params.set('limit', limit.toString());
+      params = params.set('page_size', limit.toString());
     }
 
     if (orderBy) {
@@ -82,7 +82,7 @@ export class MeetingService {
     let params = new HttpParams().set('tags', `committee_uid:${committeeId}`);
 
     if (limit) {
-      params = params.set('limit', limit.toString());
+      params = params.set('page_size', limit.toString());
     }
 
     if (orderBy) {
@@ -106,16 +106,26 @@ export class MeetingService {
 
   /** Fetches upcoming meetings scoped to a committee. */
   public getUpcomingMeetingsByCommittee(committeeId: string, limit: number = 5): Observable<Meeting[]> {
-    const params = new HttpParams().set('tags', `committee_uid:${committeeId}`).set('limit', limit.toString()).set('skip_registrants', 'true');
+    const params = new HttpParams().set('tags', `committee_uid:${committeeId}`).set('page_size', limit.toString()).set('skip_registrants', 'true');
     return this.getMeetings(params).pipe(map((response) => response.data));
   }
 
-  /** Fetches past meetings scoped to a committee via `tags=committee_uid:{id}` query parameter. */
-  public getPastMeetingsByCommittee(committeeId: string, limit?: number): Observable<PastMeeting[]> {
-    let params = new HttpParams().set('tags', `committee_uid:${committeeId}`);
+  /**
+   * Fetches past meetings scoped to a committee via `parent=committee:{id}` query parameter.
+   * Uses `sort` (not `order`) because `/api/past-meetings` proxies to the query service
+   * (`/query/resources?type=v1_past_meeting`), which uses underscore-separated sort values
+   * (e.g. `updated_desc`). The `order` param with dot-notation is only for `/api/meetings`
+   * which proxies to the meeting service.
+   */
+  public getPastMeetingsByCommittee(committeeId: string, limit?: number, sort?: string): Observable<PastMeeting[]> {
+    let params = new HttpParams().set('parent', `committee:${committeeId}`);
+
+    if (sort) {
+      params = params.set('sort', sort);
+    }
 
     if (limit) {
-      params = params.set('limit', limit.toString());
+      params = params.set('page_size', limit.toString());
     }
 
     return this.getPastMeetings(params).pipe(map((response) => response.data));
@@ -146,7 +156,7 @@ export class MeetingService {
 
     // TODO: Add filter for upcoming meetings
     if (limit) {
-      params = params.set('limit', limit.toString());
+      params = params.set('page_size', limit.toString());
     }
 
     return this.getMeetings(params).pipe(map((response) => response.data));
@@ -156,7 +166,7 @@ export class MeetingService {
     let params = new HttpParams().set('tags', `project_uid:${uid}`);
 
     if (limit) {
-      params = params.set('limit', limit.toString());
+      params = params.set('page_size', limit.toString());
     }
 
     // TODO: Add sort parameter once API supports sorting by scheduled_start_time
@@ -176,7 +186,7 @@ export class MeetingService {
   ): Observable<PaginatedResponse<Meeting>> {
     let params = new HttpParams().set('tags', `project_uid:${uid}`);
     if (limit) {
-      params = params.set('limit', limit.toString());
+      params = params.set('page_size', limit.toString());
     }
     if (orderBy) {
       params = params.set('order', orderBy);
@@ -204,7 +214,7 @@ export class MeetingService {
   ): Observable<PaginatedResponse<PastMeeting>> {
     let params = new HttpParams().set('tags', `project_uid:${uid}`);
     if (limit) {
-      params = params.set('limit', limit.toString());
+      params = params.set('page_size', limit.toString());
     }
     if (pageToken) {
       params = params.set('page_token', pageToken);

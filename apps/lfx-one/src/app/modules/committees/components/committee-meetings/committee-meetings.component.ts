@@ -22,7 +22,8 @@ import { SurveyService } from '@services/survey.service';
 import { VoteService } from '@services/vote.service';
 import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, of, startWith, switchMap, tap } from 'rxjs';
+import { getCurrentOrNextOccurrence, hasMeetingEnded } from '@lfx-one/shared/utils';
+import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, map, of, startWith, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-meetings',
@@ -91,7 +92,7 @@ export class CommitteeMeetingsComponent {
   public calendarLoading = signal(false);
 
   // Data — upcoming meetings
-  public meetings: Signal<Meeting[]> = this.initMeetings();
+  public upcomingMeetings: Signal<Meeting[]> = this.initUpcomingMeetings();
 
   // Data — past meetings, lazy-loaded reactively when filter switches to 'past'
   public pastMeetings: Signal<PastMeeting[]> = toSignal(
@@ -114,8 +115,7 @@ export class CommitteeMeetingsComponent {
   public calendarEvents: Signal<EventInput[]> = this.initCalendarEvents();
 
   public constructor() {
-    // Subscribe to reactive form valueChanges to keep filter signals in sync,
-    // avoiding template (onChange) bindings that mix reactive and template-driven patterns.
+    // Form control → signal (user dropdown selection syncs to reactive state)
     (this.searchForm.get('timeFilter') as FormControl<TimeFilter>).valueChanges
       .pipe(startWith(this.initialTimeFilter()), takeUntilDestroyed(this.destroyRef))
       .subscribe((v) => this.timeFilter.set(v));
@@ -123,6 +123,11 @@ export class CommitteeMeetingsComponent {
     (this.searchForm.get('meetingType') as FormControl<string | null>).valueChanges
       .pipe(startWith(null), takeUntilDestroyed(this.destroyRef))
       .subscribe((v) => this.meetingTypeFilter.set(v));
+
+    // Signal → form control (programmatic changes via initialTimeFilter input update the dropdown)
+    toObservable(this.timeFilter)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((v) => this.searchForm.get('timeFilter')?.setValue(v, { emitEvent: false }));
   }
 
   /** Copies the committee's calendar subscribe URL to clipboard and shows a confirmation toast. */
@@ -148,12 +153,36 @@ export class CommitteeMeetingsComponent {
 
   // Private initializer functions
 
-  private initMeetings(): Signal<Meeting[]> {
+  private initUpcomingMeetings(): Signal<Meeting[]> {
     return toSignal(
       toObservable(this.committee).pipe(
         filter((c) => !!c?.uid),
         tap(() => this.meetingsLoading.set(true)),
-        switchMap((c) => this.meetingService.getMeetingsByCommittee(c.uid, undefined, 'start_time.asc').pipe(finalize(() => this.meetingsLoading.set(false))))
+        switchMap((c) =>
+          // NOTE: The query service does not support `order` — only `sort` with values
+          // name_asc/desc, updated_asc/desc. There is no start_time sort upstream.
+          // The `order=start_time.asc` param passed here is silently ignored;
+          // the client-side sort below (lines 178-185) is the actual sorting mechanism.
+          this.meetingService.getMeetingsByCommittee(c.uid, 100, 'start_time.asc').pipe(
+            map((meetings) => {
+              const active = meetings.filter((m) => {
+                if (m.occurrences?.length) {
+                  return m.occurrences.some((o) => o.status !== 'cancel' && !hasMeetingEnded(m, o));
+                }
+                return !hasMeetingEnded(m);
+              });
+              return active.sort((a, b) => {
+                const oA = getCurrentOrNextOccurrence(a);
+                const oB = getCurrentOrNextOccurrence(b);
+                return (
+                  (oA ? new Date(oA.start_time).getTime() : new Date(a.start_time).getTime()) -
+                  (oB ? new Date(oB.start_time).getTime() : new Date(b.start_time).getTime())
+                );
+              });
+            }),
+            finalize(() => this.meetingsLoading.set(false))
+          )
+        )
       ),
       { initialValue: [] }
     );
@@ -168,7 +197,7 @@ export class CommitteeMeetingsComponent {
       const time = this.timeFilter();
       const term = (searchTerm() || '').toLowerCase();
       const typeFilter = this.meetingTypeFilter();
-      const items: (Meeting | PastMeeting)[] = time === 'upcoming' ? this.meetings() : this.pastMeetings();
+      const items: (Meeting | PastMeeting)[] = time === 'upcoming' ? this.upcomingMeetings() : this.pastMeetings();
 
       return items.filter((m) => {
         const title = 'title' in m ? m.title : '';
@@ -202,7 +231,7 @@ export class CommitteeMeetingsComponent {
     );
 
     return computed(() => {
-      const allMeetings: (Meeting | PastMeeting)[] = [...this.meetings(), ...externalData().pastMeetings];
+      const allMeetings: (Meeting | PastMeeting)[] = [...this.upcomingMeetings(), ...externalData().pastMeetings];
       const { votes, surveys } = externalData();
 
       const meetingEvents = allMeetings.flatMap((m) => this.meetingToEvents(m));

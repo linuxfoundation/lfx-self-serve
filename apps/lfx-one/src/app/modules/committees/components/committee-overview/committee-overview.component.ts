@@ -3,7 +3,7 @@
 
 import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { DatePipe, NgClass } from '@angular/common';
+import { NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Dialog } from 'primeng/dialog';
@@ -36,7 +36,6 @@ import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
     DashboardMeetingCardComponent,
     MessageComponent,
     NgClass,
-    DatePipe,
     SkeletonModule,
     SelectComponent,
     TagComponent,
@@ -196,7 +195,7 @@ export class CommitteeOverviewComponent {
   });
 
   public lastMeeting: Signal<PastMeeting | null> = computed(() => {
-    const past = [...this.pastMeetings()].sort((a, b) => (b.scheduled_start_time ?? '').localeCompare(a.scheduled_start_time ?? ''));
+    const past = [...this.pastMeetings()].sort((a, b) => (b.start_time ?? '').localeCompare(a.start_time ?? ''));
     return past[0] ?? null;
   });
 
@@ -348,7 +347,7 @@ export class CommitteeOverviewComponent {
         filter((c) => !!c?.uid),
         switchMap((c) => {
           this.pastMeetingsLoading.set(true);
-          return this.meetingService.getPastMeetingsByCommittee(c.uid, 5).pipe(
+          return this.meetingService.getPastMeetingsByCommittee(c.uid, 20, 'updated_desc').pipe(
             catchError(() => of([])),
             finalize(() => this.pastMeetingsLoading.set(false))
           );
