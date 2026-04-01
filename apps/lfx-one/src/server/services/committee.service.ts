@@ -260,6 +260,10 @@ export class CommitteeService {
       ...(is_audit_enabled !== undefined && { is_audit_enabled }),
       ...(show_meeting_attendees !== undefined && { show_meeting_attendees }),
       ...(member_visibility !== undefined && { member_visibility }),
+      // Workaround: upstream committee-service PUT does not include mailing_list in the response body
+      // (verified 2026-03-29). Prefer the upstream value if present; fall back to the request payload.
+      // TODO: Remove this workaround once upstream echoes mailing_list in PUT responses.
+      ...(committeeData.mailing_list !== undefined && { mailing_list: updatedCommittee.mailing_list ?? committeeData.mailing_list }),
     };
   }
 

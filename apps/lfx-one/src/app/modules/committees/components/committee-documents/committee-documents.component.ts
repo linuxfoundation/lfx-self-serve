@@ -294,9 +294,7 @@ export class CommitteeDocumentsComponent implements OnInit {
 
       from(deletableChildren)
         .pipe(
-          concatMap((child) =>
-            this.committeeService.deleteCommitteeDocument(committeeId, child.committeeDocument!.uid, child.committeeDocument!.type)
-          ),
+          concatMap((child) => this.committeeService.deleteCommitteeDocument(committeeId, child.committeeDocument!.uid, child.committeeDocument!.type)),
           toArray(),
           switchMap(() => this.committeeService.deleteCommitteeDocument(committeeId, item.committeeDocument!.uid, 'folder')),
           finalize(() => this.cascadeDeleting.set(false))

@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { CommitteeCreateData, CommitteeUpdateData, CreateCommitteeDocumentRequest, CreateCommitteeMemberRequest, CreateCommitteeJoinApplicationRequest } from '@lfx-one/shared/interfaces';
+import {
+  CommitteeCreateData,
+  CommitteeUpdateData,
+  CreateCommitteeDocumentRequest,
+  CreateCommitteeMemberRequest,
+  CreateCommitteeJoinApplicationRequest,
+} from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
@@ -485,43 +491,6 @@ export class CommitteeController {
     }
   }
 
-  // ── Sub-groups Endpoint ─────────────────────────────────────────────────
-
-  /**
-   * GET /committees/:id/children
-   * Returns child committees (sub-groups) of a parent committee.
-   */
-  public async getCommitteeChildren(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { id } = req.params;
-    const startTime = logger.startOperation(req, 'get_committee_children', { parent_id: id });
-
-    try {
-      if (!id) {
-        const validationError = ServiceValidationError.forField('id', 'Committee ID is required', {
-          operation: 'get_committee_children',
-          service: 'committee_controller',
-          path: req.path,
-        });
-        next(validationError);
-        return;
-      }
-
-      // Use the query service's dedicated `parent` parameter for structured parent-child lookups.
-      // Format: `committee:{uid}` — matches the `^[a-zA-Z]+:[a-zA-Z0-9_-]+$` pattern in the query service.
-      const children = await this.committeeService.getCommittees(req, { ...req.query, parent: `committee:${id}` });
-
-      logger.success(req, 'get_committee_children', startTime, {
-        parent_id: id,
-        children_count: children.length,
-      });
-
-      res.json(children);
-    } catch (error) {
-      logger.error(req, 'get_committee_children', startTime, error, { parent_id: id });
-      next(error);
-    }
-  }
-
   // ── Document Endpoints ──────────────────────────────────────────────────
 
   /**
@@ -689,6 +658,47 @@ export class CommitteeController {
     }
   }
 
+  // ── Sub-groups Endpoint ─────────────────────────────────────────────────
+
+  /**
+   * GET /committees/:id/children
+   * Returns child committees (sub-groups) of a parent committee.
+   */
+  public async getCommitteeChildren(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_committee_children', { parent_id: id });
+
+    try {
+      if (!id) {
+        const validationError = ServiceValidationError.forField('id', 'Committee ID is required', {
+          operation: 'get_committee_children',
+          service: 'committee_controller',
+          path: req.path,
+        });
+        next(validationError);
+        return;
+      }
+
+      // Use the query service's dedicated `parent` parameter for structured parent-child lookups.
+      // Format: `committee:{uid}` — matches the `^[a-zA-Z]+:[a-zA-Z0-9_-]+$` pattern in the query service.
+      const children = await this.committeeService.getCommittees(req, { ...req.query, parent: `committee:${id}` });
+
+      if (children.length === 0) {
+        logger.warning(req, 'get_committee_children', 'No child committees found', { parent_id: id });
+      }
+
+      logger.success(req, 'get_committee_children', startTime, {
+        parent_id: id,
+        children_count: children.length,
+      });
+
+      res.json(children);
+    } catch (error) {
+      logger.error(req, 'get_committee_children', startTime, error, { parent_id: id });
+      next(error);
+    }
+  }
+
   // ── Join / Leave Endpoints ───────────────────────────────────────────────
 
   /**
@@ -724,7 +734,6 @@ export class CommitteeController {
       logger.success(req, 'submit_committee_application', startTime, { committee_id: id });
       res.status(201).json(application);
     } catch (error) {
-      logger.error(req, 'submit_committee_application', startTime, error, { committee_id: id });
       next(error);
     }
   }

@@ -3,6 +3,7 @@
 
 import { CommitteeMemberVisibility } from '../enums/committee.enum';
 import { CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
+import { GroupsIOMailingList } from './mailing-list.interface';
 import { MeetingAttachment } from './meeting-attachment.interface';
 
 // ── v2.0 Taxonomy Types ─────────────────────────────────────────────────────
@@ -566,3 +567,24 @@ export interface CommitteeDocumentItem {
 
 /** Dialog step for the Add Member search-first flow. */
 export type DialogMode = 'search' | 'configure';
+
+// ── Committee Dialog Data/Result Interfaces ────────────────────────────────
+
+export interface JoinApplicationDialogData {
+  committeeName: string;
+  mode: 'application' | 'invite_only';
+}
+
+export interface JoinApplicationDialogResult {
+  message: string | undefined;
+}
+
+export interface MailingListPickerDialogData {
+  mailingLists: GroupsIOMailingList[];
+  selectedUid: string | null;
+  loading: boolean;
+}
+
+export interface MailingListPickerDialogResult {
+  selectedUid: string | null;
+}

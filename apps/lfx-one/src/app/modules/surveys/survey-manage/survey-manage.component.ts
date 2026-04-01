@@ -84,7 +84,7 @@ export class SurveyManageComponent {
   public currentStep: Signal<number> = this.initCurrentStep();
   public readonly submitButtonLabel: Signal<string> = this.initSubmitButtonLabel();
 
-  constructor() {
+  public constructor() {
     this.initCommitteeContext();
   }
 

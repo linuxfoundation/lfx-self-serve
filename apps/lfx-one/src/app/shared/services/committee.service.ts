@@ -52,16 +52,6 @@ export class CommitteeService {
     );
   }
 
-  /**
-   * Fetches a committee by ID without updating shared service state.
-   * Use this instead of getCommittee() when you need to read a committee
-   * for contextual display (e.g. parent group) without side-effecting the
-   * current committee signal.
-   */
-  public fetchCommitteeById(id: string): Observable<Committee> {
-    return this.http.get<Committee>(`/api/committees/${id}`).pipe(take(1));
-  }
-
   public deleteCommittee(id: string): Observable<void> {
     return this.http.delete<void>(`/api/committees/${id}`).pipe(take(1));
   }
@@ -72,6 +62,11 @@ export class CommitteeService {
 
   public updateCommittee(id: string, committee: Partial<Committee>): Observable<Committee> {
     return this.http.put<Committee>(`/api/committees/${id}`, committee).pipe(take(1));
+  }
+
+  /** Fetches a committee by ID without updating shared service state. */
+  public fetchCommittee(id: string): Observable<Committee> {
+    return this.http.get<Committee>(`/api/committees/${id}`).pipe(take(1));
   }
 
   // ── Sub-groups (children) ─────────────────────────────────────────────────
@@ -116,7 +111,7 @@ export class CommitteeService {
 
   /** Submit a join application for a group with join_mode 'application' or 'invite_only' */
   public submitApplication(committeeId: string, message?: string): Observable<CommitteeJoinApplication> {
-    const body: CreateCommitteeJoinApplicationRequest = message ? { message } : {};
+    const body: CreateCommitteeJoinApplicationRequest = { message: message || '' };
     return this.http.post<CommitteeJoinApplication>(`/api/committees/${committeeId}/applications`, body).pipe(take(1));
   }
 

@@ -6,8 +6,13 @@
     <lfx-button label="Save Changes" severity="info" size="small" icon="fa-light fa-floppy-disk" (onClick)="saveSettings()" [loading]="saving()"></lfx-button>
   </div>
 
-  <!-- Reuse existing settings form (hide its own header) -->
-  <lfx-committee-settings [form]="form" [showHeader]="false"></lfx-committee-settings>
+  <!-- Reuse existing settings form (hide its own header), pass mailing list data -->
+  <lfx-committee-settings
+    [form]="form"
+    [showHeader]="false"
+    [linkedMailingList]="linkedMailingList()"
+    [mlLoading]="mlLoading()"
+    (mlPickerOpen)="openMailingListPicker()"></lfx-committee-settings>
 
   <!-- Danger Zone -->
   <div class="mt-10 border border-red-300 rounded-xl p-5 bg-red-50" data-testid="committee-settings-danger-zone">
