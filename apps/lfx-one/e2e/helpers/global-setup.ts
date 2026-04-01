@@ -29,7 +29,6 @@ async function globalSetup(config: FullConfig) {
   const page = await context.newPage();
 
   try {
-    // Use baseURL from config or default to localhost
     const url = baseURL || 'http://localhost:4200';
     console.log(`🔐 Attempting to authenticate at ${url}`);
 

@@ -11,14 +11,18 @@ import {
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { buildVCalendar, fetchAllMeetingPages, meetingsToVEvents } from '../helpers/ics.helper';
 import { logger } from '../services/logger.service';
 import { CommitteeService } from '../services/committee.service';
+import { MeetingService } from '../services/meeting.service';
+import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
  * Controller for handling committee HTTP requests
  */
 export class CommitteeController {
   private committeeService: CommitteeService = new CommitteeService();
+  private meetingService: MeetingService = new MeetingService();
 
   /**
    * GET /committees
@@ -751,6 +755,60 @@ export class CommitteeController {
       logger.success(req, 'leave_committee', startTime, { committee_id: id });
       res.status(204).send();
     } catch (error) {
+      next(error);
+    }
+  }
+
+  // ── Calendar ICS Endpoint ────────────────────────────────────────────────
+
+  /**
+   * GET /committees/:id/calendar.ics
+   * Returns an iCalendar (.ics) file containing all meetings for the committee.
+   * MeetingService is injected here rather than CommitteeService to avoid a
+   * circular dependency (MeetingService already imports CommitteeService).
+   */
+  public async getCommitteeCalendar(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+    const startTime = logger.startOperation(req, 'get_committee_calendar', { committee_id: id });
+
+    // Validate UID before using in query tags and Content-Disposition header
+    if (!id || !/^[A-Za-z0-9_-]+$/.test(id)) {
+      next(ServiceValidationError.forField('id', 'Invalid committee ID', { operation: 'get_committee_calendar' }));
+      return;
+    }
+
+    try {
+      // When called from the public route there is no OIDC session, so use an
+      // M2M token. When called from the authenticated route the user's bearer
+      // token is already on req and no replacement is needed.
+      if (!req.bearerToken) {
+        req.bearerToken = await generateM2MToken(req);
+      }
+
+      const query = { tags: `committee_uid:${id}` };
+
+      // Paginate both upcoming and past meetings — first page only would silently
+      // drop meetings once a committee exceeds the default page size.
+      const [upcoming, past] = await Promise.all([
+        fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_meeting', false)),
+        fetchAllMeetingPages((token) => this.meetingService.getMeetings(req, token ? { ...query, page_token: token } : query, 'v1_past_meeting', false)),
+      ]);
+
+      const allMeetings = [...upcoming, ...past];
+      const events = meetingsToVEvents(allMeetings);
+      const ics = buildVCalendar(events);
+
+      logger.success(req, 'get_committee_calendar', startTime, {
+        committee_id: id,
+        event_count: events.length,
+      });
+
+      res.setHeader('Content-Type', 'text/calendar; charset=utf-8');
+      res.setHeader('Content-Disposition', `attachment; filename="committee-${id}.ics"`);
+      res.setHeader('Cache-Control', 'public, max-age=900'); // 15 minutes — reduces load from calendar clients polling every 15-60 minutes
+      res.send(ics);
+    } catch (error) {
+      logger.error(req, 'get_committee_calendar', startTime, error, { committee_id: id });
       next(error);
     }
   }

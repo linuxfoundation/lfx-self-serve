@@ -1,32 +1,55 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, input, linkedSignal, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
+import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, input, linkedSignal, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
+import { Router, RouterLink } from '@angular/router';
+import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
+import { FullCalendarComponent } from '@app/shared/components/fullcalendar/fullcalendar.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { Committee, Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
-import { MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
-import { MeetingCardComponent } from '@app/modules/meetings/components/meeting-card/meeting-card.component';
+import { environment } from '@environments/environment';
+import { EventClickArg, EventInput } from '@fullcalendar/core';
+import { CANCELLED_COLOR, MEETING_TYPE_COLORS, MEETING_TYPE_CONFIGS, SURVEY_COLOR, VOTE_COLOR } from '@lfx-one/shared/constants';
+import { Committee, Meeting, PastMeeting, Survey, TimeFilter, ViewMode, Vote } from '@lfx-one/shared/interfaces';
+import { addMinutesToDate } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
+import { SurveyService } from '@services/survey.service';
+import { VoteService } from '@services/vote.service';
+import { MessageService } from 'primeng/api';
 import { SkeletonModule } from 'primeng/skeleton';
-import { debounceTime, distinctUntilChanged, filter, finalize, startWith, switchMap, tap } from 'rxjs';
-
-type TimeFilter = 'upcoming' | 'past';
+import { catchError, debounceTime, distinctUntilChanged, filter, finalize, forkJoin, of, startWith, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-committee-meetings',
-  imports: [ReactiveFormsModule, RouterLink, ButtonComponent, CardComponent, InputTextComponent, SelectComponent, SkeletonModule, MeetingCardComponent],
+  imports: [
+    ReactiveFormsModule,
+    RouterLink,
+    ClipboardModule,
+    ButtonComponent,
+    CardComponent,
+    InputTextComponent,
+    SelectComponent,
+    SkeletonModule,
+    MeetingCardComponent,
+    FullCalendarComponent,
+  ],
   templateUrl: './committee-meetings.component.html',
   styleUrl: './committee-meetings.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class CommitteeMeetingsComponent {
   private readonly meetingService = inject(MeetingService);
+  private readonly voteService = inject(VoteService);
+  private readonly surveyService = inject(SurveyService);
+  private readonly router = inject(Router);
+  private readonly clipboard = inject(Clipboard);
+  private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -36,6 +59,13 @@ export class CommitteeMeetingsComponent {
   // Filter state — linkedSignal tracks initialTimeFilter but allows local overrides
   public timeFilter = linkedSignal(() => this.initialTimeFilter());
   public meetingTypeFilter = signal<string | null>(null);
+
+  // View mode: list or calendar
+  public viewMode = signal<ViewMode>('list');
+
+  // Convenience computed signals — avoids repeating viewMode() === '...' in template
+  public isListView = computed(() => this.viewMode() === 'list');
+  public isCalendarView = computed(() => this.viewMode() === 'calendar');
 
   // Form for search + filter controls (bound in template)
   public searchForm = new FormGroup({
@@ -58,6 +88,7 @@ export class CommitteeMeetingsComponent {
   // Loading state
   public meetingsLoading = signal(true);
   public pastMeetingsLoading = signal(false);
+  public calendarLoading = signal(false);
 
   // Data — upcoming meetings
   public meetings: Signal<Meeting[]> = this.initMeetings();
@@ -76,22 +107,47 @@ export class CommitteeMeetingsComponent {
   // Loading computed: true when active tab's data is loading
   public loading: Signal<boolean> = computed(() => (this.timeFilter() === 'upcoming' ? this.meetingsLoading() : this.pastMeetingsLoading()));
 
-  // Filtered data
+  // Filtered data (list view)
   public filteredMeetings: Signal<(Meeting | PastMeeting)[]> = this.initFilteredMeetings();
 
-  /** Handles time filter change from dropdown — syncs signal and form control. */
-  public onTimeFilterChange(value: TimeFilter): void {
-    this.timeFilter.set(value);
-    this.searchForm.get('timeFilter')?.setValue(value, { emitEvent: false });
+  // Calendar: votes + surveys lazy-loaded on first switch to calendar mode
+  public calendarEvents: Signal<EventInput[]> = this.initCalendarEvents();
+
+  public constructor() {
+    // Subscribe to reactive form valueChanges to keep filter signals in sync,
+    // avoiding template (onChange) bindings that mix reactive and template-driven patterns.
+    (this.searchForm.get('timeFilter') as FormControl<TimeFilter>).valueChanges
+      .pipe(startWith(this.initialTimeFilter()), takeUntilDestroyed(this.destroyRef))
+      .subscribe((v) => this.timeFilter.set(v));
+
+    (this.searchForm.get('meetingType') as FormControl<string | null>).valueChanges
+      .pipe(startWith(null), takeUntilDestroyed(this.destroyRef))
+      .subscribe((v) => this.meetingTypeFilter.set(v));
   }
 
-  /** Handles meeting type filter change from dropdown — syncs signal and form control. */
-  public onMeetingTypeChange(value: string | null): void {
-    this.meetingTypeFilter.set(value);
-    this.searchForm.get('meetingType')?.setValue(value, { emitEvent: false });
+  /** Copies the committee's calendar subscribe URL to clipboard and shows a confirmation toast. */
+  public onSubscribe(): void {
+    const uid = this.committee().uid;
+    const url = `${environment.urls.home}/public/api/committees/${uid}/calendar.ics`;
+    this.clipboard.copy(url);
+    this.messageService.add({
+      severity: 'info',
+      summary: 'Subscribe URL copied!',
+      detail: 'Add this to Google Calendar, Outlook, or Apple Calendar.',
+      life: 5000,
+    });
+  }
+
+  /** Handles FullCalendar event click — navigates to meeting detail for meeting events. */
+  public onCalendarEventClick(arg: EventClickArg): void {
+    const props = arg.event.extendedProps as { type: string; meetingId?: string };
+    if (props.type === 'meeting' && props.meetingId) {
+      void this.router.navigate(['/meetings', props.meetingId]);
+    }
   }
 
   // Private initializer functions
+
   private initMeetings(): Signal<Meeting[]> {
     return toSignal(
       toObservable(this.committee).pipe(
@@ -124,5 +180,103 @@ export class CommitteeMeetingsComponent {
         return matchesSearch && matchesType;
       });
     });
+  }
+
+  private initCalendarEvents(): Signal<EventInput[]> {
+    // Lazy-load votes, surveys, and past meetings the first time calendar view is activated
+    const externalData = toSignal(
+      toObservable(computed(() => ({ mode: this.viewMode(), uid: this.committee()?.uid }))).pipe(
+        filter(({ mode, uid }) => mode === 'calendar' && !!uid),
+        distinctUntilChanged((a, b) => a.uid === b.uid),
+        tap(() => this.calendarLoading.set(true)),
+        switchMap(({ uid: committeeUid }) =>
+          forkJoin({
+            votes: this.voteService.getVotesByCommittee(committeeUid!).pipe(catchError(() => of([] as Vote[]))),
+            surveys: this.surveyService.getSurveysByCommittee(committeeUid!).pipe(catchError(() => of([] as Survey[]))),
+            pastMeetings: this.meetingService.getPastMeetingsByCommittee(committeeUid!).pipe(catchError(() => of([] as PastMeeting[]))),
+          }).pipe(finalize(() => this.calendarLoading.set(false)))
+        ),
+        tap(() => this.calendarLoading.set(false))
+      ),
+      { initialValue: { votes: [] as Vote[], surveys: [] as Survey[], pastMeetings: [] as PastMeeting[] } }
+    );
+
+    return computed(() => {
+      const allMeetings: (Meeting | PastMeeting)[] = [...this.meetings(), ...externalData().pastMeetings];
+      const { votes, surveys } = externalData();
+
+      const meetingEvents = allMeetings.flatMap((m) => this.meetingToEvents(m));
+      const voteEvents = votes.filter((v) => !!v.end_time).map((v) => this.voteToEvent(v));
+      const surveyEvents = surveys.filter((s) => !!s.survey_cutoff_date).map((s) => this.surveyToEvent(s));
+
+      return [...meetingEvents, ...voteEvents, ...surveyEvents];
+    });
+  }
+
+  private meetingToEvents(meeting: Meeting | PastMeeting): EventInput[] {
+    const typeKey = (meeting.meeting_type ?? 'default').toLowerCase();
+    const colors = MEETING_TYPE_COLORS[typeKey] ?? MEETING_TYPE_COLORS['default'];
+
+    // Recurring meetings — expand each occurrence as a separate calendar event
+    if (meeting.occurrences && meeting.occurrences.length > 0) {
+      return meeting.occurrences.map((occ) => {
+        const isCancelled = occ.status === 'cancel';
+        const c = isCancelled ? CANCELLED_COLOR : colors;
+        return {
+          id: `${meeting.id}-${occ.occurrence_id}`,
+          title: occ.title || meeting.title,
+          start: occ.start_time,
+          end: addMinutesToDate(occ.start_time, occ.duration ?? meeting.duration).toISOString(),
+          backgroundColor: c.bg,
+          borderColor: c.border,
+          textColor: '#ffffff',
+          display: 'block',
+          extendedProps: { type: 'meeting', meetingId: meeting.id, cancelled: isCancelled },
+        };
+      });
+    }
+
+    // Non-recurring — single event
+    return [
+      {
+        id: meeting.id,
+        title: meeting.title,
+        start: meeting.start_time,
+        end: addMinutesToDate(meeting.start_time, meeting.duration).toISOString(),
+        backgroundColor: colors.bg,
+        borderColor: colors.border,
+        textColor: '#ffffff',
+        display: 'block',
+        extendedProps: { type: 'meeting', meetingId: meeting.id },
+      },
+    ];
+  }
+
+  private voteToEvent(vote: Vote): EventInput {
+    return {
+      id: `vote-${vote.uid}`,
+      title: `Vote closes: ${vote.name}`,
+      start: vote.end_time,
+      allDay: true,
+      backgroundColor: VOTE_COLOR.bg,
+      borderColor: VOTE_COLOR.border,
+      textColor: '#ffffff',
+      classNames: ['cursor-default'],
+      extendedProps: { type: 'vote', voteId: vote.uid },
+    };
+  }
+
+  private surveyToEvent(survey: Survey): EventInput {
+    return {
+      id: `survey-${survey.uid}`,
+      title: `Survey: ${survey.survey_title}`,
+      start: survey.survey_cutoff_date,
+      allDay: true,
+      backgroundColor: SURVEY_COLOR.bg,
+      borderColor: SURVEY_COLOR.border,
+      textColor: '#ffffff',
+      classNames: ['cursor-default'],
+      extendedProps: { type: 'survey', surveyId: survey.uid },
+    };
   }
 }

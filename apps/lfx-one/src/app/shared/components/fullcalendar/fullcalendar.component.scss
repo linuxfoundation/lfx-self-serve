@@ -9,11 +9,11 @@
       @apply font-sans;
 
       .fc-col-header-cell-cushion {
-        @apply text-black font-serif font-semibold text-sm uppercase tracking-wider;
+        @apply text-gray-400 font-sans font-medium text-xs uppercase tracking-wider;
       }
 
       .fc-daygrid-day-number {
-        @apply text-black font-sans font-semibold text-sm uppercase tracking-wider;
+        @apply text-gray-600 font-sans font-normal text-sm;
       }
 
       .fc-dayGridMonth-button {
@@ -39,7 +39,7 @@
         @apply mb-6;
 
         .fc-toolbar-title {
-          @apply text-2xl font-serif font-semibold text-gray-900 m-0;
+          @apply text-xl font-sans font-semibold text-gray-900 m-0;
         }
 
         .fc-button-group {

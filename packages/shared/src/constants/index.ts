@@ -4,6 +4,7 @@
 export * from './ai.constants';
 export * from './avatar.constants';
 export * from './api.constants';
+export * from './calendar-colors.constants';
 export * from './colors.constants';
 export * from './tag.constants';
 export * from './committees.constants';

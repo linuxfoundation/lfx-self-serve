@@ -565,6 +565,12 @@ export interface CommitteeDocumentItem {
   };
 }
 
+/** View mode for the committee meetings tab. */
+export type ViewMode = 'list' | 'calendar';
+
+/** Time filter for the committee meetings tab. */
+export type TimeFilter = 'upcoming' | 'past';
+
 /** Dialog step for the Add Member search-first flow. */
 export type DialogMode = 'search' | 'configure';
 
