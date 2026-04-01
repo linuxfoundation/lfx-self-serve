@@ -43,7 +43,7 @@ Once the server is running, open your browser and navigate to `http://localhost:
 ### Styling
 
 - **CSS Layers**: Organized system (`tailwind-base, primeng, tailwind-utilities`)
-- **Custom Fonts**: Open Sans (primary) and Roboto Slab (display)
+- **Custom Fonts**: Inter (primary) and Roboto Slab (display)
 - **LFX Theme**: Custom PrimeNG preset using LFX UI Core
 
 ## Using PrimeNG Components

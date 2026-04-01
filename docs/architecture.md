@@ -20,7 +20,7 @@
 - **LFX UI Core**: Linux Foundation design system integration
 - **LFX Tools**: Web component for platform navigation integration
 - **Font Awesome Pro**: Icon library via kits (no npm packages)
-- **Google Fonts**: Inter (primary, overrides Open Sans in styles.scss) and Roboto Slab (display) fonts
+- **Google Fonts**: Inter (primary) and Roboto Slab (display) fonts
 
 ## ⚡ Zoneless Change Detection
 
@@ -307,11 +307,11 @@ The application uses Google Fonts with CSS custom properties:
 
 ```scss
 // styles.scss - Font configuration
-@import url('https://fonts.googleapis.com/css2?family=Open+Sans:ital,wght@0,300..800;1,300..800&family=Roboto+Slab:wght@100..900&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Inter:wght@100..900&family=Roboto+Slab:wght@100..900&display=swap');
 
 @theme {
-  /* Inter as the primary sans-serif font (overrides Open Sans in styles.scss) */
-  --font-sans: 'Inter', 'Open Sans', ui-sans-serif, system-ui, sans-serif;
+  /* Inter as the primary sans-serif font */
+  --font-inter: 'Inter', ui-sans-serif, system-ui, sans-serif;
 
   /* Roboto Slab for headings and display text */
   --font-display: 'Roboto Slab', ui-serif, Georgia, serif;
@@ -337,7 +337,7 @@ export default {
     },
     fontSize: lfxFontSizes,
     fontFamily: {
-      sans: ['Open Sans', 'sans-serif'],
+      inter: ['Inter', 'sans-serif'],
       display: ['Roboto Slab', 'serif'],
       serif: ['Roboto Slab', 'serif'],
     },

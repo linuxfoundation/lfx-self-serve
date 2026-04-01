@@ -73,25 +73,25 @@
         <ng-template #header>
           <tr>
             <th>
-              <span class="text-sm font-sans text-gray-500">Name</span>
+              <span class="text-sm font-inter text-gray-500">Name</span>
             </th>
             <th>
-              <span class="text-sm font-sans text-gray-500">Email</span>
+              <span class="text-sm font-inter text-gray-500">Email</span>
             </th>
             <th>
-              <span class="text-sm font-sans text-gray-500">Organization</span>
+              <span class="text-sm font-inter text-gray-500">Organization</span>
             </th>
             @if (committee()?.enable_voting) {
               <th>
-                <span class="text-sm font-sans text-gray-500">Role</span>
+                <span class="text-sm font-inter text-gray-500">Role</span>
               </th>
               <th>
-                <span class="text-sm font-sans text-gray-500">Voting Status</span>
+                <span class="text-sm font-inter text-gray-500">Voting Status</span>
               </th>
             }
             <th style="width: 80px">
               <div class="flex justify-center">
-                <span class="text-sm font-sans text-gray-500">Actions</span>
+                <span class="text-sm font-inter text-gray-500">Actions</span>
               </div>
             </th>
           </tr>
@@ -100,28 +100,28 @@
         <ng-template #body let-member>
           <tr>
             <td>
-              <span class="text-sm font-sans text-gray-900 font-medium">
+              <span class="text-sm font-inter text-gray-900 font-medium">
                 {{ member | fullName | titlecase }}
               </span>
             </td>
             <td>
-              <span class="text-sm font-sans text-gray-500">{{ member.email || '-' }}</span>
+              <span class="text-sm font-inter text-gray-500">{{ member.email || '-' }}</span>
             </td>
             <td>
               @if (member.organization?.website) {
-                <a [href]="member.organization.website" target="_blank" rel="noopener noreferrer" class="text-primary hover:text-primary-600 text-sm font-sans">
+                <a [href]="member.organization.website" target="_blank" rel="noopener noreferrer" class="text-primary hover:text-primary-600 text-sm font-inter">
                   {{ member.organization.name }}
                 </a>
               } @else {
-                <span class="text-sm font-sans text-gray-500">{{ member.organization?.name || '-' }}</span>
+                <span class="text-sm font-inter text-gray-500">{{ member.organization?.name || '-' }}</span>
               }
             </td>
             @if (committee()?.enable_voting) {
               <td>
-                <span class="text-sm font-sans text-gray-500">{{ member.role?.name || 'None' }}</span>
+                <span class="text-sm font-inter text-gray-500">{{ member.role?.name || 'None' }}</span>
               </td>
               <td>
-                <span class="text-sm font-sans text-gray-500">{{ member.voting?.status || 'None' }}</span>
+                <span class="text-sm font-inter text-gray-500">{{ member.voting?.status || 'None' }}</span>
               </td>
             }
             <td class="text-right relative">

@@ -101,22 +101,22 @@
             <ng-template #header>
               <tr>
                 <th>
-                  <span class="text-xs font-sans text-gray-500">Name</span>
+                  <span class="text-xs font-inter text-gray-500">Name</span>
                 </th>
                 <th>
-                  <span class="text-xs font-sans text-gray-500">Organization</span>
+                  <span class="text-xs font-inter text-gray-500">Organization</span>
                 </th>
                 @if (form.value.committees.length > 1) {
                   <th>
-                    <span class="text-xs font-sans text-gray-500">{{ committeeLabel.singular }}</span>
+                    <span class="text-xs font-inter text-gray-500">{{ committeeLabel.singular }}</span>
                   </th>
                 }
                 @if (hasVotingEnabledCommittee()) {
                   <th>
-                    <span class="text-xs font-sans text-gray-500">Role</span>
+                    <span class="text-xs font-inter text-gray-500">Role</span>
                   </th>
                   <th>
-                    <span class="text-xs font-sans text-gray-500">Voting Status</span>
+                    <span class="text-xs font-inter text-gray-500">Voting Status</span>
                   </th>
                 }
               </tr>

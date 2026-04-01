@@ -6,14 +6,14 @@
   ::ng-deep {
     .fc {
       // Overall calendar styling
-      @apply font-sans;
+      @apply font-inter;
 
       .fc-col-header-cell-cushion {
         @apply text-gray-400 font-sans font-medium text-xs uppercase tracking-wider;
       }
 
       .fc-daygrid-day-number {
-        @apply text-gray-600 font-sans font-normal text-sm;
+        @apply text-gray-600 font-inter font-normal text-sm;
       }
 
       .fc-dayGridMonth-button {
