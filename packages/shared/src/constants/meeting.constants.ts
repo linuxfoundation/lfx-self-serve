@@ -114,6 +114,8 @@ export interface MeetingTypeConfig {
   borderColorLight: string;
   /** Font Awesome icon class */
   icon: string;
+  /** CSS class for tag badge color override (e.g., tag-meeting-board) */
+  tagStyleClass: string;
 }
 
 /**
@@ -124,6 +126,7 @@ export interface MeetingTypeBadge {
   label: string;
   className: string;
   severity?: TagSeverity;
+  styleClass?: string;
   icon?: string;
 }
 
@@ -140,6 +143,7 @@ export const MEETING_TYPE_CONFIGS: Record<string, MeetingTypeConfig> = {
     borderColor: 'border-violet-500',
     borderColorLight: 'border-violet-300',
     icon: 'fa-light fa-code',
+    tagStyleClass: 'tag-meeting-technical',
   },
   maintainers: {
     label: 'Maintainers',
@@ -149,6 +153,7 @@ export const MEETING_TYPE_CONFIGS: Record<string, MeetingTypeConfig> = {
     borderColor: 'border-blue-500',
     borderColorLight: 'border-blue-300',
     icon: 'fa-light fa-gear',
+    tagStyleClass: 'tag-meeting-maintainers',
   },
   board: {
     label: 'Board',
@@ -158,6 +163,7 @@ export const MEETING_TYPE_CONFIGS: Record<string, MeetingTypeConfig> = {
     borderColor: 'border-red-500',
     borderColorLight: 'border-red-300',
     icon: 'fa-light fa-user-check',
+    tagStyleClass: 'tag-meeting-board',
   },
   marketing: {
     label: 'Marketing',
@@ -167,6 +173,7 @@ export const MEETING_TYPE_CONFIGS: Record<string, MeetingTypeConfig> = {
     borderColor: 'border-emerald-500',
     borderColorLight: 'border-emerald-300',
     icon: 'fa-light fa-chart-line-up',
+    tagStyleClass: 'tag-meeting-marketing',
   },
   legal: {
     label: 'Legal',
@@ -176,6 +183,7 @@ export const MEETING_TYPE_CONFIGS: Record<string, MeetingTypeConfig> = {
     borderColor: 'border-amber-500',
     borderColorLight: 'border-amber-300',
     icon: 'fa-light fa-scale-balanced',
+    tagStyleClass: 'tag-meeting-legal',
   },
   other: {
     label: 'Other',
@@ -185,6 +193,7 @@ export const MEETING_TYPE_CONFIGS: Record<string, MeetingTypeConfig> = {
     borderColor: 'border-gray-500',
     borderColorLight: 'border-gray-300',
     icon: 'fa-light fa-calendar-days',
+    tagStyleClass: 'tag-meeting-other',
   },
 };
 
@@ -200,6 +209,7 @@ export const DEFAULT_MEETING_TYPE_CONFIG: MeetingTypeConfig = {
   borderColor: 'border-gray-400',
   borderColorLight: 'border-gray-300',
   icon: 'fa-light fa-calendar-days',
+  tagStyleClass: 'tag-meeting-other',
 };
 
 // ============================================================================

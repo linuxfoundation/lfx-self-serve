@@ -22,12 +22,22 @@
             <div class="flex items-center gap-2 flex-wrap">
               <!-- Private Badge -->
               @if (meeting().visibility === 'private') {
-                <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield" [attr.data-testid]="'meeting-badge-private'"></lfx-tag>
+                <lfx-tag
+                  value="Private"
+                  severity="danger"
+                  icon="fa-light fa-shield"
+                  styleClass="tag-private"
+                  [attr.data-testid]="'meeting-badge-private'"></lfx-tag>
               }
 
               <!-- Meeting Type Badge -->
               @if (meetingTypeBadge(); as badge) {
-                <lfx-tag [value]="badge.text" [severity]="badge.severity" [icon]="badge.icon" [attr.data-testid]="'meeting-badge-type'"></lfx-tag>
+                <lfx-tag
+                  [value]="badge.text"
+                  [severity]="badge.severity"
+                  [icon]="badge.icon"
+                  [styleClass]="badge.styleClass"
+                  [attr.data-testid]="'meeting-badge-type'"></lfx-tag>
               }
 
               <!-- Recurring Badge -->
@@ -36,6 +46,7 @@
                   [value]="meeting().recurrence | recurrenceSummary"
                   severity="secondary"
                   icon="fa-light fa-repeat"
+                  styleClass="tag-recurring"
                   pTooltip="This is a recurring meeting"
                   data-testid="recurring-badge"></lfx-tag>
               }
@@ -91,22 +102,42 @@
 
                   <!-- YouTube Upload Badge -->
                   @if (meeting().youtube_upload_enabled) {
-                    <lfx-tag value="YouTube Upload" severity="danger" icon="fa-light fa-upload" [attr.data-testid]="'meeting-badge-youtube'"></lfx-tag>
+                    <lfx-tag
+                      value="YouTube Upload"
+                      severity="secondary"
+                      icon="fa-light fa-upload"
+                      styleClass="tag-feature-youtube"
+                      [attr.data-testid]="'meeting-badge-youtube'"></lfx-tag>
                   }
 
                   <!-- Recording Badge -->
                   @if (meeting().recording_enabled) {
-                    <lfx-tag value="Recording" severity="info" icon="fa-light fa-video" [attr.data-testid]="'meeting-badge-recording'"></lfx-tag>
+                    <lfx-tag
+                      value="Recording"
+                      severity="secondary"
+                      icon="fa-light fa-video"
+                      styleClass="tag-feature-recording"
+                      [attr.data-testid]="'meeting-badge-recording'"></lfx-tag>
                   }
 
                   <!-- Transcripts Badge -->
                   @if (meeting().transcript_enabled) {
-                    <lfx-tag value="Transcripts" severity="secondary" icon="fa-light fa-file-lines" [attr.data-testid]="'meeting-badge-transcripts'"></lfx-tag>
+                    <lfx-tag
+                      value="Transcripts"
+                      severity="secondary"
+                      icon="fa-light fa-file-lines"
+                      styleClass="tag-feature-transcripts"
+                      [attr.data-testid]="'meeting-badge-transcripts'"></lfx-tag>
                   }
 
                   <!-- AI Summary Badge -->
                   @if (hasAiCompanion()) {
-                    <lfx-tag value="AI Summary" severity="success" icon="fa-light fa-sparkles" [attr.data-testid]="'meeting-badge-live-chat'"></lfx-tag>
+                    <lfx-tag
+                      value="AI Summary"
+                      severity="secondary"
+                      icon="fa-light fa-sparkles"
+                      styleClass="tag-feature-ai"
+                      [attr.data-testid]="'meeting-badge-ai-summary'"></lfx-tag>
                   }
 
                   <!-- Show Attendees Badge -->

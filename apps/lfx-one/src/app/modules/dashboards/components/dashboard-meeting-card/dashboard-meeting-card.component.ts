@@ -113,18 +113,11 @@ export class DashboardMeetingCardComponent {
       const type = this.meeting().meeting_type?.toLowerCase();
       const config = type ? (MEETING_TYPE_CONFIGS[type] ?? DEFAULT_MEETING_TYPE_CONFIG) : DEFAULT_MEETING_TYPE_CONFIG;
 
-      // Map text color to severity
-      let severity: TagSeverity = 'secondary';
-      if (config.textColor.includes('red')) severity = 'danger';
-      else if (config.textColor.includes('blue')) severity = 'info';
-      else if (config.textColor.includes('green')) severity = 'success';
-      else if (config.textColor.includes('purple')) severity = 'secondary';
-      else if (config.textColor.includes('amber')) severity = 'warn';
-
       return {
         label: config.label,
         className: `${config.bgColor} ${config.textColor}`,
-        severity,
+        severity: 'secondary' as TagSeverity,
+        styleClass: config.tagStyleClass,
         icon: `${config.icon} mr-2`,
       };
     });

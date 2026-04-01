@@ -8,13 +8,13 @@
       <div class="flex items-center gap-2 flex-wrap">
         <!-- Privacy Badge -->
         @if (meeting().visibility === 'private') {
-          <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield"></lfx-tag>
+          <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield" styleClass="tag-private"></lfx-tag>
         }
 
         <!-- Meeting Type Badge -->
         @if (meetingTypeBadge(); as badge) {
           @if (badge.text !== 'None') {
-            <lfx-tag [value]="badge.text" [severity]="badge.severity" [icon]="badge.icon"></lfx-tag>
+            <lfx-tag [value]="badge.text" [severity]="badge.severity" [icon]="badge.icon" [styleClass]="badge.styleClass"></lfx-tag>
           }
         }
 
@@ -24,6 +24,7 @@
             [value]="meeting().recurrence | recurrenceSummary"
             severity="secondary"
             icon="fa-light fa-repeat"
+            styleClass="tag-recurring"
             pTooltip="This is a recurring meeting"
             data-testid="recurring-badge"></lfx-tag>
         }
@@ -94,16 +95,16 @@
           data-testid="meeting-datetime"></lfx-tag>
       }
       @if (meeting().youtube_upload_enabled) {
-        <lfx-tag value="YouTube Upload" severity="danger" icon="fa-light fa-upload"></lfx-tag>
+        <lfx-tag value="YouTube Upload" severity="secondary" icon="fa-light fa-upload" styleClass="tag-feature-youtube"></lfx-tag>
       }
       @if (meeting().recording_enabled) {
-        <lfx-tag value="Recording" severity="info" icon="fa-light fa-video"></lfx-tag>
+        <lfx-tag value="Recording" severity="secondary" icon="fa-light fa-video" styleClass="tag-feature-recording"></lfx-tag>
       }
       @if (meeting().transcript_enabled) {
-        <lfx-tag value="Transcripts" severity="secondary" icon="fa-light fa-file-lines"></lfx-tag>
+        <lfx-tag value="Transcripts" severity="secondary" icon="fa-light fa-file-lines" styleClass="tag-feature-transcripts"></lfx-tag>
       }
       @if (hasAiCompanion()) {
-        <lfx-tag value="AI Summary" severity="success" icon="fa-light fa-sparkles"></lfx-tag>
+        <lfx-tag value="AI Summary" severity="secondary" icon="fa-light fa-sparkles" styleClass="tag-feature-ai"></lfx-tag>
       }
       @if (meeting().show_meeting_attendees) {
         <lfx-tag value="Show Attendees" severity="secondary" icon="fa-light fa-users"></lfx-tag>

@@ -127,6 +127,32 @@
   --p-tag-font-size: 10.5px;
   --p-tag-font-weight: 400;
 
+  /* Meeting type badge colors */
+  --meeting-board: #8b5cf6;
+  --meeting-board-bg: #f3f4f6;
+  --meeting-maintainers: #0ea5e9;
+  --meeting-maintainers-bg: #f0f9ff;
+  --meeting-marketing: #f59e0b;
+  --meeting-marketing-bg: #fffbeb;
+  --meeting-technical: #10b981;
+  --meeting-technical-bg: #f0fdf4;
+  --meeting-legal: #ef4444;
+  --meeting-legal-bg: #fef2f2;
+  --meeting-other: #6b7280;
+  --meeting-other-bg: #f9fafb;
+
+  /* Feature badge colors */
+  --feature-recording: #ef4444;
+  --feature-recording-bg: #fef2f2;
+  --feature-youtube: #f59e0b;
+  --feature-youtube-bg: #fffbeb;
+  --feature-transcripts: #0ea5e9;
+  --feature-transcripts-bg: #f0f9ff;
+  --feature-ai: #10b981;
+  --feature-ai-bg: #f0fdf4;
+  --feature-chat: #8b5cf6;
+  --feature-chat-bg: #f5f3ff;
+
   /* Breadcrumb component styling */
   --p-breadcrumb-background: transparent;
   --p-breadcrumb-padding: 0;
@@ -135,6 +161,69 @@
   --p-card-shadow: none;
 
   --p-stepper-background: #fff;
+}
+
+/* Tag badge variant overrides — colors from Figma design tokens */
+.p-tag {
+  /* Private badge — solid fill */
+  &.tag-private {
+    background: #d4183d;
+    color: #fff;
+  }
+
+  /* Meeting type badges */
+  &.tag-meeting-board {
+    background: var(--meeting-board-bg);
+    color: var(--meeting-board);
+  }
+  &.tag-meeting-maintainers {
+    background: var(--meeting-maintainers-bg);
+    color: var(--meeting-maintainers);
+  }
+  &.tag-meeting-marketing {
+    background: var(--meeting-marketing-bg);
+    color: var(--meeting-marketing);
+  }
+  &.tag-meeting-technical {
+    background: var(--meeting-technical-bg);
+    color: var(--meeting-technical);
+  }
+  &.tag-meeting-legal {
+    background: var(--meeting-legal-bg);
+    color: var(--meeting-legal);
+  }
+  &.tag-meeting-other {
+    background: var(--meeting-other-bg);
+    color: var(--meeting-other);
+  }
+
+  /* Recurring badge */
+  &.tag-recurring {
+    background: var(--color-gray-100, #f3f4f6);
+    color: var(--card-foreground, oklch(0.145 0 0));
+  }
+
+  /* Feature badges */
+  &.tag-feature-youtube {
+    background: var(--feature-youtube-bg);
+    color: var(--feature-youtube);
+  }
+  &.tag-feature-recording {
+    background: var(--feature-recording-bg);
+    color: var(--feature-recording);
+  }
+  &.tag-feature-transcripts {
+    background: var(--feature-transcripts-bg);
+    color: var(--feature-transcripts);
+  }
+  &.tag-feature-ai {
+    background: var(--feature-ai-bg);
+    color: var(--feature-ai);
+  }
+  &.tag-feature-chat {
+    background: var(--feature-chat-bg);
+    color: var(--feature-chat);
+  }
 }
 
 html {

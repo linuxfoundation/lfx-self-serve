@@ -11,6 +11,7 @@ export interface TagTypeConfig {
   severity: TagProps['severity'];
   icon?: string;
   rounded?: boolean;
+  styleClass?: string;
 }
 
 /**
@@ -19,18 +20,18 @@ export interface TagTypeConfig {
  */
 export const TAG_TYPE_CONFIGS: Record<string, TagTypeConfig> = {
   // Meeting Privacy
-  meetingPrivate: { severity: 'danger', icon: 'fa-light fa-shield', rounded: false },
+  meetingPrivate: { severity: 'danger', icon: 'fa-light fa-shield', rounded: false, styleClass: 'tag-private' },
   meetingPublic: { severity: 'info', icon: 'fa-light fa-globe', rounded: false },
 
   // Meeting Recurrence
-  meetingRecurring: { severity: 'secondary', icon: 'fa-light fa-repeat', rounded: false },
+  meetingRecurring: { severity: 'secondary', icon: 'fa-light fa-repeat', rounded: false, styleClass: 'tag-recurring' },
 
   // Meeting Features
-  featureYoutube: { severity: 'danger', icon: 'fa-light fa-upload', rounded: false },
-  featureRecording: { severity: 'info', icon: 'fa-light fa-video', rounded: false },
-  featureTranscript: { severity: 'secondary', icon: 'fa-light fa-file-lines', rounded: false },
-  featureAiSummary: { severity: 'success', icon: 'fa-light fa-sparkles', rounded: false },
-  featureChat: { severity: 'info', icon: 'fa-light fa-messages', rounded: false },
+  featureYoutube: { severity: 'secondary', icon: 'fa-light fa-upload', rounded: false, styleClass: 'tag-feature-youtube' },
+  featureRecording: { severity: 'secondary', icon: 'fa-light fa-video', rounded: false, styleClass: 'tag-feature-recording' },
+  featureTranscript: { severity: 'secondary', icon: 'fa-light fa-file-lines', rounded: false, styleClass: 'tag-feature-transcripts' },
+  featureAiSummary: { severity: 'secondary', icon: 'fa-light fa-sparkles', rounded: false, styleClass: 'tag-feature-ai' },
+  featureChat: { severity: 'secondary', icon: 'fa-light fa-messages', rounded: false, styleClass: 'tag-feature-chat' },
 
   // Meeting DateTime
   meetingDateTime: { severity: 'secondary', icon: 'fa-light fa-calendar-days', rounded: false },

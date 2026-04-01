@@ -10,12 +10,14 @@
         [value]="meetingTypeInfo().label"
         [severity]="meetingTypeInfo().severity"
         [icon]="meetingTypeInfo().icon"
+        [styleClass]="meetingTypeInfo().styleClass"
         data-testid="dashboard-meeting-card-type-badge"></lfx-tag>
       @if (isRecurring()) {
         <lfx-tag
           [value]="meeting().recurrence | recurrenceSummary"
           severity="secondary"
           icon="fa-light fa-repeat"
+          styleClass="tag-recurring"
           pTooltip="This is a recurring meeting"
           data-testid="dashboard-meeting-card-recurring-badge"></lfx-tag>
       }
