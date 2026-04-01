@@ -3,27 +3,27 @@
 
 import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { ReactiveFormsModule, FormControl, FormGroup } from '@angular/forms';
+import { FormControl, FormGroup } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { Committee, GroupsIOMailingList, JoinMode } from '@lfx-one/shared/interfaces';
+import { TagComponent } from '@components/tag/tag.component';
+import { Committee, CreateMailingListRequest, GroupsIOMailingList, JoinMode, MailingListPickerDialogResult } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberVisibility } from '@lfx-one/shared/enums';
 import { CommitteeService } from '@services/committee.service';
 import { MailingListService } from '@services/mailing-list.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
-import { catchError, filter, finalize, of, switchMap, take } from 'rxjs';
-import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
+import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { catchError, filter, finalize, forkJoin, map, merge, Observable, of, Subject, switchMap, take } from 'rxjs';
 
-import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
-import { MailingListPickerDialogResult } from '@lfx-one/shared/interfaces';
 import { MailingListPickerDialogComponent } from '../mailing-list-picker-dialog/mailing-list-picker-dialog.component';
+import { CommitteeSettingsComponent } from '../committee-settings/committee-settings.component';
 import { MailingListEmailPipe } from './pipes/mailing-list-email.pipe';
+import { MailingListTypePipe } from './pipes/mailing-list-type.pipe';
 
 @Component({
   selector: 'lfx-committee-settings-tab',
-  imports: [CommitteeSettingsComponent, ButtonComponent, ReactiveFormsModule, ConfirmDialogModule],
+  imports: [CommitteeSettingsComponent, ButtonComponent, TagComponent, ConfirmDialogModule, MailingListEmailPipe, MailingListTypePipe],
   providers: [DialogService],
   templateUrl: './committee-settings-tab.component.html',
   styleUrl: './committee-settings-tab.component.scss',
@@ -33,10 +33,9 @@ export class CommitteeSettingsTabComponent {
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
   private readonly confirmationService = inject(ConfirmationService);
-  private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
   private readonly router = inject(Router);
-  private readonly mailingListEmailPipe = new MailingListEmailPipe();
+  private readonly dialogService = inject(DialogService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -48,7 +47,11 @@ export class CommitteeSettingsTabComponent {
   public saving = signal(false);
   public deleting = signal(false);
   public savingMl = signal(false);
-  public mlLoading = signal(false);
+  public removingMlUid = signal<string | null>(null);
+  private mlLoadingInternal = signal(true);
+
+  // Subject to trigger ML list refresh after association changes
+  private refreshMl$ = new Subject<void>();
 
   // Form
   public form = new FormGroup({
@@ -64,17 +67,17 @@ export class CommitteeSettingsTabComponent {
     website: new FormControl<string | null>(null),
   });
 
-  // Project mailing lists (loaded when committee has a project_uid)
+  // Project mailing lists (loaded when committee has a project_uid — used by the picker dialog)
   public projectMailingLists: Signal<GroupsIOMailingList[]> = this.initProjectMailingLists();
 
-  // Currently linked mailing list (matched by email)
-  public linkedMailingList: Signal<GroupsIOMailingList | null> = computed(() => {
-    const email = this.committee().mailing_list;
-    if (!email) return null;
-    return this.projectMailingLists().find((ml) => this.mailingListEmailPipe.transform(ml) === email) ?? null;
-  });
+  // Associated mailing lists (queried directly by committee_uid tag)
+  public associatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingLists();
+
+  // Derived loading state: true until first emission from associatedMailingLists
+  public mlLoading = computed(() => this.mlLoadingInternal() && !!this.committee()?.uid);
 
   public constructor() {
+    // Patch form when committee input changes
     toObservable(this.committee)
       .pipe(
         filter((c): c is Committee => !!c),
@@ -97,26 +100,46 @@ export class CommitteeSettingsTabComponent {
   }
 
   public openMailingListPicker(): void {
-    const linked = this.linkedMailingList();
+    const associatedUids = new Set(this.associatedMailingLists().map((ml) => ml.uid));
 
     const ref = this.dialogService.open(MailingListPickerDialogComponent, {
-      header: 'Associated Mailing List',
-      width: '640px',
+      header: 'Associated Mailing Lists',
+      width: '700px',
       modal: true,
       closable: true,
-      dismissableMask: false,
+      draggable: false,
       data: {
         mailingLists: this.projectMailingLists(),
-        selectedUid: linked?.uid ?? null,
-        loading: this.mlLoading(),
+        associatedUids,
+        projectUid: this.committee().project_uid,
       },
     }) as DynamicDialogRef;
 
     ref.onClose.pipe(take(1)).subscribe((result: MailingListPickerDialogResult | null) => {
-      if (result) {
-        this.saveMailingListAssociation(result.selectedUid);
-      }
+      if (!result) return;
+      this.saveMailingListAssociation(result.selectedUids, associatedUids);
     });
+  }
+
+  public removeMailingList(ml: GroupsIOMailingList): void {
+    const committee = this.committee();
+    if (!committee?.uid || this.removingMlUid()) return;
+
+    this.removingMlUid.set(ml.uid);
+
+    this.mailingListService
+      .updateMailingList(ml.uid, this.buildMlUpdatePayload(ml, null))
+      .pipe(finalize(() => this.removingMlUid.set(null)))
+      .subscribe({
+        next: () => {
+          this.messageService.add({ severity: 'success', summary: 'Removed', detail: `${ml.group_name} removed from this group` });
+          this.refreshMl$.next();
+        },
+        error: (err: any) => {
+          const detail = this.getMlErrorDetail(err, `Failed to remove ${ml.group_name}`);
+          this.messageService.add({ severity: 'error', summary: 'Error', detail });
+        },
+      });
   }
 
   public confirmDelete(): void {
@@ -136,7 +159,7 @@ export class CommitteeSettingsTabComponent {
           .subscribe({
             next: () => {
               this.messageService.add({ severity: 'success', summary: 'Deleted', detail: `"${this.committee().name}" has been deleted` });
-              this.router.navigate(['/groups']);
+              this.router.navigate(['/', 'groups']);
             },
             error: () => {
               this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to delete group' });
@@ -174,45 +197,119 @@ export class CommitteeSettingsTabComponent {
       });
   }
 
-  // -- Private helpers --
-  private saveMailingListAssociation(uid: string | null): void {
+  // -- Private methods --
+
+  private saveMailingListAssociation(currentSelection: Set<string>, originalSelectedUids: Set<string>): void {
     const committee = this.committee();
     if (!committee?.uid) return;
 
-    const selectedList = uid ? (this.projectMailingLists().find((ml) => ml.uid === uid) ?? null) : null;
-    const emailValue = selectedList ? this.mailingListEmailPipe.transform(selectedList) : null;
+    const added = [...currentSelection].filter((uid) => !originalSelectedUids.has(uid));
+    const removed = [...originalSelectedUids].filter((uid) => !currentSelection.has(uid));
 
-    // Guard: upstream service requires a valid email (group_name@domain)
-    if (emailValue && !emailValue.includes('@')) {
-      this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Selected mailing list has no associated domain and cannot be linked.' });
+    if (added.length === 0 && removed.length === 0) {
+      return;
+    }
+
+    const updates$: Observable<{ uid: string; success: boolean }>[] = [];
+
+    // Associate: set committee_uid on newly selected MLs
+    for (const uid of added) {
+      const ml = this.projectMailingLists().find((m) => m.uid === uid);
+      if (ml) {
+        updates$.push(
+          this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, committee.uid)).pipe(
+            map(() => ({ uid, success: true })),
+            catchError(() => of({ uid, success: false }))
+          )
+        );
+      }
+    }
+
+    // Disassociate: clear committee_uid on deselected MLs
+    for (const uid of removed) {
+      const ml = this.projectMailingLists().find((m) => m.uid === uid) ?? this.associatedMailingLists().find((m) => m.uid === uid);
+      if (ml) {
+        updates$.push(
+          this.mailingListService.updateMailingList(uid, this.buildMlUpdatePayload(ml, null)).pipe(
+            map(() => ({ uid, success: true })),
+            catchError(() => of({ uid, success: false }))
+          )
+        );
+      }
+    }
+
+    if (updates$.length === 0) {
       return;
     }
 
     this.savingMl.set(true);
-    this.committeeService
-      .updateCommittee(committee.uid, { mailing_list: emailValue })
+    forkJoin(updates$)
       .pipe(finalize(() => this.savingMl.set(false)))
       .subscribe({
-        next: () => {
-          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Mailing list association updated' });
-          this.committeeUpdated.emit();
-        },
-        error: () => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update mailing list association' });
+        next: (results) => {
+          const failed = results.filter((r) => !r.success).length;
+          const succeeded = results.filter((r) => r.success).length;
+          if (failed === 0) {
+            this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Mailing list associations updated' });
+          } else if (succeeded > 0) {
+            this.messageService.add({ severity: 'warn', summary: 'Partial Success', detail: `${succeeded} updated, ${failed} failed` });
+          } else {
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to update mailing list associations' });
+          }
+          this.refreshMl$.next();
         },
       });
+  }
+
+  private getMlErrorDetail(err: any, fallback: string): string {
+    const body = err?.error;
+    if (body?.error?.includes?.('subgroup not found') || body?.code === 'NOT_FOUND') {
+      return 'Mailing list sync failed — the Groups.io subgroup may not exist for this list';
+    }
+    return fallback;
+  }
+
+  private buildMlUpdatePayload(ml: GroupsIOMailingList, committeeUid: string | null): Partial<CreateMailingListRequest> {
+    return {
+      group_name: ml.group_name,
+      public: ml.public,
+      type: ml.type,
+      audience_access: ml.audience_access,
+      description: ml.description,
+      title: ml.title,
+      service_uid: ml.service_uid,
+      committee_uid: committeeUid ?? '',
+      subject_tag: ml.subject_tag,
+      writers: ml.writers,
+      auditors: ml.auditors,
+    };
+  }
+
+  private initAssociatedMailingLists(): Signal<GroupsIOMailingList[]> {
+    const committee$ = toObservable(this.committee);
+    const refresh$ = this.refreshMl$.pipe(map(() => this.committee()));
+
+    return toSignal(
+      merge(committee$, refresh$).pipe(
+        filter((c) => !!c?.uid),
+        switchMap((c) => {
+          this.mlLoadingInternal.set(true);
+          return this.mailingListService.getMailingListsByCommittee(c!.uid).pipe(
+            finalize(() => this.mlLoadingInternal.set(false)),
+            catchError(() => of([] as GroupsIOMailingList[]))
+          );
+        })
+      ),
+      { initialValue: [] as GroupsIOMailingList[] }
+    );
   }
 
   private initProjectMailingLists(): Signal<GroupsIOMailingList[]> {
     return toSignal(
       toObservable(this.committee).pipe(
+        filter((c) => !!c?.project_uid),
         switchMap((c) => {
-          if (!c?.project_uid) return of([] as GroupsIOMailingList[]);
-          this.mlLoading.set(true);
-          return this.mailingListService.getMailingListsByProject(c.project_uid).pipe(
-            catchError(() => of([] as GroupsIOMailingList[])),
-            finalize(() => this.mlLoading.set(false))
-          );
+          return this.mailingListService.getMailingListsByProject(c!.project_uid!).pipe(catchError(() => of([] as GroupsIOMailingList[])));
         })
       ),
       { initialValue: [] as GroupsIOMailingList[] }

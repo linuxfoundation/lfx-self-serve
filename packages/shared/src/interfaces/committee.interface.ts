@@ -587,10 +587,10 @@ export interface JoinApplicationDialogResult {
 
 export interface MailingListPickerDialogData {
   mailingLists: GroupsIOMailingList[];
-  selectedUid: string | null;
-  loading: boolean;
+  associatedUids: Set<string>;
+  projectUid: string;
 }
 
 export interface MailingListPickerDialogResult {
-  selectedUid: string | null;
+  selectedUids: Set<string>;
 }

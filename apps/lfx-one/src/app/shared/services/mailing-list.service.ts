@@ -31,6 +31,11 @@ export class MailingListService {
     return this.http.get<GroupsIOMailingList[]>(this.baseUrl, { params });
   }
 
+  public getMailingListsByCommittee(committeeUid: string): Observable<GroupsIOMailingList[]> {
+    const params = new HttpParams().set('tags', `committee_uid:${committeeUid}`);
+    return this.http.get<GroupsIOMailingList[]>(this.baseUrl, { params });
+  }
+
   public getMailingLists(): Observable<GroupsIOMailingList[]> {
     return this.http.get<GroupsIOMailingList[]>(this.baseUrl);
   }

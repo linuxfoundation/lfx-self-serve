@@ -3,28 +3,34 @@
 
 <div class="flex flex-col gap-4">
   <!-- Subtext -->
-  <p class="text-[12.5px] text-gray-500 -mt-1">Select a mailing list to associate with this group. Members will be auto-subscribed.</p>
+  <p class="text-[12.5px] text-gray-500 -mt-1">
+    Select one or more mailing lists to associate with this group. Members will be auto-subscribed to all selected lists.
+  </p>
 
-  <!-- Search -->
-  <lfx-input-text
-    [form]="searchForm"
-    control="query"
-    placeholder="Search mailing lists…"
-    size="small"
-    icon="fa-light fa-search"
-    styleClass="w-full"
-    dataTest="settings-ml-picker-search"></lfx-input-text>
+  <!-- Search + Create New List -->
+  <div class="flex items-center gap-3">
+    <lfx-input-text
+      [form]="mlSearchForm"
+      control="query"
+      placeholder="Search mailing lists..."
+      size="small"
+      icon="fa-light fa-search"
+      styleClass="w-full"
+      dataTest="settings-ml-picker-search"></lfx-input-text>
+    <a
+      [routerLink]="['/mailing-lists/manage']"
+      [queryParams]="{ project_uid: projectUid }"
+      (click)="cancel()"
+      class="inline-flex items-center gap-1.5 text-[12.5px] font-medium text-blue-600 hover:text-blue-700 whitespace-nowrap"
+      data-testid="settings-ml-create-new-btn">
+      <i class="fa-light fa-plus text-xs"></i> Create New List
+    </a>
+  </div>
 
   <!-- List -->
   <div class="border border-gray-200 rounded-lg overflow-hidden max-h-80 overflow-y-auto" data-testid="settings-ml-picker-table">
     @if (filteredMailingLists().length === 0) {
-      <div class="py-8 text-center text-[12.5px] text-gray-400">
-        @if (loading) {
-          <i class="fa-light fa-spinner-third fa-spin mr-1.5"></i>Loading mailing lists…
-        } @else {
-          No mailing lists found.
-        }
-      </div>
+      <div class="py-8 text-center text-[12.5px] text-gray-400">No mailing lists found.</div>
     } @else {
       <table class="w-full border-collapse text-[12.5px]">
         <thead>
@@ -33,25 +39,19 @@
             <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Name</th>
             <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Email</th>
             <th class="py-2.5 px-2 text-left text-[11.5px] font-medium text-gray-500">Visibility</th>
-            <th class="py-2.5 px-4 text-left text-[11.5px] font-medium text-gray-500">Access</th>
+            <th class="py-2.5 px-4 text-left text-[11.5px] font-medium text-gray-500">Type</th>
           </tr>
         </thead>
         <tbody>
           @for (ml of filteredMailingLists(); track ml.uid) {
             <tr
               class="border-t border-gray-100 cursor-pointer transition-colors"
-              [class.bg-blue-50]="selectedMailingListUid() === ml.uid"
-              [class.hover:bg-gray-50]="selectedMailingListUid() !== ml.uid"
-              (click)="selectMailingList(ml.uid)"
+              [class.bg-blue-50]="selectedMailingListUids().has(ml.uid)"
+              [class.hover:bg-gray-50]="!selectedMailingListUids().has(ml.uid)"
+              (click)="toggleMailingList(ml.uid)"
               [attr.data-testid]="'settings-ml-picker-row-' + ml.uid">
               <td class="py-3 px-4">
-                <lfx-radio-button
-                  [form]="selectionForm"
-                  control="selectedUid"
-                  name="mailingListSelection"
-                  [value]="ml.uid"
-                  [inputId]="'ml-radio-' + ml.uid"
-                  (onChange)="selectMailingList(ml.uid)"></lfx-radio-button>
+                <lfx-checkbox [form]="mlCheckboxForm" [control]="ml.uid" [binary]="true"></lfx-checkbox>
               </td>
               <td class="py-3 px-2 font-semibold text-gray-900">{{ ml.group_name }}</td>
               <td class="py-3 px-2 text-gray-500">{{ ml | mailingListEmail }}</td>
@@ -62,32 +62,19 @@
                   <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
                 }
               </td>
-              <td class="py-3 px-4 text-gray-500">{{ ml.audience_access | audienceAccess }}</td>
+              <td class="py-3 px-4 text-gray-500">{{ ml.type | mailingListType }}</td>
             </tr>
           }
         </tbody>
       </table>
       <div class="px-4 py-2.5 bg-gray-50 border-t border-gray-200 text-[11.5px] text-gray-400">
-        Showing {{ filteredMailingLists().length }} of {{ mailingLists.length }} mailing lists
+        {{ selectedCount() }} selected · Showing {{ filteredMailingLists().length }} of {{ mailingLists.length }} mailing lists
       </div>
     }
   </div>
 </div>
 
-<div class="flex justify-between items-center mt-4">
-  @if (selectedMailingListUid()) {
-    <lfx-button
-      label="Clear association"
-      severity="danger"
-      [text]="true"
-      size="small"
-      (onClick)="clearAssociation()"
-      data-testid="settings-ml-picker-clear-btn"></lfx-button>
-  } @else {
-    <span></span>
-  }
-  <div class="flex gap-2">
-    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancel()"></lfx-button>
-    <lfx-button label="Save" severity="info" size="small" (onClick)="save()"></lfx-button>
-  </div>
+<div class="flex justify-end gap-2 mt-4">
+  <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancel()"></lfx-button>
+  <lfx-button label="Save" severity="info" size="small" (onClick)="save()"></lfx-button>
 </div>

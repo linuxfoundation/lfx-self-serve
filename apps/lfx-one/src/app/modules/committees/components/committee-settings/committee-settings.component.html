@@ -81,79 +81,8 @@
   <div class="flex flex-col gap-2">
     <h3 class="text-base font-medium text-gray-900">Connected Channels</h3>
 
-    <!-- Associated Mailing List -->
-    <div class="bg-white border border-gray-200 p-4 rounded-lg" data-testid="settings-mailing-list-card">
-      <div class="flex flex-col gap-3">
-        <div class="flex items-center gap-3">
-          <div class="p-2 rounded-lg bg-blue-50 text-blue-500">
-            <i class="fa-light fa-envelope text-sm"></i>
-          </div>
-          <div class="flex-1">
-            <label class="text-sm font-semibold text-gray-900">Associated Mailing List</label>
-            <p class="text-xs text-gray-600">Members are automatically subscribed when they join this group</p>
-          </div>
-        </div>
-
-        @if (mlLoading()) {
-          <div class="flex items-center gap-2 text-xs text-gray-400">
-            <i class="fa-light fa-spinner-third fa-spin"></i>
-            <span>Loading mailing list…</span>
-          </div>
-        } @else if (linkedMailingList(); as ml) {
-          <div
-            class="bg-gray-50 border border-gray-200 rounded-lg px-3.5 py-3 flex items-center justify-between gap-3"
-            data-testid="settings-linked-mailing-list">
-            <div class="flex items-center gap-2.5 min-w-0">
-              <div class="w-8 h-8 rounded-md bg-blue-100 flex items-center justify-center flex-shrink-0">
-                <i class="fa-light fa-envelope text-blue-600 text-xs"></i>
-              </div>
-              <div class="min-w-0">
-                <div class="flex items-center gap-1.5 flex-wrap">
-                  <span class="text-[13px] font-semibold text-gray-900">{{ ml.group_name }}</span>
-                  @if (ml.public) {
-                    <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
-                  } @else {
-                    <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
-                  }
-                  <lfx-tag [value]="ml.audience_access | titlecase" severity="secondary" styleClass="!text-[10px]" />
-                </div>
-                @if (ml.service?.domain) {
-                  <div class="text-[11.5px] text-gray-400 mt-0.5">
-                    {{ ml.group_name }}@{{ ml.service!.domain }} <span class="mx-1">·</span>{{ ml.subscriber_count }} subscribers
-                  </div>
-                } @else {
-                  <div class="text-[11.5px] text-gray-400 mt-0.5">{{ ml.subscriber_count }} subscribers</div>
-                }
-              </div>
-            </div>
-            <lfx-button
-              label="Update"
-              severity="secondary"
-              [outlined]="true"
-              size="small"
-              styleClass="flex-shrink-0"
-              (onClick)="mlPickerOpen.emit()"
-              data-testid="settings-update-mailing-list-btn"></lfx-button>
-          </div>
-        } @else {
-          <div class="flex items-center justify-between gap-3 py-1" data-testid="settings-no-mailing-list">
-            <p class="text-[12.5px] text-gray-400">No mailing list associated with this group.</p>
-            <lfx-button
-              label="Link Mailing List"
-              severity="secondary"
-              [outlined]="true"
-              size="small"
-              styleClass="flex-shrink-0"
-              (onClick)="mlPickerOpen.emit()"
-              data-testid="settings-link-mailing-list-btn"></lfx-button>
-          </div>
-        }
-
-        <p class="text-[11.5px] text-gray-400 leading-relaxed">
-          When members are removed from this group, they are also removed from the mailing list if the list is private.
-        </p>
-      </div>
-    </div>
+    <!-- Associated Mailing List — projected from parent via ng-content -->
+    <ng-content select="[mailingListCard]"></ng-content>
 
     <!-- Chat Channel -->
     <div class="bg-white border border-gray-200 p-4 rounded-lg" data-testid="settings-chat-channel-card">

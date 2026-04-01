@@ -145,6 +145,8 @@ export interface CreateMailingListRequest {
   title?: string;
   /** Parent service UID (required) */
   service_uid: string;
+  /** Committee UID to associate (upstream accepts singular committee_uid) */
+  committee_uid?: string | null;
   /** Linked committees with allowed voting statuses */
   committees?: CommitteeReference[];
   /** Email subject prefix (optional) */

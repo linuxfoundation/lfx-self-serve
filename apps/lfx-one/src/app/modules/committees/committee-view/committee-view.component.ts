@@ -28,7 +28,7 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { SafeUrlPipe } from '@pipes/safe-url.pipe';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { MenuItem, MessageService } from 'primeng/api';
-import { catchError, combineLatest, filter, finalize, map, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, filter, finalize, of, switchMap, take } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
 import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
@@ -37,6 +37,7 @@ import { CommitteeDocumentsComponent } from '../components/committee-documents/c
 import { CommitteeMeetingsComponent } from '../components/committee-meetings/committee-meetings.component';
 import { CommitteeMembersComponent } from '../components/committee-members/committee-members.component';
 import { CommitteeOverviewComponent } from '../components/committee-overview/committee-overview.component';
+import { MailingListEmailPipe } from '../components/committee-settings-tab/pipes/mailing-list-email.pipe';
 import { CommitteeSettingsTabComponent } from '../components/committee-settings-tab/committee-settings-tab.component';
 import { CommitteeSurveysComponent } from '../components/committee-surveys/committee-surveys.component';
 import { CommitteeVotesComponent } from '../components/committee-votes/committee-votes.component';
@@ -61,6 +62,7 @@ const VALID_TABS: CommitteeTab[] = ['overview', 'members', 'votes', 'meetings', 
     InitialsPipe,
     JoinModeLabelPipe,
     LinkifyPipe,
+    MailingListEmailPipe,
     SafeUrlPipe,
     TextareaComponent,
     CommitteeDocumentsComponent,
@@ -74,6 +76,7 @@ const VALID_TABS: CommitteeTab[] = ['overview', 'members', 'votes', 'meetings', 
   providers: [DialogService],
   templateUrl: './committee-view.component.html',
   styleUrl: './committee-view.component.scss',
+  host: { '(document:click)': 'onDocumentClick()' },
 })
 export class CommitteeViewComponent {
   // -- Injections --
@@ -137,16 +140,20 @@ export class CommitteeViewComponent {
 
   public hasChannels: Signal<boolean> = computed(() => {
     const c = this.committee();
-    return !!(c?.mailing_list || c?.chat_channel || c?.website) || this.canEdit();
+    return this.associatedMailingLists().length > 0 || !!(c?.chat_channel || c?.website) || this.canEdit();
   });
+
+  public mlExpanded = signal(false);
 
   public chatPlatformLabel: Signal<string> = this.initChatPlatformLabel();
   public chatPlatformIcon: Signal<string> = this.initChatPlatformIcon();
   public repoPlatformLabel: Signal<string> = this.initRepoPlatformLabel();
   public repoPlatformIcon: Signal<string> = this.initRepoPlatformIcon();
 
-  // -- Linked mailing list (rich object for header display) --
-  public linkedMailingList: Signal<GroupsIOMailingList | null> = this.initLinkedMailingList();
+  // -- Associated mailing lists (rich objects filtered by ml.committees[]) --
+  public associatedMailingLists: Signal<GroupsIOMailingList[]> = this.initAssociatedMailingLists();
+  public extraMailingLists: Signal<GroupsIOMailingList[]> = computed(() => this.associatedMailingLists().slice(1));
+  public extraMailingListCount: Signal<number> = computed(() => this.associatedMailingLists().length - 1);
 
   // -- Sub-groups --
   public subGroupsLoading = signal(true);
@@ -313,6 +320,12 @@ export class CommitteeViewComponent {
     this.router.navigate(['/', 'groups', subGroup.uid]);
   }
 
+  public onDocumentClick(): void {
+    if (this.mlExpanded()) {
+      this.mlExpanded.set(false);
+    }
+  }
+
   // -- Private methods --
   private openApplicationDialog(committeeUid: string, committeeName: string, mode: 'application' | 'invite_only'): void {
     const isApplication = mode === 'application';
@@ -473,27 +486,15 @@ export class CommitteeViewComponent {
     return computed(() => getRepoPlatformIcon(this.committee()?.website));
   }
 
-  private initLinkedMailingList(): Signal<GroupsIOMailingList | null> {
+  private initAssociatedMailingLists(): Signal<GroupsIOMailingList[]> {
     return toSignal(
       toObservable(this.committee).pipe(
-        filter((c): c is Committee => !!c?.project_uid),
+        filter((c): c is Committee => !!c?.uid),
         switchMap((c) => {
-          if (!c.mailing_list) return of(null);
-          return this.mailingListService.getMailingListsByProject(c.project_uid!).pipe(
-            map((lists) => {
-              const email = c.mailing_list!;
-              return (
-                lists.find((ml) => {
-                  const mlEmail = ml.service?.domain ? `${ml.group_name}@${ml.service.domain}` : ml.group_name;
-                  return mlEmail === email;
-                }) ?? null
-              );
-            }),
-            catchError(() => of(null))
-          );
+          return this.mailingListService.getMailingListsByCommittee(c.uid).pipe(catchError(() => of([])));
         })
       ),
-      { initialValue: null }
+      { initialValue: [] }
     );
   }
 
