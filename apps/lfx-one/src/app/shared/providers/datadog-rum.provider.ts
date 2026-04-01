@@ -20,7 +20,7 @@ async function initializeDataDogRum(): Promise<void> {
   const transferState = inject(TransferState);
   const runtimeConfig = getRuntimeConfig(transferState);
 
-  const { dataDogRumApplicationId, dataDogRumClientId } = runtimeConfig;
+  const { dataDogRumApplicationId, dataDogRumClientId, allowedTracingUrls } = runtimeConfig;
 
   // Skip if not configured (both applicationId and clientToken required)
   if (!dataDogRumApplicationId || !dataDogRumClientId) {
@@ -41,6 +41,11 @@ async function initializeDataDogRum(): Promise<void> {
       trackResources: environment.datadog.env ? true : false,
       trackLongTasks: environment.datadog.env ? true : false,
       defaultPrivacyLevel: 'allow',
+      traceSampleRate: environment.datadog.env ? 100 : 0,
+      allowedTracingUrls: allowedTracingUrls.map((url) => ({
+        match: url.replace(/\/+$/, ''),
+        propagatorTypes: ['tracecontext' as const],
+      })),
     });
   } catch (error) {
     console.error('Failed to initialize DataDog RUM:', error);

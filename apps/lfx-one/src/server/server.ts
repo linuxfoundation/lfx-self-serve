@@ -245,6 +245,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     launchDarklyClientId: process.env['LD_CLIENT_ID'] || '',
     dataDogRumClientId: process.env['DD_RUM_CLIENT_ID'] || '',
     dataDogRumApplicationId: process.env['DD_RUM_APPLICATION_ID'] || '',
+    allowedTracingUrls: [process.env['LFX_V2_SERVICE'], process.env['PCC_BASE_URL']].filter(Boolean) as string[],
   };
 
   angularApp

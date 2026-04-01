@@ -73,6 +73,7 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             BUILD_ENV=development
+            APP_VERSION=pr-${{ github.event.pull_request.number }}
 
       - name: Comment deployment URL on PR
         uses: actions/github-script@v7

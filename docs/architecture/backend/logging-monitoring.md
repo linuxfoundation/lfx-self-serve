@@ -33,7 +33,11 @@ logger.success(req, 'fetch_projects', startTime, { count: projects.length });
 ### Logging Architecture Layers
 
 ```text
+server-tracer.ts
+  └─ Exports SERVICE_NAME and tracer (OpenTelemetry tracer instance)
+
 server-logger.ts (breaks circular dependency)
+  ├─ Imports SERVICE_NAME from server-tracer.ts
   └─ Creates and exports serverLogger (base Pino instance)
       └─ Configuration: levels, serializers, formatters, redaction
 
@@ -528,41 +532,20 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
 Defined in `server-logger.ts` with whitelist-based serializers to prevent sensitive data leakage:
 
 ```typescript
-// apps/lfx-one/src/server/server-logger.ts
-export const serverLogger = pino(
-  {
-    level: process.env['LOG_LEVEL'] || 'info',
-    base: {
-      service: 'lfx-one-ssr',
-      environment: process.env['NODE_ENV'] || 'development',
-      version: process.env['APP_VERSION'] || '1.0.0',
-    },
-    mixin: () => {
-      // Capture AWS X-Ray trace ID if available
-      const traceHeader = process.env['_X_AMZN_TRACE_ID'];
-      if (traceHeader) {
-        const traceId = traceHeader.split(';')[0]?.replace('Root=', '');
-        return { aws_trace_id: traceId };
-      }
-      return {};
-    },
-    serializers: {
-      err: customErrorSerializer,
-      error: customErrorSerializer,
-      req: reqSerializer, // Whitelist-based — only safe fields
-      res: resSerializer, // Whitelist-based — statusCode only
-    },
-    redact: {
-      paths: ['access_token', 'refresh_token', 'authorization', 'cookie'],
-      remove: true,
-    },
-    formatters: {
-      level: (label) => ({ level: label.toUpperCase() }),
-    },
-    timestamp: pino.stdTimeFunctions.isoTime,
+export const serverLogger = pino({
+  base: { service: SERVICE_NAME, ... },   // SERVICE_NAME from server-tracer.ts
+  mixin: () => ({
+    aws_trace_id: ...,                     // AWS X-Ray trace ID when available
+    trace_id, span_id, trace_flags: ...,   // Active OTEL span context for correlation
+  }),
+  serializers: {
+    req: reqSerializer,  // Whitelist-based — only safe fields
+    res: resSerializer,  // statusCode only
+    err: customErrorSerializer,
   },
-  prettyStream // Pretty-printed in dev, raw JSON in production
-);
+  redact: ['access_token', 'refresh_token', 'authorization', 'cookie'],
+  prettyStream,          // Pretty-printed in dev, raw JSON in production
+});
 ```
 
 ### HTTP Logger Middleware

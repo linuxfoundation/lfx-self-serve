@@ -6,6 +6,7 @@ module.exports = {
     {
       name: 'lfx-one',
       script: 'dist/lfx-one/server/server.mjs',
+      node_args: '--import ./otel.mjs',
       env: {
         PM2: 'true',
         NODE_ENV: 'production',

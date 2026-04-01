@@ -186,6 +186,41 @@ This strategy eliminates the need for separate server configurations across envi
 - ✅ **Benefits**: High performance, structured queries, security redaction
 - ⚠️ **Learning Curve**: Requires JSON log analysis tools for development debugging
 
+## 📡 OpenTelemetry Tracing
+
+### Overview
+
+The server supports distributed tracing via OpenTelemetry. Tracing is **opt-in** — it is only enabled when `OTEL_EXPORTER_OTLP_ENDPOINT` is set. The instrumentation is loaded before the application via Node.js `--import` flag in `otel.mjs`.
+
+### Configuration
+
+| Variable                      | Default                      | Description                                                                                                                                |
+| ----------------------------- | ---------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `OTEL_EXPORTER_OTLP_ENDPOINT` | _(unset — tracing disabled)_ | OTLP collector endpoint (e.g., `http://localhost:4318`)                                                                                    |
+| `OTEL_SERVICE_NAME`           | `lfx-v2-ui`                  | Service name reported in traces                                                                                                            |
+| `OTEL_TRACES_SAMPLER`         | `parentbased_always_on`      | Sampler strategy: `always_on`, `always_off`, `traceidratio`, `parentbased_always_on`, `parentbased_always_off`, `parentbased_traceidratio` |
+| `OTEL_TRACES_SAMPLER_ARG`     | `1.0`                        | Sampling ratio (0.0–1.0), clamped and validated                                                                                            |
+| `OTEL_LOG_LEVEL`              | `info`                       | Diagnostic log level: `none`, `error`, `warn`, `info`, `debug`, `verbose`, `all`                                                           |
+| `APP_VERSION`                 | `development`                | Reported as `service.version` in traces                                                                                                    |
+
+### Instrumentations
+
+- **HTTP** — traces incoming requests (excludes `/health`, `/api/health`, `/.well-known`)
+- **Express** — traces Express route and middleware execution
+- **Undici** — traces outgoing `fetch()` requests with header propagation
+
+### Architecture
+
+```text
+Node.js startup
+  └─ --import ./otel.mjs          # Loaded before application code
+      ├─ Checks OTEL_EXPORTER_OTLP_ENDPOINT
+      ├─ Configures exporter, sampler, propagators
+      ├─ Registers HTTP, Express, Undici instrumentations
+      └─ Starts NodeSDK
+          └─ server.ts (application code loads with tracing active)
+```
+
 ## 📁 Modular Architecture
 
 ### Server Organization Strategy

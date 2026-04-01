@@ -204,7 +204,8 @@ apps/lfx-one/src/server/
 │   ├── persona-helper.ts     # User persona helpers
 │   └── security.util.ts      # Security utilities
 ├── server.ts                 # Server bootstrap and route registration
-└── server-logger.ts          # Base Pino logger instance
+├── server-logger.ts          # Base Pino logger instance
+└── server-tracer.ts          # OpenTelemetry tracer and SERVICE_NAME
 ```
 
 ### API Routes

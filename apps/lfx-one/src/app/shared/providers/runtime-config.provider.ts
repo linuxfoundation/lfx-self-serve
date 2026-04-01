@@ -12,6 +12,7 @@ export const DEFAULT_RUNTIME_CONFIG: RuntimeConfig = {
   launchDarklyClientId: '',
   dataDogRumClientId: '',
   dataDogRumApplicationId: '',
+  allowedTracingUrls: [],
 };
 
 /**

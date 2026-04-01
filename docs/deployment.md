@@ -238,6 +238,14 @@ NATS_URL=nats://lfx-platform-nats.lfx.svc.cluster.local:4222
 AI_PROXY_URL=https://litellm.tools.lfx.dev/chat/completions
 AI_API_KEY=your-ai-api-key
 
+# OpenTelemetry Tracing (Optional)
+# Set OTEL_EXPORTER_OTLP_ENDPOINT to enable tracing; omit to disable
+OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4318
+OTEL_SERVICE_NAME=lfx-v2-ui
+OTEL_TRACES_SAMPLER=parentbased_always_on             # Sampler: always_on, always_off, traceidratio, parentbased_*
+OTEL_TRACES_SAMPLER_ARG=1.0                         # Sampling ratio 0.0-1.0, clamped (default: 1.0)
+OTEL_LOG_LEVEL=info                                 # Log level: none, error, warn, info, debug, verbose, all
+
 # Runtime Client IDs (injected at container startup, not build time)
 # See docs/runtime-configuration.md for architecture details
 LD_CLIENT_ID=your-launchdarkly-client-id           # LaunchDarkly client-side ID for feature flags

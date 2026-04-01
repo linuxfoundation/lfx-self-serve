@@ -9,7 +9,7 @@
       @apply font-inter;
 
       .fc-col-header-cell-cushion {
-        @apply text-gray-400 font-sans font-medium text-xs uppercase tracking-wider;
+        @apply text-gray-400 font-inter font-medium text-xs uppercase tracking-wider;
       }
 
       .fc-daygrid-day-number {
@@ -39,7 +39,7 @@
         @apply mb-6;
 
         .fc-toolbar-title {
-          @apply text-xl font-sans font-semibold text-gray-900 m-0;
+          @apply text-xl font-inter font-semibold text-gray-900 m-0;
         }
 
         .fc-button-group {

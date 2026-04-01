@@ -25,4 +25,10 @@ export interface RuntimeConfig {
    * @future Not yet integrated - placeholder for future use
    */
   dataDogRumApplicationId: string;
+
+  /**
+   * Backend service URLs for DataDog RUM allowed tracing.
+   * Passed from server-side environment variables (e.g., LFX_V2_SERVICE).
+   */
+  allowedTracingUrls: string[];
 }

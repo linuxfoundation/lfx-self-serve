@@ -84,6 +84,7 @@ jobs:
           cache-to: type=gha,mode=max
           build-args: |
             BUILD_ENV=production
+            APP_VERSION=${{ steps.prepare.outputs.app_version }}
 
   release-helm-chart:
     needs: build-and-push

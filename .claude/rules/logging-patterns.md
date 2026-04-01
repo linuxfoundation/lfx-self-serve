@@ -157,7 +157,11 @@ This means: 0 INFO lines for read endpoints, 1 INFO line for write endpoints, al
 ## Logging Architecture
 
 ```text
+server-tracer.ts
+  └─ Exports SERVICE_NAME and tracer (OpenTelemetry tracer instance)
+
 server-logger.ts (breaks circular dependency)
+  ├─ Imports SERVICE_NAME from server-tracer.ts
   └─ Creates and exports serverLogger (base Pino instance)
       └─ Configuration: levels, serializers, formatters, redaction
 

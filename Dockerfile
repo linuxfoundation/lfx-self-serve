@@ -6,6 +6,8 @@ FROM node:22-alpine AS builder
 
 # Set build environment
 ARG BUILD_ENV=production
+ARG APP_VERSION=development
+ENV APP_VERSION=${APP_VERSION}
 
 # Enable Corepack for Yarn
 RUN corepack enable
