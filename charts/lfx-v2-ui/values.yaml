@@ -3,6 +3,13 @@
 
 replicaCount: 3
 
+# podDisruptionBudget configures a PodDisruptionBudget for the deployment.
+# Only one of minAvailable or maxUnavailable may be set (not both).
+podDisruptionBudget:
+  enabled: false
+  # minAvailable: 1
+  # maxUnavailable: 1
+
 image:
   repository: ghcr.io/linuxfoundation/lfx-v2-ui
   pullPolicy: IfNotPresent
