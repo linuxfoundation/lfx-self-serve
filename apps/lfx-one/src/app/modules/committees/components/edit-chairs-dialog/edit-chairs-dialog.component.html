@@ -1,0 +1,37 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="committee-edit-chairs-dialog">
+  <div class="flex flex-col gap-1">
+    <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Chair</label>
+    <lfx-select
+      [form]="chairsForm"
+      control="chairUid"
+      [options]="memberOptions"
+      optionLabel="label"
+      optionValue="value"
+      placeholder="— None —"
+      [showClear]="true"
+      [filter]="true"
+      filterBy="label"
+      filterPlaceholder="Search members..."></lfx-select>
+  </div>
+  <div class="flex flex-col gap-1">
+    <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Vice Chair</label>
+    <lfx-select
+      [form]="chairsForm"
+      control="viceChairUid"
+      [options]="memberOptions"
+      optionLabel="label"
+      optionValue="value"
+      placeholder="— None —"
+      [showClear]="true"
+      [filter]="true"
+      filterBy="label"
+      filterPlaceholder="Search members..."></lfx-select>
+  </div>
+</div>
+<div class="flex justify-end gap-2 mt-4">
+  <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancel()"></lfx-button>
+  <lfx-button label="Save" severity="info" size="small" (onClick)="save()"></lfx-button>
+</div>

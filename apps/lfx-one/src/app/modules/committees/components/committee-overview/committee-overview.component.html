@@ -309,54 +309,6 @@
   }
 </div>
 
-<!-- Edit Chairs Modal -->
-<p-dialog
-  header="Edit Chairs"
-  [visible]="showChairsModal()"
-  (visibleChange)="showChairsModal.set($event)"
-  [modal]="true"
-  [closable]="true"
-  [style]="{ width: '480px' }"
-  [draggable]="false"
-  data-testid="committee-overview-chairs-modal">
-  <div class="flex flex-col gap-4">
-    <div class="flex flex-col gap-1">
-      <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Chair</label>
-      <lfx-select
-        [form]="chairsForm"
-        control="chairUid"
-        [options]="memberOptions()"
-        optionLabel="label"
-        optionValue="value"
-        placeholder="— None —"
-        [showClear]="true"
-        [filter]="true"
-        filterBy="label"
-        filterPlaceholder="Search members..."></lfx-select>
-    </div>
-    <div class="flex flex-col gap-1">
-      <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide">Vice Chair</label>
-      <lfx-select
-        [form]="chairsForm"
-        control="viceChairUid"
-        [options]="memberOptions()"
-        optionLabel="label"
-        optionValue="value"
-        placeholder="— None —"
-        [showClear]="true"
-        [filter]="true"
-        filterBy="label"
-        filterPlaceholder="Search members..."></lfx-select>
-    </div>
-  </div>
-  <ng-template #footer>
-    <div class="flex justify-end gap-2">
-      <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancelEditChairs()" [disabled]="savingChairs()"></lfx-button>
-      <lfx-button label="Save" severity="info" size="small" (onClick)="saveChairs()" [loading]="savingChairs()"></lfx-button>
-    </div>
-  </ng-template>
-</p-dialog>
-
 <!-- Vote Results Drawer -->
 <lfx-vote-results-drawer
   [visible]="voteDrawerVisible()"

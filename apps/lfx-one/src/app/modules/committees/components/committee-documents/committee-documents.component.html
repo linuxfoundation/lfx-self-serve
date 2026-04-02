@@ -90,9 +90,11 @@
                       type="button"
                       class="flex items-center justify-center w-5 h-5 text-gray-400 hover:text-gray-600 flex-shrink-0 -ml-1"
                       (click)="toggleFolder(item.uid)"
-                      [attr.aria-expanded]="isFolderExpanded(item.uid)"
+                      [attr.aria-expanded]="item.uid | folderExpanded: expandedFolders()"
                       aria-label="Toggle folder">
-                      <i [class]="isFolderExpanded(item.uid) ? 'fa-solid fa-chevron-down text-xs' : 'fa-solid fa-chevron-right text-xs'" aria-hidden="true"></i>
+                      <i
+                        [class]="(item.uid | folderExpanded: expandedFolders()) ? 'fa-solid fa-chevron-down text-xs' : 'fa-solid fa-chevron-right text-xs'"
+                        aria-hidden="true"></i>
                     </button>
                   }
                   <i [class]="(item | documentIcon) + ' flex-shrink-0'" aria-hidden="true"></i>

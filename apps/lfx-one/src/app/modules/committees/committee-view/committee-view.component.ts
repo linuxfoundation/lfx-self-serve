@@ -6,17 +6,16 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { Dialog } from 'primeng/dialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
-import { Committee, CommitteeMember, CommitteeMemberVisibility, getCommitteeCategorySeverity, TagSeverity } from '@lfx-one/shared';
+import { Committee, CommitteeMember, CommitteeMemberVisibility, CommitteeTab, getCommitteeCategorySeverity, TagSeverity } from '@lfx-one/shared';
 import { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
+import { COMMITTEE_VALID_TABS } from '@lfx-one/shared/constants';
 import { getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepoPlatformLabel } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MailingListService } from '@services/mailing-list.service';
@@ -24,9 +23,8 @@ import { UserService } from '@services/user.service';
 import { CategoryAvatarColorPipe } from '@pipes/category-avatar-color.pipe';
 import { InitialsPipe } from '@pipes/initials.pipe';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
-import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { SafeUrlPipe } from '@pipes/safe-url.pipe';
-import { TextareaComponent } from '@components/textarea/textarea.component';
+import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MenuItem, MessageService } from 'primeng/api';
 import { catchError, combineLatest, filter, finalize, of, switchMap, take } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
@@ -42,9 +40,6 @@ import { CommitteeSettingsTabComponent } from '../components/committee-settings-
 import { CommitteeSurveysComponent } from '../components/committee-surveys/committee-surveys.component';
 import { CommitteeVotesComponent } from '../components/committee-votes/committee-votes.component';
 
-type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';
-const VALID_TABS: CommitteeTab[] = ['overview', 'members', 'votes', 'meetings', 'surveys', 'documents', 'settings'];
-
 @Component({
   selector: 'lfx-committee-view',
   imports: [
@@ -54,17 +49,13 @@ const VALID_TABS: CommitteeTab[] = ['overview', 'members', 'votes', 'meetings', 
     RouteLoadingComponent,
     DatePipe,
     NgClass,
-    ReactiveFormsModule,
-    Dialog,
     PopoverModule,
     SkeletonModule,
     CategoryAvatarColorPipe,
     InitialsPipe,
     JoinModeLabelPipe,
-    LinkifyPipe,
     MailingListEmailPipe,
     SafeUrlPipe,
-    TextareaComponent,
     CommitteeDocumentsComponent,
     CommitteeMeetingsComponent,
     CommitteeMembersComponent,
@@ -93,7 +84,7 @@ export class CommitteeViewComponent {
   // Initial tab from queryParams (e.g., ?tab=surveys after create flow redirect)
   private readonly initialTab: CommitteeTab | null = (() => {
     const tab = this.route.snapshot.queryParamMap.get('tab');
-    return tab && VALID_TABS.includes(tab as CommitteeTab) ? (tab as CommitteeTab) : null;
+    return tab && COMMITTEE_VALID_TABS.includes(tab as CommitteeTab) ? (tab as CommitteeTab) : null;
   })();
 
   // -- Writable signals --
@@ -105,14 +96,6 @@ export class CommitteeViewComponent {
   public membersLoading = signal<boolean>(true);
   public myRoleLoading: Signal<boolean> = computed(() => this.membersLoading());
   public joiningOrLeaving = signal(false);
-
-  // -- Description state --
-  public showDescriptionDialog = signal(false);
-  public editingDescription = signal(false);
-  public savingDescription = signal(false);
-  public descriptionForm = new FormGroup({
-    description: new FormControl(''),
-  });
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
@@ -218,7 +201,7 @@ export class CommitteeViewComponent {
 
   public handleTabNavigation(tabWithContext: string): void {
     const [tab, context] = tabWithContext.split(':');
-    if (!VALID_TABS.includes(tab as CommitteeTab)) {
+    if (!COMMITTEE_VALID_TABS.includes(tab as CommitteeTab)) {
       return;
     }
     this.activeTab.set(tab as CommitteeTab);
@@ -227,31 +210,47 @@ export class CommitteeViewComponent {
     }
   }
 
+  public openDescriptionView(): void {
+    this.dialogService.open(DescriptionDialogComponent, {
+      header: 'Description',
+      width: '560px',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: { mode: 'view', description: this.committee()?.description || '' },
+    });
+  }
+
   public openEditDescription(): void {
-    this.descriptionForm.patchValue({ description: this.committee()?.description || '' });
-    this.editingDescription.set(true);
+    const ref = this.dialogService.open(DescriptionDialogComponent, {
+      header: 'Edit Description',
+      width: '560px',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: { mode: 'edit', description: this.committee()?.description || '' },
+    });
+    ref?.onClose.pipe(take(1)).subscribe((newDescription: string | undefined) => {
+      if (newDescription !== undefined) {
+        this.saveDescription(newDescription);
+      }
+    });
   }
 
-  public cancelEditDescription(): void {
-    this.editingDescription.set(false);
-  }
-
-  public saveDescription(): void {
-    this.savingDescription.set(true);
-    const description = this.descriptionForm.get('description')?.value || '';
-    this.committeeService
-      .updateCommittee(this.committee()!.uid, { description })
-      .pipe(finalize(() => this.savingDescription.set(false)))
-      .subscribe({
-        next: () => {
-          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Description updated' });
-          this.editingDescription.set(false);
-          this.refreshCommittee();
-        },
-        error: (err: HttpErrorResponse) => {
-          this.messageService.add({ severity: 'error', summary: 'Error', detail: getHttpErrorDetail(err, 'Failed to update description. Please try again.') });
-        },
-      });
+  public saveDescription(description: string): void {
+    const committee = this.committee();
+    if (!committee) {
+      return;
+    }
+    this.committeeService.updateCommittee(committee.uid, { description }).subscribe({
+      next: () => {
+        this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Description updated' });
+        this.refreshCommittee();
+      },
+      error: (err: HttpErrorResponse) => {
+        this.messageService.add({ severity: 'error', summary: 'Error', detail: getHttpErrorDetail(err, 'Failed to update description. Please try again.') });
+      },
+    });
   }
 
   public handleJoinRequest(): void {

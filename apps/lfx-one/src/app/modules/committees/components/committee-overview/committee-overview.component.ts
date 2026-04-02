@@ -5,13 +5,12 @@ import { Component, computed, inject, input, output, signal, Signal } from '@ang
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { Dialog } from 'primeng/dialog';
+import { DialogService } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MessageComponent } from '@components/message/message.component';
-import { SelectComponent } from '@components/select/select.component';
+import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dialog.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
 import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
@@ -23,24 +22,13 @@ import { MeetingService } from '@services/meeting.service';
 import { VoteService } from '@services/vote.service';
 import { SurveyService } from '@services/survey.service';
 import { MessageService } from 'primeng/api';
-import { catchError, filter, finalize, forkJoin, of, switchMap } from 'rxjs';
+import { catchError, filter, finalize, forkJoin, of, switchMap, take } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 @Component({
   selector: 'lfx-committee-overview',
-  imports: [
-    CardComponent,
-    ReactiveFormsModule,
-    ButtonComponent,
-    Dialog,
-    DashboardMeetingCardComponent,
-    MessageComponent,
-    NgClass,
-    SkeletonModule,
-    SelectComponent,
-    TagComponent,
-    VoteResultsDrawerComponent,
-  ],
+  imports: [CardComponent, ButtonComponent, DashboardMeetingCardComponent, MessageComponent, NgClass, SkeletonModule, TagComponent, VoteResultsDrawerComponent],
+  providers: [DialogService],
   templateUrl: './committee-overview.component.html',
   styleUrl: './committee-overview.component.scss',
 })
@@ -51,6 +39,7 @@ export class CommitteeOverviewComponent {
   private readonly voteService = inject(VoteService);
   private readonly surveyService = inject(SurveyService);
   private readonly messageService = inject(MessageService);
+  private readonly dialogService = inject(DialogService);
 
   // Inputs
   public committee = input.required<Committee>();
@@ -65,14 +54,6 @@ export class CommitteeOverviewComponent {
   public readonly committeeUpdated = output<void>();
   public readonly joinRequested = output<void>();
   public readonly tabNavigated = output<string>();
-
-  // Chairs modal state
-  public showChairsModal = signal(false);
-  public savingChairs = signal(false);
-  public chairsForm = new FormGroup({
-    chairUid: new FormControl<string | null>(null),
-    viceChairUid: new FormControl<string | null>(null),
-  });
 
   // Vote drawer state
   public voteDrawerVisible = signal(false);
@@ -225,28 +206,34 @@ export class CommitteeOverviewComponent {
   public startEditChairs(): void {
     const currentChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.CHAIR);
     const currentViceChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.VICE_CHAIR);
-    this.chairsForm.patchValue({
-      chairUid: currentChair?.uid || null,
-      viceChairUid: currentViceChair?.uid || null,
+
+    const ref = this.dialogService.open(EditChairsDialogComponent, {
+      header: 'Edit Chairs',
+      width: '480px',
+      modal: true,
+      closable: true,
+      draggable: false,
+      data: {
+        members: this.memberOptions(),
+        currentChairUid: currentChair?.uid || null,
+        currentViceChairUid: currentViceChair?.uid || null,
+      },
     });
-    this.showChairsModal.set(true);
+
+    ref?.onClose.pipe(take(1)).subscribe((result: { chairUid: string | null; viceChairUid: string | null } | undefined) => {
+      if (result) {
+        this.saveChairs(result.chairUid, result.viceChairUid);
+      }
+    });
   }
 
-  public cancelEditChairs(): void {
-    this.showChairsModal.set(false);
-  }
-
-  public saveChairs(): void {
-    this.savingChairs.set(true);
+  public saveChairs(newChairUid: string | null, newViceChairUid: string | null): void {
     const committeeId = this.committee().uid;
     const currentChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.CHAIR);
     const currentViceChair = this.chairs().find((c) => c.role?.name === CommitteeMemberRole.VICE_CHAIR);
-    const newChairUid = this.chairsForm.get('chairUid')?.value;
-    const newViceChairUid = this.chairsForm.get('viceChairUid')?.value;
 
     if (newChairUid && newChairUid === newViceChairUid) {
       this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Chair and Vice Chair must be different members' });
-      this.savingChairs.set(false);
       return;
     }
 
@@ -272,31 +259,23 @@ export class CommitteeOverviewComponent {
     }
 
     if (removals.length === 0 && assignments.length === 0) {
-      this.showChairsModal.set(false);
-      this.savingChairs.set(false);
       return;
     }
 
     // Execute removals first, then assignments
-    (removals.length > 0 ? forkJoin(removals) : of([]))
-      .pipe(
-        switchMap(() => (assignments.length > 0 ? forkJoin(assignments) : of([]))),
-        finalize(() => this.savingChairs.set(false))
-      )
-      .subscribe({
-        next: () => {
-          this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Chairs updated' });
-          this.showChairsModal.set(false);
-          this.committeeUpdated.emit();
-        },
-        error: (err: HttpErrorResponse) => {
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Unable to Save',
-            detail: getHttpErrorDetail(err, 'Failed to update chairs. Please try again.'),
-          });
-        },
-      });
+    (removals.length > 0 ? forkJoin(removals) : of([])).pipe(switchMap(() => (assignments.length > 0 ? forkJoin(assignments) : of([])))).subscribe({
+      next: () => {
+        this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Chairs updated' });
+        this.committeeUpdated.emit();
+      },
+      error: (err: HttpErrorResponse) => {
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Unable to Save',
+          detail: getHttpErrorDetail(err, 'Failed to update chairs. Please try again.'),
+        });
+      },
+    });
   }
 
   // Private initializer functions

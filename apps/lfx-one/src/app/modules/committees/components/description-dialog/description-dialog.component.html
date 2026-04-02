@@ -1,0 +1,25 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (mode === 'view') {
+  <div
+    class="text-sm text-gray-600 leading-relaxed whitespace-pre-line"
+    [innerHTML]="description | linkify"
+    data-testid="committee-description-view-dialog"></div>
+} @else {
+  <div data-testid="committee-description-edit-dialog">
+    <lfx-textarea
+      [form]="descriptionForm"
+      control="description"
+      [rows]="8"
+      [maxlength]="2000"
+      placeholder="Enter a description for this group..."
+      [autoResize]="true"
+      styleClass="!min-h-[160px] !w-full"
+      dataTest="committee-view-description-textarea"></lfx-textarea>
+    <div class="flex justify-end gap-2 mt-4">
+      <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancel()"></lfx-button>
+      <lfx-button label="Save" severity="info" size="small" (onClick)="save()" [disabled]="!descriptionForm.dirty"></lfx-button>
+    </div>
+  </div>
+}

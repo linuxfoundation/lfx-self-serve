@@ -2,12 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Pipe, PipeTransform } from '@angular/core';
-import { CommitteeDocumentSource } from '@lfx-one/shared/interfaces';
-
-interface DocumentAction {
-  icon: string;
-  tooltip: string;
-}
+import { CommitteeDocumentSource, DocumentAction } from '@lfx-one/shared/interfaces';
 
 const DOCUMENT_SOURCE_ACTIONS: Record<CommitteeDocumentSource, DocumentAction> = {
   link: { icon: 'fa-light fa-external-link', tooltip: 'Open Link' },

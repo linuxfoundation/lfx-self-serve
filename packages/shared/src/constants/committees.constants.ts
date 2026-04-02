@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberVotingStatus } from '../enums/committee-member.enum';
-import { GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
+import { CommitteeTab, GroupBehavioralClass, JoinMode } from '../interfaces/committee.interface';
 import { lfxColors } from './colors.constants';
 
 // Re-export helper functions from utils for backward compatibility
@@ -17,6 +17,11 @@ export {
   isGovernanceClass,
   isCollaborationClass,
 } from '../utils/committee.utils';
+
+/**
+ * Valid tab keys for committee view navigation
+ */
+export const COMMITTEE_VALID_TABS: CommitteeTab[] = ['overview', 'members', 'votes', 'meetings', 'surveys', 'documents', 'settings'];
 
 /**
  * Configurable labels for committees displayed throughout the UI

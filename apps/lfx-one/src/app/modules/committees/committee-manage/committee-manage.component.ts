@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { Component, computed, DestroyRef, effect, inject, signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -44,8 +44,6 @@ export class CommitteeManageComponent {
   private readonly committeeService = inject(CommitteeService);
   private readonly messageService = inject(MessageService);
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly destroyRef = inject(DestroyRef);
-
   // Mode and state signals
   public mode = signal<'create' | 'edit'>('create');
   public committeeId = signal<string | null>(null);
@@ -71,7 +69,11 @@ export class CommitteeManageComponent {
   public submitting = signal<boolean>(false);
 
   // Validation signals for template
-  public readonly canProceed = signal<boolean>(false);
+  private formValue = toSignal(this.form.valueChanges, { initialValue: this.form.value });
+  public readonly canProceed = computed(() => {
+    this.formValue();
+    return this.isStepValid(this.currentStep());
+  });
   public readonly canGoNext = computed(() => this.currentStep() + 1 < this.totalSteps && this.canNavigateToStep(this.currentStep() + 1));
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
   public readonly isFirstStep = computed(() => this.currentStep() === 1);
@@ -108,17 +110,6 @@ export class CommitteeManageComponent {
       ),
       { initialValue: 1 }
     );
-
-    // Subscribe to form value changes and update validation signals
-    this.form.valueChanges.pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => {
-      this.updateCanProceed();
-    });
-
-    // Effect for step changes - handles validation
-    effect(() => {
-      this.currentStep();
-      this.updateCanProceed();
-    });
 
     // Populate form when editing
     toObservable(this.committee)
@@ -478,11 +469,6 @@ export class CommitteeManageComponent {
       }
     }
     return true;
-  }
-
-  private updateCanProceed(): void {
-    const isValid = this.isStepValid(this.currentStep());
-    this.canProceed.set(isValid);
   }
 
   private isStepValid(step: number): boolean {

@@ -13,6 +13,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { FileSizePipe } from '@pipes/file-size.pipe';
 import { DocumentIconPipe } from '../../pipes/document-icon.pipe';
+import { FolderExpandedPipe } from '../../pipes/folder-expanded.pipe';
 import { DocumentTypeIconPipe } from '../../pipes/document-type-icon.pipe';
 import { SourceLabelPipe } from '../../pipes/source-label.pipe';
 import { SourceSeverityPipe } from '../../pipes/source-severity.pipe';
@@ -57,6 +58,7 @@ const ATTACHMENT_FETCH_CONCURRENCY = 4;
     DocumentIconPipe,
     DocumentTypeIconPipe,
     FileSizePipe,
+    FolderExpandedPipe,
     SourceLabelPipe,
     SourceSeverityPipe,
     DatePipe,
@@ -170,11 +172,6 @@ export class CommitteeDocumentsComponent implements OnInit {
       }
       return next;
     });
-  }
-
-  /** Whether a folder is currently expanded. */
-  public isFolderExpanded(folderUid: string): boolean {
-    return this.expandedFolders().has(folderUid);
   }
 
   // ── CRUD Dialog Methods ──────────────────────────────────────────────────

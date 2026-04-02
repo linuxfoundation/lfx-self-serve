@@ -565,6 +565,11 @@ export interface CommitteeDocumentItem {
   };
 }
 
+export interface DocumentAction {
+  icon: string;
+  tooltip: string;
+}
+
 /** View mode for the committee meetings tab. */
 export type ViewMode = 'list' | 'calendar';
 
@@ -594,3 +599,16 @@ export interface MailingListPickerDialogData {
 export interface MailingListPickerDialogResult {
   selectedUids: Set<string>;
 }
+
+export interface DescriptionDialogData {
+  mode: 'view' | 'edit';
+  description: string;
+}
+
+export interface EditChairsDialogData {
+  members: { label: string; value: string }[];
+  currentChairUid: string | null;
+  currentViceChairUid: string | null;
+}
+
+export type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';
