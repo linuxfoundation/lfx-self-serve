@@ -74,7 +74,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
+import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
@@ -557,11 +557,18 @@ export class ProjectService {
 
       const userData = userMetadata.data || {};
 
+      const resolvedEmail = (originalEmail || userData.email || '').trim().toLowerCase();
+      if (!resolvedEmail) {
+        throw ServiceValidationError.forField('email', 'User email could not be resolved from metadata', {
+          operation: 'get_user_info',
+          service: 'project_service',
+        });
+      }
+
       const result: { name: string; email: string; username: string; avatar?: string } = {
         // Use the name from metadata, fallback to constructed name from given_name/family_name
         name: userData.name || `${userData.given_name || ''} ${userData.family_name || ''}`.trim() || usernameForLookup,
-        // Use the original email if we had one, otherwise leave empty
-        email: originalEmail || '',
+        email: resolvedEmail,
         username: usernameForLookup,
       };
 
