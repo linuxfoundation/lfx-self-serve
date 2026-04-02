@@ -111,14 +111,14 @@ export class MeetingService {
   }
 
   /**
-   * Fetches past meetings scoped to a committee via `parent=committee:{id}` query parameter.
+   * Fetches past meetings scoped to a committee via `tags=committee_uid:{id}` query parameter.
    * Uses `sort` (not `order`) because `/api/past-meetings` proxies to the query service
    * (`/query/resources?type=v1_past_meeting`), which uses underscore-separated sort values
    * (e.g. `updated_desc`). The `order` param with dot-notation is only for `/api/meetings`
    * which proxies to the meeting service.
    */
   public getPastMeetingsByCommittee(committeeId: string, limit?: number, sort?: string): Observable<PastMeeting[]> {
-    let params = new HttpParams().set('parent', `committee:${committeeId}`);
+    let params = new HttpParams().set('tags', `committee_uid:${committeeId}`);
 
     if (sort) {
       params = params.set('sort', sort);
