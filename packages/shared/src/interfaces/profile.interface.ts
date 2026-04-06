@@ -300,7 +300,7 @@ export type MaintainerConfirmationResult = 'maintainer' | 'contributor';
 /**
  * Social identity providers supported for OAuth verification flow
  */
-export type SocialProvider = 'github' | 'linkedin';
+export type SocialProvider = 'github' | 'google' | 'linkedin';
 
 /**
  * Pending social connection stored in session during Flow C chain

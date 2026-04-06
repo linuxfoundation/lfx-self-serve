@@ -3,10 +3,14 @@
 
 <div class="flex flex-col gap-5" data-testid="affiliation-timeline-dialog">
   <!-- Description -->
-  @if (hasNoWorkExperience()) {
+  @if (hasUnverifiedWorkExperienceOnly()) {
+    <p class="text-sm text-slate-500" data-testid="unverified-work-experience-message">
+      Your work history is pending verification. Once your work experience has been verified, your organizations will appear here for affiliation.
+    </p>
+  } @else if (hasNoWorkExperience()) {
     <p class="text-sm text-slate-500" data-testid="no-work-experience-message">
-      To affiliate your contributions with an organization, first add your work history in the Work Experience section. Organizations from your work history
-      will appear here for affiliation.
+      To affiliate your contributions with an organization, first add your work history in the Work Experience section. Organizations from your verified work
+      history will appear here for affiliation.
     </p>
   } @else {
     <p class="text-sm text-slate-500">

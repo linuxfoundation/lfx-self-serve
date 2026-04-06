@@ -60,6 +60,8 @@ export const YEAR_OPTIONS: { label: string; value: string }[] = Array.from({ len
  */
 export const IDENTITY_PROVIDER_OPTIONS: IdentityProviderOption[] = [
   { id: 'github', name: 'GitHub', description: 'Connect your GitHub account for code contributions', icon: 'fa-brands fa-github' },
+  { id: 'linkedin', name: 'LinkedIn', description: 'Connect your LinkedIn account for employer recognition', icon: 'fa-brands fa-linkedin' },
+  { id: 'google', name: 'Google', description: 'Connect your Google account to verify your email', icon: 'fa-brands fa-google' },
   { id: 'email', name: 'Email', description: 'Add an email address for notifications and attribution', icon: 'fa-light fa-envelope' },
   { id: 'lfid', name: 'LF ID', description: 'Connect your Linux Foundation ID', icon: 'fa-light fa-id-badge' },
 ];
@@ -68,7 +70,7 @@ export const IDENTITY_PROVIDER_OPTIONS: IdentityProviderOption[] = [
  * Platforms that the UI supports verification for.
  * Only identities on these platforms are returned to the frontend.
  */
-export const IDENTITY_DISPLAY_PLATFORMS: readonly string[] = ['github', 'email'];
+export const IDENTITY_DISPLAY_PLATFORMS: readonly string[] = ['github', 'google', 'linkedin', 'email'];
 
 /**
  * Maps Auth0 identity provider names to CDP platform names
@@ -84,10 +86,21 @@ export const AUTH0_TO_CDP_PROVIDER_MAP: Record<string, string> = {
 };
 
 /**
+ * Reverse of AUTH0_TO_CDP_PROVIDER_MAP — maps CDP platform names back to Auth0 provider names.
+ * Used when unlinking identities (Auth0 expects its own provider names, not CDP platform names).
+ * Note: Assumes a 1:1 mapping — if two Auth0 providers map to the same CDP platform,
+ * the last entry wins silently. Currently all mappings are unique.
+ */
+export const CDP_TO_AUTH0_PROVIDER_MAP: Record<string, string> = Object.fromEntries(
+  Object.entries(AUTH0_TO_CDP_PROVIDER_MAP).map(([auth0, cdp]) => [cdp, auth0])
+);
+
+/**
  * CDP platform to icon class mapping
  */
 export const CDP_PLATFORM_ICONS: Record<string, string> = {
   github: 'fa-brands fa-github',
+  google: 'fa-brands fa-google',
   linkedin: 'fa-brands fa-linkedin',
   email: 'fa-light fa-envelope',
   lfid: 'fa-light fa-id-badge',

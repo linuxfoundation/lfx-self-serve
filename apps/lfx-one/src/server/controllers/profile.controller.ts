@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { AUTH0_TO_CDP_PROVIDER_MAP, CDP_PLATFORM_ICONS, IDENTITY_DISPLAY_PLATFORMS } from '@lfx-one/shared/constants';
+import { AUTH0_TO_CDP_PROVIDER_MAP, CDP_PLATFORM_ICONS, CDP_TO_AUTH0_PROVIDER_MAP, IDENTITY_DISPLAY_PLATFORMS } from '@lfx-one/shared/constants';
 import {
   AddEmailRequest,
   Auth0Identity,
@@ -875,9 +875,11 @@ export class ProfileController {
       // If provider and auth0UserId are provided, attempt to unlink from Auth0 via NATS
       const { provider, auth0UserId } = req.body || {};
       if (provider && auth0UserId) {
+        // Map CDP platform name to Auth0 provider name (e.g., 'google' → 'google-oauth2')
+        const auth0Provider = CDP_TO_AUTH0_PROVIDER_MAP[provider] || provider;
         const mgmtToken = this.profileAuthService.getManagementToken(req);
         if (mgmtToken) {
-          const unlinkResult = await this.emailVerificationService.unlinkIdentity(req, mgmtToken, provider, auth0UserId);
+          const unlinkResult = await this.emailVerificationService.unlinkIdentity(req, mgmtToken, auth0Provider, auth0UserId);
           if (!unlinkResult.success) {
             logger.warning(req, 'reject_identity', 'Auth0 unlink failed, continuing with CDP rejection', {
               provider,
@@ -1377,7 +1379,7 @@ export class ProfileController {
   }
 
   /**
-   * GET /api/profile/identities/social/connect?provider=github|linkedin
+   * GET /api/profile/identities/social/connect?provider=github|google|linkedin
    * Initiates the social identity verification OAuth flow.
    * If no management token exists, chains through Flow C first.
    */
@@ -1798,11 +1800,18 @@ export class ProfileController {
     // Process CDP identities
     const enriched: EnrichedIdentity[] = cdpIdentities.map((cdp): EnrichedIdentity => {
       const authKey = `${cdp.platform}:${cdp.value}`;
-      const authIdentity = authServiceMap.get(authKey);
+      // Google OAuth creates email-type CDP entries — cross-match CDP email entries against Google auth identities
+      const authIdentity = authServiceMap.get(authKey)
+        ?? (cdp.platform === 'email' ? authServiceMap.get(`google:${cdp.value}`) : undefined);
+
       const inAuthService = !!authIdentity;
 
       if (inAuthService) {
         matchedAuthKeys.add(authKey);
+        // Also mark the Google auth key as matched to prevent duplicate synthetic entries
+        if (cdp.platform === 'email' && authIdentity?.provider === 'google-oauth2') {
+          matchedAuthKeys.add(`google:${cdp.value}`);
+        }
       }
 
       // Rule: The logged-in user's own LFID is always verified
@@ -1830,8 +1839,11 @@ export class ProfileController {
             });
           });
         }
+        // If a Google OAuth identity matched a CDP email entry, show it as a Google identity
+        const isGoogleCrossMatch = cdp.platform === 'email' && authIdentity?.provider === 'google-oauth2';
         return {
           ...cdp,
+          ...(isGoogleCrossMatch ? { platform: 'google', icon: CDP_PLATFORM_ICONS['google'] } : {}),
           displayState: 'verified',
           inAuth0: true,
           ...(authIdentity ? { auth0UserId: authIdentity.user_id } : {}),
@@ -1842,7 +1854,10 @@ export class ProfileController {
       const isCdpVerifiedWithOwner = cdp.verified && !!cdp.verifiedBy;
       let displayState: IdentityDisplayState;
 
-      if (isCdpVerifiedWithOwner && hasMultiLfid) {
+      if (cdp.platform === 'linkedin') {
+        // LinkedIn identities must be linked via auth-service — ignore CDP-only entries
+        displayState = 'hidden';
+      } else if (isCdpVerifiedWithOwner && hasMultiLfid) {
         // Multi-LFID merged profile — hide identities verified by another LFID
         displayState = 'hidden';
       } else {
@@ -1866,31 +1881,39 @@ export class ProfileController {
         continue;
       }
 
-      // Skip non-display platforms (e.g., lfid, google)
+      // Skip non-display platforms (e.g., lfid, gitlab)
       if (!IDENTITY_DISPLAY_PLATFORMS.includes(cdpPlatform)) {
         continue;
       }
 
       notInCdpCount++;
 
-      // Fire-and-forget: persist auth-service identity to CDP
-      const cdpPostPlatform = cdpPlatform === 'email' ? 'custom' : cdpPlatform;
-      this.cdpService
-        .createIdentityForUser(req, [lfid], {
-          value,
-          platform: cdpPostPlatform,
-          type: cdpPlatform === 'email' ? 'email' : 'username',
-          source: 'lfxOne',
-          verified: true,
-          verifiedBy: lfid,
-        })
-        .catch((err: unknown) => {
-          logger.warning(req, 'reconcile_identities', 'CDP identity create failed (non-blocking)', {
-            platform: cdpPlatform,
+      // Google uses email as its value — skip CDP create if the same email is already a verified email identity
+      const isEmailAlreadyVerified = enriched.some(
+        (id) => id.platform === 'email' && id.value === value && id.verified && id.verifiedBy === lfid
+      );
+
+      if (!isEmailAlreadyVerified) {
+        // Fire-and-forget: persist auth-service identity to CDP
+        const isEmailType = cdpPlatform === 'email' || cdpPlatform === 'google';
+        const cdpPostPlatform = isEmailType ? 'custom' : cdpPlatform;
+        this.cdpService
+          .createIdentityForUser(req, [lfid], {
             value,
-            error: err instanceof Error ? err.message : 'Unknown',
+            platform: cdpPostPlatform,
+            type: isEmailType ? 'email' : 'username',
+            source: 'lfxOne',
+            verified: true,
+            verifiedBy: lfid,
+          })
+          .catch((err: unknown) => {
+            logger.warning(req, 'reconcile_identities', 'CDP identity create failed (non-blocking)', {
+              platform: cdpPlatform,
+              value,
+              error: err instanceof Error ? err.message : 'Unknown',
+            });
           });
-        });
+      }
 
       // Create synthetic EnrichedIdentity for display
       enriched.push({
@@ -1926,8 +1949,10 @@ export class ProfileController {
         return pd.email ?? null;
       case 'github':
         return pd.nickname ?? null;
+      case 'google-oauth2':
+        return pd.email ?? null;
       case 'linkedin':
-        return pd.nickname ?? null;
+        return pd.email ?? pd.name ?? null;
       default:
         return null;
     }
