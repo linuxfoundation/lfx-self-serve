@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { inject, Injectable, signal, WritableSignal } from '@angular/core';
+import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
 import { MessageService } from 'primeng/api';
 import {
   AddEmailRequest,
@@ -38,6 +38,7 @@ export class UserService {
 
   public authenticated: WritableSignal<boolean> = signal<boolean>(false);
   public user: WritableSignal<User | null> = signal<User | null>(null);
+  public readonly userInitials: Signal<string> = this.initUserInitials();
 
   // Create a new user with permissions
   public createUserWithPermissions(userData: CreateUserPermissionRequest): Observable<any> {
@@ -266,5 +267,18 @@ export class UserService {
    */
   public verifyAndLinkEmail(email: string, otp: string): Observable<VerifyAndLinkEmailResponse> {
     return this.http.post<VerifyAndLinkEmailResponse>('/api/profile/identities/email/verify', { email, otp }).pipe(take(1));
+  }
+
+  private initUserInitials(): Signal<string> {
+    return computed(() => {
+      const name = this.user()?.name ?? '';
+      const parts = name.trim().split(/\s+/);
+      if (parts.length === 0 || !parts[0]) {
+        return '';
+      }
+      const first = parts[0][0] ?? '';
+      const last = parts.length > 1 ? (parts[parts.length - 1][0] ?? '') : '';
+      return (first + last).toUpperCase();
+    });
   }
 }

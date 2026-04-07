@@ -1,23 +1,23 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { FlushableResponse, LensChatRequest, LensSSEEventType } from '@lfx-one/shared/interfaces';
+import { CopilotChatRequest, CopilotSSEEventType, FlushableResponse } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
+import { CopilotService } from '../services/copilot.service';
 import { logger } from '../services/logger.service';
-import { LensService } from '../services/lens.service';
 
-export class LensController {
-  private readonly lensService = new LensService();
+export class CopilotController {
+  private readonly copilotService = new CopilotService();
 
   public async chat(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { message, sessionId, context } = req.body as LensChatRequest;
+    const { message, sessionId, context } = req.body as CopilotChatRequest;
 
     if (!message || typeof message !== 'string' || !message.trim()) {
       const validationError = ServiceValidationError.forField('message', 'message is required and must be a non-empty string', {
-        operation: 'lens_chat',
-        service: 'lens_controller',
+        operation: 'copilot_chat',
+        service: 'copilot_controller',
         path: req.path,
       });
       next(validationError);
@@ -30,7 +30,7 @@ export class LensController {
 
     const userId = (req.oidc?.user?.['sub'] as string) || 'anonymous';
 
-    const startTime = logger.startOperation(req, 'lens_chat', {
+    const startTime = logger.startOperation(req, 'copilot_chat', {
       has_session: !!validSessionId,
       has_context: !!validContext,
     });
@@ -55,7 +55,7 @@ export class LensController {
       abortController.abort();
     });
 
-    const sendEvent = (type: LensSSEEventType, data: unknown): void => {
+    const sendEvent = (type: CopilotSSEEventType, data: unknown): void => {
       if (clientDisconnected) return;
       res.write(`event: ${type}\ndata: ${JSON.stringify(data)}\n\n`);
       (res as FlushableResponse).flush?.();
@@ -67,7 +67,7 @@ export class LensController {
       let blockCount = 0;
       let resolvedSessionId: string | undefined;
 
-      for await (const event of this.lensService.streamQuery(
+      for await (const event of this.copilotService.streamQuery(
         req,
         { message, userId, sessionId: validSessionId, context: validContext },
         abortController.signal
@@ -84,13 +84,13 @@ export class LensController {
         sendEvent(event.type, event.data);
       }
 
-      logger.success(req, 'lens_chat', startTime, {
+      logger.success(req, 'copilot_chat', startTime, {
         session_id: resolvedSessionId,
         block_count: blockCount,
       });
     } catch (error) {
       if (clientDisconnected) return;
-      logger.error(req, 'lens_chat', startTime, error, { user_id: userId });
+      logger.error(req, 'copilot_chat', startTime, error, { user_id: userId });
       sendEvent('error', 'Something went wrong. Please try again.');
     } finally {
       if (!clientDisconnected) {

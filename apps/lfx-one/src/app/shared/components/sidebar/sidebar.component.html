@@ -2,27 +2,17 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <aside
-  class="h-full bg-white w-72 flex flex-col"
+  class="h-full bg-white w-full flex flex-col"
   [ngClass]="{
     'border-r border-gray-200': !mobile(),
   }"
   data-testid="sidebar">
-  <div class="flex flex-col py-6 h-full min-h-0 overflow-y-auto">
+  <div class="flex flex-col py-4 h-full min-h-0 overflow-y-auto">
     <!-- Top Navigation -->
     <div class="flex flex-col items-start w-full flex-1">
-      <!-- LFX Logo - Hidden on mobile (shown in drawer header instead) -->
-      @if (!mobile()) {
-        <div class="h-[20px] ml-2 w-[141.6px] px-3 py-3 mb-12">
-          <a [routerLink]="['/']" class="flex items-center">
-            <!-- LFX Logo SVG -->
-            <img src="/images/logo_lfx.svg" alt="LFX Logo" class="w-auto h-5" />
-          </a>
-        </div>
-      }
-
       <!-- Project Selector -->
       @if (showProjectSelector()) {
-        <div class="px-3 mb-6 w-full">
+        <div class="px-4 mb-6 w-full">
           <lfx-project-selector
             [projects]="foundationProjects()"
             [selectedProject]="selectedProject()"
@@ -30,29 +20,33 @@
         </div>
       }
 
+      <!-- Me Selector — uses [class.hidden] to avoid SSR hydration mismatch -->
+      <div class="px-4 mb-6 w-full" [class.hidden]="!showMeSelector()">
+        <div data-testid="me-selector" class="box-border flex gap-3 items-center p-3 w-full rounded-lg">
+          <lfx-avatar [image]="user()?.picture ?? ''" [label]="user()?.name ?? ''" shape="circle" size="large" styleClass="shrink-0 size-10"></lfx-avatar>
+          <div class="flex flex-col gap-1 grow min-w-0">
+            <p class="font-semibold text-base text-gray-900 leading-5 tracking-tight line-clamp-2">{{ user()?.name }}</p>
+            <div class="flex flex-wrap gap-1">
+              <span class="inline-block text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">{{ personaLabel() }}</span>
+            </div>
+          </div>
+        </div>
+      </div>
+
       <!-- Main Navigation Items -->
-      <div class="flex flex-col gap-2 items-start px-3 w-full">
+      <div class="flex flex-col gap-2 items-start px-4 w-full">
         @for (item of itemsWithTestIds(); track item.label) {
           @if (item.isSection) {
             <!-- Section Header -->
-            <div class="w-full" [attr.data-testid]="item.testId">
-              <!-- Divider -->
-              <div class="h-px bg-gray-200 my-2"></div>
-
-              <!-- Section Toggle Button -->
-              <button
-                type="button"
-                (click)="onSectionToggle(item.label, item.isExpanded)"
-                class="w-full px-2 py-1.5 flex items-center justify-between hover:bg-gray-50 rounded-md transition-colors"
-                [attr.data-testid]="item.testId + '-toggle'"
-                [attr.aria-expanded]="item.isExpanded"
-                [attr.aria-label]="'Toggle ' + item.label + ' section'">
-                <span class="text-xs font-medium text-gray-400 uppercase tracking-wide">{{ item.label }}</span>
-                <i class="fa-solid w-3 h-3 text-gray-400 transition-transform" [ngClass]="item.isExpanded ? 'fa-chevron-down' : 'fa-chevron-right'"></i>
-              </button>
+            <div class="w-full mt-2" [attr.data-testid]="item.testId">
+              <!-- Section Label with Divider -->
+              <div class="flex items-center gap-2 px-2 py-1.5">
+                <span class="text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">{{ item.label }}</span>
+                <div class="flex-1 h-px bg-gray-200"></div>
+              </div>
 
               <!-- Section Items -->
-              @if (item.isExpanded && item.items?.length) {
+              @if (item.items?.length) {
                 <div class="flex flex-col gap-1 mt-2">
                   @for (childItem of item.items; track childItem.label) {
                     <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: childItem }"></ng-container>
@@ -71,7 +65,7 @@
     </div>
 
     <!-- Bottom Navigation (stays at bottom when space allows, scrolls with content otherwise) -->
-    <div class="flex flex-col gap-2 items-start px-3 w-full mt-auto pt-4">
+    <div class="flex flex-col gap-2 items-start px-4 w-full mt-auto pt-4">
       @if (footerItems().length > 0) {
         @for (item of footerItemsWithTestIds(); track item.label) {
           <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
@@ -88,7 +82,7 @@
       [routerLink]="item.routerLink"
       routerLinkActive="bg-blue-100 font-medium text-gray-950"
       [routerLinkActiveOptions]="{ exact: true }"
-      class="flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-base !text-gray-950 font-normal hover:bg-gray-50"
+      class="flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-base text-gray-600 font-normal hover:bg-gray-50"
       [ngClass]="{
         'opacity-50 pointer-events-none cursor-not-allowed': item.disabled,
       }"
@@ -110,7 +104,7 @@
       [href]="item.url"
       [target]="item.target || '_blank'"
       [rel]="item.rel || 'noopener noreferrer'"
-      class="flex items-center justify-between gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-base !text-gray-950 font-normal hover:bg-gray-50"
+      class="flex items-center justify-between gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-base text-gray-600 font-normal hover:bg-gray-50"
       [ngClass]="{
         'opacity-50 pointer-events-none cursor-not-allowed': item.disabled,
       }"
@@ -135,7 +129,7 @@
     <button
       type="button"
       (click)="item.command()"
-      class="flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-left text-base !text-gray-950 font-normal hover:bg-gray-50"
+      class="flex items-center gap-2 px-2 py-2 rounded-lg transition-colors cursor-pointer w-full text-left text-base text-gray-600 font-normal hover:bg-gray-50"
       [ngClass]="{
         'opacity-50 cursor-not-allowed': item.disabled,
       }"

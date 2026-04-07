@@ -6,7 +6,7 @@
   <lfx-button
     (onClick)="openDrawer()"
     data-testid="data-copilot-button"
-    label="Ask LFX Lens"
+    label="Ask Copilot"
     size="small"
     styleClass="px-5 py-2.5 bg-white hover:bg-blue-50 text-blue-500 rounded-full font-medium flex items-center gap-2 border border-blue-500 transition-all">
     <span class="fa-stack" style="font-size: 0.6em; width: 2em; height: 2em; line-height: 2em">
@@ -19,7 +19,7 @@
 <p-drawer
   [visible]="visible()"
   position="right"
-  styleClass="xl:w-2/5 lg:w-2/3 w-full lens-drawer"
+  styleClass="xl:w-2/5 lg:w-2/3 w-full copilot-drawer"
   (onHide)="onHide()"
   (onShow)="onShow()"
   data-testid="data-copilot-drawer">
@@ -27,9 +27,9 @@
   <ng-template #header>
     <div class="flex w-full items-center justify-between">
       <div class="flex items-center gap-3">
-        <img src="/images/lens-avatar.png" alt="LFX Lens" class="h-8 w-8 rounded-full" />
+        <img src="/images/lens-avatar.png" alt="LFX Copilot" class="h-8 w-8 rounded-full" />
         <div class="flex flex-col">
-          <span class="text-sm font-semibold text-gray-900">LFX Lens</span>
+          <span class="text-sm font-semibold text-gray-900">LFX Copilot</span>
           <span class="text-[10px] text-gray-400">AI-powered data assistant</span>
         </div>
       </div>
@@ -61,7 +61,7 @@
         @if (!hasMessages()) {
           <!-- Empty state -->
           <div class="flex h-full flex-col items-center justify-center gap-5">
-            <img src="/images/lens-avatar.png" alt="LFX Lens" class="h-12 w-12 rounded-full" />
+            <img src="/images/lens-avatar.png" alt="LFX Copilot" class="h-12 w-12 rounded-full" />
             <div class="flex flex-col items-center gap-1.5">
               <h3 class="font-display text-2xl font-light text-gray-900">Ask about {{ contextLabel() }}</h3>
               <p class="max-w-sm text-center text-sm text-gray-400">{{ contextDescription() }}</p>
@@ -99,7 +99,7 @@
                     <div class="fade-slide-in flex items-start gap-3">
                       <div class="relative flex h-8 w-8 shrink-0 items-center justify-center">
                         <div class="absolute -inset-0.5 animate-spin rounded-full border-2 border-transparent border-r-blue-400 border-t-blue-400"></div>
-                        <img src="/images/lens-avatar.png" alt="LFX Lens" class="h-7 w-7 rounded-full" />
+                        <img src="/images/lens-avatar.png" alt="LFX Copilot" class="h-7 w-7 rounded-full" />
                       </div>
                       <div class="flex flex-col gap-1.5 pt-0.5" role="status" aria-live="polite">
                         @for (stage of stageHistory(); track stage.stage) {
@@ -130,7 +130,7 @@
                     </div>
                   } @else {
                     <div class="text-[13px] leading-[1.7]" data-testid="data-copilot-assistant-message">
-                      <lfx-lens-response [content]="msg.content" [blocks]="msg.blocks" (suggestionClick)="sendPrompt($event)" />
+                      <lfx-copilot-response [content]="msg.content" [blocks]="msg.blocks" (suggestionClick)="sendPrompt($event)" />
                     </div>
                   }
                 </div>

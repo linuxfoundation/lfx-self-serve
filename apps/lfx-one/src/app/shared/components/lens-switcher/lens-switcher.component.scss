@@ -1,0 +1,26 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+:host {
+  display: block;
+  height: 100%;
+}
+
+// PrimeNG Popover override — hide arrow, remove padding, force right positioning
+::ng-deep .user-menu-popover.p-popover {
+  // Hide arrow
+  &::before,
+  &::after {
+    display: none !important;
+  }
+
+  // Remove default content padding
+  .p-popover-content {
+    @apply p-0;
+  }
+
+  // Force position to the right of the avatar (override absolutePosition)
+  left: 72px !important;
+  bottom: 16px !important;
+  top: auto !important;
+}

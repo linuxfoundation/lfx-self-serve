@@ -5,13 +5,13 @@ import { Component, computed, DestroyRef, ElementRef, inject, input, signal, vie
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@app/shared/components/button/button.component';
-import { LensResponseComponent } from '@app/shared/components/lens-response/lens-response.component';
+import { CopilotResponseComponent } from '@app/shared/components/copilot-response/copilot-response.component';
 import { AccountContextService } from '@app/shared/services/account-context.service';
 import { FeatureFlagService } from '@app/shared/services/feature-flag.service';
-import { LensService } from '@app/shared/services/lens.service';
+import { CopilotService } from '@app/shared/services/copilot.service';
 import { ProjectContextService } from '@app/shared/services/project-context.service';
-import { LENS_COMPANY_PROMPTS, LENS_FOUNDATION_PROMPTS } from '@lfx-one/shared/constants';
-import { LensContext } from '@lfx-one/shared/interfaces';
+import { COPILOT_COMPANY_PROMPTS, COPILOT_FOUNDATION_PROMPTS } from '@lfx-one/shared/constants';
+import { CopilotContext } from '@lfx-one/shared/interfaces';
 import { DrawerModule } from 'primeng/drawer';
 import { map } from 'rxjs';
 
@@ -19,7 +19,7 @@ import type { Signal } from '@angular/core';
 
 @Component({
   selector: 'lfx-data-copilot',
-  imports: [DrawerModule, ButtonComponent, ReactiveFormsModule, LensResponseComponent],
+  imports: [DrawerModule, ButtonComponent, ReactiveFormsModule, CopilotResponseComponent],
   templateUrl: './data-copilot.component.html',
   styleUrl: './data-copilot.component.scss',
 })
@@ -27,7 +27,7 @@ export class DataCopilotComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly featureFlagService = inject(FeatureFlagService);
-  private readonly lensService = inject(LensService);
+  private readonly copilotService = inject(CopilotService);
   private readonly destroyRef = inject(DestroyRef);
 
   // Optional inputs to control which context fields are included
@@ -45,13 +45,13 @@ export class DataCopilotComponent {
   // Feature flag
   protected readonly isLfxLensEnabled = this.featureFlagService.getBooleanFlag('lfx-lens', false);
 
-  // Lens service signals
-  protected readonly messages = this.lensService.messages;
-  protected readonly streaming = this.lensService.streaming;
-  protected readonly currentStatus = this.lensService.currentStatus;
-  protected readonly error = this.lensService.error;
-  protected readonly currentStage = this.lensService.currentStage;
-  protected readonly stageHistory = this.lensService.stageHistory;
+  // Copilot service signals
+  protected readonly messages = this.copilotService.messages;
+  protected readonly streaming = this.copilotService.streaming;
+  protected readonly currentStatus = this.copilotService.currentStatus;
+  protected readonly error = this.copilotService.error;
+  protected readonly currentStage = this.copilotService.currentStage;
+  protected readonly stageHistory = this.copilotService.stageHistory;
 
   // Computed
   protected readonly hasMessages = computed(() => this.messages().length > 0);
@@ -92,7 +92,7 @@ export class DataCopilotComponent {
 
   protected onHide(): void {
     this.visible.set(false);
-    this.lensService.reset();
+    this.copilotService.reset();
   }
 
   protected send(): void {
@@ -102,7 +102,7 @@ export class DataCopilotComponent {
     const context = this.buildContext();
     if (!context) return;
 
-    this.lensService.sendMessage(message, context);
+    this.copilotService.sendMessage(message, context);
     this.messageControl.setValue('');
     this.autoScroll = true;
   }
@@ -113,7 +113,7 @@ export class DataCopilotComponent {
     const context = this.buildContext();
     if (!context) return;
 
-    this.lensService.sendMessage(prompt, context);
+    this.copilotService.sendMessage(prompt, context);
     this.autoScroll = true;
   }
 
@@ -129,14 +129,14 @@ export class DataCopilotComponent {
   }
 
   protected abort(): void {
-    this.lensService.abort();
+    this.copilotService.abort();
   }
 
   protected newChat(): void {
-    this.lensService.reset();
+    this.copilotService.reset();
   }
 
-  private buildContext(): LensContext | undefined {
+  private buildContext(): CopilotContext | undefined {
     const slug = this.includeFoundationSlug() ? this.foundationSlug() : '';
     const name = this.includeFoundationName() ? this.foundationName() : '';
 
@@ -145,7 +145,7 @@ export class DataCopilotComponent {
       return undefined;
     }
 
-    const ctx: LensContext = {
+    const ctx: CopilotContext = {
       foundation: { slug, name },
     };
 
@@ -192,7 +192,7 @@ export class DataCopilotComponent {
   }
 
   private initSuggestedPrompts(): Signal<readonly string[]> {
-    return computed(() => (this.hasCompanyContext() ? LENS_COMPANY_PROMPTS : LENS_FOUNDATION_PROMPTS));
+    return computed(() => (this.hasCompanyContext() ? COPILOT_COMPANY_PROMPTS : COPILOT_FOUNDATION_PROMPTS));
   }
 
   private initAutoScroll(): void {

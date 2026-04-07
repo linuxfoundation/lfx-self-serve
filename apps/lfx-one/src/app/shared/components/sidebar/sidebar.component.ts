@@ -2,21 +2,24 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, PLATFORM_ID, Signal, signal } from '@angular/core';
+import { Component, computed, inject, input, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
+import { AvatarComponent } from '@components/avatar/avatar.component';
 import { BadgeComponent } from '@components/badge/badge.component';
 import { ProjectSelectorComponent } from '@components/project-selector/project-selector.component';
 import { environment } from '@environments/environment';
+import { PERSONA_OPTIONS } from '@lfx-one/shared/constants';
 import { Project, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
+import { UserService } from '@services/user.service';
 import { tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-sidebar',
-  imports: [NgClass, NgTemplateOutlet, RouterModule, BadgeComponent, ProjectSelectorComponent],
+  imports: [NgClass, NgTemplateOutlet, RouterModule, AvatarComponent, BadgeComponent, ProjectSelectorComponent],
   templateUrl: './sidebar.component.html',
   styleUrl: './sidebar.component.scss',
 })
@@ -24,7 +27,7 @@ export class SidebarComponent {
   private readonly projectService = inject(ProjectService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
-  private readonly platformId = inject(PLATFORM_ID);
+  private readonly userService = inject(UserService);
 
   // Input properties
   public readonly items = input.required<SidebarMenuItem[]>();
@@ -32,6 +35,7 @@ export class SidebarComponent {
   public readonly collapsed = input<boolean>(false);
   public readonly styleClass = input<string>('');
   public readonly showProjectSelector = input<boolean>(false);
+  public readonly showMeSelector = input<boolean>(false);
   public readonly mobile = input<boolean>(false);
 
   // Load all available projects
@@ -59,28 +63,23 @@ export class SidebarComponent {
     return this.projects().find((p: Project) => p.slug === foundation.slug) || null;
   });
 
-  // Section expanded state tracking - uses section labels as keys
-  protected readonly sectionExpandedState = signal<Record<string, boolean>>({});
+  // Me selector signals
+  protected readonly user = this.userService.user;
+  protected readonly userInitials = this.userService.userInitials;
+  protected readonly personaLabel: Signal<string> = this.initPersonaLabel();
 
-  // Computed items with test IDs, section state, isExpanded property, and external flag
+  // Computed items with test IDs, external flag
   protected readonly itemsWithTestIds = computed(() =>
-    this.items().map((item) => {
-      const expandedState = this.sectionExpandedState();
-      const defaultExpanded = item.expanded !== false;
-      const isExpanded = expandedState[item.label] ?? defaultExpanded;
-
-      return {
-        ...item,
-        testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
-        isExpanded,
-        external: item.url ? this.isExternalUrl(item.url) : undefined,
-        items: item.items?.map((childItem) => ({
-          ...childItem,
-          testId: childItem.testId || `sidebar-item-${childItem.label.toLowerCase().replace(/\s+/g, '-')}`,
-          external: childItem.url ? this.isExternalUrl(childItem.url) : undefined,
-        })),
-      };
-    })
+    this.items().map((item) => ({
+      ...item,
+      testId: item.testId || `sidebar-item-${item.label.toLowerCase().replace(/\s+/g, '-')}`,
+      external: item.url ? this.isExternalUrl(item.url) : undefined,
+      items: item.items?.map((childItem) => ({
+        ...childItem,
+        testId: childItem.testId || `sidebar-item-${childItem.label.toLowerCase().replace(/\s+/g, '-')}`,
+        external: childItem.url ? this.isExternalUrl(childItem.url) : undefined,
+      })),
+    }))
   );
 
   protected readonly footerItemsWithTestIds = computed(() =>
@@ -90,16 +89,6 @@ export class SidebarComponent {
       external: item.url ? this.isExternalUrl(item.url) : undefined,
     }))
   );
-
-  /**
-   * Toggle section expanded state
-   */
-  protected onSectionToggle(sectionLabel: string, currentExpanded: boolean): void {
-    this.sectionExpandedState.update((state) => ({
-      ...state,
-      [sectionLabel]: !currentExpanded,
-    }));
-  }
 
   /**
    * Handle project selection change - distinguish between foundation and non-foundation projects
@@ -128,14 +117,6 @@ export class SidebarComponent {
     }
   }
 
-  /**
-   * Handle logo click - navigate to home/overview
-   */
-  protected onLogoClick(): void {
-    // Navigate to home page
-    window.location.href = '/';
-  }
-
   private initProjects(): Signal<Project[]> {
     return toSignal(
       this.projectService.getProjects().pipe(
@@ -161,6 +142,14 @@ export class SidebarComponent {
         initialValue: [],
       }
     );
+  }
+
+  private initPersonaLabel(): Signal<string> {
+    return computed(() => {
+      const persona = this.personaService.currentPersona();
+      const option = PERSONA_OPTIONS.find((o) => o.value === persona);
+      return option?.label ?? persona;
+    });
   }
 
   /**

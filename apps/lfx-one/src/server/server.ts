@@ -20,7 +20,7 @@ import { apiErrorHandler } from './middleware/error-handler.middleware';
 import { apiRateLimiter } from './middleware/rate-limit.middleware';
 import analyticsRouter from './routes/analytics.route';
 import committeesRouter from './routes/committees.route';
-import lensRouter from './routes/lens.route';
+import copilotRouter from './routes/copilot.route';
 import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
 import organizationsRouter from './routes/organizations.route';
@@ -186,7 +186,7 @@ app.use('/api/analytics', analyticsRouter);
 app.use('/api/user', userRouter);
 app.use('/api/votes', votesRouter);
 app.use('/api/surveys', surveysRouter);
-app.use('/api/lens', lensRouter);
+app.use('/api/copilot', copilotRouter);
 
 // Add API error handler middleware
 app.use('/api/*', apiErrorHandler);

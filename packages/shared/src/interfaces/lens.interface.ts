@@ -1,110 +1,28 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-// SSE event types from our Express server to the client
-export type LensSSEEventType = 'status' | 'block' | 'content' | 'session_id' | 'done' | 'error';
+/**
+ * Navigation lens types
+ * Each lens represents a top-level navigation context that determines sidebar content
+ */
+export type Lens = 'me' | 'foundation' | 'project' | 'org';
 
-// Frontend loading stages derived from upstream stream events
-export type LensStreamStage = 'starting' | 'analyzing' | 'querying' | 'preparing' | 'complete';
-
-// Block types from LFX Lens API response
-export type LensBlockType = 'message' | 'sql' | 'suggestions';
-
-export interface LensMessageBlock {
-  type: 'message';
-  content: string;
-}
-
-export interface LensSqlBlock {
-  type: 'sql';
-  sql: string;
-  result: {
-    data: Record<string, unknown>[];
-    columns: string[];
-    rowCount: number;
-  } | null;
-}
-
-export interface LensSuggestionsBlock {
-  type: 'suggestions';
-  items: string[];
-}
-
-export type LensBlock = LensMessageBlock | LensSqlBlock | LensSuggestionsBlock;
-
-// What the frontend stores per conversation turn
-export interface LensMessage {
-  role: 'user' | 'assistant';
-  content: string;
-  blocks: LensBlock[];
-  loading: boolean;
-}
-
-// Context passed from dashboards (maps to API's additional_data)
-export interface LensContext {
-  foundation: { slug: string; name: string };
-  company?: { id: string; name?: string };
-}
-
-// Request body from Angular to Express
-export interface LensChatRequest {
-  message: string;
-  sessionId?: string;
-  context?: LensContext;
-}
-
-// The full LFX Lens API response (sync mode)
-export interface LfxLensApiResponse {
-  content: { blocks: LensBlock[] };
-  session_id: string;
-  status: 'COMPLETED' | 'ERROR';
-  run_id: string;
-  metrics?: {
-    duration: number;
-    steps: Record<string, { metrics: { input_tokens: number; output_tokens: number; duration: number } }>;
-  };
-}
-
-// Server-side query parameters for the Lens service
-export interface LensQueryParams {
-  message: string;
-  userId: string;
-  sessionId?: string;
-  context?: LensContext;
-}
-
-// Server-side SSE event emitted by the Lens service
-export interface LensSSEEvent {
-  type: LensSSEEventType;
-  data: unknown;
-}
-
-// Express response extended with flush for compression middleware
-export interface FlushableResponse {
-  flush?: () => void;
-}
-
-// Generic SSE event structure for the frontend
-export interface SSEEvent<T extends string = string> {
-  type: T;
-  data: unknown;
-}
-
-// SSE connection options for the frontend
-export interface SSEConnectOptions {
-  method?: string;
-  body?: unknown;
-  headers?: Record<string, string>;
-}
-
-// Visual config for a loading stage
-export interface LensStageConfig {
-  stage: LensStreamStage;
+/**
+ * Configuration for a lens option displayed in the L1 Rail
+ */
+export interface LensOption {
+  /** Lens identifier */
+  id: Lens;
+  /** Full display label (e.g., "Foundation") */
   label: string;
-  dotColor: string;
-}
-
-// Stage config extended with runtime status
-export interface LensStageStatus extends LensStageConfig {
-  status: 'pending' | 'active' | 'completed';
+  /** Short label for the L1 Rail (e.g., "Fdn") */
+  shortLabel: string;
+  /** FontAwesome icon class (inactive state) */
+  icon: string;
+  /** FontAwesome icon class (active state) */
+  activeIcon: string;
+  /** Default route to navigate to when this lens is activated */
+  defaultRoute: string;
+  /** Test ID for the lens button */
+  testId: string;
 }

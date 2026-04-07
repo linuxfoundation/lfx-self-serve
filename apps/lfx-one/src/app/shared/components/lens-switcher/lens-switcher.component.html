@@ -1,0 +1,164 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (mobile()) {
+  <div class="flex items-center gap-1 px-3 py-2" data-testid="lens-switcher-mobile">
+    @for (lens of lenses(); track lens.id) {
+      <button
+        type="button"
+        (click)="setLens(lens.id)"
+        [attr.data-testid]="lens.testId + '-mobile'"
+        class="flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-colors"
+        [ngClass]="activeLens() === lens.id ? 'bg-indigo-900 text-white' : 'text-gray-500 hover:bg-gray-100 hover:text-gray-700'">
+        <i [ngClass]="activeLens() === lens.id ? lens.activeIcon : lens.icon" class="text-sm"></i>
+        <span>{{ lens.shortLabel }}</span>
+      </button>
+    }
+
+    <!-- Mobile account actions -->
+    <div class="ml-auto flex items-center gap-2">
+      <a
+        [routerLink]="['/profile']"
+        data-testid="lens-mobile-profile"
+        class="flex items-center justify-center w-8 h-8 rounded-full text-gray-500 hover:bg-gray-100 transition-colors">
+        <i class="fa-light fa-user text-sm"></i>
+      </a>
+      <a
+        href="https://jira.linuxfoundation.org/servicedesk/customer/portal/4"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="lens-mobile-support"
+        class="flex items-center justify-center w-8 h-8 rounded-full text-gray-500 hover:bg-gray-100 transition-colors">
+        <i class="fa-light fa-question-circle text-sm"></i>
+      </a>
+      <a
+        href="/logout"
+        data-testid="lens-mobile-logout"
+        class="flex items-center justify-center w-8 h-8 rounded-full text-gray-500 hover:bg-gray-100 transition-colors">
+        <i class="fa-light fa-arrow-right-from-bracket text-sm"></i>
+      </a>
+    </div>
+  </div>
+} @else {
+  <div class="flex flex-col items-center h-full bg-blue-900 py-6" data-testid="lens-switcher">
+    <!-- LF Logo -->
+    <button
+      (click)="setLens('me')"
+      class="mb-4 flex items-center justify-center px-3 focus:outline-none"
+      aria-label="Go to My Dashboard"
+      data-testid="lens-lf-logo">
+      <img src="/images/logo_lf_white.svg" alt="Linux Foundation" class="h-6 w-6" />
+    </button>
+
+    <!-- Divider -->
+    <hr class="w-6 border-white/20 mb-3" />
+
+    <!-- Lens Buttons -->
+    <div class="flex flex-col items-center gap-2.5 flex-1">
+      @for (lens of lenses(); track lens.id) {
+        <button
+          type="button"
+          (click)="setLens(lens.id)"
+          [attr.data-testid]="lens.testId"
+          [attr.aria-label]="'Switch to ' + lens.label + ' lens'"
+          [pTooltip]="lens.label"
+          tooltipPosition="right"
+          class="group flex flex-col items-center gap-1 w-14 transition-colors"
+          [ngClass]="activeLens() === lens.id ? 'text-blue-400' : 'text-blue-200/70 hover:text-white'">
+          <div
+            class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors"
+            [ngClass]="{
+              'bg-blue-500/20': activeLens() === lens.id,
+              'group-hover:bg-white/10': activeLens() !== lens.id,
+            }">
+            <i [ngClass]="activeLens() === lens.id ? lens.activeIcon : lens.icon" class="text-xl"></i>
+          </div>
+          <span class="text-[9px] font-medium leading-none">{{ lens.shortLabel }}</span>
+        </button>
+      }
+    </div>
+
+    <!-- Footer -->
+    <div class="flex flex-col items-center gap-2.5 mt-auto">
+      <!-- LFX Insights -->
+      <a
+        href="https://insights.linuxfoundation.org/"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="lens-insights"
+        aria-label="LFX Insights"
+        [pTooltip]="'LFX Insights'"
+        tooltipPosition="right"
+        class="group flex flex-col items-center gap-1 w-14 transition-colors text-blue-200/70 hover:text-white">
+        <div class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors group-hover:bg-white/10">
+          <i class="fa-light fa-chart-simple text-lg"></i>
+        </div>
+      </a>
+
+      <!-- Divider -->
+      <hr class="w-6 border-white/20" />
+
+      <!-- User Avatar -->
+      <button
+        type="button"
+        (click)="toggleUserMenu($event)"
+        aria-label="User menu"
+        data-testid="lens-user-avatar"
+        class="flex items-center justify-center w-8 h-8 rounded-full overflow-hidden transition-all hover:ring-2 hover:ring-white/30 focus:outline-none shrink-0">
+        <lfx-avatar [image]="user()?.picture ?? ''" [label]="user()?.name ?? ''" shape="circle" size="normal" styleClass="w-full h-full"></lfx-avatar>
+      </button>
+    </div>
+  </div>
+
+  <!-- User Menu Popover -->
+  <p-popover #userMenu appendTo="body" styleClass="w-64 user-menu-popover">
+    <ng-template #content>
+      <!-- User identity -->
+      <div class="flex items-center gap-2.5 px-4 py-3 border-b border-gray-100">
+        <lfx-avatar [image]="user()?.picture ?? ''" [label]="user()?.name ?? ''" shape="circle" size="normal" styleClass="shrink-0"></lfx-avatar>
+        <div class="flex flex-col min-w-0">
+          <span class="font-semibold text-sm text-gray-900 truncate">{{ user()?.name }}</span>
+          <span class="text-xs text-gray-500 truncate">{{ user()?.email }}</span>
+        </div>
+      </div>
+
+      <!-- Actions -->
+      <div class="py-1 border-b border-gray-100">
+        <button
+          type="button"
+          data-testid="lens-profile"
+          (click)="navigateToProfile()"
+          class="flex w-full items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+          <i class="fa-light fa-user w-4 text-gray-400"></i>
+          <span>My profile</span>
+        </button>
+        <a
+          [href]="changelogUrl"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="lens-changelog"
+          class="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+          <i class="fa-light fa-clock-rotate-left w-4 text-gray-400"></i>
+          <span>Changelog</span>
+        </a>
+        <a
+          href="https://jira.linuxfoundation.org/servicedesk/customer/portal/4"
+          target="_blank"
+          rel="noopener noreferrer"
+          data-testid="lens-support"
+          class="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+          <i class="fa-light fa-question-circle w-4 text-gray-400"></i>
+          <span>Support</span>
+        </a>
+      </div>
+
+      <!-- Sign out -->
+      <div class="py-1">
+        <a href="/logout" data-testid="lens-logout" class="flex items-center gap-2.5 px-4 py-2 text-sm text-gray-700 hover:bg-gray-50 transition-colors">
+          <i class="fa-light fa-arrow-right-from-bracket w-4 text-gray-400"></i>
+          <span>Sign out</span>
+        </a>
+      </div>
+    </ng-template>
+  </p-popover>
+}

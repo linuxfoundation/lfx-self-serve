@@ -1,49 +1,64 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { LensStreamStage } from '../interfaces/lens.interface';
+import type { Lens, LensOption } from '../interfaces/lens.interface';
 
-/** Visual stages shown in the loading indicator (excludes 'complete' which is a terminal state) */
-type LensVisualStage = Exclude<LensStreamStage, 'complete'>;
+/** Cookie key for persisting the active lens selection */
+export const LENS_COOKIE_KEY = 'lfx-active-lens';
 
-export const LENS_CONFIG = {
-  DEFAULT_API_URL: 'https://lfx-ai.onrender.com',
-  WORKFLOW_PATH: '/workflows/lfx-lens-workflow/runs',
-  REQUEST_TIMEOUT_MS: 120_000,
-  MAX_HISTORY_MESSAGES: 50,
+/** Default lens when no selection is persisted */
+export const DEFAULT_LENS: Lens = 'me';
+
+/** Default route for each lens */
+export const LENS_DEFAULT_ROUTES: Readonly<Record<Lens, string>> = {
+  me: '/home',
+  foundation: '/foundation/overview',
+  project: '/project/overview',
+  org: '/org',
 } as const;
 
-/** Stage configs for the multi-stage loading indicator */
-export const LENS_STAGE_CONFIGS: Readonly<Record<LensVisualStage, { label: string; dotColor: string }>> = {
-  starting: { label: 'Understanding question', dotColor: 'bg-violet-400' },
-  analyzing: { label: 'Analyzing data', dotColor: 'bg-blue-400' },
-  querying: { label: 'Running queries', dotColor: 'bg-emerald-400' },
-  preparing: { label: 'Preparing results', dotColor: 'bg-pink-300' },
+/** All lens definitions — visibility is controlled by persona at runtime */
+export const ALL_LENSES: Readonly<Record<Lens, LensOption>> = {
+  me: {
+    id: 'me',
+    label: 'Me',
+    shortLabel: 'Me',
+    icon: 'fa-light fa-circle-user',
+    activeIcon: 'fa-solid fa-circle-user',
+    defaultRoute: LENS_DEFAULT_ROUTES.me,
+    testId: 'lens-me',
+  },
+  foundation: {
+    id: 'foundation',
+    label: 'Foundation',
+    shortLabel: 'Fdn',
+    icon: 'fa-light fa-landmark',
+    activeIcon: 'fa-solid fa-landmark',
+    defaultRoute: LENS_DEFAULT_ROUTES.foundation,
+    testId: 'lens-foundation',
+  },
+  project: {
+    id: 'project',
+    label: 'Project',
+    shortLabel: 'Proj',
+    icon: 'fa-light fa-laptop-code',
+    activeIcon: 'fa-solid fa-laptop-code',
+    defaultRoute: LENS_DEFAULT_ROUTES.project,
+    testId: 'lens-project',
+  },
+  org: {
+    id: 'org',
+    label: 'Organization',
+    shortLabel: 'Org',
+    icon: 'fa-light fa-building',
+    activeIcon: 'fa-solid fa-building',
+    defaultRoute: LENS_DEFAULT_ROUTES.org,
+    testId: 'lens-org',
+  },
 } as const;
 
-/** Maps server status strings to frontend stream stages */
-export const LENS_STATUS_TO_STAGE: Readonly<Record<string, LensStreamStage>> = {
-  'Understanding your question...': 'starting',
-  'Analyzing your question...': 'analyzing',
-  'Running queries...': 'querying',
-  'Preparing results...': 'preparing',
-} as const;
+/** Lenses visible to board-scoped personas (board-member, executive-director) */
+export const BOARD_SCOPED_LENSES: readonly Lens[] = ['me', 'foundation', 'org'] as const;
 
-/** Ordered list of stages for building the stage array */
-export const LENS_STAGE_ORDER: readonly LensStreamStage[] = ['starting', 'analyzing', 'querying', 'preparing'] as const;
-
-/** Suggested prompts for foundation-only context */
-export const LENS_FOUNDATION_PROMPTS: readonly string[] = [
-  'How many events did we host last year?',
-  'How many members do we have right now?',
-  'Show me the top contributors this month',
-  'What is the commit activity trend?',
-] as const;
-
-/** Suggested prompts for foundation+company context */
-export const LENS_COMPANY_PROMPTS: readonly string[] = [
-  'How many employees attended events?',
-  'How many contributors from my organization are active?',
-  'What is our membership status?',
-  'Show me our contribution trends',
-] as const;
+/** Lenses visible to project-scoped personas (maintainer, core-developer, projects) */
+export const PROJECT_SCOPED_LENSES: readonly Lens[] = ['me', 'project', 'org'] as const;

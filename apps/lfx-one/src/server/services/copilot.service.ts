@@ -1,15 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LENS_CONFIG } from '@lfx-one/shared/constants';
-import { LensBlock, LensQueryParams, LensSSEEvent, LfxLensApiResponse } from '@lfx-one/shared/interfaces';
+import { COPILOT_CONFIG } from '@lfx-one/shared/constants';
+import { CopilotBlock, CopilotQueryParams, CopilotSSEEvent, LfxCopilotApiResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
 
-export class LensService {
+export class CopilotService {
   private get apiUrl(): string {
-    return process.env['LENS_API_URL'] || LENS_CONFIG.DEFAULT_API_URL;
+    return process.env['LENS_API_URL'] || COPILOT_CONFIG.DEFAULT_API_URL;
   }
 
   private get apiKey(): string {
@@ -21,8 +21,8 @@ export class LensService {
    * JSON response (e.g. when they don't support streaming yet), falls back to
    * parsing the full response and yielding blocks.
    */
-  public async *streamQuery(req: Request, params: LensQueryParams, abortSignal?: AbortSignal): AsyncGenerator<LensSSEEvent> {
-    logger.debug(req, 'lens_stream_query', 'Calling LFX Lens API (stream=true)', {
+  public async *streamQuery(req: Request, params: CopilotQueryParams, abortSignal?: AbortSignal): AsyncGenerator<CopilotSSEEvent> {
+    logger.debug(req, 'copilot_stream_query', 'Calling LFX Copilot API (stream=true)', {
       user_id: params.userId,
       has_session: !!params.sessionId,
       has_context: !!params.context,
@@ -42,7 +42,7 @@ export class LensService {
     }
 
     const controller = new AbortController();
-    const timeoutId = setTimeout(() => controller.abort(), LENS_CONFIG.REQUEST_TIMEOUT_MS);
+    const timeoutId = setTimeout(() => controller.abort(), COPILOT_CONFIG.REQUEST_TIMEOUT_MS);
 
     // Link caller's abort signal
     if (abortSignal) {
@@ -50,7 +50,7 @@ export class LensService {
     }
 
     try {
-      const url = `${this.apiUrl}${LENS_CONFIG.WORKFLOW_PATH}`;
+      const url = `${this.apiUrl}${COPILOT_CONFIG.WORKFLOW_PATH}`;
       const response = await fetch(url, {
         method: 'POST',
         headers: this.apiKey ? { Authorization: `Bearer ${this.apiKey}` } : {},
@@ -60,7 +60,7 @@ export class LensService {
 
       if (!response.ok) {
         const errorText = await response.text();
-        throw new Error(`LFX Lens API error: ${response.status} ${response.statusText} - ${errorText}`);
+        throw new Error(`LFX Copilot API error: ${response.status} ${response.statusText} - ${errorText}`);
       }
 
       const contentType = response.headers.get('content-type') || '';
@@ -78,11 +78,11 @@ export class LensService {
   }
 
   /**
-   * Read upstream SSE stream from LFX Lens API and re-emit as our normalized events.
+   * Read upstream SSE stream from LFX Copilot API and re-emit as our normalized events.
    * The upstream sends workflow events (WorkflowStarted, StepStarted, RunContent, etc.)
    * which are translated to our status/content/block/session_id/done/error types.
    */
-  private async *readUpstreamSSE(req: Request, response: globalThis.Response): AsyncGenerator<LensSSEEvent> {
+  private async *readUpstreamSSE(req: Request, response: globalThis.Response): AsyncGenerator<CopilotSSEEvent> {
     // Per-stream counter — local to avoid concurrency issues across parallel requests
     const streamState = { runContentCount: 0 };
 
@@ -121,20 +121,20 @@ export class LensService {
       reader.cancel().catch(() => undefined);
     }
 
-    logger.debug(req, 'lens_stream_query', 'Upstream SSE stream completed');
+    logger.debug(req, 'copilot_stream_query', 'Upstream SSE stream completed');
   }
 
   /**
    * Fallback: parse a synchronous JSON response and yield blocks individually.
    */
-  private async *handleSyncResponse(req: Request, fetchResponse: globalThis.Response): AsyncGenerator<LensSSEEvent> {
-    const result = (await fetchResponse.json()) as LfxLensApiResponse;
+  private async *handleSyncResponse(req: Request, fetchResponse: globalThis.Response): AsyncGenerator<CopilotSSEEvent> {
+    const result = (await fetchResponse.json()) as LfxCopilotApiResponse;
 
     if (result.status === 'ERROR') {
-      throw new Error(`LFX Lens workflow error: ${JSON.stringify(result.content)}`);
+      throw new Error(`LFX Copilot workflow error: ${JSON.stringify(result.content)}`);
     }
 
-    logger.debug(req, 'lens_stream_query', 'LFX Lens API sync response received', {
+    logger.debug(req, 'copilot_stream_query', 'LFX Copilot API sync response received', {
       session_id: result.session_id,
       run_id: result.run_id,
       block_count: result.content?.blocks?.length ?? 0,
@@ -156,13 +156,13 @@ export class LensService {
   }
 
   /**
-   * Parse a raw SSE text block into zero or more normalized LensSSEEvents.
+   * Parse a raw SSE text block into zero or more normalized CopilotSSEEvents.
    *
-   * The upstream Lens API sends workflow-level events (WorkflowStarted, StepStarted,
+   * The upstream Copilot API sends workflow-level events (WorkflowStarted, StepStarted,
    * RunContent, WorkflowCompleted, etc.) — NOT the simple status/content/block/done
    * events our client expects. This method translates between the two.
    */
-  private parseUpstreamSSEBlock(block: string, streamState: { runContentCount: number }): LensSSEEvent[] {
+  private parseUpstreamSSEBlock(block: string, streamState: { runContentCount: number }): CopilotSSEEvent[] {
     let eventType = '';
     const dataLines: string[] = [];
 
@@ -194,17 +194,17 @@ export class LensService {
    * Translate a single upstream workflow event into our normalized SSE events.
    *
    * Stage mapping (from API guide):
-   *   WorkflowStarted                          → session_id + "starting"
-   *   StepStarted (lens agent)                  → "analyzing"
-   *   RunContent (1st, string)                  → "analyzing"
-   *   ToolCallStarted (tool != run_query)       → "analyzing"
-   *   RunContent (2nd, string)                  → "querying"
-   *   ToolCallStarted (tool == run_query)       → "querying"
-   *   StepStarted (assemble)                    → "preparing"
-   *   WorkflowCompleted                         → emit blocks + done
-   *   WorkflowError                             → error
+   *   WorkflowStarted                          -> session_id + "starting"
+   *   StepStarted (lens agent)                  -> "analyzing"
+   *   RunContent (1st, string)                  -> "analyzing"
+   *   ToolCallStarted (tool != run_query)       -> "analyzing"
+   *   RunContent (2nd, string)                  -> "querying"
+   *   ToolCallStarted (tool == run_query)       -> "querying"
+   *   StepStarted (assemble)                    -> "preparing"
+   *   WorkflowCompleted                         -> emit blocks + done
+   *   WorkflowError                             -> error
    */
-  private mapUpstreamEvent(eventType: string, data: Record<string, unknown>, streamState: { runContentCount: number }): LensSSEEvent[] {
+  private mapUpstreamEvent(eventType: string, data: Record<string, unknown>, streamState: { runContentCount: number }): CopilotSSEEvent[] {
     switch (eventType) {
       case 'WorkflowStarted': {
         const sessionId = data['session_id'] as string | undefined;
@@ -229,14 +229,14 @@ export class LensService {
         const content = data['content'];
         if (!content) return [];
 
-        // String narrations → stage-based status updates
+        // String narrations -> stage-based status updates
         if (typeof content === 'string') {
           streamState.runContentCount++;
           const status = streamState.runContentCount <= 1 ? 'Analyzing your question...' : 'Running queries...';
           return [{ type: 'status', data: status }];
         }
 
-        // Object content (structured LFXLensAgentOutput) → ignore, blocks come from WorkflowCompleted
+        // Object content (structured LFXLensAgentOutput) -> ignore, blocks come from WorkflowCompleted
         return [];
       }
 
@@ -254,8 +254,8 @@ export class LensService {
 
       case 'WorkflowCompleted': {
         const content = data['content'] as Record<string, unknown> | undefined;
-        const blocks = (content?.['blocks'] as LensBlock[]) || [];
-        const events: LensSSEEvent[] = [];
+        const blocks = (content?.['blocks'] as CopilotBlock[]) || [];
+        const events: CopilotSSEEvent[] = [];
 
         for (const block of blocks) {
           if (block.type === 'message') {

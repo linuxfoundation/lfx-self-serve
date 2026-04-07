@@ -1801,8 +1801,7 @@ export class ProfileController {
     const enriched: EnrichedIdentity[] = cdpIdentities.map((cdp): EnrichedIdentity => {
       const authKey = `${cdp.platform}:${cdp.value}`;
       // Google OAuth creates email-type CDP entries — cross-match CDP email entries against Google auth identities
-      const authIdentity = authServiceMap.get(authKey)
-        ?? (cdp.platform === 'email' ? authServiceMap.get(`google:${cdp.value}`) : undefined);
+      const authIdentity = authServiceMap.get(authKey) ?? (cdp.platform === 'email' ? authServiceMap.get(`google:${cdp.value}`) : undefined);
 
       const inAuthService = !!authIdentity;
 
@@ -1889,9 +1888,7 @@ export class ProfileController {
       notInCdpCount++;
 
       // Google uses email as its value — skip CDP create if the same email is already a verified email identity
-      const isEmailAlreadyVerified = enriched.some(
-        (id) => id.platform === 'email' && id.value === value && id.verified && id.verifiedBy === lfid
-      );
+      const isEmailAlreadyVerified = enriched.some((id) => id.platform === 'email' && id.value === value && id.verified && id.verifiedBy === lfid);
 
       if (!isEmailAlreadyVerified) {
         // Fire-and-forget: persist auth-service identity to CDP

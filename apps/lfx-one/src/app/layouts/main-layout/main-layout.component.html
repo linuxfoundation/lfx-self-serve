@@ -5,9 +5,24 @@
 <lfx-dev-toolbar></lfx-dev-toolbar>
 
 <div class="flex min-h-screen" [ngClass]="{ 'pt-12': showDevToolbar() }">
-  <!-- Sidebar - Desktop -->
-  <div class="hidden lg:block w-64 flex-shrink-0 fixed left-0 bottom-0" [ngClass]="{ 'top-12': showDevToolbar(), 'top-0': !showDevToolbar() }">
-    <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems()" [showProjectSelector]="true"></lfx-sidebar>
+  <!-- Sidebar - Desktop: lens switcher (64px) + nav panel (280px) = 344px -->
+  <div
+    class="hidden lg:flex flex-row flex-shrink-0 fixed left-0 bottom-0 z-40"
+    [ngClass]="{
+      'top-12': showDevToolbar(),
+      'top-0': !showDevToolbar(),
+    }">
+    <!-- Lens Switcher Column (w-16 = 64px) -->
+    <div class="w-16 flex-shrink-0" data-testid="lens-switcher-column">
+      <lfx-lens-switcher></lfx-lens-switcher>
+    </div>
+    <!-- Nav Panel (280px) -->
+    <div class="w-[280px] flex-shrink-0">
+      <lfx-sidebar
+        [items]="sidebarItems()"
+        [showMeSelector]="activeLens() === 'me'"
+        [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"></lfx-sidebar>
+    </div>
   </div>
 
   <!-- Sidebar - Mobile Drawer -->
@@ -16,22 +31,34 @@
     (visibleChange)="onDrawerVisibilityChange($event)"
     position="left"
     [modal]="true"
-    [dismissable]="true"
+    [dismissible]="true"
     [showCloseIcon]="true"
-    styleClass="lg:hidden w-86 mobile-sidebar-drawer"
+    styleClass="lg:hidden w-[344px] mobile-sidebar-drawer"
     data-testid="mobile-sidebar-drawer">
     <ng-template #header>
       <div class="flex items-center gap-3">
-        <a [routerLink]="['/']" class="flex items-center">
+        <a [routerLink]="['/home']" class="flex items-center">
           <img src="/images/logo_lfx.svg" alt="LFX Logo" class="w-auto h-5" />
         </a>
       </div>
     </ng-template>
-    <lfx-sidebar [items]="sidebarItems()" [footerItems]="sidebarFooterItems()" [showProjectSelector]="true" [mobile]="true"></lfx-sidebar>
+    <!-- Mobile: lens switcher horizontal strip + nav -->
+    <div class="flex flex-col h-full">
+      <div class="border-b border-gray-100">
+        <lfx-lens-switcher [mobile]="true"></lfx-lens-switcher>
+      </div>
+      <div class="flex-1 min-h-0">
+        <lfx-sidebar
+          [items]="sidebarItems()"
+          [showMeSelector]="activeLens() === 'me'"
+          [showProjectSelector]="activeLens() === 'project' || activeLens() === 'foundation'"
+          [mobile]="true"></lfx-sidebar>
+      </div>
+    </div>
   </p-drawer>
 
   <!-- Main Content Area -->
-  <main class="flex-1 min-w-0 transition-all duration-300 lg:ml-64 flex flex-col" data-testid="main-content">
+  <main class="flex-1 min-w-0 transition-all duration-300 lg:ml-[344px] flex flex-col" data-testid="main-content">
     <!-- Mobile Menu Button -->
     <div class="lg:hidden sticky z-30 bg-white border-b border-gray-200 px-5 py-3" [ngClass]="{ 'top-12': showDevToolbar(), 'top-0': !showDevToolbar() }">
       <button

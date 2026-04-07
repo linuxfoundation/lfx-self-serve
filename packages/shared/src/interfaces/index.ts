@@ -86,11 +86,17 @@ export * from './filter.interface';
 // Profile interfaces
 export * from './profile.interface';
 
-// Lens interfaces
-export * from './lens.interface';
+// SSE interfaces
+export * from './sse.interface';
+
+// Copilot interfaces
+export * from './copilot.interface';
 
 // Committee application interfaces
 export * from './committee-application.interface';
 
 // Public committee interfaces
 export * from './public-committee.interface';
+
+// Lens interfaces
+export * from './lens.interface';

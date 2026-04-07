@@ -1,253 +1,96 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Injectable, inject, signal } from '@angular/core';
-import { LENS_STAGE_CONFIGS, LENS_STAGE_ORDER, LENS_STATUS_TO_STAGE } from '@lfx-one/shared/constants';
-import { LensBlock, LensChatRequest, LensContext, LensMessage, LensSSEEventType, LensStageStatus, LensStreamStage } from '@lfx-one/shared/interfaces';
-import { Subscription } from 'rxjs';
+import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { ALL_LENSES, BOARD_SCOPED_LENSES, DEFAULT_LENS, LENS_COOKIE_KEY, PROJECT_SCOPED_LENSES } from '@lfx-one/shared/constants';
+import { Lens, LensOption } from '@lfx-one/shared/interfaces';
+import { SsrCookieService } from 'ngx-cookie-service-ssr';
 
-import { SseService } from './sse.service';
+import { CookieRegistryService } from './cookie-registry.service';
+import { PersonaService } from './persona.service';
 
-@Injectable({ providedIn: 'root' })
+@Injectable({
+  providedIn: 'root',
+})
 export class LensService {
-  private readonly sseService = inject(SseService);
+  private readonly cookieService = inject(SsrCookieService);
+  private readonly cookieRegistry = inject(CookieRegistryService);
+  private readonly personaService = inject(PersonaService);
 
-  public readonly messages = signal<LensMessage[]>([]);
-  public readonly streaming = signal(false);
-  public readonly sessionId = signal<string | null>(null);
-  public readonly error = signal('');
-  public readonly currentStatus = signal('');
-  public readonly currentStage = signal<LensStreamStage | null>(null);
-  public readonly stageHistory = signal<LensStageStatus[]>([]);
+  private readonly selectedLens: WritableSignal<Lens>;
 
-  private subscription: Subscription | null = null;
-  private charBuffer = '';
-  private animFrameId: number | null = null;
+  /**
+   * Active lens, clamped to the current persona's allowed set.
+   * If the stored/selected lens is not allowed, falls back to the default.
+   */
+  public readonly activeLens: Signal<Lens> = this.initActiveLens();
 
-  public sendMessage(message: string, context?: LensContext): void {
-    if (!message.trim() || this.streaming()) return;
+  /**
+   * Available lenses based on current persona.
+   * Board-scoped personas see Me + Foundation + Org.
+   * Project-scoped personas see Me + Project + Org.
+   */
+  public readonly availableLenses: Signal<LensOption[]> = this.initAvailableLenses();
 
-    // Tear down any lingering subscription from a previous stream
-    this.subscription?.unsubscribe();
-    this.subscription = null;
+  public constructor() {
+    const stored = this.loadFromCookie();
+    this.selectedLens = signal<Lens>(stored ?? DEFAULT_LENS);
+  }
 
-    this.error.set('');
-    this.currentStatus.set('');
-    this.currentStage.set(null);
-    this.stageHistory.set([]);
+  /**
+   * Set the active lens and persist to cookie.
+   * Ignores the request if the lens is not in the current persona's allowed set.
+   */
+  public setLens(lens: Lens): void {
+    const allowed = this.getAllowedLensIds();
+    if (!allowed.includes(lens)) {
+      return;
+    }
+    if (lens === this.selectedLens()) {
+      return;
+    }
+    this.selectedLens.set(lens);
+    this.persistToCookie(lens);
+  }
 
-    // Add user message
-    this.messages.update((msgs) => [...msgs, { role: 'user', content: message, blocks: [], loading: false }]);
-
-    // Add empty assistant message that will be filled by streaming content/blocks
-    this.messages.update((msgs) => [...msgs, { role: 'assistant', content: '', blocks: [], loading: true }]);
-
-    this.streaming.set(true);
-
-    const body: LensChatRequest = {
-      message,
-      sessionId: this.sessionId() || undefined,
-      context,
-    };
-
-    this.subscription = this.sseService.connect<LensSSEEventType>('/api/lens/chat', { method: 'POST', body }).subscribe({
-      next: (event) => this.handleSSEEvent(event as { type: LensSSEEventType; data: unknown }),
-      error: (err) => {
-        this.flushCharBuffer();
-        console.error('Lens SSE error:', err);
-        this.error.set('Connection failed. Please try again.');
-        this.streaming.set(false);
-        this.currentStatus.set('');
-        this.resetStages();
-        this.clearEmptyAssistantPlaceholder();
-        this.markLastAssistantDone();
-      },
-      complete: () => {
-        this.flushCharBuffer();
-        this.streaming.set(false);
-        this.currentStatus.set('');
-        this.resetStages();
-        this.clearEmptyAssistantPlaceholder();
-        this.markLastAssistantDone();
-      },
+  private initActiveLens(): Signal<Lens> {
+    return computed(() => {
+      const selected = this.selectedLens();
+      const allowed = this.getAllowedLensIds();
+      return allowed.includes(selected) ? selected : DEFAULT_LENS;
     });
   }
 
-  public abort(): void {
-    this.flushCharBuffer();
-    this.subscription?.unsubscribe();
-    this.subscription = null;
-    this.streaming.set(false);
-    this.currentStatus.set('');
-    this.resetStages();
-    this.clearEmptyAssistantPlaceholder();
-    this.markLastAssistantDone();
+  private initAvailableLenses(): Signal<LensOption[]> {
+    return computed(() => {
+      const lensIds = this.getAllowedLensIds();
+      return lensIds.map((id) => ALL_LENSES[id]);
+    });
   }
 
-  public reset(): void {
-    this.abort();
-    this.messages.set([]);
-    this.sessionId.set(null);
-    this.error.set('');
-    this.currentStatus.set('');
-    this.resetStages();
+  private getAllowedLensIds(): readonly Lens[] {
+    return this.personaService.isBoardScoped() ? BOARD_SCOPED_LENSES : PROJECT_SCOPED_LENSES;
   }
 
-  private handleSSEEvent(event: { type: LensSSEEventType; data: unknown }): void {
-    switch (event.type) {
-      case 'status': {
-        const statusText = event.data as string;
-        this.currentStatus.set(statusText);
-        const stage = LENS_STATUS_TO_STAGE[statusText] as LensStreamStage | undefined;
-        if (stage) {
-          this.advanceToStage(stage);
-        }
-        break;
+  private persistToCookie(lens: Lens): void {
+    this.cookieService.set(LENS_COOKIE_KEY, lens, {
+      expires: 30,
+      path: '/',
+      sameSite: 'Lax',
+      secure: typeof window !== 'undefined' && window.location.protocol === 'https:',
+    });
+    this.cookieRegistry.registerCookie(LENS_COOKIE_KEY);
+  }
+
+  private loadFromCookie(): Lens | null {
+    try {
+      const stored = this.cookieService.get(LENS_COOKIE_KEY);
+      if (stored && stored in ALL_LENSES) {
+        return stored as Lens;
       }
-      case 'session_id':
-        this.sessionId.set(event.data as string);
-        break;
-      case 'content':
-        // Character-stream message text (same pattern as lfx-changelog)
-        this.charBuffer += event.data as string;
-        this.startDraining();
-        break;
-      case 'block':
-        // Non-text blocks (sql, suggestions) arrive complete
-        this.appendBlock(event.data as LensBlock);
-        break;
-      case 'done':
-        this.flushCharBuffer();
-        this.streaming.set(false);
-        this.currentStatus.set('');
-        this.resetStages();
-        this.markLastAssistantDone();
-        break;
-      case 'error':
-        this.flushCharBuffer();
-        this.error.set(event.data as string);
-        this.streaming.set(false);
-        this.currentStatus.set('');
-        this.resetStages();
-        // Remove empty assistant message on error
-        this.messages.update((msgs) => {
-          const last = msgs[msgs.length - 1];
-          if (last && last.role === 'assistant' && !last.content && last.blocks.length === 0) {
-            return msgs.slice(0, -1);
-          }
-          return msgs;
-        });
-        break;
+    } catch {
+      // Invalid cookie data, ignore
     }
-  }
-
-  // --- Character draining (adaptive rate, matches lfx-changelog pattern) ---
-
-  private startDraining(): void {
-    if (this.animFrameId !== null || typeof requestAnimationFrame === 'undefined') return;
-    this.animFrameId = requestAnimationFrame(() => this.drainStep());
-  }
-
-  private drainStep(): void {
-    this.animFrameId = null;
-
-    if (this.charBuffer.length === 0) return;
-
-    // Adaptive rate: drain faster when buffer is large to prevent lag
-    let charsPerFrame = 2;
-    if (this.charBuffer.length > 150) {
-      charsPerFrame = 8;
-    } else if (this.charBuffer.length > 50) {
-      charsPerFrame = 4;
-    }
-
-    const chunk = this.charBuffer.slice(0, charsPerFrame);
-    this.charBuffer = this.charBuffer.slice(charsPerFrame);
-    this.appendToAssistantContent(chunk);
-
-    if (this.charBuffer.length > 0) {
-      this.animFrameId = requestAnimationFrame(() => this.drainStep());
-    }
-  }
-
-  private flushCharBuffer(): void {
-    if (this.animFrameId !== null && typeof cancelAnimationFrame !== 'undefined') {
-      cancelAnimationFrame(this.animFrameId);
-      this.animFrameId = null;
-    }
-    if (this.charBuffer.length > 0) {
-      this.appendToAssistantContent(this.charBuffer);
-      this.charBuffer = '';
-    }
-  }
-
-  private appendToAssistantContent(text: string): void {
-    this.messages.update((msgs) => {
-      const updated = [...msgs];
-      const last = updated[updated.length - 1];
-      if (last && last.role === 'assistant') {
-        updated[updated.length - 1] = { ...last, content: last.content + text };
-      }
-      return updated;
-    });
-  }
-
-  // --- Block handling ---
-
-  private appendBlock(block: LensBlock): void {
-    this.messages.update((msgs) => {
-      const updated = [...msgs];
-      const lastMsg = updated[updated.length - 1];
-      if (lastMsg?.role === 'assistant') {
-        updated[updated.length - 1] = {
-          ...lastMsg,
-          blocks: [...lastMsg.blocks, block],
-        };
-      }
-      return updated;
-    });
-  }
-
-  private clearEmptyAssistantPlaceholder(): void {
-    this.messages.update((msgs) => {
-      const last = msgs[msgs.length - 1];
-      return last && last.role === 'assistant' && !last.content && last.blocks.length === 0 ? msgs.slice(0, -1) : msgs;
-    });
-  }
-
-  private advanceToStage(stage: LensStreamStage): void {
-    this.currentStage.set(stage);
-    const stageIndex = LENS_STAGE_ORDER.indexOf(stage);
-    this.stageHistory.set(
-      LENS_STAGE_ORDER.map((s, i) => {
-        const key = s as Exclude<LensStreamStage, 'complete'>;
-        const config = LENS_STAGE_CONFIGS[key];
-        let status: 'pending' | 'active' | 'completed';
-        if (i < stageIndex) {
-          status = 'completed';
-        } else if (i === stageIndex) {
-          status = 'active';
-        } else {
-          status = 'pending';
-        }
-        return { stage: s, label: config.label, dotColor: config.dotColor, status };
-      })
-    );
-  }
-
-  private resetStages(): void {
-    this.currentStage.set(null);
-    this.stageHistory.set([]);
-  }
-
-  private markLastAssistantDone(): void {
-    this.messages.update((msgs) => {
-      const updated = [...msgs];
-      const lastMsg = updated[updated.length - 1];
-      if (lastMsg?.role === 'assistant' && lastMsg.loading) {
-        updated[updated.length - 1] = { ...lastMsg, loading: false };
-      }
-      return updated;
-    });
+    return null;
   }
 }
