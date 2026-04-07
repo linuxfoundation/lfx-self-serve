@@ -4,44 +4,43 @@
 @if (showDevToolbar()) {
   <div class="fixed top-0 left-0 right-0 z-50 bg-gray-900 text-white px-4 py-2" data-testid="dev-tools-bar">
     <div class="flex items-center gap-4 max-w-full">
-      <!-- Persona Selector (left side) -->
+      <!-- Persona Selector -->
       <div class="flex items-center gap-2" data-testid="dev-tools-bar-persona">
-        <lfx-select-button
+        <label for="persona-select" class="text-xs text-gray-400">Persona:</label>
+        <lfx-select
           [form]="form"
           control="persona"
-          [options]="personaOptions"
+          [options]="personaPresets"
           optionLabel="label"
           optionValue="value"
-          size="small"
-          styleClass="dev-tools-select-button"
-          data-testid="dev-tools-bar-persona-selector">
-        </lfx-select-button>
+          [showClear]="false"
+          styleClass="min-w-44 dev-tools-select"
+          inputId="persona-select"
+          data-testid="dev-tools-bar-persona-selector" />
       </div>
 
-      <!-- Board Member Project Override -->
-      @if (isBoardMember()) {
-        <div class="flex items-center gap-2" data-testid="dev-tools-bar-project-override">
-          <label for="project-override-select" class="text-sm">Project:</label>
-          <lfx-select
-            [form]="form"
-            control="selectedProjectUid"
-            [options]="projectContextService.availableProjects"
-            optionLabel="name"
-            optionValue="uid"
-            [filter]="true"
-            filterPlaceholder="Search projects..."
-            placeholder="Select a project"
-            [showClear]="false"
-            styleClass="min-w-[250px] dev-tools-select"
-            inputId="project-override-select"
-            data-testid="dev-tools-bar-project-override-select" />
-        </div>
-      }
+      <!-- Project/Foundation Selector -->
+      <div class="flex items-center gap-2" data-testid="dev-tools-bar-project-override">
+        <label for="project-override-select" class="text-xs text-gray-400">{{ selectorLabel() }}</label>
+        <lfx-select
+          [form]="form"
+          control="selectedProjectUid"
+          [options]="projectContextService.availableProjects"
+          optionLabel="name"
+          optionValue="uid"
+          [filter]="true"
+          filterPlaceholder="Search..."
+          placeholder="Select..."
+          [showClear]="false"
+          styleClass="min-w-52 dev-tools-select"
+          inputId="project-override-select"
+          data-testid="dev-tools-bar-project-override-select" />
+      </div>
 
       <!-- Organization Selector (only visible on board dashboard) -->
       @if (showOrganizationSelector() && isOnBoardDashboard()) {
         <div class="flex items-center gap-2" data-testid="dev-tools-bar-organization">
-          <label for="organization-select" class="text-sm">Organization:</label>
+          <label for="organization-select" class="text-xs text-gray-400">Organization:</label>
           <lfx-select
             [form]="form"
             control="selectedAccountId"
@@ -52,7 +51,7 @@
             filterPlaceholder="Search organizations..."
             placeholder="Select an organization"
             [showClear]="false"
-            styleClass="min-w-[250px] dev-tools-select"
+            styleClass="min-w-64 dev-tools-select"
             inputId="organization-select"
             data-testid="dev-tools-bar-organization-select" />
         </div>

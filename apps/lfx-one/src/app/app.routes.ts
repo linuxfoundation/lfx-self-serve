@@ -11,15 +11,10 @@ export const routes: Routes = [
     canActivate: [authGuard],
     loadComponent: () => import('./layouts/main-layout/main-layout.component').then((m) => m.MainLayoutComponent),
     children: [
-      // Redirect root to /home
+      // Me Lens dashboard (root route)
       {
         path: '',
-        redirectTo: 'home',
         pathMatch: 'full',
-      },
-      // Me Lens dashboard
-      {
-        path: 'home',
         data: { lens: 'me' },
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },

@@ -25,7 +25,7 @@ export class ScrollShadowDirective {
     afterNextRender(() => {
       const container = this.el.nativeElement;
       container.addEventListener('scroll', this.scrollHandler);
-      setTimeout(() => this.updateScrollShadows(), 0);
+      this.updateScrollShadows();
 
       this.destroyRef.onDestroy(() => {
         container.removeEventListener('scroll', this.scrollHandler);

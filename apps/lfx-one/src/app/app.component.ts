@@ -9,7 +9,6 @@ import { ToastModule } from 'primeng/toast';
 import { AccountContextService } from './shared/services/account-context.service';
 import { DataDogRumService } from './shared/services/datadog-rum.service';
 import { FeatureFlagService } from './shared/services/feature-flag.service';
-import { PersonaService } from './shared/services/persona.service';
 import { SegmentService } from './shared/services/segment.service';
 import { UserService } from './shared/services/user.service';
 
@@ -21,7 +20,6 @@ import { UserService } from './shared/services/user.service';
 })
 export class AppComponent {
   private readonly userService = inject(UserService);
-  private readonly personaService = inject(PersonaService);
   private readonly segmentService = inject(SegmentService);
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly dataDogRumService = inject(DataDogRumService);
@@ -58,9 +56,6 @@ export class AppComponent {
     if (this.auth?.authenticated && this.auth.user) {
       this.userService.authenticated.set(true);
       this.userService.user.set(this.auth.user);
-
-      // Initialize persona from backend (auto-detected from committee membership)
-      this.personaService.initializeFromAuth(this.auth.persona);
 
       // Initialize user organizations from backend (matched from committee memberships)
       if (this.auth.organizations && this.auth.organizations.length > 0) {

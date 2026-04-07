@@ -1,15 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, inject, Signal } from '@angular/core';
+import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { NavigationEnd, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { SelectButtonComponent } from '@components/select-button/select-button.component';
 import { SelectComponent } from '@components/select/select.component';
-import { ACCOUNTS, PERSONA_OPTIONS } from '@lfx-one/shared/constants';
-import { Account, isBoardScopedPersona, PersonaType } from '@lfx-one/shared/interfaces';
+import { ACCOUNTS, DEV_PERSONA_PRESETS } from '@lfx-one/shared/constants';
+import { Account, DevPersonaPreset, isBoardScopedPersona } from '@lfx-one/shared/interfaces';
 import { AccountContextService } from '@services/account-context.service';
 import { CookieRegistryService } from '@services/cookie-registry.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
@@ -19,7 +18,7 @@ import { filter, map, startWith } from 'rxjs';
 
 @Component({
   selector: 'lfx-dev-toolbar',
-  imports: [ReactiveFormsModule, SelectButtonComponent, SelectComponent, ButtonComponent],
+  imports: [ReactiveFormsModule, SelectComponent, ButtonComponent],
   templateUrl: './dev-toolbar.component.html',
   styleUrl: './dev-toolbar.component.scss',
 })
@@ -38,11 +37,14 @@ export class DevToolbarComponent {
   // Organization selector options
   protected readonly availableAccounts = ACCOUNTS;
 
-  // Persona options for SelectButton
-  protected readonly personaOptions = PERSONA_OPTIONS;
+  // Dev persona presets for SelectButton
+  protected readonly personaPresets = DEV_PERSONA_PRESETS;
 
-  // Board member project override — delegates to centralized isBoardScoped signal
-  protected readonly isBoardMember = this.personaService.isBoardScoped;
+  // Track the active preset for conditional UI
+  protected readonly activePreset = signal<DevPersonaPreset>(DEV_PERSONA_PRESETS.find((p) => p.value === 'maintainer-single') ?? DEV_PERSONA_PRESETS[0]);
+
+  /** Label for the project/foundation selector */
+  protected readonly selectorLabel = computed(() => (isBoardScopedPersona(this.activePreset().primary) ? 'Foundation:' : 'Project:'));
 
   // Check if we're on the board dashboard page
   protected readonly isOnBoardDashboard: Signal<boolean> = this.initIsOnBoardDashboard();
@@ -51,37 +53,54 @@ export class DevToolbarComponent {
   public form: FormGroup;
 
   public constructor() {
+    // Find the initial preset matching the current persona
+    const currentPersona = this.personaService.currentPersona();
+    const allPersonas = this.personaService.allPersonas();
+    const initialPreset =
+      DEV_PERSONA_PRESETS.find(
+        (p) => p.primary === currentPersona && p.personas.length === allPersonas.length && p.personas.every((persona) => allPersonas.includes(persona))
+      ) ?? DEV_PERSONA_PRESETS[1];
+    this.activePreset.set(initialPreset);
+
     this.form = new FormGroup({
-      persona: new FormControl<PersonaType>(this.personaService.currentPersona(), [Validators.required]),
+      persona: new FormControl<string>(initialPreset.value, [Validators.required]),
       selectedAccountId: new FormControl<string>(this.accountContextService.selectedAccount().accountId),
-      selectedProjectUid: new FormControl<string>(this.projectContextService.selectedFoundation()?.uid || ''),
+      selectedProjectUid: new FormControl<string>(
+        isBoardScopedPersona(currentPersona)
+          ? this.projectContextService.selectedFoundation()?.uid || ''
+          : this.projectContextService.selectedProject()?.uid || this.projectContextService.selectedFoundation()?.uid || ''
+      ),
     });
 
-    // Subscribe to persona changes
+    // Subscribe to persona preset changes
     this.form
       .get('persona')
       ?.valueChanges.pipe(takeUntilDestroyed())
-      .subscribe((value: PersonaType) => {
-        if (isBoardScopedPersona(value)) {
-          // TODO: DEMO - Remove when proper permissions are implemented
+      .subscribe((presetValue: string) => {
+        const preset = DEV_PERSONA_PRESETS.find((p) => p.value === presetValue);
+        if (!preset) {
+          return;
+        }
+
+        this.activePreset.set(preset);
+
+        if (isBoardScopedPersona(preset.primary)) {
+          // Board/ED: default to TLF foundation
           const tlfProject = this.projectContextService.availableProjects.find((p) => p.slug === 'tlf');
           if (tlfProject) {
-            this.projectContextService.setFoundation({
-              uid: tlfProject.uid,
-              name: tlfProject.name,
-              slug: tlfProject.slug,
-            });
+            this.projectContextService.setFoundation({ uid: tlfProject.uid, name: tlfProject.name, slug: tlfProject.slug });
             this.form.get('selectedProjectUid')?.setValue(tlfProject.uid, { emitEvent: false });
           }
         } else {
-          // Navigate to the first project in the list that is not the TLF project
+          // Project-scoped: select first non-TLF project
           const firstProject = this.projectContextService.availableProjects.find((p) => p.slug !== 'tlf');
           if (firstProject) {
             this.projectContextService.setProject(firstProject);
+            this.form.get('selectedProjectUid')?.setValue(firstProject.uid, { emitEvent: false });
           }
         }
 
-        this.personaService.setPersona(value);
+        this.personaService.setPersonas(preset.primary, preset.personas, preset.multiProject ?? false, preset.multiFoundation ?? false);
       });
 
     // Subscribe to account selection changes
@@ -95,14 +114,18 @@ export class DevToolbarComponent {
         }
       });
 
-    // Subscribe to board member project override changes
+    // Subscribe to project/foundation selection changes
     this.form
       .get('selectedProjectUid')
       ?.valueChanges.pipe(takeUntilDestroyed())
       .subscribe((uid: string) => {
         const project = this.projectContextService.availableProjects.find((p) => p.uid === uid);
         if (project) {
-          this.projectContextService.setFoundation(project);
+          if (isBoardScopedPersona(this.personaService.currentPersona())) {
+            this.projectContextService.setFoundation(project);
+          } else {
+            this.projectContextService.setProject(project);
+          }
         }
       });
   }
@@ -125,9 +148,9 @@ export class DevToolbarComponent {
         filter((event): event is NavigationEnd => event instanceof NavigationEnd),
         map((event) => event.urlAfterRedirects),
         startWith(this.router.url),
-        map((url) => url === '/' || url === '/dashboard' || url.startsWith('/dashboard?') || url.startsWith('/?'))
+        map((url) => url === '/' || url.startsWith('/?'))
       ),
-      { initialValue: this.router.url === '/' || this.router.url === '/dashboard' }
+      { initialValue: this.router.url === '/' }
     );
   }
 }

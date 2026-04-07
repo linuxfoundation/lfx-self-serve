@@ -23,7 +23,7 @@ import { ToggleSwitchModule } from 'primeng/toggleswitch';
   selector: 'lfx-affiliation-timeline-dialog',
   imports: [FormsModule, ButtonComponent, CheckboxModule, SelectModule, ToggleSwitchModule],
   templateUrl: './affiliation-timeline-dialog.component.html',
-  styles: [`:host { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }`],
+  styleUrl: './affiliation-timeline-dialog.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class AffiliationTimelineDialogComponent {

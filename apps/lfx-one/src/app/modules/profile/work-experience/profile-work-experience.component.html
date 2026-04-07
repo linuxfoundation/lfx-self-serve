@@ -46,95 +46,95 @@
         dataKey="id"
         [styleClass]="hasReviewable() ? 'rounded-b-xl border border-gray-200' : 'rounded-xl border border-gray-200'"
         data-testid="work-experience-table">
-      <ng-template #header>
-        <tr class="border-b border-slate-100 bg-white">
-          <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Organization</th>
-          <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Job Title</th>
-          <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Dates</th>
-          <th class="px-5 py-3 text-right">
-            @if (!hideHeader()) {
-              <lfx-button
-                label="Add Work Experience"
-                icon="fa-light fa-plus"
-                severity="secondary"
-                [outlined]="true"
-                size="small"
-                (onClick)="onAdd()"
-                data-testid="add-work-experience-btn" />
-            }
-          </th>
-        </tr>
-      </ng-template>
+        <ng-template #header>
+          <tr class="border-b border-slate-100 bg-white">
+            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Organization</th>
+            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Job Title</th>
+            <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Dates</th>
+            <th class="px-5 py-3 text-right">
+              @if (!hideHeader()) {
+                <lfx-button
+                  label="Add Work Experience"
+                  icon="fa-light fa-plus"
+                  severity="secondary"
+                  [outlined]="true"
+                  size="small"
+                  (onClick)="onAdd()"
+                  data-testid="add-work-experience-btn" />
+              }
+            </th>
+          </tr>
+        </ng-template>
 
-      <ng-template #body let-item let-rowIndex="rowIndex">
-        <tr
-          class="transition-colors hover:bg-slate-50/50"
-          [class.border-b]="rowIndex < sortedExperience().length - 1"
-          [class.border-slate-100]="rowIndex < sortedExperience().length - 1"
-          [class.bg-blue-50/30]="item.needsReview"
-          [attr.data-row-index]="rowIndex"
-          [attr.data-testid]="'work-experience-row-' + item.id">
-          <!-- Organization -->
-          <td class="px-5 py-3.5">
-            <div class="flex items-center gap-3">
-              <!-- Org Logo -->
-              @if (item.organization === 'Independent') {
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-200">
-                  <i class="fa-solid fa-user text-sm text-slate-500"></i>
+        <ng-template #body let-item let-rowIndex="rowIndex">
+          <tr
+            class="transition-colors hover:bg-slate-50/50"
+            [class.border-b]="rowIndex < sortedExperience().length - 1"
+            [class.border-slate-100]="rowIndex < sortedExperience().length - 1"
+            [class]="item.needsReview ? 'bg-blue-50/30' : ''"
+            [attr.data-row-index]="rowIndex"
+            [attr.data-testid]="'work-experience-row-' + item.id">
+            <!-- Organization -->
+            <td class="px-5 py-3.5">
+              <div class="flex items-center gap-3">
+                <!-- Org Logo -->
+                @if (item.organization === 'Independent') {
+                  <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-200">
+                    <i class="fa-solid fa-user text-sm text-slate-500"></i>
+                  </div>
+                } @else if (item.organizationLogo) {
+                  <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-white shadow-sm">
+                    <img [src]="item.organizationLogo" [alt]="item.organization" class="h-5 w-5 object-contain" loading="lazy" />
+                  </div>
+                } @else {
+                  <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-white shadow-sm">
+                    <i class="fa-light fa-building text-sm text-slate-400"></i>
+                  </div>
+                }
+
+                <div class="flex flex-col gap-0.5">
+                  <span class="text-sm font-semibold text-slate-900">{{ item.organization }}</span>
                 </div>
-              } @else if (item.organizationLogo) {
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-white shadow-sm">
-                  <img [src]="item.organizationLogo" [alt]="item.organization" class="h-5 w-5 object-contain" loading="lazy" />
-                </div>
+              </div>
+            </td>
+
+            <!-- Job Title -->
+            <td class="px-5 py-3.5">
+              <span class="text-sm text-slate-600">{{ item.jobTitle }}</span>
+            </td>
+
+            <!-- Dates -->
+            <td class="px-5 py-3.5">
+              <span class="text-sm text-slate-500">{{ item.startDate }} – {{ item.endDate || 'Present' }}</span>
+            </td>
+
+            <!-- Actions -->
+            <td class="px-5 py-3.5 text-right">
+              @if (item.needsReview) {
+                <lfx-button
+                  label="Review"
+                  icon="fa-light fa-clipboard-check"
+                  severity="primary"
+                  [outlined]="true"
+                  size="small"
+                  (onClick)="onReview(item)"
+                  [attr.data-testid]="'work-experience-review-' + item.id" />
               } @else {
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-white shadow-sm">
-                  <i class="fa-light fa-building text-sm text-slate-400"></i>
+                <div class="relative inline-block">
+                  <lfx-button
+                    icon="fa-solid fa-ellipsis-vertical"
+                    [text]="true"
+                    [rounded]="true"
+                    size="small"
+                    styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
+                    (onClick)="actionMenu.toggle($event)"
+                    [attr.data-testid]="'work-experience-menu-' + item.id" />
+                  <lfx-menu #actionMenu [model]="menuItemsMap().get(item.id) ?? []" [popup]="true" appendTo="body" />
                 </div>
               }
-
-              <div class="flex flex-col gap-0.5">
-                <span class="text-sm font-semibold text-slate-900">{{ item.organization }}</span>
-              </div>
-            </div>
-          </td>
-
-          <!-- Job Title -->
-          <td class="px-5 py-3.5">
-            <span class="text-sm text-slate-600">{{ item.jobTitle }}</span>
-          </td>
-
-          <!-- Dates -->
-          <td class="px-5 py-3.5">
-            <span class="text-sm text-slate-500">{{ item.startDate }} – {{ item.endDate || 'Present' }}</span>
-          </td>
-
-          <!-- Actions -->
-          <td class="px-5 py-3.5 text-right">
-            @if (item.needsReview) {
-              <lfx-button
-                label="Review"
-                icon="fa-light fa-clipboard-check"
-                severity="primary"
-                [outlined]="true"
-                size="small"
-                (onClick)="onReview(item)"
-                [attr.data-testid]="'work-experience-review-' + item.id" />
-            } @else {
-              <div class="relative inline-block">
-                <lfx-button
-                  icon="fa-solid fa-ellipsis-vertical"
-                  [text]="true"
-                  [rounded]="true"
-                  size="small"
-                  styleClass="!text-slate-400 hover:!text-slate-600 hover:!bg-slate-100"
-                  (onClick)="actionMenu.toggle($event)"
-                  [attr.data-testid]="'work-experience-menu-' + item.id" />
-                <lfx-menu #actionMenu [model]="menuItemsMap().get(item.id) ?? []" [popup]="true" appendTo="body" />
-              </div>
-            }
-          </td>
-        </tr>
-      </ng-template>
+            </td>
+          </tr>
+        </ng-template>
       </lfx-table>
     </div>
   }

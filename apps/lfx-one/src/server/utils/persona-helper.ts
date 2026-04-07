@@ -14,6 +14,8 @@ import { getUsernameFromAuth } from './auth-helper';
 export interface UserPersonaResult {
   /** User's determined persona type */
   persona: PersonaType | null;
+  /** All detected persona types from committee memberships */
+  personas: PersonaType[];
   /** Organization names from committee memberships */
   organizationNames: string[];
 }
@@ -45,6 +47,7 @@ export async function fetchUserPersonaAndOrganizations(req: Request): Promise<Us
 
   const result: UserPersonaResult = {
     persona: null,
+    personas: [],
     organizationNames: [],
   };
 
@@ -95,6 +98,7 @@ export async function fetchUserPersonaAndOrganizations(req: Request): Promise<Us
 
     // Convert Set to array
     result.organizationNames = Array.from(organizationNamesSet);
+    result.personas = matchedPersonas;
 
     // No committee memberships found
     if (matchedPersonas.length === 0) {

@@ -35,8 +35,6 @@ import userRouter from './routes/user.route';
 import votesRouter from './routes/votes.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
-import { matchOrganizationNamesToAccounts } from './utils/organization-matcher';
-import { fetchUserPersonaAndOrganizations } from './utils/persona-helper';
 
 if (process.env['NODE_ENV'] !== 'production') {
   dotenv.config();
@@ -230,14 +228,6 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       res.oidc.logout();
       return;
     }
-
-    // Fetch user persona and organizations based on committee membership (non-critical, don't block SSR)
-    // Note: fetchUserPersonaAndOrganizations handles errors internally and returns defaults on failure
-    const personaResult = await fetchUserPersonaAndOrganizations(req);
-    auth.persona = personaResult.persona;
-
-    // Match organization names to predefined accounts
-    auth.organizations = matchOrganizationNamesToAccounts(personaResult.organizationNames);
   }
 
   // Build runtime config from environment variables

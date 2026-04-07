@@ -16,7 +16,7 @@
         severity="secondary"
         size="small"
         ariaLabel="Scroll left"
-        (onClick)="scrollShadowDirective.scrollLeft()"
+        (onClick)="scrollShadowDirective()?.scrollLeft()"
         data-testid="marketing-overview-carousel-prev" />
       <lfx-button
         icon="fa-light fa-chevron-right"
@@ -24,7 +24,7 @@
         severity="secondary"
         size="small"
         ariaLabel="Scroll right"
-        (onClick)="scrollShadowDirective.scrollRight()"
+        (onClick)="scrollShadowDirective()?.scrollRight()"
         data-testid="marketing-overview-carousel-next" />
     </div>
   </div>
@@ -144,20 +144,18 @@
     </div>
 
     <!-- Right shadow fade -->
-    @if (scrollShadowDirective && scrollShadowDirective.showRightShadow()) {
-      <div
-        class="absolute top-0 bottom-0 right-0 w-32 z-10 pointer-events-none bg-[linear-gradient(to_right,transparent,#f9fafb)]"
-        data-testid="marketing-overview-shadow-right"
-        aria-hidden="true"></div>
-    }
+    <div
+      class="absolute top-0 bottom-0 right-0 w-32 z-10 pointer-events-none bg-[linear-gradient(to_right,transparent,#f9fafb)] transition-opacity duration-200"
+      [class.opacity-0]="!scrollShadowDirective()?.showRightShadow()"
+      data-testid="marketing-overview-shadow-right"
+      aria-hidden="true"></div>
 
     <!-- Left shadow fade -->
-    @if (scrollShadowDirective && scrollShadowDirective.showLeftShadow()) {
-      <div
-        class="absolute top-0 bottom-0 left-0 w-32 z-10 pointer-events-none bg-[linear-gradient(to_left,transparent,#f9fafb)]"
-        data-testid="marketing-overview-shadow-left"
-        aria-hidden="true"></div>
-    }
+    <div
+      class="absolute top-0 bottom-0 left-0 w-32 z-10 pointer-events-none bg-[linear-gradient(to_left,transparent,#f9fafb)] transition-opacity duration-200"
+      [class.opacity-0]="!scrollShadowDirective()?.showLeftShadow()"
+      data-testid="marketing-overview-shadow-left"
+      aria-hidden="true"></div>
   </div>
 </section>
 

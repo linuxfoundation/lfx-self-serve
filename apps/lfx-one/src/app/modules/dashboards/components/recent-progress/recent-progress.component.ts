@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, ViewChild } from '@angular/core';
+import { Component, computed, inject, signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { FilterPillOption } from '@lfx-one/shared/interfaces';
@@ -44,7 +44,7 @@ import type {
   styleUrl: './recent-progress.component.scss',
 })
 export class RecentProgressComponent {
-  @ViewChild(ScrollShadowDirective) protected scrollShadowDirective!: ScrollShadowDirective;
+  protected readonly scrollShadowDirective = viewChild(ScrollShadowDirective);
 
   private readonly personaService = inject(PersonaService);
   private readonly analyticsService = inject(AnalyticsService);

@@ -61,7 +61,7 @@ export class MainLayoutComponent {
     {
       label: 'My Dashboard',
       icon: 'fa-light fa-grid-2',
-      routerLink: '/home',
+      routerLink: '/',
     },
     {
       label: 'My Engagement',

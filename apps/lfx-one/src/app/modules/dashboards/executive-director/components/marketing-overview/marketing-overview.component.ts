@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { afterNextRender, ChangeDetectionStrategy, Component, computed, inject, signal, Signal, ViewChild } from '@angular/core';
+import { afterNextRender, ChangeDetectionStrategy, Component, computed, inject, signal, Signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -57,7 +57,7 @@ import { WebsiteVisitsDrawerComponent } from '../website-visits-drawer/website-v
   styleUrl: './marketing-overview.component.scss',
 })
 export class MarketingOverviewComponent {
-  @ViewChild(ScrollShadowDirective) public scrollShadowDirective!: ScrollShadowDirective;
+  public readonly scrollShadowDirective = viewChild(ScrollShadowDirective);
 
   // === Services ===
   private readonly analyticsService = inject(AnalyticsService);

@@ -11,7 +11,7 @@ export const DEFAULT_LENS: Lens = 'me';
 
 /** Default route for each lens */
 export const LENS_DEFAULT_ROUTES: Readonly<Record<Lens, string>> = {
-  me: '/home',
+  me: '/',
   foundation: '/foundation/overview',
   project: '/project/overview',
   org: '/org',
@@ -62,3 +62,6 @@ export const BOARD_SCOPED_LENSES: readonly Lens[] = ['me', 'foundation', 'org'] 
 
 /** Lenses visible to project-scoped personas (maintainer, core-developer, projects) */
 export const PROJECT_SCOPED_LENSES: readonly Lens[] = ['me', 'project', 'org'] as const;
+
+/** Lenses visible to dual-role personas (users with both board and project roles) */
+export const DUAL_SCOPED_LENSES: readonly Lens[] = ['me', 'foundation', 'project', 'org'] as const;

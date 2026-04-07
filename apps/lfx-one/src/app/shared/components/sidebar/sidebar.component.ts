@@ -11,6 +11,7 @@ import { ProjectSelectorComponent } from '@components/project-selector/project-s
 import { environment } from '@environments/environment';
 import { PERSONA_OPTIONS } from '@lfx-one/shared/constants';
 import { Project, ProjectContext, SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -27,6 +28,7 @@ export class SidebarComponent {
   private readonly projectService = inject(ProjectService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
+  private readonly lensService = inject(LensService);
   private readonly userService = inject(UserService);
 
   // Input properties
@@ -43,9 +45,8 @@ export class SidebarComponent {
   // shareReplay(1) in ProjectService deduplicates within the client runtime.
   protected readonly projects: Signal<Project[]> = this.initProjects();
 
-  // TODO: DEMO - Remove this once we have proper project permissions
-  protected readonly isBoardMember = this.personaService.isBoardScoped;
-  protected readonly foundationProjects = computed(() => this.projects().filter((p: Project) => (this.isBoardMember() ? p.slug === 'tlf' : true)));
+  /** Projects passed to the selector — single item triggers read-only, full list triggers dropdown */
+  protected readonly selectorProjects = this.initSelectorProjects();
 
   protected readonly selectedProject = computed(() => {
     // First check if a specific project is selected (child project)
@@ -149,6 +150,28 @@ export class SidebarComponent {
       const persona = this.personaService.currentPersona();
       const option = PERSONA_OPTIONS.find((o) => o.value === persona);
       return option?.label ?? persona;
+    });
+  }
+
+  private initSelectorProjects(): Signal<Project[]> {
+    return computed(() => {
+      const all = this.projects();
+      if (all.length === 0) {
+        return all;
+      }
+
+      const activeLens = this.lensService.activeLens();
+
+      // Determine if the current lens has multi-access
+      const hasMultiAccess = activeLens === 'foundation' ? this.personaService.multiFoundation() : this.personaService.multiProject();
+
+      if (!hasMultiAccess) {
+        // Single access — pass only the selected project for read-only display
+        const selected = this.selectedProject();
+        return selected ? [selected] : [all[0]];
+      }
+
+      return all;
     });
   }
 

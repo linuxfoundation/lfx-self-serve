@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, signal, ViewChild } from '@angular/core';
+import { Component, computed, inject, input, signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DataCopilotComponent } from '@app/shared/components/data-copilot/data-copilot.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
@@ -52,7 +52,7 @@ import type {
   styleUrl: './foundation-health.component.scss',
 })
 export class FoundationHealthComponent {
-  @ViewChild(ScrollShadowDirective) public scrollShadowDirective!: ScrollShadowDirective;
+  public readonly scrollShadowDirective = viewChild(ScrollShadowDirective);
 
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
