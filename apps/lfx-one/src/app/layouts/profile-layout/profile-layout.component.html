@@ -124,6 +124,9 @@
               class="flex items-center gap-1.5 h-14 text-sm font-medium transition-colors border-b-2 whitespace-nowrap text-slate-500 hover:text-slate-700 border-transparent"
               [attr.data-testid]="'profile-tab-' + tab.id">
               {{ tab.label }}
+              @if (tabNotifications().get(tab.id)) {
+                <span class="h-1.5 w-1.5 rounded-full bg-blue-500" role="status" aria-label="Action required"></span>
+              }
             </a>
           }
         </div>

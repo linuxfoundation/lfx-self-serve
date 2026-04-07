@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, viewChild } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, viewChild } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 
 import { ProfileAffiliationsComponent } from '../affiliations/profile-affiliations.component';
@@ -16,6 +16,8 @@ import { ProfileWorkExperienceComponent } from '../work-experience/profile-work-
 export class ProfileAttributionComponent {
   private readonly workExperience = viewChild(ProfileWorkExperienceComponent);
   private readonly affiliations = viewChild(ProfileAffiliationsComponent);
+
+  public readonly isWorkExperienceEmpty = computed(() => this.workExperience()?.isEmpty() ?? true);
 
   public onAddWorkExperience(): void {
     this.workExperience()?.onAdd();

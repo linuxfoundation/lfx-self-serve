@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-5" data-testid="affiliation-timeline-dialog">
+<div class="flex min-h-0 flex-1 flex-col gap-5" data-testid="affiliation-timeline-dialog">
   <!-- Description -->
   @if (hasUnverifiedWorkExperienceOnly()) {
     <p class="text-sm text-slate-500" data-testid="unverified-work-experience-message">
@@ -13,22 +13,25 @@
       history will appear here for affiliation.
     </p>
   } @else {
-    <p class="text-sm text-slate-500">
-      Your contributions may only be affiliated with one organization at a time. Toggle organizations on or off and set affiliation period dates below.
-    </p>
+    <!-- Sticky top section -->
+    <div class="flex shrink-0 flex-col gap-5">
+      <p class="text-sm text-slate-500">
+        Your contributions may only be affiliated with one organization at a time. Toggle organizations on or off and set affiliation period dates below.
+      </p>
 
-    <!-- Overlap Warning -->
-    @if (hasOverlap()) {
-      <div class="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5" data-testid="overlap-warning">
-        <i class="fa-light fa-triangle-exclamation text-sm text-amber-600"></i>
-        <span class="text-xs text-amber-700">Affiliation periods overlap. Contributions can only be affiliated with one organization at a time.</span>
-      </div>
-    }
-  }
+      <!-- Overlap Warning -->
+      @if (hasOverlap()) {
+        <div class="flex items-center gap-2 rounded-lg border border-amber-200 bg-amber-50 px-3 py-2.5" data-testid="overlap-warning">
+          <i class="fa-light fa-triangle-exclamation text-sm text-amber-600"></i>
+          <span class="text-xs text-amber-700">Affiliation periods overlap. Contributions can only be affiliated with one organization at a time.</span>
+        </div>
+      }
+    </div>
 
-  <!-- Company Organization Cards -->
-  @for (org of companyOrgs(); track org.organization) {
-    <div class="overflow-hidden rounded-lg border border-slate-200" [attr.data-testid]="'org-card-' + org.organization">
+    <!-- Scrollable middle section: org cards -->
+    <div class="flex min-h-0 flex-1 flex-col gap-5 overflow-y-auto pr-1">
+      @for (org of companyOrgs(); track org.organization) {
+    <div class="shrink-0 overflow-hidden rounded-lg border border-slate-200" [attr.data-testid]="'org-card-' + org.organization">
       <!-- Card Header -->
       <div
         class="flex cursor-pointer items-center gap-3 px-4 py-3 transition-colors hover:bg-slate-50"
@@ -59,18 +62,13 @@
       <!-- Expanded Content -->
       @if (org.enabled) {
         <div class="flex flex-col gap-3 border-t border-slate-100 px-4 py-3" [attr.data-testid]="'org-periods-' + org.organization">
-          <span class="text-xs font-semibold text-slate-600">Affiliation period(s):</span>
+          <span class="px-2 text-xs font-semibold text-slate-600">Affiliation period(s):</span>
 
           @for (period of org.periods; track period.id) {
             @let isOverlapping = overlappingPeriodIds().has(period.id);
             <div
-              class="flex items-center gap-2"
-              [class.rounded-md]="isOverlapping"
-              [class.border]="isOverlapping"
-              [class.border-amber-300]="isOverlapping"
-              [class.bg-amber-50]="isOverlapping"
-              [class.px-2]="isOverlapping"
-              [class.py-1]="isOverlapping"
+              class="flex items-center gap-2 rounded-md px-2 py-1"
+              [class.bg-amber-50/50]="isOverlapping"
               [attr.data-testid]="'period-row-' + period.id">
               <!-- Start Month -->
               <p-select
@@ -175,7 +173,7 @@
 
           <!-- Add Period Button -->
           <button
-            class="flex w-fit cursor-pointer items-center gap-1.5 text-xs font-medium text-blue-600 transition-colors hover:text-blue-700 disabled:cursor-not-allowed disabled:text-slate-300"
+            class="flex w-fit cursor-pointer items-center gap-1.5 px-2 text-xs font-medium text-blue-600 transition-colors hover:text-blue-700 disabled:cursor-not-allowed disabled:text-slate-300"
             [disabled]="!areAllPeriodsComplete(org.organization)"
             (click)="addPeriod(org.organization)"
             [attr.data-testid]="'add-period-' + org.organization">
@@ -186,21 +184,23 @@
       }
     </div>
   }
+    </div>
 
-  <!-- Helper Text -->
-  @if (!hasNoWorkExperience()) {
-    <p class="text-[11px] text-slate-400">Time periods without an organization are treated as independent contributions.</p>
+    <!-- Sticky bottom section -->
+    <div class="flex shrink-0 flex-col gap-5">
+      <p class="text-[11px] text-slate-400">Time periods without an organization are treated as independent contributions.</p>
+
+      <!-- Footer -->
+      <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
+        <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancel()" data-testid="timeline-cancel" />
+        <lfx-button
+          label="Save changes"
+          severity="primary"
+          size="small"
+          [disabled]="hasNoWorkExperience() || hasOverlap() || hasValidationErrors()"
+          (onClick)="save()"
+          data-testid="timeline-save" />
+      </div>
+    </div>
   }
-
-  <!-- Footer -->
-  <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
-    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="cancel()" data-testid="timeline-cancel" />
-    <lfx-button
-      label="Save changes"
-      severity="primary"
-      size="small"
-      [disabled]="hasNoWorkExperience() || hasOverlap() || hasValidationErrors()"
-      (onClick)="save()"
-      data-testid="timeline-save" />
-  </div>
 </div>

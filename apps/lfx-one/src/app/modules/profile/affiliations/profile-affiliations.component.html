@@ -5,7 +5,7 @@
   <!-- Header -->
   @if (!hideHeader()) {
     <div class="flex flex-col gap-1">
-      <h2 class="text-lg font-semibold text-slate-900">Project Involvement</h2>
+      <h2>Project Involvement</h2>
       <p class="text-sm text-slate-500">Your role and organizational affiliation for each open source project you contribute to.</p>
     </div>
   }
@@ -175,8 +175,8 @@
               <div class="flex items-center gap-2.5">
                 <!-- Company logo -->
                 @if (segment.organization === 'Independent') {
-                  <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-blue-500">
-                    <i class="fa-light fa-user text-[10px] text-white"></i>
+                  <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-slate-200">
+                    <i class="fa-solid fa-user text-[10px] text-slate-500"></i>
                   </div>
                 } @else if (segment.organizationLogo) {
                   <div class="flex h-6 w-6 shrink-0 items-center justify-center rounded border border-slate-100 bg-white">
@@ -335,8 +335,8 @@
               <div class="flex items-center gap-2.5">
                 <!-- Org Logo -->
                 @if (row.segment.organization === 'Independent') {
-                  <div class="flex h-7 w-7 items-center justify-center rounded-full bg-blue-500">
-                    <i class="fa-light fa-user text-xs text-white"></i>
+                  <div class="flex h-7 w-7 items-center justify-center rounded-full bg-slate-200">
+                    <i class="fa-solid fa-user text-xs text-slate-500"></i>
                   </div>
                 } @else if (row.segment.organizationLogo) {
                   <div class="flex h-7 w-7 items-center justify-center rounded-md border border-slate-100 bg-white shadow-sm">

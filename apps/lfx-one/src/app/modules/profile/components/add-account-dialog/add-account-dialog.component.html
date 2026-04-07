@@ -49,7 +49,7 @@
           id="email"
           placeholder="your.email@example.com"
           icon="fa-light fa-envelope"
-          styleClass="font-mono text-sm"
+          styleClass="text-sm"
           data-testid="add-account-email" />
         @if (!codeSent()) {
           <p class="text-xs text-slate-500">You'll receive a verification code after clicking Send verification code.</p>
@@ -83,7 +83,7 @@
             (ngModelChange)="verificationCode.set($event ?? '')"
             [length]="6"
             [integerOnly]="true"
-            styleClass="gap-2 justify-center"
+            styleClass="w-full gap-3 [&_.p-inputtext]:flex-1"
             data-testid="add-account-otp" />
           @if (verificationError()) {
             <p class="text-center text-sm text-red-600" data-testid="add-account-otp-error">{{ verificationError() }}</p>

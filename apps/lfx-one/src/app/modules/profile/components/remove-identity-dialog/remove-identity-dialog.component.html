@@ -22,23 +22,27 @@
     <p class="text-xs text-slate-600">Identity information may be retained to help improve our services and support project insights.</p>
   </div>
 
-  <!-- Acknowledgment checkbox for verified identities -->
-  @if (isVerified) {
-    <lfx-checkbox
-      [form]="form"
-      control="acknowledged"
-      label="I understand that removing this verified identity may affect my contribution attribution"
-      labelClass="text-sm text-slate-600 leading-3"
-      data-testid="remove-acknowledge-checkbox" />
-  }
-
   <!-- Footer -->
-  <div class="flex items-center justify-end gap-3 border-t border-slate-100 pt-4">
-    <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="onCancel()" data-testid="remove-cancel" />
+  <div class="flex items-start gap-3 border-t border-slate-100 pt-4">
     @if (isVerified) {
-      <lfx-button label="Remove identity" severity="danger" size="small" [disabled]="!canConfirm" (onClick)="onConfirm()" data-testid="remove-confirm" />
+      <div class="flex flex-1 items-start gap-2">
+        <lfx-checkbox
+          [form]="form"
+          control="acknowledged"
+          label="I understand that removing this verified identity may affect my contribution attribution"
+          labelClass="text-xs text-slate-700 leading-tight"
+          data-testid="remove-acknowledge-checkbox" />
+      </div>
     } @else {
-      <lfx-button label="Remove" severity="danger" size="small" (onClick)="onConfirm()" data-testid="remove-confirm" />
+      <div class="flex-1"></div>
     }
+    <div class="flex shrink-0 items-center gap-3">
+      <lfx-button label="Cancel" severity="secondary" [outlined]="true" size="small" (onClick)="onCancel()" data-testid="remove-cancel" />
+      @if (isVerified) {
+        <lfx-button label="Remove identity" severity="danger" size="small" [disabled]="!canConfirm" (onClick)="onConfirm()" data-testid="remove-confirm" />
+      } @else {
+        <lfx-button label="Remove" severity="danger" size="small" (onClick)="onConfirm()" data-testid="remove-confirm" />
+      }
+    </div>
   </div>
 </div>

@@ -23,7 +23,15 @@
     @apply ring-0 outline-none;
 
     &.p-button-primary:not(:disabled):hover {
-      @apply bg-blue-100 text-black;
+      @apply bg-blue-100 text-blue-500;
+    }
+  }
+
+  .p-button.p-button-outlined.p-button-primary {
+    @apply border border-blue-500 text-blue-500;
+
+    &:not(:disabled):hover {
+      @apply bg-blue-50 border-blue-600 text-blue-600;
     }
   }
 

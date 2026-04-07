@@ -6,15 +6,17 @@
     <!-- Left Column: Work history -->
     <div class="flex flex-col gap-3">
       <div class="flex items-center justify-between">
-        <h2 class="text-sm font-bold text-slate-900">Work history</h2>
-        <lfx-button
-          label="Add work experience"
-          icon="fa-light fa-plus"
-          severity="secondary"
-          [text]="true"
-          size="small"
-          (onClick)="onAddWorkExperience()"
-          data-testid="add-work-experience-header-btn" />
+        <h2>Work history</h2>
+        @if (!isWorkExperienceEmpty()) {
+          <lfx-button
+            label="Add work experience"
+            icon="fa-light fa-plus"
+            severity="primary"
+            [text]="true"
+            size="small"
+            (onClick)="onAddWorkExperience()"
+            data-testid="add-work-experience-header-btn" />
+        }
       </div>
       <p class="mb-4 text-[13px] leading-normal text-slate-500">
         Work experiences determine which organization receives credit for your contributions during each time period.
@@ -24,7 +26,7 @@
 
     <!-- Right Column: Project Involvement -->
     <div class="flex w-[360px] flex-col gap-3">
-      <h2 class="text-sm font-bold text-slate-900">Project Involvement</h2>
+      <h2>Project Involvement</h2>
       <p class="text-[13px] leading-normal text-slate-500">
         Your contributions are automatically attributed based on your verified identities and work history.
       </p>

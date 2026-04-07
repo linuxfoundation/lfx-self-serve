@@ -2,29 +2,15 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex w-full flex-col gap-8 pb-12" data-testid="profile-identities">
-  <!-- Success/Error messages from social identity linking -->
-  @if (successMessage()) {
-    <div class="flex items-center gap-2 rounded-lg border border-green-200 bg-green-50 p-3" data-testid="identity-success-message">
-      <i class="fa-light fa-circle-check shrink-0 text-sm text-green-600"></i>
-      <p class="text-xs text-green-900">{{ successMessage() }}</p>
-    </div>
-  }
-  @if (errorMessage()) {
-    <div class="flex items-center gap-2 rounded-lg border border-red-200 bg-red-50 p-3" data-testid="identity-error-message">
-      <i class="fa-light fa-circle-exclamation shrink-0 text-sm text-red-600"></i>
-      <p class="text-xs text-red-900">{{ errorMessage() }}</p>
-    </div>
-  }
-
   <!-- Left Column: Identities -->
   <div class="flex flex-col gap-5">
     <!-- Header with Add Button -->
     <div class="flex items-start justify-between">
       <div class="flex flex-col gap-1">
-        <h2 class="text-base font-bold text-slate-900">Identities</h2>
+        <h2>Identities</h2>
         <p class="text-sm text-slate-500">Manage the accounts used to identify you and attribute contributions.</p>
       </div>
-      <lfx-button severity="secondary" [text]="true" size="small" (onClick)="onAdd()" data-testid="add-identity-btn">
+      <lfx-button severity="primary" [text]="true" size="small" (onClick)="onAdd()" data-testid="add-identity-btn">
         <i class="fa-light fa-plus mr-1.5"></i>
         Add identity
       </lfx-button>
@@ -61,7 +47,7 @@
         <!-- Orange section header -->
         <div class="flex items-center gap-2">
           <div class="flex items-center gap-1">
-            <i class="fa-light fa-triangle-exclamation text-[15px] text-orange-500"></i>
+            <i class="fa-light fa-circle-exclamation text-[15px] text-orange-500"></i>
             <span class="text-xs font-semibold text-orange-500">Unverified identities</span>
           </div>
           <div class="h-px flex-1 bg-slate-200"></div>
@@ -71,7 +57,7 @@
           You have unverified identities connected to your profile. Please verify them to validate your project affiliations and work history.
         </p>
         <!-- Unverified card -->
-        <lfx-card data-testid="unverified-identities-list">
+        <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="unverified-identities-list">
           <div class="flex flex-col gap-0 divide-y divide-slate-100">
             @for (identity of unverifiedIdentities(); track identity.id) {
               <div class="flex items-center justify-between px-4 py-3" [attr.data-testid]="'identity-row-' + identity.id">
@@ -82,7 +68,7 @@
                   <span class="text-sm font-medium text-slate-900">{{ identity.identifier }}</span>
                 </div>
                 <div class="flex items-center gap-3">
-                  <lfx-button severity="secondary" [outlined]="true" size="small" (onClick)="onVerify(identity)" data-testid="verify-identity-btn">
+                  <lfx-button severity="primary" [outlined]="true" size="small" (onClick)="onVerify(identity)" data-testid="verify-identity-btn">
                     Verify
                   </lfx-button>
                   <lfx-button severity="secondary" [outlined]="true" size="small" (onClick)="onRemove(identity)" data-testid="reject-identity-btn">
@@ -100,13 +86,13 @@
         <!-- Grey section header -->
         <div class="flex items-center gap-2">
           <div class="flex items-center gap-1">
-            <i class="fa-solid fa-circle-check text-[15px] text-slate-500"></i>
+            <i class="fa-light fa-circle-check text-[15px] text-slate-600"></i>
             <span class="text-xs font-semibold text-slate-500">Verified identities</span>
           </div>
           <div class="h-px flex-1 bg-slate-200"></div>
         </div>
         <!-- Verified card -->
-        <lfx-card data-testid="verified-identities-list">
+        <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="verified-identities-list">
           <div class="flex flex-col gap-0 divide-y divide-slate-100">
             @for (identity of verifiedIdentities(); track identity.id) {
               <div class="flex items-center justify-between px-4 py-3" [attr.data-testid]="'identity-row-' + identity.id">

@@ -12,7 +12,7 @@ import { CombinedProfile, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, U
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { BehaviorSubject, catchError, filter, map, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, filter, map, of, startWith, switchMap, take } from 'rxjs';
 
 import { ProfileEditDialogComponent } from '../../modules/profile/components/profile-edit-dialog/profile-edit-dialog.component';
 
@@ -101,6 +101,9 @@ export class ProfileLayoutComponent {
     const match = TSHIRT_SIZES.find((s) => s.value === data.tshirtSize);
     return match?.label || data.tshirtSize;
   });
+
+  // Tab notification dots — show when work experiences need review or identities are unverified
+  public readonly tabNotifications: Signal<Map<string, boolean>> = this.initTabNotifications();
 
   public constructor() {
     // Subscribe to tab selection changes for mobile navigation
@@ -258,6 +261,31 @@ export class ProfileLayoutComponent {
       }
       return lines;
     });
+  }
+
+  private initTabNotifications(): Signal<Map<string, boolean>> {
+    return toSignal(
+      combineLatest([
+        this.userService.getWorkExperiences().pipe(
+          map((entries) => entries.some((e) => e.needsReview)),
+          catchError(() => of(false)),
+          startWith(false)
+        ),
+        this.userService.getIdentities().pipe(
+          map((identities) => identities.some((id) => id.platform !== 'lfid' && id.displayState !== 'hidden' && id.displayState !== 'verified')),
+          catchError(() => of(false)),
+          startWith(false)
+        ),
+      ]).pipe(
+        map(([hasReviewable, hasUnverified]) => {
+          const notifications = new Map<string, boolean>();
+          notifications.set('attribution', hasReviewable);
+          notifications.set('identities', hasUnverified);
+          return notifications;
+        })
+      ),
+      { initialValue: new Map<string, boolean>() }
+    );
   }
 
   private mapToHeaderData(profile: CombinedProfile): ProfileHeaderData {

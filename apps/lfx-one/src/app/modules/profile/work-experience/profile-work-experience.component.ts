@@ -334,7 +334,7 @@ export class ProfileWorkExperienceComponent {
       for (const item of this.sortedExperience()) {
         map.set(item.id, [
           { label: 'Edit', icon: 'fa-light fa-pencil', command: () => this.onEdit(item) },
-          { label: 'Delete', icon: 'fa-light fa-trash', command: () => this.onDelete(item) },
+          { label: 'Delete', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.onDelete(item) },
         ]);
       }
       return map;

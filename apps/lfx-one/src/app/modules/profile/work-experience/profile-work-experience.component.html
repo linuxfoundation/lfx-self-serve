@@ -5,7 +5,7 @@
   <!-- Header -->
   @if (!hideHeader()) {
     <div class="flex flex-col gap-1">
-      <h2 class="text-lg font-semibold text-slate-900">Work Experience</h2>
+      <h2>Work Experience</h2>
       <p class="text-sm text-slate-500">Your employment history determines which organization your contributions are attributed to.</p>
     </div>
   }
@@ -31,10 +31,23 @@
       </div>
     </lfx-card>
   } @else {
-    <!-- Work Experience Table -->
-    <lfx-table [value]="sortedExperience()" dataKey="id" styleClass="rounded-xl border border-gray-200" data-testid="work-experience-table">
+    <!-- Review Banner + Table (connected when banner is shown) -->
+    <div class="flex flex-col [&>lfx-table]:block">
+      @if (hasReviewable()) {
+        <div class="-mb-px flex items-center gap-2 rounded-t-xl border border-blue-200 bg-blue-50 px-3 py-2.5" data-testid="work-experience-review-banner">
+          <i class="fa-light fa-circle-info text-sm text-blue-600"></i>
+          <span class="text-xs text-blue-700">Some work experiences need your review. Please confirm or update the details below.</span>
+        </div>
+      }
+
+      <!-- Work Experience Table -->
+      <lfx-table
+        [value]="sortedExperience()"
+        dataKey="id"
+        [styleClass]="hasReviewable() ? 'rounded-b-xl border border-gray-200' : 'rounded-xl border border-gray-200'"
+        data-testid="work-experience-table">
       <ng-template #header>
-        <tr class="border-b border-slate-100 bg-slate-50/50">
+        <tr class="border-b border-slate-100 bg-white">
           <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Organization</th>
           <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Job Title</th>
           <th class="px-5 py-3 text-left text-[10px] font-bold uppercase tracking-wider text-slate-500">Dates</th>
@@ -66,8 +79,8 @@
             <div class="flex items-center gap-3">
               <!-- Org Logo -->
               @if (item.organization === 'Independent') {
-                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-blue-500">
-                  <i class="fa-light fa-user text-sm text-white"></i>
+                <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-slate-200">
+                  <i class="fa-solid fa-user text-sm text-slate-500"></i>
                 </div>
               } @else if (item.organizationLogo) {
                 <div class="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-slate-100 bg-white shadow-sm">
@@ -102,6 +115,7 @@
                 label="Review"
                 icon="fa-light fa-clipboard-check"
                 severity="primary"
+                [outlined]="true"
                 size="small"
                 (onClick)="onReview(item)"
                 [attr.data-testid]="'work-experience-review-' + item.id" />
@@ -121,6 +135,7 @@
           </td>
         </tr>
       </ng-template>
-    </lfx-table>
+      </lfx-table>
+    </div>
   }
 </div>

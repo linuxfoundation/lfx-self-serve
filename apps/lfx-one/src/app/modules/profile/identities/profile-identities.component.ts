@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpErrorResponse } from '@angular/common/http';
-import { ChangeDetectionStrategy, Component, computed, inject, OnInit, Signal, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, OnInit, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -17,7 +17,7 @@ import {
   VerifyIdentityDialogData,
 } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
-import { MenuItem } from 'primeng/api';
+import { MenuItem, MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { map, startWith, Subject, switchMap, take } from 'rxjs';
 
@@ -40,10 +40,8 @@ interface IdentitiesState {
 export class ProfileIdentitiesComponent implements OnInit {
   private readonly userService = inject(UserService);
   private readonly dialogService = inject(DialogService);
+  private readonly messageService = inject(MessageService);
   private readonly route = inject(ActivatedRoute);
-
-  public successMessage = signal('');
-  public errorMessage = signal('');
 
   public readonly identities: Signal<ConnectedIdentityFull[]> = computed(() =>
     this.identitiesState()
@@ -65,7 +63,7 @@ export class ProfileIdentitiesComponent implements OnInit {
     const params = this.route.snapshot.queryParams;
 
     if (params['success'] === 'identity_linked') {
-      this.successMessage.set('Identity linked successfully.');
+      this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Identity linked successfully.' });
       this.refreshTrigger$.next();
     } else if (params['error']) {
       const errorMap: Record<string, string> = {
@@ -78,7 +76,7 @@ export class ProfileIdentitiesComponent implements OnInit {
         no_management_token: 'Authorization expired. Please try again.',
         no_identity_token: 'No identity token received. Please try again.',
       };
-      this.errorMessage.set(errorMap[params['error']] || 'An error occurred. Please try again.');
+      this.messageService.add({ severity: 'error', summary: 'Error', detail: errorMap[params['error']] || 'An error occurred. Please try again.' });
     }
   }
 
@@ -157,7 +155,7 @@ export class ProfileIdentitiesComponent implements OnInit {
                 window.location.href = err.error.authorize_url;
                 return;
               }
-              this.errorMessage.set('Failed to remove identity. Please try again.');
+              this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to remove identity. Please try again.' });
             },
           });
       }
@@ -180,7 +178,7 @@ export class ProfileIdentitiesComponent implements OnInit {
     return computed(() => {
       const map = new Map<string, MenuItem[]>();
       for (const identity of this.identities()) {
-        map.set(identity.id, [{ label: 'Remove', icon: 'fa-light fa-trash', command: () => this.onRemove(identity) }]);
+        map.set(identity.id, [{ label: 'Remove', icon: 'fa-light fa-trash', styleClass: 'text-red-500', command: () => this.onRemove(identity) }]);
       }
       return map;
     });

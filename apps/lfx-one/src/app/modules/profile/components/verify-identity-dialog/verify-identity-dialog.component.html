@@ -36,7 +36,7 @@
       </div>
       <div class="flex flex-1 flex-col gap-0.5">
         <span class="text-sm font-bold text-slate-900">{{ providerLabel }}</span>
-        <span class="font-mono text-xs text-slate-600">{{ identity.identifier }}</span>
+        <span class="text-xs text-slate-600">{{ identity.identifier }}</span>
       </div>
       @if (!codeSent()) {
         <lfx-button
@@ -81,7 +81,7 @@
           (ngModelChange)="verificationCode.set($event ?? '')"
           [length]="6"
           [integerOnly]="true"
-          styleClass="gap-3 justify-center"
+          styleClass="w-full gap-3 [&_.p-inputtext]:flex-1"
           data-testid="verify-otp" />
         @if (verificationError()) {
           <p class="text-center text-sm text-red-600" data-testid="verify-email-error">{{ verificationError() }}</p>

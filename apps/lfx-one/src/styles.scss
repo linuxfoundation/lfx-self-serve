@@ -64,6 +64,27 @@
   @tailwind components;
   @tailwind utilities;
 }
+/* PrimeNG component overrides */
+.p-toggleswitch .p-toggleswitch-handle {
+  border-radius: 9999px;
+}
+
+.p-datatable .p-datatable-thead > tr > th,
+.p-datatable .p-datatable-tbody > tr > td {
+  background: white;
+}
+
+.p-datatable .p-datatable-thead > tr > th,
+.p-datatable .p-datatable-tbody > tr:not(:last-child) > td {
+  border-bottom: 1px solid #f1f5f9; /* slate-100 */
+}
+
+.p-menu .p-menu-item.text-red-500 .p-menu-item-content,
+.p-menu .p-menu-item.text-red-500 .p-menu-item-label,
+.p-menu .p-menu-item.text-red-500 .p-menu-item-icon {
+  color: inherit;
+}
+
 /* Custom font family theme variables */
 @theme {
   /* Inter as the primary sans-serif font */
@@ -114,6 +135,12 @@
   --p-inplace-padding: 0;
 
   --p-fileupload-content-padding: 1rem;
+
+  /* Lighter placeholder text across all form fields */
+  --p-select-placeholder-color: #94a3b8;
+  --p-inputtext-placeholder-color: #94a3b8;
+  --p-multiselect-placeholder-color: #94a3b8;
+  --p-textarea-placeholder-color: #94a3b8;
 
   --p-checkbox-border-color: #cecece;
 
