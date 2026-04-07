@@ -81,13 +81,17 @@
               <div class="h-0 w-full" data-testid="meetings-load-more-sentinel"></div>
             }
           }
-          <lfx-meeting-card
-            [attr.id]="'meeting-' + meeting.id"
-            [meetingInput]="meeting"
-            (meetingUpdated)="refreshMeetings()"
-            (meetingDeleted)="refreshMeetings()"
-            [pastMeeting]="timeFilter() === 'past'"
-            [showBorder]="true"></lfx-meeting-card>
+          @defer (on viewport) {
+            <lfx-meeting-card
+              [attr.id]="'meeting-' + meeting.id"
+              [meetingInput]="meeting"
+              (meetingUpdated)="refreshMeetings()"
+              (meetingDeleted)="refreshMeetings()"
+              [pastMeeting]="timeFilter() === 'past'"
+              [showBorder]="true"></lfx-meeting-card>
+          } @placeholder {
+            <div class="bg-white border border-gray-200 rounded-lg p-6 animate-pulse min-h-[200px]"></div>
+          }
         }
       </div>
 

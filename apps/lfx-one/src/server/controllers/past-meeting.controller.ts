@@ -64,6 +64,48 @@ export class PastMeetingController {
   }
 
   /**
+   * GET /past-meetings/:uid
+   */
+  public async getPastMeetingById(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { uid } = req.params;
+
+    const startTime = logger.startOperation(req, 'get_past_meeting_by_id', {
+      past_meeting_id: uid,
+    });
+
+    try {
+      if (
+        !validateUidParameter(uid, req, next, {
+          operation: 'get_past_meeting_by_id',
+          service: 'past_meeting_controller',
+        })
+      ) {
+        return;
+      }
+
+      const meeting = await this.meetingService.getPastMeetingById(req, uid);
+
+      const counts = await this.addParticipantsCount(req, uid);
+      meeting.individual_registrants_count = counts.individual_registrants_count;
+      meeting.committee_members_count = counts.committee_members_count;
+      meeting.participant_count = counts.participant_count;
+      meeting.attended_count = counts.attended_count;
+
+      logger.success(req, 'get_past_meeting_by_id', startTime, {
+        past_meeting_id: uid,
+        title: meeting.title,
+      });
+
+      res.json(meeting);
+    } catch (error) {
+      logger.error(req, 'get_past_meeting_by_id', startTime, error, {
+        past_meeting_id: uid,
+      });
+      next(error);
+    }
+  }
+
+  /**
    * GET /past-meetings/:uid/participants
    */
   public async getPastMeetingParticipants(req: Request, res: Response, next: NextFunction): Promise<void> {

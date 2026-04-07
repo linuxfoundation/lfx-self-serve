@@ -1,0 +1,442 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<!-- Loading State -->
+@if (loading()) {
+  <div class="py-6 px-8 flex flex-col gap-8">
+    <!-- Back button -->
+    <p-skeleton width="60px" height="1rem" />
+
+    <!-- Header: badges + title + tags -->
+    <div class="flex flex-col gap-3">
+      <div class="flex gap-2">
+        <p-skeleton width="60px" height="1.5rem" borderRadius="999px" />
+        <p-skeleton width="70px" height="1.5rem" borderRadius="999px" />
+        <p-skeleton width="120px" height="1.5rem" borderRadius="999px" />
+      </div>
+      <p-skeleton width="45%" height="2rem" />
+      <div class="flex gap-2">
+        <p-skeleton width="180px" height="1.5rem" borderRadius="999px" />
+        <p-skeleton width="90px" height="1.5rem" borderRadius="999px" />
+      </div>
+    </div>
+
+    <!-- Stats row -->
+    <div class="flex flex-wrap gap-3">
+      <p-skeleton width="200px" height="48px" borderRadius="8px" />
+      <p-skeleton width="180px" height="48px" borderRadius="8px" />
+      <p-skeleton width="160px" height="48px" borderRadius="8px" />
+    </div>
+
+    <!-- Agenda card -->
+    <p-skeleton width="100%" height="100px" borderRadius="8px" />
+
+    <!-- Participants table -->
+    <div class="flex flex-col gap-3">
+      <div class="flex items-center justify-between">
+        <p-skeleton width="120px" height="1rem" />
+        <div class="flex gap-2">
+          <p-skeleton width="200px" height="2rem" borderRadius="8px" />
+          <p-skeleton width="200px" height="2rem" borderRadius="8px" />
+        </div>
+      </div>
+      @for (row of [1, 2, 3, 4, 5]; track row) {
+        <div class="flex items-center gap-4">
+          <p-skeleton width="32px" height="32px" borderRadius="999px" />
+          <p-skeleton width="25%" height="1rem" />
+          <p-skeleton width="20%" height="0.75rem" />
+          <p-skeleton width="15%" height="0.75rem" />
+          <p-skeleton width="10%" height="0.75rem" />
+          <p-skeleton width="70px" height="1.5rem" borderRadius="999px" />
+          <p-skeleton width="60px" height="1.5rem" borderRadius="999px" />
+        </div>
+      }
+    </div>
+  </div>
+}
+
+@if (meeting(); as meeting) {
+  <div class="py-6 px-8 flex flex-col gap-8">
+    <!-- Header -->
+    <div class="flex flex-col gap-4">
+      <lfx-button
+        label="Back"
+        icon="fa-light fa-arrow-left"
+        [text]="true"
+        severity="secondary"
+        styleClass="!text-sm !text-gray-500"
+        (onClick)="goBack()"
+        data-testid="back-button">
+      </lfx-button>
+
+      <div class="flex flex-col gap-2">
+        <div class="flex flex-wrap items-center gap-2">
+          <lfx-tag value="Ended" severity="warn" icon="fa-light fa-circle-check" data-testid="meeting-ended-badge"></lfx-tag>
+          @if (meeting.visibility === 'private') {
+            <lfx-tag value="Private" severity="danger" icon="fa-light fa-shield" styleClass="tag-private" data-testid="badge-private"></lfx-tag>
+          }
+          @if (meetingTypeBadge(); as badge) {
+            <lfx-tag [value]="badge.text" [severity]="badge.severity" [icon]="badge.icon" [styleClass]="badge.styleClass" data-testid="badge-type"></lfx-tag>
+          }
+          @if (meeting.recurrence) {
+            <lfx-tag
+              [value]="meeting.recurrence | recurrenceSummary"
+              severity="secondary"
+              icon="fa-light fa-repeat"
+              styleClass="tag-recurring"
+              data-testid="badge-recurring">
+            </lfx-tag>
+          }
+        </div>
+        <h1 class="text-2xl font-semibold text-gray-900" data-testid="meeting-title">{{ meeting.title }}</h1>
+        <div class="flex flex-wrap gap-2 items-center">
+          @if (meeting.start_time) {
+            <lfx-tag
+              [value]="meeting.start_time | meetingTime: meeting.duration : 'compact'"
+              severity="secondary"
+              icon="fa-light fa-calendar-days"
+              data-testid="badge-datetime">
+            </lfx-tag>
+          }
+          @if (meeting.recording_enabled) {
+            <lfx-tag value="Recording" severity="secondary" icon="fa-light fa-video" styleClass="tag-feature-recording" data-testid="badge-recording"></lfx-tag>
+          }
+          @if (meeting.transcript_enabled) {
+            <lfx-tag
+              value="Transcripts"
+              severity="secondary"
+              icon="fa-light fa-file-lines"
+              styleClass="tag-feature-transcripts"
+              data-testid="badge-transcripts"></lfx-tag>
+          }
+          @if (meeting.zoom_config?.ai_companion_enabled) {
+            <lfx-tag value="AI Summary" severity="secondary" icon="fa-light fa-sparkles" styleClass="tag-feature-ai" data-testid="badge-ai"></lfx-tag>
+          }
+        </div>
+      </div>
+    </div>
+
+    <!-- Attendance Stats + Actions -->
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      @if (meeting.participant_count) {
+        <div class="flex flex-wrap gap-3" data-testid="attendance-section">
+          <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3">
+            <i class="fa-light fa-chart-pie text-gray-400 text-sm"></i>
+            <span class="text-xs text-gray-500 uppercase tracking-wide">Rate</span>
+            <span class="text-xl font-bold text-gray-900">{{ attendancePercentage() }}%</span>
+            <div class="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
+              <div class="h-full rounded-full" [ngClass]="attendanceBarColor()" [style.width.%]="attendancePercentage()"></div>
+            </div>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3">
+            <i class="fa-light fa-circle-check text-emerald-500 text-sm"></i>
+            <span class="text-xs text-gray-500 uppercase tracking-wide">Attended</span>
+            <span class="text-xl font-bold text-emerald-600">{{ meeting.attended_count || 0 }}</span>
+            <span class="text-xs text-gray-400">of {{ meeting.participant_count || 0 }}</span>
+          </div>
+          <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3">
+            <i class="fa-light fa-circle-xmark text-gray-400 text-sm"></i>
+            <span class="text-xs text-gray-500 uppercase tracking-wide">Absent</span>
+            <span class="text-xl font-bold text-gray-400">{{ (meeting.participant_count || 0) - (meeting.attended_count || 0) }}</span>
+            <span class="text-xs text-gray-400">of {{ meeting.participant_count || 0 }}</span>
+          </div>
+        </div>
+      }
+      <div class="flex flex-wrap gap-3">
+        @if (hasRecording()) {
+          <div
+            class="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3 cursor-pointer hover:border-gray-300 transition-colors"
+            (click)="openRecording()"
+            data-testid="watch-recording-button">
+            <i class="fa-light fa-play text-blue-500 text-sm"></i>
+            <span class="text-sm font-medium text-gray-700">Watch Recording</span>
+            <i class="fa-light fa-arrow-up-right-from-square text-xs text-gray-400"></i>
+          </div>
+        }
+        @if (hasSummary()) {
+          <div
+            class="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3 cursor-pointer hover:border-gray-300 transition-colors"
+            (click)="openSummaryModal()"
+            data-testid="view-summary-button">
+            <i class="fa-light fa-sparkles text-amber-500 text-sm"></i>
+            <span class="text-sm font-medium text-gray-700">AI Summary</span>
+            @if (summaryApproved()) {
+              <span class="text-xs font-medium text-emerald-600 bg-emerald-100 px-1.5 py-0.5 rounded-full">Approved</span>
+            } @else {
+              <span class="text-xs font-medium text-amber-600 bg-amber-100 px-1.5 py-0.5 rounded-full">Pending</span>
+            }
+          </div>
+        }
+      </div>
+    </div>
+
+    <!-- Agenda (full-width, only when present) -->
+    @if (meeting.description) {
+      <lfx-card data-testid="agenda-card">
+        <div class="flex items-center gap-2 mb-3">
+          <i class="fa-light fa-list text-gray-500 text-sm"></i>
+          <h2 class="text-sm font-medium text-gray-700">Agenda</h2>
+        </div>
+        <lfx-expandable-text [maxHeight]="300">
+          <div [innerHTML]="meeting.description | linkify" class="text-sm text-gray-600 leading-relaxed"></div>
+        </lfx-expandable-text>
+      </lfx-card>
+    }
+
+    <!-- Resources (full-width, only when present) -->
+    @if (attachments().length > 0) {
+      <lfx-card data-testid="resources-card">
+        <div class="flex items-center gap-2 mb-3">
+          <i class="fa-light fa-paperclip text-gray-500 text-sm"></i>
+          <h2 class="text-sm font-medium text-gray-700">Resources</h2>
+          <span class="text-xs font-medium text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded-full">{{ attachments().length }}</span>
+        </div>
+        <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-2">
+          @for (attachment of attachments(); track attachment.uid; let i = $index) {
+            @if (attachment.type === 'link') {
+              <a
+                [href]="attachment.link"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="bg-gray-100 hover:bg-gray-200 rounded px-3 py-2 flex items-center gap-3 transition-colors cursor-pointer"
+                [attr.data-testid]="'resource-link-' + i">
+                <i class="fa-light fa-arrow-up-right-from-square text-xs text-gray-600 flex-shrink-0"></i>
+                <span class="text-sm text-gray-900 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1">{{ attachment.name }}</span>
+              </a>
+            } @else {
+              <a
+                (click)="downloadAttachment(attachment)"
+                class="bg-gray-100 hover:bg-gray-200 rounded px-3 py-2 flex items-center gap-3 transition-colors cursor-pointer"
+                [attr.data-testid]="'resource-file-' + i">
+                <i class="fa-light fa-file-arrow-down text-xs text-gray-600 flex-shrink-0"></i>
+                <span class="text-sm text-gray-900 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1">{{ attachment.name }}</span>
+              </a>
+            }
+          }
+        </div>
+      </lfx-card>
+    }
+
+    <!-- Participants Table -->
+    @if (participantsLoading()) {
+      <lfx-card>
+        <div class="flex items-center justify-between mb-4">
+          <div class="flex items-center gap-2">
+            <p-skeleton width="20px" height="20px" borderRadius="4px" />
+            <p-skeleton width="100px" height="1rem" />
+          </div>
+          <div class="flex gap-2">
+            <p-skeleton width="200px" height="2rem" borderRadius="8px" />
+            <p-skeleton width="200px" height="2rem" borderRadius="8px" />
+          </div>
+        </div>
+        @for (row of [1, 2, 3, 4, 5]; track row) {
+          <div class="flex items-center gap-4 py-2.5 border-b border-gray-50">
+            <p-skeleton width="32px" height="32px" borderRadius="999px" />
+            <p-skeleton width="25%" height="1rem" />
+            <p-skeleton width="20%" height="0.75rem" />
+            <p-skeleton width="15%" height="0.75rem" />
+            <p-skeleton width="70px" height="1.5rem" borderRadius="999px" />
+            <p-skeleton width="60px" height="1.5rem" borderRadius="999px" />
+          </div>
+        }
+      </lfx-card>
+    } @else if (participants().length > 0) {
+      <lfx-card data-testid="participants-table">
+        <!-- Header with filter buttons -->
+        <div class="flex flex-col md:flex-row items-start md:items-center justify-between gap-3 mb-4">
+          <div class="flex items-center gap-2">
+            <i class="fa-light fa-users text-gray-500 text-sm"></i>
+            <h2 class="text-sm font-medium text-gray-700">Participants</h2>
+            <span class="text-xs font-medium text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded-full">{{ participants().length }}</span>
+          </div>
+          <div class="flex flex-wrap items-center gap-3">
+            <!-- Invitation Filter -->
+            <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+              <button
+                class="text-xs px-2.5 py-1.5 rounded-md transition-colors"
+                [ngClass]="invitationFilter() === 'all' ? 'bg-white text-gray-900 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'"
+                (click)="invitationFilter.set('all')"
+                data-testid="filter-inv-all">
+                All
+              </button>
+              <button
+                class="text-xs px-2.5 py-1.5 rounded-md transition-colors"
+                [ngClass]="invitationFilter() === 'invited' ? 'bg-white text-blue-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'"
+                (click)="invitationFilter.set('invited')"
+                data-testid="filter-invited">
+                Invited
+              </button>
+              <button
+                class="text-xs px-2.5 py-1.5 rounded-md transition-colors"
+                [ngClass]="invitationFilter() === 'uninvited' ? 'bg-white text-amber-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'"
+                (click)="invitationFilter.set('uninvited')"
+                data-testid="filter-uninvited">
+                Uninvited
+              </button>
+            </div>
+
+            <div class="h-6 w-px bg-gray-200"></div>
+
+            <!-- Attendance Filter -->
+            <div class="flex items-center gap-1 bg-gray-100 rounded-lg p-0.5">
+              <button
+                class="text-xs px-2.5 py-1.5 rounded-md transition-colors"
+                [ngClass]="attendanceFilter() === 'all' ? 'bg-white text-gray-900 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'"
+                (click)="attendanceFilter.set('all')"
+                data-testid="filter-att-all">
+                All
+              </button>
+              <button
+                class="text-xs px-2.5 py-1.5 rounded-md transition-colors"
+                [ngClass]="attendanceFilter() === 'attended' ? 'bg-white text-emerald-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'"
+                (click)="attendanceFilter.set('attended')"
+                data-testid="filter-attended">
+                Attended
+              </button>
+              <button
+                class="text-xs px-2.5 py-1.5 rounded-md transition-colors"
+                [ngClass]="attendanceFilter() === 'absent' ? 'bg-white text-gray-700 shadow-sm font-medium' : 'text-gray-500 hover:text-gray-700'"
+                (click)="attendanceFilter.set('absent')"
+                data-testid="filter-absent">
+                Absent
+              </button>
+            </div>
+
+            <!-- Voting Rep Toggle -->
+            @if (hasVotingCommittees()) {
+              <div class="h-6 w-px bg-gray-200"></div>
+              <button
+                class="text-xs px-3 py-1.5 rounded-lg transition-colors border"
+                [ngClass]="
+                  votingOnly() ? 'bg-purple-50 text-purple-700 border-purple-200 font-medium' : 'bg-white text-gray-500 border-gray-200 hover:text-gray-700'
+                "
+                (click)="votingOnly.set(!votingOnly())"
+                data-testid="filter-voting">
+                <i class="fa-light fa-check-to-slot mr-1"></i>
+                Voting Reps
+              </button>
+            }
+          </div>
+        </div>
+
+        <!-- Table -->
+        <lfx-table
+          [value]="filteredParticipants()"
+          [paginator]="filteredParticipants().length > 10"
+          [rows]="10"
+          [rowsPerPageOptions]="[10, 25, 50]"
+          [showCurrentPageReport]="true"
+          currentPageReportTemplate="{first} - {last} of {totalRecords}"
+          [rowHover]="true"
+          dataKey="uid"
+          data-testid="participants-data-table">
+          <ng-template #header>
+            <tr>
+              <th>Name</th>
+              <th>Email</th>
+              <th>Organization</th>
+              <th>Title</th>
+              @if (hasVotingCommittees()) {
+                <th>Voting Status</th>
+              }
+              <th class="w-24">Attendance</th>
+              <th class="w-24">Invitation</th>
+              @if (isRecurring() && uninvitedCount() > 0) {
+                <th class="w-20 text-right">Actions</th>
+              }
+            </tr>
+          </ng-template>
+          <ng-template #body let-p>
+            <tr>
+              <td>
+                <div class="flex items-center gap-2.5">
+                  <div class="relative flex-shrink-0">
+                    <lfx-avatar
+                      [label]="p.first_name"
+                      [image]="p.avatar_url || ''"
+                      styleClass="bg-blue-50 border border-gray-200 w-8 h-8"
+                      shape="circle"></lfx-avatar>
+                    <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center">
+                      @if (p.is_attended) {
+                        <i class="fa-solid fa-check-circle text-emerald-600 text-sm"></i>
+                      } @else {
+                        <i class="fa-solid fa-times-circle text-red-400 text-sm"></i>
+                      }
+                    </div>
+                  </div>
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-sm text-gray-900 truncate">{{ p.first_name }} {{ p.last_name }}</span>
+                    @if (p.host) {
+                      <span class="text-xs font-medium text-blue-600 bg-blue-50 px-1.5 py-0.5 rounded">Host</span>
+                    }
+                  </div>
+                </div>
+              </td>
+              <td>
+                <span class="text-xs text-gray-400">{{ p.email }}</span>
+              </td>
+              <td>
+                @if (p.org_name) {
+                  <span class="text-sm text-gray-700 truncate">{{ p.org_name }}</span>
+                } @else {
+                  <span class="text-xs text-gray-300">—</span>
+                }
+              </td>
+              <td>
+                @if (p.job_title) {
+                  <span class="text-xs text-gray-500 truncate">{{ p.job_title }}</span>
+                } @else {
+                  <span class="text-xs text-gray-300">—</span>
+                }
+              </td>
+              @if (hasVotingCommittees()) {
+                <td>
+                  @if (p.committee_voting_status && p.committee_voting_status !== 'None') {
+                    <div class="flex items-center gap-1">
+                      <i class="fa-light fa-check-to-slot text-sm text-gray-400 flex-shrink-0"></i>
+                      <span class="text-xs text-gray-500">{{ p.committee_voting_status }}</span>
+                    </div>
+                  } @else {
+                    <span class="text-xs text-gray-300">—</span>
+                  }
+                </td>
+              }
+              <td>
+                @if (p.is_attended) {
+                  <span class="text-xs font-medium text-emerald-600 bg-emerald-50 px-2 py-0.5 rounded-full">Attended</span>
+                } @else {
+                  <span class="text-xs font-medium text-gray-500 bg-gray-100 px-2 py-0.5 rounded-full">Absent</span>
+                }
+              </td>
+              <td>
+                @if (p.is_invited) {
+                  <span class="text-xs font-medium text-blue-600 bg-blue-50 px-2 py-0.5 rounded-full">Invited</span>
+                } @else {
+                  <span class="text-xs font-medium text-amber-600 bg-amber-50 px-2 py-0.5 rounded-full whitespace-nowrap">Not invited</span>
+                }
+              </td>
+              @if (isRecurring() && uninvitedCount() > 0) {
+                <td class="text-right">
+                  @if (!p.is_invited) {
+                    <lfx-button
+                      label="Invite"
+                      icon="fa-light fa-user-plus"
+                      [text]="true"
+                      size="small"
+                      severity="info"
+                      [disabled]="true"
+                      pTooltip="Coming soon"
+                      styleClass="!text-xs"
+                      [attr.data-testid]="'invite-button-' + p.uid">
+                    </lfx-button>
+                  }
+                </td>
+              }
+            </tr>
+          </ng-template>
+        </lfx-table>
+      </lfx-card>
+    }
+  </div>
+}

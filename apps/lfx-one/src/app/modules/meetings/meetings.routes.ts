@@ -19,4 +19,8 @@ export const MEETING_ROUTES: Routes = [
     path: ':id/edit',
     loadComponent: () => import('./meeting-manage/meeting-manage.component').then((m) => m.MeetingManageComponent),
   },
+  {
+    path: ':id/details',
+    loadComponent: () => import('./past-meeting-details/past-meeting-details.component').then((m) => m.PastMeetingDetailsComponent),
+  },
 ];

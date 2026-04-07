@@ -1,6 +1,15 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+/**
+ * Minimal user identity fields for displaying initials
+ */
+export interface UserInitialsInput {
+  first_name?: string;
+  last_name?: string;
+  email?: string;
+}
+
 export interface UserProfile {
   id: string;
   email: string;

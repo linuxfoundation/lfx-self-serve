@@ -30,4 +30,7 @@ router.get('/:uid/attachments/:attachmentId', (req, res, next) => pastMeetingCon
 
 router.get('/:uid/attachments/:attachmentId/download', (req, res, next) => pastMeetingController.getPastMeetingAttachmentDownloadUrl(req, res, next));
 
+// Get a single past meeting by UID (must be after all /:uid/* routes)
+router.get('/:uid', (req, res, next) => pastMeetingController.getPastMeetingById(req, res, next));
+
 export default router;

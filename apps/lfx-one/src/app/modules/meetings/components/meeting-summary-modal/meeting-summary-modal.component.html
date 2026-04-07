@@ -1,0 +1,16 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4">
+  <!-- Status -->
+  <div class="flex items-center gap-2" data-testid="summary-status">
+    @if (approved) {
+      <span class="text-xs font-medium text-emerald-600 bg-emerald-100 px-2 py-1 rounded-full"> <i class="fa-light fa-circle-check mr-1"></i>Approved </span>
+    } @else {
+      <span class="text-xs font-medium text-amber-600 bg-amber-100 px-2 py-1 rounded-full"> <i class="fa-light fa-clock mr-1"></i>Pending Review </span>
+    }
+  </div>
+
+  <!-- Content -->
+  <lfx-markdown-renderer [content]="content" data-testid="summary-content"></lfx-markdown-renderer>
+</div>

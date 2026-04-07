@@ -710,6 +710,11 @@ export class MeetingCardComponent implements OnInit {
   private initMeetingDetailUrl(): Signal<string> {
     return computed(() => {
       const meeting = this.meetingInput();
+
+      if (this.pastMeeting()) {
+        return `/meetings/${meeting.id}/details`;
+      }
+
       const params = new URLSearchParams();
 
       if (meeting.password) {

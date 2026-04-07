@@ -404,6 +404,15 @@ export class MeetingService {
     );
   }
 
+  public getPastMeetingById(pastMeetingUid: string): Observable<PastMeeting> {
+    return this.http.get<PastMeeting>(`/api/past-meetings/${pastMeetingUid}`).pipe(
+      catchError((error) => {
+        console.error(`Failed to load past meeting ${pastMeetingUid}:`, error);
+        return throwError(() => error);
+      })
+    );
+  }
+
   public getPastMeetingParticipants(pastMeetingUid: string): Observable<PastMeetingParticipant[]> {
     return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${pastMeetingUid}/participants`).pipe(
       catchError((error) => {

@@ -15,6 +15,7 @@ import {
   MeetingRegistrant,
   MeetingRsvp,
   PaginatedResponse,
+  PastMeeting,
   PastMeetingAttachment,
   PastMeetingParticipant,
   PastMeetingRecording,
@@ -205,6 +206,46 @@ export class MeetingService {
 
     logger.debug(req, 'get_meeting_by_id', 'Completed meeting fetch', {
       meeting_id: meetingUid,
+    });
+
+    return meeting;
+  }
+
+  /**
+   * Fetches a single past meeting by UID via ITX endpoint
+   */
+  public async getPastMeetingById(req: Request, pastMeetingUid: string): Promise<PastMeeting> {
+    logger.debug(req, 'get_past_meeting_by_id', 'Fetching past meeting by ID', {
+      past_meeting_id: pastMeetingUid,
+    });
+
+    const meeting = await this.microserviceProxy.proxyRequest<PastMeeting>(req, 'LFX_V2_SERVICE', `/itx/past_meetings/${pastMeetingUid}`, 'GET');
+
+    if (!meeting) {
+      throw new ResourceNotFoundError('Past Meeting', pastMeetingUid, {
+        operation: 'get_past_meeting_by_id',
+        service: 'meeting_service',
+        path: `/itx/past_meetings/${pastMeetingUid}`,
+      });
+    }
+
+    meeting.id = pastMeetingUid;
+
+    if (meeting.committees && meeting.committees.length > 0) {
+      logger.debug(req, 'get_past_meeting_by_id', 'Enriching past meeting with committee data', {
+        past_meeting_id: pastMeetingUid,
+        committee_count: meeting.committees.length,
+      });
+      const committeeNameMap = await this.getCommitteeNameMap(req, [meeting]);
+      meeting.committees = meeting.committees.map((c) => ({
+        uid: c.uid,
+        name: committeeNameMap.get(c.uid) || c.name,
+        allowed_voting_statuses: c.allowed_voting_statuses,
+      }));
+    }
+
+    logger.debug(req, 'get_past_meeting_by_id', 'Completed past meeting fetch', {
+      past_meeting_id: pastMeetingUid,
     });
 
     return meeting;
@@ -576,7 +617,7 @@ export class MeetingService {
     try {
       const params = {
         type: 'v1_past_meeting_recording',
-        tags: pastMeetingUid,
+        tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
       };
 
       const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingRecording>>(
@@ -616,7 +657,7 @@ export class MeetingService {
     try {
       const params = {
         type: 'v1_past_meeting_summary',
-        tags: `past_meeting_id:${pastMeetingUid}`,
+        tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
       };
 
       const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingSummary>>(
@@ -983,7 +1024,7 @@ export class MeetingService {
   public async getPastMeetingAttachments(req: Request, pastMeetingUid: string): Promise<PastMeetingAttachment[]> {
     const params = {
       type: 'v1_past_meeting_attachment',
-      parent: `past_meeting:${pastMeetingUid}`,
+      tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
     };
 
     logger.debug(req, 'get_past_meeting_attachments', 'Fetching past meeting attachments', { past_meeting_id: pastMeetingUid });

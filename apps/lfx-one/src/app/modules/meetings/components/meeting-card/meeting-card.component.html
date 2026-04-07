@@ -355,7 +355,18 @@
               </lfx-button>
             }
           }
-          @if (!pastMeeting()) {
+          @if (pastMeeting()) {
+            <lfx-button
+              class="w-full"
+              icon="fa-light fa-arrow-up-right-from-square"
+              label="See Meeting Details"
+              size="small"
+              severity="secondary"
+              styleClass="w-full"
+              data-testid="see-meeting-details-button"
+              [routerLink]="meetingDetailUrl()">
+            </lfx-button>
+          } @else {
             <lfx-button
               class="w-full"
               icon="fa-light fa-arrow-up-right-from-square"

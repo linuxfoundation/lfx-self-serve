@@ -659,6 +659,10 @@ export interface PastMeetingParticipant {
   last_name: string;
   /** Whether participant has host access */
   host: boolean;
+  /** Participant's job title */
+  job_title?: string;
+  /** Participant's organization name */
+  org_name?: string;
   /** Whether participant actually attended the meeting */
   is_attended: boolean;
   /** Whether participant was invited to the meeting */
@@ -667,10 +671,28 @@ export interface PastMeetingParticipant {
   org_is_member: boolean;
   /** Project membership status */
   org_is_project_member: boolean;
+  /** Participant's avatar URL */
+  avatar_url?: string;
+  /** Participant's username */
+  username?: string;
   /** Creation timestamp */
   created_at: string;
   /** Last update timestamp */
   updated_at: string;
+}
+
+/**
+ * Past meeting participant enriched with committee membership data from meeting registrants
+ */
+export interface EnrichedPastMeetingParticipant extends PastMeetingParticipant {
+  /** Committee name (from committee member data) */
+  committee_name?: string | null;
+  /** Role within the committee (from committee member data) */
+  committee_role?: string | null;
+  /** Voting status within the committee (from committee member data) */
+  committee_voting_status?: string | null;
+  /** Committee category (from committee member data) */
+  committee_category?: string | null;
 }
 
 /**
