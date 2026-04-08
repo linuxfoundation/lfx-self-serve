@@ -649,6 +649,8 @@ export interface PastMeetingParticipant {
   uid: string;
   /** Original meeting UUID this participant belongs to */
   meeting_id: string;
+  /** Composite meeting and occurrence ID (e.g., "99152950841-1630560600000") */
+  meeting_and_occurrence_id: string;
   /** Past meeting UUID for the specific occurrence */
   past_meeting_id: string;
   /** Participant's email address */

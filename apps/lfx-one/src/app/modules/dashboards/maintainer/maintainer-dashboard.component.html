@@ -2,8 +2,13 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="dashboard-container">
-  <!-- Foundation Project -->
-  @if (selectedProject()) {
+  <!-- Page Header -->
+  @if (isMeLens()) {
+    <div class="mb-6" data-testid="me-lens-header">
+      <h1>My LFX Overview</h1>
+      <p class="mt-1 text-sm text-gray-500">Cross-foundation dashboard — your activity, meetings, and actions across all foundations.</p>
+    </div>
+  } @else if (selectedProject()) {
     <div class="mb-6 flex items-center gap-4" data-testid="foundation-project">
       <h1>{{ selectedProject()?.name }} Overview</h1>
     </div>
@@ -45,11 +50,10 @@
       </section>
     }
 
-    <!-- Middle Row - Two Cards -->
-    <div class="grid grid-cols-1 md:grid-cols-2 gap-6">
-      <!-- My Meetings -->
+    <!-- Meetings (hidden on org lens) -->
+    @if (showMeetings()) {
       @defer (on idle) {
-        <lfx-my-meetings class="h-full" />
+        <lfx-my-meetings />
       } @placeholder {
         <section class="flex flex-col flex-1" data-testid="dashboard-my-meetings-placeholder">
           <div class="flex items-center justify-between mb-4 h-8">
@@ -64,38 +68,40 @@
           </div>
         </section>
       }
+    }
 
-      <!-- Pending Actions -->
-      @defer (on idle) {
-        <lfx-pending-actions class="h-full" [pendingActions]="maintainerActions()" (actionClick)="handleActionClick()" />
-      } @placeholder {
-        <section class="flex flex-col flex-1" data-testid="dashboard-pending-actions-placeholder">
-          <div class="flex items-center justify-between mb-4 px-2 h-8">
-            <div class="flex items-center gap-2">
-              <p-skeleton width="1.125rem" height="1.125rem" borderRadius="4px" />
-              <p-skeleton width="9rem" height="1rem" />
-            </div>
-          </div>
-          <div class="flex flex-col gap-3 px-2">
-            <p-skeleton width="100%" height="140px" />
-          </div>
-        </section>
-      }
-    </div>
-
-    <!-- My Projects - Full Width (below fold) -->
-    @defer (on viewport) {
-      <lfx-my-projects />
+    <!-- Pending Actions -->
+    @defer (on idle) {
+      <lfx-pending-actions [pendingActions]="maintainerActions()" (actionClick)="handleActionClick()" />
     } @placeholder {
-      <div data-testid="dashboard-my-projects-placeholder">
-        <div class="flex items-center justify-between mb-4">
+      <section class="flex flex-col flex-1" data-testid="dashboard-pending-actions-placeholder">
+        <div class="flex items-center justify-between mb-4 px-2 h-8">
           <div class="flex items-center gap-2">
             <p-skeleton width="1.125rem" height="1.125rem" borderRadius="4px" />
-            <p-skeleton width="6rem" height="1rem" />
+            <p-skeleton width="9rem" height="1rem" />
           </div>
         </div>
-        <p-skeleton width="100%" height="200px" borderRadius="8px" />
-      </div>
+        <div class="flex flex-col gap-3 px-2">
+          <p-skeleton width="100%" height="140px" />
+        </div>
+      </section>
+    }
+
+    <!-- My Projects - Full Width (below fold, project lens only) -->
+    @if (showProjects()) {
+      @defer (on viewport) {
+        <lfx-my-projects />
+      } @placeholder {
+        <div data-testid="dashboard-my-projects-placeholder">
+          <div class="flex items-center justify-between mb-4">
+            <div class="flex items-center gap-2">
+              <p-skeleton width="1.125rem" height="1.125rem" borderRadius="4px" />
+              <p-skeleton width="6rem" height="1rem" />
+            </div>
+          </div>
+          <p-skeleton width="100%" height="200px" borderRadius="8px" />
+        </div>
+      }
     }
   </div>
 </div>

@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
 import { ALL_LENSES, BOARD_SCOPED_LENSES, DEFAULT_LENS, DUAL_SCOPED_LENSES, LENS_COOKIE_KEY, PROJECT_SCOPED_LENSES } from '@lfx-one/shared/constants';
 import { Lens, LensOption } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';

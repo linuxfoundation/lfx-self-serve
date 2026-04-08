@@ -1,12 +1,12 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<section class="flex flex-col flex-1" data-testid="dashboard-my-meetings-section">
+<section class="flex flex-col gap-4" data-testid="dashboard-my-meetings-section">
   <!-- Header -->
-  <div class="flex items-center justify-between mb-4 h-8">
+  <div class="flex items-center justify-between h-8">
     <h2 class="flex items-center gap-2">
       <i class="fa-light fa-calendar text-lg"></i>
-      <span>My Meetings</span>
+      <span>{{ sectionTitle() }}</span>
     </h2>
     <lfx-button
       label="View All"
@@ -19,62 +19,70 @@
       data-testid="dashboard-my-meetings-view-all" />
   </div>
 
-  <!-- Scrollable Content -->
-  <div class="flex flex-col flex-1">
-    @if (loading()) {
-      <div class="flex flex-col gap-3" data-testid="dashboard-my-meetings-loading">
-        @for (_ of [1]; track $index) {
-          <div class="bg-white rounded-xl border shadow-md p-4 flex flex-col gap-3">
-            <!-- Badge row -->
+  <!-- Meeting Cards: Last Meeting + Next Meeting -->
+  <div class="grid grid-cols-1 lg:grid-cols-2 gap-4 items-start">
+    <!-- Left Column: Last Meeting -->
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center gap-2">
+        <h3 class="text-sm font-normal text-gray-500 flex items-center gap-1.5">
+          <i class="fa-light fa-clock-rotate-left text-gray-400"></i>
+          Last Meeting
+        </h3>
+      </div>
+      @if (pastLoading()) {
+        <lfx-card>
+          <div class="flex flex-col gap-3">
             <div class="flex items-center gap-2">
-              <p-skeleton width="5rem" height="1.25rem" borderRadius="1rem"></p-skeleton>
+              <p-skeleton width="5rem" height="1.25rem" borderRadius="1rem" />
             </div>
-            <!-- Title + time -->
-            <div class="flex flex-col gap-1.5">
-              <p-skeleton width="75%" height="0.875rem"></p-skeleton>
-              <p-skeleton width="40%" height="0.75rem"></p-skeleton>
-            </div>
-            <!-- Action buttons -->
-            <p-skeleton width="100%" height="2rem" borderRadius="6px"></p-skeleton>
+            <p-skeleton width="75%" height="0.875rem" />
+            <p-skeleton width="40%" height="0.75rem" />
+            <p-skeleton width="100%" height="2rem" borderRadius="6px" />
           </div>
-        }
-      </div>
-    } @else {
-      <div class="relative overflow-hidden flex-1">
-        <div lfxScrollShadow class="flex flex-col gap-1 overflow-scroll max-h-[30rem] py-1 -mt-1" data-testid="dashboard-my-meetings-list">
-          @if (nextMeetings().length > 0) {
-            <div class="flex flex-col gap-3">
-              @for (item of nextMeetings(); track item.trackId) {
-                <lfx-dashboard-meeting-card
-                  [meeting]="item.meeting"
-                  [occurrence]="item.occurrence"
-                  [attr.data-testid]="'dashboard-my-meetings-item-' + item.meeting.id" />
-              }
-            </div>
-          } @else {
-            <div class="text-center py-8" data-testid="dashboard-my-meetings-empty">
-              <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-              <p class="text-sm text-gray-500">No meetings scheduled</p>
-            </div>
-          }
-        </div>
+        </lfx-card>
+      } @else if (lastMeeting(); as meeting) {
+        <lfx-dashboard-meeting-card [meeting]="meeting" [detailUrl]="'/meetings/' + meeting.id + '/details'" [openDetailsInNewTab]="false" />
+      } @else {
+        <lfx-card>
+          <div class="flex flex-col items-center py-6">
+            <i class="fa-light fa-clock-rotate-left text-2xl text-gray-300 mb-2"></i>
+            <p class="text-sm font-medium text-gray-500">No past meetings</p>
+            <p class="text-xs text-gray-400 mt-1">{{ emptyPastText() }}</p>
+          </div>
+        </lfx-card>
+      }
+    </div>
 
-        <!-- Top shadow fade -->
-        @if (showTopShadow()) {
-          <div
-            class="absolute top-0 left-0 right-0 h-16 z-10 pointer-events-none bg-[linear-gradient(to_bottom,#f9fafb,transparent)]"
-            data-testid="dashboard-my-meetings-shadow-top"
-            aria-hidden="true"></div>
-        }
-
-        <!-- Bottom shadow fade -->
-        @if (showBottomShadow()) {
-          <div
-            class="absolute bottom-0 left-0 right-0 h-16 z-10 pointer-events-none bg-[linear-gradient(to_top,#f9fafb,transparent)]"
-            data-testid="dashboard-my-meetings-shadow-bottom"
-            aria-hidden="true"></div>
-        }
+    <!-- Right Column: Next Meeting -->
+    <div class="flex flex-col gap-2">
+      <div class="flex items-center gap-2">
+        <h3 class="text-sm font-normal text-gray-500 flex items-center gap-1.5">
+          <i class="fa-light fa-calendar text-gray-400"></i>
+          Next Meeting
+        </h3>
       </div>
-    }
+      @if (upcomingLoading()) {
+        <lfx-card>
+          <div class="flex flex-col gap-3">
+            <div class="flex items-center gap-2">
+              <p-skeleton width="5rem" height="1.25rem" borderRadius="1rem" />
+            </div>
+            <p-skeleton width="75%" height="0.875rem" />
+            <p-skeleton width="40%" height="0.75rem" />
+            <p-skeleton width="100%" height="2rem" borderRadius="6px" />
+          </div>
+        </lfx-card>
+      } @else if (nextMeeting(); as item) {
+        <lfx-dashboard-meeting-card [meeting]="item.meeting" [occurrence]="item.occurrence" />
+      } @else {
+        <lfx-card>
+          <div class="flex flex-col items-center py-6">
+            <i class="fa-light fa-calendar-check text-2xl text-gray-300 mb-2"></i>
+            <p class="text-sm font-medium text-gray-500">No upcoming meetings</p>
+            <p class="text-xs text-gray-400 mt-1">{{ emptyUpcomingText() }}</p>
+          </div>
+        </lfx-card>
+      }
+    </div>
   </div>
 </section>

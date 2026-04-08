@@ -131,18 +131,48 @@
     <div class="flex gap-2">
       <!-- See Meeting button - full width when alone, flex-1 when both buttons present -->
       @if (showDetailsButton()) {
+        @if (openDetailsInNewTab()) {
+          <lfx-button
+            class="w-full"
+            severity="secondary"
+            size="small"
+            styleClass="w-full"
+            label="See Meeting Details"
+            [href]="meetingDetailUrl()"
+            target="_blank"
+            type="button"
+            [outlined]="true"
+            icon="fa-light fa-up-right-from-square text-xs"
+            data-testid="dashboard-meeting-card-see-button" />
+        } @else {
+          <lfx-button
+            class="w-full"
+            severity="secondary"
+            size="small"
+            styleClass="w-full"
+            label="See Meeting Details"
+            [routerLink]="meetingDetailUrl()"
+            [queryParams]="meetingDetailQueryParams()"
+            type="button"
+            [outlined]="true"
+            data-testid="dashboard-meeting-card-see-button" />
+        }
+      }
+
+      <!-- See Recording button -->
+      @if (recordingShareUrl()) {
         <lfx-button
           class="w-full"
           severity="secondary"
           size="small"
           styleClass="w-full"
-          label="See Meeting Details"
-          [href]="meetingDetailUrl()"
+          label="See Recording"
+          [href]="recordingShareUrl()!"
           target="_blank"
           type="button"
           [outlined]="true"
-          icon="fa-light fa-up-right-from-square text-xs"
-          data-testid="dashboard-meeting-card-see-button" />
+          icon="fa-light fa-play text-xs"
+          data-testid="dashboard-meeting-card-recording-button" />
       }
 
       <!-- Join Meeting button - right side when present -->

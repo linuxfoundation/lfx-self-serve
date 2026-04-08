@@ -14,4 +14,7 @@ router.get('/pending-actions', (req, res, next) => userController.getPendingActi
 // GET /api/user/meetings - Get all meetings for the authenticated user
 router.get('/meetings', (req, res, next) => userController.getUserMeetings(req, res, next));
 
+// GET /api/user/past-meetings - Get past meetings for the authenticated user
+router.get('/past-meetings', (req, res, next) => userController.getUserPastMeetings(req, res, next));
+
 export default router;

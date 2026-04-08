@@ -5,6 +5,7 @@ import { Component, computed, inject, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { PendingActionItem } from '@lfx-one/shared/interfaces';
 import { HiddenActionsService } from '@services/hidden-actions.service';
+import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -25,6 +26,9 @@ export class ExecutiveDirectorDashboardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
   private readonly hiddenActionsService = inject(HiddenActionsService);
+  private readonly lensService = inject(LensService);
+
+  protected readonly showMeetings = computed(() => this.lensService.activeLens() !== 'org');
 
   // === Configuration ===
   private readonly refresh$ = new BehaviorSubject<void>(undefined);

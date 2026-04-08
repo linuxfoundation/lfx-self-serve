@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { NavigationEnd, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -14,7 +14,7 @@ import { CookieRegistryService } from '@services/cookie-registry.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { filter, map, startWith } from 'rxjs';
+import { filter, map, skip, startWith } from 'rxjs';
 
 @Component({
   selector: 'lfx-dev-toolbar',
@@ -56,10 +56,7 @@ export class DevToolbarComponent {
     // Find the initial preset matching the current persona
     const currentPersona = this.personaService.currentPersona();
     const allPersonas = this.personaService.allPersonas();
-    const initialPreset =
-      DEV_PERSONA_PRESETS.find(
-        (p) => p.primary === currentPersona && p.personas.length === allPersonas.length && p.personas.every((persona) => allPersonas.includes(persona))
-      ) ?? DEV_PERSONA_PRESETS[1];
+    const initialPreset = this.findMatchingPreset(currentPersona, allPersonas);
     this.activePreset.set(initialPreset);
 
     this.form = new FormGroup({
@@ -119,6 +116,17 @@ export class DevToolbarComponent {
         }
       });
 
+    // Sync form when persona changes externally (e.g., after SSR persona detection)
+    toObservable(this.personaService.currentPersona)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe((persona) => {
+        const matchingPreset = this.findMatchingPreset(persona, this.personaService.allPersonas());
+        if (matchingPreset.value !== this.form.get('persona')?.value) {
+          this.activePreset.set(matchingPreset);
+          this.form.get('persona')?.setValue(matchingPreset.value, { emitEvent: false });
+        }
+      });
+
     // Subscribe to project/foundation selection changes
     this.form
       .get('selectedProjectUid')
@@ -145,6 +153,16 @@ export class DevToolbarComponent {
     if (typeof window !== 'undefined') {
       window.location.reload();
     }
+  }
+
+  private findMatchingPreset(persona: string, allPersonas: string[]): DevPersonaPreset {
+    return (
+      DEV_PERSONA_PRESETS.find(
+        (p) => p.primary === persona && p.personas.length === allPersonas.length && p.personas.every((pp) => allPersonas.includes(pp))
+      ) ??
+      DEV_PERSONA_PRESETS.find((p) => p.primary === persona) ??
+      DEV_PERSONA_PRESETS[1]
+    );
   }
 
   private initIsOnBoardDashboard(): Signal<boolean> {

@@ -93,10 +93,9 @@ export class UserController {
   }
 
   /**
-   * GET /api/user/meetings - Get all meetings for the authenticated user
-   * Returns meetings the user is registered for or has access to, filtered by project
-   * TODO: DEMO - Revisit this after the demo as this is not an efficient way of getting current users meetings
-   * @query projectUid - Required project UID to filter meetings
+   * GET /api/user/meetings - Get meetings for the authenticated user
+   * Returns meetings the user is registered for, optionally filtered by project
+   * @query projectUid - Optional project UID to filter meetings
    * @query limit - Optional limit on number of meetings to return
    */
   public async getUserMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
@@ -106,18 +105,7 @@ export class UserController {
     });
 
     try {
-      // Extract and validate projectUid
       const projectUid = req.query['projectUid'] as string | undefined;
-      if (!projectUid) {
-        const validationError = ServiceValidationError.forField('projectUid', 'projectUid query parameter is required', {
-          operation: 'get_user_meetings',
-          service: 'user_controller',
-          path: req.path,
-        });
-
-        next(validationError);
-        return;
-      }
 
       // Extract user email from OIDC (lowercased for consistent tag matching)
       const userEmail = (req.oidc?.user?.['email'] as string)?.toLowerCase();
@@ -151,8 +139,7 @@ export class UserController {
       }
 
       // Get user's meetings from service
-      const query = { tags_all: `project_uid:${projectUid}` };
-      const meetings = await this.userService.getUserMeetings(req, userEmail, query, limit);
+      const meetings = await this.userService.getUserMeetings(req, userEmail, projectUid, limit);
 
       logger.success(req, 'get_user_meetings', startTime, {
         project_uid: projectUid,
@@ -161,6 +148,67 @@ export class UserController {
       });
 
       res.json(meetings);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/user/past-meetings - Get past meetings for the authenticated user
+   * Returns past meetings the user was registered for, optionally filtered by project
+   * @query projectUid - Optional project UID to filter meetings
+   * @query limit - Optional limit on number of past meetings to return
+   */
+  public async getUserPastMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_user_past_meetings', {
+      project_uid: req.query['projectUid'],
+      limit: req.query['limit'],
+    });
+
+    try {
+      const projectUid = req.query['projectUid'] as string | undefined;
+
+      // Extract user email from OIDC (lowercased for consistent tag matching)
+      const userEmail = (req.oidc?.user?.['email'] as string)?.toLowerCase();
+      if (!userEmail) {
+        const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
+          operation: 'get_user_past_meetings',
+          service: 'user_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      // Extract and validate optional limit parameter
+      const limitParam = req.query['limit'] as string | undefined;
+      let limit: number | undefined;
+      if (limitParam !== undefined) {
+        const parsedLimit = parseInt(limitParam, 10);
+        if (isNaN(parsedLimit) || parsedLimit <= 0) {
+          const validationError = ServiceValidationError.forField('limit', 'limit must be a positive integer', {
+            operation: 'get_user_past_meetings',
+            service: 'user_controller',
+            path: req.path,
+          });
+
+          next(validationError);
+          return;
+        }
+        limit = parsedLimit;
+      }
+
+      // Get user's past meetings from service
+      const pastMeetings = await this.userService.getUserPastMeetings(req, userEmail, projectUid, limit);
+
+      logger.success(req, 'get_user_past_meetings', startTime, {
+        project_uid: projectUid,
+        past_meeting_count: pastMeetings.length,
+        limit,
+      });
+
+      res.json(pastMeetings);
     } catch (error) {
       next(error);
     }

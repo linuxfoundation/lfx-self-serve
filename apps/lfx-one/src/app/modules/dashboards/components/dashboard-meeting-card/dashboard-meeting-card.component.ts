@@ -15,6 +15,7 @@ import {
   MEETING_TYPE_CONFIGS,
   MeetingOccurrence,
   MeetingTypeBadge,
+  PastMeetingRecording,
   TagSeverity,
 } from '@lfx-one/shared';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
@@ -40,6 +41,8 @@ export class DashboardMeetingCardComponent {
   public readonly detailUrl = input<string | null>(null);
   /** Set to false to hide the "See Meeting Details" button (e.g. for past meetings where the detail page is inaccessible). */
   public readonly showDetailsButton = input<boolean>(true);
+  /** Set to false to open the details link in the same tab instead of a new tab. */
+  public readonly openDetailsInNewTab = input<boolean>(true);
 
   public readonly attachments: Signal<MeetingAttachment[]> = this.initAttachments();
   public readonly joinUrl: Signal<string | null>;
@@ -60,6 +63,8 @@ export class DashboardMeetingCardComponent {
   public readonly meetingTitle: Signal<string> = this.initMeetingTitle();
   public readonly isRecurring: Signal<boolean> = this.initIsRecurring();
   public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
+  public readonly meetingDetailQueryParams: Signal<Record<string, string>> = this.initMeetingDetailQueryParams();
+  public readonly recordingShareUrl: Signal<string | null> = this.initRecordingShareUrl();
 
   public constructor() {
     const meeting$ = toObservable(this.meeting);
@@ -261,17 +266,44 @@ export class DashboardMeetingCardComponent {
       if (override) {
         return override;
       }
-
-      const meeting = this.meeting();
-      const params = new URLSearchParams();
-
-      if (meeting.password) {
-        params.set('password', meeting.password);
-      }
-
-      const queryString = params.toString();
-      return queryString ? `/meetings/${meeting.id}?${queryString}` : `/meetings/${meeting.id}`;
+      return `/meetings/${this.meeting().id}`;
     });
+  }
+
+  private initMeetingDetailQueryParams(): Signal<Record<string, string>> {
+    return computed((): Record<string, string> => {
+      const meeting = this.meeting();
+      return meeting.password ? { password: meeting.password } : {};
+    });
+  }
+
+  private initRecordingShareUrl(): Signal<string | null> {
+    return toSignal(
+      toObservable(this.meeting).pipe(
+        switchMap((meeting) => {
+          if (!meeting?.id || !meeting.recording_enabled) {
+            return of(null);
+          }
+          // Skip for upcoming meetings — no recording exists yet
+          // Use occurrence start time for recurring meetings, fall back to meeting start time
+          const startTime = this.occurrence()?.start_time || meeting.start_time;
+          if (new Date(startTime).getTime() > Date.now()) {
+            return of(null);
+          }
+          return this.meetingService.getPastMeetingRecording(meeting.id).pipe(
+            map((recording: PastMeetingRecording | null) => {
+              if (!recording?.sessions?.length) {
+                return null;
+              }
+              const largest = recording.sessions.reduce((a, b) => ((a.total_size || 0) >= (b.total_size || 0) ? a : b));
+              return largest.share_url || null;
+            }),
+            catchError(() => of(null))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
   }
 
   private initAttachments(): Signal<MeetingAttachment[]> {
