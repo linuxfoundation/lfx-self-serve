@@ -123,7 +123,7 @@ export class OrganizationSearchComponent {
     this.onOrganizationSelect.emit(selectedOrganization);
 
     // Resolve the organization via CDP
-    this.resolveOrg(selectedOrganization.name, selectedOrganization.domain);
+    this.resolveOrg(selectedOrganization.name, selectedOrganization.domain, selectedOrganization.logo);
   }
 
   public onSearchClear(): void {
@@ -227,12 +227,12 @@ export class OrganizationSearchComponent {
     );
   }
 
-  private resolveOrg(name: string, domain: string): void {
+  private resolveOrg(name: string, domain: string, logo?: string): void {
     this.resolvingOrg.set(true);
     this.resolvedOrg.set(null);
 
     this.organizationService
-      .resolveOrganization(name, domain)
+      .resolveOrganization(name, domain, logo)
       .pipe(take(1))
       .subscribe({
         next: (cdpOrg) => {

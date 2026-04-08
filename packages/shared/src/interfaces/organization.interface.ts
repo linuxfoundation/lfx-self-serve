@@ -10,6 +10,8 @@ export interface OrganizationSuggestion {
   name: string;
   /** Organization domain name */
   domain: string;
+  /** Organization logo URL */
+  logo?: string;
 }
 
 /**
@@ -61,4 +63,6 @@ export interface CdpOrganizationCreateRequest {
   domain: string;
   /** Source system that created this record */
   source: string;
+  /** Organization logo URL */
+  logo?: string;
 }

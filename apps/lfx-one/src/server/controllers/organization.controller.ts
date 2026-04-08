@@ -59,10 +59,11 @@ export class OrganizationController {
    * Find or create an organization in CDP by name and domain
    */
   public async resolveOrganization(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const { name, domain } = req.body;
+    const { name, domain, logo } = req.body;
     const startTime = logger.startOperation(req, 'resolve_organization', {
       has_name: !!name,
       has_domain: !!domain,
+      has_logo: !!logo,
     });
 
     try {
@@ -77,7 +78,18 @@ export class OrganizationController {
         return;
       }
 
-      const org = await this.cdpService.resolveOrganization(req, name, domain || '');
+      if (logo !== undefined && (typeof logo !== 'string' || !logo.startsWith('https://'))) {
+        const validationError = ServiceValidationError.forField('logo', 'Organization logo must be an https URL', {
+          operation: 'resolve_organization',
+          service: 'organization_controller',
+          path: req.path,
+        });
+
+        next(validationError);
+        return;
+      }
+
+      const org = await this.cdpService.resolveOrganization(req, name, domain || '', logo);
 
       logger.success(req, 'resolve_organization', startTime, {
         organization_id: org.id,

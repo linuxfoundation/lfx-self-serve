@@ -760,7 +760,7 @@ export class CdpService {
   /**
    * Create an organization in CDP
    */
-  public async createOrganization(req: Request | undefined, name: string, domain: string, source = 'lfxOne'): Promise<CdpOrganization> {
+  public async createOrganization(req: Request | undefined, name: string, domain: string, source = 'lfxOne', logo?: string): Promise<CdpOrganization> {
     const token = await this.generateToken(req);
     const url = `${this.cdpApiUrl}${CDP_CONFIG.ENDPOINTS.ORGANIZATIONS}`;
     const requestId = randomUUID();
@@ -774,7 +774,8 @@ export class CdpService {
         Authorization: `Bearer ${token}`,
         'X-LFX-Request-ID': requestId,
       },
-      body: JSON.stringify({ name, domain, source }),
+      // Drop empty-string logos — they're not meaningful URLs
+      body: JSON.stringify({ name, domain, source, ...(logo ? { logo } : {}) }),
       signal: AbortSignal.timeout(10000),
     });
 
@@ -794,7 +795,7 @@ export class CdpService {
    * Find or create an organization in CDP by domain
    * Tries to find first, creates if not found
    */
-  public async resolveOrganization(req: Request | undefined, name: string, domain: string): Promise<CdpOrganization> {
+  public async resolveOrganization(req: Request | undefined, name: string, domain: string, logo?: string): Promise<CdpOrganization> {
     logger.debug(req, 'resolve_cdp_organization', 'Resolving CDP organization', { name, domain });
 
     if (domain) {
@@ -805,7 +806,7 @@ export class CdpService {
       }
     }
 
-    const created = await this.createOrganization(req, name, domain);
+    const created = await this.createOrganization(req, name, domain, undefined, logo);
     logger.info(req, 'resolve_cdp_organization', 'Created new CDP organization', { id: created.id, name: created.name, domain });
     return created;
   }
