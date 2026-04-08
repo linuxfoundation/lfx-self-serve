@@ -30,11 +30,13 @@ import projectsRouter from './routes/projects.route';
 import publicCommitteesRouter from './routes/public-committees.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
 import searchRouter from './routes/search.route';
+import personaRouter from './routes/persona.route';
 import surveysRouter from './routes/surveys.route';
 import userRouter from './routes/user.route';
 import votesRouter from './routes/votes.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
+import { resolvePersonaForSsr } from './utils/persona-helper';
 
 if (process.env['NODE_ENV'] !== 'production') {
   dotenv.config();
@@ -182,6 +184,7 @@ app.use('/api/profile', profileRouter);
 app.use('/api/search', searchRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/user', userRouter);
+app.use('/api/user', personaRouter);
 app.use('/api/votes', votesRouter);
 app.use('/api/surveys', surveysRouter);
 app.use('/api/copilot', copilotRouter);
@@ -228,6 +231,13 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
       res.oidc.logout();
       return;
     }
+  }
+
+  // Resolve persona: uses cookie if available, otherwise fetches via NATS (blocking)
+  if (auth.authenticated) {
+    const personaResult = await resolvePersonaForSsr(req, res);
+    auth.persona = personaResult.persona;
+    auth.personas = personaResult.personas;
   }
 
   // Build runtime config from environment variables

@@ -60,7 +60,7 @@ export const ALL_LENSES: Readonly<Record<Lens, LensOption>> = {
 /** Lenses visible to board-scoped personas (board-member, executive-director) */
 export const BOARD_SCOPED_LENSES: readonly Lens[] = ['me', 'foundation', 'org'] as const;
 
-/** Lenses visible to project-scoped personas (maintainer, core-developer, projects) */
+/** Lenses visible to project-scoped personas (maintainer, contributor) */
 export const PROJECT_SCOPED_LENSES: readonly Lens[] = ['me', 'project', 'org'] as const;
 
 /** Lenses visible to dual-role personas (users with both board and project roles) */

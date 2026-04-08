@@ -4,9 +4,9 @@
 import type { PendingActionItem } from '../interfaces';
 
 /**
- * Core Developer action items
+ * Contributor action items
  */
-export const CORE_DEVELOPER_ACTION_ITEMS: PendingActionItem[] = [
+export const CONTRIBUTOR_ACTION_ITEMS: PendingActionItem[] = [
   {
     type: 'Fix Bug',
     badge: 'React',

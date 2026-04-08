@@ -5,10 +5,10 @@
  * Available persona types for UI customization
  * @description Defines the different user personas that can be selected
  */
-export type PersonaType = 'core-developer' | 'maintainer' | 'projects' | 'board-member' | 'executive-director';
+export type PersonaType = 'contributor' | 'maintainer' | 'board-member' | 'executive-director';
 
 /** All valid persona type values — used for runtime validation (e.g., cookie deserialization) */
-export const VALID_PERSONAS: ReadonlySet<string> = new Set<string>(['core-developer', 'maintainer', 'projects', 'board-member', 'executive-director']);
+export const VALID_PERSONAS: ReadonlySet<string> = new Set<string>(['contributor', 'maintainer', 'board-member', 'executive-director']);
 
 /** Board-scoped personas that see foundation-level dashboards */
 export const BOARD_SCOPED_PERSONAS: ReadonlySet<PersonaType> = new Set(['board-member', 'executive-director']);
@@ -19,7 +19,7 @@ export function isBoardScopedPersona(persona: PersonaType): boolean {
 }
 
 /** Project-scoped personas that see project-level dashboards */
-export const PROJECT_SCOPED_PERSONAS: ReadonlySet<PersonaType> = new Set(['maintainer', 'core-developer', 'projects']);
+export const PROJECT_SCOPED_PERSONAS: ReadonlySet<PersonaType> = new Set(['maintainer', 'contributor']);
 
 /** Check if a persona value is project-scoped (sees project-level dashboards) */
 export function isProjectScopedPersona(persona: PersonaType): boolean {

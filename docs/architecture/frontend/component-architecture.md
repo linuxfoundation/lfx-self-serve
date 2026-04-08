@@ -17,7 +17,7 @@ apps/lfx-one/src/app/modules/
 │   └── components/             # Committee-specific components
 ├── dashboards/                 # Role-based dashboards
 │   ├── board-member/           # Board member dashboard
-│   ├── core-developer/         # Core developer dashboard
+│   ├── contributor/            # Contributor dashboard
 │   ├── maintainer/             # Maintainer dashboard
 │   └── components/             # Dashboard-specific components (drawers, cards)
 ├── meetings/                   # Meetings management

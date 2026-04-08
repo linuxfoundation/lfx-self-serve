@@ -28,9 +28,11 @@ export class AccessCheckService {
       return new Map();
     }
 
-    const startTime = logger.startOperation(req, 'check_access_permissions', {
+    const resourceTypes = [...new Set(resources.map((r) => r.resource))];
+    const operationName = `check_access_permissions_${resourceTypes.join('_')}`;
+    const startTime = logger.startOperation(req, operationName, {
       request_count: resources.length,
-      resource_types: [...new Set(resources.map((r) => r.resource))],
+      resource_types: resourceTypes,
       access_types: [...new Set(resources.map((r) => r.access))],
     });
 
@@ -84,14 +86,14 @@ export class AccessCheckService {
         userAccessInfo.push({ resourceId: resource.id, username, hasAccess });
       }
 
-      logger.success(req, 'check_access_permissions', startTime, {
+      logger.success(req, operationName, startTime, {
         request_count: resources.length,
         granted_count: Array.from(resultMap.values()).filter(Boolean).length,
       });
 
       return resultMap;
     } catch (error) {
-      logger.error(req, 'check_access_permissions', startTime, error, {
+      logger.error(req, operationName, startTime, error, {
         request_count: resources.length,
         fallback_behavior: 'returning no access',
       });

@@ -40,7 +40,7 @@ export class PersonaSelectorComponent {
       ?.valueChanges.pipe(takeUntilDestroyed())
       .subscribe((value: PersonaType) => {
         // TODO: DEMO - Remove when proper permissions are implemented
-        // Set foundation before persona so navigation in setPersona() has correct context
+        // Set foundation before persona so navigation in setPersonas() has correct context
         if (isBoardScopedPersona(value)) {
           const tlfProject = this.projectContextService.availableProjects.find((p) => p.slug === 'tlf');
           if (tlfProject) {

@@ -664,7 +664,7 @@ export class RecentProgressComponent {
     return toSignal(
       toObservable(this.personaService.currentPersona).pipe(
         switchMap((persona) => {
-          // Only fetch for core-developer persona
+          // Only fetch for contributor persona
           if (persona === 'maintainer') {
             this.loadingState.update((state) => ({ ...state, activeWeeksStreak: false }));
             return [{ data: [], currentStreak: 0, totalWeeks: 0 }];
@@ -693,7 +693,7 @@ export class RecentProgressComponent {
     return toSignal(
       toObservable(this.personaService.currentPersona).pipe(
         switchMap((persona) => {
-          // Only fetch for core-developer persona
+          // Only fetch for contributor persona
           if (persona === 'maintainer') {
             this.loadingState.update((state) => ({ ...state, pullRequestsMerged: false }));
             return [{ data: [], totalPullRequests: 0, totalDays: 0 }];
@@ -722,7 +722,7 @@ export class RecentProgressComponent {
     return toSignal(
       toObservable(this.personaService.currentPersona).pipe(
         switchMap((persona) => {
-          // Only fetch for core-developer persona
+          // Only fetch for contributor persona
           if (persona === 'maintainer') {
             this.loadingState.update((state) => ({ ...state, codeCommits: false }));
             return [{ data: [], totalCommits: 0, totalDays: 0 }];
@@ -943,7 +943,7 @@ export class RecentProgressComponent {
         );
       }
 
-      // For core-developer, only check core-developer-specific metrics
+      // For contributor, only check contributor-specific metrics
       return state.activeWeeksStreak || state.pullRequestsMerged || state.codeCommits;
     });
   }
@@ -1078,7 +1078,7 @@ export class RecentProgressComponent {
         return allCards.filter((item) => item.category === filter).map((item) => item.card);
       }
 
-      // Core developer - no filtering, just materialize card values
+      // Contributor - no filtering, just materialize card values
       return [this.activeWeeksStreakCard(), this.pullRequestsMergedCard(), this.codeCommitsCard()];
     });
   }

@@ -100,3 +100,6 @@ export * from './public-committee.interface';
 
 // Lens interfaces
 export * from './lens.interface';
+
+// Persona detection interfaces
+export * from './persona-detection.interface';

@@ -440,7 +440,7 @@ export class UserService {
   /**
    * Get all pending actions for a user based on persona
    * @param req - Express request object
-   * @param persona - User persona type (board-member, maintainer, core-developer)
+   * @param persona - User persona type (board-member, maintainer, contributor)
    * @param projectUid - Project UID for filtering
    * @param email - User email
    * @param projectSlug - Project slug for survey filtering
@@ -450,7 +450,7 @@ export class UserService {
     if (persona === 'board-member') {
       return this.getBoardMemberActions(req, email, projectSlug, projectUid);
     }
-    // Future personas: maintainer, core-developer can be added here
+    // Future personas: maintainer, contributor can be added here
     return [];
   }
 

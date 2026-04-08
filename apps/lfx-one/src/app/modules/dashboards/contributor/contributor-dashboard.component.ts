@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, signal } from '@angular/core';
-import { CORE_DEVELOPER_ACTION_ITEMS } from '@lfx-one/shared/constants';
+import { CONTRIBUTOR_ACTION_ITEMS } from '@lfx-one/shared/constants';
 import { HiddenActionsService } from '@services/hidden-actions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SkeletonModule } from 'primeng/skeleton';
@@ -14,20 +14,20 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
 import { RecentProgressComponent } from '../components/recent-progress/recent-progress.component';
 
 @Component({
-  selector: 'lfx-core-developer-dashboard',
+  selector: 'lfx-contributor-dashboard',
   imports: [RecentProgressComponent, PendingActionsComponent, MyMeetingsComponent, MyProjectsComponent, SkeletonModule],
-  templateUrl: './core-developer-dashboard.component.html',
-  styleUrl: './core-developer-dashboard.component.scss',
+  templateUrl: './contributor-dashboard.component.html',
+  styleUrl: './contributor-dashboard.component.scss',
 })
-export class CoreDeveloperDashboardComponent {
+export class ContributorDashboardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly hiddenActionsService = inject(HiddenActionsService);
 
   public readonly selectedFoundation = computed(() => this.projectContextService.selectedFoundation());
   public readonly refresh$: BehaviorSubject<void> = new BehaviorSubject<void>(undefined);
-  private readonly rawCoreDevActions = signal(CORE_DEVELOPER_ACTION_ITEMS);
-  public readonly coreDevActions = computed(() => {
-    return this.rawCoreDevActions()
+  private readonly rawContributorActions = signal(CONTRIBUTOR_ACTION_ITEMS);
+  public readonly contributorActions = computed(() => {
+    return this.rawContributorActions()
       .filter((item) => !this.hiddenActionsService.isActionHidden(item))
       .slice(0, 2);
   });

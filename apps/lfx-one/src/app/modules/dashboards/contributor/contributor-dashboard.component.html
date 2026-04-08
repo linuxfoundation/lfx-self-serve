@@ -67,7 +67,7 @@
 
       <!-- Pending Actions -->
       @defer (on idle) {
-        <lfx-pending-actions class="h-full" [pendingActions]="coreDevActions()" (actionClick)="handleActionClick()" />
+        <lfx-pending-actions class="h-full" [pendingActions]="contributorActions()" (actionClick)="handleActionClick()" />
       } @placeholder {
         <section class="flex flex-col flex-1" data-testid="dashboard-pending-actions-placeholder">
           <div class="flex items-center justify-between mb-4 px-2 h-8">

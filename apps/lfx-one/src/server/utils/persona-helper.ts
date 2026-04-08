@@ -1,143 +1,104 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { PersonaType } from '@lfx-one/shared/interfaces';
-import { Request } from 'express';
+import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import type { PersistedPersonaState, PersonaType, SsrPersonaResult } from '@lfx-one/shared/interfaces';
+import { VALID_PERSONAS } from '@lfx-one/shared/interfaces';
+import { Request, Response } from 'express';
 
-import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
-import { getUsernameFromAuth } from './auth-helper';
+import { PersonaDetectionService } from '../services/persona-detection.service';
+
+const DEFAULT_PERSONA: PersonaType = 'contributor';
+
+/** Shared singleton — reused by both SSR helper and persona controller */
+export const personaDetectionService = new PersonaDetectionService();
 
 /**
- * Result of user persona and organization determination
+ * Resolve persona for SSR rendering using hybrid cookie-gated strategy:
+ * - If persona cookie exists → parse and use it (non-blocking)
+ * - If no cookie → fetch from NATS persona service (blocking, sets cookie on response)
+ * - Fallback to 'contributor' on any failure
  */
-export interface UserPersonaResult {
-  /** User's determined persona type */
-  persona: PersonaType | null;
-  /** All detected persona types from committee memberships */
-  personas: PersonaType[];
-  /** Organization names from committee memberships */
-  organizationNames: string[];
+export async function resolvePersonaForSsr(req: Request, res: Response): Promise<SsrPersonaResult> {
+  const cookieHeader = req.headers.cookie || '';
+  const hasPersonaCookie = cookieHeader.includes(PERSONA_COOKIE_KEY + '=');
+
+  if (hasPersonaCookie) {
+    return resolveFromCookie(req, cookieHeader);
+  }
+
+  return resolveFromNats(req, res);
 }
 
 /**
- * Mapping of committee categories to their corresponding personas
- * Add new mappings here to support additional persona types
+ * Parse persona from existing cookie (non-blocking path)
  */
-const COMMITTEE_CATEGORY_TO_PERSONA: Record<string, PersonaType> = {
-  Board: 'board-member',
-  Maintainers: 'maintainer',
-  Committers: 'core-developer',
-};
-
-/**
- * Priority order for personas when user belongs to multiple committee categories
- * Higher index = higher priority (board-member is highest, core-developer is lowest)
- * Only includes personas that can be resolved from COMMITTEE_CATEGORY_TO_PERSONA
- */
-const PERSONA_PRIORITY: PersonaType[] = ['core-developer', 'maintainer', 'board-member'];
-
-/**
- * Fetches and determines user's persona and organizations based on committee membership
- * Checks all configured committee categories and returns the highest priority persona
- * along with all unique organization names from the user's committee memberships
- */
-export async function fetchUserPersonaAndOrganizations(req: Request): Promise<UserPersonaResult> {
-  const startTime = logger.startOperation(req, 'fetch_user_persona_and_organizations');
-
-  const result: UserPersonaResult = {
-    persona: null,
-    personas: [],
-    organizationNames: [],
-  };
-
+function resolveFromCookie(req: Request, cookieHeader: string): SsrPersonaResult {
   try {
-    // Get username from auth context
-    const username = await getUsernameFromAuth(req);
-    if (!username) {
-      logger.success(req, 'fetch_user_persona_and_organizations', startTime, {
-        result: 'no_username_no_persona',
-      });
-      return result;
-    }
-
-    const committeeService = new CommitteeService();
-    const userEmail = req.oidc?.user?.['email'];
-    const matchedPersonas: PersonaType[] = [];
-    const organizationNamesSet = new Set<string>();
-
-    // Check each committee category mapping
-    for (const [category, persona] of Object.entries(COMMITTEE_CATEGORY_TO_PERSONA)) {
-      logger.debug(req, 'check_committee_category', 'Checking committee category', { category });
-      const memberships = await committeeService.getCommitteeMembersByCategory(req, username, userEmail || '', category);
-
-      logger.debug(req, 'found_committee_memberships', 'Committee memberships retrieved', {
-        category,
-        memberships_count: memberships.length,
-      });
-
-      if (memberships.length > 0) {
-        logger.debug(req, 'matched_persona', 'Persona matched for user', {
-          username,
-          category,
-          persona,
-          memberships_count: memberships.length,
-        });
-        matchedPersonas.push(persona);
-
-        // Collect unique organization names from memberships
-        for (const membership of memberships) {
-          if (membership.organization?.name) {
-            organizationNamesSet.add(membership.organization.name);
-          }
-        }
-      } else {
-        logger.debug(req, 'no_memberships_found', 'No memberships found for category', { category });
+    const cookieMatch = cookieHeader.match(new RegExp(`${PERSONA_COOKIE_KEY}=([^;]+)`));
+    if (cookieMatch?.[1]) {
+      let decoded: string;
+      try {
+        decoded = decodeURIComponent(cookieMatch[1]);
+      } catch {
+        return { persona: DEFAULT_PERSONA, personas: [DEFAULT_PERSONA] };
+      }
+      const parsed = JSON.parse(decoded) as PersistedPersonaState;
+      if (parsed.primary && VALID_PERSONAS.has(parsed.primary) && parsed.all?.length > 0 && parsed.all.every((p) => VALID_PERSONAS.has(p))) {
+        return {
+          persona: parsed.primary,
+          personas: parsed.all,
+        };
       }
     }
-
-    // Convert Set to array
-    result.organizationNames = Array.from(organizationNamesSet);
-    result.personas = matchedPersonas;
-
-    // No committee memberships found
-    if (matchedPersonas.length === 0) {
-      logger.success(req, 'fetch_user_persona_and_organizations', startTime, {
-        username,
-        result: 'no_committee_memberships',
-      });
-      return result;
-    }
-
-    // Return highest priority persona if user belongs to multiple categories
-    result.persona = matchedPersonas.reduce((highest, current) => {
-      const currentPriority = PERSONA_PRIORITY.indexOf(current);
-      const highestPriority = PERSONA_PRIORITY.indexOf(highest);
-      return currentPriority > highestPriority ? current : highest;
-    }, matchedPersonas[0]);
-
-    logger.success(req, 'fetch_user_persona_and_organizations', startTime, {
-      username,
-      matched_personas: matchedPersonas,
-      selected_persona: result.persona,
-      organization_count: result.organizationNames.length,
-    });
-
-    return result;
-  } catch (error) {
-    // Log error but don't fail SSR - persona determination is non-critical
-    logger.error(req, 'fetch_user_persona_and_organizations', startTime, error, {
-      failure_reason: 'committee_lookup_failed',
-    });
-    return result;
+  } catch {
+    logger.debug(req, 'ssr_persona', 'Failed to parse persona cookie, using default');
   }
+
+  return { persona: DEFAULT_PERSONA, personas: [DEFAULT_PERSONA] };
 }
 
 /**
- * @deprecated Use fetchUserPersonaAndOrganizations instead
- * Fetches and determines user's persona based on committee membership
+ * Fetch persona from NATS persona detection service (blocking path for first-time users)
+ * Sets the persona cookie on the response so subsequent requests use the non-blocking path
  */
-export async function fetchUserPersona(req: Request): Promise<PersonaType | null> {
-  const result = await fetchUserPersonaAndOrganizations(req);
-  return result.persona;
+async function resolveFromNats(req: Request, res: Response): Promise<SsrPersonaResult> {
+  try {
+    const personaResult = await personaDetectionService.getPersonas(req);
+
+    const persona = personaResult.personas.length > 0 ? personaResult.personas[0] : DEFAULT_PERSONA;
+    const personas = personaResult.personas.length > 0 ? personaResult.personas : [DEFAULT_PERSONA];
+
+    // Only cache when detection succeeded — don't pin user to contributor on transient NATS failure
+    if (!personaResult.error) {
+      const cookieState: PersistedPersonaState = {
+        primary: persona,
+        all: personas,
+        multiProject: personaResult.multiProject,
+        multiFoundation: personaResult.multiFoundation,
+      };
+      res.cookie(PERSONA_COOKIE_KEY, JSON.stringify(cookieState), {
+        maxAge: 30 * 24 * 60 * 60 * 1000,
+        path: '/',
+        sameSite: 'lax',
+        secure: process.env['NODE_ENV'] === 'production',
+        httpOnly: false,
+      });
+    }
+
+    logger.debug(req, 'ssr_persona', 'Persona resolved via NATS for first-time SSR', {
+      persona,
+      personas,
+    });
+
+    return { persona, personas };
+  } catch (error) {
+    logger.warning(req, 'ssr_persona', 'Persona detection failed during SSR, defaulting to contributor', {
+      error: error instanceof Error ? error.message : 'Unknown error',
+      path: req.path,
+    });
+
+    return { persona: DEFAULT_PERSONA, personas: [DEFAULT_PERSONA] };
+  }
 }

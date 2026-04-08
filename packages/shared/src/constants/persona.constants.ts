@@ -11,8 +11,8 @@ export const PERSONA_COOKIE_KEY = 'lfx-active-persona-preset';
  */
 export const PERSONA_OPTIONS: PersonaOption[] = [
   // {
-  //   value: 'core-developer',
-  //   label: 'Core Developer',
+  //   value: 'contributor',
+  //   label: 'Contributor',
   //   description: 'New streamlined developer experience',
   // },
   {
@@ -37,11 +37,11 @@ export const PERSONA_OPTIONS: PersonaOption[] = [
  */
 export const DEV_PERSONA_PRESETS: DevPersonaPreset[] = [
   // Single-role presets
-  { label: 'Contributor', value: 'contributor', personas: ['core-developer'], primary: 'core-developer' },
+  { label: 'Contributor', value: 'contributor', personas: ['contributor'], primary: 'contributor' },
   {
     label: 'Contributor + Maint (multi proj)',
     value: 'contributor-maintainer-multi',
-    personas: ['core-developer', 'maintainer'],
+    personas: ['contributor', 'maintainer'],
     primary: 'maintainer',
     multiProject: true,
   },

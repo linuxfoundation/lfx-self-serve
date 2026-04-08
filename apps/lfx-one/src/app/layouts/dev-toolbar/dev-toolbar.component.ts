@@ -92,11 +92,16 @@ export class DevToolbarComponent {
             this.form.get('selectedProjectUid')?.setValue(tlfProject.uid, { emitEvent: false });
           }
         } else {
-          // Project-scoped: select first non-TLF project
-          const firstProject = this.projectContextService.availableProjects.find((p) => p.slug !== 'tlf');
-          if (firstProject) {
-            this.projectContextService.setProject(firstProject);
-            this.form.get('selectedProjectUid')?.setValue(firstProject.uid, { emitEvent: false });
+          // Project-scoped: keep current project if set, otherwise select first non-TLF project
+          const currentProject = this.projectContextService.selectedProject();
+          if (currentProject) {
+            this.form.get('selectedProjectUid')?.setValue(currentProject.uid, { emitEvent: false });
+          } else {
+            const firstProject = this.projectContextService.availableProjects.find((p) => p.slug !== 'tlf');
+            if (firstProject) {
+              this.projectContextService.setProject(firstProject);
+              this.form.get('selectedProjectUid')?.setValue(firstProject.uid, { emitEvent: false });
+            }
           }
         }
 
