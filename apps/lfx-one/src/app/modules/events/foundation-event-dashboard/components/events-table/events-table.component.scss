@@ -1,0 +1,10 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+:host ::ng-deep .p-datatable .p-datatable-tbody tr td a.p-button {
+  @apply text-white;
+
+  &.p-button-outlined {
+    @apply text-blue-500;
+  }
+}

@@ -112,6 +112,8 @@ export interface ProjectContext {
   name: string;
   /** URL-friendly project identifier */
   slug: string;
+  /** Parent project UID (present for sub-projects; absent for top-level foundations) */
+  parent_uid?: string;
 }
 
 /**

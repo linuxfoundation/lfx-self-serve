@@ -18,7 +18,7 @@ export class ProjectContextService {
 
   public readonly selectedFoundation: WritableSignal<ProjectContext | null>;
   public readonly selectedProject: WritableSignal<ProjectContext | null>;
-  public availableProjects: ProjectContext[] = [];
+  public readonly availableProjects = signal<ProjectContext[]>([]);
 
   public constructor() {
     const storedFoundation = this.loadFromStorage(this.foundationStorageKey);

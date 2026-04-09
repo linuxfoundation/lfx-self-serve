@@ -159,6 +159,11 @@ export class MainLayoutComponent {
       routerLink: '/meetings',
     },
     {
+      label: 'Events',
+      icon: 'fa-light fa-ticket',
+      routerLink: '/events',
+    },
+    {
       label: MAILING_LIST_LABEL.plural,
       icon: 'fa-light fa-envelope',
       routerLink: '/mailing-lists',

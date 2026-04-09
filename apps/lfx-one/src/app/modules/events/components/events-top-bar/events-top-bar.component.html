@@ -1,0 +1,70 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
+  <!-- Search Input -->
+  <div class="flex-1 relative">
+    <lfx-input-text
+      [form]="searchForm"
+      control="search"
+      placeholder="Search events..."
+      icon="fa-light fa-search"
+      styleClass="w-full pr-7"
+      size="small"
+      data-testid="events-search-input" />
+    @if (searchValue()) {
+      <button
+        type="button"
+        class="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 focus:outline-none"
+        (click)="clearSearch()"
+        aria-label="Clear search"
+        data-testid="events-search-clear">
+        <i class="fa-light fa-times text-sm"></i>
+      </button>
+    }
+  </div>
+
+  <!-- Foundation Filter Dropdown -->
+  @if (isFoundationFilter()) {
+    <div class="w-full sm:w-48">
+      <lfx-select
+        [form]="searchForm"
+        control="foundation"
+        size="small"
+        [options]="foundationOptions()"
+        [loading]="foundationOptionsLoading()"
+        placeholder="Foundation"
+        [showClear]="true"
+        styleClass="w-full"
+        data-testid="events-foundation-filter"></lfx-select>
+    </div>
+  }
+
+  @if (!isFoundationFilter()) {
+    <!-- Role Filter Dropdown -->
+    <div class="w-full sm:w-40">
+      <lfx-select
+        [form]="searchForm"
+        control="role"
+        size="small"
+        [options]="roleOptions()"
+        placeholder="Role"
+        [showClear]="true"
+        styleClass="w-full"
+        data-testid="events-role-filter"></lfx-select>
+    </div>
+
+    <!-- Status Filter Dropdown -->
+    <div class="w-full sm:w-40">
+      <lfx-select
+        [form]="searchForm"
+        control="status"
+        size="small"
+        [options]="statusOptions()"
+        placeholder="Status"
+        [showClear]="true"
+        styleClass="w-full"
+        data-testid="events-status-filter"></lfx-select>
+    </div>
+  }
+</div>

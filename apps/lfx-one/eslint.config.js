@@ -27,6 +27,7 @@ module.exports = defineConfig([
       '**/deps_ssr/**',
       'playwright.config.ts',
       'e2e/**/*',
+      'src/server/pdf-templates/**/*',
     ],
   },
   {

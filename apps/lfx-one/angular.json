@@ -62,7 +62,7 @@
               "safe-buffer",
               "lodash.isempty"
             ],
-            "externalDependencies": ["snowflake-sdk", "@opentelemetry/api", "@opentelemetry/semantic-conventions"]
+            "externalDependencies": ["snowflake-sdk", "@opentelemetry/api", "@opentelemetry/semantic-conventions", "pdfkit"]
           },
           "configurations": {
             "production": {

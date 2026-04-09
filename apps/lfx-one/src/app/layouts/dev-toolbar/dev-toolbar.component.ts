@@ -86,7 +86,7 @@ export class DevToolbarComponent {
 
         if (isBoardScopedPersona(preset.primary)) {
           // Board/ED: default to TLF foundation
-          const tlfProject = this.projectContextService.availableProjects.find((p) => p.slug === 'tlf');
+          const tlfProject = this.projectContextService.availableProjects().find((p) => p.slug === 'tlf');
           if (tlfProject) {
             this.projectContextService.setFoundation({ uid: tlfProject.uid, name: tlfProject.name, slug: tlfProject.slug });
             this.form.get('selectedProjectUid')?.setValue(tlfProject.uid, { emitEvent: false });
@@ -97,7 +97,7 @@ export class DevToolbarComponent {
           if (currentProject) {
             this.form.get('selectedProjectUid')?.setValue(currentProject.uid, { emitEvent: false });
           } else {
-            const firstProject = this.projectContextService.availableProjects.find((p) => p.slug !== 'tlf');
+            const firstProject = this.projectContextService.availableProjects().find((p) => p.slug !== 'tlf');
             if (firstProject) {
               this.projectContextService.setProject(firstProject);
               this.form.get('selectedProjectUid')?.setValue(firstProject.uid, { emitEvent: false });
@@ -135,7 +135,7 @@ export class DevToolbarComponent {
       .get('selectedProjectUid')
       ?.valueChanges.pipe(takeUntilDestroyed())
       .subscribe((uid: string) => {
-        const project = this.projectContextService.availableProjects.find((p) => p.uid === uid);
+        const project = this.projectContextService.availableProjects().find((p) => p.uid === uid);
         if (project) {
           if (isBoardScopedPersona(this.personaService.currentPersona())) {
             this.projectContextService.setFoundation(project);

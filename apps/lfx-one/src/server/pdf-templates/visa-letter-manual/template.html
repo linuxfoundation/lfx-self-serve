@@ -1,0 +1,179 @@
+<!--
+  ~ Copyright The Linux Foundation and each contributor to LFX.
+  ~ SPDX-License-Identifier: MIT
+  -->
+
+<html>
+  <head>
+    <meta content="text/html; charset=UTF-8" http-equiv="content-type" />
+    <style type="text/css">
+      @font-face {
+        font-family: 'Helvetica';
+        src: url('data:font/truetype;charset=utf-8;base64,{{fontHelvetica}}');
+        font-weight: normal;
+        font-style: normal;
+      }
+      ol {
+        margin: 0;
+        padding: 0;
+      }
+      table td,
+      table th {
+        padding: 0;
+      }
+
+      body,
+      .doc-content {
+        color: #000000;
+        font-weight: 400;
+        text-decoration: none;
+        vertical-align: baseline;
+        font-size: 8pt;
+        font-family: 'Helvetica';
+        font-style: normal;
+      }
+      p {
+        font-size: 8pt;
+      }
+      table {
+        font-size: 8pt;
+      }
+      table td {
+        vertical-align: top;
+      }
+
+      .floating {
+        font-size: 7pt;
+        color: #5bb6e7;
+        font-weight: 700;
+        position: absolute;
+        top: 0px;
+        right: 0px;
+      }
+    </style>
+  </head>
+  <body class="doc-content">
+    <div class="floating">
+      2810 N Church St
+      <br />
+      PMB 57274
+      <br />
+      Wilmington, Delaware 19802-4447 US
+      <br />
+      Phone/Fax: +1 415 723 9709
+      <br />
+      <a
+        href="https://www.google.com/url?q=http://www.linuxfoundation.org/&amp;sa=D&amp;source=editors&amp;ust=1682161456048394&amp;usg=AOvVaw0n3ksmVUfr3eBLrjf9udCU"
+        >https://www.linuxfoundation.org/</a
+      >
+    </div>
+    <img src="data:image/png;base64,{{ linuxLogo }}" style="width: 1.5in; display: block" />
+    <br />
+    <br />
+    {{ issueDate }}
+    <br />
+    Dear Embassy{{#if event.country }} of {{ event.country }}{{/if}}:
+    <p>
+      The Linux Foundation is pleased to invite the following delegate {{#ifCond attendeeType "===" 'speaker'}} to speak at {{/ifCond}}
+      {{#ifCond attendeeType "!==" 'speaker'}} to attend {{/ifCond}} {{ event.name }}.
+    </p>
+    <table>
+      <tr>
+        <td>Event Name:</td>
+        <td>{{ event.name }}</td>
+      </tr>
+      <tr>
+        <td style="padding-top: 10pt"></td>
+      </tr>
+      <tr>
+        <td>Event Date:</td>
+        <td>{{ event.startDate }} - {{ event.endDate }}</td>
+      </tr>
+      <tr>
+        <td>Event Location:</td>
+        <td>
+          {{#if event.location }}{{ event.location }}, {{/if}} {{#if event.city }}{{ event.city }}, {{/if}}
+          {{#if
+          event.state
+
+
+
+
+
+
+
+          }}{{ event.state }}, {{/if}} {{#if event.country }}{{ event.country }}{{/if}}
+        </td>
+      </tr>
+      <tr>
+        <td style="padding-top: 10pt"></td>
+      </tr>
+      <tr>
+        <td>Name:</td>
+        <td>{{ nameOnPassport }}</td>
+        <td></td>
+      </tr>
+
+      <tr>
+        <td>Passport number:</td>
+        <td>{{ attendee.passportNumber }}</td>
+      </tr>
+      <tr>
+        <td>Date of Birth:</td>
+        <td>{{ birthDate }}</td>
+      </tr>
+      <tr>
+        <td>Country of Birth:</td>
+        <td>{{ attendee.birthCountry }}</td>
+      </tr>
+      <tr>
+        <td>Company:</td>
+        <td>{{ attendee.Account.Name }}</td>
+      </tr>
+      <tr>
+        <td>Title:</td>
+        <td>{{ attendee.jobTitle }}</td>
+      </tr>
+      <tr>
+        <td>Phone Number:</td>
+        <td>{{ attendee.contactNumber }}</td>
+      </tr>
+      <tr>
+        <td>Address:</td>
+        <td>
+          {{ attendee.Address.Street }}
+          <br />
+          {{ attendee.Address.City }}, {{ attendee.Address.State }} {{ attendee.Address.PostalCode }}
+          <br />
+          {{ attendee.Address.Country }}
+        </td>
+      </tr>
+    </table>
+    <p>
+      The Linux Foundation (<a
+        href="https://www.google.com/url?q=http://www.linuxfoundation.org/&amp;sa=D&amp;source=editors&amp;ust=1682161456050945&amp;usg=AOvVaw1ltzmjl00eKMQs9-OlrFgs"
+        >www.linuxfoundation.org</a
+      >) is a nonprofit consortium dedicated to fostering the growth of the Linux operating system. The Linux Foundation promotes, protects and standardizes
+      Linux by providing unified resources and services. It is supported by its members - the leading IT companies such as IBM, Intel, Hewlett Packard, etc.
+      <a
+        href="https://www.google.com/url?q=http://www.linuxfoundation.org/en/Members&amp;sa=D&amp;source=editors&amp;ust=1682161456051180&amp;usg=AOvVaw3sLhnQ3Db9mcXVK5elq7AB"
+        >http://www.linuxfoundation.org/en/Members</a
+      >).
+    </p>
+    <p>All cost of travel and accommodation will be paid for by {{ paidBy }}</p>
+    <p>
+      On behalf of The Linux Foundation, we would be extremely grateful if you could assist in granting
+      {{ nameOnPassport }} a VISA as we look forward to seeing {{ nameOnPassport }} in {{ event.country }}.
+    </p>
+    <br />
+    <br />
+    Yours truly,
+    <br />
+    <img alt="" src="data:image/png;base64,{{ signature }}" style="width: 1.2in; height: 0.37in" title="" />
+    <br />
+    James R. Zemlin <br />
+    Executive Director <br />
+    The Linux Foundation <br />
+    +1.415.723.9709
+  </body>
+</html>

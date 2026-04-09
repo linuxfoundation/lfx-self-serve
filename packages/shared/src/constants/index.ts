@@ -38,6 +38,8 @@ export * from './total-members-drawer.constants';
 export * from './active-contributors-drawer.constants';
 export * from './maintainers-drawer.constants';
 export * from './events-drawer.constants';
+export * from './events.constants';
+export * from './links.config';
 export * from './copilot.constants';
 export * from './committee-documents.constants';
 export * from './lens.constants';

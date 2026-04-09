@@ -26,7 +26,7 @@
           <lfx-select
             [form]="form"
             control="selectedProjectUid"
-            [options]="projectContextService.availableProjects"
+            [options]="projectContextService.availableProjects()"
             optionLabel="name"
             optionValue="uid"
             [filter]="true"

@@ -77,7 +77,7 @@ export class SidebarComponent {
         takeUntilDestroyed()
       )
       .subscribe((detectedProjects) => {
-        this.projectContextService.availableProjects = detectedProjects.map(toProjectContext);
+        this.projectContextService.availableProjects.set(detectedProjects.map(toProjectContext));
         this.setDefaultProjectIfNeeded(detectedProjects);
       });
   }

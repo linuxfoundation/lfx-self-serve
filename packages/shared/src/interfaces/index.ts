@@ -103,3 +103,6 @@ export * from './lens.interface';
 
 // Persona detection interfaces
 export * from './persona-detection.interface';
+
+// My Event interfaces
+export * from './my-event.interface';

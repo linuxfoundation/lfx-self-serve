@@ -13,6 +13,7 @@ import { ATTR_DB_RESPONSE_RETURNED_ROWS } from '@opentelemetry/semantic-conventi
 import { SNOWFLAKE_CONFIG } from '@lfx-one/shared/constants';
 import { SnowflakeLockStrategy } from '@lfx-one/shared/enums';
 import { LockStats, SnowflakePoolStats, SnowflakeQueryOptions, SnowflakeQueryResult } from '@lfx-one/shared/interfaces';
+import crypto from 'crypto';
 import snowflakeSdk from 'snowflake-sdk';
 
 import { MicroserviceError } from '../errors';
@@ -331,8 +332,19 @@ export class SnowflakeService {
       });
     }
 
-    const privateKey = requiredEnvVars.SNOWFLAKE_API_KEY!;
-    logger.debug(undefined, 'snowflake_pool_creation', 'Using SNOWFLAKE_API_KEY from environment variable', {});
+    const rawKey = requiredEnvVars.SNOWFLAKE_API_KEY!;
+    const passphrase = process.env['SNOWFLAKE_PRIVATE_KEY_PASSPHRASE'];
+    let privateKey: string;
+
+    if (passphrase) {
+      // Decrypt the encrypted private key in memory before passing to the SDK
+      const privateKeyObject = crypto.createPrivateKey({ key: rawKey, format: 'pem', passphrase });
+      privateKey = privateKeyObject.export({ format: 'pem', type: 'pkcs8' }) as string;
+      logger.debug(undefined, 'snowflake_pool_creation', 'Using encrypted SNOWFLAKE_API_KEY with passphrase', {});
+    } else {
+      privateKey = rawKey;
+      logger.debug(undefined, 'snowflake_pool_creation', 'Using SNOWFLAKE_API_KEY from environment variable', {});
+    }
 
     // Pool configuration
     const minConnections = Number(process.env['SNOWFLAKE_MIN_CONNECTIONS']) || SNOWFLAKE_CONFIG.MIN_CONNECTIONS;

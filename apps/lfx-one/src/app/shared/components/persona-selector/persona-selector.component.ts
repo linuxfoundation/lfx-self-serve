@@ -42,7 +42,7 @@ export class PersonaSelectorComponent {
         // TODO: DEMO - Remove when proper permissions are implemented
         // Set foundation before persona so navigation in setPersonas() has correct context
         if (isBoardScopedPersona(value)) {
-          const tlfProject = this.projectContextService.availableProjects.find((p) => p.slug === 'tlf');
+          const tlfProject = this.projectContextService.availableProjects().find((p) => p.slug === 'tlf');
           if (tlfProject) {
             this.projectContextService.setFoundation({
               uid: tlfProject.uid,

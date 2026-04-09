@@ -68,6 +68,15 @@ export const routes: Routes = [
         path: 'profile',
         loadChildren: () => import('./modules/profile/profile.routes').then((m) => m.PROFILE_ROUTES),
       },
+      {
+        path: 'me/events',
+        loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
+      },
+      {
+        path: 'events',
+        data: { lens: 'foundation' },
+        loadChildren: () => import('./modules/events/events.routes').then((m) => m.FOUNDATION_EVENTS_ROUTES),
+      },
     ],
   },
   {

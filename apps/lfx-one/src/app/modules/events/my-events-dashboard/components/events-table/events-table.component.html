@@ -1,0 +1,159 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-table
+  [value]="eventsResponse().data"
+  [loading]="loading()"
+  [lazy]="true"
+  [paginator]="eventsResponse().total > 0"
+  [alwaysShowPaginator]="true"
+  [rows]="eventsResponse().pageSize"
+  [first]="eventsResponse().offset"
+  [totalRecords]="eventsResponse().total"
+  [rowsPerPageOptions]="[10, 25, 50]"
+  [showCurrentPageReport]="true"
+  currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+  paginatorPosition="bottom"
+  (onPage)="onPageChange($event)"
+  data-testid="events-data-table">
+  <ng-template #header>
+    <tr>
+      <th
+        scope="col"
+        [attr.aria-sort]="sortField() === 'EVENT_NAME' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
+        data-testid="sort-event-name">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1" (click)="onHeaderClick('EVENT_NAME')">
+          Event Name <i [class]="sortIcons()['EVENT_NAME']"></i>
+        </button>
+      </th>
+      <th
+        scope="col"
+        [attr.aria-sort]="sortField() === 'PROJECT_NAME' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
+        data-testid="sort-foundation">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1" (click)="onHeaderClick('PROJECT_NAME')">
+          Foundation <i [class]="sortIcons()['PROJECT_NAME']"></i>
+        </button>
+      </th>
+      <th
+        scope="col"
+        [attr.aria-sort]="sortField() === 'EVENT_START_DATE' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
+        data-testid="sort-date">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1" (click)="onHeaderClick('EVENT_START_DATE')">
+          Date <i [class]="sortIcons()['EVENT_START_DATE']"></i>
+        </button>
+      </th>
+      <th
+        scope="col"
+        [attr.aria-sort]="sortField() === 'EVENT_CITY' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
+        data-testid="sort-location">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1" (click)="onHeaderClick('EVENT_CITY')">
+          Location <i [class]="sortIcons()['EVENT_CITY']"></i>
+        </button>
+      </th>
+      <th>Role</th>
+      <th>Status</th>
+      @if (isPastEvents()) {
+        <th>Certificate</th>
+      }
+      @if (!isPastEvents()) {
+        <th>Action</th>
+      }
+    </tr>
+  </ng-template>
+
+  <ng-template #body let-event let-rowIndex="rowIndex">
+    <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'event-row-' + event.id">
+      <!-- Event Name -->
+      <td>
+        <a
+          [href]="event.url"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+          [attr.data-testid]="'event-name-' + event.id">
+          {{ event.name }}
+        </a>
+      </td>
+
+      <!-- Foundation -->
+      <td>
+        <div class="max-w-[120px]" [pTooltip]="event.foundation" tooltipPosition="top">
+          <lfx-tag
+            [value]="event.foundation"
+            severity="secondary"
+            styleClass="!block !truncate !max-w-full"
+            [attr.data-testid]="'event-foundation-' + event.id" />
+        </div>
+      </td>
+
+      <!-- Date -->
+      <td>
+        <span class="text-sm text-gray-700">{{ event.date }}</span>
+      </td>
+
+      <!-- Location -->
+      <td>
+        <span class="text-sm text-gray-700">{{ event.location }}</span>
+      </td>
+
+      <!-- Role -->
+      <td>
+        @if (event.role) {
+          <lfx-tag [value]="event.role" [severity]="roleSeverityMap[event.role] ?? 'secondary'" [attr.data-testid]="'event-role-' + event.id" />
+        } @else {
+          <span class="text-sm text-gray-400">—</span>
+        }
+      </td>
+
+      <!-- Status -->
+      <td>
+        <lfx-tag [value]="event.status" [severity]="statusSeverityMap[event.status] ?? 'info'" [attr.data-testid]="'event-status-' + event.id" />
+      </td>
+
+      <!-- Certificate -->
+      @if (isPastEvents()) {
+        <td>
+          <lfx-button
+            label="Download Certificate"
+            severity="primary"
+            [outlined]="true"
+            size="small"
+            styleClass="whitespace-nowrap"
+            (click)="downloadCertificate(event.id)"
+            [attr.data-testid]="'event-download-certificate-button-' + event.id" />
+        </td>
+      }
+
+      <!-- Action -->
+      @if (!isPastEvents()) {
+        <td>
+          <lfx-button
+            [label]="event.isRegistered ? 'View Event' : 'Register'"
+            severity="primary"
+            [outlined]="true"
+            [href]="event.isRegistered ? event.url : event.registrationUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            size="small"
+            styleClass="whitespace-nowrap"
+            [attr.data-testid]="'event-view-button-' + event.id" />
+        </td>
+      }
+    </tr>
+  </ng-template>
+
+  <ng-template #emptymessage>
+    <tr>
+      <td colspan="7" class="text-center py-10">
+        <div class="flex items-center justify-center p-16">
+          <div class="text-center max-w-md">
+            <div class="text-gray-400 mb-4">
+              <i class="fa-light fa-eyes text-3xl mb-4"></i>
+              <h3 class="text-gray-600 mt-2">No events found</h3>
+            </div>
+          </div>
+        </div>
+      </td>
+    </tr>
+  </ng-template>
+</lfx-table>

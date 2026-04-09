@@ -118,6 +118,21 @@ export interface PaginationInfo {
 }
 
 /**
+ * Paginated response wrapper for offset-based pagination
+ * @description Generic response structure for API endpoints that use total/pageSize/offset pagination
+ */
+export interface OffsetPaginatedResponse<T> {
+  /** Array of response items */
+  data: T[];
+  /** Total number of records matching the query */
+  total: number;
+  /** Number of records per page */
+  pageSize: number;
+  /** Number of records skipped */
+  offset: number;
+}
+
+/**
  * Paginated response wrapper for cursor-based pagination
  * @description Generic response structure for API endpoints that support page_token pagination
  */

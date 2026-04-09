@@ -10,3 +10,4 @@ export * from './nats.enum';
 export * from './snowflake.enum';
 export * from './poll.enum';
 export * from './survey.enum';
+export * from './event.enum';
