@@ -64,6 +64,7 @@ export class DashboardMeetingCardComponent {
   public readonly isRecurring: Signal<boolean> = this.initIsRecurring();
   public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
   public readonly meetingDetailQueryParams: Signal<Record<string, string>> = this.initMeetingDetailQueryParams();
+  public readonly meetingDetailHref: Signal<string> = this.initMeetingDetailHref();
   public readonly recordingShareUrl: Signal<string | null> = this.initRecordingShareUrl();
 
   public constructor() {
@@ -274,6 +275,15 @@ export class DashboardMeetingCardComponent {
     return computed((): Record<string, string> => {
       const meeting = this.meeting();
       return meeting.password ? { password: meeting.password } : {};
+    });
+  }
+
+  private initMeetingDetailHref(): Signal<string> {
+    return computed(() => {
+      const url = this.meetingDetailUrl();
+      const params = this.meetingDetailQueryParams();
+      const queryString = new URLSearchParams(params).toString();
+      return queryString ? `${url}?${queryString}` : url;
     });
   }
 
