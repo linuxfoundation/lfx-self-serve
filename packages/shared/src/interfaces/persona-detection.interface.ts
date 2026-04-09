@@ -53,6 +53,10 @@ export interface EnrichedPersonaProject {
   projectName: string | null;
   /** Parent project UID (null if this is a top-level foundation) */
   parentProjectUid: string | null;
+  /** Project logo URL (null if unavailable) */
+  logoUrl: string | null;
+  /** Project description text (null if unavailable) */
+  description: string | null;
   detections: PersonaDetection[];
   personas: PersonaType[];
 }

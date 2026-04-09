@@ -19,26 +19,28 @@
           data-testid="dev-tools-bar-persona-selector" />
       </div>
 
-      <!-- Project/Foundation Selector -->
-      <div class="flex items-center gap-2" data-testid="dev-tools-bar-project-override">
-        <label for="project-override-select" class="text-xs text-gray-400">{{ selectorLabel() }}</label>
-        <lfx-select
-          [form]="form"
-          control="selectedProjectUid"
-          [options]="projectContextService.availableProjects"
-          optionLabel="name"
-          optionValue="uid"
-          [filter]="true"
-          filterPlaceholder="Search..."
-          placeholder="Select..."
-          [showClear]="false"
-          styleClass="min-w-52 dev-tools-select"
-          inputId="project-override-select"
-          data-testid="dev-tools-bar-project-override-select" />
-      </div>
+      <!-- Project/Foundation Selector (hidden on Me lens) -->
+      @if (showProjectSelector()) {
+        <div class="flex items-center gap-2" data-testid="dev-tools-bar-project-override">
+          <label for="project-override-select" class="text-xs text-gray-400">{{ selectorLabel() }}</label>
+          <lfx-select
+            [form]="form"
+            control="selectedProjectUid"
+            [options]="projectContextService.availableProjects"
+            optionLabel="name"
+            optionValue="uid"
+            [filter]="true"
+            filterPlaceholder="Search..."
+            placeholder="Select..."
+            [showClear]="false"
+            styleClass="min-w-52 dev-tools-select"
+            inputId="project-override-select"
+            data-testid="dev-tools-bar-project-override-select" />
+        </div>
+      }
 
-      <!-- Organization Selector (only visible on board dashboard) -->
-      @if (showOrganizationSelector() && isOnBoardDashboard()) {
+      <!-- Organization Selector (visible on foundation lens) -->
+      @if (isFoundationLens() && showOrganizationSelector()) {
         <div class="flex items-center gap-2" data-testid="dev-tools-bar-organization">
           <label for="organization-select" class="text-xs text-gray-400">Organization:</label>
           <lfx-select

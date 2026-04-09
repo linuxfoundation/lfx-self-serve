@@ -150,10 +150,15 @@ export class PersonaDetectionService {
         let projectName: string | null = null;
         let parentProjectUid: string | null = null;
 
+        let logoUrl: string | null = null;
+        let description: string | null = null;
+
         try {
           const projectData = await this.projectService.getProjectById(req, project.project_uid, false);
           projectName = projectData?.name || null;
           parentProjectUid = projectData?.parent_uid || null;
+          logoUrl = projectData?.logo_url || null;
+          description = projectData?.description || null;
         } catch {
           logger.debug(req, 'enrich_project_name', 'Failed to fetch project data, using null', {
             project_uid: project.project_uid,
@@ -167,6 +172,8 @@ export class PersonaDetectionService {
           projectSlug: project.project_slug,
           projectName,
           parentProjectUid,
+          logoUrl,
+          description,
           detections: project.detections,
           personas,
         } as EnrichedPersonaProject;

@@ -1,10 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
-import { NavigationEnd, Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { ACCOUNTS, DEV_PERSONA_PRESETS } from '@lfx-one/shared/constants';
@@ -12,9 +11,10 @@ import { Account, DevPersonaPreset, isBoardScopedPersona } from '@lfx-one/shared
 import { AccountContextService } from '@services/account-context.service';
 import { CookieRegistryService } from '@services/cookie-registry.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { filter, map, skip, startWith } from 'rxjs';
+import { skip } from 'rxjs';
 
 @Component({
   selector: 'lfx-dev-toolbar',
@@ -27,8 +27,8 @@ export class DevToolbarComponent {
   protected readonly projectContextService = inject(ProjectContextService);
   private readonly accountContextService = inject(AccountContextService);
   private readonly cookieRegistry = inject(CookieRegistryService);
+  private readonly lensService = inject(LensService);
   private readonly featureFlagService = inject(FeatureFlagService);
-  private readonly router = inject(Router);
 
   // Feature flags
   protected readonly showDevToolbar = this.featureFlagService.getBooleanFlag('dev-toolbar', true);
@@ -46,8 +46,11 @@ export class DevToolbarComponent {
   /** Label for the project/foundation selector */
   protected readonly selectorLabel = computed(() => (isBoardScopedPersona(this.activePreset().primary) ? 'Foundation:' : 'Project:'));
 
-  // Check if we're on the board dashboard page
-  protected readonly isOnBoardDashboard: Signal<boolean> = this.initIsOnBoardDashboard();
+  /** Hide project selector on the "Me" lens */
+  protected readonly showProjectSelector = computed(() => this.lensService.activeLens() !== 'me');
+
+  /** Organization selector is only relevant on the foundation lens */
+  protected readonly isFoundationLens = computed(() => this.lensService.activeLens() === 'foundation');
 
   // Form for persona selector and organization selector
   public form: FormGroup;
@@ -162,18 +165,6 @@ export class DevToolbarComponent {
       ) ??
       DEV_PERSONA_PRESETS.find((p) => p.primary === persona) ??
       DEV_PERSONA_PRESETS[1]
-    );
-  }
-
-  private initIsOnBoardDashboard(): Signal<boolean> {
-    return toSignal(
-      this.router.events.pipe(
-        filter((event): event is NavigationEnd => event instanceof NavigationEnd),
-        map((event) => event.urlAfterRedirects),
-        startWith(this.router.url),
-        map((url) => url === '/' || url.startsWith('/?'))
-      ),
-      { initialValue: this.router.url === '/' }
     );
   }
 }

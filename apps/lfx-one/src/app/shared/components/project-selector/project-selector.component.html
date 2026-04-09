@@ -46,18 +46,18 @@
 
       <!-- Projects List -->
       <div class="max-h-[400px] overflow-y-auto">
-        @for (foundation of foundations(); track foundation.uid) {
+        @for (foundation of foundations(); track foundation.projectUid) {
           <div>
             <!-- Foundation -->
             <div
               class="flex items-center gap-3 p-2 cursor-pointer hover:bg-gray-100 rounded-lg transition-colors"
               (click)="selectProject(foundation, popover)"
-              [attr.data-testid]="'foundation-' + foundation.slug">
+              [attr.data-testid]="'foundation-' + foundation.projectSlug">
               <!-- Foundation Logo (32px) -->
               <div class="bg-gray-100 overflow-clip rounded-full shrink-0 size-[32px]">
                 <div class="flex items-center justify-center size-full p-[8px]">
-                  @if (foundation.logo_url) {
-                    <img [alt]="foundation.name" class="w-full h-full object-contain" [src]="foundation.logo_url" />
+                  @if (foundation.logoUrl) {
+                    <img [alt]="foundation.projectName" class="w-full h-full object-contain" [src]="foundation.logoUrl" />
                   }
                 </div>
               </div>
@@ -65,26 +65,28 @@
               <!-- Foundation Info -->
               <div class="flex-1 min-w-0">
                 <div class="flex items-center gap-2">
-                  <p class="font-medium text-sm text-gray-900 mb-0">{{ foundation.name }}</p>
+                  <p class="font-medium text-sm text-gray-900 mb-0">{{ foundation.projectName }}</p>
                   <lfx-tag value="Foundation" severity="info"></lfx-tag>
                 </div>
-                <p class="text-xs text-gray-500 line-clamp-1">{{ foundation.description }}</p>
+                @if (foundation.description) {
+                  <p class="text-xs text-gray-500 line-clamp-1">{{ foundation.description }}</p>
+                }
               </div>
             </div>
 
             <!-- Child Projects -->
-            @if (childProjectsMap().has(foundation.uid)) {
+            @if (childProjectsMap().has(foundation.projectUid)) {
               <div class="ml-4 border-l-2 border-gray-200 pl-2 my-1">
-                @for (project of childProjectsMap().get(foundation.uid); track project.uid) {
+                @for (project of childProjectsMap().get(foundation.projectUid); track project.projectUid) {
                   <div
                     class="flex items-center gap-3 p-2 cursor-pointer hover:bg-gray-100 rounded-lg transition-colors"
                     (click)="selectProject(project, popover)"
-                    [attr.data-testid]="'project-' + project.slug">
+                    [attr.data-testid]="'project-' + project.projectSlug">
                     <!-- Project Logo (28px) -->
                     <div class="bg-gray-100 overflow-clip rounded-full shrink-0 size-[28px]">
                       <div class="flex items-center justify-center size-full p-[6px]">
-                        @if (project.logo_url) {
-                          <img [alt]="project.name" class="w-full h-full object-contain" [src]="project.logo_url" />
+                        @if (project.logoUrl) {
+                          <img [alt]="project.projectName" class="w-full h-full object-contain" [src]="project.logoUrl" />
                         } @else {
                           <svg width="14" height="14" viewBox="0 0 20 20" fill="none" xmlns="http://www.w3.org/2000/svg">
                             <path d="M3.96369 15.9789V7.98987H0V19.9504H11.9372V15.9789H3.96369Z" fill="#0094FF" />
@@ -96,8 +98,10 @@
 
                     <!-- Project Info -->
                     <div class="flex-1 min-w-0">
-                      <p class="font-medium text-sm text-gray-900">{{ project.name }}</p>
-                      <p class="text-xs text-gray-500 line-clamp-1">{{ project.description }}</p>
+                      <p class="font-medium text-sm text-gray-900">{{ project.projectName }}</p>
+                      @if (project.description) {
+                        <p class="text-xs text-gray-500 line-clamp-1">{{ project.description }}</p>
+                      }
                     </div>
                   </div>
                 }

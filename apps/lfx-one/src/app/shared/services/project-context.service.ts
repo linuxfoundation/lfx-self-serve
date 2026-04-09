@@ -32,7 +32,12 @@ export class ProjectContextService {
    * Set the selected foundation-level project
    */
   public setFoundation(foundation: ProjectContext): void {
-    this.clearProject();
+    if (this.selectedFoundation()?.uid === foundation.uid) {
+      return;
+    }
+    if (this.selectedProject()) {
+      this.clearProject();
+    }
     this.selectedFoundation.set(foundation);
     this.persistToStorage(this.foundationStorageKey, foundation);
   }
@@ -41,7 +46,12 @@ export class ProjectContextService {
    * Set the selected sub-project (child project)
    */
   public setProject(project: ProjectContext): void {
-    this.clearFoundation();
+    if (this.selectedProject()?.uid === project.uid) {
+      return;
+    }
+    if (this.selectedFoundation()) {
+      this.clearFoundation();
+    }
     this.selectedProject.set(project);
     this.persistToStorage(this.projectStorageKey, project);
   }

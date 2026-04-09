@@ -20,7 +20,7 @@ import { AnalyticsService } from '@services/analytics.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
-import { catchError, of, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, Observable, of, switchMap, tap } from 'rxjs';
 
 import type {
   ActiveWeeksStreakResponse,
@@ -65,6 +65,7 @@ export class RecentProgressComponent {
   });
   public readonly projectSlug = computed(() => this.projectContextService.selectedFoundation()?.slug || this.projectContextService.selectedProject()?.slug);
   private readonly entityType = computed<'foundation' | 'project'>(() => (this.projectContextService.selectedFoundation() ? 'foundation' : 'project'));
+  private readonly isMaintainer = computed(() => this.personaService.currentPersona() === 'maintainer');
   private readonly activeWeeksStreakData = this.initializeActiveWeeksStreakData();
   private readonly pullRequestsMergedData = this.initializePullRequestsMergedData();
   private readonly codeCommitsData = this.initializeCodeCommitsData();
@@ -748,181 +749,82 @@ export class RecentProgressComponent {
   }
 
   private initializeProjectIssuesResolutionData() {
-    return toSignal(
-      toObservable(this.projectSlug).pipe(
-        switchMap((projectSlug) => {
-          if (!projectSlug) {
-            this.loadingState.update((state) => ({ ...state, projectIssuesResolution: false }));
-            return [{ data: [], totalOpenedIssues: 0, totalClosedIssues: 0, resolutionRatePct: 0, medianDaysToClose: 0, totalDays: 0 }];
-          }
-          this.loadingState.update((state) => ({ ...state, projectIssuesResolution: true }));
-          const entityType = this.entityType();
-          return this.analyticsService.getProjectIssuesResolution(projectSlug, entityType).pipe(
-            tap(() => this.loadingState.update((state) => ({ ...state, projectIssuesResolution: false }))),
-            catchError(() => {
-              this.loadingState.update((state) => ({ ...state, projectIssuesResolution: false }));
-              return of({ data: [], totalOpenedIssues: 0, totalClosedIssues: 0, resolutionRatePct: 0, medianDaysToClose: 0, totalDays: 0 });
-            })
-          );
-        })
-      ),
-      {
-        initialValue: {
-          data: [],
-          totalOpenedIssues: 0,
-          totalClosedIssues: 0,
-          resolutionRatePct: 0,
-          medianDaysToClose: 0,
-          totalDays: 0,
-        },
-      }
-    );
+    const defaultValue: ProjectIssuesResolutionResponse = {
+      data: [],
+      totalOpenedIssues: 0,
+      totalClosedIssues: 0,
+      resolutionRatePct: 0,
+      medianDaysToClose: 0,
+      totalDays: 0,
+    };
+
+    return this.maintainerGuardedFetch('projectIssuesResolution', defaultValue, (slug) => {
+      const entityType = this.entityType();
+      return this.analyticsService.getProjectIssuesResolution(slug, entityType);
+    });
   }
 
   private initializeProjectPullRequestsWeeklyData() {
-    return toSignal(
-      toObservable(this.projectSlug).pipe(
-        switchMap((projectSlug) => {
-          if (!projectSlug) {
-            this.loadingState.update((state) => ({ ...state, projectPullRequestsWeekly: false }));
-            return [{ data: [], totalMergedPRs: 0, avgMergeTime: 0, totalWeeks: 0 }];
-          }
-          this.loadingState.update((state) => ({ ...state, projectPullRequestsWeekly: true }));
-          const entityType = this.entityType();
-          return this.analyticsService.getProjectPullRequestsWeekly(projectSlug, entityType).pipe(
-            tap(() => this.loadingState.update((state) => ({ ...state, projectPullRequestsWeekly: false }))),
-            catchError(() => {
-              this.loadingState.update((state) => ({ ...state, projectPullRequestsWeekly: false }));
-              return of({ data: [], totalMergedPRs: 0, avgMergeTime: 0, totalWeeks: 0 });
-            })
-          );
-        })
-      ),
-      {
-        initialValue: {
-          data: [],
-          totalMergedPRs: 0,
-          avgMergeTime: 0,
-          totalWeeks: 0,
-        },
-      }
-    );
+    const defaultValue: ProjectPullRequestsWeeklyResponse = { data: [], totalMergedPRs: 0, avgMergeTime: 0, totalWeeks: 0 };
+
+    return this.maintainerGuardedFetch('projectPullRequestsWeekly', defaultValue, (slug) => {
+      const entityType = this.entityType();
+      return this.analyticsService.getProjectPullRequestsWeekly(slug, entityType);
+    });
   }
 
   private initializeContributorsMentoredData() {
-    return toSignal(
-      toObservable(this.projectSlug).pipe(
-        switchMap((projectSlug) => {
-          if (!projectSlug) {
-            this.loadingState.update((state) => ({ ...state, contributorsMentored: false }));
-            return [{ data: [], totalMentored: 0, avgWeeklyNew: 0, totalWeeks: 0 }];
-          }
-          this.loadingState.update((state) => ({ ...state, contributorsMentored: true }));
-          return this.analyticsService.getContributorsMentored(projectSlug).pipe(
-            tap(() => this.loadingState.update((state) => ({ ...state, contributorsMentored: false }))),
-            catchError(() => {
-              this.loadingState.update((state) => ({ ...state, contributorsMentored: false }));
-              return of({ data: [], totalMentored: 0, avgWeeklyNew: 0, totalWeeks: 0 });
-            })
-          );
-        })
-      ),
-      {
-        initialValue: {
-          data: [],
-          totalMentored: 0,
-          avgWeeklyNew: 0,
-          totalWeeks: 0,
-        },
-      }
-    );
+    const defaultValue: FoundationContributorsMentoredResponse = { data: [], totalMentored: 0, avgWeeklyNew: 0, totalWeeks: 0 };
+
+    return this.maintainerGuardedFetch('contributorsMentored', defaultValue, (slug) => this.analyticsService.getContributorsMentored(slug));
   }
 
   private initializeUniqueContributorsWeeklyData() {
-    return toSignal(
-      toObservable(this.projectSlug).pipe(
-        switchMap((projectSlug) => {
-          if (!projectSlug) {
-            this.loadingState.update((state) => ({ ...state, uniqueContributorsWeekly: false }));
-            return [{ data: [], totalUniqueContributors: 0, avgUniqueContributors: 0, totalWeeks: 0 }];
-          }
-          this.loadingState.update((state) => ({ ...state, uniqueContributorsWeekly: true }));
-          const entityType = this.entityType();
-          return this.analyticsService.getUniqueContributorsWeekly(projectSlug, entityType).pipe(
-            tap(() => this.loadingState.update((state) => ({ ...state, uniqueContributorsWeekly: false }))),
-            catchError(() => {
-              this.loadingState.update((state) => ({ ...state, uniqueContributorsWeekly: false }));
-              return of({ data: [], totalUniqueContributors: 0, avgUniqueContributors: 0, totalWeeks: 0 });
-            })
-          );
-        })
-      ),
-      {
-        initialValue: {
-          data: [],
-          totalUniqueContributors: 0,
-          avgUniqueContributors: 0,
-          totalWeeks: 0,
-        },
-      }
-    );
+    const defaultValue: UniqueContributorsWeeklyResponse = { data: [], totalUniqueContributors: 0, avgUniqueContributors: 0, totalWeeks: 0 };
+
+    return this.maintainerGuardedFetch('uniqueContributorsWeekly', defaultValue, (slug) => {
+      const entityType = this.entityType();
+      return this.analyticsService.getUniqueContributorsWeekly(slug, entityType);
+    });
   }
 
   private initializeHealthMetricsDailyData() {
-    return toSignal(
-      toObservable(this.projectSlug).pipe(
-        switchMap((projectSlug) => {
-          if (!projectSlug) {
-            this.loadingState.update((state) => ({ ...state, healthMetricsDaily: false }));
-            return [{ data: [], currentAvgHealthScore: 0, totalDays: 0 }];
-          }
-          this.loadingState.update((state) => ({ ...state, healthMetricsDaily: true }));
-          const entityType = this.entityType();
-          return this.analyticsService.getHealthMetricsDaily(projectSlug, entityType).pipe(
-            tap(() => this.loadingState.update((state) => ({ ...state, healthMetricsDaily: false }))),
-            catchError(() => {
-              this.loadingState.update((state) => ({ ...state, healthMetricsDaily: false }));
-              return of({ data: [], currentAvgHealthScore: 0, totalDays: 0 });
-            })
-          );
-        })
-      ),
-      {
-        initialValue: {
-          data: [],
-          currentAvgHealthScore: 0,
-          totalDays: 0,
-        },
-      }
-    );
+    const defaultValue: HealthMetricsDailyResponse = { data: [], currentAvgHealthScore: 0, totalDays: 0 };
+
+    return this.maintainerGuardedFetch('healthMetricsDaily', defaultValue, (slug) => {
+      const entityType = this.entityType();
+      return this.analyticsService.getHealthMetricsDaily(slug, entityType);
+    });
   }
 
   private initializeCodeCommitsDailyData() {
+    const defaultValue: CodeCommitsDailyResponse = { data: [], totalCommits: 0, totalDays: 0 };
+
+    return this.maintainerGuardedFetch('codeCommitsDaily', defaultValue, (slug) => {
+      const entityType = this.entityType();
+      return this.analyticsService.getCodeCommitsDaily(slug, entityType);
+    });
+  }
+
+  private maintainerGuardedFetch<T>(loadingKey: string, defaultValue: T, fetchFn: (slug: string) => Observable<T>) {
     return toSignal(
-      toObservable(this.projectSlug).pipe(
-        switchMap((projectSlug) => {
-          if (!projectSlug) {
-            this.loadingState.update((state) => ({ ...state, codeCommitsDaily: false }));
-            return [{ data: [], totalCommits: 0, totalDays: 0 }];
+      combineLatest([toObservable(this.projectSlug), toObservable(this.isMaintainer)]).pipe(
+        switchMap(([projectSlug, isMaintainer]) => {
+          if (!isMaintainer || !projectSlug) {
+            this.loadingState.update((state) => ({ ...state, [loadingKey]: false }));
+            return [defaultValue];
           }
-          this.loadingState.update((state) => ({ ...state, codeCommitsDaily: true }));
-          const entityType = this.entityType();
-          return this.analyticsService.getCodeCommitsDaily(projectSlug, entityType).pipe(
-            tap(() => this.loadingState.update((state) => ({ ...state, codeCommitsDaily: false }))),
+          this.loadingState.update((state) => ({ ...state, [loadingKey]: true }));
+          return fetchFn(projectSlug).pipe(
+            tap(() => this.loadingState.update((state) => ({ ...state, [loadingKey]: false }))),
             catchError(() => {
-              this.loadingState.update((state) => ({ ...state, codeCommitsDaily: false }));
-              return of({ data: [], totalCommits: 0, totalDays: 0 });
+              this.loadingState.update((state) => ({ ...state, [loadingKey]: false }));
+              return of(defaultValue);
             })
           );
         })
       ),
-      {
-        initialValue: {
-          data: [],
-          totalCommits: 0,
-          totalDays: 0,
-        },
-      }
+      { initialValue: defaultValue }
     );
   }
 
