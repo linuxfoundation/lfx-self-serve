@@ -17,6 +17,19 @@ export const apiRateLimiter = rateLimit({
 });
 
 /**
+ * Rate limiter for public API routes (unauthenticated access).
+ *
+ * Applied to /public/api/* routes which don't require authentication,
+ * so a stricter limit is needed to prevent abuse.
+ */
+export const publicApiRateLimiter = rateLimit({
+  windowMs: 60 * 1000, // 1 minute window
+  max: 100, // limit each IP to 100 requests per window
+  standardHeaders: true,
+  legacyHeaders: false,
+});
+
+/**
  * Stricter rate limiter for authentication endpoints.
  *
  * Applied to /login, /passwordless/*, and /social/* routes

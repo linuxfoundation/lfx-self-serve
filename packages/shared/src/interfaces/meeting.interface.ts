@@ -995,3 +995,15 @@ export interface UrlMetadataRequest {
 export interface UrlMetadataResponse {
   results: UrlMetadata[];
 }
+
+/**
+ * Response from public past meeting endpoint
+ * @description Returns meeting details with tiered access — full_access indicates whether
+ * the user has permission to view enrichment data (summary, recording, attachments)
+ * via the existing authenticated endpoints
+ */
+export interface PublicPastMeetingResponse {
+  meeting: PastMeeting;
+  project: { name: string; slug: string; logo_url: string };
+  full_access: boolean;
+}

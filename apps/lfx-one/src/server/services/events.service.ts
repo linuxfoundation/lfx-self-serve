@@ -316,11 +316,7 @@ export class EventsService {
     return { data, total, pageSize: normalizedPageSize, offset: normalizedOffset };
   }
 
-  public async getEventOrganizations(
-    req: Request,
-    userEmail: string,
-    options: GetEventOrganizationsOptions
-  ): Promise<MyEventOrganizationsResponse> {
+  public async getEventOrganizations(req: Request, userEmail: string, options: GetEventOrganizationsOptions): Promise<MyEventOrganizationsResponse> {
     const { projectName, isPast } = options;
 
     logger.debug(req, 'get_event_organizations', 'Building organizations query', {

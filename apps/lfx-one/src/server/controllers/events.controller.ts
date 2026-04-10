@@ -8,7 +8,13 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { CertificateService } from '../services/certificate.service';
-import { DEFAULT_EVENTS_PAGE_SIZE, MAX_EVENTS_PAGE_SIZE, VALID_EVENT_SORT_ORDERS, VALID_EVENT_STATUS_VALUES, VALID_MY_EVENT_STATUS_VALUES } from '@lfx-one/shared/constants';
+import {
+  DEFAULT_EVENTS_PAGE_SIZE,
+  MAX_EVENTS_PAGE_SIZE,
+  VALID_EVENT_SORT_ORDERS,
+  VALID_EVENT_STATUS_VALUES,
+  VALID_MY_EVENT_STATUS_VALUES,
+} from '@lfx-one/shared/constants';
 import { EventSortOrder, EventStatusFilter, GetEventOrganizationsOptions, GetEventsOptions } from '@lfx-one/shared/interfaces';
 import { EventsService } from '../services/events.service';
 

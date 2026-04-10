@@ -1,14 +1,18 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Meeting } from '@lfx-one/shared/interfaces';
+import { MeetingVisibility } from '@lfx-one/shared/enums';
+import { Meeting, PastMeeting } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { CommitteeService } from '../services/committee.service';
+import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 const meetingService = new MeetingService();
+const committeeService = new CommitteeService();
 
 /**
  * Checks if a user is invited to a meeting by their email, falling back to username
@@ -80,4 +84,73 @@ export async function addInvitedStatusToMeetings(req: Request, meetings: Meeting
   // Check invitation status for all meetings, including organizer meetings
   // (organizers may also be invited to their own meetings)
   return Promise.all(meetings.map((meeting) => addInvitedStatusToMeeting(req, meeting, email, m2mToken)));
+}
+
+/**
+ * Determines whether a user has full access to a past meeting based on
+ * visibility, authentication, and membership (registrant, participant,
+ * organizer, or committee member).
+ */
+export async function checkPastMeetingAccess(req: Request, meeting: PastMeeting, m2mToken: string, isOrganizer: boolean): Promise<boolean> {
+  // Public, non-restricted meetings are accessible to everyone
+  if (meeting.visibility === MeetingVisibility.PUBLIC && !meeting.restricted) {
+    return true;
+  }
+
+  // Organizer status was already determined by the controller
+  if (isOrganizer) {
+    return true;
+  }
+
+  // Non-authenticated users cannot access non-public meetings
+  if (!req.oidc?.isAuthenticated()) {
+    logger.debug(req, 'check_past_meeting_access', 'Unauthenticated user denied access to non-public meeting', {
+      past_meeting_id: meeting.id,
+    });
+    return false;
+  }
+
+  const email = (req.oidc.user?.['email'] as string) || '';
+  const username = await getUsernameFromAuth(req);
+
+  logger.debug(req, 'check_past_meeting_access', 'Running membership checks', {
+    past_meeting_id: meeting.id,
+    meeting_id: meeting.meeting_id,
+    has_email: !!email,
+    has_username: !!username,
+    committee_count: meeting.committees?.length ?? 0,
+  });
+
+  // Run registrant, participant, and committee checks in parallel
+  const registrantCheck = isUserInvitedToMeeting(req, meeting.meeting_id, email, m2mToken);
+  const participantCheck = meetingService.isUserPastMeetingParticipant(req, meeting.id, email, username ?? undefined);
+
+  const committeeChecks: Promise<boolean>[] = [];
+  if (username && meeting.committees?.length) {
+    for (const committee of meeting.committees) {
+      committeeChecks.push(
+        committeeService
+          .getCommitteeMembers(req, committee.uid, { tags_all: [`username:${username}`] })
+          .then((members) => members.length > 0)
+          .catch(() => false)
+      );
+    }
+  }
+
+  const [isRegistrant, isParticipant, ...committeeResults] = await Promise.all([registrantCheck, participantCheck, ...committeeChecks]);
+  const isCommitteeMember = committeeResults.some((r) => r);
+
+  logger.debug(req, 'check_past_meeting_access', 'Membership check complete', {
+    past_meeting_id: meeting.id,
+    email,
+    username,
+    is_registrant: isRegistrant,
+    is_participant: isParticipant,
+    is_committee_member: isCommitteeMember,
+    committee_results: committeeResults,
+  });
+
+  const hasAccess = isRegistrant || isParticipant || isCommitteeMember;
+
+  return hasAccess;
 }

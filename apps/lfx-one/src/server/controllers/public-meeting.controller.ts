@@ -8,7 +8,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { ResourceNotFoundError, ServiceValidationError } from '../errors';
 import { AuthorizationError } from '../errors/authentication.error';
-import { addInvitedStatusToMeeting } from '../helpers/meeting.helper';
+import { addInvitedStatusToMeeting, checkPastMeetingAccess } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
@@ -152,6 +152,103 @@ export class PublicMeetingController {
       res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url } });
     } catch (error) {
       // Error handler will log
+      next(error);
+    }
+  }
+
+  /**
+   * GET /public/api/meetings/past/:id
+   * Retrieves a past meeting by ID with tiered access based on authentication and membership
+   */
+  public async getPublicPastMeetingById(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const { id } = req.params;
+
+    const startTime = logger.startOperation(req, 'get_public_past_meeting_by_id', {
+      past_meeting_id: id,
+    });
+
+    try {
+      if (!this.validateMeetingId(id, 'get_public_past_meeting_by_id', req, next)) {
+        return;
+      }
+
+      // Save the user's original token before setting M2M token
+      const originalToken = req.bearerToken;
+
+      // Generate M2M token once for all operations
+      const m2mToken = await this.setupM2MToken(req);
+
+      // Fetch past meeting (throws ResourceNotFoundError if not found)
+      const meeting = await this.meetingService.getPastMeetingById(req, id);
+
+      // Fetch project
+      const project = await this.projectService.getProjectById(req, meeting.project_uid, false);
+      if (!project) {
+        throw new ResourceNotFoundError('Project', meeting.project_uid, {
+          operation: 'get_public_past_meeting_by_id',
+          service: 'public_meeting_controller',
+          path: `/projects/${meeting.project_uid}`,
+        });
+      }
+
+      // Check organizer status for authenticated users using user token
+      let isOrganizer = false;
+      const isAuthenticated = req.oidc?.isAuthenticated();
+      if (isAuthenticated && originalToken !== undefined) {
+        req.bearerToken = originalToken;
+        try {
+          const meetingWithAccess = await this.accessCheckService.addAccessToResource(req, meeting, 'v1_past_meeting', 'organizer');
+          isOrganizer = meetingWithAccess.organizer ?? false;
+        } catch {
+          isOrganizer = false;
+        }
+        req.bearerToken = m2mToken;
+      }
+
+      logger.debug(req, 'get_public_past_meeting_by_id', 'Organizer check result', {
+        past_meeting_id: id,
+        is_organizer: isOrganizer,
+        is_authenticated: !!isAuthenticated,
+        has_original_token: originalToken !== undefined,
+      });
+
+      // Determine full access based on visibility and membership
+      const fullAccess = await checkPastMeetingAccess(req, meeting, m2mToken, isOrganizer);
+
+      logger.success(req, 'get_public_past_meeting_by_id', startTime, {
+        past_meeting_id: id,
+        full_access: fullAccess,
+      });
+
+      // For non-full-access users, return only the fields needed for the basic UI
+      const meetingResponse = fullAccess
+        ? meeting
+        : {
+            id: meeting.id,
+            title: meeting.title,
+            visibility: meeting.visibility,
+            meeting_type: meeting.meeting_type,
+            restricted: meeting.restricted,
+            start_time: meeting.start_time,
+            scheduled_start_time: meeting.scheduled_start_time,
+            scheduled_end_time: meeting.scheduled_end_time,
+            duration: meeting.duration,
+            recurrence: meeting.recurrence,
+            recording_enabled: meeting.recording_enabled,
+            transcript_enabled: meeting.transcript_enabled,
+            youtube_upload_enabled: meeting.youtube_upload_enabled,
+            show_meeting_attendees: meeting.show_meeting_attendees,
+            zoom_config: meeting.zoom_config ? { ai_companion_enabled: meeting.zoom_config.ai_companion_enabled } : undefined,
+            project_uid: meeting.project_uid,
+            meeting_id: meeting.meeting_id,
+          };
+
+      res.json({
+        meeting: meetingResponse,
+        project: { name: project.name, slug: project.slug, logo_url: project.logo_url },
+        full_access: fullAccess,
+      });
+    } catch (error) {
       next(error);
     }
   }

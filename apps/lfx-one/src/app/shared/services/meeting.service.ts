@@ -27,6 +27,7 @@ import {
   PastMeetingRecording,
   PastMeetingSummary,
   PresignAttachmentRequest,
+  PublicPastMeetingResponse,
   PresignAttachmentResponse,
   Project,
   QueryServiceCountResponse,
@@ -402,6 +403,10 @@ export class MeetingService {
         return of([]);
       })
     );
+  }
+
+  public getPublicPastMeeting(id: string): Observable<PublicPastMeetingResponse> {
+    return this.http.get<PublicPastMeetingResponse>(`/public/api/meetings/past/${id}`);
   }
 
   public getPastMeetingById(pastMeetingUid: string): Observable<PastMeeting> {

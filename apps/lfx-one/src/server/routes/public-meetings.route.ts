@@ -11,6 +11,9 @@ const publicMeetingController = new PublicMeetingController();
 // POST /public/api/meetings/register - register for a public, non-restricted meeting (public access, no authentication required)
 router.post('/register', (req, res, next) => publicMeetingController.registerForPublicMeeting(req, res, next));
 
+// GET /public/api/meetings/past/:id - get a past meeting with tiered access (public access, no authentication required)
+router.get('/past/:id', (req, res, next) => publicMeetingController.getPublicPastMeetingById(req, res, next));
+
 // GET /public/api/meetings/:id - get a single meeting (public access, no authentication required)
 router.get('/:id', (req, res, next) => publicMeetingController.getMeetingById(req, res, next));
 
