@@ -20,12 +20,18 @@
     <div class="bg-white rounded-lg border border-gray-200 p-4">
       <lfx-events-top-bar
         [isFoundationFilter]="true"
+        [isPast]="isPast()"
         (searchQueryChange)="onSearchQueryChange($event)"
         (foundationChange)="onFoundationChange($event)"
         (roleChange)="onRoleChange($event)"
         (statusChange)="onStatusChange($event)" />
     </div>
     <!-- Events List (Tabs + Table) -->
-    <lfx-events-list [foundation]="selectedFoundation()" [searchQuery]="selectedSearchQuery()" [role]="selectedRole()" [status]="selectedStatus()" />
+    <lfx-events-list
+      [foundation]="selectedFoundation()"
+      [searchQuery]="selectedSearchQuery()"
+      [role]="selectedRole()"
+      [status]="selectedStatus()"
+      (activeTabChange)="onActiveTabChange($event)" />
   </div>
 </div>

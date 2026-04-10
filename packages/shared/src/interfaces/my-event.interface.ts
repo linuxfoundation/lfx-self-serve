@@ -4,6 +4,14 @@
 import { OffsetPaginatedResponse } from './api.interface';
 
 /**
+ * The set of valid status filter values for foundation events.
+ * Raw EVENT_STATUS DB values ('Active', 'Planned', 'Pending', 'Completed') are passed
+ * directly as SQL bind parameters. 'coming-soon' is a synthetic sentinel that the server
+ * maps to `EVENT_STATUS IN ('Pending', 'Planned')`.
+ */
+export type EventStatusFilter = 'Active' | 'Planned' | 'Pending' | 'Completed' | 'coming-soon';
+
+/**
  * Event item for the My Events dashboard
  */
 export interface MyEvent {
@@ -110,7 +118,7 @@ export interface FoundationEvent {
   date: string;
   /** Human-readable location string (e.g. "Salt Lake City, UT") */
   location: string;
-  /** Event status (e.g. "Published", "Cancelled") */
+  /** Raw EVENT_STATUS value from the database (e.g. 'Active', 'Planned', 'Completed') */
   status: string | null;
   /** Whether the event is in the past */
   isPast: boolean;
@@ -122,6 +130,8 @@ export interface FoundationEvent {
  * Foundation event with computed action properties for the events table
  */
 export interface FoundationEventWithActions extends FoundationEvent {
+  /** Display label derived from raw status (e.g. 'Active' → 'Registration Open') */
+  displayStatus: string | null;
   actionLabel: string;
   isOutlined: boolean;
 }
@@ -188,6 +198,8 @@ export interface GetMyEventsParams {
  */
 export interface GetEventOrganizationsParams {
   projectName?: string;
+  /** When true, returns only foundations from the user's registered past events */
+  isPast?: boolean;
 }
 
 /**
@@ -198,6 +210,8 @@ export interface GetEventsParams {
   eventId?: string;
   projectNames?: string[];
   searchQuery?: string;
+  /** Filter by event status. See {@link EventStatusFilter} for supported values. */
+  status?: EventStatusFilter;
   sortField?: string;
   pageSize?: number;
   offset?: number;
@@ -267,6 +281,8 @@ export interface GetEventsOptions {
   eventId?: string;
   projectNames?: string[];
   searchQuery?: string;
+  /** Filter by event status. See {@link EventStatusFilter} for supported values. */
+  status?: EventStatusFilter;
   sortField?: string;
   pageSize: number;
   offset: number;
@@ -278,4 +294,6 @@ export interface GetEventsOptions {
  */
 export interface GetEventOrganizationsOptions {
   projectName?: string;
+  /** When true, returns only foundations from the authenticated user's registered past events */
+  isPast?: boolean;
 }

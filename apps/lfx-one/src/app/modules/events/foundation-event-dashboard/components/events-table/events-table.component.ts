@@ -6,8 +6,9 @@ import { Component, computed, input, output } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
+import { FOUNDATION_EVENT_STATUS_SEVERITY_MAP } from '@lfx-one/shared/constants';
 import { FoundationEventStatus } from '@lfx-one/shared/enums';
-import { EventsResponse, FoundationEventWithActions, PageChangeEvent, SortChangeEvent, TagSeverity } from '@lfx-one/shared/interfaces';
+import { EventsResponse, FoundationEventWithActions, PageChangeEvent, SortChangeEvent } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-foundation-events-table',
@@ -24,12 +25,7 @@ export class EventsTableComponent {
   public readonly pageChange = output<PageChangeEvent>();
   public readonly sortChange = output<SortChangeEvent>();
 
-  protected readonly statusSeverityMap: Partial<Record<string, TagSeverity>> = {
-    Planned: 'secondary',
-    Pending: 'secondary',
-    Completed: 'success',
-    Active: 'info',
-  };
+  protected readonly statusSeverityMap = FOUNDATION_EVENT_STATUS_SEVERITY_MAP;
 
   protected readonly sortIcons = computed(() => {
     const field = this.sortField();
@@ -47,11 +43,15 @@ export class EventsTableComponent {
 
   protected readonly eventsWithActions = computed<FoundationEventWithActions[]>(() => {
     const isPast = this.isPastEvents();
-    return this.eventsResponse().data.map((event) => ({
-      ...event,
-      actionLabel: isPast ? 'View Recap' : this.resolveActionLabel(event.status),
-      isOutlined: !isPast && (event.status === FoundationEventStatus.PLANNED || event.status === FoundationEventStatus.PENDING),
-    }));
+    return this.eventsResponse().data.map((event) => {
+      const displayStatus = this.mapFoundationEventStatus(event.status);
+      return {
+        ...event,
+        displayStatus,
+        actionLabel: isPast ? 'View Recap' : this.resolveActionLabel(displayStatus),
+        isOutlined: !isPast && displayStatus === FoundationEventStatus.COMING_SOON,
+      };
+    });
   });
 
   protected onPageChange(event: { first: number; rows: number }): void {
@@ -62,15 +62,26 @@ export class EventsTableComponent {
     this.sortChange.emit({ field });
   }
 
-  private resolveActionLabel(status: string | null): string {
-    switch (status) {
-      case FoundationEventStatus.PLANNED:
-      case FoundationEventStatus.PENDING:
+  private resolveActionLabel(displayStatus: string | null): string {
+    switch (displayStatus) {
+      case FoundationEventStatus.COMING_SOON:
         return 'Notify Me';
       case FoundationEventStatus.COMPLETED:
         return 'View Recap';
       default:
         return 'Register';
+    }
+  }
+
+  private mapFoundationEventStatus(raw: string | null): string | null {
+    switch (raw) {
+      case FoundationEventStatus.ACTIVE:
+        return FoundationEventStatus.REGISTRATION_OPEN;
+      case FoundationEventStatus.PENDING:
+      case FoundationEventStatus.PLANNED:
+        return FoundationEventStatus.COMING_SOON;
+      default:
+        return raw;
     }
   }
 }

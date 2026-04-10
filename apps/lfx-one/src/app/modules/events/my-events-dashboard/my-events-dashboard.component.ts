@@ -6,6 +6,7 @@ import { TagComponent } from '@app/shared/components/tag/tag.component';
 import { PersonaService } from '@app/shared/services/persona.service';
 import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { LINKS_CONFIG } from '@lfx-one/shared/constants';
+import { EventTabId } from '@lfx-one/shared/interfaces';
 import { DiscoverEventsButtonComponent } from '../components/discover-events-button/discover-events-button.component';
 import { EventsTopBarComponent } from '../components/events-top-bar/events-top-bar.component';
 import { EventsInfoBannersComponent } from './components/events-info-banners/events-info-banners.component';
@@ -22,6 +23,9 @@ export class MyEventsDashboardComponent {
   private readonly projectContextService = inject(ProjectContextService);
 
   protected readonly linksConfig = LINKS_CONFIG;
+
+  protected readonly activeTab = signal<EventTabId>('upcoming');
+  protected readonly isPast = computed(() => this.activeTab() === 'past');
 
   protected readonly selectedFoundation = signal<string | null>(null);
   protected readonly selectedRole = signal<string | null>(null);
@@ -44,6 +48,12 @@ export class MyEventsDashboardComponent {
 
   protected onSearchQueryChange(value: string): void {
     this.selectedSearchQuery.set(value);
+  }
+
+  protected onActiveTabChange(tab: EventTabId): void {
+    this.activeTab.set(tab);
+    // Reset foundation filter when switching tabs — each tab has a different foundation list
+    this.selectedFoundation.set(null);
   }
 
   private initFoundationLabel(): Signal<string> {

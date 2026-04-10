@@ -40,8 +40,8 @@
     </div>
   }
 
-  @if (!isFoundationFilter()) {
-    <!-- Role Filter Dropdown -->
+  <!-- Role Filter Dropdown -->
+  @if (showRoleFilter()) {
     <div class="w-full sm:w-40">
       <lfx-select
         [form]="searchForm"
@@ -53,18 +53,18 @@
         styleClass="w-full"
         data-testid="events-role-filter"></lfx-select>
     </div>
-
-    <!-- Status Filter Dropdown -->
-    <div class="w-full sm:w-40">
-      <lfx-select
-        [form]="searchForm"
-        control="status"
-        size="small"
-        [options]="statusOptions()"
-        placeholder="Status"
-        [showClear]="true"
-        styleClass="w-full"
-        data-testid="events-status-filter"></lfx-select>
-    </div>
   }
+
+  <!-- Status Filter Dropdown -->
+  <div class="w-full sm:w-40">
+    <lfx-select
+      [form]="searchForm"
+      control="status"
+      size="small"
+      [options]="statusOptions()"
+      placeholder="Status"
+      [showClear]="true"
+      styleClass="w-full"
+      data-testid="events-status-filter"></lfx-select>
+  </div>
 </div>

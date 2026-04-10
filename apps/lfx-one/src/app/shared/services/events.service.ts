@@ -51,6 +51,7 @@ export class EventsService {
       });
     }
     if (params.searchQuery) httpParams = httpParams.set('searchQuery', params.searchQuery);
+    if (params.status) httpParams = httpParams.set('status', params.status);
     if (params.sortField) httpParams = httpParams.set('sortField', params.sortField);
     if (params.pageSize) httpParams = httpParams.set('pageSize', String(params.pageSize));
     if (params.offset !== undefined) httpParams = httpParams.set('offset', String(params.offset));
@@ -63,6 +64,7 @@ export class EventsService {
     let httpParams = new HttpParams();
 
     if (params.projectName) httpParams = httpParams.set('projectName', params.projectName);
+    if (params.isPast !== undefined) httpParams = httpParams.set('isPast', String(params.isPast));
 
     return this.http
       .get<MyEventOrganizationsResponse>('/api/events/organizations', { params: httpParams })

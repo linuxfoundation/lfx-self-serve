@@ -2,13 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, inject, input, Signal, signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, output, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EventsService } from '@app/shared/services/events.service';
 import { DEFAULT_EVENTS_PAGE_SIZE, EMPTY_MY_EVENTS_RESPONSE } from '@lfx-one/shared/constants';
 import { EventTab, EventTabId, MyEventsResponse, PageChangeEvent, SortChangeEvent } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { catchError, combineLatest, finalize, of, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, finalize, of, skip, switchMap, tap } from 'rxjs';
 import { EventsTableComponent } from '../events-table/events-table.component';
 
 @Component({
@@ -24,6 +24,8 @@ export class EventsListComponent {
   public readonly searchQuery = input<string>('');
   public readonly role = input<string | null>(null);
   public readonly status = input<string | null>(null);
+
+  public readonly activeTabChange = output<EventTabId>();
 
   protected readonly activeTab = signal<EventTabId>('upcoming');
 
@@ -65,6 +67,7 @@ export class EventsListComponent {
 
   protected setActiveTab(tab: EventTabId): void {
     this.activeTab.set(tab);
+    this.activeTabChange.emit(tab);
   }
 
   protected onUpcomingPageChange(event: PageChangeEvent): void {
@@ -124,6 +127,7 @@ export class EventsListComponent {
           sortOrder: sortOrderSignal(),
         }))
       ).pipe(
+        debounceTime(0),
         tap(() => loadingSignal.set(true)),
         switchMap(({ offset, pageSize, projectName, searchQuery, role, status, sortField, sortOrder }) =>
           this.eventsService.getMyEvents({ isPast, offset, pageSize, projectName, searchQuery, role, status, sortField, sortOrder }).pipe(

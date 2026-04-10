@@ -7,7 +7,7 @@ import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { FilterOption } from '@lfx-one/shared/interfaces';
-import { debounceTime, map, switchMap, tap } from 'rxjs';
+import { combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, shareReplay, skip, switchMap } from 'rxjs';
 import { EventsService } from '@app/shared/services/events.service';
 import { EVENT_ROLE_OPTIONS, MY_EVENT_STATUS_OPTIONS } from '@lfx-one/shared/constants';
 
@@ -19,8 +19,11 @@ import { EVENT_ROLE_OPTIONS, MY_EVENT_STATUS_OPTIONS } from '@lfx-one/shared/con
 export class EventsTopBarComponent {
   private readonly eventsService = inject(EventsService);
 
-  public isFoundationFilter = input<boolean>(false);
+  public readonly isFoundationFilter = input<boolean>(false);
+  public readonly showRoleFilter = input<boolean>(true);
   public readonly projectName = input<string | undefined>(undefined);
+  /** When true, foundation options are scoped to the user's registered past events */
+  public readonly isPast = input<boolean>(false);
   public readonly searchQueryChange = output<string>();
 
   public readonly searchForm: FormGroup = new FormGroup({
@@ -36,7 +39,7 @@ export class EventsTopBarComponent {
 
   protected readonly roleOptions = signal<FilterOption[]>(EVENT_ROLE_OPTIONS);
 
-  protected readonly statusOptions = signal<FilterOption[]>(MY_EVENT_STATUS_OPTIONS);
+  public readonly statusOptions = input<FilterOption[]>(MY_EVENT_STATUS_OPTIONS);
 
   protected readonly foundationOptionsLoading = signal(true);
   protected readonly searchValue = signal('');
@@ -52,6 +55,15 @@ export class EventsTopBarComponent {
     searchControl?.valueChanges.pipe(debounceTime(500), takeUntilDestroyed()).subscribe((value) => {
       this.searchQueryChange.emit(value || '');
     });
+
+    // Clear the foundation dropdown when the tab changes (isPast flips).
+    // emitEvent: false prevents a spurious foundationChange output that would conflict
+    // with the dashboard's own selectedFoundation reset.
+    toObservable(this.isPast)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        this.searchForm.get('foundation')?.setValue(null, { emitEvent: false });
+      });
   }
 
   public clearSearch(): void {
@@ -59,16 +71,25 @@ export class EventsTopBarComponent {
   }
 
   private initFoundationOptions(): Signal<FilterOption[]> {
+    const defaultOptions = [{ label: 'All Foundations', value: null }] as FilterOption[];
     return toSignal(
-      toObservable(this.projectName).pipe(
-        switchMap((projectName) =>
-          this.eventsService.getEventOrganizations({ projectName }).pipe(
-            tap(() => this.foundationOptionsLoading.set(false)),
-            map(({ data }) => [{ label: 'All Foundations', value: null }, ...data.map((name) => ({ label: name, value: name }))])
-          )
-        )
+      combineLatest([toObservable(this.projectName), toObservable(this.isPast), toObservable(this.isFoundationFilter)]).pipe(
+        distinctUntilChanged((a, b) => a[0] === b[0] && a[1] === b[1] && a[2] === b[2]),
+        switchMap(([projectName, isPast, isFoundationFilter]) => {
+          if (!isFoundationFilter) {
+            // Foundation dropdown is not rendered — skip the API call and clear loading.
+            this.foundationOptionsLoading.set(false);
+            return of(defaultOptions);
+          }
+          this.foundationOptionsLoading.set(true);
+          return this.eventsService.getEventOrganizations({ projectName, isPast }).pipe(
+            map(({ data }) => [{ label: 'All Foundations', value: null }, ...data.map((name) => ({ label: name, value: name }))]),
+            finalize(() => this.foundationOptionsLoading.set(false))
+          );
+        }),
+        shareReplay({ bufferSize: 1, refCount: true })
       ),
-      { initialValue: [{ label: 'All Foundations', value: null }] as FilterOption[] }
+      { initialValue: defaultOptions }
     );
   }
 }

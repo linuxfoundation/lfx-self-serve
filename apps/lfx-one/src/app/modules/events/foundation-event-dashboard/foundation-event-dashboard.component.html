@@ -13,10 +13,14 @@
 
     <!-- Search and Filters -->
     <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <lfx-events-top-bar [isFoundationFilter]="true" (searchQueryChange)="onSearchQueryChange($event)" />
+      <lfx-events-top-bar
+        [showRoleFilter]="false"
+        [statusOptions]="foundationStatusOptions"
+        (searchQueryChange)="onSearchQueryChange($event)"
+        (statusChange)="onStatusChange($event)" />
     </div>
 
     <!-- Events List (Tabs + Table) -->
-    <lfx-foundation-events-list [foundation]="userFoundation()" [searchQuery]="selectedSearchQuery()" />
+    <lfx-foundation-events-list [foundation]="userFoundation()" [searchQuery]="selectedSearchQuery()" [status]="selectedStatus()" />
   </div>
 </div>

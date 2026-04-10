@@ -3,7 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { DEFAULT_EVENT_SORT_FIELD, VALID_EVENT_SORT_FIELDS } from '@lfx-one/shared/constants';
+import { COMING_SOON_SENTINEL, DEFAULT_EVENT_SORT_FIELD, VALID_EVENT_SORT_FIELDS } from '@lfx-one/shared/constants';
 import {
   EventRow,
   EventSortOrder,
@@ -219,7 +219,7 @@ export class EventsService {
   }
 
   public async getEvents(req: Request, options: GetEventsOptions): Promise<EventsResponse> {
-    const { isPast, eventId, projectNames, searchQuery, sortField: rawSortField, pageSize, offset, sortOrder } = options;
+    const { isPast, eventId, projectNames, searchQuery, status, sortField: rawSortField, pageSize, offset, sortOrder } = options;
     const sortField = rawSortField && VALID_EVENT_SORT_FIELDS.has(rawSortField) ? rawSortField : DEFAULT_EVENT_SORT_FIELD;
     const normalizedSortOrder: EventSortOrder = sortOrder === 'DESC' ? 'DESC' : 'ASC';
     const normalizedPageSize = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : 10;
@@ -230,6 +230,7 @@ export class EventsService {
       has_event_id: !!eventId,
       project_names_count: projectNames?.length ?? 0,
       has_search_query: !!searchQuery,
+      status,
       page_size: normalizedPageSize,
       offset: normalizedOffset,
       sort_order: normalizedSortOrder,
@@ -239,6 +240,12 @@ export class EventsService {
     const eventIdFilter = eventId ? 'AND EVENT_ID = ?' : '';
     const projectNamesFilter = projectNames && projectNames.length > 0 ? `AND PROJECT_NAME IN (${projectNames.map(() => '?').join(', ')})` : '';
     const searchQueryFilter = searchQuery ? 'AND EVENT_NAME ILIKE ?' : '';
+    let statusFilter = '';
+    if (status === COMING_SOON_SENTINEL) {
+      statusFilter = "AND EVENT_STATUS IN ('Pending', 'Planned')";
+    } else if (status) {
+      statusFilter = 'AND EVENT_STATUS = ?';
+    }
 
     const sql = `
       SELECT
@@ -265,6 +272,7 @@ export class EventsService {
         ${eventIdFilter}
         ${projectNamesFilter}
         ${searchQueryFilter}
+        ${statusFilter}
       GROUP BY
         E.EVENT_ID,
         EVENT_NAME,
@@ -284,6 +292,7 @@ export class EventsService {
     if (eventId) binds.push(eventId);
     if (projectNames && projectNames.length > 0) binds.push(...projectNames);
     if (searchQuery) binds.push(`%${searchQuery}%`);
+    if (status && status !== COMING_SOON_SENTINEL) binds.push(status);
 
     logger.debug(req, 'get_events', 'Executing events query', { bind_count: binds.length });
 
@@ -307,27 +316,47 @@ export class EventsService {
     return { data, total, pageSize: normalizedPageSize, offset: normalizedOffset };
   }
 
-  public async getEventOrganizations(req: Request, options: GetEventOrganizationsOptions): Promise<MyEventOrganizationsResponse> {
-    const { projectName } = options;
+  public async getEventOrganizations(
+    req: Request,
+    userEmail: string,
+    options: GetEventOrganizationsOptions
+  ): Promise<MyEventOrganizationsResponse> {
+    const { projectName, isPast } = options;
 
     logger.debug(req, 'get_event_organizations', 'Building organizations query', {
       has_project_name: !!projectName,
+      is_past: isPast,
     });
 
-    // Return all distinct project names from upcoming events so the foundation filter dropdown
-    // includes both the user's registered foundations and discoverable ones.
-    const projectNameFilter = projectName ? 'AND PROJECT_NAME = ?' : '';
-
-    const sql = `
-      SELECT DISTINCT PROJECT_NAME
-      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
-      WHERE IS_PAST_EVENT = FALSE
-        ${projectNameFilter}
-      ORDER BY PROJECT_NAME
-    `;
-
+    let sql: string;
     const binds: string[] = [];
-    if (projectName) binds.push(projectName);
+
+    if (isPast === true) {
+      // Past tab: return only foundations from the authenticated user's registered past events.
+      const projectNameFilter = projectName ? 'AND PROJECT_NAME = ?' : '';
+      sql = `
+        SELECT DISTINCT PROJECT_NAME
+        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+        WHERE USER_EMAIL = ?
+          AND IS_PAST_EVENT = TRUE
+          ${projectNameFilter}
+        ORDER BY PROJECT_NAME
+      `;
+      binds.push(userEmail);
+      if (projectName) binds.push(projectName);
+    } else {
+      // Upcoming tab: return all distinct project names from upcoming events so the foundation
+      // filter dropdown includes both the user's registered foundations and discoverable ones.
+      const projectNameFilter = projectName ? 'AND PROJECT_NAME = ?' : '';
+      sql = `
+        SELECT DISTINCT PROJECT_NAME
+        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+        WHERE IS_PAST_EVENT = FALSE
+          ${projectNameFilter}
+        ORDER BY PROJECT_NAME
+      `;
+      if (projectName) binds.push(projectName);
+    }
 
     logger.debug(req, 'get_event_organizations', 'Executing organizations query', { bind_count: binds.length });
 
@@ -421,7 +450,7 @@ export class EventsService {
       registrationUrl: row.EVENT_REGISTRATION_URL ?? null,
       date: this.formatDateRange(row.EVENT_START_DATE, row.EVENT_END_DATE),
       location: this.formatLocation(row.EVENT_LOCATION, row.EVENT_CITY, row.EVENT_COUNTRY),
-      status: row.EVENT_STATUS,
+      status: row.EVENT_STATUS ?? null,
       isPast: row.IS_PAST_EVENT,
       attendees: row.ATTENDEES ?? null,
     };

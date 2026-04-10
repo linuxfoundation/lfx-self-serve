@@ -94,7 +94,7 @@
         </td>
       } @else {
         <td>
-          <lfx-tag [value]="event.status" [severity]="statusSeverityMap[event.status] ?? 'secondary'" [attr.data-testid]="'event-status-' + event.id" />
+          <lfx-tag [value]="event.displayStatus" [severity]="statusSeverityMap[event.displayStatus] ?? 'secondary'" [attr.data-testid]="'event-status-' + event.id" />
         </td>
       }
 

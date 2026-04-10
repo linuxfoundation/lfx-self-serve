@@ -8,8 +8,8 @@ import { NextFunction, Request, Response } from 'express';
 import { AuthenticationError, ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { CertificateService } from '../services/certificate.service';
-import { DEFAULT_EVENTS_PAGE_SIZE, MAX_EVENTS_PAGE_SIZE, VALID_EVENT_SORT_ORDERS } from '@lfx-one/shared/constants';
-import { EventSortOrder, GetEventOrganizationsOptions, GetEventsOptions } from '@lfx-one/shared/interfaces';
+import { DEFAULT_EVENTS_PAGE_SIZE, MAX_EVENTS_PAGE_SIZE, VALID_EVENT_SORT_ORDERS, VALID_EVENT_STATUS_VALUES, VALID_MY_EVENT_STATUS_VALUES } from '@lfx-one/shared/constants';
+import { EventSortOrder, EventStatusFilter, GetEventOrganizationsOptions, GetEventsOptions } from '@lfx-one/shared/interfaces';
 import { EventsService } from '../services/events.service';
 
 export class EventsController {
@@ -43,7 +43,8 @@ export class EventsController {
       const projectName = req.query['projectName'] ? String(req.query['projectName']) : undefined;
       const searchQuery = req.query['searchQuery'] ? String(req.query['searchQuery']).trim() : undefined;
       const role = req.query['role'] ? String(req.query['role']) : undefined;
-      const status = req.query['status'] ? String(req.query['status']) : undefined;
+      const rawMyEventStatus = req.query['status'] ? String(req.query['status']) : undefined;
+      const status = rawMyEventStatus && VALID_MY_EVENT_STATUS_VALUES.has(rawMyEventStatus) ? rawMyEventStatus : undefined;
       const sortField = req.query['sortField'] ? String(req.query['sortField']) : undefined;
 
       const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_EVENTS_PAGE_SIZE ? rawPageSize : DEFAULT_EVENTS_PAGE_SIZE;
@@ -105,6 +106,8 @@ export class EventsController {
         projectNames = [String(rawProjectNames)];
       }
       const searchQuery = req.query['searchQuery'] ? String(req.query['searchQuery']).trim() : undefined;
+      const rawStatus = req.query['status'] ? String(req.query['status']) : undefined;
+      const status = rawStatus && VALID_EVENT_STATUS_VALUES.has(rawStatus) ? (rawStatus as EventStatusFilter) : undefined;
       const sortField = req.query['sortField'] ? String(req.query['sortField']) : undefined;
 
       const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_EVENTS_PAGE_SIZE ? rawPageSize : DEFAULT_EVENTS_PAGE_SIZE;
@@ -122,6 +125,7 @@ export class EventsController {
         eventId,
         projectNames,
         searchQuery,
+        status,
         sortField,
         pageSize,
         offset,
@@ -160,11 +164,20 @@ export class EventsController {
         });
       }
 
+      const rawIsPast = req.query['isPast'];
+      let isPast: boolean | undefined;
+      if (rawIsPast === 'true') {
+        isPast = true;
+      } else if (rawIsPast === 'false') {
+        isPast = false;
+      }
+
       const options: GetEventOrganizationsOptions = {
         projectName: req.query['projectName'] ? String(req.query['projectName']) : undefined,
+        isPast,
       };
 
-      const response = await this.eventsService.getEventOrganizations(req, options);
+      const response = await this.eventsService.getEventOrganizations(req, userEmail, options);
 
       logger.success(req, 'get_event_organizations', startTime, {
         result_count: response.data.length,
