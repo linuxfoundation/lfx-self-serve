@@ -65,11 +65,7 @@ export class DevToolbarComponent {
     this.form = new FormGroup({
       persona: new FormControl<string>(initialPreset.value, [Validators.required]),
       selectedAccountId: new FormControl<string>(this.accountContextService.selectedAccount().accountId),
-      selectedProjectUid: new FormControl<string>(
-        isBoardScopedPersona(currentPersona)
-          ? this.projectContextService.selectedFoundation()?.uid || ''
-          : this.projectContextService.selectedProject()?.uid || this.projectContextService.selectedFoundation()?.uid || ''
-      ),
+      selectedProjectUid: new FormControl<string>(this.projectContextService.activeContextUid()),
     });
 
     // Subscribe to persona preset changes
@@ -128,6 +124,13 @@ export class DevToolbarComponent {
           this.activePreset.set(matchingPreset);
           this.form.get('persona')?.setValue(matchingPreset.value, { emitEvent: false });
         }
+      });
+
+    // Sync form when active context changes externally (e.g., lens switch, sidebar selection)
+    toObservable(this.projectContextService.activeContext)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe((ctx) => {
+        this.form.get('selectedProjectUid')?.setValue(ctx?.uid || '', { emitEvent: false });
       });
 
     // Subscribe to project/foundation selection changes

@@ -143,7 +143,7 @@
     <!-- Two Column Info Cards -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5" data-testid="meeting-info-cards">
       <!-- Resources Card Column -->
-      <div class="flex flex-col">
+      <div class="flex flex-col gap-2">
         @defer (on idle) {
           <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60" data-testid="resources-card">
             <div class="flex items-center justify-between gap-2">
@@ -192,7 +192,7 @@
         <!-- Action Buttons for Resources Column -->
         <!-- Join Meeting Button - Show when meeting can be joined -->
         @if (canJoinMeeting()) {
-          <div class="flex gap-2 mt-3.5">
+          <div class="flex gap-2">
             @if (joinUrl()) {
               <!-- Direct join URL available -->
               <lfx-button
@@ -255,7 +255,7 @@
       </div>
 
       <!-- People/Attendees Card Column — defer RSVP fetches until browser is idle -->
-      <div class="flex flex-col">
+      <div class="flex flex-col gap-2">
         @if (meeting().organizer) {
           @defer (on idle) {
             <!-- Organizer view with optional toggle for invited organizers -->

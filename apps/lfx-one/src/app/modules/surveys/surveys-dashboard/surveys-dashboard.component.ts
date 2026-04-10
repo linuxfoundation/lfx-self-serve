@@ -73,7 +73,7 @@ export class SurveysDashboardComponent {
 
   // === Private Initializers ===
   private initProject(): Signal<ProjectContext | null> {
-    return computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+    return computed(() => this.projectContextService.activeContext());
   }
 
   private initSurveys(): Signal<Survey[]> {

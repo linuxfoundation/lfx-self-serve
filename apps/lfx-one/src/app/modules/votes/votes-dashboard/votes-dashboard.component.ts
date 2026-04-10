@@ -114,7 +114,7 @@ export class VotesDashboardComponent {
 
   // === Private Initializers ===
   private initProject(): Signal<ProjectContext | null> {
-    return computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+    return computed(() => this.projectContextService.activeContext());
   }
 
   private initSearchQuery(): Signal<string> {

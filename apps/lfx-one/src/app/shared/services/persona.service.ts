@@ -18,14 +18,12 @@ import { SsrCookieService } from 'ngx-cookie-service-ssr';
 import { catchError, of, take } from 'rxjs';
 
 import { CookieRegistryService } from './cookie-registry.service';
-import { ProjectContextService } from './project-context.service';
 
 @Injectable({
   providedIn: 'root',
 })
 export class PersonaService {
   private readonly http = inject(HttpClient);
-  private readonly projectContextService = inject(ProjectContextService);
   private readonly cookieService = inject(SsrCookieService);
   private readonly cookieRegistry = inject(CookieRegistryService);
 
@@ -91,10 +89,6 @@ export class PersonaService {
     this.multiProject.set(multiProject);
     this.multiFoundation.set(multiFoundation);
     this.persistToCookie({ primary, all, multiProject, multiFoundation });
-
-    if (this.isBoardScoped()) {
-      this.projectContextService.clearProject();
-    }
   }
 
   /**

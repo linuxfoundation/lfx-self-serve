@@ -5,7 +5,7 @@
   <div class="mb-8">
     <div class="mb-8">
       <div class="flex justify-between items-center w-full gap-4">
-        <h1>Meetings</h1>
+        <h1>{{ activeLens() === 'me' ? 'My Meetings' : 'Meetings' }}</h1>
         @if (canCreateMeeting()) {
           <lfx-button
             icon="fa-light fa-calendar"
@@ -25,6 +25,7 @@
       @if (upcomingMeetings() || pastMeetings()) {
         <lfx-meetings-top-bar
           [meetingTypeOptions]="meetingTypeOptions()"
+          [initialTimeFilter]="timeFilter()"
           (meetingTypeChange)="onMeetingTypeChange($event)"
           (searchQueryChange)="searchQuery.set($event)"
           (timeFilterChange)="onTimeFilterChange($event)" />
@@ -53,12 +54,12 @@
           <div class="text-center max-w-md">
             <div class="text-gray-400 mb-4">
               <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
-              <h3 class="text-gray-600 mt-2">Your project has no meetings, yet.</h3>
+              <h3 class="text-gray-600 mt-2">{{ activeLens() === 'me' ? 'You have no upcoming meetings.' : 'Your project has no meetings, yet.' }}</h3>
             </div>
           </div>
         </div>
       </lfx-card>
-    } @else if (filteredMeetings().length === 0 && project()?.uid) {
+    } @else if (filteredMeetings().length === 0 && (project()?.uid || activeLens() === 'me')) {
       <lfx-card>
         <div class="flex items-center justify-center p-16">
           <div class="text-center max-w-md">

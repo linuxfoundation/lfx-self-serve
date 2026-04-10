@@ -11,7 +11,7 @@ import { ProjectSelectorComponent } from '@components/project-selector/project-s
 import { environment } from '@environments/environment';
 import { PERSONA_OPTIONS } from '@lfx-one/shared/constants';
 import { EnrichedPersonaProject, SidebarMenuItem } from '@lfx-one/shared/interfaces';
-import { isFoundationProject, toProjectContext } from '@lfx-one/shared/utils';
+import { toProjectContext } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -40,7 +40,12 @@ export class SidebarComponent {
   public readonly mobile = input<boolean>(false);
 
   protected readonly projects = computed(() => this.personaService.detectedProjects());
-  protected readonly selectorProjects = this.initSelectorProjects();
+  protected readonly selectorProjects = computed(() => {
+    const available = this.projectContextService.availableProjects();
+    const allProjects = this.projects();
+    const availableUids = new Set(available.map((p) => p.uid));
+    return allProjects.filter((p) => availableUids.has(p.projectUid));
+  });
   protected readonly selectedProject: Signal<EnrichedPersonaProject | null> = this.initSelectedProject();
 
   // Me selector signals
@@ -77,36 +82,28 @@ export class SidebarComponent {
         takeUntilDestroyed()
       )
       .subscribe((detectedProjects) => {
-        this.projectContextService.availableProjects.set(detectedProjects.map(toProjectContext));
-        this.setDefaultProjectIfNeeded(detectedProjects);
+        this.projectContextService.ensureDefaultSelection(detectedProjects);
       });
   }
 
   protected onProjectChange(project: EnrichedPersonaProject): void {
-    const validProjectIds = new Set(this.projects().map((p) => p.projectUid));
+    const context = toProjectContext(project);
+    const lens = this.lensService.activeLens();
 
-    if (isFoundationProject(project, validProjectIds)) {
-      this.projectContextService.setFoundation(toProjectContext(project));
+    if (lens === 'foundation') {
+      this.projectContextService.setFoundation(context);
     } else {
-      this.projectContextService.setProject(toProjectContext(project));
+      this.projectContextService.setProject(context);
     }
   }
 
   private initSelectedProject(): Signal<EnrichedPersonaProject | null> {
     return computed(() => {
-      const allProjects = this.projects();
-
-      const project = this.projectContextService.selectedProject();
-      if (project) {
-        return allProjects.find((p) => p.projectSlug === project.slug) || null;
-      }
-
-      const foundation = this.projectContextService.selectedFoundation();
-      if (!foundation) {
+      const ctx = this.projectContextService.activeContext();
+      if (!ctx) {
         return null;
       }
-
-      return allProjects.find((p) => p.projectSlug === foundation.slug) || null;
+      return this.projects().find((p) => p.projectUid === ctx.uid) || null;
     });
   }
 
@@ -116,45 +113,6 @@ export class SidebarComponent {
       const option = PERSONA_OPTIONS.find((o) => o.value === persona);
       return option?.label ?? persona;
     });
-  }
-
-  private initSelectorProjects(): Signal<EnrichedPersonaProject[]> {
-    return computed(() => {
-      const all = this.projects();
-      if (all.length === 0) {
-        return all;
-      }
-
-      const activeLens = this.lensService.activeLens();
-      const hasMultiAccess = activeLens === 'foundation' ? this.personaService.multiFoundation() : this.personaService.multiProject();
-
-      if (!hasMultiAccess) {
-        const selected = this.selectedProject();
-        return selected ? [selected] : [all[0]];
-      }
-
-      return all;
-    });
-  }
-
-  private setDefaultProjectIfNeeded(detectedProjects: EnrichedPersonaProject[]): void {
-    const currentFoundation = this.projectContextService.selectedFoundation();
-    const currentProject = this.projectContextService.selectedProject();
-
-    if (currentProject) {
-      return;
-    }
-
-    const foundationExists = currentFoundation && detectedProjects.some((p) => p.projectUid === currentFoundation.uid);
-
-    if (foundationExists) {
-      return;
-    }
-
-    const validProjectIds = new Set(detectedProjects.map((p) => p.projectUid));
-    const defaultFoundation = detectedProjects.find((p) => isFoundationProject(p, validProjectIds)) ?? detectedProjects[0];
-
-    this.projectContextService.setFoundation(toProjectContext(defaultFoundation));
   }
 
   private isExternalUrl(url: string): boolean {

@@ -144,7 +144,7 @@ export class MeetingCommitteeManagerComponent {
    * Fetches committee options from API reactively based on project context
    */
   private initCommitteeOptions(): Signal<Committee[]> {
-    const projectUid = computed(() => this.projectContextService.selectedProject()?.uid || this.projectContextService.selectedFoundation()?.uid || '');
+    const projectUid = computed(() => this.projectContextService.activeContextUid());
 
     return toSignal(
       toObservable(projectUid).pipe(

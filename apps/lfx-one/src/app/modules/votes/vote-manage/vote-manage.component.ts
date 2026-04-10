@@ -428,7 +428,7 @@ export class VoteManageComponent {
   }
 
   private initProject(): Signal<ReturnType<typeof this.projectContextService.selectedProject>> {
-    return computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+    return computed(() => this.projectContextService.activeContext());
   }
 
   private initFormValue(): Signal<Record<string, unknown>> {

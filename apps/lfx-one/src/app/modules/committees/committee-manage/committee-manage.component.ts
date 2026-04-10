@@ -51,7 +51,7 @@ export class CommitteeManageComponent {
 
   // Initialize committee data
   public committee = this.initializeCommittee();
-  public project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+  public project = computed(() => this.projectContextService.activeContext());
 
   // Member management state
   public memberUpdates = signal<MemberPendingChanges>({ toAdd: [], toUpdate: [], toDelete: [] });

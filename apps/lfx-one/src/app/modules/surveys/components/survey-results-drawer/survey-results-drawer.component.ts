@@ -103,7 +103,7 @@ export class SurveyResultsDrawerComponent {
 
           this.loading.set(true);
           const listData = this.listSurvey();
-          const project = this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation();
+          const project = this.projectContextService.activeContext();
           const projectId = project?.uid ?? undefined;
 
           return this.surveyService.getSurvey(id, projectId).pipe(

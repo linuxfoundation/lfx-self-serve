@@ -1,33 +1,29 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, Signal } from '@angular/core';
-import { PersonaType } from '@lfx-one/shared/interfaces';
+import { Component, computed, inject } from '@angular/core';
+import { isBoardScopedPersona } from '@lfx-one/shared/interfaces';
+import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 
 import { BoardMemberDashboardComponent } from './board-member/board-member-dashboard.component';
-import { ContributorDashboardComponent } from './contributor/contributor-dashboard.component';
 import { ExecutiveDirectorDashboardComponent } from './executive-director/executive-director-dashboard.component';
-import { MaintainerDashboardComponent } from './maintainer/maintainer-dashboard.component';
+import { ProjectDashboardComponent } from './project-dashboard/project-dashboard.component';
+import { UserDashboardComponent } from './user-dashboard/user-dashboard.component';
 
-/**
- * Main dashboard component that dynamically renders persona-specific dashboards
- * based on the user's selected persona type
- */
 @Component({
   selector: 'lfx-dashboard',
-  imports: [ContributorDashboardComponent, MaintainerDashboardComponent, BoardMemberDashboardComponent, ExecutiveDirectorDashboardComponent],
+  imports: [UserDashboardComponent, ProjectDashboardComponent, BoardMemberDashboardComponent, ExecutiveDirectorDashboardComponent],
   templateUrl: './dashboard.component.html',
 })
 export class DashboardComponent {
   private readonly personaService = inject(PersonaService);
+  private readonly lensService = inject(LensService);
 
-  /**
-   * Computed signal that determines which dashboard to display
-   * based on the current persona selection
-   */
-  protected readonly dashboardType: Signal<PersonaType> = computed(() => {
+  protected readonly activeLens = this.lensService.activeLens;
+
+  protected readonly foundationDashboardType = computed(() => {
     const persona = this.personaService.currentPersona();
-    return persona;
+    return isBoardScopedPersona(persona) ? persona : 'board-member';
   });
 }

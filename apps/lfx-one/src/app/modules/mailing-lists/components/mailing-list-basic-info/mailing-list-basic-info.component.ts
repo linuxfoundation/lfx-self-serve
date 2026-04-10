@@ -24,7 +24,7 @@ export class MailingListBasicInfoComponent {
   public readonly isEditMode = input<boolean>(false);
 
   public readonly projectName = computed(() => {
-    return this.service()?.project_name || this.projectContextService.selectedProject()?.name || this.projectContextService.selectedFoundation()?.name || '';
+    return this.service()?.project_name || this.projectContextService.activeContext()?.name || '';
   });
 
   public readonly serviceDomain = computed(() => {
@@ -35,7 +35,7 @@ export class MailingListBasicInfoComponent {
     const service = this.service();
     if (!service) return false;
 
-    const currentProjectUid = this.projectContextService.selectedProject()?.uid || this.projectContextService.selectedFoundation()?.uid;
+    const currentProjectUid = this.projectContextService.activeContextUid();
 
     // If service type is explicitly 'shared', it's a shared service
     if (service.type === 'shared') return true;

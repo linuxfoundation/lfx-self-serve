@@ -88,12 +88,12 @@ export class CommitteeDashboardComponent {
 
   public constructor() {
     // Initialize project context
-    this.project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+    this.project = computed(() => this.projectContextService.activeContext());
 
     // Initialize permission checks
     this.isMaintainer = computed(() => this.personaService.currentPersona() === 'maintainer');
     this.isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
-    this.isFoundationContext = computed(() => !this.projectContextService.selectedProject() && !!this.projectContextService.selectedFoundation());
+    this.isFoundationContext = computed(() => this.projectContextService.isFoundationContext());
     this.foundationCreateCommitteeFlag = this.featureFlagService.getBooleanFlag('foundation-create-committee', false);
     this.canCreateGroup = computed(() => {
       // Board members cannot manage committees

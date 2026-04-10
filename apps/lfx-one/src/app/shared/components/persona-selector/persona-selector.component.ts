@@ -6,10 +6,9 @@ import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { SelectComponent } from '@components/select/select.component';
 import { PERSONA_OPTIONS } from '@lfx-one/shared/constants';
-import { isBoardScopedPersona, PersonaType } from '@lfx-one/shared/interfaces';
+import { PersonaType } from '@lfx-one/shared/interfaces';
 import { FeatureFlagService } from '@services/feature-flag.service';
 import { PersonaService } from '@services/persona.service';
-import { ProjectContextService } from '@services/project-context.service';
 
 @Component({
   selector: 'lfx-persona-selector',
@@ -18,7 +17,6 @@ import { ProjectContextService } from '@services/project-context.service';
 })
 export class PersonaSelectorComponent {
   private readonly personaService = inject(PersonaService);
-  private readonly projectContextService = inject(ProjectContextService);
   private readonly featureFlagService = inject(FeatureFlagService);
 
   // Persona options available for selection
@@ -39,19 +37,6 @@ export class PersonaSelectorComponent {
       .get('persona')
       ?.valueChanges.pipe(takeUntilDestroyed())
       .subscribe((value: PersonaType) => {
-        // TODO: DEMO - Remove when proper permissions are implemented
-        // Set foundation before persona so navigation in setPersonas() has correct context
-        if (isBoardScopedPersona(value)) {
-          const tlfProject = this.projectContextService.availableProjects().find((p) => p.slug === 'tlf');
-          if (tlfProject) {
-            this.projectContextService.setFoundation({
-              uid: tlfProject.uid,
-              name: tlfProject.name,
-              slug: tlfProject.slug,
-            });
-          }
-        }
-
         this.personaService.setPersona(value);
       });
   }

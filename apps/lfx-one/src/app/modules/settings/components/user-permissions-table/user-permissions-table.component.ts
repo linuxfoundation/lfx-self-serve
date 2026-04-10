@@ -32,7 +32,7 @@ export class UserPermissionsTableComponent {
   // State signals
   public users = input.required<ProjectPermissionUser[]>();
   public loading = input<boolean>();
-  public project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+  public project = computed(() => this.projectContextService.activeContext());
   public isRemoving: WritableSignal<string | null> = signal(null);
   public selectedUser: WritableSignal<ProjectPermissionUser | null> = signal(null);
   public userActionMenuItems: MenuItem[] = this.initializeUserActionMenuItems();

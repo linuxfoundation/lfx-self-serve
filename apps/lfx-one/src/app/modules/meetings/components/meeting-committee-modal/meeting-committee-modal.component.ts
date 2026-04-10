@@ -49,8 +49,8 @@ export class MeetingCommitteeModalComponent {
   public membersLoading: WritableSignal<boolean> = signal(false);
   public form: FormGroup;
   public filteredCommitteeMembers: Signal<CommitteeMemberDisplay[]> = signal([]);
-  public project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
-  public projectUid = computed(() => this.project()?.uid || '');
+  public project = computed(() => this.projectContextService.activeContext());
+  public projectUid = computed(() => this.projectContextService.activeContextUid());
 
   // Track loaded committees to avoid duplicate API calls
   private loadedCommitteeIds = new Set<string>();

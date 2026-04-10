@@ -165,7 +165,7 @@ export class MeetingDetailsComponent implements OnInit {
 
   public async generateAiAgenda(): Promise<void> {
     const context = this.form().get('aiPrompt')?.value;
-    const currentProject = this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation();
+    const currentProject = this.projectContextService.activeContext();
     const form = this.form();
     const title = form.get('title')?.value;
     const meetingType = form.get('meeting_type')?.value;

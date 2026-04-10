@@ -35,7 +35,7 @@ export class ExecutiveDirectorDashboardComponent {
 
   // === Computed Signals ===
   protected readonly selectedFoundation = this.projectContextService.selectedFoundation;
-  protected readonly selectedProject = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+  protected readonly selectedProject = computed(() => this.projectContextService.activeContext());
   private readonly rawPendingActions: Signal<PendingActionItem[]>;
   public readonly pendingActions: Signal<PendingActionItem[]>;
 

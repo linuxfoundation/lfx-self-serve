@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, output } from '@angular/core';
+import { Component, input, OnInit, output } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { InputTextComponent } from '@components/input-text/input-text.component';
@@ -13,8 +13,9 @@ import { SelectComponent } from '@components/select/select.component';
   imports: [ReactiveFormsModule, InputTextComponent, SelectComponent],
   templateUrl: './meetings-top-bar.component.html',
 })
-export class MeetingsTopBarComponent {
+export class MeetingsTopBarComponent implements OnInit {
   public meetingTypeOptions = input.required<{ label: string; value: string | null }[]>();
+  public readonly initialTimeFilter = input<'upcoming' | 'past'>('upcoming');
   public readonly meetingTypeChange = output<string | null>();
   public readonly searchQueryChange = output<string>();
   public readonly timeFilterChange = output<'upcoming' | 'past'>();
@@ -53,6 +54,13 @@ export class MeetingsTopBarComponent {
           this.timeFilterChange.emit(value);
         }
       });
+  }
+
+  public ngOnInit(): void {
+    const initial = this.initialTimeFilter();
+    if (initial !== 'upcoming') {
+      this.searchForm.get('timeFilter')?.setValue(initial, { emitEvent: false });
+    }
   }
 
   public onMeetingTypeChange(value: string | null): void {

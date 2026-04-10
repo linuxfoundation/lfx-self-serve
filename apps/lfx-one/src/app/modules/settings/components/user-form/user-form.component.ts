@@ -40,7 +40,7 @@ export class UserFormComponent {
 
   public isEditing = computed(() => this.config.data?.isEditing || false);
   public user = computed(() => (this.config.data?.user as ProjectPermissionUser) || null);
-  public project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+  public project = computed(() => this.projectContextService.activeContext());
 
   // Permission options - simplified to only View/Manage
   public permissionLevelOptions = [

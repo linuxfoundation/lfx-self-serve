@@ -34,7 +34,7 @@ export class MyMeetingsComponent {
   protected readonly upcomingLoading = signal(true);
   protected readonly pastLoading = signal(true);
 
-  private readonly selectedProject = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+  private readonly selectedProject = computed(() => this.projectContextService.activeContext());
 
   // Raw data from API — switches data source based on active lens
   private readonly rawMeetings = this.initRawMeetings();

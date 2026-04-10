@@ -1,17 +1,18 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-@switch (dashboardType()) {
-  @case ('contributor') {
-    <lfx-contributor-dashboard />
+@switch (activeLens()) {
+  @case ('me') {
+    <lfx-user-dashboard />
   }
-  @case ('maintainer') {
-    <lfx-maintainer-dashboard />
+  @case ('project') {
+    <lfx-project-dashboard />
   }
-  @case ('board-member') {
-    <lfx-board-member-dashboard />
-  }
-  @case ('executive-director') {
-    <lfx-executive-director-dashboard />
+  @case ('foundation') {
+    @if (foundationDashboardType() === 'executive-director') {
+      <lfx-executive-director-dashboard />
+    } @else {
+      <lfx-board-member-dashboard />
+    }
   }
 }

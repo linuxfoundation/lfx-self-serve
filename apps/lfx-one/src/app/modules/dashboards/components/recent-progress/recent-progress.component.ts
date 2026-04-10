@@ -17,6 +17,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { hexToRgba, parseLocalDateString } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
+import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
@@ -49,6 +50,7 @@ export class RecentProgressComponent {
   private readonly personaService = inject(PersonaService);
   private readonly analyticsService = inject(AnalyticsService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly lensService = inject(LensService);
 
   // Get project ID from context service
 
@@ -63,9 +65,9 @@ export class RecentProgressComponent {
     healthMetricsDaily: true,
     codeCommitsDaily: true,
   });
-  public readonly projectSlug = computed(() => this.projectContextService.selectedFoundation()?.slug || this.projectContextService.selectedProject()?.slug);
-  private readonly entityType = computed<'foundation' | 'project'>(() => (this.projectContextService.selectedFoundation() ? 'foundation' : 'project'));
-  private readonly isMaintainer = computed(() => this.personaService.currentPersona() === 'maintainer');
+  public readonly projectSlug = computed(() => this.projectContextService.activeContext()?.slug);
+  private readonly entityType = computed<'foundation' | 'project'>(() => (this.projectContextService.isFoundationContext() ? 'foundation' : 'project'));
+  private readonly showProjectMetrics = computed(() => this.lensService.activeLens() === 'project' || this.personaService.currentPersona() === 'maintainer');
   private readonly activeWeeksStreakData = this.initializeActiveWeeksStreakData();
   private readonly pullRequestsMergedData = this.initializePullRequestsMergedData();
   private readonly codeCommitsData = this.initializeCodeCommitsData();
@@ -98,8 +100,7 @@ export class RecentProgressComponent {
   // Filtered cards - materializes card values while benefiting from individual signal memoization
   protected readonly filteredProgressItems = this.initializeFilteredProgressItems();
 
-  protected readonly currentPersona = computed(() => this.personaService.currentPersona());
-  protected readonly showFilterPills = computed(() => this.currentPersona() === 'maintainer');
+  protected readonly showFilterPills = computed(() => this.showProjectMetrics());
   protected readonly filterOptions: FilterPillOption[] = [
     { id: 'all', label: 'All' },
     { id: 'code', label: 'Code' },
@@ -111,8 +112,7 @@ export class RecentProgressComponent {
   }
 
   private getMetricConfig(title: string): DashboardMetricCard {
-    const persona = this.personaService.currentPersona();
-    const baseMetrics = persona === 'maintainer' ? MAINTAINER_PROGRESS_METRICS : CORE_DEVELOPER_PROGRESS_METRICS;
+    const baseMetrics = this.showProjectMetrics() ? MAINTAINER_PROGRESS_METRICS : CORE_DEVELOPER_PROGRESS_METRICS;
     return baseMetrics.find((m) => m.title === title) || MAINTAINER_PROGRESS_METRICS.find((m) => m.title === title)!;
   }
 
@@ -663,10 +663,10 @@ export class RecentProgressComponent {
 
   private initializeActiveWeeksStreakData() {
     return toSignal(
-      toObservable(this.personaService.currentPersona).pipe(
-        switchMap((persona) => {
-          // Only fetch for contributor persona
-          if (persona === 'maintainer') {
+      toObservable(this.showProjectMetrics).pipe(
+        switchMap((isProjectScoped) => {
+          // Only fetch for contributor/user-scoped view
+          if (isProjectScoped) {
             this.loadingState.update((state) => ({ ...state, activeWeeksStreak: false }));
             return [{ data: [], currentStreak: 0, totalWeeks: 0 }];
           }
@@ -692,10 +692,10 @@ export class RecentProgressComponent {
 
   private initializePullRequestsMergedData() {
     return toSignal(
-      toObservable(this.personaService.currentPersona).pipe(
-        switchMap((persona) => {
-          // Only fetch for contributor persona
-          if (persona === 'maintainer') {
+      toObservable(this.showProjectMetrics).pipe(
+        switchMap((isProjectScoped) => {
+          // Only fetch for contributor/user-scoped view
+          if (isProjectScoped) {
             this.loadingState.update((state) => ({ ...state, pullRequestsMerged: false }));
             return [{ data: [], totalPullRequests: 0, totalDays: 0 }];
           }
@@ -721,10 +721,10 @@ export class RecentProgressComponent {
 
   private initializeCodeCommitsData() {
     return toSignal(
-      toObservable(this.personaService.currentPersona).pipe(
-        switchMap((persona) => {
-          // Only fetch for contributor persona
-          if (persona === 'maintainer') {
+      toObservable(this.showProjectMetrics).pipe(
+        switchMap((isProjectScoped) => {
+          // Only fetch for contributor/user-scoped view
+          if (isProjectScoped) {
             this.loadingState.update((state) => ({ ...state, codeCommits: false }));
             return [{ data: [], totalCommits: 0, totalDays: 0 }];
           }
@@ -808,9 +808,9 @@ export class RecentProgressComponent {
 
   private maintainerGuardedFetch<T>(loadingKey: string, defaultValue: T, fetchFn: (slug: string) => Observable<T>) {
     return toSignal(
-      combineLatest([toObservable(this.projectSlug), toObservable(this.isMaintainer)]).pipe(
-        switchMap(([projectSlug, isMaintainer]) => {
-          if (!isMaintainer || !projectSlug) {
+      combineLatest([toObservable(this.projectSlug), toObservable(this.showProjectMetrics)]).pipe(
+        switchMap(([projectSlug, isProjectScoped]) => {
+          if (!isProjectScoped || !projectSlug) {
             this.loadingState.update((state) => ({ ...state, [loadingKey]: false }));
             return [defaultValue];
           }
@@ -831,10 +831,9 @@ export class RecentProgressComponent {
   private initializeIsLoading() {
     return computed<boolean>(() => {
       const state = this.loadingState();
-      const persona = this.personaService.currentPersona();
 
-      if (persona === 'maintainer') {
-        // For maintainer, only check maintainer-specific metrics
+      if (this.showProjectMetrics()) {
+        // For project-scoped view, only check project-specific metrics
         return (
           state.projectIssuesResolution ||
           state.projectPullRequestsWeekly ||
@@ -960,11 +959,10 @@ export class RecentProgressComponent {
 
   private initializeFilteredProgressItems() {
     return computed<DashboardMetricCard[]>(() => {
-      const persona = this.personaService.currentPersona();
       const filter = this.selectedFilter();
 
-      if (persona === 'maintainer') {
-        // Materialize maintainer card values
+      if (this.showProjectMetrics()) {
+        // Materialize project-scoped card values
         const allCards = [
           { card: this.issuesTrendCard(), category: 'code' },
           { card: this.prVelocityCard(), category: 'code' },

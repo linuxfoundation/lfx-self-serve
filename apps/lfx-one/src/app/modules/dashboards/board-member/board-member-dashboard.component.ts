@@ -32,7 +32,7 @@ export class BoardMemberDashboardComponent {
   protected readonly showOrgInvolvement = computed(() => this.lensService.activeLens() !== 'me');
 
   public readonly selectedFoundation = computed(() => this.projectContextService.selectedFoundation());
-  public readonly selectedProject = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+  public readonly selectedProject = computed(() => this.projectContextService.activeContext());
   public readonly refresh$: BehaviorSubject<void> = new BehaviorSubject<void>(undefined);
   private readonly rawBoardMemberActions: Signal<PendingActionItem[]>;
   public readonly boardMemberActions: Signal<PendingActionItem[]>;

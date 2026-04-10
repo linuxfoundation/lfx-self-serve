@@ -126,7 +126,7 @@ export class MeetingManageComponent {
 
   // Validation signals for template
   public readonly canProceed = signal<boolean>(false);
-  public readonly project = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+  public readonly project = computed(() => this.projectContextService.activeContext());
   public readonly canGoNext = computed(() => this.currentStep() + 1 < this.totalSteps && this.canNavigateToStep(this.currentStep() + 1));
   public readonly canGoPrevious = computed(() => this.currentStep() > 1);
   public readonly isFirstStep = computed(() => this.currentStep() === 1);
@@ -477,7 +477,7 @@ export class MeetingManageComponent {
     }
 
     return {
-      project_uid: this.projectContextService.selectedProject()?.uid || this.projectContextService.selectedFoundation()?.uid || '',
+      project_uid: this.projectContextService.activeContextUid(),
       title: formValue.title,
       description: formValue.description || '',
       start_time: startDateTime,
@@ -966,7 +966,7 @@ export class MeetingManageComponent {
     const form = this.form();
     const meetingType = form.get('meeting_type')?.value;
     const startDate = form.get('startDate')?.value;
-    const project = this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation();
+    const project = this.projectContextService.activeContext();
 
     // Only auto-generate if we have meeting type, start date, and the title is empty
     const currentTitle = form.get('title')?.value;

@@ -120,7 +120,7 @@ export class MailingListDashboardComponent {
   }
 
   private initProject(): Signal<ProjectContext | null> {
-    return computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
+    return computed(() => this.projectContextService.activeContext());
   }
 
   private initIsMaintainer(): Signal<boolean> {
@@ -128,7 +128,7 @@ export class MailingListDashboardComponent {
   }
 
   private initIsFoundationContext(): Signal<boolean> {
-    return computed(() => !this.projectContextService.selectedProject() && !!this.projectContextService.selectedFoundation());
+    return computed(() => this.projectContextService.isFoundationContext());
   }
 
   private initCanCreateMailingList(): Signal<boolean> {

@@ -70,9 +70,9 @@ export class DataCopilotComponent {
   // Context
   private readonly organizationId = computed(() => this.accountContextService.selectedAccount()?.accountId ?? '');
   private readonly organizationName = computed(() => this.accountContextService.selectedAccount()?.accountName ?? '');
-  private readonly foundationContext = computed(() => this.projectContextService.selectedProject() || this.projectContextService.selectedFoundation());
-  private readonly foundationSlug = computed(() => this.foundationContext()?.slug ?? '');
-  private readonly foundationName = computed(() => this.foundationContext()?.name ?? '');
+  private readonly activeContext = computed(() => this.projectContextService.activeContext());
+  private readonly activeSlug = computed(() => this.activeContext()?.slug ?? '');
+  private readonly activeName = computed(() => this.activeContext()?.name ?? '');
   private readonly hasCompanyContext = computed(() => this.includeOrganizationId() && !!this.organizationId());
 
   public constructor() {
@@ -137,8 +137,8 @@ export class DataCopilotComponent {
   }
 
   private buildContext(): CopilotContext | undefined {
-    const slug = this.includeFoundationSlug() ? this.foundationSlug() : '';
-    const name = this.includeFoundationName() ? this.foundationName() : '';
+    const slug = this.includeFoundationSlug() ? this.activeSlug() : '';
+    const name = this.includeFoundationName() ? this.activeName() : '';
 
     // Foundation is required by the API — cannot send context without it
     if (!slug || !name) {
@@ -165,7 +165,7 @@ export class DataCopilotComponent {
 
   private initContextLabel(): Signal<string> {
     return computed(() => {
-      const fName = this.foundationName();
+      const fName = this.activeName();
       const cName = this.organizationName();
       if (this.hasCompanyContext() && cName && fName) {
         return `${cName} + ${fName}`;
@@ -179,7 +179,7 @@ export class DataCopilotComponent {
 
   private initContextDescription(): Signal<string> {
     return computed(() => {
-      const fName = this.foundationName();
+      const fName = this.activeName();
       const cName = this.organizationName();
       if (this.hasCompanyContext() && cName && fName) {
         return `Explore memberships, contributions, events, and more for ${cName}'s involvement in ${fName}.`;
