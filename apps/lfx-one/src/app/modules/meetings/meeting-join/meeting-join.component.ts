@@ -2,17 +2,18 @@
 // SPDX-License-Identifier: MIT
 
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
+import { DatePipe, NgClass } from '@angular/common';
 import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
+import { MeetingSummaryModalComponent } from '@app/modules/meetings/components/meeting-summary-modal/meeting-summary-modal.component';
 import { RsvpButtonGroupComponent } from '@app/modules/meetings/components/rsvp-button-group/rsvp-button-group.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ExpandableTextComponent } from '@components/expandable-text/expandable-text.component';
 import { HeaderComponent } from '@components/header/header.component';
-import { MarkdownRendererComponent } from '@components/markdown-renderer/markdown-renderer.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { environment } from '@environments/environment';
 import {
@@ -24,16 +25,16 @@ import {
   Meeting,
   MeetingAttachment,
   MeetingOccurrence,
-  MeetingResourceItem,
   MEETING_TYPE_CONFIGS,
   PastMeetingAttachment,
   PastMeetingRecording,
   PastMeetingSummary,
   Project,
+  PublicPastMeetingResponse,
   TagSeverity,
   User,
 } from '@lfx-one/shared';
-import { FileSizePipe } from '@pipes/file-size.pipe';
+import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
@@ -54,6 +55,8 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
   selector: 'lfx-meeting-join',
   imports: [
     ClipboardModule,
+    DatePipe,
+    NgClass,
     ReactiveFormsModule,
     ButtonComponent,
     CardComponent,
@@ -70,11 +73,10 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     LinkifyPipe,
     ExpandableTextComponent,
     HeaderComponent,
-    MarkdownRendererComponent,
+    FileTypeDisplayPipe,
     DynamicDialogModule,
-    FileSizePipe,
   ],
-  providers: [],
+  providers: [DialogService],
   templateUrl: './meeting-join.component.html',
 })
 export class MeetingJoinComponent {
@@ -130,7 +132,14 @@ export class MeetingJoinComponent {
   protected pastMeetingAttachments: Signal<PastMeetingAttachment[]>;
   protected primaryRecordingUrl: Signal<string | null>;
   protected transcriptUrl: Signal<string | null>;
-  protected displayResources: Signal<MeetingResourceItem[]>;
+  protected currentAttachments = computed(() => (this.pastMeetingFullAccess() ? this.pastMeetingAttachments() : this.attachments()));
+  protected materialFiles = computed(() => this.currentAttachments().filter((a) => a.type === 'file'));
+  protected materialLinks = computed(() => this.currentAttachments().filter((a) => a.type === 'link'));
+  protected hasRecentlyUpdatedMaterials = computed(() => {
+    const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
+    const sevenDaysAgo = new Date(Date.now() - SEVEN_DAYS_MS);
+    return this.currentAttachments().some((a) => a.updated_at && new Date(a.updated_at) > sevenDaysAgo);
+  });
   // Computed signals for invited/registration status
   public isInvited: Signal<boolean>;
   public canRegisterForMeeting: Signal<boolean>;
@@ -158,7 +167,6 @@ export class MeetingJoinComponent {
     this.pastMeetingAttachments = this.initializePastMeetingAttachments();
     this.primaryRecordingUrl = this.initializePrimaryRecordingUrl();
     this.transcriptUrl = this.initializeTranscriptUrl();
-    this.displayResources = this.initializeDisplayResources();
 
     // Initialize invited/registration signals
     this.isInvited = this.initializeIsInvited();
@@ -218,24 +226,24 @@ export class MeetingJoinComponent {
     this.showMyRsvp.set(!this.showMyRsvp());
   }
 
-  public downloadAttachment(attachment: Pick<MeetingAttachment, 'uid'>): void {
-    this.meetingService
-      .getMeetingAttachmentDownloadUrl(this.meeting().id, attachment.uid)
-      .pipe(take(1))
-      .subscribe({
-        next: (res) => {
-          const newWindow = window.open(res.download_url, '_blank', 'noopener,noreferrer');
-          if (newWindow) {
-            newWindow.opener = null;
-          }
-        },
-        error: () =>
-          this.messageService.add({
-            severity: 'error',
-            summary: 'Download Failed',
-            detail: 'Unable to download the attachment. Please try again.',
-          }),
-      });
+  public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {
+    const download$ = this.loadedViaPastMeetingId()
+      ? this.meetingService.getPastMeetingAttachmentDownloadUrl(this.meeting().id, attachment.uid)
+      : this.meetingService.getMeetingAttachmentDownloadUrl(this.meeting().id, attachment.uid);
+    download$.pipe(take(1)).subscribe({
+      next: (res) => {
+        const newWindow = window.open(res.download_url, '_blank', 'noopener,noreferrer');
+        if (newWindow) {
+          newWindow.opener = null;
+        }
+      },
+      error: () =>
+        this.messageService.add({
+          severity: 'error',
+          summary: 'Download Failed',
+          detail: 'Unable to download the attachment. Please try again.',
+        }),
+    });
   }
 
   public registerForMeeting(): void {
@@ -260,6 +268,20 @@ export class MeetingJoinComponent {
         // Trigger refresh to update meeting data with invitation status
         this.refreshTrigger$.next();
       }
+    });
+  }
+
+  public openSummaryModal(): void {
+    const summary = this.pastMeetingSummary();
+    if (!summary) return;
+
+    this.dialogService.open(MeetingSummaryModalComponent, {
+      header: 'AI Summary',
+      width: '700px',
+      modal: true,
+      closable: true,
+      dismissableMask: true,
+      data: { summary },
     });
   }
 
@@ -329,10 +351,10 @@ export class MeetingJoinComponent {
           if (this.isPastMeetingOccurrenceId(meetingId)) {
             this.loadedViaPastMeetingId.set(true);
             return this.meetingService.getPublicPastMeeting(meetingId).pipe(
-              tap((res) => {
+              tap((res: PublicPastMeetingResponse) => {
                 this.pastMeetingFullAccess.set(res.full_access);
               }),
-              map((res) => ({
+              map((res: PublicPastMeetingResponse) => ({
                 meeting: res.meeting as Meeting,
                 project: res.project as Project,
               })),
@@ -350,14 +372,13 @@ export class MeetingJoinComponent {
           this.pastMeetingFullAccess.set(false);
           return this.meetingService.getPublicMeeting(meetingId, this.password()).pipe(
             catchError((error) => {
-              // If upcoming meeting not found, try as a past meeting
               if (error.status === 404) {
                 return this.meetingService.getPublicPastMeeting(meetingId).pipe(
-                  tap((res) => {
+                  tap((res: PublicPastMeetingResponse) => {
                     this.loadedViaPastMeetingId.set(true);
                     this.pastMeetingFullAccess.set(res.full_access);
                   }),
-                  map((res) => ({
+                  map((res: PublicPastMeetingResponse) => ({
                     meeting: res.meeting as Meeting,
                     project: res.project as Project,
                   })),
@@ -383,7 +404,6 @@ export class MeetingJoinComponent {
   }
 
   private isPastMeetingOccurrenceId(id: string): boolean {
-    // Past meeting occurrence IDs have format: meetingId-timestamp (e.g., 95580361604-1775745000000)
     const parts = id.split('-');
     return parts.length === 2 && /^\d+$/.test(parts[0]) && /^\d{13}$/.test(parts[1]);
   }
@@ -568,7 +588,6 @@ export class MeetingJoinComponent {
       toObservable(this.meeting).pipe(
         filter((meeting) => {
           if (!meeting?.id) return false;
-          // Public meetings can fetch attachments without auth; private meetings require it
           if (meeting.visibility === 'public' && !meeting.restricted) return true;
           return this.authenticated();
         }),
@@ -699,29 +718,6 @@ export class MeetingJoinComponent {
 
       const transcript = recording.recording_files.find((f) => f.file_type === 'TRANSCRIPT');
       return transcript?.download_url ?? null;
-    });
-  }
-
-  private initializeDisplayResources(): Signal<MeetingResourceItem[]> {
-    return computed(() => {
-      if (this.pastMeetingFullAccess()) {
-        return this.pastMeetingAttachments().map((a) => ({
-          uid: a.uid,
-          type: a.type,
-          name: a.name,
-          link: a.link,
-          fileUrl: a.file_url,
-          fileSize: a.file_size,
-          isPastMeeting: true,
-        }));
-      }
-      return this.attachments().map((a) => ({
-        uid: a.uid,
-        type: a.type,
-        name: a.name,
-        link: a.link,
-        isPastMeeting: false,
-      }));
     });
   }
 }

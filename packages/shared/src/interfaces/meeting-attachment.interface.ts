@@ -101,25 +101,17 @@ export interface PastMeetingAttachment {
 }
 
 /**
- * Normalized attachment item for unified template rendering.
- * Merges the common fields from MeetingAttachment and PastMeetingAttachment
- * so a single template block can render both.
+ * Display metadata for a file attachment based on its extension
  */
-export interface MeetingResourceItem {
-  /** Unique attachment identifier */
-  uid: string;
-  /** Attachment type: 'link' for external URLs, 'file' for uploaded files */
-  type: 'file' | 'link';
-  /** Attachment name/title */
-  name: string;
-  /** External link URL (only for type='link') */
-  link?: string;
-  /** Direct download URL for past meeting files */
-  fileUrl?: string;
-  /** File size in bytes (only for past meeting files) */
-  fileSize?: number;
-  /** Whether this resource is from a past meeting (direct download) vs future meeting (requires API call) */
-  isPastMeeting: boolean;
+export interface FileTypeDisplay {
+  /** Font Awesome icon class */
+  icon: string;
+  /** Tailwind background color class */
+  bgColor: string;
+  /** Tailwind text color class */
+  textColor: string;
+  /** Short uppercase label (e.g. 'PDF', 'DOCX') */
+  label: string;
 }
 
 /**
