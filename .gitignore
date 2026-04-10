@@ -42,6 +42,7 @@ snowflake.log
 # Misc
 .DS_Store
 *.pem
+*.p8
 
 # yarn
 .yarn/install-state.gz

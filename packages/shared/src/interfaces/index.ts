@@ -106,3 +106,6 @@ export * from './persona-detection.interface';
 
 // My Event interfaces
 export * from './my-event.interface';
+
+// Training interfaces
+export * from './training.interface';
