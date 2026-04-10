@@ -7,7 +7,23 @@ import PrimeUI from 'tailwindcss-primeui';
 /** @type {import('tailwindcss').Config} */
 export default {
   content: ['./src/**/*.{html,ts}'],
-  safelist: ['bg-violet-400', 'bg-blue-400', 'bg-emerald-400', 'bg-pink-300'],
+  safelist: [
+    'bg-violet-400',
+    'bg-blue-400',
+    'bg-emerald-400',
+    'bg-pink-300',
+    // Meeting summary modal — dynamic section border/icon colors (applied via [ngClass])
+    'border-l-blue-400',
+    'border-l-emerald-400',
+    'border-l-amber-400',
+    'border-l-purple-400',
+    'border-l-gray-300',
+    'text-blue-500',
+    'text-emerald-500',
+    'text-amber-500',
+    'text-purple-500',
+    'text-gray-500',
+  ],
   theme: {
     container: {
       center: true,

@@ -1007,3 +1007,21 @@ export interface PublicPastMeetingResponse {
   project: { name: string; slug: string; logo_url: string };
   full_access: boolean;
 }
+
+/**
+ * Parsed section from an AI-generated meeting summary
+ * @description Represents a structured section extracted from markdown `##` headings
+ * in meeting summaries, with visual styling metadata for display
+ */
+export interface SummarySection {
+  /** Section heading text (from ## heading) */
+  heading: string;
+  /** Section body content (markdown between headings) */
+  content: string;
+  /** Font Awesome icon class for the section */
+  icon: string;
+  /** Tailwind border-left color class */
+  borderColor: string;
+  /** Tailwind text color class for the icon */
+  iconColor: string;
+}

@@ -39,6 +39,7 @@ import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
 import { MeetingService } from '@services/meeting.service';
+import { ProjectService } from '@services/project.service';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
@@ -85,6 +86,7 @@ export class MeetingJoinComponent {
   private readonly activatedRoute = inject(ActivatedRoute);
   private readonly router = inject(Router);
   private readonly meetingService = inject(MeetingService);
+  private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
   private readonly clipboard = inject(Clipboard);
   private readonly dialogService = inject(DialogService);
@@ -93,8 +95,8 @@ export class MeetingJoinComponent {
   public authenticated: WritableSignal<boolean>;
   public user: Signal<User | null> = this.userService.user;
   public joinForm: FormGroup;
-  public project: WritableSignal<Project | null> = signal<Project | null>(null);
-  public meeting: Signal<Meeting & { project: Project }>;
+  public project: WritableSignal<Partial<Project> | null> = signal<Partial<Project> | null>(null);
+  public meeting: Signal<Meeting & { project: Partial<Project> }>;
   public currentOccurrence: Signal<MeetingOccurrence | null>;
   public meetingTypeBadge: Signal<{
     severity: TagSeverity;
@@ -140,6 +142,11 @@ export class MeetingJoinComponent {
     const sevenDaysAgo = new Date(Date.now() - SEVEN_DAYS_MS);
     return this.currentAttachments().some((a) => a.updated_at && new Date(a.updated_at) > sevenDaysAgo);
   });
+  // RSVP summary counts from meeting object
+  protected rsvpAcceptedCount = computed(() => this.meeting()?.registrants_accepted_count ?? 0);
+  protected rsvpDeclinedCount = computed(() => this.meeting()?.registrants_declined_count ?? 0);
+  protected rsvpPendingCount = computed(() => this.meeting()?.registrants_pending_count ?? 0);
+  protected hasRsvpData = computed(() => this.rsvpAcceptedCount() > 0 || this.rsvpDeclinedCount() > 0 || this.rsvpPendingCount() > 0);
   // Computed signals for invited/registration status
   public isInvited: Signal<boolean>;
   public canRegisterForMeeting: Signal<boolean>;
@@ -220,6 +227,10 @@ export class MeetingJoinComponent {
   public onEmailErrorClick(): void {
     this.joinUrlError.set(null);
     this.showGuestForm.set(true);
+  }
+
+  public onShowMembersPlaceholder(): void {
+    // TODO: Phase 4 — attendees drawer
   }
 
   public onRsvpViewToggle(): void {
@@ -336,8 +347,9 @@ export class MeetingJoinComponent {
   }
 
   private initializeMeeting() {
-    return toSignal<Meeting & { project: Project }>(
+    return toSignal<Meeting & { project: Partial<Project> }>(
       combineLatest([this.activatedRoute.paramMap, this.activatedRoute.queryParamMap, this.refreshTrigger$]).pipe(
+        debounceTime(0), // Coalesce rapid SSR hydration emissions so the fallback chain isn't canceled
         switchMap(([params, queryParams]) => {
           const meetingId = params.get('id');
           this.password.set(queryParams.get('password'));
@@ -355,8 +367,8 @@ export class MeetingJoinComponent {
                 this.pastMeetingFullAccess.set(res.full_access);
               }),
               map((res: PublicPastMeetingResponse) => ({
-                meeting: res.meeting as Meeting,
-                project: res.project as Project,
+                meeting: res.meeting,
+                project: res.project as Partial<Project>,
               })),
               catchError((error) => {
                 if ([404, 403, 400].includes(error.status)) {
@@ -379,8 +391,8 @@ export class MeetingJoinComponent {
                     this.pastMeetingFullAccess.set(res.full_access);
                   }),
                   map((res: PublicPastMeetingResponse) => ({
-                    meeting: res.meeting as Meeting,
-                    project: res.project as Project,
+                    meeting: res.meeting,
+                    project: res.project as Partial<Project>,
                   })),
                   catchError(() => {
                     this.router.navigate(['/meetings/not-found']);
@@ -400,7 +412,7 @@ export class MeetingJoinComponent {
           this.project.set(res.project);
         })
       )
-    ) as Signal<Meeting & { project: Project }>;
+    ) as Signal<Meeting & { project: Partial<Project> }>;
   }
 
   private isPastMeetingOccurrenceId(id: string): boolean {

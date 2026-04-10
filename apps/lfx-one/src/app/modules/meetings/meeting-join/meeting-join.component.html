@@ -7,12 +7,14 @@
     <!-- Main Content Container -->
     <div class="container mx-auto py-6 px-8">
       <div class="max-w-[900px] mx-auto flex flex-col">
-        <!-- Project Logo -->
-        @if (project()?.logo_url) {
-          <div class="flex items-center justify-center mb-6">
+        <!-- Project Logo (fallback to LFX logo) -->
+        <div class="flex items-center justify-center mb-6">
+          @if (project()?.logo_url) {
             <img [src]="project()?.logo_url" [alt]="project()?.name" class="w-auto h-10 md:h-14" />
-          </div>
-        }
+          } @else {
+            <img src="/images/logo_lfx.svg" alt="LFX Logo" class="w-auto h-10 md:h-14" />
+          }
+        </div>
 
         <!-- Main Meeting Card -->
         <lfx-card class="rounded-[12.75px] mb-6" [attr.data-testid]="'meeting-info-card'">
@@ -56,17 +58,26 @@
                   data-testid="recurring-badge"></lfx-tag>
               }
 
-              <!-- View Guests Button (for organizers and invited users) -->
+              <!-- View Guests Button -->
               @if (authenticated() && (meeting().organizer || meeting().invited)) {
                 <lfx-button
                   label="Show Members"
                   icon="fa-light fa-users"
                   [outlined]="true"
                   severity="primary"
-                  [disabled]="!meeting().organizer && !meeting().invited"
                   (onClick)="onRegistrantsToggle()"
                   styleClass="py-[0.15rem] text-xs"
                   data-testid="view-members-button">
+                </lfx-button>
+              } @else if (meeting().show_meeting_attendees) {
+                <lfx-button
+                  label="Show Members"
+                  icon="fa-light fa-users"
+                  [outlined]="true"
+                  severity="secondary"
+                  (onClick)="onShowMembersPlaceholder()"
+                  styleClass="py-[0.15rem] text-xs"
+                  data-testid="view-members-button-placeholder">
                 </lfx-button>
               }
             </div>
@@ -94,35 +105,27 @@
                   {{ meetingTitle() }}
                 </h1>
 
-                <!-- Feature Badges Row -->
-                <div class="flex flex-wrap gap-2 items-center">
-                  <!-- Date/Time Badge -->
-                  @if (currentOccurrence()?.start_time || meeting().start_time; as startTime) {
+                <!-- Date/Time Badge -->
+                @if (currentOccurrence()?.start_time || meeting().start_time; as startTime) {
+                  <div class="flex items-center">
                     <lfx-tag
                       [value]="startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact'"
                       severity="secondary"
                       icon="fa-light fa-calendar-days"
                       [attr.data-testid]="'meeting-badge-datetime'"></lfx-tag>
-                  }
+                  </div>
+                }
 
-                  <!-- YouTube Upload Badge -->
-                  @if (meeting().youtube_upload_enabled) {
-                    <lfx-tag
-                      value="YouTube Upload"
-                      severity="secondary"
-                      icon="fa-light fa-upload"
-                      styleClass="tag-feature-youtube"
-                      [attr.data-testid]="'meeting-badge-youtube'"></lfx-tag>
-                  }
-
+                <!-- Feature Badges Row -->
+                <div class="flex flex-wrap gap-2 items-center">
                   <!-- Recording Badge -->
                   @if (meeting().recording_enabled) {
                     <lfx-tag
                       value="Recording"
                       severity="secondary"
                       icon="fa-light fa-video"
-                      styleClass="tag-feature-recording"
-                      [attr.data-testid]="'meeting-badge-recording'"></lfx-tag>
+                      styleClass="!text-red-500"
+                      data-testid="meeting-badge-recording"></lfx-tag>
                   }
 
                   <!-- Transcripts Badge -->
@@ -131,8 +134,18 @@
                       value="Transcripts"
                       severity="secondary"
                       icon="fa-light fa-file-lines"
-                      styleClass="tag-feature-transcripts"
-                      [attr.data-testid]="'meeting-badge-transcripts'"></lfx-tag>
+                      styleClass="!text-teal-600"
+                      data-testid="meeting-badge-transcripts"></lfx-tag>
+                  }
+
+                  <!-- YouTube Upload Badge -->
+                  @if (meeting().youtube_upload_enabled) {
+                    <lfx-tag
+                      value="YouTube Upload"
+                      severity="secondary"
+                      icon="fa-light fa-upload"
+                      styleClass="!text-amber-600"
+                      data-testid="meeting-badge-youtube"></lfx-tag>
                   }
 
                   <!-- AI Summary Badge -->
@@ -141,15 +154,28 @@
                       value="AI Summary"
                       severity="secondary"
                       icon="fa-light fa-sparkles"
-                      styleClass="tag-feature-ai"
-                      [attr.data-testid]="'meeting-badge-ai-summary'"></lfx-tag>
-                  }
-
-                  <!-- Show Attendees Badge -->
-                  @if (meeting().show_meeting_attendees) {
-                    <lfx-tag value="Show Attendees" severity="secondary" icon="fa-light fa-users" [attr.data-testid]="'meeting-badge-attendees'"></lfx-tag>
+                      styleClass="!text-purple-500"
+                      data-testid="meeting-badge-ai-summary"></lfx-tag>
                   }
                 </div>
+
+                <!-- RSVP Summary -->
+                @if (hasRsvpData()) {
+                  <div class="flex items-center gap-4 text-xs" data-testid="rsvp-summary">
+                    <div class="inline-flex items-center gap-1">
+                      <i class="fa-light fa-circle-check text-emerald-500"></i>
+                      <span class="text-gray-600">{{ rsvpAcceptedCount() }} accepted</span>
+                    </div>
+                    <div class="inline-flex items-center gap-1">
+                      <i class="fa-light fa-circle-xmark text-red-500"></i>
+                      <span class="text-gray-600">{{ rsvpDeclinedCount() }} declined</span>
+                    </div>
+                    <div class="inline-flex items-center gap-1">
+                      <i class="fa-light fa-clock text-gray-400"></i>
+                      <span class="text-gray-600">{{ rsvpPendingCount() }} pending</span>
+                    </div>
+                  </div>
+                }
               </div>
               <!-- Alert Banner -->
               @if (isPastMeeting()) {
@@ -370,129 +396,129 @@
               [meeting]="meeting()"
               [pastMeeting]="isPastMeeting()"
               [showAddRegistrant]="false"
-              [myMeetingRegistrants]="true"
+              [myMeetingRegistrants]="false"
               [visible]="showRegistrants()">
             </lfx-meeting-registrants-display>
           </p-drawer>
+        </lfx-card>
 
-          @if (!(isPastMeeting() && !pastMeetingFullAccess())) {
-            <!-- Divider -->
-            <hr class="border-gray-200 my-4" />
-
-            <!-- Agenda + Resources Row (2-column) -->
-            <div class="flex flex-col md:flex-row gap-6">
-              <!-- Left: Agenda Section (flex-1) -->
-              <div class="flex-1 flex flex-col gap-2">
-                <!-- Agenda Header -->
-                <div class="flex items-center gap-2">
-                  <i class="fa-light fa-list text-gray-500 text-xs"></i>
-                  <h3 class="text-gray-600 text-sm font-normal">Agenda</h3>
-                </div>
-
-                <!-- Description -->
-                @if (meetingDescription(); as description) {
-                  <div class="text-gray-600 text-xs leading-relaxed" [attr.data-testid]="'meeting-description'">
-                    <lfx-expandable-text [maxHeight]="200">
-                      <div [innerHTML]="description | linkify" class="text-sm leading-relaxed"></div>
-                    </lfx-expandable-text>
-                  </div>
-                }
-              </div>
-
-              <!-- Right: Meeting Materials Card (fixed width) -->
-              <div class="w-full md:w-[296px]" data-testid="meeting-materials">
-                @defer (on idle) {
-                  <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
-                    <!-- Header -->
-                    <div class="flex items-center gap-2 mb-1">
-                      <i class="fa-light fa-folder-open text-gray-500 text-sm"></i>
-                      <h3 class="text-gray-700 text-sm font-medium">Meeting Materials</h3>
-                      @if (hasRecentlyUpdatedMaterials()) {
-                        <span class="text-xs font-medium text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">Updated</span>
-                      }
-                    </div>
-                    <p class="text-xs text-gray-400 mb-3">Documents provided to support meeting preparation, discussion, and governance record.</p>
-
-                    <div class="flex flex-col gap-4">
-                      <!-- PRIMARY MATERIALS -->
-                      <div class="flex flex-col gap-2">
-                        <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">Primary Materials</span>
-                        <p class="text-xs text-gray-400">Materials intended for review before the meeting.</p>
-                        @if (materialFiles().length > 0) {
-                          @for (attachment of materialFiles(); track attachment.uid; let i = $index) {
-                            @let fileType = attachment | fileTypeDisplay;
-                            <button
-                              type="button"
-                              (click)="downloadAttachment(attachment)"
-                              class="bg-white border border-gray-200 hover:border-gray-300 rounded-lg p-3 flex items-center gap-3 transition-colors cursor-pointer w-full text-left"
-                              [attr.data-testid]="'meeting-material-file-' + i">
-                              <div class="w-9 h-9 rounded flex items-center justify-center flex-shrink-0" [ngClass]="[fileType.bgColor]">
-                                <i [ngClass]="[fileType.icon, fileType.textColor]" class="text-base"></i>
-                              </div>
-                              <div class="flex flex-col flex-1 overflow-hidden gap-0.5">
-                                <span class="text-sm text-gray-900 overflow-ellipsis overflow-hidden whitespace-nowrap font-inter">{{ attachment.name }}</span>
-                                <div class="flex items-center gap-2">
-                                  <span class="text-xs uppercase tracking-wide text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded">{{ fileType.label }}</span>
-                                  @if (attachment.updated_at || attachment.created_at) {
-                                    <span class="text-xs text-gray-400">{{ attachment.updated_at || attachment.created_at | date: 'MMM d, yyyy' }}</span>
-                                  }
-                                </div>
-                              </div>
-                              <i class="fa-light fa-arrow-up-right-from-square text-gray-400 text-xs flex-shrink-0"></i>
-                            </button>
-                          }
-                        } @else {
-                          @if (!authenticated() && meeting().visibility === 'private') {
-                            <p class="text-xs text-gray-400 italic">Sign in to view materials for this meeting.</p>
-                          } @else {
-                            <p class="text-xs text-gray-400 italic">No primary materials available.</p>
-                          }
-                        }
-                      </div>
-
-                      <!-- SUPPORTING MATERIALS -->
-                      <div class="flex flex-col gap-2">
-                        <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">Supporting Materials</span>
-                        @if (materialLinks().length > 0) {
-                          @for (attachment of materialLinks(); track attachment.uid; let i = $index) {
-                            <div class="flex items-center gap-3 py-1.5" [attr.data-testid]="'meeting-material-link-' + i">
-                              <i class="fa-light fa-link text-gray-400 text-sm flex-shrink-0"></i>
-                              <span class="text-sm text-gray-700 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-inter">{{
-                                attachment.name
-                              }}</span>
-                              <a
-                                [href]="attachment.link"
-                                target="_blank"
-                                rel="noopener noreferrer"
-                                class="text-xs border border-gray-300 text-gray-600 rounded px-2 py-0.5 hover:bg-gray-100 transition-colors flex-shrink-0">
-                                Open
-                              </a>
-                            </div>
-                          }
-                        } @else {
-                          <p class="text-xs text-gray-400 italic">No supporting materials available.</p>
-                        }
-                      </div>
-                    </div>
-                  </div>
-                } @placeholder {
-                  <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 animate-pulse">
-                    <div class="h-4 bg-gray-200 rounded w-2/3 mb-3"></div>
-                    <div class="h-3 bg-gray-200 rounded w-full mb-4"></div>
-                    <div class="flex flex-col gap-3">
-                      <div class="h-12 bg-gray-200 rounded"></div>
-                      <div class="h-12 bg-gray-200 rounded"></div>
-                    </div>
-                  </div>
-                }
-              </div>
-            </div>
-          }
-
-          <!-- Footer Divider -->
+        @if (!(isPastMeeting() && !pastMeetingFullAccess())) {
+          <!-- Divider -->
           <hr class="border-gray-200 my-4" />
 
-          <!-- Card Footer: Authentication Section -->
+          <!-- Agenda + Resources Row (2-column) -->
+          <div class="flex flex-col md:flex-row gap-6">
+            <!-- Left: Agenda Section (flex-1) -->
+            <div class="flex-1 flex flex-col gap-2">
+              <!-- Agenda Header -->
+              <div class="flex items-center gap-2">
+                <i class="fa-light fa-list text-gray-500 text-xs"></i>
+                <h3 class="text-gray-600 text-sm font-normal">Agenda</h3>
+              </div>
+
+              <!-- Description -->
+              @if (meetingDescription(); as description) {
+                <div class="text-gray-600 text-xs leading-relaxed" [attr.data-testid]="'meeting-description'">
+                  <lfx-expandable-text [maxHeight]="200">
+                    <div [innerHTML]="description | linkify" class="text-sm leading-relaxed"></div>
+                  </lfx-expandable-text>
+                </div>
+              }
+            </div>
+
+            <!-- Right: Meeting Materials Card (fixed width) -->
+            <div class="w-full md:w-[296px]" data-testid="meeting-materials">
+              @defer (on idle) {
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                  <!-- Header -->
+                  <div class="flex items-center gap-2 mb-1">
+                    <i class="fa-light fa-folder-open text-gray-500 text-sm"></i>
+                    <h3 class="text-gray-700 text-sm font-medium">Meeting Materials</h3>
+                    @if (hasRecentlyUpdatedMaterials()) {
+                      <span class="text-xs font-medium text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">Updated</span>
+                    }
+                  </div>
+                  <p class="text-xs text-gray-400 mb-3">Documents provided to support meeting preparation, discussion, and governance record.</p>
+
+                  <div class="flex flex-col gap-4">
+                    <!-- PRIMARY MATERIALS -->
+                    <div class="flex flex-col gap-2">
+                      <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">Primary Materials</span>
+                      <p class="text-xs text-gray-400">Materials intended for review before the meeting.</p>
+                      @if (materialFiles().length > 0) {
+                        @for (attachment of materialFiles(); track attachment.uid; let i = $index) {
+                          @let fileType = attachment | fileTypeDisplay;
+                          <button
+                            type="button"
+                            (click)="downloadAttachment(attachment)"
+                            class="bg-white border border-gray-200 hover:border-gray-300 rounded-lg p-3 flex items-center gap-3 transition-colors cursor-pointer w-full text-left"
+                            [attr.data-testid]="'meeting-material-file-' + i">
+                            <div class="w-9 h-9 rounded flex items-center justify-center flex-shrink-0" [ngClass]="[fileType.bgColor]">
+                              <i [ngClass]="[fileType.icon, fileType.textColor]" class="text-base"></i>
+                            </div>
+                            <div class="flex flex-col flex-1 overflow-hidden gap-0.5">
+                              <span class="text-sm text-gray-900 overflow-ellipsis overflow-hidden whitespace-nowrap font-inter">{{ attachment.name }}</span>
+                              <div class="flex items-center gap-2">
+                                <span class="text-xs uppercase tracking-wide text-gray-500 bg-gray-200 px-1.5 py-0.5 rounded">{{ fileType.label }}</span>
+                                @if (attachment.updated_at || attachment.created_at) {
+                                  <span class="text-xs text-gray-400">{{ attachment.updated_at || attachment.created_at | date: 'MMM d, yyyy' }}</span>
+                                }
+                              </div>
+                            </div>
+                            <i class="fa-light fa-arrow-up-right-from-square text-gray-400 text-xs flex-shrink-0"></i>
+                          </button>
+                        }
+                      } @else {
+                        @if (!authenticated() && meeting().visibility === 'private') {
+                          <p class="text-xs text-gray-400 italic">Sign in to view materials for this meeting.</p>
+                        } @else {
+                          <p class="text-xs text-gray-400 italic">No primary materials available.</p>
+                        }
+                      }
+                    </div>
+
+                    <!-- SUPPORTING MATERIALS -->
+                    <div class="flex flex-col gap-2">
+                      <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">Supporting Materials</span>
+                      @if (materialLinks().length > 0) {
+                        @for (attachment of materialLinks(); track attachment.uid; let i = $index) {
+                          <div class="flex items-center gap-3 py-1.5" [attr.data-testid]="'meeting-material-link-' + i">
+                            <i class="fa-light fa-link text-gray-400 text-sm flex-shrink-0"></i>
+                            <span class="text-sm text-gray-700 overflow-ellipsis overflow-hidden whitespace-nowrap flex-1 font-inter">{{
+                              attachment.name
+                            }}</span>
+                            <a
+                              [href]="attachment.link"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="text-xs border border-gray-300 text-gray-600 rounded px-2 py-0.5 hover:bg-gray-100 transition-colors flex-shrink-0">
+                              Open
+                            </a>
+                          </div>
+                        }
+                      } @else {
+                        <p class="text-xs text-gray-400 italic">No supporting materials available.</p>
+                      }
+                    </div>
+                  </div>
+                </div>
+              } @placeholder {
+                <div class="bg-gray-50 border border-gray-200 rounded-lg p-4 animate-pulse">
+                  <div class="h-4 bg-gray-200 rounded w-2/3 mb-3"></div>
+                  <div class="h-3 bg-gray-200 rounded w-full mb-4"></div>
+                  <div class="flex flex-col gap-3">
+                    <div class="h-12 bg-gray-200 rounded"></div>
+                    <div class="h-12 bg-gray-200 rounded"></div>
+                  </div>
+                </div>
+              }
+            </div>
+          </div>
+        }
+
+        <!-- Card 3: Authentication Section -->
+        <lfx-card class="rounded-[12.75px] mb-6" [attr.data-testid]="'meeting-auth-card'">
+          <!-- Authentication Section -->
           @if (authenticated() && user(); as user) {
             <!-- Signed In State -->
             <div class="flex flex-col gap-6">

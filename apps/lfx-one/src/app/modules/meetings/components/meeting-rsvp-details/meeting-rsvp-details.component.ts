@@ -18,7 +18,7 @@ export class MeetingRsvpDetailsComponent {
   private readonly meetingService = inject(MeetingService);
 
   public readonly meeting: InputSignal<Meeting | PastMeeting> = input.required<Meeting | PastMeeting>();
-  public readonly project: InputSignal<Project | null> = input<Project | null>(null);
+  public readonly project: InputSignal<Partial<Project> | null> = input<Partial<Project> | null>(null);
   public readonly currentOccurrence: InputSignal<MeetingOccurrence | null> = input<MeetingOccurrence | null>(null);
   public readonly pastMeeting: InputSignal<boolean> = input<boolean>(false);
   public readonly showAddButton: InputSignal<boolean> = input<boolean>(false);
