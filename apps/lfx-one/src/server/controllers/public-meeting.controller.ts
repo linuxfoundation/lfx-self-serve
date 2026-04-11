@@ -220,6 +220,11 @@ export class PublicMeetingController {
         full_access: fullAccess,
       });
 
+      // Include organizer flag for authenticated users with full access
+      if (fullAccess) {
+        meeting.organizer = isOrganizer;
+      }
+
       // For non-full-access users, return only the fields needed for the basic UI
       const meetingResponse = fullAccess
         ? meeting

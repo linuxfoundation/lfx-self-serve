@@ -712,7 +712,7 @@ export class MeetingCardComponent implements OnInit {
       const meeting = this.meetingInput();
 
       if (this.pastMeeting()) {
-        return `/meetings/${meeting.id}/details`;
+        return `/meetings/${meeting.id}`;
       }
 
       const params = new URLSearchParams();
