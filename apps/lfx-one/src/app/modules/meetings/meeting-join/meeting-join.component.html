@@ -109,24 +109,41 @@
                 @if (parentProject()?.name || project()?.name || meeting().project_name || (meeting().committees && meeting().committees.length > 0)) {
                   <div class="flex flex-wrap items-center gap-2" data-testid="meeting-context">
                     @if (parentProject()?.name; as foundationName) {
-                      <lfx-tag [value]="foundationName" severity="secondary" icon="fa-light fa-landmark" data-testid="meeting-context-foundation"></lfx-tag>
+                      <button
+                        type="button"
+                        class="cursor-pointer hover:opacity-70 transition-opacity"
+                        (click)="navigateToFoundation()"
+                        data-testid="meeting-context-foundation">
+                        <lfx-tag [value]="foundationName" severity="secondary" icon="fa-light fa-landmark" styleClass="cursor-pointer"></lfx-tag>
+                      </button>
                     }
                     @if (project()?.name || meeting().project_name; as projectName) {
-                      <lfx-tag
-                        [value]="projectName"
-                        severity="secondary"
-                        icon="fa-light fa-cube"
-                        styleClass="!text-teal-700 !bg-teal-50 !border-teal-200"
-                        data-testid="meeting-context-project"></lfx-tag>
+                      <button
+                        type="button"
+                        class="cursor-pointer hover:opacity-70 transition-opacity"
+                        (click)="navigateToFoundation()"
+                        data-testid="meeting-context-project">
+                        <lfx-tag
+                          [value]="projectName"
+                          severity="secondary"
+                          icon="fa-light fa-cube"
+                          styleClass="!text-teal-700 !bg-teal-50 !border-teal-200 cursor-pointer"></lfx-tag>
+                      </button>
                     }
                     @for (committee of meeting().committees ?? []; track committee.uid) {
-                      @if (committee.name) {
-                        <lfx-tag
-                          [value]="committee.name"
-                          severity="secondary"
-                          icon="fa-light fa-users-rectangle"
-                          styleClass="!text-blue-700 !bg-blue-50 !border-blue-200"
-                          [attr.data-testid]="'meeting-context-committee-' + committee.uid"></lfx-tag>
+                      @if (committee.name && committee.uid) {
+                        <a
+                          [href]="'/groups/' + committee.uid"
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          class="no-underline hover:opacity-70 transition-opacity"
+                          [attr.data-testid]="'meeting-context-committee-' + committee.uid">
+                          <lfx-tag
+                            [value]="committee.name"
+                            severity="secondary"
+                            icon="fa-light fa-users-rectangle"
+                            styleClass="!text-blue-700 !bg-blue-50 !border-blue-200 cursor-pointer"></lfx-tag>
+                        </a>
                       }
                     }
                   </div>
@@ -358,7 +375,7 @@
                         [href]="primaryRecordingUrl()"
                         target="_blank"
                         rel="noopener noreferrer"
-                        class="flex items-center justify-center gap-2 border border-gray-200 rounded-lg py-2.5 px-4 text-sm font-medium text-gray-900 hover:bg-gray-50 transition-colors cursor-pointer"
+                        class="flex items-center justify-center gap-2 border border-gray-200 rounded-lg py-2.5 px-4 text-sm font-medium text-gray-900 hover:bg-gray-100 hover:border-gray-400 hover:shadow-sm transition-all cursor-pointer"
                         data-testid="view-recording-link">
                         <i class="fa-light fa-play text-sm"></i>
                         <span>See Recording</span>
@@ -377,7 +394,7 @@
                       <button
                         type="button"
                         (click)="openSummaryModal()"
-                        class="flex items-center justify-center gap-2 border border-gray-200 rounded-lg py-2.5 px-4 text-sm font-medium text-gray-900 hover:bg-gray-50 transition-colors cursor-pointer w-full"
+                        class="flex items-center justify-center gap-2 border border-gray-200 rounded-lg py-2.5 px-4 text-sm font-medium text-gray-900 hover:bg-gray-100 hover:border-gray-400 hover:shadow-sm transition-all cursor-pointer w-full"
                         data-testid="past-meeting-summary">
                         <i class="fa-light fa-sparkles text-sm"></i>
                         <span>AI Summary</span>
@@ -402,7 +419,7 @@
                         [href]="transcriptUrl()"
                         target="_blank"
                         rel="noopener noreferrer"
-                        class="flex items-center justify-center gap-2 border border-gray-200 rounded-lg py-2.5 px-4 text-sm font-medium text-gray-900 hover:bg-gray-50 transition-colors cursor-pointer"
+                        class="flex items-center justify-center gap-2 border border-gray-200 rounded-lg py-2.5 px-4 text-sm font-medium text-gray-900 hover:bg-gray-100 hover:border-gray-400 hover:shadow-sm transition-all cursor-pointer"
                         data-testid="download-transcript-link">
                         <i class="fa-light fa-file-lines text-sm"></i>
                         <span>View Transcript</span>
