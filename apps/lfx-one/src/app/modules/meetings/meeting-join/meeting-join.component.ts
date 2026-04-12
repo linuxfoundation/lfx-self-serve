@@ -21,6 +21,7 @@ import {
   canJoinMeeting,
   CommitteeMember,
   DEFAULT_MEETING_TYPE_CONFIG,
+  getActiveOccurrences,
   getCurrentOrNextOccurrence,
   hasMeetingEnded,
   Meeting,
@@ -121,6 +122,10 @@ export class MeetingJoinComponent implements OnInit {
   public project: WritableSignal<Partial<Project> | null> = signal<Partial<Project> | null>(null);
   public meeting: Signal<Meeting & { project: Partial<Project> }>;
   public currentOccurrence: Signal<MeetingOccurrence | null>;
+  private occurrenceContext: Signal<{ sorted: MeetingOccurrence[]; currentIdx: number }>;
+  protected previousOccurrenceUrl: Signal<string | null>;
+  protected nextOccurrenceUrl: Signal<string | null>;
+  protected occurrenceLabel: Signal<string | null>;
   public meetingTypeBadge: Signal<{
     severity: TagSeverity;
     styleClass: string;
@@ -209,6 +214,10 @@ export class MeetingJoinComponent implements OnInit {
     this.authenticated = this.userService.authenticated;
     this.meeting = this.initializeMeeting();
     this.currentOccurrence = this.initializeCurrentOccurrence();
+    this.occurrenceContext = this.initializeOccurrenceContext();
+    this.previousOccurrenceUrl = this.initializePreviousOccurrenceUrl();
+    this.nextOccurrenceUrl = this.initializeNextOccurrenceUrl();
+    this.occurrenceLabel = this.initializeOccurrenceLabel();
     this.joinForm = this.initializeJoinForm();
     this.formValues = this.initializeFormValues();
     this.meetingTypeBadge = this.initializeMeetingTypeBadge();
@@ -500,7 +509,87 @@ export class MeetingJoinComponent implements OnInit {
   private initializeCurrentOccurrence(): Signal<MeetingOccurrence | null> {
     return computed(() => {
       const meeting = this.meeting();
+      // Check if a specific occurrence was requested via query param
+      const requestedOccurrence = this.activatedRoute.snapshot.queryParamMap.get('occurrence');
+      if (requestedOccurrence && meeting?.occurrences?.length) {
+        const requestedTime = parseInt(requestedOccurrence, 10);
+        const active = getActiveOccurrences(meeting.occurrences);
+        const match = active.find((o: MeetingOccurrence) => new Date(o.start_time).getTime() === requestedTime);
+        if (match) return match;
+      }
       return getCurrentOrNextOccurrence(meeting);
+    });
+  }
+
+  private initializeOccurrenceContext(): Signal<{ sorted: MeetingOccurrence[]; currentIdx: number }> {
+    return computed(() => {
+      const meeting = this.meeting();
+      if (!meeting?.occurrences?.length) return { sorted: [], currentIdx: -1 };
+      const sorted = getActiveOccurrences(meeting.occurrences).sort(
+        (a: MeetingOccurrence, b: MeetingOccurrence) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime()
+      );
+      const current = this.currentOccurrence();
+      let currentTime: number;
+      if (current) {
+        currentTime = new Date(current.start_time).getTime();
+      } else {
+        // For past meetings loaded via /meetings/{id}-{timestamp}, extract timestamp from route
+        const routeId = this.activatedRoute.snapshot.paramMap.get('id') ?? '';
+        const parts = routeId.split('-');
+        currentTime = parts.length === 2 && /^\d{13}$/.test(parts[1]) ? parseInt(parts[1], 10) : Date.now();
+      }
+      let currentIdx = sorted.findIndex((o: MeetingOccurrence) => new Date(o.start_time).getTime() === currentTime);
+      if (currentIdx < 0) {
+        currentIdx = sorted.findIndex((o: MeetingOccurrence) => new Date(o.start_time).getTime() >= currentTime);
+      }
+      if (currentIdx < 0) currentIdx = sorted.length - 1;
+      return { sorted, currentIdx };
+    });
+  }
+
+  private buildOccurrenceUrl(meetingId: string, occurrence: MeetingOccurrence): string {
+    const timestamp = new Date(occurrence.start_time).getTime();
+    const meeting = this.meeting();
+    const isPast = hasMeetingEnded(meeting, occurrence);
+    const password = this.password();
+    const params = new URLSearchParams();
+    if (password) params.set('password', password);
+    if (isPast) {
+      const base = `/meetings/${meetingId}-${timestamp}`;
+      const qs = params.toString();
+      return qs ? `${base}?${qs}` : base;
+    }
+    params.set('occurrence', timestamp.toString());
+    return `/meetings/${meetingId}?${params.toString()}`;
+  }
+
+  private initializePreviousOccurrenceUrl(): Signal<string | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+      if (!meeting?.recurrence) return null;
+      const { sorted, currentIdx } = this.occurrenceContext();
+      if (currentIdx <= 0) return null;
+      return this.buildOccurrenceUrl(meeting.id, sorted[currentIdx - 1]);
+    });
+  }
+
+  private initializeNextOccurrenceUrl(): Signal<string | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+      if (!meeting?.recurrence) return null;
+      const { sorted, currentIdx } = this.occurrenceContext();
+      if (currentIdx < 0 || currentIdx >= sorted.length - 1) return null;
+      return this.buildOccurrenceUrl(meeting.id, sorted[currentIdx + 1]);
+    });
+  }
+
+  private initializeOccurrenceLabel(): Signal<string | null> {
+    return computed(() => {
+      const meeting = this.meeting();
+      if (!meeting?.recurrence) return null;
+      const { sorted, currentIdx } = this.occurrenceContext();
+      if (sorted.length === 0) return null;
+      return `${currentIdx + 1} of ${sorted.length}`;
     });
   }
 

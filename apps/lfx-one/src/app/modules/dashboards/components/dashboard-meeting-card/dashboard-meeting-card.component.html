@@ -137,7 +137,7 @@
             severity="secondary"
             size="small"
             styleClass="w-full"
-            label="See Meeting Details"
+            label="View details"
             [href]="meetingDetailHref()"
             target="_blank"
             type="button"
@@ -150,27 +150,27 @@
             severity="secondary"
             size="small"
             styleClass="w-full"
-            label="See Meeting Details"
+            label="View details"
             [routerLink]="meetingDetailUrl()"
             [queryParams]="meetingDetailQueryParams()"
             type="button"
             [outlined]="true"
+            icon="fa-light fa-eye text-xs"
             data-testid="dashboard-meeting-card-see-button" />
         }
       }
 
-      <!-- See Recording button -->
+      <!-- Watch Recording button -->
       @if (recordingShareUrl()) {
         <lfx-button
           class="w-full"
-          severity="secondary"
+          severity="success"
           size="small"
           styleClass="w-full"
-          label="See Recording"
+          label="Watch Recording"
           [href]="recordingShareUrl()!"
           target="_blank"
           type="button"
-          [outlined]="true"
           icon="fa-light fa-play text-xs"
           data-testid="dashboard-meeting-card-recording-button" />
       }

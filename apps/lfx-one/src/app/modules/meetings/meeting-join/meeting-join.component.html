@@ -151,12 +151,47 @@
 
                 <!-- Date/Time Badge -->
                 @if (currentOccurrence()?.start_time || meeting().start_time; as startTime) {
-                  <div class="flex items-center">
+                  <div class="flex items-center gap-3">
                     <lfx-tag
                       [value]="startTime | meetingTime: currentOccurrence()?.duration || meeting().duration : 'compact'"
                       severity="secondary"
                       icon="fa-light fa-calendar-days"
                       [attr.data-testid]="'meeting-badge-datetime'"></lfx-tag>
+                  </div>
+                }
+
+                <!-- Occurrence Navigation (recurring meetings only) -->
+                @if (meeting().recurrence && occurrenceLabel()) {
+                  <div class="flex items-center gap-3" data-testid="occurrence-navigation">
+                    @if (previousOccurrenceUrl(); as prevUrl) {
+                      <a
+                        [href]="prevUrl"
+                        class="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                        data-testid="occurrence-nav-prev">
+                        <i class="fa-light fa-chevron-left text-xs"></i>
+                        <span>Previous</span>
+                      </a>
+                    } @else {
+                      <span class="flex items-center gap-1 text-sm text-gray-300">
+                        <i class="fa-light fa-chevron-left text-xs"></i>
+                        <span>Previous</span>
+                      </span>
+                    }
+                    <span class="text-xs text-gray-500 font-medium" data-testid="occurrence-counter">{{ occurrenceLabel() }}</span>
+                    @if (nextOccurrenceUrl(); as nextUrl) {
+                      <a
+                        [href]="nextUrl"
+                        class="flex items-center gap-1 text-sm text-blue-600 hover:text-blue-800 transition-colors"
+                        data-testid="occurrence-nav-next">
+                        <span>Next</span>
+                        <i class="fa-light fa-chevron-right text-xs"></i>
+                      </a>
+                    } @else {
+                      <span class="flex items-center gap-1 text-sm text-gray-300">
+                        <span>Next</span>
+                        <i class="fa-light fa-chevron-right text-xs"></i>
+                      </span>
+                    }
                   </div>
                 }
 
