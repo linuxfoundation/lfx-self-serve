@@ -4,7 +4,7 @@
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="trainings-dashboard">
   <!-- Page Header -->
   <div class="mb-8">
-    <h1 data-testid="trainings-title">Training &amp; Certifications</h1>
+    <h1 class="font-display" data-testid="trainings-title">Training &amp; Certifications</h1>
     <p class="mt-2 text-gray-500" data-testid="trainings-subtitle">{{ subtitle }}</p>
   </div>
 
@@ -65,15 +65,67 @@
         }
       }
 
-      <!-- ── TAB: Enrolled Trainings (placeholder) ────────────────────────── -->
+      <!-- ── TAB: Enrolled Trainings ──────────────────────────────────────── -->
       @if (activeTab() === 'enrolled-trainings') {
-        <div class="flex flex-col items-center justify-center py-20 text-center gap-4" data-testid="trainings-empty-state">
-          <i class="fa-light fa-book-open text-6xl text-gray-300"></i>
-          <div class="flex flex-col gap-2 max-w-md">
-            <h2 class="text-lg font-semibold text-gray-700">Coming soon</h2>
-            <p class="text-gray-500 text-sm">Enrolled trainings will be available here soon.</p>
+        @if (enrollments() === undefined || completedTrainings() === undefined) {
+          <!-- Loading state -->
+          <div class="flex flex-col gap-4" data-testid="trainings-loading">
+            @for (i of [1, 2, 3]; track i) {
+              <div class="bg-white rounded-xl border shadow-sm p-5 animate-pulse">
+                <div class="flex items-start gap-5">
+                  <div class="w-14 h-14 bg-gray-200 rounded-xl"></div>
+                  <div class="flex-1 flex flex-col gap-3">
+                    <div class="h-4 bg-gray-200 rounded w-1/3"></div>
+                    <div class="h-3 bg-gray-200 rounded w-2/3"></div>
+                    <div class="h-3 bg-gray-200 rounded w-1/2"></div>
+                  </div>
+                </div>
+              </div>
+            }
           </div>
-        </div>
+        } @else if ((enrollments()?.length ?? 0) === 0 && (completedTrainings()?.length ?? 0) === 0) {
+          <!-- Empty state: both sections empty -->
+          <div class="flex flex-col items-center justify-center py-20 text-center gap-4" data-testid="trainings-empty-state">
+            <i class="fa-light fa-book-open text-6xl text-gray-300"></i>
+            <div class="flex flex-col gap-2 max-w-md">
+              <h2 class="text-lg font-semibold text-gray-700">No enrolled trainings yet</h2>
+              <p class="text-gray-500 text-sm">Browse the Linux Foundation course catalog to start your learning journey.</p>
+            </div>
+            <lfx-button
+              label="Browse Courses →"
+              href="https://training.linuxfoundation.org"
+              target="_blank"
+              rel="noopener noreferrer"
+              severity="secondary"
+              [outlined]="true"
+              data-testid="trainings-empty-cta" />
+          </div>
+        } @else {
+          <!-- Content: show non-empty sections only -->
+          <div class="flex flex-col gap-8" data-testid="trainings-content">
+            @if ((enrollments()?.length ?? 0) > 0) {
+              <div data-testid="trainings-ongoing-section">
+                <h2 class="text-base font-semibold text-gray-800 pb-3 mb-4 border-b border-gray-200">Ongoing trainings</h2>
+                <div class="flex flex-col gap-4" data-testid="trainings-ongoing-list">
+                  @for (enrollment of (enrollments() ?? []); track enrollment.id) {
+                    <lfx-training-card [training]="enrollment" variant="ongoing" data-testid="training-card-item" />
+                  }
+                </div>
+              </div>
+            }
+
+            @if ((completedTrainings()?.length ?? 0) > 0) {
+              <div data-testid="trainings-completed-section">
+                <h2 class="text-base font-semibold text-gray-800 pb-3 mb-4 border-b border-gray-200">Completed trainings</h2>
+                <div class="flex flex-col gap-4" data-testid="trainings-completed-list">
+                  @for (cert of (completedTrainings() ?? []); track cert.id) {
+                    <lfx-training-card [training]="cert" variant="completed" data-testid="training-completed-item" />
+                  }
+                </div>
+              </div>
+            }
+          </div>
+        }
       }
 
       <!-- ── TAB: Rewards (placeholder) ───────────────────────────────────── -->

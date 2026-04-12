@@ -15,7 +15,7 @@ export class TrainingController {
 
   /**
    * GET /api/training/certifications
-   * Get all certifications for the authenticated user
+   * Get certifications for the authenticated user, optionally filtered by productType
    */
   public async getCertifications(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_certifications');
@@ -30,15 +30,47 @@ export class TrainingController {
       }
 
       const username = stripAuthPrefix(rawUsername);
-      const certifications = await this.trainingService.getCertifications(req, username);
+      const productType = req.query['productType'] ? String(req.query['productType']) : undefined;
+      const certifications = await this.trainingService.getCertifications(req, username, productType);
 
       logger.success(req, 'get_certifications', startTime, {
         result_count: certifications.length,
+        product_type: productType,
       });
 
       res.json(certifications);
     } catch (error) {
       logger.error(req, 'get_certifications', startTime, error);
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/training/enrollments
+   * Get ongoing training enrollments for the authenticated user
+   */
+  public async getEnrollments(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_enrollments');
+
+    try {
+      const rawUsername = await getUsernameFromAuth(req);
+
+      if (!rawUsername) {
+        throw new AuthenticationError('User authentication required', {
+          operation: 'get_enrollments',
+        });
+      }
+
+      const username = stripAuthPrefix(rawUsername);
+      const enrollments = await this.trainingService.getEnrollments(req, username);
+
+      logger.success(req, 'get_enrollments', startTime, {
+        result_count: enrollments.length,
+      });
+
+      res.json(enrollments);
+    } catch (error) {
+      logger.error(req, 'get_enrollments', startTime, error);
       next(error);
     }
   }

@@ -3,9 +3,9 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { HttpClient } from '@angular/common/http';
+import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Certification } from '@lfx-one/shared/interfaces';
+import { Certification, TrainingEnrollment } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of } from 'rxjs';
 
 @Injectable({
@@ -14,7 +14,15 @@ import { catchError, Observable, of } from 'rxjs';
 export class TrainingService {
   private readonly http = inject(HttpClient);
 
-  public getCertifications(): Observable<Certification[]> {
-    return this.http.get<Certification[]>('/api/training/certifications').pipe(catchError(() => of([])));
+  public getCertifications(productType?: string): Observable<Certification[]> {
+    let params = new HttpParams();
+    if (productType) {
+      params = params.set('productType', productType);
+    }
+    return this.http.get<Certification[]>('/api/training/certifications', { params }).pipe(catchError(() => of([])));
+  }
+
+  public getEnrollments(): Observable<TrainingEnrollment[]> {
+    return this.http.get<TrainingEnrollment[]>('/api/training/enrollments').pipe(catchError(() => of([])));
   }
 }

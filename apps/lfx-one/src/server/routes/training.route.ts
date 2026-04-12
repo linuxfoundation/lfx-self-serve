@@ -11,5 +11,6 @@ const router = Router();
 const trainingController = new TrainingController();
 
 router.get('/certifications', (req, res, next) => trainingController.getCertifications(req, res, next));
+router.get('/enrollments', (req, res, next) => trainingController.getEnrollments(req, res, next));
 
 export default router;

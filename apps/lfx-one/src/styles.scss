@@ -9,8 +9,11 @@
 @layer tailwind-base {
   @tailwind base;
 
-  /* Typography Defaults - Apply Inter font family to all text elements */
-  h1,
+  /* Typography Defaults - Inter on html so it cascades to everything */
+  html {
+    font-family: var(--font-inter);
+  }
+
   h2,
   h3,
   h4,

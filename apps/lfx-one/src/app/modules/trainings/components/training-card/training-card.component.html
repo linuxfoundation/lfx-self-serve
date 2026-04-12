@@ -1,0 +1,82 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="bg-white rounded-xl border shadow-sm hover:border-blue-400 transition-all" data-testid="training-card">
+  <div class="p-5 flex items-start gap-5">
+    <!-- Col 1: Logo -->
+    <div
+      class="flex-shrink-0 w-14 h-14 flex items-center justify-center overflow-hidden rounded-xl bg-gray-50 border border-gray-100"
+      data-testid="training-card-image-container">
+      @if (hasImage()) {
+        <img [src]="training().imageUrl" [alt]="training().name" class="w-14 h-14 object-contain" data-testid="training-card-image" />
+      } @else {
+        <i class="fa-light fa-book-open text-2xl text-gray-400" data-testid="training-card-icon-fallback"></i>
+      }
+    </div>
+
+    <!-- Col 2: Main content -->
+    <div class="flex-1 min-w-0 flex flex-col gap-3">
+      <!-- Top row: name + level badge + issuedBy | Continue Learning button -->
+      <div class="flex items-start justify-between gap-4">
+        <div class="flex flex-col gap-1 min-w-0">
+          <div class="flex items-center gap-2 flex-wrap">
+            <h3 class="text-sm font-semibold text-gray-900 leading-snug" data-testid="training-card-name">{{ training().name }}</h3>
+            @if (training().level) {
+              <span class="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium" [ngClass]="levelClasses()" data-testid="training-card-level-badge">
+                {{ training().level }}
+              </span>
+            }
+          </div>
+          <p class="text-xs text-gray-500" data-testid="training-card-issued-by">{{ training().issuedBy }}</p>
+        </div>
+
+        @if (isOngoing()) {
+          <div class="flex-shrink-0" data-testid="training-card-continue-action">
+            <!-- TODO: replace !important overrides with a size="sm" input on ButtonComponent (LFXV2-TODO) -->
+            <lfx-button
+              severity="secondary"
+              styleClass="!text-xs !h-8 !py-0"
+              label="Continue Learning"
+              icon="fa-light fa-arrow-right"
+              [href]="continueLearningUrl()"
+              target="_blank"
+              rel="noopener noreferrer"
+              [outlined]="true"
+              data-testid="training-card-continue-btn" />
+          </div>
+        }
+      </div>
+
+      <!-- Description -->
+      <p class="text-sm text-gray-600 line-clamp-2" [title]="training().description" data-testid="training-card-description">
+        {{ training().description }}
+      </p>
+
+      <!-- Bottom row: date meta + download button (completed only) -->
+      <div class="flex items-end justify-between gap-4 border-t border-gray-100 pt-3" data-testid="training-card-meta-row">
+        <div class="flex flex-wrap gap-x-8 gap-y-1.5 text-xs" data-testid="training-card-meta">
+          <div class="flex flex-col gap-0.5">
+            <span class="text-gray-400">{{ dateLabel() }}</span>
+            <span class="text-gray-700 font-medium" data-testid="training-card-date">{{ date() | date: 'MMM d, y' }}</span>
+          </div>
+        </div>
+
+        @if (downloadUrl()) {
+          <div class="flex-shrink-0" data-testid="training-card-actions">
+            <!-- TODO: replace !important overrides with a size="sm" input on ButtonComponent (LFXV2-TODO) -->
+            <lfx-button
+              severity="secondary"
+              styleClass="!text-xs !h-8 !py-0"
+              label="Download Certificate"
+              icon="fa-light fa-arrow-down-to-line"
+              [href]="downloadUrl()!"
+              target="_blank"
+              rel="noopener noreferrer"
+              [outlined]="true"
+              data-testid="training-card-download-btn" />
+          </div>
+        }
+      </div>
+    </div>
+  </div>
+</div>
