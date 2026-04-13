@@ -13,10 +13,12 @@ import { Committee, MyCommittee, ProjectContext } from '@lfx-one/shared/interfac
 import { RoleBadgeClassPipe } from '@pipes/role-badge-class.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
 
+import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap } from 'rxjs';
 
@@ -35,6 +37,7 @@ import { CommitteeTableComponent } from '../components/committee-table/committee
     RoleBadgeClassPipe,
     PlatformIconPipe,
     PlatformLabelPipe,
+    SkeletonModule,
     TooltipModule,
   ],
   templateUrl: './committee-dashboard.component.html',
@@ -47,6 +50,7 @@ export class CommitteeDashboardComponent {
   private readonly personaService = inject(PersonaService);
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly router = inject(Router);
+  private readonly lensService = inject(LensService);
   private readonly messageService = inject(MessageService);
 
   // Use the configurable label constants
@@ -78,11 +82,19 @@ export class CommitteeDashboardComponent {
   public foundationCreateCommitteeFlag: Signal<boolean>;
   public canCreateGroup: Signal<boolean>;
 
+  // Lens
+  public readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
+
   // Statistics
   public totalCommittees: Signal<number>;
   public publicCommittees: Signal<number>;
   public activeVoting: Signal<number>;
   public totalMembers: Signal<number>;
+
+  // Me lens statistics
+  public myTotalGroups: Signal<number>;
+  public myPublicGroups: Signal<number>;
+  public myActiveVoting: Signal<number>;
 
   private searchTerm: Signal<string>;
 
@@ -96,6 +108,9 @@ export class CommitteeDashboardComponent {
     this.isFoundationContext = computed(() => this.projectContextService.isFoundationContext());
     this.foundationCreateCommitteeFlag = this.featureFlagService.getBooleanFlag('foundation-create-committee', false);
     this.canCreateGroup = computed(() => {
+      if (this.isMeLens()) {
+        return false;
+      }
       // Board members cannot manage committees
       if (this.isBoardMember()) {
         return false;
@@ -126,6 +141,11 @@ export class CommitteeDashboardComponent {
     this.publicCommittees = computed(() => this.committees().filter((c) => c.public).length);
     this.activeVoting = computed(() => this.committees().filter((c) => c.enable_voting).length);
     this.totalMembers = computed(() => this.committees().reduce((sum, c) => sum + (c.total_members || 0), 0));
+
+    // Me lens statistics (derived from myCommittees)
+    this.myTotalGroups = computed(() => this.myCommittees().length);
+    this.myPublicGroups = computed(() => this.myCommittees().filter((c) => c.public).length);
+    this.myActiveVoting = computed(() => this.myCommittees().filter((c) => c.enable_voting).length);
   }
 
   public openCreateDialog(): void {
@@ -154,12 +174,18 @@ export class CommitteeDashboardComponent {
   private initializeMyCommittees(): Signal<MyCommittee[]> {
     const project$ = toObservable(this.project);
     const refresh$ = toObservable(this.refresh);
+    const lens$ = toObservable(this.lensService.activeLens);
 
     return toSignal(
-      combineLatest([project$, refresh$]).pipe(
-        switchMap(([project]) => {
+      combineLatest([project$, refresh$, lens$]).pipe(
+        switchMap(([project, , lens]) => {
           this.myCommitteesLoading.set(true);
-          return this.committeeService.getMyCommittees(project?.uid).pipe(
+          if (lens !== 'me' && !project?.uid) {
+            this.myCommitteesLoading.set(false);
+            return of([] as MyCommittee[]);
+          }
+          const projectUid = lens === 'me' ? undefined : project!.uid;
+          return this.committeeService.getMyCommittees(projectUid).pipe(
             catchError((error) => {
               console.error('Failed to load my committees:', error);
               this.myCommitteesLoading.set(false);
@@ -194,14 +220,14 @@ export class CommitteeDashboardComponent {
   }
 
   private initializeCommittees(): Signal<Committee[]> {
-    // Convert project signal to observable to react to project changes
     const project$ = toObservable(this.project);
     const refresh$ = toObservable(this.refresh);
+    const lens$ = toObservable(this.lensService.activeLens);
 
     return toSignal(
-      combineLatest([project$, refresh$]).pipe(
-        switchMap(([project]) => {
-          if (!project?.uid) {
+      combineLatest([project$, refresh$, lens$]).pipe(
+        switchMap(([project, , lens]) => {
+          if (lens === 'me' || !project?.uid) {
             this.committeesLoading.set(false);
             return of([]);
           }

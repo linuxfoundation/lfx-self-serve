@@ -130,7 +130,7 @@
                           styleClass="!text-teal-700 !bg-teal-50 !border-teal-200 cursor-pointer"></lfx-tag>
                       </button>
                     }
-                    @for (committee of meeting().committees ?? []; track committee.uid) {
+                    @for (committee of meeting().committees; track committee.uid) {
                       @if (committee.name && committee.uid) {
                         <a
                           [href]="'/groups/' + committee.uid"

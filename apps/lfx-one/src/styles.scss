@@ -23,7 +23,7 @@
   label,
   button,
   input {
-    font-family: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
+    font-family: var(--font-inter);
   }
 
   /* Heading styles - only apply to elements without text or font classes */
@@ -88,18 +88,11 @@
   color: inherit;
 }
 
-/* Custom font family theme variables */
-@theme {
-  /* Inter as the primary sans-serif font */
+/* Font family CSS custom properties (Tailwind v3 — @theme is v4-only, use :root instead) */
+:root {
   --font-inter: 'Inter', ui-sans-serif, system-ui, sans-serif, 'Apple Color Emoji', 'Segoe UI Emoji', 'Segoe UI Symbol', 'Noto Color Emoji';
-
-  /* Roboto Slab for headings and display text */
   --font-display: 'Roboto Slab', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
-
-  /* Keep Roboto Slab as serif option too */
   --font-serif: 'Roboto Slab', ui-serif, Georgia, Cambria, 'Times New Roman', Times, serif;
-
-  /* JetBrains Mono for code/SQL blocks */
   --font-mono: 'JetBrains Mono', ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace;
 }
 
