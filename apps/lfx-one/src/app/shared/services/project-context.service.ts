@@ -86,15 +86,13 @@ export class ProjectContextService {
    * Called by sidebar when persona detection first populates.
    */
   public ensureDefaultSelection(detectedProjects: EnrichedPersonaProject[]): void {
-    const validProjectIds = new Set(detectedProjects.map((p) => p.projectUid));
     const personaProjects = this.personaService.personaProjects();
 
     // Foundation slot — pick from board-scoped persona projects
     if (!this.foundationSelection() || !detectedProjects.some((p) => p.projectUid === this.foundationSelection()?.uid)) {
       const boardUids = this.getPersonaProjectUids(personaProjects, BOARD_SCOPED_PERSONAS);
       const defaultFoundation =
-        detectedProjects.find((p) => boardUids.has(p.projectUid) && isFoundationProject(p, validProjectIds)) ??
-        detectedProjects.find((p) => isFoundationProject(p, validProjectIds));
+        detectedProjects.find((p) => boardUids.has(p.projectUid) && isFoundationProject(p)) ?? detectedProjects.find((p) => isFoundationProject(p));
       if (defaultFoundation) {
         this.setFoundation(toProjectContext(defaultFoundation));
       }
@@ -104,7 +102,7 @@ export class ProjectContextService {
     if (!this.projectSelection() || !detectedProjects.some((p) => p.projectUid === this.projectSelection()?.uid)) {
       const projectUids = this.getPersonaProjectUids(personaProjects, PROJECT_SCOPED_PERSONAS);
       const defaultProject =
-        detectedProjects.find((p) => projectUids.has(p.projectUid) && !isFoundationProject(p, validProjectIds)) ??
+        detectedProjects.find((p) => projectUids.has(p.projectUid) && !isFoundationProject(p)) ??
         detectedProjects.find((p) => projectUids.has(p.projectUid)) ??
         detectedProjects[0];
       if (defaultProject) {

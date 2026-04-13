@@ -26,7 +26,6 @@ export class ProjectSelectorComponent {
 
   protected readonly searchQuery = signal<string>('');
 
-  private readonly validProjectIds = computed(() => new Set(this.projects().map((p) => p.projectUid)));
   protected readonly displayName = this.initializeDisplayName();
   protected readonly displayLogo = this.initializeDisplayLogo();
   protected readonly foundations = this.initializeFoundations();
@@ -65,9 +64,8 @@ export class ProjectSelectorComponent {
     return computed(() => {
       const allProjects = this.projects();
       const query = this.searchQuery().toLowerCase().trim();
-      const ids = this.validProjectIds();
 
-      const foundationList = allProjects.filter((p) => isFoundationProject(p, ids));
+      const foundationList = allProjects.filter((p) => isFoundationProject(p));
 
       if (!query) {
         return foundationList;
@@ -95,12 +93,11 @@ export class ProjectSelectorComponent {
     return computed(() => {
       const allProjects = this.projects();
       const query = this.searchQuery().toLowerCase().trim();
-      const ids = this.validProjectIds();
 
       const map = new Map<string, EnrichedPersonaProject[]>();
 
       allProjects.forEach((project) => {
-        if (!isFoundationProject(project, ids) && project.parentProjectUid) {
+        if (!isFoundationProject(project) && project.parentProjectUid) {
           const children = map.get(project.parentProjectUid) || [];
           children.push(project);
           map.set(project.parentProjectUid, children);

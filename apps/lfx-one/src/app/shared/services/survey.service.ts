@@ -45,6 +45,10 @@ export class SurveyService {
     return this.getSurveys(params);
   }
 
+  public getMySurveys(): Observable<Survey[]> {
+    return this.http.get<Survey[]>('/api/surveys/my-surveys');
+  }
+
   public getSurvey(surveyUid: string, projectId?: string): Observable<Survey> {
     let params = new HttpParams();
     if (projectId) {

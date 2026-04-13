@@ -53,6 +53,8 @@ export interface EnrichedPersonaProject {
   projectName: string | null;
   /** Parent project UID (null if this is a top-level foundation) */
   parentProjectUid: string | null;
+  /** Whether this project is a foundation (top-level) */
+  isFoundation: boolean;
   /** Project logo URL (null if unavailable) */
   logoUrl: string | null;
   /** Project description text (null if unavailable) */

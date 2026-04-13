@@ -2,13 +2,14 @@
 // SPDX-License-Identifier: MIT
 
 import { LowerCasePipe } from '@angular/common';
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { SURVEY_LABEL } from '@lfx-one/shared';
 import { ProjectContext, Survey } from '@lfx-one/shared/interfaces';
+import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SurveyService } from '@services/survey.service';
 import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
@@ -25,6 +26,7 @@ import { SurveysTableComponent } from '../components/surveys-table/surveys-table
 export class SurveysDashboardComponent {
   // === Services ===
   private readonly surveyService = inject(SurveyService);
+  private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
 
   // === Constants ===
@@ -39,11 +41,16 @@ export class SurveysDashboardComponent {
   protected readonly hasPMOAccess = signal<boolean>(true);
   protected readonly resultsDrawerVisible = signal<boolean>(false);
   protected readonly selectedSurveyId = signal<string | null>(null);
+  protected readonly mySurveysLoading = signal<boolean>(true);
 
-  // === Computed Signals ===
+  // === Lens ===
+  protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
+
+  // === Computed / toSignal Signals ===
   protected readonly project: Signal<ProjectContext | null> = this.initProject();
   protected readonly surveys: Signal<Survey[]> = this.initSurveys();
   protected readonly selectedListSurvey: Signal<Survey | null> = this.initSelectedListSurvey();
+  protected readonly mySurveys: Signal<Survey[]> = this.initMySurveys();
 
   protected onViewResults(surveyId: string): void {
     this.selectedSurveyId.set(surveyId);
@@ -78,11 +85,12 @@ export class SurveysDashboardComponent {
 
   private initSurveys(): Signal<Survey[]> {
     const project$ = toObservable(this.project);
+    const lens$ = toObservable(this.lensService.activeLens);
 
     return toSignal(
-      combineLatest([project$, this.refresh$]).pipe(
-        switchMap(([project]) => {
-          if (!project?.uid) {
+      combineLatest([project$, this.refresh$, lens$]).pipe(
+        switchMap(([project, , lens]) => {
+          if (lens === 'me' || !project?.uid) {
             this.loading.set(false);
             return of([]);
           }
@@ -105,7 +113,32 @@ export class SurveysDashboardComponent {
     return computed(() => {
       const surveyId = this.selectedSurveyId();
       if (!surveyId) return null;
-      return this.surveys().find((s) => s.uid === surveyId) ?? null;
+      const source = this.isMeLens() ? this.mySurveys() : this.surveys();
+      return source.find((s) => s.uid === surveyId) ?? null;
     });
+  }
+
+  private initMySurveys(): Signal<Survey[]> {
+    const lens$ = toObservable(this.lensService.activeLens);
+
+    return toSignal(
+      combineLatest([lens$, this.refresh$]).pipe(
+        switchMap(([lens]) => {
+          if (lens !== 'me') {
+            this.mySurveysLoading.set(false);
+            return of([] as Survey[]);
+          }
+          this.mySurveysLoading.set(true);
+          return this.surveyService.getMySurveys().pipe(
+            catchError(() => {
+              this.mySurveysLoading.set(false);
+              return of([] as Survey[]);
+            }),
+            finalize(() => this.mySurveysLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: [] }
+    );
   }
 }

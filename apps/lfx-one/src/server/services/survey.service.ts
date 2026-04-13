@@ -6,6 +6,8 @@ import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { ETagService } from './etag.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -157,5 +159,86 @@ export class SurveyService {
 
     // Step 2: Delete survey with ETag
     await this.etagService.deleteWithETag(req, 'LFX_V2_SERVICE', `/surveys/${surveyUid}`, etag, 'delete_survey');
+  }
+
+  // ============================================
+  // My Surveys (Me Lens)
+  // ============================================
+
+  /**
+   * Fetches surveys the current user has responded to.
+   * Queries survey_response records by email and username using filters_or.
+   */
+  public async getMySurveys(req: Request): Promise<Survey[]> {
+    const rawUsername = await getUsernameFromAuth(req);
+    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
+    const email = (req.oidc?.user?.['email'] as string)?.toLowerCase();
+
+    logger.debug(req, 'get_my_surveys', 'Fetching surveys for current user', {
+      username,
+      has_email: !!email,
+    });
+
+    if (!username && !email) {
+      return [];
+    }
+
+    // Build filters_or array for email and/or username
+    const filtersOr: string[] = [];
+    if (email) {
+      filtersOr.push(`email:${email}`);
+    }
+    if (username) {
+      filtersOr.push(`username:${username}`);
+    }
+
+    // Query survey_response records using filters_or (OR logic on data fields)
+    const responses = await fetchAllQueryResources<{ survey_uid: string }>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<{ survey_uid: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        v: '1',
+        type: 'survey_response',
+        page_size: 100,
+        filters_or: filtersOr,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
+
+    // Extract unique survey UIDs
+    const surveyUids = [...new Set(responses.filter((r) => r.survey_uid).map((r) => r.survey_uid))];
+
+    if (surveyUids.length === 0) {
+      return [];
+    }
+
+    logger.debug(req, 'get_my_surveys', 'Found user survey responses', {
+      response_count: responses.length,
+      unique_survey_count: surveyUids.length,
+    });
+
+    // Fetch survey details in parallel
+    const surveys = await Promise.all(
+      surveyUids.map(async (uid) => {
+        try {
+          const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Survey>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            type: 'survey',
+            tags: uid,
+          });
+
+          if (!resources || resources.length === 0) {
+            return null;
+          }
+
+          return resources[0].data;
+        } catch (error) {
+          logger.warning(req, 'get_my_surveys', 'Failed to fetch survey details, skipping', {
+            survey_uid: uid,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+          return null;
+        }
+      })
+    );
+
+    return surveys.filter((s): s is Survey => s !== null);
   }
 }

@@ -67,6 +67,25 @@ export class SurveyController {
   }
 
   /**
+   * GET /surveys/my-surveys
+   */
+  public async getMySurveys(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_my_surveys');
+
+    try {
+      const mySurveys = await this.surveyService.getMySurveys(req);
+
+      logger.success(req, 'get_my_surveys', startTime, {
+        survey_count: mySurveys.length,
+      });
+
+      res.json(mySurveys);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /surveys/:uid
    */
   public async getSurveyById(req: Request, res: Response, next: NextFunction): Promise<void> {
