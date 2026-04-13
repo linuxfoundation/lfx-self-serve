@@ -10,6 +10,7 @@ import {
   GroupsIOMailingList,
   GroupsIOService,
   MailingListMember,
+  MyMailingList,
   QueryServiceCountResponse,
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
@@ -38,6 +39,14 @@ export class MailingListService {
 
   public getMailingLists(): Observable<GroupsIOMailingList[]> {
     return this.http.get<GroupsIOMailingList[]>(this.baseUrl);
+  }
+
+  public getMyMailingLists(projectUid?: string): Observable<MyMailingList[]> {
+    let params = new HttpParams();
+    if (projectUid) {
+      params = params.set('project_uid', projectUid);
+    }
+    return this.http.get<MyMailingList[]>(`${this.baseUrl}/my-mailing-lists`, { params });
   }
 
   public getMailingList(uid: string): Observable<GroupsIOMailingList> {

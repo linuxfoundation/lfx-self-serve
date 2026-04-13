@@ -8,15 +8,19 @@ import {
   GroupsIOMailingList,
   GroupsIOService,
   MailingListMember,
+  MyMailingList,
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateGroupsIOServiceRequest,
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
+import { MailingListMemberDeliveryMode, MailingListMemberModStatus } from '@lfx-one/shared/enums';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
+import { getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { pollEndpoint, pollUntilIndexed } from '../helpers/poll-endpoint.helper';
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -326,6 +330,140 @@ export class MailingListService {
     await this.pollUntilResourceRemoved(req, 'delete_mailing_list', 'groupsio_mailing_list', 'groupsio_mailing_list_uid', mailingListId, {
       mailing_list_uid: mailingListId,
     });
+  }
+
+  // ============================================
+  // My Mailing Lists (Me Lens)
+  // ============================================
+
+  /**
+   * Fetches mailing lists the current user is a member of.
+   * Queries by both email and username to ensure complete coverage.
+   */
+  public async getMyMailingLists(req: Request, projectUid?: string): Promise<MyMailingList[]> {
+    // Get user identity from auth context
+    const rawUsername = await getUsernameFromAuth(req);
+    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
+    const email = (req.oidc?.user?.['email'] as string)?.toLowerCase();
+
+    logger.debug(req, 'get_my_mailing_lists', 'Fetching mailing lists for current user', {
+      username,
+      has_email: !!email,
+      project_uid: projectUid,
+    });
+
+    if (!username && !email) {
+      return [];
+    }
+
+    // Query groupsio_member records by both email and username in parallel (with full pagination)
+    const memberQueries: Promise<MailingListMember[]>[] = [];
+
+    if (email) {
+      memberQueries.push(
+        fetchAllQueryResources<MailingListMember>(req, (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            v: '1',
+            type: 'groupsio_member',
+            page_size: 100,
+            tags_all: [`email:${email}`],
+            ...(pageToken && { page_token: pageToken }),
+          })
+        )
+      );
+    }
+
+    if (username) {
+      memberQueries.push(
+        fetchAllQueryResources<MailingListMember>(req, (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            v: '1',
+            type: 'groupsio_member',
+            page_size: 100,
+            tags_all: [`username:${username}`],
+            ...(pageToken && { page_token: pageToken }),
+          })
+        )
+      );
+    }
+
+    const results = await Promise.all(memberQueries);
+
+    // Deduplicate members by uid (a member might match both email and username)
+    const memberMap = new Map<string, MailingListMember>();
+    for (const members of results) {
+      for (const member of members) {
+        memberMap.set(member.uid, member);
+      }
+    }
+
+    const allMembers = Array.from(memberMap.values());
+
+    if (allMembers.length === 0) {
+      return [];
+    }
+
+    logger.debug(req, 'get_my_mailing_lists', 'Found user memberships', {
+      username,
+      has_email: !!email,
+      membership_count: allMembers.length,
+    });
+
+    // Build a map of mailing_list_uid → member details for quick lookup
+    const membershipMap = new Map<string, { delivery_mode: MailingListMemberDeliveryMode; mod_status: MailingListMemberModStatus; member_uid: string }>();
+    for (const m of allMembers) {
+      membershipMap.set(m.mailing_list_uid, {
+        delivery_mode: m.delivery_mode || MailingListMemberDeliveryMode.NORMAL,
+        mod_status: m.mod_status || MailingListMemberModStatus.NONE,
+        member_uid: m.uid,
+      });
+    }
+
+    // Fetch mailing list details for each membership in parallel
+    const mailingListUids = Array.from(membershipMap.keys());
+    const mailingLists = await Promise.all(
+      mailingListUids.map(async (uid) => {
+        try {
+          const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(
+            req,
+            'LFX_V2_SERVICE',
+            '/query/resources',
+            'GET',
+            {
+              type: 'groupsio_mailing_list',
+              tags: `groupsio_mailing_list_uid:${uid}`,
+            }
+          );
+
+          if (!resources || resources.length === 0) {
+            return null;
+          }
+
+          const mailingList = resources[0].data;
+          const membership = membershipMap.get(uid)!;
+          return {
+            ...mailingList,
+            my_delivery_mode: membership.delivery_mode,
+            my_mod_status: membership.mod_status,
+            my_member_uid: membership.member_uid,
+          } as MyMailingList;
+        } catch (error) {
+          logger.warning(req, 'get_my_mailing_lists', 'Failed to enrich mailing list membership, skipping', {
+            mailing_list_uid: uid,
+            error: error instanceof Error ? error.message : 'Unknown error',
+          });
+          return null;
+        }
+      })
+    );
+
+    const filtered = mailingLists.filter((ml): ml is MyMailingList => ml !== null);
+
+    // Filter by project_uid server-side if provided
+    const result = projectUid ? filtered.filter((ml) => ml.project_uid === projectUid) : filtered;
+
+    // Enrich with service data for correct email display in UI
+    return (await this.enrichWithServices(req, result)) as MyMailingList[];
   }
 
   // ============================================

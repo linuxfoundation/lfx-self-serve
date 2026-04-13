@@ -20,6 +20,7 @@ router.delete('/services/:id', (req, res, next) => mailingListController.deleteS
 // Mailing List routes
 router.get('/', (req, res, next) => mailingListController.getMailingLists(req, res, next));
 router.get('/count', (req, res, next) => mailingListController.getMailingListsCount(req, res, next));
+router.get('/my-mailing-lists', (req, res, next) => mailingListController.getMyMailingLists(req, res, next));
 router.get('/:id', (req, res, next) => mailingListController.getMailingListById(req, res, next));
 router.post('/', (req, res, next) => mailingListController.createMailingList(req, res, next));
 router.put('/:id', (req, res, next) => mailingListController.updateMailingList(req, res, next));

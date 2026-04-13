@@ -127,6 +127,19 @@ export interface GroupsIOMailingList {
 }
 
 /**
+ * Mailing list with current user's membership details
+ * @description Extended mailing list data including the user's subscription info for "me" lens views
+ */
+export interface MyMailingList extends GroupsIOMailingList {
+  /** User's delivery mode in this mailing list (e.g., "Normal", "Digest", "None") */
+  my_delivery_mode: MailingListMemberDeliveryMode;
+  /** User's moderation status in this mailing list (e.g., "none", "moderator", "owner") */
+  my_mod_status: MailingListMemberModStatus;
+  /** User's member UID in this mailing list */
+  my_member_uid?: string;
+}
+
+/**
  * Request payload for creating a new mailing list
  * @description Maps to Groups.io API create endpoint
  */
