@@ -37,7 +37,7 @@ jobs:
           set -euo pipefail
           APP_VERSION=$(echo ${{ github.ref_name }} | sed 's/v//g')
           CHART_NAME="$(yq '.name' charts/*/Chart.yaml)"
-          CHART_VERSION="$(yq '.version' charts/*/Chart.yaml)"
+          CHART_VERSION=$(echo ${{ github.ref_name }} | sed 's/v//g')
           {
             echo "app_version=$APP_VERSION"
             echo "chart_name=$CHART_NAME"
@@ -102,7 +102,7 @@ jobs:
 
       - name: Publish Chart to GHCR
         id: publish-ghcr
-        uses: linuxfoundation/lfx-public-workflows/.github/actions/helm-chart-oci-publisher@c465d6571fa0b8be9d551d902955164ea04a00af # main
+        uses: linuxfoundation/lfx-public-workflows/.github/actions/helm-chart-oci-publisher@17e4144d7ba68f7c3e8c16eece5aed15fd7c2dc8 # main
         with:
           name: ${{ needs.build-and-push.outputs.chart_name }}
           repository: ${{ github.repository }}/chart
