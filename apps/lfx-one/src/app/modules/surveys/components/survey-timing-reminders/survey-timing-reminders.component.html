@@ -63,7 +63,7 @@
           <!-- Cutoff Date -->
           <div class="flex flex-col gap-2 pt-2">
             <label class="block mb-2 text-neutral-950"> Survey Cutoff Date <span class="text-red-500">*</span> </label>
-            <p class="text-xs text-gray-500 mb-2">The date when the survey will close and no longer accept responses.</p>
+            <p class="text-sm text-gray-500 mb-2">The date when the survey will close and no longer accept responses.</p>
             <lfx-calendar
               [form]="form()"
               control="cutoffDate"
@@ -114,7 +114,7 @@
           @if (isAutomatic()) {
             <div class="flex flex-col gap-2 pt-2">
               <label class="block mb-2 text-neutral-950">Reminder Frequency</label>
-              <p class="text-xs text-gray-500 mb-2">How often should automatic reminders be sent to non-respondents?</p>
+              <p class="text-sm text-gray-500 mb-2">How often should automatic reminders be sent to non-respondents?</p>
               <lfx-select
                 styleClass="w-full"
                 appendTo="body"

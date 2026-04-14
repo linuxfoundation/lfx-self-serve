@@ -50,7 +50,7 @@
       <!-- Existing File Attachments (Edit Mode) -->
       @if (existingAttachments().length > 0) {
         <div class="flex flex-col gap-2" data-testid="existing-attachments-list">
-          <p class="text-xs text-gray-500 font-medium uppercase tracking-wide">Existing Files</p>
+          <p class="text-sm text-gray-500 font-medium uppercase tracking-wide">Existing Files</p>
           @for (attachment of existingAttachments(); track attachment.uid) {
             @if (attachment.type === 'file') {
               <div

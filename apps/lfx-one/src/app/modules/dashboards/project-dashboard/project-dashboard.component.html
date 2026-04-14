@@ -4,8 +4,8 @@
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="project-dashboard-container">
   <!-- Page Header -->
   @if (selectedProject()) {
-    <div class="mb-6 flex items-center gap-4" data-testid="project-dashboard-foundation-project">
-      <h1>{{ selectedProject()?.name }} Overview</h1>
+    <div class="mt-3 mb-6 flex items-center gap-4" data-testid="project-dashboard-foundation-project">
+      <h1 class="font-display font-light text-2xl">{{ selectedProject()?.name }} Overview</h1>
     </div>
   }
 

@@ -15,7 +15,7 @@
             <lfx-tag [value]="item.scope + ' ' + item.level" [severity]="item.badge.severity"></lfx-tag>
           </div>
           <p class="text-xs text-gray-600 mb-2">{{ item.description }}</p>
-          <ul class="text-xs text-gray-500 flex flex-col gap-1">
+          <ul class="text-sm text-gray-500 flex flex-col gap-1">
             @for (capability of item.capabilities; track capability) {
               <li class="flex items-start">
                 <i class="fa-light fa-check text-emerald-500 mr-1 mt-0.5" style="font-size: 10px"></i>

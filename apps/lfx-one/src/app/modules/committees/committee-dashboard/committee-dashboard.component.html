@@ -3,27 +3,29 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8">
   <div class="flex flex-col gap-6">
-    <!-- Page Title with Create Group Button -->
-    <div class="flex justify-between items-center w-full gap-4">
-      <h1>{{ isMeLens() ? 'My ' + committeeLabel.plural : committeeLabel.plural }}</h1>
-      @if (canCreateGroup()) {
-        <lfx-button
-          [label]="'Create ' + committeeLabel.singular"
-          icon="fa-light fa-users mr-1"
-          severity="info"
-          size="small"
-          (onClick)="openCreateDialog()"
-          data-testid="committee-new-cta">
-        </lfx-button>
-      }
+    <!-- Page Header -->
+    <div class="mt-3 mb-6">
+      <div class="flex justify-between items-center w-full gap-4">
+        <h1 class="font-display font-light text-2xl">{{ isMeLens() ? 'My ' + committeeLabel.plural : committeeLabel.plural }}</h1>
+        @if (canCreateGroup()) {
+          <lfx-button
+            [label]="'Create ' + committeeLabel.singular"
+            icon="fa-light fa-users mr-1"
+            severity="info"
+            size="small"
+            (onClick)="openCreateDialog()"
+            data-testid="committee-new-cta">
+          </lfx-button>
+        }
+      </div>
+      <p class="mt-1 text-sm text-gray-500" data-testid="dashboard-hero-description">
+        {{
+          isMeLens()
+            ? committeeLabel.plural + ' you are a member of across all foundations and projects.'
+            : 'Manage ' + committeeLabel.plural.toLowerCase() + ' and governance for your project.'
+        }}
+      </p>
     </div>
-    <p class="text-gray-500" data-testid="dashboard-hero-description">
-      {{
-        isMeLens()
-          ? committeeLabel.plural + ' you are a member of across all foundations and projects.'
-          : 'Manage ' + committeeLabel.plural.toLowerCase() + ' and governance for your project.'
-      }}
-    </p>
 
     <!-- Statistics Bar -->
     @if ((isMeLens() && myCommitteesLoading()) || (!isMeLens() && committeesLoading())) {
@@ -44,26 +46,26 @@
         <lfx-card>
           <div class="text-center py-2">
             <p class="text-2xl font-semibold text-gray-900">{{ (isMeLens() ? myTotalGroups() : totalCommittees()) | number }}</p>
-            <p class="text-xs text-gray-500 mt-1">Total {{ committeeLabel.plural }}</p>
+            <p class="text-sm text-gray-500 mt-1">Total {{ committeeLabel.plural }}</p>
           </div>
         </lfx-card>
         <lfx-card>
           <div class="text-center py-2">
             <p class="text-2xl font-semibold text-gray-900">{{ (isMeLens() ? myPublicGroups() : publicCommittees()) | number }}</p>
-            <p class="text-xs text-gray-500 mt-1">Public</p>
+            <p class="text-sm text-gray-500 mt-1">Public</p>
           </div>
         </lfx-card>
         <lfx-card>
           <div class="text-center py-2">
             <p class="text-2xl font-semibold text-emerald-600">{{ (isMeLens() ? myActiveVoting() : activeVoting()) | number }}</p>
-            <p class="text-xs text-gray-500 mt-1">Active Voting</p>
+            <p class="text-sm text-gray-500 mt-1">Active Voting</p>
           </div>
         </lfx-card>
         @if (!isMeLens()) {
           <lfx-card>
             <div class="text-center py-2">
               <p class="text-2xl font-semibold text-gray-900">{{ totalMembers() | number }}</p>
-              <p class="text-xs text-gray-500 mt-1">Total Members</p>
+              <p class="text-sm text-gray-500 mt-1">Total Members</p>
             </div>
           </lfx-card>
         }
@@ -120,7 +122,7 @@
                     <div class="min-w-0 flex-1">
                       <h3 class="text-sm font-semibold text-gray-900 truncate">{{ committee.display_name || committee.name }}</h3>
                       <div class="flex items-center gap-2 mt-1">
-                        <span class="text-xs text-gray-500">{{ committee.category }}</span>
+                        <span class="text-sm text-gray-500">{{ committee.category }}</span>
                         @if (!committee.public) {
                           <i class="fa-light fa-lock w-3 h-3 text-gray-400"></i>
                         }
@@ -136,7 +138,7 @@
 
                   <!-- Meta Row: Members + Voting + Channels -->
                   <div class="flex items-center gap-4 mt-auto pt-3 border-t border-gray-100">
-                    <div class="flex items-center gap-1.5 text-xs text-gray-500">
+                    <div class="flex items-center gap-1.5 text-sm text-gray-500">
                       <i class="fa-light fa-users w-3.5 h-3.5"></i>
                       <span>{{ committee.total_members || 0 }} members</span>
                     </div>
@@ -151,7 +153,7 @@
                       <a
                         [href]="'mailto:' + committee.mailing_list"
                         (click)="$event.stopPropagation()"
-                        class="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 no-underline"
+                        class="flex items-center gap-1 text-sm text-gray-500 hover:text-blue-600 no-underline"
                         [pTooltip]="committee.mailing_list"
                         tooltipPosition="top"
                         aria-label="Mailing list">
@@ -168,7 +170,7 @@
                         target="_blank"
                         rel="noopener"
                         (click)="$event.stopPropagation()"
-                        class="flex items-center gap-1 text-xs text-gray-500 hover:text-blue-600 no-underline"
+                        class="flex items-center gap-1 text-sm text-gray-500 hover:text-blue-600 no-underline"
                         [pTooltip]="committee.chat_channel | platformLabel"
                         tooltipPosition="top"
                         [attr.aria-label]="committee.chat_channel | platformLabel">

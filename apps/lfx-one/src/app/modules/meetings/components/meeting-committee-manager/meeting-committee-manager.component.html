@@ -19,7 +19,7 @@
           </div>
           <div class="flex-1">
             <p class="text-sm font-medium text-gray-900">{{ ctx.name }}</p>
-            <p class="text-xs text-gray-500">{{ ctx.category }}</p>
+            <p class="text-sm text-gray-500">{{ ctx.category }}</p>
           </div>
           <i class="fa-light fa-lock text-gray-400" aria-hidden="true"></i>
         </div>
@@ -42,7 +42,7 @@
           data-testid="meeting-committee-multi-select"></lfx-multi-select>
       </div>
       @if (selectedCommitteeIds().length === 0) {
-        <p class="text-xs text-gray-500">
+        <p class="text-sm text-gray-500">
           Select {{ committeeLabel.plural.toLowerCase() }} to associate with this meeting. {{ committeeLabel.singular }} members will automatically be added as
           guests.
         </p>
@@ -55,7 +55,7 @@
         <div class="flex items-center gap-1 mb-2">
           <label class="block text-neutral-950">Voting Status Selection</label>
           <i
-            class="fa-light fa-info-circle text-xs text-gray-500"
+            class="fa-light fa-info-circle text-sm text-gray-500"
             pTooltip="Select which voting statuses committee members must have to participate in this meeting. Only members with the selected voting status(es) will be invited to the meeting."></i>
         </div>
         <lfx-multi-select
@@ -74,7 +74,7 @@
     }
 
     @if (selectedCommitteeIds().length > 0) {
-      <p class="text-xs text-gray-500">
+      <p class="text-sm text-gray-500">
         <strong>{{ selectedCommitteeIds().length }}</strong> {{ committeeLabel.plural.toLowerCase() }} selected.
         @if (filteredCommitteeMembers().length > 0) {
           <strong>{{ filteredCommitteeMembers().length }}</strong> unique member(s) will be added to the invitation list.

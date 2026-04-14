@@ -122,7 +122,7 @@
         <div class="flex flex-wrap gap-3" data-testid="attendance-section">
           <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3">
             <i class="fa-light fa-chart-pie text-gray-400 text-sm"></i>
-            <span class="text-xs text-gray-500 uppercase tracking-wide">Rate</span>
+            <span class="text-sm text-gray-500 uppercase tracking-wide">Rate</span>
             <span class="text-xl font-bold text-gray-900">{{ attendancePercentage() }}%</span>
             <div class="w-20 h-1.5 bg-gray-100 rounded-full overflow-hidden">
               <div class="h-full rounded-full" [ngClass]="attendanceBarColor()" [style.width.%]="attendancePercentage()"></div>
@@ -130,13 +130,13 @@
           </div>
           <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3">
             <i class="fa-light fa-circle-check text-emerald-500 text-sm"></i>
-            <span class="text-xs text-gray-500 uppercase tracking-wide">Attended</span>
+            <span class="text-sm text-gray-500 uppercase tracking-wide">Attended</span>
             <span class="text-xl font-bold text-emerald-600">{{ meeting.attended_count || 0 }}</span>
             <span class="text-xs text-gray-400">of {{ meeting.participant_count || 0 }}</span>
           </div>
           <div class="bg-white border border-gray-200 rounded-lg px-4 py-3 flex items-center gap-3">
             <i class="fa-light fa-circle-xmark text-gray-400 text-sm"></i>
-            <span class="text-xs text-gray-500 uppercase tracking-wide">Absent</span>
+            <span class="text-sm text-gray-500 uppercase tracking-wide">Absent</span>
             <span class="text-xl font-bold text-gray-400">{{ (meeting.participant_count || 0) - (meeting.attended_count || 0) }}</span>
             <span class="text-xs text-gray-400">of {{ meeting.participant_count || 0 }}</span>
           </div>
@@ -385,7 +385,7 @@
               </td>
               <td>
                 @if (p.job_title) {
-                  <span class="text-xs text-gray-500 truncate">{{ p.job_title }}</span>
+                  <span class="text-sm text-gray-500 truncate">{{ p.job_title }}</span>
                 } @else {
                   <span class="text-xs text-gray-300">—</span>
                 }
@@ -395,7 +395,7 @@
                   @if (p.committee_voting_status && p.committee_voting_status !== 'None') {
                     <div class="flex items-center gap-1">
                       <i class="fa-light fa-check-to-slot text-sm text-gray-400 flex-shrink-0"></i>
-                      <span class="text-xs text-gray-500">{{ p.committee_voting_status }}</span>
+                      <span class="text-sm text-gray-500">{{ p.committee_voting_status }}</span>
                     </div>
                   } @else {
                     <span class="text-xs text-gray-300">—</span>

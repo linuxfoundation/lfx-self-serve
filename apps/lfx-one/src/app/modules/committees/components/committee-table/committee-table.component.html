@@ -181,9 +181,9 @@
                 [attr.data-testid]="'committee-join-' + committee.uid">
               </lfx-button>
             } @else if (committee.public && committee.join_mode === 'invite_only') {
-              <span class="text-xs text-gray-500 italic">Invite only</span>
+              <span class="text-sm text-gray-500 italic">Invite only</span>
             } @else {
-              <span class="text-xs text-gray-400 italic">{{ committee.public ? 'Closed' : 'Private' }}</span>
+              <span class="text-sm text-gray-400 italic">{{ committee.public ? 'Closed' : 'Private' }}</span>
             }
           </td>
         }

@@ -74,14 +74,14 @@
             <p class="text-sm text-gray-500 truncate">{{ registrant().email }}</p>
           }
           @if (registrant().type === 'committee' && registrant().committee_name) {
-            <p class="text-xs text-gray-500 mt-0.5">
+            <p class="text-sm text-gray-500 mt-0.5">
               {{ registrant().committee_name }}
               @if (registrant().committee_role) {
                 · {{ registrant().committee_role }}
               }
             </p>
           } @else if (registrant().org_name || registrant().job_title) {
-            <p class="text-xs text-gray-500 mt-0.5">
+            <p class="text-sm text-gray-500 mt-0.5">
               @if (registrant().job_title) {
                 {{ registrant().job_title }}
               }

@@ -102,3 +102,12 @@ export interface SsrPersonaResult {
   /** User's organizations from board member detections (optional — empty for non-board personas) */
   organizations?: Account[];
 }
+
+/**
+ * Cache entry for affiliated project UIDs lookup in PersonaDetectionService.
+ * Stores an in-flight (or resolved) promise to collapse concurrent lookups.
+ */
+export interface AffiliatedProjectUidsCacheEntry {
+  promise: Promise<string[]>;
+  expiresAt: number;
+}

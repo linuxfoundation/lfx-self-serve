@@ -53,7 +53,7 @@
       <div class="flex flex-col gap-1">
         <h4 class="text-neutral-950">Invitation List ({{ registrantCount() }})</h4>
         @if (committeeMemberCount() > 0 || directGuestCount() > 0) {
-          <p class="text-xs text-gray-500" data-testid="stats">
+          <p class="text-sm text-gray-500" data-testid="stats">
             @if (committeeMemberCount() > 0) {
               <span>{{ committeeMemberCount() }} from committees</span>
             }

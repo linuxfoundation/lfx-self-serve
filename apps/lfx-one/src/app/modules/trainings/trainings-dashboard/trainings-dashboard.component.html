@@ -3,9 +3,9 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="trainings-dashboard">
   <!-- Page Header -->
-  <div class="mb-8">
-    <h1 class="font-display" data-testid="trainings-title">Training &amp; Certifications</h1>
-    <p class="mt-2 text-gray-500" data-testid="trainings-subtitle">{{ subtitle }}</p>
+  <div class="mt-3 mb-6">
+    <h1 class="font-display font-light text-2xl" data-testid="trainings-title">Training &amp; Certifications</h1>
+    <p class="mt-1 text-sm text-gray-500" data-testid="trainings-subtitle">{{ subtitle }}</p>
   </div>
 
   <!-- Two-column layout -->
@@ -107,7 +107,7 @@
               <div data-testid="trainings-ongoing-section">
                 <h2 class="text-base font-semibold text-gray-800 pb-3 mb-4 border-b border-gray-200">Ongoing trainings</h2>
                 <div class="flex flex-col gap-4" data-testid="trainings-ongoing-list">
-                  @for (enrollment of (enrollments() ?? []); track enrollment.id) {
+                  @for (enrollment of enrollments() ?? []; track enrollment.id) {
                     <lfx-training-card [training]="enrollment" variant="ongoing" data-testid="training-card-item" />
                   }
                 </div>
@@ -118,7 +118,7 @@
               <div data-testid="trainings-completed-section">
                 <h2 class="text-base font-semibold text-gray-800 pb-3 mb-4 border-b border-gray-200">Completed trainings</h2>
                 <div class="flex flex-col gap-4" data-testid="trainings-completed-list">
-                  @for (cert of (completedTrainings() ?? []); track cert.id) {
+                  @for (cert of completedTrainings() ?? []; track cert.id) {
                     <lfx-training-card [training]="cert" variant="completed" data-testid="training-completed-item" />
                   }
                 </div>
@@ -154,7 +154,7 @@
                 class="text-sm font-medium text-blue-600 hover:text-blue-800 hover:underline transition-colors">
                 {{ link.label }}
               </a>
-              <p class="text-xs text-gray-500 leading-relaxed">{{ link.description }}</p>
+              <p class="text-sm text-gray-500 leading-relaxed">{{ link.description }}</p>
             </li>
           }
         </ul>

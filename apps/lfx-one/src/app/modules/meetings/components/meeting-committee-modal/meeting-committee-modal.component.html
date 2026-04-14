@@ -27,7 +27,7 @@
         data-testid="meeting-committee-multi-select"></lfx-multi-select>
     </div>
     @if (selectedCommitteeIds().length === 0) {
-      <p class="text-xs text-gray-500">
+      <p class="text-sm text-gray-500">
         Select {{ committeeLabel.plural.toLowerCase() }} to associate with this meeting. {{ committeeLabel.singular }} members will automatically be added as
         guests.
       </p>
@@ -39,7 +39,7 @@
         <div class="flex items-center gap-1">
           <label class="text-sm font-medium text-gray-700">Voting Status Selection</label>
           <i
-            class="fa-light fa-info-circle text-xs text-gray-500"
+            class="fa-light fa-info-circle text-sm text-gray-500"
             pTooltip="Select which voting statuses committee members must have to participate in this meeting. Only members with the selected voting status(es) will be invited to the meeting."
             [tooltipOptions]="{ appendTo: 'body' }"></i>
         </div>
@@ -59,7 +59,7 @@
       </div>
     }
 
-    <p class="text-xs text-gray-500">
+    <p class="text-sm text-gray-500">
       @if (selectedCommitteeIds().length > 0) {
         <strong>{{ selectedCommitteeIds().length }}</strong> {{ committeeLabel.plural.toLowerCase() }} selected.
         @if (filteredCommitteeMembers().length > 0) {
@@ -134,7 +134,7 @@
                 </td>
                 @if (form.value.committees.length > 1) {
                   <td>
-                    <span class="text-xs text-gray-500">{{ member.committees?.join(', ') }}</span>
+                    <span class="text-sm text-gray-500">{{ member.committees?.join(', ') }}</span>
                   </td>
                 }
                 @if (hasVotingEnabledCommittee()) {
@@ -178,7 +178,7 @@
           </div>
         }
 
-        <p class="text-xs text-gray-500 mt-2">
+        <p class="text-sm text-gray-500 mt-2">
           <i class="fa-light fa-info-circle mr-1"></i>
           @if (hasVotingEnabledCommittee() && selectedVotingStatuses().length > 0) {
             Filtered members: {{ filteredCommitteeMembers().length }} / {{ committeeMembers().length }}

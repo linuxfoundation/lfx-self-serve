@@ -4,6 +4,7 @@
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
   Account,
+  AffiliatedProjectUidsCacheEntry,
   EnrichedPersonaProject,
   PersonaApiResponse,
   PersonaDetectionResponse,
@@ -28,12 +29,6 @@ const PERSONA_PRIORITY: PersonaType[] = ['board-member', 'executive-director', '
 
 /** TTL for the affiliated-project-UIDs cache, in milliseconds */
 const AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS = 15_000;
-
-interface AffiliatedProjectUidsCacheEntry {
-  /** In-flight (or resolved) promise — stored before awaiting to collapse concurrent lookups */
-  promise: Promise<string[]>;
-  expiresAt: number;
-}
 
 /**
  * Service for detecting user personas via the persona detection NATS RPC

@@ -177,7 +177,7 @@
                         <span>Previous</span>
                       </span>
                     }
-                    <span class="text-xs text-gray-500 font-medium" data-testid="occurrence-counter">{{ occurrenceLabel() }}</span>
+                    <span class="text-sm text-gray-500 font-medium" data-testid="occurrence-counter">{{ occurrenceLabel() }}</span>
                     @if (nextOccurrenceUrl(); as nextUrl) {
                       <a
                         [href]="nextUrl"
@@ -258,7 +258,7 @@
 
                 <!-- Total Invitees -->
                 @if ((registrants().length > 0 || committeeMembers().length > 0) && !isPastMeeting()) {
-                  <div class="inline-flex items-center gap-1 text-xs text-gray-500" data-testid="total-invitees">
+                  <div class="inline-flex items-center gap-1 text-sm text-gray-500" data-testid="total-invitees">
                     <i class="fa-light fa-users"></i>
                     <span>{{ totalInvitees() }} invited</span>
                   </div>
@@ -271,17 +271,17 @@
                   <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
                     <i class="fa-light fa-circle-check text-emerald-500 text-sm"></i>
                     <span class="text-sm font-semibold text-emerald-600">{{ attendedCount() }}</span>
-                    <span class="text-xs text-gray-500">attended</span>
+                    <span class="text-sm text-gray-500">attended</span>
                   </div>
                   <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
                     <i class="fa-light fa-circle-xmark text-gray-400 text-sm"></i>
                     <span class="text-sm font-semibold text-gray-500">{{ absentCount() }}</span>
-                    <span class="text-xs text-gray-500">absent</span>
+                    <span class="text-sm text-gray-500">absent</span>
                   </div>
                   <div class="flex items-center gap-2 bg-white border border-gray-200 rounded-lg px-3 py-2">
                     <i class="fa-light fa-chart-pie text-blue-500 text-sm"></i>
                     <span class="text-sm font-semibold text-gray-700">{{ attendancePercentage() }}%</span>
-                    <span class="text-xs text-gray-500">rate</span>
+                    <span class="text-sm text-gray-500">rate</span>
                   </div>
                 </div>
               }

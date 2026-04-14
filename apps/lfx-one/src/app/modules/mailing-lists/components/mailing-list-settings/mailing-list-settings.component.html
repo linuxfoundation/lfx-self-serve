@@ -32,7 +32,7 @@
               <span class="px-2 py-0.5 bg-blue-100 text-primary text-xs rounded">Recommended</span>
             </span>
           </label>
-          <p class="text-xs text-gray-500 ml-7 mt-1">Anyone can subscribe. Most projects start here.</p>
+          <p class="text-sm text-gray-500 ml-7 mt-1">Anyone can subscribe. Most projects start here.</p>
         </div>
 
         <!-- Approval Required -->
@@ -45,7 +45,7 @@
               inputId="audience-approval"></p-radioButton>
             <span class="text-sm text-neutral-950">Approval Required</span>
           </label>
-          <p class="text-xs text-gray-500 ml-7 mt-1">Users must request access and be approved.</p>
+          <p class="text-sm text-gray-500 ml-7 mt-1">Users must request access and be approved.</p>
         </div>
 
         <!-- Invite Only -->
@@ -58,7 +58,7 @@
               inputId="audience-invite"></p-radioButton>
             <span class="text-sm text-neutral-950">Invite Only</span>
           </label>
-          <p class="text-xs text-gray-500 ml-7 mt-1">Only invited {{ memberLabel.plural | lowercase }} can join.</p>
+          <p class="text-sm text-gray-500 ml-7 mt-1">Only invited {{ memberLabel.plural | lowercase }} can join.</p>
         </div>
       </div>
     </lfx-settings-card>
@@ -81,7 +81,7 @@
               <span class="px-2 py-0.5 bg-blue-100 text-primary text-xs rounded">Recommended</span>
             </span>
           </label>
-          <p class="text-xs text-gray-500 ml-7 mt-1">Anyone can post. Best for open community discussion.</p>
+          <p class="text-sm text-gray-500 ml-7 mt-1">Anyone can post. Best for open community discussion.</p>
         </div>
 
         <!-- Moderated Discussion -->
@@ -90,7 +90,7 @@
             <p-radioButton name="type" formControlName="type" value="discussion_moderated" inputId="posting-moderated"></p-radioButton>
             <span class="text-sm text-neutral-950">Moderated Discussion</span>
           </label>
-          <p class="text-xs text-gray-500 ml-7 mt-1">{{ memberLabel.plural }} can post, but messages require moderation.</p>
+          <p class="text-sm text-gray-500 ml-7 mt-1">{{ memberLabel.plural }} can post, but messages require moderation.</p>
         </div>
 
         <!-- Announcement -->
@@ -99,7 +99,7 @@
             <p-radioButton name="type" formControlName="type" value="announcement" inputId="posting-announcement"></p-radioButton>
             <span class="text-sm text-neutral-950">Announcement</span>
           </label>
-          <p class="text-xs text-gray-500 ml-7 mt-1">Only moderators can post. Best for official updates.</p>
+          <p class="text-sm text-gray-500 ml-7 mt-1">Only moderators can post. Best for official updates.</p>
         </div>
       </div>
     </lfx-settings-card>

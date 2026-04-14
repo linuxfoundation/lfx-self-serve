@@ -30,7 +30,7 @@
         <div class="px-3 py-2 bg-gray-100 border border-gray-200 rounded-md text-sm text-neutral-700" data-testid="mailing-list-basic-info-name-readonly">
           {{ emailPreview() }}
         </div>
-        <p class="text-xs text-gray-500">Mailing list name cannot be changed after creation.</p>
+        <p class="text-sm text-gray-500">Mailing list name cannot be changed after creation.</p>
       } @else {
         <lfx-input-text
           size="small"
@@ -41,8 +41,8 @@
           styleClass="w-full"
           data-testid="mailing-list-basic-info-name-input">
         </lfx-input-text>
-        <p class="text-xs text-gray-500">Use a simple, purpose-based name (e.g., dev, announce).</p>
-        <p class="text-xs text-gray-500 mt-2">
+        <p class="text-sm text-gray-500">Use a simple, purpose-based name (e.g., dev, announce).</p>
+        <p class="text-sm text-gray-500 mt-2">
           Email address: <span class="font-medium">{{ emailPreview() }}</span>
         </p>
         @if (form().get('group_name')?.errors?.['required'] && form().get('group_name')?.touched) {
@@ -70,7 +70,7 @@
         [style]="{ height: '125px' }"
         dataTest="mailing-list-basic-info-description-input">
       </lfx-editor>
-      <p class="text-xs text-gray-500">This helps members understand when to use this list.</p>
+      <p class="text-sm text-gray-500">This helps members understand when to use this list.</p>
       @if (form().get('description')?.errors?.['required'] && form().get('description')?.touched) {
         <p class="mt-1 text-sm text-red-600">Description is required</p>
       } @else if (form().get('description')?.errors?.['minlength'] && form().get('description')?.touched) {

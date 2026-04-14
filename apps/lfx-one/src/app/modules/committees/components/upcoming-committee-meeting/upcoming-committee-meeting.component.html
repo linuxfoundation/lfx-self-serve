@@ -19,7 +19,7 @@
     }
 
     @if (upcomingMeeting()!.committees && upcomingMeeting()!.committees!.length > 0) {
-      <div class="text-xs text-gray-500">
+      <div class="text-sm text-gray-500">
         Committee: {{ upcomingMeeting()!.committees![0].name }}
         @if (upcomingMeeting()!.committees!.length > 1) {
           <span [pTooltip]="committees()" tooltipPosition="top"> +{{ upcomingMeeting()!.committees!.length - 1 }} more</span>
@@ -31,6 +31,6 @@
   <div class="flex flex-col items-center text-center py-4">
     <i class="fa-light fa-calendar text-xl text-gray-400 mb-2"></i>
     <p class="text-sm text-gray-600 mb-2">No upcoming meetings</p>
-    <p class="text-xs text-gray-500">No committee meetings scheduled</p>
+    <p class="text-sm text-gray-500">No committee meetings scheduled</p>
   </div>
 }

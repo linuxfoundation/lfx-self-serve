@@ -74,7 +74,7 @@
                     <span class="text-xs text-gray-400 font-medium">Already member</span>
                   }
                 </div>
-                <span class="text-xs text-gray-500 truncate">{{ result.email }}</span>
+                <span class="text-sm text-gray-500 truncate">{{ result.email }}</span>
                 @if (result.organization?.name) {
                   <span class="text-xs text-gray-400 truncate">{{ result.organization?.name }}</span>
                 }
@@ -130,7 +130,7 @@
                 </span>
               }
             </div>
-            <span class="text-xs text-gray-500 truncate">{{ user.email }}</span>
+            <span class="text-sm text-gray-500 truncate">{{ user.email }}</span>
             @if (user.organization?.name) {
               <span class="text-xs text-gray-400 truncate">{{ user.organization?.name }}</span>
             }
