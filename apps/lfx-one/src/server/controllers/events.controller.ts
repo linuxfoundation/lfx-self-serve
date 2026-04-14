@@ -17,10 +17,12 @@ import {
 } from '@lfx-one/shared/constants';
 import { EventSortOrder, EventStatusFilter, GetEventOrganizationsOptions, GetEventsOptions } from '@lfx-one/shared/interfaces';
 import { EventsService } from '../services/events.service';
+import { PersonaDetectionService } from '../services/persona-detection.service';
 
 export class EventsController {
   private readonly eventsService = new EventsService();
   private readonly certificateService = new CertificateService();
+  private readonly personaDetectionService = new PersonaDetectionService();
 
   /**
    * GET /api/events
@@ -63,6 +65,14 @@ export class EventsController {
         isPast = false;
       }
 
+      // For upcoming events, fetch affiliated project slugs server-side from the persona service.
+      // Slugs are used because PROJECT_SLUG is the shared key between the persona service and datalake.
+      // This ensures client-supplied values cannot be used to access events from arbitrary projects.
+      let affiliatedProjectSlugs: string[] | undefined;
+      if (isPast === false) {
+        affiliatedProjectSlugs = await this.personaDetectionService.getAffiliatedProjectSlugs(req);
+      }
+
       const response = await this.eventsService.getMyEvents(req, userEmail, {
         isPast,
         eventId,
@@ -74,6 +84,7 @@ export class EventsController {
         pageSize,
         offset,
         sortOrder,
+        affiliatedProjectSlugs,
       });
 
       logger.success(req, 'get_my_events', startTime, {
@@ -178,9 +189,16 @@ export class EventsController {
         isPast = false;
       }
 
+      // For upcoming events, fetch affiliated project slugs server-side from the persona service.
+      let affiliatedProjectSlugs: string[] | undefined;
+      if (isPast === false) {
+        affiliatedProjectSlugs = await this.personaDetectionService.getAffiliatedProjectSlugs(req);
+      }
+
       const options: GetEventOrganizationsOptions = {
         projectName: req.query['projectName'] ? String(req.query['projectName']) : undefined,
         isPast,
+        affiliatedProjectSlugs,
       };
 
       const response = await this.eventsService.getEventOrganizations(req, userEmail, options);

@@ -30,7 +30,7 @@ export class EventsService {
   }
 
   public async getMyEvents(req: Request, userEmail: string, options: GetMyEventsOptions): Promise<MyEventsResponse> {
-    const { isPast, eventId, projectName, searchQuery, role, status, sortField: rawSortField, pageSize, offset, sortOrder } = options;
+    const { isPast, eventId, projectName, searchQuery, role, status, sortField: rawSortField, pageSize, offset, sortOrder, affiliatedProjectSlugs } = options;
     const sortField = rawSortField && VALID_EVENT_SORT_FIELDS.has(rawSortField) ? rawSortField : DEFAULT_EVENT_SORT_FIELD;
     const normalizedSortOrder: EventSortOrder = sortOrder === 'DESC' ? 'DESC' : 'ASC';
     const normalizedPageSize = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : 10;
@@ -42,6 +42,7 @@ export class EventsService {
       has_project_name: !!projectName,
       has_search_query: !!searchQuery,
       role,
+      affiliated_project_count: affiliatedProjectSlugs?.length ?? 0,
       page_size: normalizedPageSize,
       offset: normalizedOffset,
       sort_order: normalizedSortOrder,
@@ -51,16 +52,21 @@ export class EventsService {
     let binds: string[];
 
     if (isPast === false) {
-      // Upcoming tab: show all upcoming events (registered by current user OR discoverable),
-      // LEFT JOIN user's registrations so unregistered events show with null user-specific fields.
+      // Upcoming tab: show events from affiliated projects UNION user's registered events.
+      // When affiliatedProjectSlugs is empty, use AND 1=0 so only registered events appear
+      // (persona detection returned no affiliations or encountered an error).
       const eventIdFilter = eventId ? 'AND EVENT_ID = ?' : '';
       const projectNameFilter = projectName ? 'AND e.PROJECT_NAME = ?' : '';
       const searchQueryFilter = searchQuery ? 'AND e.EVENT_NAME ILIKE ?' : '';
       const roleFilterResult = role ? this.buildUpcomingRoleFilter(role) : { filter: '', binds: [] as string[] };
       const statusFilterResult = status ? this.buildUpcomingStatusFilter(status) : { filter: '', binds: [] as string[] };
 
+      const slugs = affiliatedProjectSlugs ?? [];
+      const hasAffiliatedSlugs = slugs.length > 0;
+      const affiliatedFilter = hasAffiliatedSlugs ? `AND LOWER(PROJECT_SLUG) IN (${slugs.map(() => '?').join(', ')})` : 'AND 1=0';
+
       sql = `
-        WITH all_upcoming AS (
+        WITH affiliated_upcoming AS (
           SELECT
             EVENT_ID,
             EVENT_NAME,
@@ -79,6 +85,30 @@ export class EventsService {
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
           WHERE IS_PAST_EVENT = FALSE
             ${eventIdFilter}
+            ${affiliatedFilter}
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1
+        ),
+        registered_events AS (
+          SELECT
+            EVENT_ID,
+            EVENT_NAME,
+            EVENT_START_DATE,
+            EVENT_END_DATE,
+            EVENT_LOCATION,
+            EVENT_CITY,
+            EVENT_COUNTRY,
+            PROJECT_ID,
+            PROJECT_NAME,
+            PROJECT_SLUG,
+            ACCOUNT_NAME,
+            ACCOUNT_LOGO_URL,
+            EVENT_URL,
+            EVENT_REGISTRATION_URL
+          FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+          WHERE USER_EMAIL = ?
+            AND IS_PAST_EVENT = FALSE
+            AND REGISTRATION_STATUS = 'Accepted'
+            ${eventIdFilter}
           QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY EVENT_START_DATE) = 1
         ),
         user_reg AS (
@@ -95,6 +125,13 @@ export class EventsService {
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
           WHERE USER_EMAIL = ?
             AND IS_PAST_EVENT = FALSE
+            AND REGISTRATION_STATUS = 'Accepted'
+        ),
+        combined AS (
+          SELECT *, 1 AS source_priority FROM registered_events
+          UNION ALL
+          SELECT *, 2 AS source_priority FROM affiliated_upcoming
+          QUALIFY ROW_NUMBER() OVER (PARTITION BY EVENT_ID ORDER BY source_priority) = 1
         )
         SELECT
           e.EVENT_ID,
@@ -122,7 +159,7 @@ export class EventsService {
           (r.EVENT_ID IS NOT NULL) AS IS_REGISTERED,
           FALSE AS IS_PAST_EVENT,
           COUNT(*) OVER() AS TOTAL_RECORDS
-        FROM all_upcoming e
+        FROM combined e
         LEFT JOIN user_reg r ON e.EVENT_ID = r.EVENT_ID
         WHERE 1=1
           ${projectNameFilter}
@@ -133,13 +170,23 @@ export class EventsService {
         LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
       `;
 
-      binds = [];
-      if (eventId) binds.push(eventId);
-      binds.push(userEmail);
-      if (projectName) binds.push(projectName);
-      if (searchQuery) binds.push(`%${searchQuery}%`);
-      binds.push(...roleFilterResult.binds);
-      binds.push(...statusFilterResult.binds);
+      const affiliatedUpcomingBinds: string[] = [...(eventId ? [eventId] : []), ...slugs];
+      const registeredEventsBinds: string[] = [userEmail, ...(eventId ? [eventId] : [])];
+      const userRegBinds: string[] = [userEmail];
+      const whereBinds: string[] = [
+        ...(projectName ? [projectName] : []),
+        ...(searchQuery ? [`%${searchQuery}%`] : []),
+        ...roleFilterResult.binds,
+        ...statusFilterResult.binds,
+      ];
+      binds = [...affiliatedUpcomingBinds, ...registeredEventsBinds, ...userRegBinds, ...whereBinds];
+
+      logger.debug(req, 'get_my_events', 'Upcoming events query binds', {
+        affiliated_project_slugs: slugs,
+        affiliated_filter_active: hasAffiliatedSlugs,
+        user_email: '***',
+        bind_count: binds.length,
+      });
     } else {
       // Past tab (or no isPast filter): show only the user's own registered events.
       const isPastFilter = isPast !== undefined ? `AND IS_PAST_EVENT = ${isPast ? 'TRUE' : 'FALSE'}` : '';
@@ -317,11 +364,12 @@ export class EventsService {
   }
 
   public async getEventOrganizations(req: Request, userEmail: string, options: GetEventOrganizationsOptions): Promise<MyEventOrganizationsResponse> {
-    const { projectName, isPast } = options;
+    const { projectName, isPast, affiliatedProjectSlugs } = options;
 
     logger.debug(req, 'get_event_organizations', 'Building organizations query', {
       has_project_name: !!projectName,
       is_past: isPast,
+      affiliated_project_count: affiliatedProjectSlugs?.length ?? 0,
     });
 
     let sql: string;
@@ -341,16 +389,23 @@ export class EventsService {
       binds.push(userEmail);
       if (projectName) binds.push(projectName);
     } else {
-      // Upcoming tab: return all distinct project names from upcoming events so the foundation
-      // filter dropdown includes both the user's registered foundations and discoverable ones.
+      // Upcoming tab: return foundations from events the user has registered for OR that belong
+      // to affiliated projects. When affiliatedProjectSlugs is empty, show only registered foundations.
       const projectNameFilter = projectName ? 'AND PROJECT_NAME = ?' : '';
+      const slugs = affiliatedProjectSlugs ?? [];
+      const hasAffiliatedSlugs = slugs.length > 0;
+      const affiliatedFilter = hasAffiliatedSlugs ? `OR LOWER(PROJECT_SLUG) IN (${slugs.map(() => '?').join(', ')})` : '';
+
       sql = `
         SELECT DISTINCT PROJECT_NAME
         FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
         WHERE IS_PAST_EVENT = FALSE
+          AND ((USER_EMAIL = ? AND REGISTRATION_STATUS = 'Accepted') ${affiliatedFilter})
           ${projectNameFilter}
         ORDER BY PROJECT_NAME
       `;
+      binds.push(userEmail);
+      if (hasAffiliatedSlugs) binds.push(...slugs);
       if (projectName) binds.push(projectName);
     }
 

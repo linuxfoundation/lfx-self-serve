@@ -82,10 +82,15 @@ export class EventsTopBarComponent {
             return of(defaultOptions);
           }
           this.foundationOptionsLoading.set(true);
-          return this.eventsService.getEventOrganizations({ projectName, isPast }).pipe(
-            map(({ data }) => [{ label: 'All Foundations', value: null }, ...data.map((name) => ({ label: name, value: name }))]),
-            finalize(() => this.foundationOptionsLoading.set(false))
-          );
+          return this.eventsService
+            .getEventOrganizations({
+              projectName,
+              isPast,
+            })
+            .pipe(
+              map(({ data }) => [{ label: 'All Foundations', value: null }, ...data.map((name) => ({ label: name, value: name }))]),
+              finalize(() => this.foundationOptionsLoading.set(false))
+            );
         }),
         shareReplay({ bufferSize: 1, refCount: true })
       ),
