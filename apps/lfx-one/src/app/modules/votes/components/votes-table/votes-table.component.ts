@@ -64,6 +64,10 @@ export class VotesTableComponent implements OnInit {
   public readonly first = input<number>(0);
   public readonly lazy = input<boolean>(false);
   public readonly groupOptions = input<{ label: string; value: string | null }[]>([{ label: 'All Groups', value: null }]);
+  public readonly foundationOptions = input<{ label: string; value: string }[]>([]);
+  public readonly projectOptions = input<{ label: string; value: string }[]>([]);
+  public readonly showFoundationFilter = input<boolean>(false);
+  public readonly showProjectFilter = input<boolean>(false);
 
   // === Outputs ===
   public readonly viewVote = output<string>();
@@ -71,6 +75,8 @@ export class VotesTableComponent implements OnInit {
   public readonly refresh = output<void>();
   public readonly pageChange = output<{ first: number; rows: number }>();
   public readonly filtersChange = output<VoteFilterState>();
+  public readonly foundationFilterChange = output<string | null>();
+  public readonly projectFilterChange = output<string | null>();
 
   // === Writable Signals ===
   protected readonly isDeleting = signal(false);
@@ -80,6 +86,8 @@ export class VotesTableComponent implements OnInit {
     search: new FormControl<string>(''),
     status: new FormControl<PollStatus | null>(null),
     group: new FormControl<string | null>(null),
+    foundationFilter: new FormControl<string | null>(null),
+    projectFilter: new FormControl<string | null>(null),
   });
 
   // === Computed Signals ===
@@ -97,6 +105,12 @@ export class VotesTableComponent implements OnInit {
 
   protected onViewResults(voteId: string): void {
     this.viewResults.emit(voteId);
+  }
+
+  protected onFoundationFilterChange(value: string | null): void {
+    this.foundationFilterChange.emit(value);
+    this.searchForm.get('projectFilter')?.setValue(null, { emitEvent: false });
+    this.projectFilterChange.emit(null);
   }
 
   protected onPageChange(event: { first: number; rows: number }): void {

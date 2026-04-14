@@ -472,7 +472,7 @@ export class UserService {
    * @param limit - Optional limit on number of meetings to return
    * @returns Array of Meeting objects the user is registered for
    */
-  public async getUserMeetings(req: Request, email: string, projectUid?: string, limit?: number): Promise<Meeting[]> {
+  public async getUserMeetings(req: Request, email: string, projectUid?: string, limit?: number, foundationUid?: string): Promise<Meeting[]> {
     const meetingIds = await this.getUserRegisteredMeetingIds(req, email);
 
     logger.debug(req, 'get_user_meetings', 'Found registered meeting IDs for user', { meeting_count: meetingIds.size });
@@ -481,7 +481,13 @@ export class UserService {
       return [];
     }
 
-    return this.fetchByIdFilterAndLimit<Meeting>(req, meetingIds, '/itx/meetings', 'get_user_meetings', projectUid, limit);
+    let foundationProjectUids: Set<string> | undefined;
+    if (foundationUid) {
+      const uids = await this.projectService.getFoundationProjectUids(req, foundationUid);
+      foundationProjectUids = new Set(uids);
+    }
+
+    return this.fetchByIdFilterAndLimit<Meeting>(req, meetingIds, '/itx/meetings', 'get_user_meetings', projectUid, limit, foundationProjectUids);
   }
 
   /**
@@ -494,7 +500,7 @@ export class UserService {
    * @param limit - Optional limit on number of past meetings to return
    * @returns Array of PastMeeting objects the user participated in
    */
-  public async getUserPastMeetings(req: Request, email: string, projectUid?: string, limit?: number): Promise<PastMeeting[]> {
+  public async getUserPastMeetings(req: Request, email: string, projectUid?: string, limit?: number, foundationUid?: string): Promise<PastMeeting[]> {
     // Step 1: Get past meeting participant records for this user via query service
     const normalizedEmail = email.toLowerCase();
     const participantParams: Record<string, any> = {
@@ -525,8 +531,22 @@ export class UserService {
       return [];
     }
 
+    let foundationProjectUids: Set<string> | undefined;
+    if (foundationUid) {
+      const uids = await this.projectService.getFoundationProjectUids(req, foundationUid);
+      foundationProjectUids = new Set(uids);
+    }
+
     // Step 2: Fetch each past meeting and filter/limit
-    return this.fetchByIdFilterAndLimit<PastMeeting>(req, pastMeetingIds, '/itx/past_meetings', 'get_user_past_meetings', projectUid, limit);
+    return this.fetchByIdFilterAndLimit<PastMeeting>(
+      req,
+      pastMeetingIds,
+      '/itx/past_meetings',
+      'get_user_past_meetings',
+      projectUid,
+      limit,
+      foundationProjectUids
+    );
   }
 
   /**
@@ -539,7 +559,8 @@ export class UserService {
     endpoint: string,
     operation: string,
     projectUid?: string,
-    limit?: number
+    limit?: number,
+    projectUids?: Set<string>
   ): Promise<T[]> {
     const results: T[] = [];
 
@@ -563,12 +584,18 @@ export class UserService {
       }
     }
 
-    let filtered = projectUid ? results.filter((r) => r.project_uid === projectUid) : results;
+    let filtered = results;
+    if (projectUid) {
+      filtered = filtered.filter((r) => r.project_uid === projectUid);
+    } else if (projectUids && projectUids.size > 0) {
+      filtered = filtered.filter((r) => r.project_uid !== undefined && projectUids.has(r.project_uid));
+    }
 
     logger.debug(req, operation, 'Filtered results', {
       total_fetched: results.length,
       filtered: filtered.length,
       project_uid: projectUid ?? 'all',
+      foundation_filter: projectUids ? projectUids.size : 0,
     });
 
     if (limit !== undefined && limit > 0) {

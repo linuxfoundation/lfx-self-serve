@@ -24,6 +24,7 @@ import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { ProjectService } from './project.service';
 
 /**
  * Service for handling mailing list business logic
@@ -32,10 +33,12 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 export class MailingListService {
   private accessCheckService: AccessCheckService;
   private microserviceProxy: MicroserviceProxyService;
+  private projectService: ProjectService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
     this.microserviceProxy = new MicroserviceProxyService();
+    this.projectService = new ProjectService();
   }
 
   // ============================================
@@ -340,7 +343,7 @@ export class MailingListService {
    * Fetches mailing lists the current user is a member of.
    * Queries by both email and username to ensure complete coverage.
    */
-  public async getMyMailingLists(req: Request, projectUid?: string): Promise<MyMailingList[]> {
+  public async getMyMailingLists(req: Request, projectUid?: string, foundationUid?: string): Promise<MyMailingList[]> {
     // Get user identity from auth context
     const rawUsername = await getUsernameFromAuth(req);
     const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
@@ -366,7 +369,7 @@ export class MailingListService {
             v: '1',
             type: 'groupsio_member',
             page_size: 100,
-            tags_all: [`email:${email}`],
+            tags_all: projectUid ? [`email:${email}`, `project_uid:${projectUid}`] : [`email:${email}`],
             ...(pageToken && { page_token: pageToken }),
           })
         )
@@ -380,7 +383,7 @@ export class MailingListService {
             v: '1',
             type: 'groupsio_member',
             page_size: 100,
-            tags_all: [`username:${username}`],
+            tags_all: projectUid ? [`username:${username}`, `project_uid:${projectUid}`] : [`username:${username}`],
             ...(pageToken && { page_token: pageToken }),
           })
         )
@@ -459,8 +462,16 @@ export class MailingListService {
 
     const filtered = mailingLists.filter((ml): ml is MyMailingList => ml !== null);
 
-    // Filter by project_uid server-side if provided
-    const result = projectUid ? filtered.filter((ml) => ml.project_uid === projectUid) : filtered;
+    // Post-fetch filtering by project_uid or foundation_uid
+    let result = filtered;
+    if (projectUid) {
+      result = filtered.filter((ml) => ml.project_uid === projectUid);
+    } else if (foundationUid) {
+      logger.debug(req, 'get_my_mailing_lists', 'Filtering by foundation', { foundation_uid: foundationUid });
+      const uids = await this.projectService.getFoundationProjectUids(req, foundationUid);
+      const uidSet = new Set(uids);
+      result = filtered.filter((ml) => uidSet.has(ml.project_uid));
+    }
 
     // Enrich with service data for correct email display in UI
     return (await this.enrichWithServices(req, result)) as MyMailingList[];

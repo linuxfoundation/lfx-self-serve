@@ -2529,4 +2529,37 @@ export class ProjectService {
       };
     }
   }
+
+  /**
+   * Get all project UIDs under a foundation (foundation UID + child project UIDs).
+   * Queries the query service for projects with parent_uid matching the foundation.
+   * @param req - Express request object
+   * @param foundationUid - The foundation UID to resolve children for
+   * @returns Array of UIDs including the foundation itself and all child projects
+   */
+  public async getFoundationProjectUids(req: Request, foundationUid: string): Promise<string[]> {
+    logger.debug(req, 'get_foundation_project_uids', 'Resolving child projects for foundation', { foundation_uid: foundationUid });
+    const uids = [foundationUid];
+    try {
+      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        v: '1',
+        type: 'project',
+        parent: `project:${foundationUid}`,
+        page_size: 200,
+      });
+      for (const r of resources) {
+        if (r.data?.uid) {
+          uids.push(r.data.uid);
+        }
+      }
+    } catch (error) {
+      // If child lookup fails, just filter by foundation UID alone
+      logger.warning(req, 'get_foundation_project_uids', 'Failed to resolve child projects, using foundation UID only', {
+        foundation_uid: foundationUid,
+        error: error instanceof Error ? error.message : String(error),
+      });
+    }
+    logger.debug(req, 'get_foundation_project_uids', 'Resolved foundation project UIDs', { foundation_uid: foundationUid, count: uids.length });
+    return uids;
+  }
 }

@@ -65,6 +65,12 @@ export class MeetingsDashboardComponent {
   public timeFilter: WritableSignal<'upcoming' | 'past'>;
   public meetingTypeFilter: WritableSignal<string | null>;
   public meetingTypeOptions: Signal<{ label: string; value: string | null }[]>;
+  public foundationFilter: WritableSignal<string | null>;
+  public projectFilter: WritableSignal<string | null>;
+  public showFoundationFilter: Signal<boolean>;
+  public showProjectFilter: Signal<boolean>;
+  public foundationOptions: Signal<{ label: string; value: string }[]>;
+  public projectOptions: Signal<{ label: string; value: string }[]>;
   public project: Signal<ProjectContext | null>;
   public isMaintainer: Signal<boolean>;
   public isFoundationContext: Signal<boolean>;
@@ -109,6 +115,12 @@ export class MeetingsDashboardComponent {
     const initialTimeFilter = this.route.snapshot.queryParamMap.get('time') === 'past' ? 'past' : 'upcoming';
     this.timeFilter = signal<'upcoming' | 'past'>(initialTimeFilter);
     this.meetingTypeFilter = signal<string | null>(null);
+    this.foundationFilter = signal<string | null>(null);
+    this.projectFilter = signal<string | null>(null);
+    this.foundationOptions = this.initializeFoundationOptions();
+    this.projectOptions = this.initializeProjectOptions();
+    this.showFoundationFilter = computed(() => this.activeLens() === 'me' && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
+    this.showProjectFilter = computed(() => this.activeLens() === 'me' && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
     this.hasMore = computed(() => this.activeLens() !== 'me' && (this.timeFilter() === 'past' ? !!this.pastPageToken() : !!this.upcomingPageToken()));
 
     // Initialize meeting type options
@@ -137,8 +149,19 @@ export class MeetingsDashboardComponent {
     this.meetingTypeFilter.set(value);
   }
 
+  public onFoundationFilterChange(value: string | null): void {
+    this.foundationFilter.set(value);
+    this.projectFilter.set(null);
+  }
+
+  public onProjectFilterChange(value: string | null): void {
+    this.projectFilter.set(value);
+  }
+
   public onTimeFilterChange(value: 'upcoming' | 'past'): void {
     this.timeFilter.set(value);
+    this.foundationFilter.set(null);
+    this.projectFilter.set(null);
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { time: value === 'past' ? 'past' : null },
@@ -319,15 +342,17 @@ export class MeetingsDashboardComponent {
 
   private initializeRawUserMeetings(): Signal<Meeting[]> {
     const lens$ = toObservable(this.activeLens);
+    const projectFilter$ = toObservable(this.projectFilter);
+    const foundationFilter$ = toObservable(this.foundationFilter);
 
     return toSignal(
-      combineLatest([lens$, this.refresh$]).pipe(
-        switchMap(([lens]) => {
+      combineLatest([lens$, this.refresh$, projectFilter$, foundationFilter$]).pipe(
+        switchMap(([lens, , projectFilter, foundationFilter]) => {
           if (lens !== 'me') {
             return of([] as Meeting[]);
           }
           this.meetingsLoading.set(true);
-          return this.userService.getUserMeetings(100).pipe(
+          return this.userService.getUserMeetings(100, projectFilter ?? undefined, foundationFilter ?? undefined).pipe(
             tap(() => this.meetingsLoading.set(false)),
             catchError(() => {
               this.meetingsLoading.set(false);
@@ -342,15 +367,17 @@ export class MeetingsDashboardComponent {
 
   private initializeRawUserPastMeetings(): Signal<PastMeeting[]> {
     const lens$ = toObservable(this.activeLens);
+    const projectFilter$ = toObservable(this.projectFilter);
+    const foundationFilter$ = toObservable(this.foundationFilter);
 
     return toSignal(
-      combineLatest([lens$, this.refresh$]).pipe(
-        switchMap(([lens]) => {
+      combineLatest([lens$, this.refresh$, projectFilter$, foundationFilter$]).pipe(
+        switchMap(([lens, , projectFilter, foundationFilter]) => {
           if (lens !== 'me') {
             return of([] as PastMeeting[]);
           }
           this.pastMeetingsLoading.set(true);
-          return this.userService.getUserPastMeetings(100).pipe(
+          return this.userService.getUserPastMeetings(100, projectFilter ?? undefined, foundationFilter ?? undefined).pipe(
             tap(() => this.pastMeetingsLoading.set(false)),
             catchError(() => {
               this.pastMeetingsLoading.set(false);
@@ -408,6 +435,30 @@ export class MeetingsDashboardComponent {
       filtered = filtered.filter((m) => m.meeting_type === meetingType);
     }
     return filtered;
+  }
+
+  private initializeFoundationOptions(): Signal<{ label: string; value: string }[]> {
+    return computed(() => {
+      const projects = this.personaService.detectedProjects();
+      return projects.filter((p) => p.isFoundation).map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+    });
+  }
+
+  private initializeProjectOptions(): Signal<{ label: string; value: string }[]> {
+    return computed(() => {
+      const projects = this.personaService.detectedProjects();
+      const foundation = this.foundationFilter();
+
+      // Filter to non-foundation projects
+      let candidates = projects.filter((p) => !p.isFoundation);
+
+      // If a foundation is selected, show only its children
+      if (foundation) {
+        candidates = candidates.filter((p) => p.parentProjectUid === foundation);
+      }
+
+      return candidates.map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+    });
   }
 
   private buildMeetingTypeFilters(meetingType: string | null): string[] | undefined {

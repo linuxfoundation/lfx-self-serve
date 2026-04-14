@@ -61,13 +61,20 @@ export class VoteController {
    * GET /votes/my-votes
    */
   public async getMyVotes(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_my_votes');
+    const projectUid = req.query['project_uid'] as string | undefined;
+    const foundationUid = req.query['foundation_uid'] as string | undefined;
+    const startTime = logger.startOperation(req, 'get_my_votes', {
+      project_uid: projectUid,
+      foundation_uid: foundationUid,
+    });
 
     try {
-      const myVotes = await this.voteService.getMyVotes(req);
+      const myVotes = await this.voteService.getMyVotes(req, projectUid, foundationUid);
 
       logger.success(req, 'get_my_votes', startTime, {
         vote_count: myVotes.length,
+        project_uid: projectUid,
+        foundation_uid: foundationUid,
       });
 
       res.json(myVotes);

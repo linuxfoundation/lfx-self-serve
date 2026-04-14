@@ -25,6 +25,7 @@ import { logger } from '../services/logger.service';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
+import { ProjectService } from './project.service';
 
 /** Upstream response shape for committee folders */
 interface CommitteeFolder {
@@ -58,11 +59,13 @@ export class CommitteeService {
   private accessCheckService: AccessCheckService;
   private etagService: ETagService;
   private microserviceProxy: MicroserviceProxyService;
+  private projectService: ProjectService;
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
     this.microserviceProxy = new MicroserviceProxyService();
     this.etagService = new ETagService();
+    this.projectService = new ProjectService();
   }
 
   /**
@@ -457,17 +460,22 @@ export class CommitteeService {
 
   // ── My Committees ─────────────────────────────────────────────────────────
 
-  public async getMyCommittees(req: Request, projectUid?: string): Promise<MyCommittee[]> {
+  public async getMyCommittees(req: Request, projectUid?: string, foundationUid?: string): Promise<MyCommittee[]> {
     const username = await getUsernameFromAuth(req);
     if (!username) {
       return [];
     }
 
     // Fetch all committee_member records for the current user
+    const tagsAll = [`username:${username}`];
+    if (projectUid) {
+      tagsAll.push(`project_uid:${projectUid}`);
+    }
+
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
       v: '1',
       type: 'committee_member',
-      tags_all: [`username:${username}`],
+      tags_all: tagsAll,
     });
 
     const memberships = resources.map((r) => r.data);
@@ -519,6 +527,11 @@ export class CommitteeService {
     // Filter by project_uid server-side if provided
     if (projectUid) {
       return result.filter((c) => c.project_uid === projectUid);
+    } else if (foundationUid) {
+      logger.debug(req, 'get_my_committees', 'Filtering by foundation', { foundation_uid: foundationUid });
+      const uids = await this.projectService.getFoundationProjectUids(req, foundationUid);
+      const uidSet = new Set(uids);
+      return result.filter((c) => uidSet.has(c.project_uid));
     }
 
     return result;

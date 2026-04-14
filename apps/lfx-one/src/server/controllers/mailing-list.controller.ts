@@ -242,10 +242,11 @@ export class MailingListController {
    */
   public async getMyMailingLists(req: Request, res: Response, next: NextFunction): Promise<void> {
     const projectUid = req.query['project_uid'] as string | undefined;
-    const startTime = logger.startOperation(req, 'get_my_mailing_lists', { project_uid: projectUid });
+    const foundationUid = req.query['foundation_uid'] as string | undefined;
+    const startTime = logger.startOperation(req, 'get_my_mailing_lists', { project_uid: projectUid, foundation_uid: foundationUid });
 
     try {
-      const myMailingLists = await this.mailingListService.getMyMailingLists(req, projectUid);
+      const myMailingLists = await this.mailingListService.getMyMailingLists(req, projectUid, foundationUid);
 
       logger.success(req, 'get_my_mailing_lists', startTime, {
         mailing_list_count: myMailingLists.length,

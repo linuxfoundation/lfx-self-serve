@@ -4,7 +4,7 @@
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { CreateSurveyRequest, Survey } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, take, throwError } from 'rxjs';
+import { catchError, Observable, of, take, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -45,8 +45,15 @@ export class SurveyService {
     return this.getSurveys(params);
   }
 
-  public getMySurveys(): Observable<Survey[]> {
-    return this.http.get<Survey[]>('/api/surveys/my-surveys');
+  public getMySurveys(projectUid?: string, foundationUid?: string): Observable<Survey[]> {
+    let params = new HttpParams();
+    if (projectUid) {
+      params = params.set('project_uid', projectUid);
+    }
+    if (foundationUid) {
+      params = params.set('foundation_uid', foundationUid);
+    }
+    return this.http.get<Survey[]>('/api/surveys/my-surveys', { params }).pipe(catchError(() => of([])));
   }
 
   public getSurvey(surveyUid: string, projectId?: string): Observable<Survey> {

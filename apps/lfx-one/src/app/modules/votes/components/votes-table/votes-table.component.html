@@ -15,6 +15,41 @@
           data-testid="votes-search-input"></lfx-input-text>
       </div>
 
+      @if (showFoundationFilter()) {
+        <div class="w-full sm:w-56">
+          <lfx-select
+            [form]="searchForm"
+            control="foundationFilter"
+            size="small"
+            [options]="foundationOptions()"
+            placeholder="All Foundations"
+            [showClear]="true"
+            [filter]="true"
+            filterPlaceholder="Search foundations..."
+            styleClass="w-full"
+            (onChange)="onFoundationFilterChange($event.value)"
+            data-testid="votes-foundation-filter">
+          </lfx-select>
+        </div>
+      }
+      @if (showProjectFilter() && projectOptions().length > 0) {
+        <div class="w-full sm:w-56">
+          <lfx-select
+            [form]="searchForm"
+            control="projectFilter"
+            size="small"
+            [options]="projectOptions()"
+            placeholder="All Projects"
+            [showClear]="true"
+            [filter]="true"
+            filterPlaceholder="Search projects..."
+            styleClass="w-full"
+            (onChange)="projectFilterChange.emit($event.value)"
+            data-testid="votes-project-filter">
+          </lfx-select>
+        </div>
+      }
+
       <div class="w-full sm:w-auto sm:shrink-0">
         <lfx-select
           [form]="searchForm"

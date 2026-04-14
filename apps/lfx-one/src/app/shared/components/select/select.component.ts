@@ -1,13 +1,14 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, model, output } from '@angular/core';
+import { NgTemplateOutlet } from '@angular/common';
+import { Component, contentChild, input, model, output, TemplateRef } from '@angular/core';
 import { FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { SelectModule } from 'primeng/select';
 
 @Component({
   selector: 'lfx-select',
-  imports: [SelectModule, ReactiveFormsModule],
+  imports: [SelectModule, ReactiveFormsModule, NgTemplateOutlet],
   templateUrl: './select.component.html',
   styleUrl: './select.component.scss',
 })
@@ -82,6 +83,10 @@ export class SelectComponent {
   public readonly tooltipPositionStyle = input<string>('absolute');
   public readonly tooltipStyleClass = input<string | undefined>(undefined);
   public readonly autofocusFilter = input<boolean>(true);
+
+  // Templates
+  public readonly itemTemplate = contentChild<TemplateRef<any>>('item');
+  public readonly selectedItemTemplate = contentChild<TemplateRef<any>>('selectedItem');
 
   // Events
   public readonly onChange = output<any>();

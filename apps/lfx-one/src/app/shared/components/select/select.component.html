@@ -55,5 +55,16 @@
     [variant]="variant()"
     [checkmark]="checkmark()"
     [loading]="loading()"
-    (onChange)="handleChange($event)"></p-select>
+    (onChange)="handleChange($event)">
+    @if (itemTemplate()) {
+      <ng-template let-option #item>
+        <ng-container *ngTemplateOutlet="itemTemplate()!; context: { $implicit: option }"></ng-container>
+      </ng-template>
+    }
+    @if (selectedItemTemplate()) {
+      <ng-template let-option #selectedItem>
+        <ng-container *ngTemplateOutlet="selectedItemTemplate()!; context: { $implicit: option }"></ng-container>
+      </ng-template>
+    }
+  </p-select>
 </ng-container>

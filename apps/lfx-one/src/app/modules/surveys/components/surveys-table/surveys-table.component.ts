@@ -53,11 +53,17 @@ export class SurveysTableComponent {
   public readonly surveys = input.required<Survey[]>();
   public readonly hasPMOAccess = input<boolean>(false);
   public readonly loading = input<boolean>(false);
+  public readonly foundationOptions = input<{ label: string; value: string }[]>([]);
+  public readonly projectOptions = input<{ label: string; value: string }[]>([]);
+  public readonly showFoundationFilter = input<boolean>(false);
+  public readonly showProjectFilter = input<boolean>(false);
 
   // === Outputs ===
   public readonly viewResults = output<string>();
   public readonly refresh = output<void>();
   public readonly rowClick = output<Survey>();
+  public readonly foundationFilterChange = output<string | null>();
+  public readonly projectFilterChange = output<string | null>();
 
   // === Writable Signals ===
   protected readonly isDeleting = signal(false);
@@ -68,6 +74,8 @@ export class SurveysTableComponent {
     status: new FormControl<string | null>(null),
     group: new FormControl<string | null>(null),
     surveyType: new FormControl<string | null>(null),
+    foundationFilter: new FormControl<string | null>(null),
+    projectFilter: new FormControl<string | null>(null),
   });
 
   // === Writable Signals ===
@@ -83,6 +91,13 @@ export class SurveysTableComponent {
   protected readonly filteredSurveys: Signal<Survey[]> = this.initFilteredSurveys();
 
   // === Protected Methods ===
+  protected onFoundationFilterChange(value: string | null): void {
+    this.foundationFilterChange.emit(value);
+    // Reset project filter when foundation changes
+    this.searchForm.get('projectFilter')?.setValue(null, { emitEvent: false });
+    this.projectFilterChange.emit(null);
+  }
+
   protected onStatusChange(value: string | null): void {
     this.statusFilter.set(value);
   }

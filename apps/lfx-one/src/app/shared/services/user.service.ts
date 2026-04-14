@@ -143,10 +143,16 @@ export class UserService {
    * Returns meetings the user is registered for across all projects
    * @param limit - Optional limit on number of meetings to return
    */
-  public getUserMeetings(limit?: number): Observable<Meeting[]> {
+  public getUserMeetings(limit?: number, projectUid?: string, foundationUid?: string): Observable<Meeting[]> {
     const params: Record<string, string> = {};
     if (limit !== undefined) {
       params['limit'] = limit.toString();
+    }
+    if (projectUid) {
+      params['projectUid'] = projectUid;
+    }
+    if (foundationUid) {
+      params['foundation_uid'] = foundationUid;
     }
     return this.http.get<Meeting[]>('/api/user/meetings', { params }).pipe(
       catchError((error) => {
@@ -160,10 +166,16 @@ export class UserService {
    * Gets past meetings for the current authenticated user
    * @param limit - Optional limit on number of past meetings to return
    */
-  public getUserPastMeetings(limit?: number): Observable<PastMeeting[]> {
+  public getUserPastMeetings(limit?: number, projectUid?: string, foundationUid?: string): Observable<PastMeeting[]> {
     const params: Record<string, string> = {};
     if (limit !== undefined) {
       params['limit'] = limit.toString();
+    }
+    if (projectUid) {
+      params['projectUid'] = projectUid;
+    }
+    if (foundationUid) {
+      params['foundation_uid'] = foundationUid;
     }
     return this.http.get<PastMeeting[]>('/api/user/past-meetings', { params }).pipe(
       catchError((error) => {

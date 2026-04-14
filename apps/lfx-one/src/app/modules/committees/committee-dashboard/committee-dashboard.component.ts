@@ -4,10 +4,12 @@
 import { DecimalPipe, NgClass } from '@angular/common';
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { InputTextComponent } from '@components/input-text/input-text.component';
+import { SelectComponent } from '@components/select/select.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { Committee, MyCommittee, ProjectContext } from '@lfx-one/shared/interfaces';
 import { RoleBadgeClassPipe } from '@pipes/role-badge-class.pipe';
@@ -31,9 +33,12 @@ import { CommitteeTableComponent } from '../components/committee-table/committee
   imports: [
     DecimalPipe,
     NgClass,
+    ReactiveFormsModule,
     ButtonComponent,
     CardComponent,
     CommitteeTableComponent,
+    InputTextComponent,
+    SelectComponent,
     RoleBadgeClassPipe,
     PlatformIconPipe,
     PlatformLabelPipe,
@@ -60,14 +65,16 @@ export class CommitteeDashboardComponent {
   public committeesLoading = signal<boolean>(true);
   public myCommitteesLoading = signal<boolean>(true);
   public refresh = signal(0);
+  public foundationFilter = signal<string | null>(null);
+  public projectFilter = signal<string | null>(null);
 
   // ── Forms ─────────────────────────────────────────────────────────────────
   public searchForm: FormGroup;
-
   // ── Computed / Read-only Signals ──────────────────────────────────────────
   public project: Signal<ProjectContext | null>;
   public committees: Signal<Committee[]>;
   public myCommittees: Signal<MyCommittee[]>;
+  public filteredMyCommittees: Signal<MyCommittee[]>;
   public myCommitteeUids: Signal<Set<string>>;
   public categories: Signal<{ label: string; value: string | null }[]>;
   public votingStatusOptions: Signal<{ label: string; value: string | null }[]>;
@@ -82,8 +89,14 @@ export class CommitteeDashboardComponent {
   public foundationCreateCommitteeFlag: Signal<boolean>;
   public canCreateGroup: Signal<boolean>;
 
+  // Foundation and project filter options (separate dropdowns)
+  public foundationOptions: Signal<{ label: string; value: string }[]> = this.initializeFoundationOptions();
+  public projectOptions: Signal<{ label: string; value: string }[]> = this.initializeProjectOptions();
+
   // Lens
   public readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
+  public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
+  public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
 
   // Statistics
   public totalCommittees: Signal<number>;
@@ -135,6 +148,7 @@ export class CommitteeDashboardComponent {
     this.categories = this.initializeCategories();
     this.votingStatusOptions = this.initializeVotingStatusOptions();
     this.filteredCommittees = this.initializeFilteredCommittees();
+    this.filteredMyCommittees = this.initializeFilteredMyCommittees();
 
     // Initialize statistics
     this.totalCommittees = computed(() => this.committees().length);
@@ -171,21 +185,34 @@ export class CommitteeDashboardComponent {
     this.router.navigate(['/groups', committee.uid]);
   }
 
+  public onFoundationFilterChange(value: string | null): void {
+    this.foundationFilter.set(value);
+    this.projectFilter.set(null);
+    this.searchForm.get('projectFilter')?.setValue(null, { emitEvent: false });
+  }
+
+  public onProjectFilterChange(value: string | null): void {
+    this.projectFilter.set(value);
+  }
+
   private initializeMyCommittees(): Signal<MyCommittee[]> {
     const project$ = toObservable(this.project);
     const refresh$ = toObservable(this.refresh);
     const lens$ = toObservable(this.lensService.activeLens);
+    const projectFilter$ = toObservable(this.projectFilter);
+    const foundationFilter$ = toObservable(this.foundationFilter);
 
     return toSignal(
-      combineLatest([project$, refresh$, lens$]).pipe(
-        switchMap(([project, , lens]) => {
+      combineLatest([project$, refresh$, lens$, projectFilter$, foundationFilter$]).pipe(
+        switchMap(([project, , lens, projectFilter, foundationFilter]) => {
           this.myCommitteesLoading.set(true);
           if (lens !== 'me' && !project?.uid) {
             this.myCommitteesLoading.set(false);
             return of([] as MyCommittee[]);
           }
-          const projectUid = lens === 'me' ? undefined : project!.uid;
-          return this.committeeService.getMyCommittees(projectUid).pipe(
+          const projectUid = lens === 'me' ? (projectFilter ?? undefined) : project!.uid;
+          const foundationUid = lens === 'me' ? (foundationFilter ?? undefined) : undefined;
+          return this.committeeService.getMyCommittees(projectUid, foundationUid).pipe(
             catchError((error) => {
               console.error('Failed to load my committees:', error);
               this.myCommitteesLoading.set(false);
@@ -204,6 +231,8 @@ export class CommitteeDashboardComponent {
       search: new FormControl<string>(''),
       category: new FormControl<string | null>(null),
       votingStatus: new FormControl<string | null>(null),
+      foundationFilter: new FormControl<string | null>(null),
+      projectFilter: new FormControl<string | null>(null),
     });
   }
 
@@ -287,6 +316,25 @@ export class CommitteeDashboardComponent {
     });
   }
 
+  private initializeFoundationOptions(): Signal<{ label: string; value: string }[]> {
+    return computed(() => {
+      const projects = this.personaService.detectedProjects();
+      return projects.filter((p) => p.isFoundation).map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+    });
+  }
+
+  private initializeProjectOptions(): Signal<{ label: string; value: string }[]> {
+    return computed(() => {
+      const projects = this.personaService.detectedProjects();
+      const foundation = this.foundationFilter();
+      let candidates = projects.filter((p) => !p.isFoundation);
+      if (foundation) {
+        candidates = candidates.filter((p) => p.parentProjectUid === foundation);
+      }
+      return candidates.map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+    });
+  }
+
   private initializeFilteredCommittees(): Signal<Committee[]> {
     return computed(() => {
       let filtered = this.committees();
@@ -319,6 +367,23 @@ export class CommitteeDashboardComponent {
       }
 
       return filtered;
+    });
+  }
+
+  private initializeFilteredMyCommittees(): Signal<MyCommittee[]> {
+    return computed(() => {
+      const committees = this.myCommittees();
+      const searchTerm = this.searchTerm()?.toLowerCase() || '';
+      if (!searchTerm) {
+        return committees;
+      }
+      return committees.filter(
+        (committee) =>
+          committee.name.toLowerCase().includes(searchTerm) ||
+          committee.display_name?.toLowerCase().includes(searchTerm) ||
+          committee.description?.toLowerCase().includes(searchTerm) ||
+          committee.category?.toLowerCase().includes(searchTerm)
+      );
     });
   }
 }

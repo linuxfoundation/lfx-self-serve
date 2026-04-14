@@ -17,6 +17,39 @@
           data-testid="mailing-list-search-input"></lfx-input-text>
       </div>
 
+      <!-- Foundation Filter Dropdown (Me lens only) -->
+      @if (showFoundationFilter()) {
+        <div class="w-full sm:w-48">
+          <lfx-select
+            [form]="searchForm()"
+            control="foundationFilter"
+            size="small"
+            [options]="foundationOptions()"
+            placeholder="All Foundations"
+            [showClear]="true"
+            styleClass="w-full"
+            (onChange)="foundationFilterChange.emit($event.value)"
+            data-testid="mailing-list-foundation-filter">
+          </lfx-select>
+        </div>
+      }
+      <!-- Project Filter Dropdown (Me lens only, cascading from foundation) -->
+      @if (showProjectFilter() && projectOptions().length > 0) {
+        <div class="w-full sm:w-48">
+          <lfx-select
+            [form]="searchForm()"
+            control="projectFilter"
+            size="small"
+            [options]="projectOptions()"
+            placeholder="All Projects"
+            [showClear]="true"
+            styleClass="w-full"
+            (onChange)="projectFilterChange.emit($event.value)"
+            data-testid="mailing-list-project-filter">
+          </lfx-select>
+        </div>
+      }
+
       <!-- Committee Filter Dropdown -->
       <div class="w-full sm:w-48">
         <lfx-select
@@ -47,6 +80,7 @@
 
   <lfx-table
     [value]="mailingLists()"
+    [loading]="loading()"
     [paginator]="mailingLists().length > 10"
     [rows]="10"
     [rowsPerPageOptions]="[10, 25, 50]"

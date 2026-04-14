@@ -11,6 +11,7 @@ import { VOTE_LABEL } from '@lfx-one/shared';
 import { Committee, PaginatedResponse, ProjectContext, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { VoteService } from '@services/vote.service';
 import { BehaviorSubject, catchError, combineLatest, finalize, map, of, switchMap, tap } from 'rxjs';
@@ -29,6 +30,7 @@ export class VotesDashboardComponent {
   private readonly voteService = inject(VoteService);
   private readonly committeeService = inject(CommitteeService);
   private readonly lensService = inject(LensService);
+  private readonly personaService = inject(PersonaService);
   private readonly projectContextService = inject(ProjectContextService);
 
   // === Constants ===
@@ -50,9 +52,13 @@ export class VotesDashboardComponent {
   protected readonly currentFirst = signal<number>(0);
   protected readonly totalRecords = signal<number>(0);
   protected readonly myVotesLoading = signal<boolean>(true);
+  protected readonly foundationFilter = signal<string | null>(null);
+  protected readonly projectFilter = signal<string | null>(null);
 
   // === Lens ===
   protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
+  public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
+  public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
 
   // === Filter State ===
   protected readonly filters = signal<VoteFilterState>({ search: '', status: null, group: null });
@@ -69,6 +75,8 @@ export class VotesDashboardComponent {
   protected readonly selectedListVote: Signal<Vote | null> = this.initSelectedListVote();
   protected readonly myVotes: Signal<Vote[]> = this.initMyVotes();
   protected readonly totalCount: Signal<number> = this.initTotalCount();
+  protected readonly foundationOptions: Signal<{ label: string; value: string }[]> = this.initializeFoundationOptions();
+  protected readonly projectOptions: Signal<{ label: string; value: string }[]> = this.initializeProjectOptions();
 
   protected onViewVote(voteId: string): void {
     this.selectedVoteId.set(voteId);
@@ -99,6 +107,15 @@ export class VotesDashboardComponent {
 
     this.currentFirst.set(event.first);
     this.fetch$.next();
+  }
+
+  protected onFoundationFilterChange(value: string | null): void {
+    this.foundationFilter.set(value);
+    this.projectFilter.set(null);
+  }
+
+  protected onProjectFilterChange(value: string | null): void {
+    this.projectFilter.set(value);
   }
 
   protected onFiltersChange(state: VoteFilterState): void {
@@ -239,16 +256,18 @@ export class VotesDashboardComponent {
 
   private initMyVotes(): Signal<Vote[]> {
     const lens$ = toObservable(this.lensService.activeLens);
+    const projectFilter$ = toObservable(this.projectFilter);
+    const foundationFilter$ = toObservable(this.foundationFilter);
 
     return toSignal(
-      combineLatest([lens$, this.refresh$]).pipe(
-        switchMap(([lens]) => {
+      combineLatest([lens$, this.refresh$, projectFilter$, foundationFilter$]).pipe(
+        switchMap(([lens, , projectFilter, foundationFilter]) => {
           if (lens !== 'me') {
             this.myVotesLoading.set(false);
             return of([] as Vote[]);
           }
           this.myVotesLoading.set(true);
-          return this.voteService.getMyVotes().pipe(
+          return this.voteService.getMyVotes(projectFilter ?? undefined, foundationFilter ?? undefined).pipe(
             catchError(() => {
               this.myVotesLoading.set(false);
               return of([] as Vote[]);
@@ -259,5 +278,26 @@ export class VotesDashboardComponent {
       ),
       { initialValue: [] }
     );
+  }
+
+  private initializeFoundationOptions(): Signal<{ label: string; value: string }[]> {
+    return computed(() => {
+      return this.personaService
+        .detectedProjects()
+        .filter((p) => p.isFoundation)
+        .map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+    });
+  }
+
+  private initializeProjectOptions(): Signal<{ label: string; value: string }[]> {
+    return computed(() => {
+      const projects = this.personaService.detectedProjects();
+      const foundation = this.foundationFilter();
+      let candidates = projects.filter((p) => !p.isFoundation);
+      if (foundation) {
+        candidates = candidates.filter((p) => p.parentProjectUid === foundation);
+      }
+      return candidates.map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+    });
   }
 }

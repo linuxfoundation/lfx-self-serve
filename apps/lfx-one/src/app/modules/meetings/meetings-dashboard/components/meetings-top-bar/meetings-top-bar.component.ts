@@ -15,8 +15,14 @@ import { SelectComponent } from '@components/select/select.component';
 })
 export class MeetingsTopBarComponent implements OnInit {
   public meetingTypeOptions = input.required<{ label: string; value: string | null }[]>();
+  public foundationOptions = input<{ label: string; value: string }[]>([]);
+  public projectOptions = input<{ label: string; value: string }[]>([]);
+  public showFoundationFilter = input<boolean>(false);
+  public showProjectFilter = input<boolean>(false);
   public readonly initialTimeFilter = input<'upcoming' | 'past'>('upcoming');
   public readonly meetingTypeChange = output<string | null>();
+  public readonly foundationFilterChange = output<string | null>();
+  public readonly projectFilterChange = output<string | null>();
   public readonly searchQueryChange = output<string>();
   public readonly timeFilterChange = output<'upcoming' | 'past'>();
 
@@ -34,6 +40,8 @@ export class MeetingsTopBarComponent implements OnInit {
     this.searchForm = new FormGroup({
       search: new FormControl(''),
       meetingType: new FormControl<string | null>(null),
+      foundationFilter: new FormControl<string | null>(null),
+      projectFilter: new FormControl<string | null>(null),
       timeFilter: new FormControl<'upcoming' | 'past'>('upcoming'),
     });
 
@@ -52,6 +60,8 @@ export class MeetingsTopBarComponent implements OnInit {
       .subscribe((value) => {
         if (value) {
           this.timeFilterChange.emit(value);
+          this.searchForm.get('foundationFilter')?.setValue(null, { emitEvent: false });
+          this.searchForm.get('projectFilter')?.setValue(null, { emitEvent: false });
         }
       });
   }
@@ -65,6 +75,17 @@ export class MeetingsTopBarComponent implements OnInit {
 
   public onMeetingTypeChange(value: string | null): void {
     this.meetingTypeChange.emit(value);
+  }
+
+  public onFoundationFilterChange(value: string | null): void {
+    this.foundationFilterChange.emit(value);
+    // Reset project filter when foundation changes
+    this.searchForm.get('projectFilter')?.setValue(null, { emitEvent: false });
+    this.projectFilterChange.emit(null);
+  }
+
+  public onProjectFilterChange(value: string | null): void {
+    this.projectFilterChange.emit(value);
   }
 
   public onTimeFilterChange(value: 'upcoming' | 'past'): void {

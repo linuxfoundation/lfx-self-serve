@@ -22,28 +22,14 @@
     }
   </div>
 
-  <!-- Loading State -->
-  @if ((isMeLens() && myVotesLoading()) || (!isMeLens() && loading())) {
+  <!-- Loading State (non-Me lens only) -->
+  @if (!isMeLens() && loading()) {
     <div class="flex justify-center items-center min-h-96">
       <div class="text-center">
         <i class="fa-light fa-spinner-third fa-spin text-3xl text-blue-600 mb-4"></i>
         <p class="text-gray-600">Loading {{ voteLabel | lowercase }} details...</p>
       </div>
     </div>
-  } @else if (isMeLens() && myVotes().length === 0) {
-    <!-- Me lens empty state -->
-    <lfx-card data-testid="votes-empty-state-card">
-      <div class="p-8 md:p-12">
-        <div class="max-w-2xl mx-auto text-center flex flex-col gap-6">
-          <div class="flex justify-center">
-            <div class="w-20 h-20 rounded-full bg-blue-100 flex items-center justify-center">
-              <i class="fa-light fa-check-to-slot text-4xl text-blue-600"></i>
-            </div>
-          </div>
-          <h2 class="text-xl font-semibold text-gray-900">You don't have any {{ voteLabelPlural | lowercase }} yet</h2>
-        </div>
-      </div>
-    </lfx-card>
   } @else if (!isMeLens() && !loading() && votes().length === 0) {
     <!-- Project empty state -->
     <lfx-card data-testid="votes-empty-state-card">
@@ -69,6 +55,12 @@
       [first]="isMeLens() ? 0 : currentFirst()"
       [lazy]="!isMeLens()"
       [groupOptions]="groupOptions()"
+      [foundationOptions]="foundationOptions()"
+      [projectOptions]="projectOptions()"
+      [showFoundationFilter]="showFoundationFilter()"
+      [showProjectFilter]="showProjectFilter()"
+      (foundationFilterChange)="onFoundationFilterChange($event)"
+      (projectFilterChange)="onProjectFilterChange($event)"
       (viewVote)="onViewVote($event)"
       (viewResults)="onViewResults($event)"
       (refresh)="refreshVotes()"

@@ -10,6 +10,7 @@ import { CardComponent } from '@components/card/card.component';
 import { SURVEY_LABEL } from '@lfx-one/shared';
 import { ProjectContext, Survey } from '@lfx-one/shared/interfaces';
 import { LensService } from '@services/lens.service';
+import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { SurveyService } from '@services/survey.service';
 import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
@@ -28,6 +29,7 @@ export class SurveysDashboardComponent {
   private readonly surveyService = inject(SurveyService);
   private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly personaService = inject(PersonaService);
 
   // === Constants ===
   protected readonly surveyLabel = SURVEY_LABEL.singular;
@@ -42,15 +44,21 @@ export class SurveysDashboardComponent {
   protected readonly resultsDrawerVisible = signal<boolean>(false);
   protected readonly selectedSurveyId = signal<string | null>(null);
   protected readonly mySurveysLoading = signal<boolean>(true);
+  protected readonly foundationFilter = signal<string | null>(null);
+  protected readonly projectFilter = signal<string | null>(null);
 
   // === Lens ===
   protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
+  public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
+  public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
 
   // === Computed / toSignal Signals ===
   protected readonly project: Signal<ProjectContext | null> = this.initProject();
   protected readonly surveys: Signal<Survey[]> = this.initSurveys();
   protected readonly selectedListSurvey: Signal<Survey | null> = this.initSelectedListSurvey();
   protected readonly mySurveys: Signal<Survey[]> = this.initMySurveys();
+  protected readonly foundationOptions: Signal<{ label: string; value: string }[]> = this.initializeFoundationOptions();
+  protected readonly projectOptions: Signal<{ label: string; value: string }[]> = this.initializeProjectOptions();
 
   protected onViewResults(surveyId: string): void {
     this.selectedSurveyId.set(surveyId);
@@ -59,6 +67,15 @@ export class SurveysDashboardComponent {
 
   protected onRowClick(survey: Survey): void {
     this.onViewResults(survey.uid);
+  }
+
+  protected onFoundationFilterChange(value: string | null): void {
+    this.foundationFilter.set(value);
+    this.projectFilter.set(null);
+  }
+
+  protected onProjectFilterChange(value: string | null): void {
+    this.projectFilter.set(value);
   }
 
   protected refreshSurveys(): void {
@@ -120,16 +137,18 @@ export class SurveysDashboardComponent {
 
   private initMySurveys(): Signal<Survey[]> {
     const lens$ = toObservable(this.lensService.activeLens);
+    const projectFilter$ = toObservable(this.projectFilter);
+    const foundationFilter$ = toObservable(this.foundationFilter);
 
     return toSignal(
-      combineLatest([lens$, this.refresh$]).pipe(
-        switchMap(([lens]) => {
+      combineLatest([lens$, this.refresh$, projectFilter$, foundationFilter$]).pipe(
+        switchMap(([lens, , projectFilter, foundationFilter]) => {
           if (lens !== 'me') {
             this.mySurveysLoading.set(false);
             return of([] as Survey[]);
           }
           this.mySurveysLoading.set(true);
-          return this.surveyService.getMySurveys().pipe(
+          return this.surveyService.getMySurveys(projectFilter ?? undefined, foundationFilter ?? undefined).pipe(
             catchError(() => {
               this.mySurveysLoading.set(false);
               return of([] as Survey[]);
@@ -140,5 +159,29 @@ export class SurveysDashboardComponent {
       ),
       { initialValue: [] }
     );
+  }
+
+  private initializeFoundationOptions(): Signal<{ label: string; value: string }[]> {
+    return computed(() => {
+      const projects = this.personaService.detectedProjects();
+      return projects.filter((p) => p.isFoundation).map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+    });
+  }
+
+  private initializeProjectOptions(): Signal<{ label: string; value: string }[]> {
+    return computed(() => {
+      const projects = this.personaService.detectedProjects();
+      const foundation = this.foundationFilter();
+
+      // Filter to non-foundation projects
+      let candidates = projects.filter((p) => !p.isFoundation);
+
+      // If a foundation is selected, show only its children
+      if (foundation) {
+        candidates = candidates.filter((p) => p.parentProjectUid === foundation);
+      }
+
+      return candidates.map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+    });
   }
 }

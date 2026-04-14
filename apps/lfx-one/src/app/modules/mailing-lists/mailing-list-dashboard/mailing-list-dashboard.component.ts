@@ -1,9 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { Component, computed, inject, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup } from '@angular/forms';
+import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -21,7 +21,7 @@ import { MailingListTableComponent } from '../components/mailing-list-table/mail
 
 @Component({
   selector: 'lfx-mailing-list-dashboard',
-  imports: [ButtonComponent, CardComponent, MailingListTableComponent],
+  imports: [ButtonComponent, CardComponent, MailingListTableComponent, ReactiveFormsModule],
   templateUrl: './mailing-list-dashboard.component.html',
   styleUrl: './mailing-list-dashboard.component.scss',
 })
@@ -54,7 +54,15 @@ export class MailingListDashboardComponent {
 
   // Lens
   public readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
+  public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
+  public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
   public myMailingListsLoading = signal<boolean>(true);
+
+  // Foundation + Project filter (Me lens only)
+  public foundationFilter: WritableSignal<string | null> = signal<string | null>(null);
+  public projectFilter: WritableSignal<string | null> = signal<string | null>(null);
+  public foundationOptions: Signal<{ label: string; value: string }[]> = this.initializeFoundationOptions();
+  public projectOptions: Signal<{ label: string; value: string }[]> = this.initializeProjectOptions();
 
   // Complex computed/toSignal signals
   public readonly project: Signal<ProjectContext | null> = this.initProject();
@@ -103,12 +111,31 @@ export class MailingListDashboardComponent {
     this.router.navigate(['/mailing-lists', mailingList.uid]);
   }
 
+  /**
+   * Handle foundation filter change
+   */
+  public onFoundationFilterChange(value: string | null): void {
+    this.foundationFilter.set(value);
+    // Reset project filter when foundation changes
+    this.projectFilter.set(null);
+    this.searchForm.get('projectFilter')?.setValue(null);
+  }
+
+  /**
+   * Handle project filter change
+   */
+  public onProjectFilterChange(value: string | null): void {
+    this.projectFilter.set(value);
+  }
+
   // Private initializer functions
   private initializeSearchForm(): FormGroup {
     return new FormGroup({
       search: new FormControl<string>(''),
       committee: new FormControl<string | null>(null),
       status: new FormControl<string | null>(null),
+      foundationFilter: new FormControl<string | null>(null),
+      projectFilter: new FormControl<string | null>(null),
     });
   }
 
@@ -302,18 +329,39 @@ export class MailingListDashboardComponent {
     return computed(() => this.servicesLoaded() && this.availableServices().length === 0);
   }
 
+  private initializeFoundationOptions(): Signal<{ label: string; value: string }[]> {
+    return computed(() => {
+      const projects = this.personaService.detectedProjects();
+      return projects.filter((p) => p.isFoundation).map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+    });
+  }
+
+  private initializeProjectOptions(): Signal<{ label: string; value: string }[]> {
+    return computed(() => {
+      const projects = this.personaService.detectedProjects();
+      const foundation = this.foundationFilter();
+      let candidates = projects.filter((p) => !p.isFoundation);
+      if (foundation) {
+        candidates = candidates.filter((p) => p.parentProjectUid === foundation);
+      }
+      return candidates.map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+    });
+  }
+
   private initMyMailingLists(): Signal<MyMailingList[]> {
     const lens$ = toObservable(this.lensService.activeLens);
+    const projectFilter$ = toObservable(this.projectFilter);
+    const foundationFilter$ = toObservable(this.foundationFilter);
 
     return toSignal(
-      combineLatest([lens$, this.refresh]).pipe(
-        switchMap(([lens]) => {
+      combineLatest([lens$, this.refresh, projectFilter$, foundationFilter$]).pipe(
+        switchMap(([lens, , projectFilter, foundationFilter]) => {
           if (lens !== 'me') {
             this.myMailingListsLoading.set(false);
             return of([] as MyMailingList[]);
           }
           this.myMailingListsLoading.set(true);
-          return this.mailingListService.getMyMailingLists().pipe(
+          return this.mailingListService.getMyMailingLists(projectFilter ?? undefined, foundationFilter ?? undefined).pipe(
             catchError(() => {
               this.myMailingListsLoading.set(false);
               return of([] as MyMailingList[]);

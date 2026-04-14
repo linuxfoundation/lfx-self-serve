@@ -22,8 +22,15 @@ export class VoteService {
     );
   }
 
-  public getMyVotes(): Observable<Vote[]> {
-    return this.http.get<Vote[]>('/api/votes/my-votes');
+  public getMyVotes(projectUid?: string, foundationUid?: string): Observable<Vote[]> {
+    let params = new HttpParams();
+    if (projectUid) {
+      params = params.set('project_uid', projectUid);
+    }
+    if (foundationUid) {
+      params = params.set('foundation_uid', foundationUid);
+    }
+    return this.http.get<Vote[]>('/api/votes/my-votes', { params }).pipe(catchError(() => of([])));
   }
 
   public getVotesByProject(projectUid: string, pageSize?: number, orderBy?: string): Observable<Vote[]> {

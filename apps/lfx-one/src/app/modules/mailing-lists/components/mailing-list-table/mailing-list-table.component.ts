@@ -54,6 +54,11 @@ export class MailingListTableComponent {
   public searchForm = input.required<FormGroup>();
   public committeeFilterOptions = input.required<FilterOption[]>();
   public statusFilterOptions = input.required<FilterOption[]>();
+  public foundationOptions = input<{ label: string; value: string }[]>([]);
+  public projectOptions = input<{ label: string; value: string }[]>([]);
+  public showFoundationFilter = input<boolean>(false);
+  public showProjectFilter = input<boolean>(false);
+  public loading = input<boolean>(false);
 
   // Constants
   protected readonly maxVisibleGroups = MAILING_LIST_MAX_VISIBLE_GROUPS;
@@ -65,6 +70,8 @@ export class MailingListTableComponent {
   // Outputs
   public readonly refresh = output<void>();
   public readonly rowClick = output<GroupsIOMailingList>();
+  public readonly foundationFilterChange = output<string | null>();
+  public readonly projectFilterChange = output<string | null>();
 
   // Event Handlers
   protected onRowSelect(event: { data: GroupsIOMailingList }): void {

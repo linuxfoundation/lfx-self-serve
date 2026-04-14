@@ -25,8 +25,14 @@
       @if (upcomingMeetings() || pastMeetings()) {
         <lfx-meetings-top-bar
           [meetingTypeOptions]="meetingTypeOptions()"
+          [foundationOptions]="foundationOptions()"
+          [projectOptions]="projectOptions()"
+          [showFoundationFilter]="showFoundationFilter()"
+          [showProjectFilter]="showProjectFilter()"
           [initialTimeFilter]="timeFilter()"
           (meetingTypeChange)="onMeetingTypeChange($event)"
+          (foundationFilterChange)="onFoundationFilterChange($event)"
+          (projectFilterChange)="onProjectFilterChange($event)"
           (searchQueryChange)="searchQuery.set($event)"
           (timeFilterChange)="onTimeFilterChange($event)" />
       }

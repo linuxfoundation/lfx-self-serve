@@ -169,7 +169,7 @@ export class SurveyService {
    * Fetches surveys the current user has responded to.
    * Queries survey_response records by email and username using filters_or.
    */
-  public async getMySurveys(req: Request): Promise<Survey[]> {
+  public async getMySurveys(req: Request, projectUid?: string, foundationUid?: string): Promise<Survey[]> {
     const rawUsername = await getUsernameFromAuth(req);
     const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
     const email = (req.oidc?.user?.['email'] as string)?.toLowerCase();
@@ -177,6 +177,8 @@ export class SurveyService {
     logger.debug(req, 'get_my_surveys', 'Fetching surveys for current user', {
       username,
       has_email: !!email,
+      project_uid: projectUid,
+      foundation_uid: foundationUid,
     });
 
     if (!username && !email) {
@@ -199,6 +201,7 @@ export class SurveyService {
         type: 'survey_response',
         page_size: 100,
         filters_or: filtersOr,
+        ...(projectUid && { tags: `project_uid:${projectUid}` }),
         ...(pageToken && { page_token: pageToken }),
       })
     );
@@ -232,7 +235,7 @@ export class SurveyService {
 
     // Sort: open/sent surveys first, then by cutoff date descending
     const openStatuses = new Set(['open', 'sent']);
-    return surveys
+    const sorted = surveys
       .filter((s): s is Survey => s !== null)
       .sort((a, b) => {
         const aOpen = openStatuses.has(a.survey_status) ? 0 : 1;
@@ -242,5 +245,17 @@ export class SurveyService {
         }
         return new Date(b.survey_cutoff_date).getTime() - new Date(a.survey_cutoff_date).getTime();
       });
+
+    // Post-fetch safety net: filter by project_uid or foundation_uid if provided
+    if (projectUid) {
+      return sorted.filter((s) => s.committees?.some((c) => c.project_uid === projectUid));
+    } else if (foundationUid) {
+      logger.debug(req, 'get_my_surveys', 'Filtering by foundation', { foundation_uid: foundationUid });
+      const uids = await this.projectService.getFoundationProjectUids(req, foundationUid);
+      const uidSet = new Set(uids);
+      return sorted.filter((s) => s.committees?.some((c) => uidSet.has(c.project_uid)));
+    }
+
+    return sorted;
   }
 }

@@ -101,11 +101,13 @@ export class UserController {
   public async getUserMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_user_meetings', {
       project_uid: req.query['projectUid'],
+      foundation_uid: req.query['foundation_uid'],
       limit: req.query['limit'],
     });
 
     try {
       const projectUid = req.query['projectUid'] as string | undefined;
+      const foundationUid = req.query['foundation_uid'] as string | undefined;
 
       // Extract user email from OIDC (lowercased for consistent tag matching)
       const userEmail = (req.oidc?.user?.['email'] as string)?.toLowerCase();
@@ -139,10 +141,11 @@ export class UserController {
       }
 
       // Get user's meetings from service
-      const meetings = await this.userService.getUserMeetings(req, userEmail, projectUid, limit);
+      const meetings = await this.userService.getUserMeetings(req, userEmail, projectUid, limit, foundationUid);
 
       logger.success(req, 'get_user_meetings', startTime, {
         project_uid: projectUid,
+        foundation_uid: foundationUid,
         meeting_count: meetings.length,
         limit,
       });
@@ -162,11 +165,13 @@ export class UserController {
   public async getUserPastMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_user_past_meetings', {
       project_uid: req.query['projectUid'],
+      foundation_uid: req.query['foundation_uid'],
       limit: req.query['limit'],
     });
 
     try {
       const projectUid = req.query['projectUid'] as string | undefined;
+      const foundationUid = req.query['foundation_uid'] as string | undefined;
 
       // Extract user email from OIDC (lowercased for consistent tag matching)
       const userEmail = (req.oidc?.user?.['email'] as string)?.toLowerCase();
@@ -200,10 +205,11 @@ export class UserController {
       }
 
       // Get user's past meetings from service
-      const pastMeetings = await this.userService.getUserPastMeetings(req, userEmail, projectUid, limit);
+      const pastMeetings = await this.userService.getUserPastMeetings(req, userEmail, projectUid, limit, foundationUid);
 
       logger.success(req, 'get_user_past_meetings', startTime, {
         project_uid: projectUid,
+        foundation_uid: foundationUid,
         past_meeting_count: pastMeetings.length,
         limit,
       });

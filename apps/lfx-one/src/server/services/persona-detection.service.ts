@@ -162,17 +162,19 @@ export class PersonaDetectionService {
     // Enrich projects with names in parallel
     const enrichedProjects = await this.enrichProjectsWithNames(req, detectionResponse);
 
-    // Build persona-centric mapping
+    // Build persona-centric mapping (before adding synthetic parents — they have no personas)
     const personaProjects = this.buildPersonaProjectsMap(enrichedProjects);
 
     // Collect all unique personas sorted by priority
     const personas = this.collectUniquePersonas(enrichedProjects);
 
-    // Compute multi-access flags from enriched projects
-    const uniqueProjectUids = new Set(enrichedProjects.map((p) => p.projectUid));
+    // Compute multi-access flags from detected projects only (before synthetic parents are added)
+    // Synthetic parent projects are for UI grouping only — they shouldn't inflate access counts
+    const detectedOnly = enrichedProjects.filter((p) => p.detections.length > 0);
+    const uniqueProjectUids = new Set(detectedOnly.map((p) => p.projectUid));
     const multiProject = uniqueProjectUids.size > 1;
 
-    const foundationUids = new Set(enrichedProjects.map((p) => (p.isFoundation ? p.projectUid : p.parentProjectUid || p.projectUid)));
+    const foundationUids = new Set(detectedOnly.map((p) => (p.isFoundation ? p.projectUid : p.parentProjectUid || p.projectUid)));
     const multiFoundation = foundationUids.size > 1;
 
     logger.debug(req, 'get_personas', 'Persona detection complete', {
@@ -325,6 +327,56 @@ export class PersonaDetectionService {
           description,
           detections: project.detections,
           personas,
+        } as EnrichedPersonaProject;
+      })
+    );
+
+    const enriched = results.filter((r): r is PromiseFulfilledResult<EnrichedPersonaProject> => r.status === 'fulfilled').map((r) => r.value);
+
+    // Fetch missing parent foundations so the UI can group child projects properly
+    const missingParents = await this.fetchMissingParentProjects(req, enriched);
+    if (missingParents.length > 0) {
+      enriched.push(...missingParents);
+    }
+
+    return enriched;
+  }
+
+  /**
+   * Fetch parent projects that aren't in the detected list but are referenced by child projects.
+   * This ensures the UI can group child projects under their foundation in the filter dropdown.
+   */
+  private async fetchMissingParentProjects(req: Request, enrichedProjects: EnrichedPersonaProject[]): Promise<EnrichedPersonaProject[]> {
+    const knownUids = new Set(enrichedProjects.map((p) => p.projectUid));
+    const missingParentUids = new Set<string>();
+
+    for (const project of enrichedProjects) {
+      if (project.parentProjectUid && !knownUids.has(project.parentProjectUid)) {
+        missingParentUids.add(project.parentProjectUid);
+      }
+    }
+
+    if (missingParentUids.size === 0) {
+      return [];
+    }
+
+    logger.debug(req, 'fetch_missing_parent_projects', 'Fetching missing parent projects for grouping', {
+      missing_parent_uids: [...missingParentUids],
+    });
+
+    const results = await Promise.allSettled(
+      [...missingParentUids].map(async (parentUid) => {
+        const projectData = await this.projectService.getProjectById(req, parentUid, false);
+        return {
+          projectUid: parentUid,
+          projectSlug: projectData?.slug || '',
+          projectName: projectData?.name || null,
+          parentProjectUid: projectData?.parent_uid || null,
+          isFoundation: this.computeIsFoundation(projectData),
+          logoUrl: projectData?.logo_url || null,
+          description: projectData?.description || null,
+          detections: [],
+          personas: [],
         } as EnrichedPersonaProject;
       })
     );
