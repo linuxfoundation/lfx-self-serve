@@ -22,6 +22,10 @@ export class VoteService {
     );
   }
 
+  public getMyVotes(): Observable<Vote[]> {
+    return this.http.get<Vote[]>('/api/votes/my-votes');
+  }
+
   public getVotesByProject(projectUid: string, pageSize?: number, orderBy?: string): Observable<Vote[]> {
     let params = new HttpParams().set('parent', `project:${projectUid}`);
 

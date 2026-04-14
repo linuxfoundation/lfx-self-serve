@@ -215,20 +215,11 @@ export class SurveyService {
       unique_survey_count: surveyUids.length,
     });
 
-    // Fetch survey details in parallel
+    // Fetch survey details in parallel via the survey microservice
     const surveys = await Promise.all(
       surveyUids.map(async (uid) => {
         try {
-          const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Survey>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            type: 'survey',
-            tags: uid,
-          });
-
-          if (!resources || resources.length === 0) {
-            return null;
-          }
-
-          return resources[0].data;
+          return await this.microserviceProxy.proxyRequest<Survey>(req, 'LFX_V2_SERVICE', `/surveys/${uid}`, 'GET');
         } catch (error) {
           logger.warning(req, 'get_my_surveys', 'Failed to fetch survey details, skipping', {
             survey_uid: uid,
@@ -239,6 +230,17 @@ export class SurveyService {
       })
     );
 
-    return surveys.filter((s): s is Survey => s !== null);
+    // Sort: open/sent surveys first, then by cutoff date descending
+    const openStatuses = new Set(['open', 'sent']);
+    return surveys
+      .filter((s): s is Survey => s !== null)
+      .sort((a, b) => {
+        const aOpen = openStatuses.has(a.survey_status) ? 0 : 1;
+        const bOpen = openStatuses.has(b.survey_status) ? 0 : 1;
+        if (aOpen !== bOpen) {
+          return aOpen - bOpen;
+        }
+        return new Date(b.survey_cutoff_date).getTime() - new Date(a.survey_cutoff_date).getTime();
+      });
   }
 }

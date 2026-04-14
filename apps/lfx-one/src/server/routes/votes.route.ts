@@ -15,6 +15,9 @@ router.get('/', (req, res, next) => voteController.getVotes(req, res, next));
 // GET /votes/count - get votes count
 router.get('/count', (req, res, next) => voteController.getVotesCount(req, res, next));
 
+// GET /votes/my-votes - get votes the current user has been invited to
+router.get('/my-votes', (req, res, next) => voteController.getMyVotes(req, res, next));
+
 // GET /votes/:uid/results - get vote results
 router.get('/:uid/results', (req, res, next) => voteController.getVoteResults(req, res, next));
 

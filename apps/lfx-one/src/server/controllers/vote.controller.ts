@@ -58,6 +58,25 @@ export class VoteController {
   }
 
   /**
+   * GET /votes/my-votes
+   */
+  public async getMyVotes(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_my_votes');
+
+    try {
+      const myVotes = await this.voteService.getMyVotes(req);
+
+      logger.success(req, 'get_my_votes', startTime, {
+        vote_count: myVotes.length,
+      });
+
+      res.json(myVotes);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /votes/:uid
    */
   public async getVoteById(req: Request, res: Response, next: NextFunction): Promise<void> {
