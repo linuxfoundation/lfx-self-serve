@@ -33,6 +33,11 @@ const USEFUL_LINKS = [
     url: 'https://training.linuxfoundation.org',
     description: 'Browse certifications, explore the full course catalog, and register for exams.',
   },
+  {
+    label: 'Certification Verification Tool',
+    url: 'https://training.linuxfoundation.org/certification/verify/',
+    description: 'Want proof of your certification? Use our Verification Tool to confirm and share the validity of your certifications.',
+  },
 ];
 
 @Component({
