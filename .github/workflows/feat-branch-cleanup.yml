@@ -12,7 +12,8 @@ permissions:
 
 jobs:
   cleanup:
-    if: github.event.ref_type == 'branch' && startsWith(github.event.ref, 'feat/')
+    if: false
+    # if: github.event.ref_type == 'branch' && startsWith(github.event.ref, 'feat/')
     runs-on: ubuntu-latest
 
     steps:
