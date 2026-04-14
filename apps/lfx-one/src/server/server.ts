@@ -243,6 +243,7 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     const personaResult = await resolvePersonaForSsr(req, res);
     auth.persona = personaResult.persona;
     auth.personas = personaResult.personas;
+    auth.organizations = personaResult.organizations ?? [];
   }
 
   // Build runtime config from environment variables

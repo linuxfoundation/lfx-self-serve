@@ -200,7 +200,6 @@ apps/lfx-one/src/server/
 │   ├── auth-helper.ts        # Auth utility functions
 │   ├── lock-manager.ts       # Distributed lock management
 │   ├── m2m-token.util.ts     # Machine-to-machine token management
-│   ├── organization-matcher.ts # Organization matching logic
 │   ├── persona-helper.ts     # User persona helpers
 │   └── security.util.ts      # Security utilities
 ├── server.ts                 # Server bootstrap and route registration

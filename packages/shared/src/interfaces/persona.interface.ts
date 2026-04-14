@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { Account } from './account.interface';
+
 /**
  * Available persona types for UI customization
  * @description Defines the different user personas that can be selected
@@ -39,6 +41,8 @@ export interface PersistedPersonaState {
   multiProject?: boolean;
   /** Whether the user has access to multiple foundations */
   multiFoundation?: boolean;
+  /** User's organizations from board member detections */
+  organizations?: Account[];
 }
 
 /**

@@ -49,6 +49,7 @@ function resolveFromCookie(req: Request, cookieHeader: string): SsrPersonaResult
         return {
           persona: parsed.primary,
           personas: parsed.all,
+          organizations: parsed.organizations ?? [],
         };
       }
     }
@@ -69,6 +70,7 @@ async function resolveFromNats(req: Request, res: Response): Promise<SsrPersonaR
 
     const persona = personaResult.personas.length > 0 ? personaResult.personas[0] : DEFAULT_PERSONA;
     const personas = personaResult.personas.length > 0 ? personaResult.personas : [DEFAULT_PERSONA];
+    const organizations = personaResult.organizations ?? [];
 
     // Only cache when detection succeeded — don't pin user to contributor on transient NATS failure
     if (!personaResult.error) {
@@ -77,6 +79,7 @@ async function resolveFromNats(req: Request, res: Response): Promise<SsrPersonaR
         all: personas,
         multiProject: personaResult.multiProject,
         multiFoundation: personaResult.multiFoundation,
+        organizations,
       };
       res.cookie(PERSONA_COOKIE_KEY, JSON.stringify(cookieState), {
         maxAge: 30 * 24 * 60 * 60 * 1000,
@@ -92,7 +95,7 @@ async function resolveFromNats(req: Request, res: Response): Promise<SsrPersonaR
       personas,
     });
 
-    return { persona, personas };
+    return { persona, personas, organizations };
   } catch (error) {
     logger.warning(req, 'ssr_persona', 'Persona detection failed during SSR, defaulting to contributor', {
       error: error instanceof Error ? error.message : 'Unknown error',

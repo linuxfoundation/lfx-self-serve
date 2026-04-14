@@ -2,7 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { NatsSubjects } from '@lfx-one/shared/enums';
-import { EnrichedPersonaProject, PersonaApiResponse, PersonaDetectionResponse, PersonaProject, PersonaType, Project } from '@lfx-one/shared/interfaces';
+import {
+  Account,
+  EnrichedPersonaProject,
+  PersonaApiResponse,
+  PersonaDetectionResponse,
+  PersonaProject,
+  PersonaType,
+  Project,
+} from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -137,6 +145,7 @@ export class PersonaDetectionService {
         projects: [],
         multiProject: false,
         multiFoundation: false,
+        organizations: [],
         error: detectionResponse.error.message,
       };
     }
@@ -150,6 +159,7 @@ export class PersonaDetectionService {
         projects: [],
         multiProject: false,
         multiFoundation: false,
+        organizations: [],
         error: null,
       };
     }
@@ -183,6 +193,7 @@ export class PersonaDetectionService {
       projects: enrichedProjects,
       multiProject,
       multiFoundation,
+      organizations: this.extractOrganizations(req, enrichedProjects),
       error: null,
     };
   }
@@ -232,6 +243,25 @@ export class PersonaDetectionService {
       });
 
       const parsed = JSON.parse(decoded);
+
+      // Log raw NATS response for debugging detection extras (e.g. organization data)
+      const projectCount = Array.isArray(parsed?.projects) ? parsed.projects.length : 0;
+      const boardDetections = Array.isArray(parsed?.projects)
+        ? parsed.projects.flatMap((p: Record<string, unknown>) =>
+            Array.isArray(p['detections'])
+              ? (p['detections'] as Record<string, unknown>[]).filter((d: Record<string, unknown>) => d['source'] === 'board_member')
+              : []
+          )
+        : [];
+      logger.debug(req, 'fetch_persona_detections', 'Raw NATS persona response', {
+        project_count: projectCount,
+        board_member_detections: boardDetections.length,
+        board_member_has_org: boardDetections.map((d: Record<string, unknown>) => {
+          const extra = d['extra'] as Record<string, unknown> | undefined;
+          const org = extra?.['organization'] as Record<string, unknown> | undefined;
+          return { has_org: !!org, org_id: org?.['id'], org_name: org?.['name'] };
+        }),
+      });
 
       // Validate response shape — normalize malformed fields to prevent downstream crashes
       const normalized = {
@@ -399,5 +429,44 @@ export class PersonaDetectionService {
       Array.isArray(project.funding_model) &&
       project.funding_model.includes('Membership')
     );
+  }
+
+  /**
+   * Extract unique organizations from board_member detection extras
+   * The persona service includes organization data (Salesforce account ID, name, website)
+   * in board_member detection extras — map these to Account objects for UI consumption
+   */
+  private extractOrganizations(req: Request, projects: EnrichedPersonaProject[]): Account[] {
+    const seen = new Set<string>();
+    const accounts: Account[] = [];
+
+    for (const project of projects) {
+      for (const detection of project.detections) {
+        if (detection.source === 'board_member' && detection.extra) {
+          const org = detection.extra['organization'] as { id?: unknown; name?: unknown } | undefined;
+          const orgId = typeof org?.id === 'string' ? org.id : '';
+          const orgName = typeof org?.name === 'string' ? org.name : '';
+
+          logger.debug(req, 'extract_organizations', 'Processing board_member detection', {
+            project_slug: project.projectSlug,
+            has_org: !!org,
+            org_id: orgId || null,
+            org_name: orgName || null,
+          });
+
+          if (orgId && orgName && !seen.has(orgId)) {
+            seen.add(orgId);
+            accounts.push({ accountId: orgId, accountName: orgName });
+          }
+        }
+      }
+    }
+
+    logger.debug(req, 'extract_organizations', 'Organization extraction complete', {
+      total_accounts: accounts.length,
+      accounts: accounts.map((a) => ({ id: a.accountId, name: a.accountName })),
+    });
+
+    return accounts;
   }
 }

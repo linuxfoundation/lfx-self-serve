@@ -34,15 +34,19 @@ export class AccountContextService {
 
   /**
    * Returns available accounts for the user
-   * If user has specific organizations from committee memberships, returns only those
-   * Otherwise returns all predefined accounts
+   * Merges detected organizations into the predefined ACCOUNTS list so that
+   * organizations not in the hardcoded list are still available for selection
    */
   public readonly availableAccounts: Signal<Account[]> = computed(() => {
-    const orgs = this.userOrganizations();
-    if (this.initialized() && orgs.length > 0) {
-      return orgs;
+    const detected = this.userOrganizations();
+    if (!this.initialized() || detected.length === 0) {
+      return ACCOUNTS;
     }
-    return ACCOUNTS;
+
+    // Start with ACCOUNTS, then append any detected orgs not already in the list
+    const knownIds = new Set(ACCOUNTS.map((a) => a.accountId));
+    const extras = detected.filter((d) => !knownIds.has(d.accountId));
+    return extras.length > 0 ? [...ACCOUNTS, ...extras] : ACCOUNTS;
   });
 
   public constructor() {
@@ -55,18 +59,19 @@ export class AccountContextService {
    * Called during app initialization with organizations matched from committee memberships
    */
   public initializeUserOrganizations(organizations: Account[]): void {
-    if (organizations && organizations.length > 0) {
-      this.userOrganizations.set(organizations);
-      this.initialized.set(true);
+    this.initialized.set(true);
+    this.userOrganizations.set(organizations ?? []);
 
-      // If stored account is not in user's organizations, select the first available
+    if (organizations && organizations.length > 0) {
+      // Validate stored selection against the full available set (ACCOUNTS + detected)
       const stored = this.loadFromStorage();
-      const isStoredValid = stored && organizations.some((org) => org.accountId === stored.accountId);
+      const available = this.availableAccounts();
+      const isStoredValid = stored && available.some((acc) => acc.accountId === stored.accountId);
 
       if (isStoredValid && stored) {
         this.selectedAccount.set(stored);
       } else {
-        // Select first organization and persist
+        // Select first detected organization and persist
         this.setAccount(organizations[0]);
       }
     }
