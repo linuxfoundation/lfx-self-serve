@@ -1,29 +1,35 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, output, signal } from '@angular/core';
-import { FormsModule } from '@angular/forms';
-import { ButtonComponent } from '@components/button/button.component';
+import { Component, computed, inject, input, model, output, signal } from '@angular/core';
 import { EnrichedPersonaProject } from '@lfx-one/shared/interfaces';
 import { isFoundationProject } from '@lfx-one/shared/utils';
+import { FeatureFlagService } from '@services/feature-flag.service';
 import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
 import { Popover, PopoverModule } from 'primeng/popover';
 
-import { TagComponent } from '../tag/tag.component';
-
 @Component({
   selector: 'lfx-project-selector',
-  imports: [PopoverModule, ButtonComponent, InputTextModule, FormsModule, AutoFocus, TagComponent],
+  imports: [PopoverModule, InputTextModule, AutoFocus],
   templateUrl: './project-selector.component.html',
   styleUrl: './project-selector.component.scss',
 })
 export class ProjectSelectorComponent {
+  private readonly featureFlagService = inject(FeatureFlagService);
+
   public readonly projects = input.required<EnrichedPersonaProject[]>();
   public readonly selectedProject = input<EnrichedPersonaProject | null>(null);
+  public readonly searchPlaceholder = input<string>('Search...');
+  public readonly emptyMessage = input<string>('No results found');
 
   public readonly projectChange = output<EnrichedPersonaProject>();
+  public readonly isPanelOpen = model<boolean>(false);
 
+  protected readonly showDevToolbar = this.featureFlagService.getBooleanFlag('dev-toolbar', true);
+  protected readonly panelStyleClass = computed(() =>
+    this.showDevToolbar() ? 'project-selector-panel project-selector-panel--with-toolbar' : 'project-selector-panel'
+  );
   protected readonly searchQuery = signal<string>('');
 
   protected readonly displayName = this.initializeDisplayName();
@@ -43,6 +49,7 @@ export class ProjectSelectorComponent {
   }
 
   protected onPopoverHide(): void {
+    this.isPanelOpen.set(false);
     this.searchQuery.set('');
   }
 

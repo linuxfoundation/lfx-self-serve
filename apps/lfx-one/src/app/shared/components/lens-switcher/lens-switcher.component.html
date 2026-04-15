@@ -47,14 +47,14 @@
       class="mb-4 flex items-center justify-center px-3 focus:outline-none"
       aria-label="Go to My Dashboard"
       data-testid="lens-lf-logo">
-      <img src="/images/logo_lf_white.svg" alt="Linux Foundation" class="h-6 w-6" />
+      <img src="/images/logo_lf_white.svg" alt="Linux Foundation" class="w-6 h-6" />
     </button>
 
     <!-- Divider -->
     <hr class="w-6 border-white/20 mb-3" />
 
     <!-- Lens Buttons -->
-    <div class="flex flex-col items-center gap-2.5 flex-1">
+    <div class="flex flex-col items-center gap-3 flex-1">
       @for (lens of lenses(); track lens.id) {
         <button
           type="button"
@@ -63,7 +63,7 @@
           [attr.aria-label]="'Switch to ' + lens.label + ' lens'"
           [pTooltip]="lens.label"
           tooltipPosition="right"
-          class="group flex flex-col items-center gap-1 w-14 transition-colors"
+          class="group flex flex-col items-center gap-1 w-full transition-colors"
           [ngClass]="activeLens() === lens.id ? 'text-blue-400' : 'text-blue-200/70 hover:text-white'">
           <div
             class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors"
@@ -73,13 +73,21 @@
             }">
             <i [ngClass]="activeLens() === lens.id ? lens.activeIcon : lens.icon" class="text-xl"></i>
           </div>
-          <span class="text-[9px] font-medium leading-none">{{ lens.shortLabel }}</span>
+          <span class="text-[10px] font-medium leading-none">{{ lens.shortLabel }}</span>
         </button>
       }
     </div>
 
+    <!-- Insights tooltip template -->
+    <ng-template #insightsTooltip>
+      <span class="flex items-center gap-2">
+        LFX Insights
+        <i class="fa-light fa-arrow-up-right-from-square text-gray-400 text-[11px]"></i>
+      </span>
+    </ng-template>
+
     <!-- Footer -->
-    <div class="flex flex-col items-center gap-2.5 mt-auto">
+    <div class="flex flex-col items-center gap-3 mt-auto">
       <!-- LFX Insights -->
       <a
         href="https://insights.linuxfoundation.org/"
@@ -87,11 +95,11 @@
         rel="noopener noreferrer"
         data-testid="lens-insights"
         aria-label="LFX Insights"
-        [pTooltip]="'LFX Insights'"
+        [pTooltip]="insightsTooltip"
         tooltipPosition="right"
-        class="group flex flex-col items-center gap-1 w-14 transition-colors text-blue-200/70 hover:text-white">
+        class="group flex flex-col items-center gap-1 w-full transition-colors text-blue-200/70 hover:text-white">
         <div class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors group-hover:bg-white/10">
-          <i class="fa-light fa-chart-simple text-lg"></i>
+          <i class="fa-light fa-chart-simple text-xl"></i>
         </div>
       </a>
 

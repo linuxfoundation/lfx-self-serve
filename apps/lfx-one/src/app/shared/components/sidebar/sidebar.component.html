@@ -16,6 +16,9 @@
           <lfx-project-selector
             [projects]="selectorProjects()"
             [selectedProject]="selectedProject()"
+            [searchPlaceholder]="activeLens() === 'foundation' ? 'Search foundations...' : 'Search projects...'"
+            [emptyMessage]="activeLens() === 'foundation' ? 'No foundations found' : 'No projects found'"
+            [(isPanelOpen)]="selectorPanelOpen"
             (projectChange)="onProjectChange($event)"></lfx-project-selector>
         </div>
       }
@@ -88,8 +91,8 @@
       }"
       [attr.data-testid]="item.testId"
       [attr.aria-label]="item.label">
-      <div class="flex items-center justify-center shrink-0 w-6 h-6">
-        <i [ngClass]="[item.icon, 'w-5']"></i>
+      <div class="nav-item-icon flex items-center justify-center shrink-0 w-6 h-6">
+        <i [ngClass]="item.icon"></i>
       </div>
       <span class="whitespace-nowrap">{{ item.label }}</span>
 
@@ -111,8 +114,8 @@
       [attr.data-testid]="item.testId"
       [attr.aria-label]="item.label">
       <div class="flex items-center gap-2">
-        <div class="flex items-center justify-center shrink-0 w-6 h-6">
-          <i [ngClass]="[item.icon, 'w-5']"></i>
+        <div class="nav-item-icon flex items-center justify-center shrink-0 w-6 h-6">
+          <i [ngClass]="item.icon"></i>
         </div>
         <span class="whitespace-nowrap">{{ item.label }}</span>
         @if (item.badge) {
@@ -136,8 +139,8 @@
       [disabled]="item.disabled"
       [attr.data-testid]="item.testId"
       [attr.aria-label]="item.label">
-      <div class="flex items-center justify-center shrink-0 w-6 h-6">
-        <i [ngClass]="[item.icon, 'w-5']"></i>
+      <div class="nav-item-icon flex items-center justify-center shrink-0 w-6 h-6">
+        <i [ngClass]="item.icon"></i>
       </div>
       <span class="whitespace-nowrap">{{ item.label }}</span>
 

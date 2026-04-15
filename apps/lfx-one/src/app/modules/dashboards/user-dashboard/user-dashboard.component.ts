@@ -47,21 +47,7 @@ export class UserDashboardComponent {
 
     return 'maintainer';
   });
-  protected readonly subtitleText: Signal<string> = computed(() => {
-    const projects = this.personaService.detectedProjects();
-    const role = this.activityRoleLabel();
-
-    if (projects.length === 1) {
-      const projectName = projects[0].projectName?.trim() || 'your project';
-      return `Your ${role} activity on ${projectName}.`;
-    }
-
-    if (projects.length > 1) {
-      return `Your ${role} activity across ${projects.length} projects.`;
-    }
-
-    return 'Your activity, meetings, and actions across all projects.';
-  });
+  protected readonly subtitleText: Signal<string> = this.initSubtitleText();
   private readonly rawBoardActions: Signal<PendingActionItem[]> = this.initBoardActions();
   public readonly pendingActions: Signal<PendingActionItem[]> = computed(() => {
     const raw = this.isBoardScoped() ? this.rawBoardActions() : this.rawContributorActions();
@@ -70,6 +56,24 @@ export class UserDashboardComponent {
 
   public handleActionClick(): void {
     this.refresh$.next();
+  }
+
+  private initSubtitleText(): Signal<string> {
+    return computed(() => {
+      const projects = this.personaService.detectedProjects();
+      const role = this.activityRoleLabel();
+
+      if (projects.length === 1) {
+        const projectName = projects[0].projectName?.trim() || 'your project';
+        return `Your ${role} activity on ${projectName}.`;
+      }
+
+      if (projects.length > 1) {
+        return `Your ${role} activity across ${projects.length} projects.`;
+      }
+
+      return 'Your activity, meetings, and actions across all projects.';
+    });
   }
 
   private initBoardActions(): Signal<PendingActionItem[]> {

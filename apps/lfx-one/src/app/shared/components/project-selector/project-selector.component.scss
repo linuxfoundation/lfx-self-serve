@@ -10,20 +10,23 @@
   @apply font-medium grow leading-5 relative text-base text-gray-900 tracking-tight line-clamp-2;
 }
 
-::ng-deep {
-  .project-selector-panel {
-    @apply shadow-lg;
+// PrimeNG Popover override — hide arrow, force right-of-sidebar positioning
+// Same pattern as user-menu-popover in lens-switcher.component.scss
+::ng-deep .project-selector-panel.p-popover {
+  // Hide arrow
+  &::before,
+  &::after {
+    display: none !important;
+  }
 
-    &::before {
-      @apply hidden;
-    }
+  // Force horizontal position to the right of the full sidebar (64px lens + 280px nav = 344px)
+  left: 344px !important;
 
-    &::after {
-      @apply hidden;
-    }
+  // Align popover top with the trigger top (sidebar top + py-4 padding = 16px)
+  top: 4px !important;
 
-    .p-popover-content {
-      @apply rounded-none;
-    }
+  // When dev toolbar is visible, offset by its height (48px)
+  &.project-selector-panel--with-toolbar {
+    top: 52px !important; // 48px toolbar + 4px
   }
 }

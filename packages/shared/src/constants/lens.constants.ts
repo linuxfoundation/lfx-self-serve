@@ -31,7 +31,7 @@ export const ALL_LENSES: Readonly<Record<Lens, LensOption>> = {
   foundation: {
     id: 'foundation',
     label: 'Foundation',
-    shortLabel: 'Fdn',
+    shortLabel: 'Foundat.',
     icon: 'fa-light fa-landmark',
     activeIcon: 'fa-solid fa-landmark',
     defaultRoute: LENS_DEFAULT_ROUTES.foundation,
@@ -40,7 +40,7 @@ export const ALL_LENSES: Readonly<Record<Lens, LensOption>> = {
   project: {
     id: 'project',
     label: 'Project',
-    shortLabel: 'Proj',
+    shortLabel: 'Project',
     icon: 'fa-light fa-laptop-code',
     activeIcon: 'fa-solid fa-laptop-code',
     defaultRoute: LENS_DEFAULT_ROUTES.project,
@@ -49,7 +49,7 @@ export const ALL_LENSES: Readonly<Record<Lens, LensOption>> = {
   org: {
     id: 'org',
     label: 'Organization',
-    shortLabel: 'Org',
+    shortLabel: 'Organiz.',
     icon: 'fa-light fa-building',
     activeIcon: 'fa-solid fa-building',
     defaultRoute: LENS_DEFAULT_ROUTES.org,

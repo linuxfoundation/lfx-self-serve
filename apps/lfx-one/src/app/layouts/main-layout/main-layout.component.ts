@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, inject } from '@angular/core';
+import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, inject, model } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { LensSwitcherComponent } from '@components/lens-switcher/lens-switcher.component';
@@ -35,6 +35,9 @@ export class MainLayoutComponent {
 
   // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
+
+  // Project/foundation selector panel open state (drives the main-content backdrop)
+  protected readonly selectorPanelOpen = model(false);
 
   // Feature flags
   protected readonly showDevToolbar = this.featureFlagService.getBooleanFlag('dev-toolbar', true);
@@ -342,6 +345,7 @@ export class MainLayoutComponent {
       )
       .subscribe(() => {
         this.appService.closeMobileSidebar();
+        this.selectorPanelOpen.set(false);
         this.syncLensFromRoute();
       });
   }

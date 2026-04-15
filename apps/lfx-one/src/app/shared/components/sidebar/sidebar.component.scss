@@ -5,3 +5,12 @@
   display: block;
   height: 100%;
 }
+
+// Font Awesome injects SVGs with `height: 1em; overflow: visible; vertical-align: -.125em`
+// which causes icons at different aspect ratios to appear at inconsistent visual sizes.
+// Force all nav-item icons to a consistent 1rem height with no overflow offset.
+:host ::ng-deep .nav-item-icon .svg-inline--fa {
+  display: block;
+  height: 1rem;
+  width: auto;
+}

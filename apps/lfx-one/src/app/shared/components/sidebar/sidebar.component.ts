@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, computed, inject, input, Signal } from '@angular/core';
+import { Component, computed, inject, input, model, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { RouterModule } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
@@ -38,7 +38,9 @@ export class SidebarComponent {
   public readonly showProjectSelector = input<boolean>(false);
   public readonly showMeSelector = input<boolean>(false);
   public readonly mobile = input<boolean>(false);
+  public readonly selectorPanelOpen = model<boolean>(false);
 
+  protected readonly activeLens = this.lensService.activeLens;
   protected readonly projects = computed(() => this.personaService.detectedProjects());
   protected readonly selectorProjects = computed(() => {
     const available = this.projectContextService.availableProjects();
