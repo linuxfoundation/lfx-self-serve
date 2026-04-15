@@ -21,17 +21,18 @@ import { apiRateLimiter, authRateLimiter, publicApiRateLimiter } from './middlew
 import analyticsRouter from './routes/analytics.route';
 import committeesRouter from './routes/committees.route';
 import copilotRouter from './routes/copilot.route';
+import documentsRouter from './routes/documents.route';
 import eventsRouter from './routes/events.route';
 import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
 import organizationsRouter from './routes/organizations.route';
 import pastMeetingsRouter from './routes/past-meetings.route';
+import personaRouter from './routes/persona.route';
 import profileRouter from './routes/profile.route';
 import projectsRouter from './routes/projects.route';
 import publicCommitteesRouter from './routes/public-committees.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
 import searchRouter from './routes/search.route';
-import personaRouter from './routes/persona.route';
 import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
 import userRouter from './routes/user.route';
@@ -191,6 +192,7 @@ app.use('/api/user', personaRouter);
 app.use('/api/votes', votesRouter);
 app.use('/api/surveys', surveysRouter);
 app.use('/api/copilot', copilotRouter);
+app.use('/api/documents', documentsRouter);
 app.use('/api/events', eventsRouter);
 app.use('/api/training', trainingRouter);
 

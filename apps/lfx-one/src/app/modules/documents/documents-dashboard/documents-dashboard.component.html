@@ -1,0 +1,224 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="documents-dashboard">
+  <!-- Page Header -->
+  <div class="flex items-start justify-between mb-8">
+    <div>
+      <div class="flex items-center gap-3 mb-1">
+        <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">My {{ documentLabel.plural }}</h1>
+        <lfx-tag [value]="foundationLabel()" severity="info" styleClass="mt-1"></lfx-tag>
+      </div>
+      <p class="mt-1 text-gray-500" data-testid="documents-dashboard-description">
+        Documents, links, and attachments from your groups and meetings across all foundations.
+      </p>
+    </div>
+  </div>
+
+  <!-- Filter Bar + Table -->
+  <lfx-card data-testid="documents-table-card">
+    <!-- Filters -->
+    <div class="pb-3 mb-3 border-b border-gray-100">
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Search -->
+        <div class="flex-1 min-w-48">
+          <lfx-input-text
+            [form]="filterForm"
+            control="search"
+            placeholder="Search documents..."
+            icon="fa-light fa-search"
+            styleClass="w-full"
+            size="small"
+            data-testid="documents-search-input">
+          </lfx-input-text>
+        </div>
+
+        <!-- Foundation filter -->
+        <div class="w-40 shrink-0 overflow-hidden">
+          <lfx-select
+            [form]="filterForm"
+            control="foundation"
+            size="small"
+            [options]="foundationOptions()"
+            placeholder="All Foundations"
+            [showClear]="true"
+            [filter]="true"
+            filterPlaceholder="Search foundations..."
+            styleClass="w-full"
+            data-testid="documents-foundation-filter">
+          </lfx-select>
+        </div>
+
+        <!-- Group filter -->
+        <div class="w-36 shrink-0 overflow-hidden">
+          <lfx-select
+            [form]="filterForm"
+            control="group"
+            size="small"
+            [options]="groupOptions()"
+            placeholder="All Groups"
+            [showClear]="true"
+            [filter]="true"
+            filterPlaceholder="Search groups..."
+            styleClass="w-full"
+            data-testid="documents-group-filter">
+          </lfx-select>
+        </div>
+
+        <!-- Meeting filter -->
+        <div class="w-36 shrink-0 overflow-hidden">
+          <lfx-select
+            [form]="filterForm"
+            control="meeting"
+            size="small"
+            [options]="meetingOptions()"
+            placeholder="All Meetings"
+            [showClear]="true"
+            [filter]="true"
+            filterPlaceholder="Search meetings..."
+            styleClass="w-full"
+            data-testid="documents-meeting-filter">
+          </lfx-select>
+        </div>
+
+        <!-- Mailing list filter -->
+        <div class="w-40 shrink-0 overflow-hidden">
+          <lfx-select
+            [form]="filterForm"
+            control="mailingList"
+            size="small"
+            [options]="mailingListOptions()"
+            placeholder="All Mailing Lists"
+            [showClear]="true"
+            [filter]="true"
+            filterPlaceholder="Search mailing lists..."
+            styleClass="w-full"
+            data-testid="documents-mailing-list-filter">
+          </lfx-select>
+        </div>
+
+        <!-- Source filter -->
+        <div class="w-32 shrink-0 overflow-hidden">
+          <lfx-select
+            [form]="filterForm"
+            control="source"
+            size="small"
+            [options]="sourceOptions"
+            placeholder="All Sources"
+            [showClear]="true"
+            styleClass="w-full"
+            data-testid="documents-source-filter">
+          </lfx-select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table -->
+    <lfx-table
+      [value]="filteredDocuments()"
+      [paginator]="true"
+      [rows]="10"
+      [rowsPerPageOptions]="[10, 25, 50]"
+      [loading]="loading()"
+      [showPageLinks]="false"
+      [showFirstLastIcon]="false"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      data-testid="documents-table">
+      <ng-template #header>
+        <tr>
+          <th class="w-[35%]">Name</th>
+          <th class="w-[20%]">Foundation</th>
+          <th class="w-[20%]">Group / Meeting</th>
+          <th class="w-[10%]">Source</th>
+          <th class="w-[10%]">Date</th>
+          <th class="w-[5%]">Actions</th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-doc let-rowIndex="rowIndex">
+        <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'documents-row-' + doc.id">
+          <!-- Name column -->
+          <td>
+            <div class="flex items-center gap-2">
+              <i [class]="(doc.source | myDocumentSourceTag: 'icon') + ' ' + (doc.source | myDocumentSourceTag: 'iconClass')" class="text-base shrink-0"></i>
+              @if (doc.url) {
+                <button
+                  type="button"
+                  class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0 truncate"
+                  (click)="openDocument(doc)"
+                  [attr.data-testid]="'documents-name-' + doc.id">
+                  {{ doc.name }}
+                </button>
+              } @else {
+                <span class="text-xs text-gray-900 truncate">{{ doc.name }}</span>
+              }
+            </div>
+          </td>
+
+          <!-- Foundation column -->
+          <td>
+            <span class="text-xs text-gray-700">{{ doc.foundationName || '—' }}</span>
+          </td>
+
+          <!-- Group / Meeting column -->
+          <td>
+            <span class="text-xs text-gray-700">{{ doc.groupOrMeetingName || '—' }}</span>
+          </td>
+
+          <!-- Source column -->
+          <td>
+            <lfx-tag
+              [value]="doc.source | myDocumentSourceTag: 'label'"
+              [severity]="doc.source | myDocumentSourceTag: 'severity'"
+              [attr.data-testid]="'documents-source-tag-' + doc.id">
+            </lfx-tag>
+          </td>
+
+          <!-- Date column -->
+          <td>
+            <span class="text-xs text-gray-700">{{ doc.date | date: 'MMM d, y' }}</span>
+          </td>
+
+          <!-- Actions column -->
+          <td>
+            <div class="flex items-center justify-end gap-1">
+              @if (doc.source === 'file' && doc.attachmentUid) {
+                <lfx-button
+                  icon="fa-light fa-arrow-down-to-line"
+                  severity="primary"
+                  size="small"
+                  [text]="true"
+                  (onClick)="openDocument(doc)"
+                  [attr.data-testid]="'documents-download-' + doc.id"
+                  tooltip="Download"
+                  tooltipPosition="top">
+                </lfx-button>
+              } @else if (doc.url) {
+                <lfx-button
+                  [icon]="doc.source === 'recording' ? 'fa-solid fa-circle-play' : 'fa-light fa-arrow-up-right-from-square'"
+                  severity="primary"
+                  size="small"
+                  [text]="true"
+                  (onClick)="openDocument(doc)"
+                  [attr.data-testid]="'documents-open-' + doc.id"
+                  [tooltip]="doc.source === 'recording' ? 'Play recording' : 'Open'"
+                  tooltipPosition="top">
+                </lfx-button>
+              }
+            </div>
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="6" class="text-center py-8">
+            <i class="fa-light fa-file-lines text-3xl text-gray-400 mb-2 block"></i>
+            <p class="text-sm text-gray-500">No documents found</p>
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  </lfx-card>
+</div>

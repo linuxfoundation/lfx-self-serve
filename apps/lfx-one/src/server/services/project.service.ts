@@ -2062,6 +2062,52 @@ export class ProjectService {
   }
 
   /**
+   * Resolves a batch of project UIDs to display names using NATS.
+   * Uses bounded parallelism (10 concurrent) to avoid overwhelming the projects-api.
+   * UIDs that fail or return empty names are silently omitted from the result map.
+   * @param req - Express request object
+   * @param uids - Array of unique project UIDs to resolve
+   * @returns Map of project UID → display name
+   */
+  public async getProjectNamesByUids(req: Request, uids: string[]): Promise<Map<string, string>> {
+    if (uids.length === 0) return new Map();
+
+    logger.debug(req, 'get_project_names_by_uids', 'Resolving project names via NATS', { uid_count: uids.length });
+
+    const codec = this.natsService.getCodec();
+    const CONCURRENCY = 10;
+    const nameMap = new Map<string, string>();
+
+    for (let i = 0; i < uids.length; i += CONCURRENCY) {
+      const batch = uids.slice(i, i + CONCURRENCY);
+      const results = await Promise.all(
+        batch.map((uid) =>
+          this.natsService
+            .request(NatsSubjects.PROJECT_GET_NAME, codec.encode(uid), { timeout: NATS_CONFIG.REQUEST_TIMEOUT })
+            .then((r) => codec.decode(r.data).trim())
+            .catch((err) => {
+              logger.debug(req, 'get_project_names_by_uids', 'NATS lookup failed for uid', {
+                uid,
+                error: err instanceof Error ? err.message : String(err),
+              });
+              return '';
+            })
+        )
+      );
+      batch.forEach((uid, j) => {
+        if (results[j]) nameMap.set(uid, results[j]);
+      });
+    }
+
+    logger.debug(req, 'get_project_names_by_uids', 'Resolved project names', {
+      requested: uids.length,
+      resolved: nameMap.size,
+    });
+
+    return nameMap;
+  }
+
+  /**
    * Get social media metrics from Snowflake Platinum tables
    * Queries ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_OVERVIEW, ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_PLATFORM_BREAKDOWN, and ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_FOLLOWER_TREND
    * @param foundationName - Foundation name used to filter by FOUNDATION_NAME (e.g., 'The Linux Foundation')
