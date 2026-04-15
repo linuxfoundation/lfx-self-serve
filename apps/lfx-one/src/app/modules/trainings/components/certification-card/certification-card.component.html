@@ -8,7 +8,7 @@
       class="flex-shrink-0 w-14 h-14 flex items-center justify-center overflow-hidden rounded-xl bg-gray-50 border border-gray-100"
       data-testid="cert-card-image-container">
       @if (hasImage()) {
-        <img [src]="cert().imageUrl" [alt]="cert().name" class="w-14 h-14 object-contain" data-testid="cert-card-image" />
+        <img [src]="cert().imageUrl" [alt]="cert().name" class="w-14 h-14 object-cover scale-[1.16] origin-[center_60%]" data-testid="cert-card-image" />
       } @else {
         <i class="fa-light fa-graduation-cap text-2xl text-gray-400" data-testid="cert-card-icon-fallback"></i>
       }
@@ -34,7 +34,8 @@
             <div data-testid="cert-card-actions">
               <lfx-button
                 severity="secondary"
-                styleClass="!text-xs !h-8 !py-0"
+                size="small"
+                styleClass="whitespace-nowrap"
                 label="Download"
                 icon="fa-light fa-arrow-down-to-line"
                 [href]="cert().downloadUrl!"

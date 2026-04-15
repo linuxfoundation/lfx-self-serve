@@ -9,10 +9,11 @@ import { Request } from 'express';
 
 import { logger } from './logger.service';
 import { SnowflakeService } from './snowflake.service';
+import { tiService } from './ti.service';
 
 const CERTIFICATES_BASE_QUERY = `
   SELECT _KEY, IDENTIFIER, COURSE_NAME, COURSE_GROUP_DESCRIPTION,
-         LOGO_URL, PROJECT_NAME, ISSUED_TS, EXPIRATION_DATE, DOWNLOAD_URL, LEVEL
+         LOGO_URL, PROJECT_NAME, ISSUED_TS, EXPIRATION_DATE, DOWNLOAD_URL, LEVEL, COURSE_ID
   FROM ANALYTICS.PLATINUM_LFX_ONE.USER_CERTIFICATES
   WHERE USER_NAME = ?`;
 
@@ -27,7 +28,7 @@ const CERTIFICATES_UNFILTERED_QUERY = `${CERTIFICATES_BASE_QUERY}
 
 const ENROLLMENTS_QUERY = `
   SELECT ENROLLMENT_ID, ENROLLMENT_TS, COURSE_NAME, COURSE_GROUP_DESCRIPTION,
-         LOGO_URL, PROJECT_NAME, LEVEL, COURSE_SLUG
+         LOGO_URL, PROJECT_NAME, LEVEL, COURSE_SLUG, COURSE_ID
   FROM ANALYTICS.PLATINUM_LFX_ONE.USER_COURSE_ENROLLMENTS
   WHERE USER_NAME = ? AND PRODUCT_TYPE = ?
   ORDER BY ENROLLMENT_TS DESC
@@ -61,7 +62,10 @@ export class TrainingService {
 
     logger.debug(req, 'get_certifications', 'Fetched certifications', { count: result.rows.length });
 
-    return result.rows.map((row) => this.mapRowToCertification(row));
+    const certifications = result.rows.map((row) => this.mapRowToCertification(row));
+    const courseIds = result.rows.map((row) => row.COURSE_ID);
+
+    return this.enrichWithTiLogos(req, certifications, courseIds);
   }
 
   public async getEnrollments(req: Request, username: string): Promise<TrainingEnrollment[]> {
@@ -81,7 +85,35 @@ export class TrainingService {
 
     logger.debug(req, 'get_enrollments', 'Fetched enrollments', { count: result.rows.length });
 
-    return result.rows.map((row) => this.mapRowToEnrollment(row));
+    const enrollments = result.rows.map((row) => this.mapRowToEnrollment(row));
+    const courseIds = result.rows.map((row) => row.COURSE_ID);
+
+    return this.enrichWithTiLogos(req, enrollments, courseIds);
+  }
+
+  // ─── Private Enrichment Methods ────────────────────────────────────────────
+
+  /**
+   * Enriches items with logo URLs fetched from the TI API.
+   * Course IDs that are null or have no TI match are left with their existing imageUrl.
+   */
+  private async enrichWithTiLogos<T extends { imageUrl: string }>(
+    req: Request,
+    items: T[],
+    courseIds: (string | null)[],
+  ): Promise<T[]> {
+    const validIds = courseIds.filter((id): id is string => Boolean(id));
+    if (validIds.length === 0) return items;
+
+    const logoMap = await tiService.getLogoUrls(req, validIds);
+    if (logoMap.size === 0) return items;
+
+    logger.info(req, 'enrich_ti_logos', 'Enriched with TI logo URLs', { enriched: logoMap.size });
+
+    return items.map((item, i) => {
+      const courseId = courseIds[i];
+      return courseId && logoMap.has(courseId) ? { ...item, imageUrl: logoMap.get(courseId)! } : item;
+    });
   }
 
   private mapRowToCertification(row: CertificateRow): Certification {

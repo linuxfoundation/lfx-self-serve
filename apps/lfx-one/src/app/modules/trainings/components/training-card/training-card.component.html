@@ -8,7 +8,11 @@
       class="flex-shrink-0 w-14 h-14 flex items-center justify-center overflow-hidden rounded-xl bg-gray-50 border border-gray-100"
       data-testid="training-card-image-container">
       @if (hasImage()) {
-        <img [src]="training().imageUrl" [alt]="training().name" class="w-14 h-14 object-contain" data-testid="training-card-image" />
+        <img
+          [src]="training().imageUrl"
+          [alt]="training().name"
+          class="w-14 h-14 object-cover scale-[1.16] origin-[center_60%]"
+          data-testid="training-card-image" />
       } @else {
         <i class="fa-light fa-book-open text-2xl text-gray-400" data-testid="training-card-icon-fallback"></i>
       }
@@ -35,12 +39,11 @@
 
         @if (isOngoing()) {
           <div class="flex-shrink-0" data-testid="training-card-continue-action">
-            <!-- TODO: replace !important overrides with a size="sm" input on ButtonComponent (LFXV2-TODO) -->
             <lfx-button
-              severity="secondary"
-              styleClass="!text-xs !h-8 !py-0"
+              severity="primary"
+              size="small"
+              styleClass="whitespace-nowrap"
               label="Continue Learning"
-              icon="fa-light fa-arrow-right"
               [href]="continueLearningUrl()"
               target="_blank"
               rel="noopener noreferrer"
@@ -49,10 +52,10 @@
           </div>
         } @else if (downloadUrl()) {
           <div class="flex-shrink-0" data-testid="training-card-actions">
-            <!-- TODO: replace !important overrides with a size="sm" input on ButtonComponent (LFXV2-TODO) -->
             <lfx-button
               severity="secondary"
-              styleClass="!text-xs !h-8 !py-0"
+              size="small"
+              styleClass="whitespace-nowrap"
               label="Download Certificate"
               icon="fa-light fa-arrow-down-to-line"
               [href]="downloadUrl()!"

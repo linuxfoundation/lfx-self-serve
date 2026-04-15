@@ -69,6 +69,7 @@ of conduct, development process, and how to submit pull requests.
 
    **Optional variables** (not needed for basic development):
    - `AI_PROXY_URL` / `AI_API_KEY` — For AI-powered features (meeting agenda generation)
+   - `TI_API_KEY` — For enriching course logo URLs via the Thought Industries API (training module); falls back to generic icons when absent
    - `TEST_USERNAME` / `TEST_PASSWORD` — For automated E2E testing
 
 #### Install and Run
