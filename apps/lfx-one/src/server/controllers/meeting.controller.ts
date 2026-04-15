@@ -199,7 +199,10 @@ export class MeetingController {
       const [registrants, meetingWithInvitedStatus] = await Promise.all([
         // TODO: Remove this once we have a way to get the registrants count
         this.meetingService.getMeetingRegistrants(req, meeting.id).catch((error) => {
-          logger.error(req, 'get_meeting_by_id', startTime, error, { meeting_id: uid });
+          logger.warning(req, 'get_meeting_by_id', 'Failed to fetch registrants for meeting', {
+            meeting_id: uid,
+            err: error,
+          });
           return null;
         }),
         addInvitedStatusToMeeting(req, meeting, userEmail),
@@ -1467,7 +1470,6 @@ export class MeetingController {
 
       res.status(201).json(result);
     } catch (error) {
-      logger.error(req, 'upload_meeting_attachment', startTime, error, { meeting_id: uid, file_name: name });
       next(error);
     }
   }

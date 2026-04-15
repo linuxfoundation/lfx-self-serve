@@ -40,7 +40,6 @@ export class TrainingController {
 
       res.json(certifications);
     } catch (error) {
-      logger.error(req, 'get_certifications', startTime, error);
       next(error);
     }
   }
@@ -70,7 +69,6 @@ export class TrainingController {
 
       res.json(enrollments);
     } catch (error) {
-      logger.error(req, 'get_enrollments', startTime, error);
       next(error);
     }
   }

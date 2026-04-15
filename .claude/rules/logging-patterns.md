@@ -47,7 +47,9 @@ logger.success(undefined, 'nats_connect', startTime, metadata);
 
 **Controllers (HTTP Boundary):**
 
-- Always use `logger.startOperation()` / `logger.success()` / `logger.error()` for HTTP operations
+- Always use `logger.startOperation()` / `logger.success()` for HTTP operations
+- **Do NOT call `logger.error()` in controller catch blocks** — just call `next(error)`. The `apiErrorHandler` middleware logs all errors centrally with full structured context (error type, status code, request ID, path, method, user agent). Adding `logger.error()` before `next(error)` creates redundant logging.
+- **Exception**: Controllers that handle their own response in the catch block (e.g., SSE streaming with `res.end()`) must log errors themselves since `apiErrorHandler` is never reached.
 - Operation names should match HTTP semantics (e.g., `get_meeting_rsvps`, `create_meeting`)
 - Duration represents full HTTP request to response cycle
 - One startOperation per HTTP endpoint
@@ -76,9 +78,12 @@ logger.success(undefined, 'nats_connect', startTime, metadata);
 **Always use `err` field** for proper error serialization:
 
 ```typescript
-// CORRECT
+// CORRECT — in services or infrastructure (not in controller catch blocks)
 logger.error(req, 'operation', startTime, error, metadata);
 logger.error(undefined, 'operation', startTime, error, metadata);
+
+// CORRECT — in controller catch blocks (apiErrorHandler logs centrally)
+next(error);
 
 // INCORRECT
 serverLogger.error({ error: error.message }, 'message'); // Don't use serverLogger directly
@@ -139,7 +144,7 @@ This means: 0 INFO lines for read endpoints, 1 INFO line for write endpoints, al
 
 **ERROR** — Critical failures:
 
-- **In Controllers**: HTTP operation failures (via `logger.error()` with startTime)
+- **In Controllers**: Handled centrally by `apiErrorHandler` — controllers should NOT call `logger.error()` in catch blocks (just call `next(error)`)
 - System failures, unhandled exceptions
 - Critical errors requiring immediate attention
 - Operations that cannot continue
@@ -199,7 +204,7 @@ export const getUser = async (req: Request, res: Response, next: NextFunction) =
     logger.success(req, 'get_user', startTime, { userId: user.id });
     return res.json(user);
   } catch (error) {
-    logger.error(req, 'get_user', startTime, error, { userId: req.params.id });
+    // Do NOT call logger.error() here — apiErrorHandler logs centrally
     return next(error);
   }
 };
@@ -325,7 +330,8 @@ private async fetchFromNats(req: Request, slug: string): Promise<Project> {
 **For Controllers:**
 
 - [ ] Using `logger.startOperation()` for HTTP operations?
-- [ ] Calling `logger.success()` or `logger.error()` with `startTime`?
+- [ ] Calling `logger.success()` on the happy path with `startTime`?
+- [ ] Using bare `next(error)` in catch blocks (no `logger.error()`) — `apiErrorHandler` logs centrally?
 - [ ] Not duplicating service-level logging?
 
 **For Services:**

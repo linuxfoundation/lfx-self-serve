@@ -28,10 +28,12 @@ export function apiErrorHandler(error: Error | BaseApiError, req: Request, res: 
     return;
   }
 
-  const operation = getOperationFromPath(req.path);
-
-  // Try to get the operation start time if it was tracked, otherwise use current time
-  const startTime = logger.getOperationStartTime(req, operation) || Date.now();
+  // Prefer the controller's registered operation name and start time over path-derived values.
+  // Controllers register operations via logger.startOperation(req, 'get_meetings', ...),
+  // which won't match the path-derived name (e.g., 'api_meetings').
+  const lastOp = logger.getLastOperation(req);
+  const operation = lastOp?.operation || getOperationFromPath(req.path);
+  const startTime = lastOp?.startTime || Date.now();
 
   // Handle our structured API errors
   if (isBaseApiError(error)) {

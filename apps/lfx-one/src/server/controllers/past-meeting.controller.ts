@@ -57,8 +57,6 @@ export class PastMeetingController {
       // Send the meetings data to the client
       res.json({ data: meetings, page_token });
     } catch (error) {
-      // Log the error
-      logger.error(req, 'get_past_meetings', startTime, error);
       next(error);
     }
   }
@@ -98,9 +96,6 @@ export class PastMeetingController {
 
       res.json(meeting);
     } catch (error) {
-      logger.error(req, 'get_past_meeting_by_id', startTime, error, {
-        past_meeting_id: uid,
-      });
       next(error);
     }
   }
@@ -137,12 +132,6 @@ export class PastMeetingController {
       // Send the participants data to the client
       res.json(participants);
     } catch (error) {
-      // Log the error
-      logger.error(req, 'get_past_meeting_participants', startTime, error, {
-        past_meeting_id: uid,
-      });
-
-      // Send the error to the next middleware
       next(error);
     }
   }
@@ -190,12 +179,6 @@ export class PastMeetingController {
       // Send the recording data to the client
       res.json(recording);
     } catch (error) {
-      // Log the error
-      logger.error(req, 'get_past_meeting_recording', startTime, error, {
-        past_meeting_id: uid,
-      });
-
-      // Send the error to the next middleware
       next(error);
     }
   }
@@ -243,12 +226,6 @@ export class PastMeetingController {
       // Send the summary data to the client
       res.json(summary);
     } catch (error) {
-      // Log the error
-      logger.error(req, 'get_past_meeting_summary', startTime, error, {
-        past_meeting_id: uid,
-      });
-
-      // Send the error to the next middleware
       next(error);
     }
   }
@@ -285,12 +262,6 @@ export class PastMeetingController {
       // Send the attachments data to the client
       res.json(attachments);
     } catch (error) {
-      // Log the error
-      logger.error(req, 'get_past_meeting_attachments', startTime, error, {
-        past_meeting_id: uid,
-      });
-
-      // Send the error to the next middleware
       next(error);
     }
   }
@@ -343,13 +314,6 @@ export class PastMeetingController {
       // Send the updated summary data to the client
       res.json(updatedSummary);
     } catch (error) {
-      // Log the error
-      logger.error(req, 'update_past_meeting_summary', startTime, error, {
-        past_meeting_id: uid,
-        summary_uid: summaryUid,
-      });
-
-      // Send the error to the next middleware
       next(error);
     }
   }
@@ -387,10 +351,6 @@ export class PastMeetingController {
 
       res.json(attachment);
     } catch (error) {
-      logger.error(req, 'get_past_meeting_attachment', startTime, error, {
-        past_meeting_id: uid,
-        attachment_id: attachmentId,
-      });
       next(error);
     }
   }
@@ -428,10 +388,6 @@ export class PastMeetingController {
 
       res.json(result);
     } catch (error) {
-      logger.error(req, 'get_past_meeting_attachment_download_url', startTime, error, {
-        past_meeting_id: uid,
-        attachment_id: attachmentId,
-      });
       next(error);
     }
   }

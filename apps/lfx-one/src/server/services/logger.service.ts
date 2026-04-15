@@ -436,6 +436,24 @@ export class LoggerService {
   }
 
   /**
+   * Gets the last registered operation for a request.
+   * Used by apiErrorHandler to find the controller's operation name and start time
+   * without needing to derive it from the request path.
+   */
+  public getLastOperation(req: Request): OperationState | undefined {
+    const stack = this.operationStacks.get(req);
+    if (!stack || stack.size === 0) return undefined;
+
+    let latest: OperationState | undefined;
+    for (const op of stack.values()) {
+      if (!latest || op.startTime > latest.startTime) {
+        latest = op;
+      }
+    }
+    return latest;
+  }
+
+  /**
    * Get or create the operation stack for a request
    */
   private getOperationStack(req: Request): Map<string, OperationState> {
