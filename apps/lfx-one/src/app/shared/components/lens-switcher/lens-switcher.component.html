@@ -17,6 +17,15 @@
 
     <!-- Mobile account actions -->
     <div class="ml-auto flex items-center gap-2">
+      @if (canImpersonate() && !isImpersonating()) {
+        <lfx-button
+          icon="fa-light fa-user-secret"
+          [text]="true"
+          [rounded]="true"
+          ariaLabel="Impersonate user"
+          (onClick)="openImpersonationDialog()"
+          data-testid="lens-mobile-impersonate" />
+      }
       <a
         [routerLink]="['/profile']"
         data-testid="lens-mobile-profile"
@@ -102,6 +111,22 @@
           <i class="fa-light fa-chart-simple text-xl"></i>
         </div>
       </a>
+
+      <!-- Impersonation Button (only for authorized users) -->
+      @if (canImpersonate() && !isImpersonating()) {
+        <button
+          type="button"
+          (click)="openImpersonationDialog()"
+          data-testid="lens-impersonate-button"
+          aria-label="Impersonate user"
+          pTooltip="Impersonate User"
+          tooltipPosition="right"
+          class="group flex flex-col items-center gap-1 w-full transition-colors text-blue-200/70 hover:text-white">
+          <div class="flex items-center justify-center w-10 h-10 rounded-xl transition-colors group-hover:bg-white/10">
+            <i class="fa-light fa-user-secret text-xl"></i>
+          </div>
+        </button>
+      }
 
       <!-- Divider -->
       <hr class="w-6 border-white/20" />

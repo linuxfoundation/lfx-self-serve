@@ -7,6 +7,7 @@ import { NextFunction, Request, Response } from 'express';
 import { ServiceValidationError } from '../errors';
 import { CopilotService } from '../services/copilot.service';
 import { logger } from '../services/logger.service';
+import { getEffectiveSub } from '../utils/auth-helper';
 
 export class CopilotController {
   private readonly copilotService = new CopilotService();
@@ -28,7 +29,7 @@ export class CopilotController {
     const validSessionId = typeof sessionId === 'string' && sessionId.trim() ? sessionId.trim() : undefined;
     const validContext = context && typeof context === 'object' && !Array.isArray(context) ? context : undefined;
 
-    const userId = (req.oidc?.user?.['sub'] as string) || 'anonymous';
+    const userId = getEffectiveSub(req) || 'anonymous';
 
     const startTime = logger.startOperation(req, 'copilot_chat', {
       has_session: !!validSessionId,

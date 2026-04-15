@@ -17,6 +17,7 @@ import {
 import { Request } from 'express';
 
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { getEffectiveEmail } from '../utils/auth-helper';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -304,7 +305,7 @@ export class DocumentService {
   private async fetchRawMeetingAttachments(req: Request): Promise<MeetingAttachment[]> {
     logger.debug(req, 'get_my_documents', 'Fetching user meeting registrations for attachments');
 
-    const email = (req.oidc?.user?.['email'] as string | undefined)?.toLowerCase();
+    const email = getEffectiveEmail(req) ?? undefined;
 
     // Delegate registrant lookup to UserService which handles email+username dual lookup
     // with M2M tokens (required because registrant queries search across all participants

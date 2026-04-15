@@ -116,5 +116,8 @@ export * from './ti.interface';
 // My Documents interfaces
 export * from './my-document.interface';
 
+// Impersonation interfaces
+export * from './impersonation.interface';
+
 // Health Metrics interfaces
 export * from './health-metrics.interface';

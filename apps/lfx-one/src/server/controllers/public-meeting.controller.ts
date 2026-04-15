@@ -13,6 +13,7 @@ import { validateUidParameter } from '../helpers/validation.helper';
 import { AccessCheckService } from '../services/access-check.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
+import { getEffectiveEmail } from '../utils/auth-helper';
 import { ProjectService } from '../services/project.service';
 import { generateM2MToken } from '../utils/m2m-token.util';
 import { validatePassword } from '../utils/security.util';
@@ -63,7 +64,7 @@ export class PublicMeetingController {
       const [project, meetingWithInvited] = await Promise.all([
         this.projectService.getProjectById(req, meeting.project_uid, false),
         isAuthenticated
-          ? addInvitedStatusToMeeting(req, meeting, (req.oidc.user?.['email'] as string) || '', m2mToken)
+          ? addInvitedStatusToMeeting(req, meeting, getEffectiveEmail(req) || '', m2mToken)
           : Promise.resolve(Object.assign(meeting, { invited: false })),
       ]);
       meeting = meetingWithInvited;
@@ -264,7 +265,8 @@ export class PublicMeetingController {
   public async postMeetingJoinUrl(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { id } = req.params;
     const { password } = req.query;
-    const email: string = req.body.email ?? req.oidc.user?.['email'] ?? '';
+    const bodyEmail = typeof req.body.email === 'string' ? req.body.email.trim() : '';
+    const email: string = bodyEmail || getEffectiveEmail(req) || '';
     const startTime = logger.startOperation(req, 'post_meeting_link', {
       meeting_id: id,
     });

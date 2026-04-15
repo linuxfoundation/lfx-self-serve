@@ -6,6 +6,7 @@ import { NextFunction, Request, Response } from 'express';
 
 import { AuthenticationError } from '../errors';
 import { logger } from '../services/logger.service';
+import { clearImpersonationSession, decodeJwtPayload } from '../utils/auth-helper';
 
 // OIDC middleware already provides req.oidc with authentication context
 
@@ -104,6 +105,40 @@ async function extractBearerToken(req: Request, isOptionalRoute: boolean = false
 
   try {
     if (req.oidc?.isAuthenticated()) {
+      // Check for active impersonation token first
+      const impersonationToken = req.appSession?.['impersonationToken'];
+      const impersonationExpiresAt = req.appSession?.['impersonationExpiresAt'];
+
+      if (impersonationToken && typeof impersonationToken === 'string' && impersonationExpiresAt && Date.now() < impersonationExpiresAt) {
+        // Validate JWT payload is decodable before using
+        if (!decodeJwtPayload(impersonationToken)) {
+          // Malformed token — clean up and fall through to normal extraction
+          logger.warning(req, 'impersonation_token_malformed', 'Impersonation token has invalid JWT format, clearing session', {
+            path: req.path,
+          });
+          clearImpersonationSession(req);
+        } else {
+          req.bearerToken = impersonationToken;
+
+          logger.debug(req, 'impersonation_request', 'Request under impersonation', {
+            path: req.path,
+            impersonator_sub: req.appSession?.['impersonator']?.sub,
+            target_sub: req.appSession?.['impersonationUser']?.sub,
+          });
+          return { success: true, needsLogout: false };
+        }
+      }
+
+      // If impersonation token is expired, clear it and fall through to normal extraction
+      if (impersonationToken && impersonationExpiresAt && Date.now() >= impersonationExpiresAt) {
+        logger.warning(req, 'impersonation_token_expired', 'Impersonation token expired, clearing session', {
+          path: req.path,
+          impersonator: req.appSession?.['impersonator']?.email,
+          target: req.appSession?.['impersonationUser']?.email,
+        });
+        clearImpersonationSession(req);
+      }
+
       // Check if token exists and is expired
       if (req.oidc.accessToken?.isExpired()) {
         try {

@@ -11,16 +11,19 @@ import { ALL_LENSES, COMMITTEE_LABEL, DOCUMENT_LABEL, MAILING_LIST_LABEL, SURVEY
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AppService } from '@services/app.service';
 import { FeatureFlagService } from '@services/feature-flag.service';
+import { ImpersonationService } from '@services/impersonation.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
+import { UserService } from '@services/user.service';
 import { DrawerModule } from 'primeng/drawer';
-import { filter } from 'rxjs';
+import { filter, take } from 'rxjs';
 
+import { ButtonComponent } from '@components/button/button.component';
 import { DevToolbarComponent } from '../dev-toolbar/dev-toolbar.component';
 
 @Component({
   selector: 'lfx-main-layout',
-  imports: [NgClass, RouterModule, SidebarComponent, DrawerModule, DevToolbarComponent, LensSwitcherComponent],
+  imports: [NgClass, RouterModule, SidebarComponent, DrawerModule, DevToolbarComponent, LensSwitcherComponent, ButtonComponent],
   templateUrl: './main-layout.component.html',
   styleUrl: './main-layout.component.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -32,6 +35,8 @@ export class MainLayoutComponent {
   private readonly featureFlagService = inject(FeatureFlagService);
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
+  private readonly impersonationService = inject(ImpersonationService);
+  protected readonly userService = inject(UserService);
 
   // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
   protected readonly showMobileSidebar = this.appService.showMobileSidebar;
@@ -378,6 +383,15 @@ export class MainLayoutComponent {
     if (!visible) {
       this.appService.closeMobileSidebar();
     }
+  }
+
+  protected stopImpersonation(): void {
+    this.impersonationService
+      .stopImpersonation()
+      .pipe(take(1))
+      .subscribe(() => {
+        window.location.reload();
+      });
   }
 
   /**

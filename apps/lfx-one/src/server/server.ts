@@ -23,6 +23,7 @@ import committeesRouter from './routes/committees.route';
 import copilotRouter from './routes/copilot.route';
 import documentsRouter from './routes/documents.route';
 import eventsRouter from './routes/events.route';
+import impersonationRouter from './routes/impersonation.route';
 import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
 import organizationsRouter from './routes/organizations.route';
@@ -39,6 +40,7 @@ import userRouter from './routes/user.route';
 import votesRouter from './routes/votes.route';
 import { reqSerializer, resSerializer, serverLogger } from './server-logger';
 import { logger } from './services/logger.service';
+import { clearImpersonationSession, decodeJwtPayload } from './utils/auth-helper';
 import { resolvePersonaForSsr } from './utils/persona-helper';
 
 if (process.env['NODE_ENV'] !== 'production') {
@@ -194,6 +196,7 @@ app.use('/api/surveys', surveysRouter);
 app.use('/api/copilot', copilotRouter);
 app.use('/api/documents', documentsRouter);
 app.use('/api/events', eventsRouter);
+app.use('/api/impersonate', impersonationRouter);
 app.use('/api/training', trainingRouter);
 
 // Add API error handler middleware
@@ -246,6 +249,45 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     auth.persona = personaResult.persona;
     auth.personas = personaResult.personas;
     auth.organizations = personaResult.organizations ?? [];
+  }
+
+  // Check if user can impersonate (from access token custom claim)
+  if (req.oidc?.accessToken?.access_token) {
+    try {
+      const payload = decodeJwtPayload(req.oidc.accessToken.access_token);
+      if (payload) {
+        auth.canImpersonate = payload['http://lfx.dev/claims/can_impersonate'] === true;
+      }
+    } catch {
+      // JWT decode failed — canImpersonate stays false
+    }
+  }
+
+  // Override user identity when impersonating
+  if (req.appSession?.['impersonationToken'] && req.appSession?.['impersonationUser']) {
+    const impersonationExpiresAt = req.appSession['impersonationExpiresAt'];
+    if (impersonationExpiresAt && Date.now() < impersonationExpiresAt) {
+      try {
+        const targetClaims = decodeJwtPayload(req.appSession['impersonationToken']);
+        if (!targetClaims) throw new Error('Invalid token format');
+
+        const impersonationUser = req.appSession['impersonationUser'];
+        if (!auth.user) throw new Error('No authenticated user for impersonation override');
+        Object.assign(auth.user, {
+          sub: targetClaims.sub,
+          email: targetClaims['http://lfx.dev/claims/email'] || '',
+          username: targetClaims['http://lfx.dev/claims/username'] || '',
+          'https://sso.linuxfoundation.org/claims/username': targetClaims['http://lfx.dev/claims/username'] || '',
+          name: impersonationUser?.name || targetClaims['http://lfx.dev/claims/username'] || '',
+          nickname: targetClaims['http://lfx.dev/claims/username'] || '',
+          picture: impersonationUser?.picture || auth.user?.picture || '',
+        });
+        auth.impersonating = true;
+        auth.impersonator = req.appSession['impersonator'];
+      } catch {
+        clearImpersonationSession(req);
+      }
+    }
   }
 
   // Build runtime config from environment variables

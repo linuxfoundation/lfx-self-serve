@@ -15,7 +15,7 @@ import { Request } from 'express';
 import { ResourceNotFoundError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
 import { ProjectService } from './project.service';
@@ -259,7 +259,7 @@ export class VoteService {
   public async getMyVotes(req: Request, projectUid?: string, foundationUid?: string): Promise<Vote[]> {
     const rawUsername = await getUsernameFromAuth(req);
     const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-    const email = (req.oidc?.user?.['email'] as string)?.toLowerCase();
+    const email = getEffectiveEmail(req);
 
     logger.debug(req, 'get_my_votes', 'Fetching votes for current user', {
       username,

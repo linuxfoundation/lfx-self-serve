@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import type { Account } from './account.interface';
+import type { Impersonator } from './impersonation.interface';
 import type { PersonaType } from './persona.interface';
 
 /**
@@ -60,6 +61,12 @@ export interface AuthContext {
   personas?: PersonaType[];
   /** User's affiliated organizations from committee memberships */
   organizations?: Account[];
+  /** Whether the user has permission to impersonate other users */
+  canImpersonate?: boolean;
+  /** Whether the current session is impersonating another user */
+  impersonating?: boolean;
+  /** Information about the admin performing impersonation */
+  impersonator?: Impersonator;
 }
 
 /**

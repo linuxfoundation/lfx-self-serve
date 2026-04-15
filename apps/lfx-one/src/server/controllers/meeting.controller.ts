@@ -30,7 +30,7 @@ import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
-import { getUsernameFromAuth, usernameMatches } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth, usernameMatches } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -72,7 +72,7 @@ export class MeetingController {
         return;
       }
 
-      const userEmail = (req.oidc.user?.['email'] as string)?.toLowerCase() || '';
+      const userEmail = getEffectiveEmail(req) || '';
       const username = await getUsernameFromAuth(req);
       const registrantsByMeeting = await Promise.all(
         meetings.map(async (m) => {
@@ -193,7 +193,7 @@ export class MeetingController {
         title: meeting.title,
       });
 
-      const userEmail = (req.oidc.user?.['email'] as string) || '';
+      const userEmail = getEffectiveEmail(req) || '';
 
       // Run registrant counts and invited status check in parallel
       const [registrants, meetingWithInvitedStatus] = await Promise.all([
@@ -490,7 +490,7 @@ export class MeetingController {
       // }
 
       // Step 5: Check if current user is a registrant (access control)
-      const userEmail = req.oidc?.user?.['email'] as string | undefined;
+      const userEmail = getEffectiveEmail(req) ?? undefined;
 
       logger.debug(req, 'get_my_meeting_registrants', 'Checking user authentication', {
         meeting_id: uid,

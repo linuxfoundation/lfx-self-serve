@@ -8,6 +8,7 @@ import { NextFunction, Request, Response } from 'express';
 import { ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { ProjectService } from '../services/project.service';
+import { getEffectiveEmail } from '../utils/auth-helper';
 
 /**
  * Controller for handling project HTTP requests
@@ -370,8 +371,8 @@ export class ProjectController {
     const startTime = logger.startOperation(req, 'get_pending_action_surveys');
 
     try {
-      // Extract user email from OIDC
-      const userEmail = req.oidc?.user?.['email'];
+      // Extract user email from auth context (impersonation-aware)
+      const userEmail = getEffectiveEmail(req);
       if (!userEmail) {
         const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
           operation: 'get_pending_action_surveys',

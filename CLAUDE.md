@@ -140,6 +140,7 @@ Detailed patterns are in `.claude/rules/` and loaded contextually based on file 
 | [Drawer Pattern](docs/architecture/frontend/drawer-pattern.md)                 | Drawer components, lazy loading, chart integration |
 | [Backend Architecture](docs/architecture/backend/README.md)                    | Controller-Service pattern, Express.js server      |
 | [Authentication](docs/architecture/backend/authentication.md)                  | Auth0 setup, selective auth middleware             |
+| [Impersonation](docs/architecture/backend/impersonation.md)                    | User impersonation via Auth0 CTE                   |
 | [SSR Server](docs/architecture/backend/ssr-server.md)                          | Server-side rendering                              |
 | [Logging & Monitoring](docs/architecture/backend/logging-monitoring.md)        | Structured logging with Pino                       |
 | [Error Handling](docs/architecture/backend/error-handling-architecture.md)     | Error classification, middleware                   |

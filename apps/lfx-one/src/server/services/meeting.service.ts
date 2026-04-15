@@ -37,7 +37,7 @@ import { Request } from 'express';
 import { ResourceNotFoundError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { getUsernameFromAuth, stripAuthPrefix, usernameMatches } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix, usernameMatches } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { CommitteeService } from './committee.service';
 import { logger } from './logger.service';
@@ -780,8 +780,7 @@ export class MeetingService {
     });
 
     // Resolve registrant_id — try email first, fall back to username
-    const rawEmail = req.oidc?.user?.['email'] as string | undefined;
-    const email = rawEmail?.toLowerCase();
+    const email = getEffectiveEmail(req) ?? undefined;
     let registrants: MeetingRegistrant[] = [];
 
     if (email) {

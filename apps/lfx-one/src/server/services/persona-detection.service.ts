@@ -14,6 +14,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
+import { getEffectiveEmail, getEffectiveUsername } from '../utils/auth-helper';
 import { logger } from './logger.service';
 import { NatsService } from './nats.service';
 import { ProjectService } from './project.service';
@@ -79,8 +80,8 @@ export class PersonaDetectionService {
    * Returns an empty array on error so callers degrade gracefully.
    */
   public async getAffiliatedProjectSlugs(req: Request): Promise<string[]> {
-    const username = req.oidc?.user?.['nickname'] || '';
-    const email = ((req.oidc?.user?.['email'] as string) || '').toLowerCase();
+    const username = getEffectiveUsername(req) || '';
+    const email = getEffectiveEmail(req) || '';
     const cacheKey = username || email;
 
     // No stable identifier — bypass cache to prevent cross-user data leaks.
@@ -118,8 +119,8 @@ export class PersonaDetectionService {
    * and maps detections to persona types
    */
   public async getPersonas(req: Request): Promise<PersonaApiResponse> {
-    const username = req.oidc?.user?.['nickname'] || '';
-    const email = (req.oidc?.user?.['email'] as string) || '';
+    const username = getEffectiveUsername(req) || '';
+    const email = getEffectiveEmail(req) || '';
 
     logger.debug(req, 'get_personas', 'Fetching personas from detection service', {
       username,

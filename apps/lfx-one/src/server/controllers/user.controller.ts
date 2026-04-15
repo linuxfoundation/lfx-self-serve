@@ -7,6 +7,7 @@ import { NextFunction, Request, Response } from 'express';
 import { ServiceValidationError } from '../errors';
 import { logger } from '../services/logger.service';
 import { UserService } from '../services/user.service';
+import { getEffectiveEmail } from '../utils/auth-helper';
 
 /**
  * Controller for handling user-related HTTP requests
@@ -24,8 +25,8 @@ export class UserController {
     });
 
     try {
-      // Extract user email from OIDC
-      const userEmail = req.oidc?.user?.['email'];
+      // Extract user email from auth context (impersonation-aware)
+      const userEmail = getEffectiveEmail(req);
       if (!userEmail) {
         const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
           operation: 'get_pending_actions',
@@ -109,8 +110,8 @@ export class UserController {
       const projectUid = req.query['projectUid'] as string | undefined;
       const foundationUid = req.query['foundation_uid'] as string | undefined;
 
-      // Extract user email from OIDC (lowercased for consistent tag matching)
-      const userEmail = (req.oidc?.user?.['email'] as string)?.toLowerCase();
+      // Extract user email from auth context (impersonation-aware, already lowercased)
+      const userEmail = getEffectiveEmail(req);
       if (!userEmail) {
         const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
           operation: 'get_user_meetings',
@@ -173,8 +174,8 @@ export class UserController {
       const projectUid = req.query['projectUid'] as string | undefined;
       const foundationUid = req.query['foundation_uid'] as string | undefined;
 
-      // Extract user email from OIDC (lowercased for consistent tag matching)
-      const userEmail = (req.oidc?.user?.['email'] as string)?.toLowerCase();
+      // Extract user email from auth context (impersonation-aware, already lowercased)
+      const userEmail = getEffectiveEmail(req);
       if (!userEmail) {
         const validationError = ServiceValidationError.forField('email', 'User email not found in authentication context', {
           operation: 'get_user_past_meetings',

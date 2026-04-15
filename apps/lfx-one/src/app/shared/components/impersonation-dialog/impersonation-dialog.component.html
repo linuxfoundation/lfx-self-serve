@@ -1,0 +1,44 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="relative flex flex-col gap-4">
+  @if (loading()) {
+    <div class="absolute inset-0 z-10 flex items-center justify-center rounded-lg bg-white/80" aria-busy="true">
+      <div class="flex items-center gap-2 text-sm text-gray-600" role="status" aria-live="polite">
+        <i class="fa-light fa-spinner-third fa-spin"></i>
+        <span>Starting impersonation...</span>
+      </div>
+    </div>
+  }
+  <p class="text-sm text-gray-600">Enter the email or username of the user you want to view the app as.</p>
+  <div class="flex flex-col gap-1" (keydown.enter)="submit()">
+    <label for="targetUser" class="text-sm font-medium text-gray-700">Email or Username</label>
+    <lfx-input-text
+      size="small"
+      [form]="targetUserForm"
+      control="targetUser"
+      placeholder="e.g. jdoe or jdoe@example.com"
+      id="targetUser"
+      dataTest="impersonation-target-input" />
+  </div>
+  @if (error()) {
+    <p class="text-sm text-red-600" role="alert" data-testid="impersonation-error">{{ error() }}</p>
+  }
+  <div class="flex justify-end gap-2">
+    <lfx-button
+      size="small"
+      label="Cancel"
+      severity="secondary"
+      [outlined]="true"
+      [disabled]="loading()"
+      (onClick)="cancel()"
+      data-testid="impersonation-cancel-button" />
+    <lfx-button
+      size="small"
+      label="Start Impersonation"
+      [loading]="loading()"
+      [disabled]="targetUserForm.controls.targetUser.invalid || loading()"
+      (onClick)="submit()"
+      data-testid="impersonation-submit-button" />
+  </div>
+</div>

@@ -8,7 +8,7 @@ import { logger } from '../services/logger.service';
 import { OrganizationService } from '../services/organization.service';
 import { ProjectService } from '../services/project.service';
 import { UserService } from '../services/user.service';
-import { getUsernameFromAuth } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth } from '../utils/auth-helper';
 
 /** Allowed pattern for foundationSlug: lowercase alphanumeric and hyphens only */
 const SLUG_PATTERN = /^[a-z0-9-]+$/;
@@ -39,7 +39,7 @@ export class AnalyticsController {
     const startTime = logger.startOperation(req, 'get_active_weeks_streak');
 
     try {
-      const userEmail = req.oidc?.user?.['email'];
+      const userEmail = getEffectiveEmail(req);
 
       if (!userEmail) {
         throw new AuthenticationError('User email not found in authentication context', {
@@ -68,7 +68,7 @@ export class AnalyticsController {
     const startTime = logger.startOperation(req, 'get_pull_requests_merged');
 
     try {
-      const userEmail = req.oidc?.user?.['email'];
+      const userEmail = getEffectiveEmail(req);
 
       if (!userEmail) {
         throw new AuthenticationError('User email not found in authentication context', {
@@ -97,7 +97,7 @@ export class AnalyticsController {
     const startTime = logger.startOperation(req, 'get_code_commits');
 
     try {
-      const userEmail = req.oidc?.user?.['email'];
+      const userEmail = getEffectiveEmail(req);
 
       if (!userEmail) {
         throw new AuthenticationError('User email not found in authentication context', {

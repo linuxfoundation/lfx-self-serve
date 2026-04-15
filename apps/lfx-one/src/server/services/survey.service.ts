@@ -7,7 +7,7 @@ import { Request } from 'express';
 import { ResourceNotFoundError } from '../errors';
 import { pollEndpoint } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
-import { getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
+import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { ETagService } from './etag.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -172,7 +172,7 @@ export class SurveyService {
   public async getMySurveys(req: Request, projectUid?: string, foundationUid?: string): Promise<Survey[]> {
     const rawUsername = await getUsernameFromAuth(req);
     const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-    const email = (req.oidc?.user?.['email'] as string)?.toLowerCase();
+    const email = getEffectiveEmail(req);
 
     logger.debug(req, 'get_my_surveys', 'Fetching surveys for current user', {
       username,

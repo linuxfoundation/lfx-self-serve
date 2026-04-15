@@ -1,10 +1,28 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
+<!-- Impersonation Banner -->
+@if (userService.impersonating()) {
+  <div
+    class="fixed top-0 left-0 right-0 z-[60] flex items-center justify-center gap-2 bg-yellow-400 py-2 text-sm font-medium text-black"
+    data-testid="impersonation-banner">
+    <i class="fa-light fa-eye text-sm"></i>
+    <span
+      >Viewing as <strong>{{ userService.user()?.email }}</strong></span
+    >
+    <span class="text-black/60">— by {{ userService.impersonator()?.name }}</span>
+    <lfx-button label="Stop Impersonating" severity="contrast" size="small" (onClick)="stopImpersonation()" data-testid="stop-impersonation-button" />
+  </div>
+}
+
 <!-- Dev Toolbar (fixed at top) -->
 <lfx-dev-toolbar></lfx-dev-toolbar>
 
-<div class="flex min-h-screen" [ngClass]="{ 'pt-12': showDevToolbar() }">
+<div
+  class="flex min-h-screen"
+  [ngClass]="{
+    'pt-12': showDevToolbar(),
+  }">
   <!-- Sidebar - Desktop: lens switcher (64px) + nav panel (280px) = 344px -->
   <div
     class="hidden lg:flex flex-row flex-shrink-0 fixed left-0 bottom-0 z-40"

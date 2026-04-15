@@ -18,6 +18,7 @@ import {
 import { EventSortOrder, EventStatusFilter, GetEventOrganizationsOptions, GetEventsOptions } from '@lfx-one/shared/interfaces';
 import { EventsService } from '../services/events.service';
 import { PersonaDetectionService } from '../services/persona-detection.service';
+import { getEffectiveEmail, getEffectiveName } from '../utils/auth-helper';
 
 export class EventsController {
   private readonly eventsService = new EventsService();
@@ -35,7 +36,7 @@ export class EventsController {
     });
 
     try {
-      const userEmail = (req.oidc?.user?.['email'] as string)?.toLowerCase();
+      const userEmail = getEffectiveEmail(req);
 
       if (!userEmail) {
         throw new AuthenticationError('User authentication required', {
@@ -173,7 +174,7 @@ export class EventsController {
     });
 
     try {
-      const userEmail = (req.oidc?.user?.['email'] as string)?.toLowerCase();
+      const userEmail = getEffectiveEmail(req);
 
       if (!userEmail) {
         throw new AuthenticationError('User authentication required', {
@@ -224,7 +225,7 @@ export class EventsController {
     const startTime = logger.startOperation(req, 'get_certificate', { event_id: eventId });
 
     try {
-      const userEmail = (req.oidc?.user?.['email'] as string)?.toLowerCase();
+      const userEmail = getEffectiveEmail(req);
 
       if (!userEmail) {
         throw new AuthenticationError('User authentication required', {
@@ -240,7 +241,7 @@ export class EventsController {
         });
       }
 
-      const userName = (req.oidc?.user?.['name'] as string) || userEmail;
+      const userName = getEffectiveName(req) || userEmail;
 
       const pdfBuffer = await this.certificateService.generateCertificate(req, {
         eventId,

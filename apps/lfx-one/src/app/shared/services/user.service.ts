@@ -14,6 +14,7 @@ import {
   EmailManagementData,
   EmailPreferences,
   EnrichedIdentity,
+  Impersonator,
   Meeting,
   PastMeeting,
   ProfileAuthStatus,
@@ -39,6 +40,9 @@ export class UserService {
 
   public authenticated: WritableSignal<boolean> = signal<boolean>(false);
   public user: WritableSignal<User | null> = signal<User | null>(null);
+  public impersonating: WritableSignal<boolean> = signal<boolean>(false);
+  public impersonator: WritableSignal<Impersonator | null> = signal<Impersonator | null>(null);
+  public canImpersonate: WritableSignal<boolean> = signal<boolean>(false);
   public readonly userInitials: Signal<string> = this.initUserInitials();
 
   // Create a new user with permissions
