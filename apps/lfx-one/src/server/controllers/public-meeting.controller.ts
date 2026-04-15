@@ -135,7 +135,10 @@ export class PublicMeetingController {
           // Remove public link outside join window
           delete meeting.public_link;
         }
-        res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url } });
+        res.json({
+          meeting,
+          project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
+        });
         return;
       }
 
@@ -149,7 +152,7 @@ export class PublicMeetingController {
       }
 
       // Send the meeting and project data to the client
-      res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url } });
+      res.json({ meeting, project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid } });
     } catch (error) {
       // Error handler will log
       next(error);
@@ -250,7 +253,7 @@ export class PublicMeetingController {
 
       res.json({
         meeting: meetingResponse,
-        project: { name: project.name, slug: project.slug, logo_url: project.logo_url },
+        project: { name: project.name, slug: project.slug, logo_url: project.logo_url, uid: project.uid, parent_uid: project.parent_uid },
         full_access: fullAccess,
       });
     } catch (error) {

@@ -1004,7 +1004,7 @@ export interface UrlMetadataResponse {
  */
 export interface PublicPastMeetingResponse {
   meeting: PastMeeting;
-  project: { name: string; slug: string; logo_url: string };
+  project: { name: string; slug: string; logo_url: string; uid: string; parent_uid: string };
   full_access: boolean;
 }
 
