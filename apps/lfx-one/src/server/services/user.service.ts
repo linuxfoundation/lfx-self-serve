@@ -32,6 +32,7 @@ import { ResourceNotFoundError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
+import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MeetingService } from './meeting.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -48,6 +49,7 @@ export class UserService {
   private meetingService: MeetingService;
   private projectService: ProjectService;
   private microserviceProxy: MicroserviceProxyService;
+  private accessCheckService: AccessCheckService;
 
   private readonly twoWeeksMs = 14 * 24 * 60 * 60 * 1000;
   private readonly bufferMinutes = 40;
@@ -58,6 +60,7 @@ export class UserService {
     this.meetingService = new MeetingService();
     this.projectService = new ProjectService();
     this.microserviceProxy = new MicroserviceProxyService();
+    this.accessCheckService = new AccessCheckService();
   }
 
   /**
@@ -487,7 +490,23 @@ export class UserService {
       foundationProjectUids = new Set(uids);
     }
 
-    return this.fetchByIdFilterAndLimit<Meeting>(req, meetingIds, '/itx/meetings', 'get_user_meetings', projectUid, limit, foundationProjectUids);
+    const meetings = await this.fetchByIdFilterAndLimit<Meeting>(
+      req,
+      meetingIds,
+      '/itx/meetings',
+      'get_user_meetings',
+      projectUid,
+      undefined,
+      foundationProjectUids
+    );
+
+    // Sort by start_time ascending (soonest first) before applying limit
+    // so the limit returns the most relevant upcoming meetings
+    meetings.sort((a, b) => new Date(a.start_time).getTime() - new Date(b.start_time).getTime());
+
+    const limited = limit !== undefined && limit > 0 ? meetings.slice(0, limit) : meetings;
+
+    return this.accessCheckService.addAccessToResources(req, limited, 'v1_meeting', 'organizer');
   }
 
   /**
@@ -501,33 +520,80 @@ export class UserService {
    * @returns Array of PastMeeting objects the user participated in
    */
   public async getUserPastMeetings(req: Request, email: string, projectUid?: string, limit?: number, foundationUid?: string): Promise<PastMeeting[]> {
-    // Step 1: Get past meeting participant records for this user via query service
+    // Step 1: Get all past meeting participant records for this user via query service
+    // Uses fetchAllQueryResources to auto-paginate through all pages and dual email+username
+    // lookup for complete coverage (same pattern as getPastMeetingOccurrenceIds)
+    logger.debug(req, 'get_user_past_meetings', 'Starting past meeting lookup for user', {
+      has_project_filter: !!projectUid,
+      has_foundation_filter: !!foundationUid,
+      limit,
+    });
+
     const normalizedEmail = email.toLowerCase();
-    const participantParams: Record<string, any> = {
-      type: 'v1_past_meeting_participant',
-      tags: `email:${normalizedEmail}`,
-      page_size: 100,
-    };
+    const username = await getUsernameFromAuth(req);
 
     // M2M token required: participant queries search across all participants in the index
     const m2mToken = await generateM2MToken(req);
     const headers = { Authorization: `Bearer ${m2mToken}` };
+    const pastMeetingIds = new Set<string>();
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(
-      req,
-      'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      { ...participantParams, sort: 'updated_desc' },
-      undefined,
-      headers
-    );
-    const participants = resources.map((r) => r.data);
+    // Query by email
+    const emailParticipants = await fetchAllQueryResources<PastMeetingParticipant>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        {
+          type: 'v1_past_meeting_participant',
+          tags: `email:${normalizedEmail}`,
+          page_size: 100,
+          ...(pageToken && { page_token: pageToken }),
+        },
+        undefined,
+        headers
+      )
+    ).catch((error) => {
+      logger.warning(req, 'get_user_past_meetings', 'Email participant query failed, returning partial results', {
+        err: error,
+      });
+      return [];
+    });
+    emailParticipants.forEach((p) => p.meeting_and_occurrence_id && pastMeetingIds.add(p.meeting_and_occurrence_id));
 
-    // Deduplicate by meeting_and_occurrence_id (composite ID like "99152950841-1630560600000")
-    const pastMeetingIds = [...new Set(participants.map((p) => p.meeting_and_occurrence_id).filter(Boolean))];
+    // Also query by username for complete coverage
+    if (username) {
+      const plainUsername = stripAuthPrefix(username);
+      const usernameParticipants = await fetchAllQueryResources<PastMeetingParticipant>(req, (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(
+          req,
+          'LFX_V2_SERVICE',
+          '/query/resources',
+          'GET',
+          {
+            type: 'v1_past_meeting_participant',
+            tags: `username:${plainUsername}`,
+            page_size: 100,
+            ...(pageToken && { page_token: pageToken }),
+          },
+          undefined,
+          headers
+        )
+      ).catch((error) => {
+        logger.warning(req, 'get_user_past_meetings', 'Username participant query failed, returning partial results', {
+          err: error,
+        });
+        return [];
+      });
+      usernameParticipants.forEach((p) => p.meeting_and_occurrence_id && pastMeetingIds.add(p.meeting_and_occurrence_id));
+    }
 
-    if (pastMeetingIds.length === 0) {
+    logger.debug(req, 'get_user_past_meetings', 'Found past meeting participant IDs', {
+      total_ids: pastMeetingIds.size,
+      email_matches: emailParticipants.length,
+    });
+
+    if (pastMeetingIds.size === 0) {
       return [];
     }
 
@@ -537,16 +603,24 @@ export class UserService {
       foundationProjectUids = new Set(uids);
     }
 
-    // Step 2: Fetch each past meeting and filter/limit
-    return this.fetchByIdFilterAndLimit<PastMeeting>(
+    // Step 2: Fetch each past meeting and filter (limit applied after sorting)
+    const pastMeetings = await this.fetchByIdFilterAndLimit<PastMeeting>(
       req,
       pastMeetingIds,
       '/itx/past_meetings',
       'get_user_past_meetings',
       projectUid,
-      limit,
+      undefined,
       foundationProjectUids
     );
+
+    // Sort by scheduled_start_time descending (most recent first) before applying limit
+    // so the limit returns the most recent meetings rather than an arbitrary subset
+    pastMeetings.sort((a, b) => new Date(b.scheduled_start_time).getTime() - new Date(a.scheduled_start_time).getTime());
+
+    const limited = limit !== undefined && limit > 0 ? pastMeetings.slice(0, limit) : pastMeetings;
+
+    return this.accessCheckService.addAccessToResources(req, limited, 'v1_past_meeting', 'organizer');
   }
 
   /**

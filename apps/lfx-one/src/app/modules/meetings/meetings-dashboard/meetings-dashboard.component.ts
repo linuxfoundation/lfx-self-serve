@@ -352,7 +352,7 @@ export class MeetingsDashboardComponent {
             return of([] as Meeting[]);
           }
           this.meetingsLoading.set(true);
-          return this.userService.getUserMeetings(100, projectFilter ?? undefined, foundationFilter ?? undefined).pipe(
+          return this.userService.getUserMeetings(undefined, projectFilter ?? undefined, foundationFilter ?? undefined).pipe(
             tap(() => this.meetingsLoading.set(false)),
             catchError(() => {
               this.meetingsLoading.set(false);
@@ -377,7 +377,7 @@ export class MeetingsDashboardComponent {
             return of([] as PastMeeting[]);
           }
           this.pastMeetingsLoading.set(true);
-          return this.userService.getUserPastMeetings(100, projectFilter ?? undefined, foundationFilter ?? undefined).pipe(
+          return this.userService.getUserPastMeetings(undefined, projectFilter ?? undefined, foundationFilter ?? undefined).pipe(
             tap(() => this.pastMeetingsLoading.set(false)),
             catchError(() => {
               this.pastMeetingsLoading.set(false);
