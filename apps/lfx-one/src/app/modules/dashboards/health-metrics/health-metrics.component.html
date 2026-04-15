@@ -1,0 +1,102 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-6 p-6" data-testid="health-metrics-page">
+  <!-- Header -->
+  <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
+    <div class="flex flex-col gap-1">
+      <h2 class="text-xl font-semibold text-gray-900" data-testid="health-metrics-title">Health Metrics</h2>
+      <p class="text-sm text-gray-500">Operational health metrics across your foundation.</p>
+    </div>
+    <div class="flex items-center gap-4">
+      <span class="text-sm text-gray-500 whitespace-nowrap">{{ dateRangeLabel() }}</span>
+      <div class="flex items-center gap-0.5 rounded-lg bg-gray-100 p-1" role="group" aria-label="Year range filter" data-testid="health-metrics-year-filter">
+        @for (option of yearOptions(); track option.range) {
+          <button
+            class="px-3 py-1 text-sm rounded-md transition-colors"
+            [class.font-semibold]="selectedRange() === option.range"
+            [class.text-gray-900]="selectedRange() === option.range"
+            [class.bg-white]="selectedRange() === option.range"
+            [class.shadow-sm]="selectedRange() === option.range"
+            [class.text-gray-500]="selectedRange() !== option.range"
+            [class.hover:text-gray-700]="selectedRange() !== option.range"
+            [attr.aria-pressed]="selectedRange() === option.range"
+            [attr.aria-label]="'Show data for ' + option.label"
+            (click)="selectRange(option.range)"
+            [attr.data-testid]="'health-metrics-year-' + (option.range === 'YTD' ? 'ytd' : option.year)">
+            {{ option.label }}
+          </button>
+        }
+      </div>
+    </div>
+  </div>
+
+  <!-- Summary Metric Cards -->
+  @if (hasFoundation()) {
+    <div class="grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-4">
+      @for (card of displayCards(); track card.config.key) {
+        <div class="flex items-center gap-3 rounded-lg border border-gray-200 bg-white p-4" [attr.data-testid]="card.config.testId">
+          @if (loading()) {
+            <p-skeleton width="2.5rem" height="2.5rem" borderRadius="8px" />
+            <div class="flex flex-col gap-1 flex-1">
+              <p-skeleton width="4rem" height="1.5rem" />
+              <p-skeleton width="5rem" height="0.75rem" />
+            </div>
+          } @else {
+            <div class="flex h-10 w-10 flex-shrink-0 items-center justify-center rounded-lg" [ngClass]="card.config.iconBgClass">
+              <i [class]="card.config.icon" [ngClass]="card.config.iconTextClass"></i>
+            </div>
+            <div class="flex flex-col">
+              <span class="text-xl font-semibold text-gray-900">{{ card.value }}</span>
+              <div class="flex items-center gap-1">
+                <span class="text-xs text-gray-500">{{ card.config.title }}</span>
+                @if (card.changePercentage) {
+                  <span class="text-xs font-medium" [class.text-emerald-600]="card.trend === 'up'" [class.text-red-600]="card.trend === 'down'">
+                    {{ card.changePercentage }}
+                  </span>
+                }
+              </div>
+            </div>
+          }
+        </div>
+      }
+    </div>
+  } @else {
+    <div class="flex items-center justify-center rounded-lg border border-gray-200 bg-gray-50 p-12">
+      <p class="text-sm text-gray-500">Select a foundation to view health metrics.</p>
+    </div>
+  }
+
+  <!-- Status Overview -->
+  @if (hasFoundation()) {
+    <div class="flex items-center gap-2 rounded-lg bg-gray-50 px-4 py-3" data-testid="health-metrics-status-overview">
+      <span class="text-sm font-semibold text-gray-900">Status Overview</span>
+      <span class="text-sm text-gray-500">{{ statusCount }} metrics tracked across your foundation</span>
+    </div>
+  }
+
+  <!-- Participating Organizations & NPS -->
+  @if (hasFoundation()) {
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <lfx-participating-orgs-card [range]="selectedRange()" />
+      <lfx-nps-card [range]="selectedRange()" />
+    </div>
+
+    <!-- Membership Churn Per Tier & Outstanding Balance -->
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <lfx-membership-churn-tier-card [range]="selectedRange()" />
+      <lfx-outstanding-balance-card />
+    </div>
+
+    <!-- Events & Training & Certification -->
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <lfx-events-card [range]="selectedRange()" />
+      <lfx-training-certification-card [range]="selectedRange()" />
+    </div>
+
+    <!-- Code Contribution -->
+    <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
+      <lfx-code-contribution-card [range]="selectedRange()" />
+    </div>
+  }
+</div>

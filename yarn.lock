@@ -11308,6 +11308,13 @@ __metadata:
   languageName: node
   linkType: hard
 
+"html-to-image@npm:^1.11.13":
+  version: 1.11.13
+  resolution: "html-to-image@npm:1.11.13"
+  checksum: 10c0/03bd7192d87b99499e37ff12a8e2b41ddce4cf8e33a93dfadff18df0f213434c7f1ba8328db2158f4805da07b7aec3c90aec3152908281153217e86784218b10
+  languageName: node
+  linkType: hard
+
 "htmlparser2@npm:^10.0.0":
   version: 10.0.0
   resolution: "htmlparser2@npm:10.0.0"
@@ -12565,6 +12572,7 @@ __metadata:
     express: "npm:^4.18.2"
     express-openid-connect: "npm:^2.19.2"
     express-rate-limit: "npm:^8.3.2"
+    html-to-image: "npm:^1.11.13"
     launchdarkly-js-client-sdk: "npm:^3.9.0"
     marked: "npm:^17.0.4"
     nats: "npm:^2.29.3"

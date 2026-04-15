@@ -53,6 +53,13 @@ import {
   FlywheelConversionResponse,
   MemberAcquisitionResponse,
   MemberRetentionResponse,
+  MembershipChurnPerTierSummaryResponse,
+  NpsSummaryResponse,
+  OutstandingBalanceSummaryResponse,
+  EventsSummaryResponse,
+  ParticipatingOrgsSummaryResponse,
+  TrainingCertificationSummaryResponse,
+  CodeContributionSummaryResponse,
   SocialMediaResponse,
   SocialReachResponse,
   WebActivitiesSummaryResponse,
@@ -966,6 +973,192 @@ export class AnalyticsService {
             convertedToWorkingGroup: 0,
           },
           monthlyData: [],
+        });
+      })
+    );
+  }
+
+  /**
+   * Get NPS summary for a foundation
+   * @param foundationSlug - Foundation slug for Snowflake project resolution
+   * @returns Observable of NPS summary response; degrades to zeros on error
+   */
+  public getNpsSummary(
+    foundationSlug: string,
+    range: string = 'YTD'
+  ): Observable<NpsSummaryResponse> {
+    const params: Record<string, string> = { foundationSlug };
+    if (range && range !== 'YTD') {
+      params['range'] = range;
+    }
+    return this.http.get<NpsSummaryResponse>('/api/analytics/nps-summary', { params }).pipe(
+      catchError(() => {
+        return of({
+          projectId: '',
+          npsScore: 0,
+          promoters: 0,
+          passives: 0,
+          detractors: 0,
+          nonResponses: 0,
+          responses: 0,
+          lastUpdatedLabel: 'N/A',
+        });
+      })
+    );
+  }
+
+  /**
+   * Get participating organizations summary (membership counts + engagement breakdown)
+   * @param foundationSlug - Foundation slug for Snowflake project_slug filter
+   * @returns Observable of participating orgs summary response
+   */
+  public getParticipatingOrgsSummary(
+    foundationSlug: string,
+    range: string = 'YTD'
+  ): Observable<ParticipatingOrgsSummaryResponse> {
+    const params: Record<string, string> = { foundationSlug };
+    if (range && range !== 'YTD') {
+      params['range'] = range;
+    }
+    return this.http.get<ParticipatingOrgsSummaryResponse>('/api/analytics/participating-orgs-summary', { params }).pipe(
+      catchError(() => {
+        return of({
+          projectId: '',
+          totalActiveMembers: 0,
+          totalNewMembers: 0,
+          highEngagement: 0,
+          medEngagement: 0,
+          lowEngagement: 0,
+        });
+      })
+    );
+  }
+
+  /**
+   * Get consolidated membership churn per tier summary
+   * @param foundationSlug - Foundation slug for Snowflake project resolution
+   * @param range - Reporting range (default 'YTD')
+   * @returns Observable of churn summary; degrades to zeros on error
+   */
+  public getMembershipChurnPerTierSummary(
+    foundationSlug: string,
+    range: string = 'YTD'
+  ): Observable<MembershipChurnPerTierSummaryResponse> {
+    const params: Record<string, string> = { foundationSlug };
+    if (range && range !== 'YTD') {
+      params['range'] = range;
+    }
+    return this.http
+      .get<MembershipChurnPerTierSummaryResponse>('/api/analytics/membership-churn-per-tier-summary', { params })
+      .pipe(
+        catchError(() => {
+          return of({
+            projectId: '',
+            range: 'YTD',
+            comparisonAvailable: false,
+            currentPeriod: { churnRatePct: 0, valueLost: 0, membersLost: 0 },
+            previousYear: null,
+            trend: null,
+          });
+        })
+      );
+  }
+
+  /**
+   * Get events summary for a foundation (total events, change, sponsorship vs goal)
+   * @param foundationSlug - Foundation slug for Snowflake project resolution
+   * @returns Observable of events summary; degrades to zeros on error
+   */
+  public getEventsSummary(
+    foundationSlug: string,
+    range: string = 'YTD'
+  ): Observable<EventsSummaryResponse> {
+    const params: Record<string, string> = { foundationSlug };
+    if (range && range !== 'YTD') {
+      params['range'] = range;
+    }
+    return this.http.get<EventsSummaryResponse>('/api/analytics/events-summary', { params }).pipe(
+      catchError(() => {
+        return of({
+          projectId: '',
+          totalEvents: 0,
+          upcomingEvents: 0,
+          pastEvents: 0,
+          eventChange: 0,
+          eventCountDiff: 0,
+          sponsorshipRevenue: 0,
+          sponsorshipGoal: 0,
+          sponsorshipProgressPct: 0,
+        });
+      })
+    );
+  }
+
+  public getTrainingCertificationSummary(
+    foundationSlug: string,
+    range: string = 'YTD'
+  ): Observable<TrainingCertificationSummaryResponse> {
+    const params: Record<string, string> = { foundationSlug };
+    if (range && range !== 'YTD') {
+      params['range'] = range;
+    }
+    return this.http
+      .get<TrainingCertificationSummaryResponse>('/api/analytics/training-certification-summary', { params })
+      .pipe(
+        catchError(() => {
+          return of({
+            projectId: '',
+            range: (range || 'YTD') as TrainingCertificationSummaryResponse['range'],
+            enrollment: { instructorLed: 0, eLearning: 0, certExams: 0, edx: 0 },
+            revenue: { instructorLed: 0, eLearning: 0, certExams: 0 },
+          });
+        })
+      );
+  }
+
+  public getCodeContributionSummary(
+    foundationSlug: string,
+    range: string = 'YTD'
+  ): Observable<CodeContributionSummaryResponse> {
+    const params: Record<string, string> = { foundationSlug };
+    if (range && range !== 'YTD') {
+      params['range'] = range;
+    }
+    return this.http
+      .get<CodeContributionSummaryResponse>('/api/analytics/code-contribution-summary', { params })
+      .pipe(
+        catchError(() => {
+          return of({
+            dataAvailable: false,
+            projectId: '',
+            projectSlug: '',
+            range: (range || 'YTD') as CodeContributionSummaryResponse['range'],
+            totalContributors: 0,
+            totalContributorsChange: 0,
+            newContributors: 0,
+            newContributorsChange: 0,
+            committers: 0,
+            maintainers: 0,
+            reviewers: 0,
+          });
+        })
+      );
+  }
+
+  public getOutstandingBalanceSummary(foundationSlug: string): Observable<OutstandingBalanceSummaryResponse> {
+    const params = { foundationSlug };
+    return this.http.get<OutstandingBalanceSummaryResponse>('/api/analytics/outstanding-balance-summary', { params }).pipe(
+      catchError(() => {
+        return of({
+          projectId: '',
+          totalOutstandingBalance: 0,
+          totalMembersAtRisk: 0,
+          primaryRiskLevel: null,
+          primaryRiskAmount: 0,
+          overdueBreakdown: {
+            medium: { riskLevel: 'Medium' as const, overdueRangeLabel: '60-89' as const, outstandingBalance: 0, membersAtRisk: 0 },
+            high: { riskLevel: 'High' as const, overdueRangeLabel: '90+' as const, outstandingBalance: 0, membersAtRisk: 0 },
+          },
         });
       })
     );

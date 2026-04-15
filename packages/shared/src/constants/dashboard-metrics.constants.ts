@@ -6,7 +6,30 @@ import { hexToRgba } from '../utils';
 import { EMPTY_CHART_DATA, NO_TOOLTIP_CHART_OPTIONS } from './chart-options.constants';
 import { lfxColors } from './colors.constants';
 
-import type { DashboardMetricCard } from '../interfaces';
+import type {
+  CodeContributionSummaryResponse,
+  DashboardMetricCard,
+  EventsSummaryResponse,
+  HealthMetricsSummaryCard,
+  MembershipChurnPerTierSummaryResponse,
+  NpsSummaryResponse,
+  OutstandingBalanceSummaryResponse,
+  ParticipatingOrgsSummaryResponse,
+  TrainingCertificationSummaryResponse,
+} from '../interfaces';
+// ============================================
+// Health Metrics Page (Summary Cards)
+// ============================================
+
+export const HEALTH_METRICS_SUMMARY_CARDS: readonly HealthMetricsSummaryCard[] = [
+  { key: 'totalValue', title: 'Total Value', icon: 'fa-solid fa-chart-bar fa-rotate-270', iconBgClass: 'bg-blue-100', iconTextClass: 'text-blue-600', format: 'currency', testId: 'health-metrics-card-total-value' },
+  { key: 'projects', title: 'Projects', icon: 'fa-solid fa-list-ul', iconBgClass: 'bg-emerald-50', iconTextClass: 'text-emerald-600', format: 'count', testId: 'health-metrics-card-projects' },
+  { key: 'members', title: 'Members', icon: 'fa-solid fa-user-group', iconBgClass: 'bg-blue-100', iconTextClass: 'text-blue-500', format: 'count', testId: 'health-metrics-card-members' },
+  { key: 'flywheel', title: 'Flywheel', icon: 'fa-light fa-arrows-spin', iconBgClass: 'bg-amber-50', iconTextClass: 'text-amber-500', format: 'percentage', testId: 'health-metrics-card-flywheel' },
+];
+
+export const HEALTH_METRICS_STATUS_COUNT = 8;
+
 // ============================================
 // Marketing Action Icon Map
 // ============================================
@@ -466,3 +489,81 @@ export const MAINTAINER_PROGRESS_METRICS: DashboardMetricCard[] = [
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },
 ];
+
+// ============================================
+// Health Metrics — default summary constants
+// ============================================
+
+export const HEALTH_METRICS_CODE_CONTRIBUTION_DEFAULT_SUMMARY: CodeContributionSummaryResponse = {
+  dataAvailable: false,
+  projectId: '',
+  projectSlug: '',
+  range: 'YTD',
+  totalContributors: 0,
+  totalContributorsChange: 0,
+  newContributors: 0,
+  newContributorsChange: 0,
+  committers: 0,
+  maintainers: 0,
+  reviewers: 0,
+};
+
+export const HEALTH_METRICS_EVENTS_DEFAULT_SUMMARY: EventsSummaryResponse = {
+  projectId: '',
+  totalEvents: 0,
+  upcomingEvents: 0,
+  pastEvents: 0,
+  eventChange: 0,
+  eventCountDiff: 0,
+  sponsorshipRevenue: 0,
+  sponsorshipGoal: 0,
+  sponsorshipProgressPct: 0,
+};
+
+export const HEALTH_METRICS_MEMBERSHIP_CHURN_DEFAULT_SUMMARY: MembershipChurnPerTierSummaryResponse = {
+  projectId: '',
+  range: 'YTD',
+  comparisonAvailable: false,
+  currentPeriod: { churnRatePct: 0, valueLost: 0, membersLost: 0 },
+  previousYear: null,
+  trend: null,
+};
+
+export const HEALTH_METRICS_NPS_DEFAULT_SUMMARY: NpsSummaryResponse = {
+  projectId: '',
+  npsScore: 0,
+  promoters: 0,
+  passives: 0,
+  detractors: 0,
+  nonResponses: 0,
+  responses: 0,
+  lastUpdatedLabel: 'N/A',
+};
+
+export const HEALTH_METRICS_OUTSTANDING_BALANCE_DEFAULT_SUMMARY: OutstandingBalanceSummaryResponse = {
+  projectId: '',
+  totalOutstandingBalance: 0,
+  totalMembersAtRisk: 0,
+  primaryRiskLevel: null,
+  primaryRiskAmount: 0,
+  overdueBreakdown: {
+    medium: { riskLevel: 'Medium', overdueRangeLabel: '60-89', outstandingBalance: 0, membersAtRisk: 0 },
+    high: { riskLevel: 'High', overdueRangeLabel: '90+', outstandingBalance: 0, membersAtRisk: 0 },
+  },
+};
+
+export const HEALTH_METRICS_PARTICIPATING_ORGS_DEFAULT_SUMMARY: ParticipatingOrgsSummaryResponse = {
+  projectId: '',
+  totalActiveMembers: 0,
+  totalNewMembers: 0,
+  highEngagement: 0,
+  medEngagement: 0,
+  lowEngagement: 0,
+};
+
+export const HEALTH_METRICS_TRAINING_CERTIFICATION_DEFAULT_SUMMARY: TrainingCertificationSummaryResponse = {
+  projectId: '',
+  range: 'YTD',
+  enrollment: { instructorLed: 0, eLearning: 0, certExams: 0, edx: 0 },
+  revenue: { instructorLed: 0, eLearning: 0, certExams: 0 },
+};

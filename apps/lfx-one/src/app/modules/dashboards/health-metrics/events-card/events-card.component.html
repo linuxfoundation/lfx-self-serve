@@ -1,0 +1,109 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div
+  class="flex h-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5"
+  data-testid="events-card"
+>
+  <!-- Header -->
+  <div class="flex items-center justify-between" data-testid="events-card-header">
+    <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Events</h3>
+    <button
+      class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+      [disabled]="loading()"
+      (click)="downloadCard()"
+      aria-label="Download card as image"
+      data-testid="events-card-download"
+    >
+      <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
+    </button>
+  </div>
+
+  @if (loading()) {
+    <!-- Loading Skeletons -->
+    <div class="flex flex-col gap-3" data-testid="events-card-skeleton">
+      <div class="flex gap-6">
+        <div class="flex flex-1 flex-col gap-1">
+          <p-skeleton width="3rem" height="2.5rem" />
+          <p-skeleton width="5rem" height="0.75rem" />
+          <p-skeleton width="7rem" height="0.75rem" />
+        </div>
+        <div class="flex flex-1 flex-col gap-1">
+          <p-skeleton width="2rem" height="2.5rem" />
+          <p-skeleton width="4.5rem" height="0.75rem" />
+        </div>
+        <div class="flex flex-1 flex-col gap-1">
+          <p-skeleton width="2rem" height="2.5rem" />
+          <p-skeleton width="2rem" height="0.75rem" />
+        </div>
+      </div>
+      <div class="h-px bg-gray-200"></div>
+      <p-skeleton width="8rem" height="1rem" />
+      <p-skeleton width="100%" height="0.625rem" borderRadius="9999px" />
+      <div class="flex justify-between">
+        <p-skeleton width="5rem" height="0.75rem" />
+        <p-skeleton width="6rem" height="0.75rem" />
+      </div>
+    </div>
+  } @else {
+    <!-- Metrics Row: Total Events | Upcoming | Past -->
+    <div class="flex gap-6" data-testid="events-card-metrics">
+      <div class="flex flex-1 flex-col gap-1" data-testid="events-card-total-events">
+        <span class="text-3xl font-bold text-gray-900">{{ formattedTotalEvents() }}</span>
+        <span class="text-xs font-medium text-gray-500">Total Events</span>
+        @if (showChangeIndicator()) {
+          <span
+            class="text-sm font-medium"
+            [class.text-emerald-600]="changeDirection() === 'up'"
+            [class.text-red-600]="changeDirection() === 'down'"
+            [class.text-gray-500]="changeDirection() === 'neutral'"
+            data-testid="events-card-change-indicator"
+          >{{ formattedChange() }}</span>
+        }
+      </div>
+      @if (range() === 'YTD') {
+        <div class="flex flex-1 flex-col gap-1" data-testid="events-card-upcoming-events">
+          <span class="text-3xl font-bold text-blue-600">{{ formattedUpcomingEvents() }}</span>
+          <span class="text-xs font-medium text-gray-500">Upcoming</span>
+        </div>
+      }
+      <div class="flex flex-1 flex-col gap-1" data-testid="events-card-past-events">
+        <span class="text-3xl font-bold text-gray-500">{{ formattedPastEvents() }}</span>
+        <span class="text-xs font-medium text-gray-500">Past</span>
+      </div>
+    </div>
+
+    <!-- Separator -->
+    <div class="h-px bg-gray-200"></div>
+
+    <!-- Sponsorship vs Goal Section -->
+    <div class="flex flex-col gap-2" data-testid="events-card-sponsorship-section">
+      <h4 class="text-sm font-bold text-gray-900">Sponsorship vs Goal</h4>
+      <!-- Progress Bar -->
+      <div class="h-2.5 w-full overflow-hidden rounded-full bg-gray-200" data-testid="events-card-progress-bar">
+        <div
+          class="h-full rounded-full bg-blue-500 transition-all duration-300"
+          [style.width.%]="sponsorshipProgressWidth()"
+        ></div>
+      </div>
+      <!-- Labels -->
+      <div class="flex items-center justify-between">
+        <span class="text-xs text-gray-500">{{ formattedProgressLabel() }}</span>
+        <span class="text-xs text-gray-500">{{ formattedDollarLabel() }}</span>
+      </div>
+    </div>
+  }
+
+  <!-- Footer -->
+  @if (exploreMoreUrl()) {
+    <a
+      [href]="exploreMoreUrl()"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="ignore-download text-sm font-medium text-blue-600 hover:text-blue-800"
+      data-testid="events-card-explore-more"
+    >
+      Explore more &rarr;
+    </a>
+  }
+</div>

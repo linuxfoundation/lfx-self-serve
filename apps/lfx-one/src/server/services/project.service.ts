@@ -71,6 +71,14 @@ import {
   EngagedCommunitySizeResponse,
   FlywheelConversionResponse,
   NorthStarMonthlyDataPoint,
+  MembershipChurnPerTierSummaryResponse,
+  NpsSummaryResponse,
+  OutstandingBalanceSummaryResponse,
+  ParticipatingOrgsSummaryResponse,
+  EventsSummaryResponse,
+  TrainingCertificationSummaryResponse,
+  CodeContributionSummaryResponse,
+  CodeContributionRange,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -92,6 +100,36 @@ export class ProjectService {
   private readonly natsService: NatsService;
   private readonly etagService: ETagService;
   private readonly snowflakeService: SnowflakeService;
+
+  private static readonly rangeSuffixMap: Record<string, Record<string, string>> = {
+    standard: {
+      YTD: '_ytd',
+      COMPLETED_YEAR: '_last_completed_year',
+      COMPLETED_YEAR_2: '_prev_completed_year',
+      COMPLETED_YEAR_3: '_3rd_last_completed_year',
+      COMPLETED_YEAR_4: '_4th_last_completed_year',
+    },
+    engagementScoresGoal: {
+      YTD: '_ytd',
+      COMPLETED_YEAR: '_last_completed_year',
+      COMPLETED_YEAR_2: '_previous_completed_year',
+      COMPLETED_YEAR_3: '_third_last_completed_year',
+      COMPLETED_YEAR_4: '_fourth_last_completed_year',
+    },
+    eventComparison: {
+      YTD: '_last_completed_year',
+      COMPLETED_YEAR: '_prev_completed_year',
+      COMPLETED_YEAR_2: '_3rd_last_completed_year',
+      COMPLETED_YEAR_3: '_4th_last_completed_year',
+    },
+    training: {
+      YTD: 'YTD',
+      COMPLETED_YEAR: 'LAST_COMPLETED_YEAR',
+      COMPLETED_YEAR_2: 'PREV_COMPLETED_YEAR',
+      COMPLETED_YEAR_3: '3RD_LAST_COMPLETED_YEAR',
+      COMPLETED_YEAR_4: '4th_LAST_COMPLETED_YEAR',
+    },
+  };
 
   public constructor() {
     this.accessCheckService = new AccessCheckService();
@@ -2577,6 +2615,771 @@ export class ProjectService {
   }
 
   /**
+   * Get participating organizations summary for a foundation from Snowflake
+   * Queries ANALYTICS.PLATINUM tables for membership counts and engagement classification.
+   * Note: ENGAGEMENT_SCORES_BY_CLASSIFICATION only provides last-12-month engagement
+   * classification, so engagement breakdown is only included for YTD. Non-YTD ranges
+   * return zeroed engagement to avoid mismatching period-scoped counts with stale breakdown.
+   * @param foundationSlug - Foundation slug used to resolve Snowflake PROJECT_ID via project_slug
+   * @param range - Reporting range (default 'YTD')
+   * @returns Participating orgs summary with member counts and engagement breakdown
+   */
+  public async getParticipatingOrgsSummary(
+    foundationSlug: string,
+    range: string = 'YTD'
+  ): Promise<ParticipatingOrgsSummaryResponse> {
+    interface ParticipatingOrgsRow {
+      PROJECT_ID: string;
+      TOTAL_ACTIVE_ACCOUNTS: number;
+      TOTAL_NEW_ACCOUNTS: number;
+      HIGH_ENGAGEMENT: number;
+      MED_ENGAGEMENT: number;
+      LOW_ENGAGEMENT: number;
+    }
+
+    const VALID_RANGES = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3', 'COMPLETED_YEAR_4'];
+    const effectiveRange = VALID_RANGES.includes(range) ? range : 'YTD';
+    const suffix = this.getRangeSuffix(effectiveRange);
+    const includeEngagement = effectiveRange === 'YTD';
+
+    const engagementJoin = includeEngagement
+      ? `LEFT JOIN (
+          SELECT
+            esc.project_id,
+            SUM(CASE WHEN esc.engagement_score_classification = 'Low' THEN esc.total_accounts ELSE 0 END) as LOW_ENGAGEMENT,
+            SUM(CASE WHEN esc.engagement_score_classification = 'Medium' THEN esc.total_accounts ELSE 0 END) as MED_ENGAGEMENT,
+            SUM(CASE WHEN esc.engagement_score_classification = 'High' THEN esc.total_accounts ELSE 0 END) as HIGH_ENGAGEMENT
+          FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION esc
+          INNER JOIN slug_resolve sr2 ON esc.project_id = sr2.project_id
+          WHERE esc.is_member
+          GROUP BY esc.project_id
+        ) as e
+        ON a.PROJECT_ID = e.PROJECT_ID`
+      : '';
+
+    const engagementSelect = includeEngagement
+      ? `IFNULL(e.LOW_ENGAGEMENT, 0) as LOW_ENGAGEMENT,
+        IFNULL(e.MED_ENGAGEMENT, 0) as MED_ENGAGEMENT,
+        IFNULL(e.HIGH_ENGAGEMENT, 0) as HIGH_ENGAGEMENT`
+      : `0 as LOW_ENGAGEMENT,
+        0 as MED_ENGAGEMENT,
+        0 as HIGH_ENGAGEMENT`;
+
+    const query = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        a.PROJECT_ID,
+        IFNULL(a.total_active_accounts${suffix}, 0) as TOTAL_ACTIVE_ACCOUNTS,
+        IFNULL(a.total_new_accounts${suffix}, 0) as TOTAL_NEW_ACCOUNTS,
+        ${engagementSelect}
+      FROM ANALYTICS.PLATINUM.MEMBERSHIP_OVERALL_ACCOUNTS as a
+      INNER JOIN slug_resolve sr ON a.PROJECT_ID = sr.project_id
+      ${engagementJoin}
+      LIMIT 1
+    `;
+
+    const result = await this.snowflakeService.execute<ParticipatingOrgsRow>(query, [foundationSlug]);
+
+    if (!result.rows || result.rows.length === 0) {
+      return {
+        projectId: '',
+        totalActiveMembers: 0,
+        totalNewMembers: 0,
+        highEngagement: 0,
+        medEngagement: 0,
+        lowEngagement: 0,
+      };
+    }
+
+    const row = result.rows[0];
+    return {
+      projectId: row.PROJECT_ID ?? '',
+      totalActiveMembers: row.TOTAL_ACTIVE_ACCOUNTS ?? 0,
+      totalNewMembers: row.TOTAL_NEW_ACCOUNTS ?? 0,
+      highEngagement: row.HIGH_ENGAGEMENT ?? 0,
+      medEngagement: row.MED_ENGAGEMENT ?? 0,
+      lowEngagement: row.LOW_ENGAGEMENT ?? 0,
+    };
+  }
+
+  /**
+   * Get NPS summary for a foundation from Snowflake
+   * SQL aligned with lfx-pcc SurveyQueriesService.surveyResponseMetrics.
+   * Resolves project_id from foundation slug via ENGAGEMENT_SCORES_BY_CLASSIFICATION CTE.
+   * @param foundationSlug - Foundation slug used to resolve project_id
+   * @param range - Reporting range (default 'YTD')
+   * @returns NPS summary response with score, counts, and period label
+   */
+  public async getNpsSummary(
+    foundationSlug: string,
+    range: string = 'YTD'
+  ): Promise<NpsSummaryResponse> {
+    interface NpsSummaryRow {
+      PROJECT_ID: string;
+      NPS_SCORE: number;
+      PROMOTERS: number;
+      PASSIVES: number;
+      DETRACTORS: number;
+      NON_RESPONSES: number;
+      LAST_UPDATED: string | null;
+      CHANGE_NPS_SCORE: number;
+    }
+
+    const VALID_RANGES = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3', 'COMPLETED_YEAR_4'];
+    const effectiveRange = VALID_RANGES.includes(range) ? range : 'YTD';
+    const suffix = this.getRangeSuffix(effectiveRange);
+
+    const query = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        sr.project_id AS PROJECT_ID,
+        IFNULL(sr.most_recent_nps_score${suffix}, 0) AS NPS_SCORE,
+        IFNULL(sr.most_recent_count_promoters${suffix}, 0) AS PROMOTERS,
+        IFNULL(sr.most_recent_count_passives${suffix}, 0) AS PASSIVES,
+        IFNULL(sr.most_recent_count_detractors${suffix}, 0) AS DETRACTORS,
+        IFNULL(sr.most_recent_count_non_responses${suffix}, 0) AS NON_RESPONSES,
+        sr.last_updated AS LAST_UPDATED,
+        IFNULL(sr.nps_score_most_recent_to_previous_change${suffix}, 0) AS CHANGE_NPS_SCORE
+      FROM ANALYTICS.PLATINUM.SURVEY_RESPONSES sr
+      INNER JOIN slug_resolve s ON sr.project_id = s.project_id
+      LIMIT 1
+    `;
+
+    const result = await this.snowflakeService.execute<NpsSummaryRow>(query, [foundationSlug]);
+
+    if (!result.rows || result.rows.length === 0) {
+      return {
+        projectId: '',
+        npsScore: 0,
+        promoters: 0,
+        passives: 0,
+        detractors: 0,
+        nonResponses: 0,
+        responses: 0,
+        lastUpdatedLabel: 'N/A',
+      };
+    }
+
+    const row = result.rows[0];
+
+    let lastUpdatedLabel = 'N/A';
+    if (row.LAST_UPDATED) {
+      const date = new Date(row.LAST_UPDATED);
+      if (!isNaN(date.getTime())) {
+        const quarter = Math.floor(date.getUTCMonth() / 3) + 1;
+        lastUpdatedLabel = `Q${quarter} ${date.getUTCFullYear()}`;
+      } else {
+        lastUpdatedLabel = row.LAST_UPDATED;
+      }
+    }
+
+    return {
+      projectId: row.PROJECT_ID ?? '',
+      npsScore: row.NPS_SCORE,
+      promoters: row.PROMOTERS,
+      passives: row.PASSIVES,
+      detractors: row.DETRACTORS,
+      nonResponses: row.NON_RESPONSES,
+      responses: row.PROMOTERS + row.PASSIVES + row.DETRACTORS + row.NON_RESPONSES,
+      lastUpdatedLabel,
+      changeNpsScore: row.CHANGE_NPS_SCORE,
+    };
+  }
+
+  /**
+   * Get consolidated membership churn per tier summary for a foundation from Snowflake.
+   * SQL semantics aligned with lfx-pcc MembershipQueriesService:
+   *  - Headline churn rate: project-level DIV0NULL(SUM(total_churned_accounts), SUM(membership_count))
+   *  - Value lost / members lost: SUM across per-tier rows
+   * Resolves project_id from foundation slug via ENGAGEMENT_SCORES_BY_CLASSIFICATION CTE.
+   * @param foundationSlug - Foundation slug used to resolve project_id
+   * @param range - Reporting range (default 'YTD')
+   * @returns Consolidated churn summary with current period, optional previous year, and trend
+   */
+  public async getMembershipChurnPerTierSummary(
+    foundationSlug: string,
+    range: string = 'YTD'
+  ): Promise<MembershipChurnPerTierSummaryResponse> {
+    interface ChurnSummaryRow {
+      PROJECT_ID: string;
+      CURRENT_CHURN_RATE_PCT: number | null;
+      CURRENT_VALUE_LOST: number | null;
+      CURRENT_MEMBERS_LOST: number | null;
+      PREVIOUS_CHURN_RATE_PCT: number | null;
+      PREVIOUS_VALUE_LOST: number | null;
+      PREVIOUS_MEMBERS_LOST: number | null;
+    }
+
+    const VALID_RANGES = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3', 'COMPLETED_YEAR_4'];
+    const effectiveRange = VALID_RANGES.includes(range) ? range : 'YTD';
+
+    const currentYearOffsetMap: Record<string, number> = {
+      COMPLETED_YEAR: 2,
+      COMPLETED_YEAR_2: 3,
+      COMPLETED_YEAR_3: 4,
+      COMPLETED_YEAR_4: 5,
+    };
+    const currentOffset = currentYearOffsetMap[effectiveRange] ?? 1;
+    const currentYearPredicate = `EXTRACT(YEAR FROM year_start) = EXTRACT(YEAR FROM CURRENT_DATE()) - ${currentOffset}`;
+
+    const previousYearOffsetMap: Record<string, number | null> = {
+      COMPLETED_YEAR: 3,
+      COMPLETED_YEAR_2: 4,
+      COMPLETED_YEAR_3: 5,
+      COMPLETED_YEAR_4: null,
+    };
+    const previousOffset = effectiveRange in previousYearOffsetMap ? previousYearOffsetMap[effectiveRange] : 2;
+    const previousYearPredicate = previousOffset !== null
+      ? `EXTRACT(YEAR FROM year_start) = EXTRACT(YEAR FROM CURRENT_DATE()) - ${previousOffset}`
+      : null;
+
+    const comparisonAvailable = previousYearPredicate !== null;
+
+    const previousTotalCte = comparisonAvailable
+      ? `previous_total AS (
+          SELECT
+            DIV0NULL(SUM(total_churned_accounts), SUM(membership_count)) AS TOTAL_CHURN_RATE
+          FROM ANALYTICS.PLATINUM.MEMBERSHIP_CHURN
+          WHERE project_id = (SELECT project_id FROM slug_resolve LIMIT 1)
+            AND year_start IS NOT NULL
+            AND ${previousYearPredicate}
+            AND membership_tier IS NOT NULL
+            AND membership_tier != 'Associate Membership'
+        ),
+        previous_per_tier AS (
+          SELECT
+            IFNULL(SUM(membership_value_lost), 0) AS VALUE_LOST,
+            IFNULL(SUM(total_churned_accounts), 0) AS MEMBERS_LOST
+          FROM ANALYTICS.PLATINUM.MEMBERSHIP_CHURN
+          WHERE project_id = (SELECT project_id FROM slug_resolve LIMIT 1)
+            AND year_start IS NOT NULL
+            AND ${previousYearPredicate}
+            AND membership_tier IS NOT NULL
+            AND membership_value_lost IS NOT NULL
+        ),`
+      : '';
+
+    const previousSelectFields = comparisonAvailable
+      ? `(SELECT ROUND(IFNULL(TOTAL_CHURN_RATE, 0) * 100, 1) FROM previous_total) AS PREVIOUS_CHURN_RATE_PCT,
+         (SELECT VALUE_LOST FROM previous_per_tier) AS PREVIOUS_VALUE_LOST,
+         (SELECT MEMBERS_LOST FROM previous_per_tier) AS PREVIOUS_MEMBERS_LOST`
+      : `NULL AS PREVIOUS_CHURN_RATE_PCT,
+         NULL AS PREVIOUS_VALUE_LOST,
+         NULL AS PREVIOUS_MEMBERS_LOST`;
+
+    const query = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      ),
+      current_total AS (
+        SELECT
+          DIV0NULL(SUM(total_churned_accounts), SUM(membership_count)) AS TOTAL_CHURN_RATE
+        FROM ANALYTICS.PLATINUM.MEMBERSHIP_CHURN
+        WHERE project_id = (SELECT project_id FROM slug_resolve LIMIT 1)
+          AND year_start IS NOT NULL
+          AND ${currentYearPredicate}
+          AND membership_tier IS NOT NULL
+          AND membership_tier != 'Associate Membership'
+      ),
+      current_per_tier AS (
+        SELECT
+          IFNULL(SUM(membership_value_lost), 0) AS VALUE_LOST,
+          IFNULL(SUM(total_churned_accounts), 0) AS MEMBERS_LOST
+        FROM ANALYTICS.PLATINUM.MEMBERSHIP_CHURN
+        WHERE project_id = (SELECT project_id FROM slug_resolve LIMIT 1)
+          AND year_start IS NOT NULL
+          AND ${currentYearPredicate}
+          AND membership_tier IS NOT NULL
+          AND membership_value_lost IS NOT NULL
+      ),
+      ${previousTotalCte}
+      final AS (
+        SELECT
+          (SELECT project_id FROM slug_resolve LIMIT 1) AS PROJECT_ID,
+          ROUND(IFNULL((SELECT TOTAL_CHURN_RATE FROM current_total), 0) * 100, 1) AS CURRENT_CHURN_RATE_PCT,
+          (SELECT VALUE_LOST FROM current_per_tier) AS CURRENT_VALUE_LOST,
+          (SELECT MEMBERS_LOST FROM current_per_tier) AS CURRENT_MEMBERS_LOST,
+          ${previousSelectFields}
+      )
+      SELECT * FROM final
+    `;
+
+    const result = await this.snowflakeService.execute<ChurnSummaryRow>(query, [foundationSlug]);
+
+    const zeroDefault: MembershipChurnPerTierSummaryResponse = {
+      projectId: '',
+      range: effectiveRange,
+      comparisonAvailable,
+      currentPeriod: { churnRatePct: 0, valueLost: 0, membersLost: 0 },
+      previousYear: comparisonAvailable ? { churnRatePct: 0, valueLost: 0, membersLost: 0 } : null,
+      trend: null,
+    };
+
+    if (!result.rows || result.rows.length === 0) {
+      return zeroDefault;
+    }
+
+    const row = result.rows[0];
+    if (!row.PROJECT_ID) {
+      return zeroDefault;
+    }
+
+    const currentPeriod = {
+      churnRatePct: row.CURRENT_CHURN_RATE_PCT ?? 0,
+      valueLost: row.CURRENT_VALUE_LOST ?? 0,
+      membersLost: row.CURRENT_MEMBERS_LOST ?? 0,
+    };
+
+    let previousYear = null;
+    let trend = null;
+
+    if (comparisonAvailable) {
+      previousYear = {
+        churnRatePct: row.PREVIOUS_CHURN_RATE_PCT ?? 0,
+        valueLost: row.PREVIOUS_VALUE_LOST ?? 0,
+        membersLost: row.PREVIOUS_MEMBERS_LOST ?? 0,
+      };
+
+      if (previousYear.membersLost > 0 && currentPeriod.membersLost > 0) {
+        const multiplier = Math.round((currentPeriod.membersLost / previousYear.membersLost) * 10) / 10;
+        if (isFinite(multiplier) && multiplier !== 1) {
+          trend = {
+            direction: (currentPeriod.membersLost > previousYear.membersLost ? 'up' : 'down') as 'up' | 'down',
+            multiplier,
+            basis: 'membersLost' as const,
+          };
+        }
+      }
+    }
+
+    return {
+      projectId: row.PROJECT_ID,
+      range: effectiveRange,
+      comparisonAvailable,
+      currentPeriod,
+      previousYear,
+      trend,
+    };
+  }
+
+  /**
+   * Get outstanding balance summary for a foundation from Snowflake.
+   * Two logical reads from ANALYTICS.PLATINUM.CHURN_RISK:
+   *  1. Overview row (churn_risk IS NULL) → headline balance and total members at risk
+   *  2. Breakdown rows (churn_risk IS NOT NULL) → per-risk-bucket overdue amounts
+   * Resolves project_id from foundation slug via ENGAGEMENT_SCORES_BY_CLASSIFICATION CTE.
+   * @param foundationSlug - Foundation slug used to resolve project_id
+   * @returns Outstanding balance summary with risk breakdown
+   */
+  public async getOutstandingBalanceSummary(
+    foundationSlug: string
+  ): Promise<OutstandingBalanceSummaryResponse> {
+    interface OverviewRow {
+      PROJECT_ID: string;
+      OUTSTANDING_BALANCE: number | null;
+      MEMBERS_AT_RISK_OF_CHURN: number | null;
+    }
+
+    interface BreakdownRow {
+      CHURN_RISK: string;
+      OUTSTANDING_BALANCE: number | null;
+      MEMBERS_AT_RISK_OF_CHURN: number | null;
+    }
+
+    const overviewQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        cr.project_id AS PROJECT_ID,
+        IFNULL(cr.outstanding_balance, 0) AS OUTSTANDING_BALANCE,
+        IFNULL(cr.members_at_risk_of_churn, 0) AS MEMBERS_AT_RISK_OF_CHURN
+      FROM ANALYTICS.PLATINUM.CHURN_RISK cr
+      INNER JOIN slug_resolve sr ON cr.project_id = sr.project_id
+      WHERE cr.churn_risk IS NULL
+      LIMIT 1
+    `;
+
+    const breakdownQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        cr.churn_risk AS CHURN_RISK,
+        IFNULL(cr.outstanding_balance, 0) AS OUTSTANDING_BALANCE,
+        IFNULL(cr.members_at_risk_of_churn, 0) AS MEMBERS_AT_RISK_OF_CHURN
+      FROM ANALYTICS.PLATINUM.CHURN_RISK cr
+      INNER JOIN slug_resolve sr ON cr.project_id = sr.project_id
+      WHERE cr.churn_risk IS NOT NULL
+    `;
+
+    const [overviewResult, breakdownResult] = await Promise.all([
+      this.snowflakeService.execute<OverviewRow>(overviewQuery, [foundationSlug]),
+      this.snowflakeService.execute<BreakdownRow>(breakdownQuery, [foundationSlug]),
+    ]);
+
+    const overviewRow = overviewResult.rows?.[0];
+    const resolvedProjectId = overviewRow?.PROJECT_ID ?? '';
+
+    const defaultResponse: OutstandingBalanceSummaryResponse = {
+      projectId: resolvedProjectId,
+      totalOutstandingBalance: 0,
+      totalMembersAtRisk: 0,
+      primaryRiskLevel: null,
+      primaryRiskAmount: 0,
+      overdueBreakdown: {
+        medium: { riskLevel: 'Medium', overdueRangeLabel: '60-89', outstandingBalance: 0, membersAtRisk: 0 },
+        high: { riskLevel: 'High', overdueRangeLabel: '90+', outstandingBalance: 0, membersAtRisk: 0 },
+      },
+    };
+
+    if (!overviewRow) {
+      return defaultResponse;
+    }
+
+    const totalOutstandingBalance = overviewRow.OUTSTANDING_BALANCE ?? 0;
+    const totalMembersAtRisk = overviewRow.MEMBERS_AT_RISK_OF_CHURN ?? 0;
+
+    const mediumBucket = { ...defaultResponse.overdueBreakdown.medium };
+    const highBucket = { ...defaultResponse.overdueBreakdown.high };
+
+    if (breakdownResult.rows) {
+      for (const row of breakdownResult.rows) {
+        if (row.CHURN_RISK === 'Medium') {
+          mediumBucket.outstandingBalance = row.OUTSTANDING_BALANCE ?? 0;
+          mediumBucket.membersAtRisk = row.MEMBERS_AT_RISK_OF_CHURN ?? 0;
+        } else if (row.CHURN_RISK === 'High') {
+          highBucket.outstandingBalance = row.OUTSTANDING_BALANCE ?? 0;
+          highBucket.membersAtRisk = row.MEMBERS_AT_RISK_OF_CHURN ?? 0;
+        }
+      }
+    }
+
+    let primaryRiskLevel: 'High' | 'Medium' | null = null;
+    let primaryRiskAmount = 0;
+    if (highBucket.outstandingBalance > 0) {
+      primaryRiskLevel = 'High';
+      primaryRiskAmount = highBucket.outstandingBalance;
+    } else if (mediumBucket.outstandingBalance > 0) {
+      primaryRiskLevel = 'Medium';
+      primaryRiskAmount = mediumBucket.outstandingBalance;
+    }
+
+    return {
+      projectId: resolvedProjectId,
+      totalOutstandingBalance,
+      totalMembersAtRisk,
+      primaryRiskLevel,
+      primaryRiskAmount,
+      overdueBreakdown: {
+        medium: mediumBucket,
+        high: highBucket,
+      },
+    };
+  }
+
+  /**
+   * Get events summary for a foundation from Snowflake
+   * Three reads: overview (total events + change), sponsorship SUM, goal MAX.
+   * Resolves project_id from foundation slug via ENGAGEMENT_SCORES_BY_CLASSIFICATION CTE.
+   * @param foundationSlug - Foundation slug used to resolve project_id
+   * @returns Events summary response with total events, change, sponsorship, and goal
+   */
+  public async getEventsSummary(
+    foundationSlug: string,
+    range: string = 'YTD'
+  ): Promise<EventsSummaryResponse> {
+    interface OverviewRow {
+      PROJECT_ID: string;
+      ALL_EVENTS: number;
+      UPCOMING_EVENTS: number;
+      PAST_EVENTS: number;
+      EVENT_CHANGE: number;
+      EVENT_COUNT_DIFF: number;
+    }
+
+    interface SponsorshipRow {
+      SPONSORSHIP_REVENUE: number;
+    }
+
+    interface GoalRow {
+      SPONSORSHIP_GOAL: number;
+    }
+
+    const VALID_RANGES = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3', 'COMPLETED_YEAR_4'];
+    const effectiveRange = VALID_RANGES.includes(range) ? range : 'YTD';
+    const suffix = this.getRangeSuffix(effectiveRange);
+    const goalSuffix = this.getRangeSuffix(effectiveRange, 'engagementScoresGoal');
+
+    const comparisonMap = ProjectService.rangeSuffixMap['eventComparison'];
+    const hasComparison = effectiveRange in comparisonMap;
+    const comparisonSuffix = hasComparison ? comparisonMap[effectiveRange] : null;
+
+    const upcomingCol = effectiveRange === 'YTD'
+      ? `IFNULL(eo.UPCOMING_EVENTS${suffix}, 0)`
+      : '0';
+
+    const changeExpr = comparisonSuffix
+      ? `CASE
+          WHEN IFNULL(eo.EVENT_COUNT${comparisonSuffix}, 0) = 0 THEN 0
+          ELSE (IFNULL(eo.EVENT_COUNT${suffix}, 0) - eo.EVENT_COUNT${comparisonSuffix})
+               / NULLIF(eo.EVENT_COUNT${comparisonSuffix}, 0)
+        END`
+      : '0';
+
+    const diffExpr = comparisonSuffix
+      ? `IFNULL(eo.EVENT_COUNT${suffix}, 0) - IFNULL(eo.EVENT_COUNT${comparisonSuffix}, 0)`
+      : '0';
+
+    const overviewQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        eo.PROJECT_ID,
+        IFNULL(eo.EVENT_COUNT${suffix}, 0) AS ALL_EVENTS,
+        ${upcomingCol} AS UPCOMING_EVENTS,
+        IFNULL(eo.PAST_EVENTS${suffix}, 0) AS PAST_EVENTS,
+        ${changeExpr} AS EVENT_CHANGE,
+        ${diffExpr} AS EVENT_COUNT_DIFF
+      FROM ANALYTICS.PLATINUM.EVENT_OVERVIEW eo
+      INNER JOIN slug_resolve sr ON eo.PROJECT_ID = sr.project_id
+      LIMIT 1
+    `;
+
+    const sponsorshipQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        IFNULL(SUM(es.SPONSORSHIP_REVENUE${suffix}), 0) AS SPONSORSHIP_REVENUE
+      FROM ANALYTICS.PLATINUM.EVENT_SPONSORSHIPS es
+      INNER JOIN slug_resolve sr ON es.PROJECT_ID = sr.project_id
+    `;
+
+    const goalQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        IFNULL(MAX(eng.EVENT_SPONSORSHIPS${goalSuffix}_GOAL), 0) AS SPONSORSHIP_GOAL
+      FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES eng
+      INNER JOIN slug_resolve sr ON eng.PROJECT_ID = sr.project_id
+      WHERE eng.IS_MEMBER = TRUE
+    `;
+
+    const [overviewResult, sponsorshipResult, goalResult] = await Promise.all([
+      this.snowflakeService.execute<OverviewRow>(overviewQuery, [foundationSlug]),
+      this.snowflakeService.execute<SponsorshipRow>(sponsorshipQuery, [foundationSlug]),
+      this.snowflakeService.execute<GoalRow>(goalQuery, [foundationSlug]),
+    ]);
+
+    const overviewRow = overviewResult.rows?.[0];
+    const sponsorshipRow = sponsorshipResult.rows?.[0];
+    const goalRow = goalResult.rows?.[0];
+
+    const resolvedProjectId = overviewRow?.PROJECT_ID ?? '';
+    const totalEvents = overviewRow?.ALL_EVENTS ?? 0;
+    const upcomingEvents = overviewRow?.UPCOMING_EVENTS ?? 0;
+    const pastEvents = overviewRow?.PAST_EVENTS ?? 0;
+    const eventChange = overviewRow?.EVENT_CHANGE ?? 0;
+    const eventCountDiff = overviewRow?.EVENT_COUNT_DIFF ?? 0;
+    const sponsorshipRevenue = sponsorshipRow?.SPONSORSHIP_REVENUE ?? 0;
+    const sponsorshipGoal = goalRow?.SPONSORSHIP_GOAL ?? 0;
+    const sponsorshipProgressPct = sponsorshipGoal > 0 ? (sponsorshipRevenue / sponsorshipGoal) * 100 : 0;
+
+    return {
+      projectId: resolvedProjectId,
+      totalEvents,
+      upcomingEvents,
+      pastEvents,
+      eventChange,
+      eventCountDiff,
+      sponsorshipRevenue,
+      sponsorshipGoal,
+      sponsorshipProgressPct,
+    };
+  }
+
+  /**
+   * Get Training & Certification summary for a foundation from Snowflake.
+   * Two logical reads: ENROLLMENTS for enrollment values and COURSE_PURCHASES for revenue values.
+   * Column selection is range-specific, reusing PCC TrainingQueriesService.trainingEnrollment semantics.
+   * @param foundationSlug - Foundation slug used to resolve project_id via slug-resolve CTE
+   * @param range - Reporting window (default 'YTD')
+   * @returns Normalized response with both enrollment and revenue values
+   */
+  public async getTrainingCertificationSummary(
+    foundationSlug: string,
+    range: string = 'YTD'
+  ): Promise<TrainingCertificationSummaryResponse> {
+    interface EnrollmentRow {
+      PROJECT_ID: string;
+      INSTRUCTOR_LED: number;
+      E_LEARNINGS: number;
+      CERTIFICATION_EXAMS: number;
+      EDX: number;
+    }
+
+    interface RevenueRow {
+      PROJECT_ID: string;
+      INSTRUCTOR_LED_REVENUE: number;
+      E_LEARNINGS_NET_REVENUE: number;
+      CERTIFICATION_EXAMS_NET_REVENUE: number;
+    }
+
+    const VALID_RANGES = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3', 'COMPLETED_YEAR_4'];
+    const effectiveRange = VALID_RANGES.includes(range) ? range : 'YTD';
+
+    const { prefix, suffix } = this.getTrainingRangeColumns(effectiveRange);
+
+    const enrollmentQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        e.project_id AS PROJECT_ID,
+        IFNULL(e.instructor_led_${prefix}${suffix}, 0) AS INSTRUCTOR_LED,
+        IFNULL(e.e_learnings_${prefix}${suffix}, 0) AS E_LEARNINGS,
+        IFNULL(e.certification_exams_${prefix}${suffix}, 0) AS CERTIFICATION_EXAMS,
+        IFNULL(e.edx_${prefix}${suffix}, 0) AS EDX
+      FROM ANALYTICS.PLATINUM.ENROLLMENTS AS e
+      INNER JOIN slug_resolve sr ON e.project_id = sr.project_id
+      LIMIT 1
+    `;
+
+    const revenueQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        c.project_id AS PROJECT_ID,
+        IFNULL(c.INSTRUCTOR_LED_NET_REVENUE_${prefix}${suffix}, 0) AS INSTRUCTOR_LED_REVENUE,
+        IFNULL(c.e_learning_net_revenue_${prefix}${suffix}, 0) AS E_LEARNINGS_NET_REVENUE,
+        IFNULL(c.certification_exam_net_revenue_${prefix}${suffix}, 0) AS CERTIFICATION_EXAMS_NET_REVENUE
+      FROM ANALYTICS.PLATINUM.COURSE_PURCHASES AS c
+      INNER JOIN slug_resolve sr ON c.project_id = sr.project_id
+      LIMIT 1
+    `;
+
+    const [enrollmentResult, revenueResult] = await Promise.all([
+      this.snowflakeService.execute<EnrollmentRow>(enrollmentQuery, [foundationSlug]),
+      this.snowflakeService.execute<RevenueRow>(revenueQuery, [foundationSlug]),
+    ]);
+
+    const enrollmentRow = enrollmentResult.rows?.[0];
+    const revenueRow = revenueResult.rows?.[0];
+    const resolvedProjectId = enrollmentRow?.PROJECT_ID ?? revenueRow?.PROJECT_ID ?? '';
+
+    return {
+      projectId: resolvedProjectId,
+      range: effectiveRange as TrainingCertificationSummaryResponse['range'],
+      enrollment: {
+        instructorLed: enrollmentRow?.INSTRUCTOR_LED ?? 0,
+        eLearning: enrollmentRow?.E_LEARNINGS ?? 0,
+        certExams: enrollmentRow?.CERTIFICATION_EXAMS ?? 0,
+        edx: enrollmentRow?.EDX ?? 0,
+      },
+      revenue: {
+        instructorLed: revenueRow?.INSTRUCTOR_LED_REVENUE ?? 0,
+        eLearning: revenueRow?.E_LEARNINGS_NET_REVENUE ?? 0,
+        certExams: revenueRow?.CERTIFICATION_EXAMS_NET_REVENUE ?? 0,
+      },
+    };
+  }
+
+  /**
+   * Get Code Contribution summary for a foundation from Snowflake.
+   * One logical read from CODE_CONTRIBUTIONS with dynamic column interpolation.
+   * Column selection is range-specific; all-time role counts are always included.
+   * @param foundationSlug - Foundation slug used to resolve project_id via slug-resolve CTE
+   * @param range - Reporting window (default 'YTD')
+   * @returns Normalized response with contributor counts and role distribution
+   */
+  public async getCodeContributionSummary(
+    foundationSlug: string,
+    range: string = 'YTD'
+  ): Promise<CodeContributionSummaryResponse> {
+    interface CodeContributionRow {
+      PROJECT_ID: string;
+      TOTAL_CONTRIBUTORS: number;
+      NEW_CONTRIBUTORS: number;
+      TOTAL_CONTRIBUTORS_CHANGE: number;
+      NEW_CONTRIBUTORS_CHANGE: number;
+      COMMITTERS_ALL_TIME: number;
+      MAINTAINERS_ALL_TIME: number;
+      REVIEWERS_ALL_TIME: number;
+    }
+
+    const validRanges: CodeContributionRange[] = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3', 'COMPLETED_YEAR_4'];
+    const effectiveRange: CodeContributionRange = validRanges.includes(range as CodeContributionRange)
+      ? (range as CodeContributionRange)
+      : 'YTD';
+    const rangeSuffix = this.getRangeSuffix(effectiveRange);
+
+    const query = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        cc.project_id AS PROJECT_ID,
+        IFNULL(cc.total_contributors${rangeSuffix}, 0) AS TOTAL_CONTRIBUTORS,
+        IFNULL(cc.new_contributors${rangeSuffix}, 0) AS NEW_CONTRIBUTORS,
+        IFNULL(cc.total_contributors${rangeSuffix}_change, 0) AS TOTAL_CONTRIBUTORS_CHANGE,
+        IFNULL(cc.new_contributors${rangeSuffix}_change, 0) AS NEW_CONTRIBUTORS_CHANGE,
+        IFNULL(cc.committers_all_time, 0) AS COMMITTERS_ALL_TIME,
+        IFNULL(cc.maintainers_all_time, 0) AS MAINTAINERS_ALL_TIME,
+        IFNULL(cc.reviewers_all_time, 0) AS REVIEWERS_ALL_TIME
+      FROM ANALYTICS.PLATINUM.CODE_CONTRIBUTIONS cc
+      INNER JOIN slug_resolve sr ON cc.project_id = sr.project_id
+      LIMIT 1
+    `;
+
+    const result = await this.snowflakeService.execute<CodeContributionRow>(query, [foundationSlug]);
+    const row = result.rows?.[0];
+
+    return {
+      dataAvailable: !!row,
+      projectId: row?.PROJECT_ID ?? '',
+      projectSlug: foundationSlug,
+      range: effectiveRange,
+      totalContributors: row?.TOTAL_CONTRIBUTORS ?? 0,
+      totalContributorsChange: row?.TOTAL_CONTRIBUTORS_CHANGE ?? 0,
+      newContributors: row?.NEW_CONTRIBUTORS ?? 0,
+      newContributorsChange: row?.NEW_CONTRIBUTORS_CHANGE ?? 0,
+      committers: row?.COMMITTERS_ALL_TIME ?? 0,
+      maintainers: row?.MAINTAINERS_ALL_TIME ?? 0,
+      reviewers: row?.REVIEWERS_ALL_TIME ?? 0,
+    };
+  }
+
+  /**
    * Get all project UIDs under a foundation (foundation UID + child project UIDs).
    * Queries the query service for projects with parent_uid matching the foundation.
    * @param req - Express request object
@@ -2607,5 +3410,17 @@ export class ProjectService {
     }
     logger.debug(req, 'get_foundation_project_uids', 'Resolved foundation project UIDs', { foundation_uid: foundationUid, count: uids.length });
     return uids;
+  }
+
+  private getRangeSuffix(range: string, convention: string = 'standard'): string {
+    const map = ProjectService.rangeSuffixMap[convention];
+    return map?.[range] ?? map?.['YTD'] ?? '_ytd';
+  }
+
+  private getTrainingRangeColumns(range: string): { prefix: string; suffix: string } {
+    const full = this.getRangeSuffix(range, 'training');
+    if (full === 'YTD') return { prefix: '', suffix: 'YTD' };
+    const lastUnderscore = full.lastIndexOf('_');
+    return { prefix: full.substring(0, lastUnderscore + 1), suffix: full.substring(lastUnderscore + 1) };
   }
 }

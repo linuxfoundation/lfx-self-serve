@@ -2108,4 +2108,300 @@ export class AnalyticsController {
       next(error);
     }
   }
+
+  /**
+   * GET /api/analytics/nps-summary
+   * Get Net Promoter Score summary for a foundation
+   * Query params: foundationSlug (required), range (optional, default 'YTD')
+   */
+  public async getNpsSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_nps_summary');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+      const range = (req.query['range'] as string | undefined) || 'YTD';
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_nps_summary',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_nps_summary',
+        });
+      }
+
+      const response = await this.projectService.getNpsSummary(foundationSlug, range);
+
+      logger.success(req, 'get_nps_summary', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        nps_score: response.npsScore,
+        responses: response.responses,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/participating-orgs-summary
+   * Get participating organizations summary (membership counts + engagement breakdown)
+   * Query params: foundationSlug (required), range (optional, default 'YTD')
+   */
+  public async getParticipatingOrgsSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_participating_orgs_summary');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+      const range = (req.query['range'] as string | undefined) || 'YTD';
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_participating_orgs_summary',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_participating_orgs_summary',
+        });
+      }
+
+      const response = await this.projectService.getParticipatingOrgsSummary(foundationSlug, range);
+
+      logger.success(req, 'get_participating_orgs_summary', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        total_active_members: response.totalActiveMembers,
+        total_new_members: response.totalNewMembers,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/membership-churn-per-tier-summary
+   * Get consolidated membership churn per tier summary for a foundation
+   * Query params: foundationSlug (required), range (optional, default 'YTD')
+   */
+  public async getMembershipChurnPerTierSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_membership_churn_per_tier_summary');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+      const range = (req.query['range'] as string | undefined) || 'YTD';
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_membership_churn_per_tier_summary',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_membership_churn_per_tier_summary',
+        });
+      }
+
+      const validRanges = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3', 'COMPLETED_YEAR_4'];
+      if (!validRanges.includes(range)) {
+        throw ServiceValidationError.forField('range', `Invalid range value. Allowed: ${validRanges.join(', ')}`, {
+          operation: 'get_membership_churn_per_tier_summary',
+        });
+      }
+
+      const response = await this.projectService.getMembershipChurnPerTierSummary(foundationSlug, range);
+
+      logger.success(req, 'get_membership_churn_per_tier_summary', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        comparison_available: response.comparisonAvailable,
+        current_churn_rate_pct: response.currentPeriod.churnRatePct,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/events-summary
+   * Get events summary for a foundation (total events, change, sponsorship vs goal)
+   * Query params: foundationSlug (required), range (optional, default 'YTD')
+   */
+  public async getEventsSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_events_summary');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+      const range = (req.query['range'] as string | undefined) || 'YTD';
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_events_summary',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_events_summary',
+        });
+      }
+
+      const response = await this.projectService.getEventsSummary(foundationSlug, range);
+
+      logger.success(req, 'get_events_summary', startTime, {
+        foundation_slug: foundationSlug,
+        range,
+        project_id: response.projectId,
+        total_events: response.totalEvents,
+        event_change: response.eventChange,
+        sponsorship_revenue: response.sponsorshipRevenue,
+        sponsorship_goal: response.sponsorshipGoal,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/outstanding-balance-summary
+   * Get outstanding balance summary for a foundation
+   * Query params: foundationSlug (required)
+   */
+  public async getOutstandingBalanceSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_outstanding_balance_summary');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_outstanding_balance_summary',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_outstanding_balance_summary',
+        });
+      }
+
+      const response = await this.projectService.getOutstandingBalanceSummary(foundationSlug);
+
+      logger.success(req, 'get_outstanding_balance_summary', startTime, {
+        foundation_slug: foundationSlug,
+        project_id: response.projectId,
+        total_outstanding_balance: response.totalOutstandingBalance,
+        total_members_at_risk: response.totalMembersAtRisk,
+        primary_risk_level: response.primaryRiskLevel,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/training-certification-summary
+   * Get Training & Certification summary for a foundation
+   * Query params: foundationSlug (required), range (optional, default 'YTD')
+   */
+  public async getTrainingCertificationSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_training_certification_summary');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+      const range = (req.query['range'] as string | undefined) || 'YTD';
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_training_certification_summary',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_training_certification_summary',
+        });
+      }
+
+      const validRanges = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3', 'COMPLETED_YEAR_4'];
+      if (!validRanges.includes(range)) {
+        throw ServiceValidationError.forField('range', `Invalid range value. Allowed: ${validRanges.join(', ')}`, {
+          operation: 'get_training_certification_summary',
+        });
+      }
+
+      const response = await this.projectService.getTrainingCertificationSummary(foundationSlug, range);
+
+      logger.success(req, 'get_training_certification_summary', startTime, {
+        foundation_slug: foundationSlug,
+        project_id: response.projectId,
+        range: response.range,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * GET /api/analytics/code-contribution-summary
+   * Get Code Contribution summary for a foundation
+   * Query params: foundationSlug (required), range (optional, default 'YTD')
+   */
+  public async getCodeContributionSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_code_contribution_summary');
+
+    try {
+      const foundationSlug = req.query['foundationSlug'] as string | undefined;
+      const range = (req.query['range'] as string | undefined) || 'YTD';
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_code_contribution_summary',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_code_contribution_summary',
+        });
+      }
+
+      const validRanges = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3', 'COMPLETED_YEAR_4'];
+      if (!validRanges.includes(range)) {
+        throw ServiceValidationError.forField('range', `Invalid range value. Allowed: ${validRanges.join(', ')}`, {
+          operation: 'get_code_contribution_summary',
+        });
+      }
+
+      const response = await this.projectService.getCodeContributionSummary(foundationSlug, range);
+
+      logger.success(req, 'get_code_contribution_summary', startTime, {
+        foundation_slug: foundationSlug,
+        project_id: response.projectId,
+        range: response.range,
+        data_available: response.dataAvailable,
+      });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
 }

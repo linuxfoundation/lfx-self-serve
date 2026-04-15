@@ -1,0 +1,105 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex h-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5" data-testid="participating-orgs-card">
+  <!-- Header -->
+  <div class="flex items-center justify-between">
+    <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Participating Organizations</h3>
+    <button
+      class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 transition-colors"
+      [disabled]="loading()"
+      (click)="downloadCard()"
+      aria-label="Download participating organizations card"
+      title="Download participating organizations card"
+      data-testid="participating-orgs-download">
+      <i class="fa-solid fa-arrow-down-to-bracket"></i>
+    </button>
+  </div>
+
+  @if (loading()) {
+    <!-- Skeleton Loading State -->
+    <div class="flex flex-col gap-3">
+      <p-skeleton width="100%" height="3rem" borderRadius="8px" />
+      <p-skeleton width="100%" height="1.25rem" borderRadius="6px" />
+      <div class="flex gap-4">
+        <p-skeleton width="4rem" height="0.75rem" />
+        <p-skeleton width="5rem" height="0.75rem" />
+        <p-skeleton width="4rem" height="0.75rem" />
+      </div>
+      <div class="flex gap-8">
+        <div class="flex flex-col gap-1">
+          <p-skeleton width="3rem" height="2rem" />
+          <p-skeleton width="5rem" height="0.75rem" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <p-skeleton width="2rem" height="2rem" />
+          <p-skeleton width="5rem" height="0.75rem" />
+        </div>
+      </div>
+    </div>
+  } @else {
+    <!-- Alert Banner -->
+    @if (dominantSegment()) {
+      <div class="flex items-start gap-2 rounded-lg px-3 py-2" [ngClass]="alertBgClass()" data-testid="participating-orgs-alert">
+        @if (isLowDominant()) {
+          <i class="fa-solid fa-triangle-exclamation text-red-500 mt-0.5"></i>
+        } @else if (dominantSegment()?.level === 'high') {
+          <i class="fa-solid fa-circle-check text-emerald-500 mt-0.5"></i>
+        } @else {
+          <i class="fa-solid fa-circle-info text-amber-500 mt-0.5"></i>
+        }
+        <div class="flex flex-col">
+          <span class="text-sm font-semibold" [ngClass]="isLowDominant() ? 'text-red-600' : 'text-gray-900'">{{ alertMessage() }}</span>
+          <span class="text-xs text-gray-500">{{ alertSubtitle() }}</span>
+        </div>
+      </div>
+    }
+
+    <!-- Engagement Bar -->
+    @if (segments().length > 0) {
+      <div class="flex flex-col gap-2" data-testid="participating-orgs-engagement-bar">
+        <div class="flex h-5 w-full overflow-hidden rounded-md">
+          @for (segment of segments(); track segment.label) {
+            <div
+              class="h-full transition-all"
+              [style.width.%]="segment.percent"
+              [style.backgroundColor]="segment.color">
+            </div>
+          }
+        </div>
+        <div class="flex items-center gap-4">
+          @for (segment of segments(); track segment.label) {
+            <div class="flex items-center gap-1">
+              <span class="inline-block h-2.5 w-2.5 rounded-full" [style.backgroundColor]="segment.dotColor"></span>
+              <span class="text-xs text-gray-600">{{ segment.label }} {{ segment.percent }}%</span>
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- Metrics Row -->
+    <div class="flex items-end gap-8">
+      <div class="flex flex-col" data-testid="participating-orgs-active-members">
+        <span class="text-3xl font-bold text-gray-900">{{ summaryData().totalActiveMembers }}</span>
+        <span class="text-xs text-gray-500">Active Members</span>
+      </div>
+      <div class="flex flex-col" data-testid="participating-orgs-new-members">
+        <span class="text-3xl font-bold text-emerald-600">{{ summaryData().totalNewMembers }}</span>
+        <span class="text-xs text-gray-500">New Members</span>
+      </div>
+    </div>
+
+    <!-- Footer -->
+    @if (exploreMoreUrl()) {
+      <a
+      class="ignore-download text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
+        [href]="exploreMoreUrl()"
+        target="_blank"
+        rel="noopener noreferrer"
+        data-testid="participating-orgs-explore-more">
+        Explore more &rarr;
+      </a>
+    }
+  }
+</div>

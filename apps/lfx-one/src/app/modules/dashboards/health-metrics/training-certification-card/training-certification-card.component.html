@@ -1,0 +1,87 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div
+  class="flex h-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5"
+  data-testid="training-certification-card"
+>
+  <!-- Header -->
+  <div class="flex items-center justify-between" data-testid="training-certification-card-header">
+    <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Training &amp; Certification</h3>
+    <button
+      class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+      [disabled]="loading()"
+      (click)="downloadCard()"
+      aria-label="Download card as image"
+      data-testid="training-certification-card-download"
+    >
+      <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
+    </button>
+  </div>
+
+  <!-- Toggle -->
+  <div class="flex items-center gap-1 rounded-full bg-gray-100 p-0.5 w-fit" data-testid="training-certification-card-toggle">
+    <button
+      class="rounded-full px-3 py-1 text-xs font-semibold transition-colors"
+      [class.bg-blue-600]="activeMode() === 'enrollment'"
+      [class.text-white]="activeMode() === 'enrollment'"
+      [class.text-gray-600]="activeMode() !== 'enrollment'"
+      (click)="setMode('enrollment')"
+      data-testid="training-certification-card-toggle-enrollment"
+    >Enrollment</button>
+    <button
+      class="rounded-full px-3 py-1 text-xs font-semibold transition-colors"
+      [class.bg-blue-600]="activeMode() === 'revenue'"
+      [class.text-white]="activeMode() === 'revenue'"
+      [class.text-gray-600]="activeMode() !== 'revenue'"
+      (click)="setMode('revenue')"
+      data-testid="training-certification-card-toggle-revenue"
+    >Revenue</button>
+  </div>
+
+  @if (loading()) {
+    <!-- Loading Skeletons -->
+    <div class="flex flex-col gap-2" data-testid="training-certification-card-skeleton">
+      <p-skeleton width="5rem" height="0.75rem" />
+      <div class="grid grid-cols-4 gap-3">
+        @for (_ of [1, 2, 3, 4]; track $index) {
+          <div class="flex flex-col gap-1 rounded-lg bg-gray-50 p-3">
+            <p-skeleton width="2.5rem" height="1.5rem" />
+            <p-skeleton width="4rem" height="0.625rem" />
+          </div>
+        }
+      </div>
+    </div>
+  } @else {
+    <!-- Mode Label -->
+    <span class="text-xs text-gray-500" data-testid="training-certification-card-mode-label">{{ activeModeLabel() }}</span>
+
+    <!-- Metrics Grid -->
+    <div
+      class="grid gap-3"
+      [class.grid-cols-4]="activeMode() === 'enrollment'"
+      [class.grid-cols-3]="activeMode() === 'revenue'"
+      data-testid="training-certification-card-metrics"
+    >
+      @for (metric of activeMetrics(); track metric.label) {
+        <div class="flex flex-col gap-1 rounded-lg border border-gray-200 bg-gray-50 p-4">
+          <span class="text-2xl font-bold text-gray-900">{{ metric.formatted }}</span>
+          <span class="text-xs font-medium text-gray-500">{{ metric.label }}</span>
+        </div>
+      }
+    </div>
+  }
+
+  <!-- Footer -->
+  @if (exploreMoreUrl()) {
+    <a
+      [href]="exploreMoreUrl()"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="ignore-download text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
+      data-testid="training-certification-card-explore-more"
+    >
+      Explore more &rarr;
+    </a>
+  }
+</div>

@@ -1,0 +1,98 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div
+  class="flex h-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5"
+  data-testid="outstanding-balance-card"
+>
+  <!-- Header -->
+  <div class="flex items-center justify-between" data-testid="outstanding-balance-card-header">
+    <div class="flex items-center gap-2">
+      <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Outstanding Balance</h3>
+      <span
+        class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
+        aria-label="Watch status badge"
+        data-testid="outstanding-balance-card-watch-badge"
+      >Watch</span>
+    </div>
+    <button
+      class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
+      [disabled]="loading()"
+      (click)="downloadCard()"
+      aria-label="Download card as image"
+      data-testid="outstanding-balance-card-download"
+    >
+      <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
+    </button>
+  </div>
+
+  @if (loading()) {
+    <!-- Loading skeletons -->
+    <div class="flex flex-col gap-3" data-testid="outstanding-balance-card-skeleton">
+      <p-skeleton width="6rem" height="2rem" />
+      <p-skeleton width="8rem" height="0.875rem" />
+      <p-skeleton width="10rem" height="1.5rem" />
+      <p-skeleton width="12rem" height="0.875rem" />
+      <p-skeleton width="100%" height="2.5rem" />
+    </div>
+  } @else {
+    <!-- Primary Metric -->
+    <div class="flex flex-col gap-1" data-testid="outstanding-balance-card-primary-metric">
+      <span class="text-3xl font-bold text-amber-600">{{ formattedBalance() }}</span>
+      <span class="text-xs text-gray-500">Outstanding Balance</span>
+    </div>
+
+    <!-- Risk Row -->
+    @if (primaryRiskLevel()) {
+      <div class="flex items-center gap-2 border-t border-gray-200 pt-3" data-testid="outstanding-balance-card-risk-row">
+        <span
+          class="rounded-full px-2.5 py-0.5 text-xs font-semibold"
+          [class.bg-amber-100]="primaryRiskLevel() === 'Medium'"
+          [class.text-amber-700]="primaryRiskLevel() === 'Medium'"
+          [class.bg-red-100]="primaryRiskLevel() === 'High'"
+          [class.text-red-700]="primaryRiskLevel() === 'High'"
+        >{{ primaryRiskLabel() }}</span>
+        <span class="text-sm font-semibold text-gray-900">{{ formattedPrimaryRiskAmount() }}</span>
+      </div>
+    } @else {
+      <div class="flex items-center gap-2 border-t border-gray-200 pt-3" data-testid="outstanding-balance-card-risk-row">
+        <span class="rounded-full bg-gray-200 px-2.5 py-0.5 text-xs font-semibold text-gray-600">No Risk</span>
+        <span class="text-sm font-semibold text-gray-900">$0</span>
+      </div>
+    }
+
+    <!-- Overdue Breakdown -->
+    <div class="flex items-center gap-1 text-sm" data-testid="outstanding-balance-card-overdue-breakdown">
+      <span class="text-gray-500">Days Overdue:</span>
+      <span class="font-semibold text-amber-600">{{ overdueBreakdown().medium.overdueRangeLabel }}</span>
+      <span class="text-gray-400">and</span>
+      <span class="font-semibold text-amber-600">{{ overdueBreakdown().high.overdueRangeLabel }}</span>
+    </div>
+
+    <!-- Warning Banner -->
+    @if (warningBannerText()) {
+      <div
+        class="flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2"
+        role="alert"
+        aria-label="Members at risk warning"
+        data-testid="outstanding-balance-card-warning-banner"
+      >
+        <i class="fa-solid fa-triangle-exclamation text-sm text-amber-500"></i>
+        <span class="text-sm font-semibold text-amber-800">{{ warningBannerText() }}</span>
+      </div>
+    }
+  }
+
+  <!-- Footer -->
+  @if (exploreMoreUrl()) {
+    <a
+      [href]="exploreMoreUrl()"
+      target="_blank"
+      rel="noopener noreferrer"
+      class="ignore-download text-sm font-medium text-blue-600 hover:text-blue-800"
+      data-testid="outstanding-balance-card-explore-more"
+    >
+      Explore more &rarr;
+    </a>
+  }
+</div>

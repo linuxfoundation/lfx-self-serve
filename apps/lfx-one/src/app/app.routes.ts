@@ -24,6 +24,12 @@ export const routes: Routes = [
         data: { lens: 'foundation' },
         loadComponent: () => import('./modules/dashboards/dashboard.component').then((m) => m.DashboardComponent),
       },
+      // Foundation Lens — Health Metrics page (ED-only)
+      {
+        path: 'foundation/health-metrics',
+        data: { lens: 'foundation' },
+        loadComponent: () => import('./modules/dashboards/health-metrics/health-metrics.component').then((m) => m.HealthMetricsComponent),
+      },
       // Project Lens dashboard (placeholder — reuses DashboardComponent for now)
       {
         path: 'project/overview',
