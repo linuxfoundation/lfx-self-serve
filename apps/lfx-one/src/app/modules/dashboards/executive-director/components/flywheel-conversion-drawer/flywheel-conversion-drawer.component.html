@@ -32,25 +32,27 @@
     <div class="flex gap-4" data-testid="flywheel-conversion-drawer-stats">
       <lfx-card styleClass="flex-1">
         <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Conversion Rate</span>
-          <span class="text-2xl font-semibold text-gray-900">{{ data().conversionRate }}%</span>
+          <span class="text-sm text-gray-500">Re-engagement Rate</span>
+          <span class="text-2xl font-semibold text-gray-900">{{ reengagement().reengagementRate | number: '1.1-1' }}%</span>
         </div>
       </lfx-card>
       <lfx-card styleClass="flex-1">
         <div class="flex flex-col gap-1">
-          <span class="text-sm text-gray-500">Event Attendees</span>
-          <span class="text-2xl font-semibold text-gray-900">{{ formattedEventAttendees() }}</span>
+          <span class="text-sm text-gray-500">Conversion Rate</span>
+          <span class="text-2xl font-semibold text-gray-900">{{ data().conversionRate | number: '1.1-1' }}%</span>
         </div>
       </lfx-card>
       <lfx-card styleClass="flex-1">
         <div class="flex flex-col gap-1">
           <span class="text-sm text-gray-500">Growth</span>
-          @if (data().changePercentage !== 0) {
+          @if (reengagement().reengagementMomChange !== 0) {
             <div class="flex items-center gap-2">
-              <span class="text-2xl font-semibold" [class]="data().trend === 'up' ? 'text-green-600' : 'text-red-600'">
-                {{ data().changePercentage > 0 ? '+' : '' }}{{ data().changePercentage }}%
+              <span class="text-2xl font-semibold" [class]="reengagement().reengagementMomChange >= 0 ? 'text-green-600' : 'text-red-600'">
+                {{ reengagement().reengagementMomChange > 0 ? '+' : '' }}{{ reengagement().reengagementMomChange | number: '1.1-1' }}%
               </span>
-              <i class="text-sm" [class]="data().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
+              <i
+                class="text-sm"
+                [class]="reengagement().reengagementMomChange >= 0 ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
             </div>
           } @else {
             <span class="text-2xl font-semibold text-gray-500">0%</span>
@@ -72,7 +74,7 @@
         @for (action of attentionActions(); track action.title) {
           <div class="flex items-start gap-3 p-4 bg-white border border-red-200 rounded-lg">
             <div class="flex items-center justify-center w-9 h-9 rounded-full bg-red-100 flex-shrink-0 mt-0.5">
-              <i [class]="actionIcon(action.actionType) + ' text-red-600'"></i>
+              <i [class]="(action.actionType | marketingActionIcon) + ' text-red-600'"></i>
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between gap-2">
@@ -111,7 +113,7 @@
         @for (action of performingActions(); track action.title) {
           <div class="flex items-start gap-3 p-4 bg-white border border-green-200 rounded-lg">
             <div class="flex items-center justify-center w-9 h-9 rounded-full bg-green-100 flex-shrink-0 mt-0.5">
-              <i [class]="actionIcon(action.actionType) + ' text-green-600'"></i>
+              <i [class]="(action.actionType | marketingActionIcon) + ' text-green-600'"></i>
             </div>
             <div class="flex-1 min-w-0">
               <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
@@ -133,22 +135,22 @@
       </div>
     }
 
-    <!-- Conversion Funnel Chart -->
+    <!-- Re-engagement Funnel Chart -->
     <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="flywheel-conversion-drawer-funnel-section">
       <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Conversion Funnel (90-day window)</h3>
-        <p class="text-sm text-gray-600">Event attendees converting to community or working group membership</p>
+        <h3 class="text-sm font-semibold text-gray-900">Re-engagement Funnel</h3>
+        <p class="text-sm text-gray-600">Event attendees re-engaging with community, working groups, and newsletter</p>
       </div>
       <div class="h-[200px]" data-testid="flywheel-conversion-drawer-funnel-chart">
         <lfx-chart type="bar" [data]="funnelChartData()" [options]="funnelChartOptions" height="100%"></lfx-chart>
       </div>
     </div>
 
-    <!-- Conversion Rate Trend Chart -->
+    <!-- Re-engagement Rate Trend Chart -->
     <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="flywheel-conversion-drawer-trend-section">
       <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Conversion Rate Trend</h3>
-        <p class="text-sm text-gray-600">Monthly flywheel conversion rate over the last 6 months</p>
+        <h3 class="text-sm font-semibold text-gray-900">Re-engaged Members Trend</h3>
+        <p class="text-sm text-gray-600">Monthly re-engaged members (count) over the last 6 months</p>
       </div>
       @if (data().monthlyData.length > 1) {
         <div class="h-[200px]" data-testid="flywheel-conversion-drawer-trend-chart">

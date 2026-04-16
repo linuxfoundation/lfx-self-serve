@@ -7,6 +7,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
+import { splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { MarketingActionIconPipe } from '@pipes/marketing-action-icon.pipe';
 import { DrawerModule } from 'primeng/drawer';
 
@@ -167,14 +168,15 @@ export class RevenueImpactDrawerComponent {
   );
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
-  protected readonly attentionActions: Signal<MarketingRecommendedAction[]> = computed(() =>
-    this.recommendedActions().filter((a) => a.priority === 'high' || a.priority === 'medium')
-  );
-  protected readonly attentionInsights: Signal<MarketingKeyInsight[]> = computed(() => this.keyInsights().filter((i) => i.type === 'warning'));
-  protected readonly performingActions: Signal<MarketingRecommendedAction[]> = computed(() => this.recommendedActions().filter((a) => a.priority === 'low'));
-  protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() =>
-    this.keyInsights().filter((i) => i.type === 'driver' || i.type === 'info')
-  );
+  private readonly split: Signal<MarketingSplitByPriority> = computed(() => splitByPriority(this.recommendedActions(), this.keyInsights()));
+
+  protected readonly attentionActions: Signal<MarketingRecommendedAction[]> = computed(() => this.split().attentionActions);
+
+  protected readonly attentionInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().attentionInsights);
+
+  protected readonly performingActions: Signal<MarketingRecommendedAction[]> = computed(() => this.split().performingActions);
+
+  protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
 
   protected onClose(): void {
     this.visible.set(false);

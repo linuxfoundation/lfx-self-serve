@@ -56,13 +56,13 @@
         <lfx-card styleClass="flex-1">
           <div class="flex flex-col gap-1">
             <span class="text-sm text-gray-500">Renewal Rate</span>
-            <span class="text-2xl font-semibold text-gray-900">{{ retentionData().renewalRate }}%</span>
+            <span class="text-2xl font-semibold text-gray-900">{{ retentionData().renewalRate | number: '1.1-1' }}%</span>
           </div>
         </lfx-card>
         <lfx-card styleClass="flex-1">
           <div class="flex flex-col gap-1">
             <span class="text-sm text-gray-500">Net Revenue Retention</span>
-            <span class="text-2xl font-semibold text-gray-900">{{ retentionData().netRevenueRetention }}%</span>
+            <span class="text-2xl font-semibold text-gray-900">{{ retentionData().netRevenueRetention | number: '1.1-1' }}%</span>
           </div>
         </lfx-card>
         <lfx-card styleClass="flex-1">
@@ -71,7 +71,7 @@
             @if (retentionData().changePercentage !== 0) {
               <div class="flex items-center gap-2">
                 <span class="text-2xl font-semibold" [class]="retentionData().trend === 'up' ? 'text-green-600' : 'text-red-600'">
-                  {{ retentionData().changePercentage > 0 ? '+' : '' }}{{ retentionData().changePercentage }}%
+                  {{ retentionData().changePercentage > 0 ? '+' : '' }}{{ retentionData().changePercentage | number: '1.1-1' }}%
                 </span>
                 <i class="text-sm" [class]="retentionData().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
               </div>
@@ -96,7 +96,7 @@
         @for (action of attentionActions(); track action.title) {
           <div class="flex items-start gap-3 p-4 bg-white border border-red-200 rounded-lg">
             <div class="flex items-center justify-center w-9 h-9 rounded-full bg-red-100 flex-shrink-0 mt-0.5">
-              <i [class]="actionIcon(action.actionType) + ' text-red-600'"></i>
+              <i [class]="(action.actionType | marketingActionIcon) + ' text-red-600'"></i>
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between gap-2">
@@ -135,7 +135,7 @@
         @for (action of performingActions(); track action.title) {
           <div class="flex items-start gap-3 p-4 bg-white border border-green-200 rounded-lg">
             <div class="flex items-center justify-center w-9 h-9 rounded-full bg-green-100 flex-shrink-0 mt-0.5">
-              <i [class]="actionIcon(action.actionType) + ' text-green-600'"></i>
+              <i [class]="(action.actionType | marketingActionIcon) + ' text-green-600'"></i>
             </div>
             <div class="flex-1 min-w-0">
               <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
@@ -157,12 +157,80 @@
       </div>
     }
 
+    <!-- Sales Pipeline -->
+    @if (
+      revenueImpactData().pipelineInfluenced > 0 ||
+      revenueImpactData().revenueAttributed > 0 ||
+      revenueImpactData().matchRate > 0 ||
+      revenueImpactData().engagementTypes.length > 0
+    ) {
+      <div class="flex flex-col gap-4" data-testid="member-acquisition-drawer-pipeline-section">
+        <h3 class="text-sm font-semibold text-gray-900">Sales Pipeline</h3>
+        <div class="flex gap-4" data-testid="member-acquisition-drawer-pipeline-stats">
+          <lfx-card styleClass="flex-1">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Pipeline Influenced</span>
+              @if (revenueImpactData().pipelineInfluenced > 0) {
+                <span class="text-2xl font-semibold text-gray-900">{{ revenueImpactData().pipelineInfluenced | formatMoney }}</span>
+              } @else {
+                <span class="text-2xl font-semibold text-gray-400">—</span>
+              }
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Revenue Attributed</span>
+              @if (revenueImpactData().revenueAttributed > 0) {
+                <span class="text-2xl font-semibold text-gray-900">{{ revenueImpactData().revenueAttributed | formatMoney }}</span>
+              } @else {
+                <span class="text-2xl font-semibold text-gray-400">—</span>
+              }
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Match Rate</span>
+              @if (revenueImpactData().matchRate > 0) {
+                <span class="text-2xl font-semibold text-gray-900">{{ revenueImpactData().matchRate | number: '1.1-1' }}%</span>
+              } @else {
+                <span class="text-2xl font-semibold text-gray-400">—</span>
+              }
+            </div>
+          </lfx-card>
+        </div>
+
+        <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="member-acquisition-drawer-deal-breakdown">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-semibold text-gray-900">Deal Pipeline Breakdown</h3>
+            <p class="text-sm text-gray-600">Deal status distribution across the membership pipeline</p>
+          </div>
+          @if (revenueImpactData().engagementTypes.length > 0) {
+            <div class="flex flex-col gap-3">
+              @for (engagement of revenueImpactData().engagementTypes; track engagement.type) {
+                <div class="flex flex-col gap-1" data-testid="member-acquisition-drawer-deal-row">
+                  <div class="flex items-center justify-between">
+                    <span class="text-sm font-medium text-gray-900">{{ engagement.type }}</span>
+                    <span class="text-sm font-semibold text-gray-900">{{ engagement.percentage | number: '1.1-1' }}%</span>
+                  </div>
+                  <div class="w-full h-2 bg-gray-100 rounded-full">
+                    <div class="h-2 bg-blue-500 rounded-full" [style.width.%]="engagement.percentage"></div>
+                  </div>
+                </div>
+              }
+            </div>
+          } @else {
+            <div class="flex items-center justify-center h-[80px] text-sm text-gray-400">Deal pipeline data not yet available</div>
+          }
+        </div>
+      </div>
+    }
+
     <!-- Total Members Trend -->
     @if (data().totalMembersMonthlyData.length > 1) {
       <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="member-acquisition-drawer-total-members-section">
         <div class="flex flex-col gap-1">
           <h3 class="text-sm font-semibold text-gray-900">Total Members Over Time</h3>
-          <p class="text-sm text-gray-600">Cumulative membership growth over the last 12 months</p>
+          <p class="text-sm text-gray-600">Cumulative membership growth over the last 6 months</p>
         </div>
         <div class="h-[200px]" data-testid="member-acquisition-drawer-total-members-chart">
           <lfx-chart type="line" [data]="totalMembersChartData()" [options]="totalMembersChartOptions" height="100%"></lfx-chart>

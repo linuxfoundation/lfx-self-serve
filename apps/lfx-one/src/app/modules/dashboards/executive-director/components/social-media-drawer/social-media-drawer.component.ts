@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { DecimalPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
@@ -8,28 +9,23 @@ import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import {
-  createHorizontalBarChartOptions,
-  createLineChartOptions,
-  DASHBOARD_TOOLTIP_CONFIG,
-  lfxColors,
-  MARKETING_ACTION_ICON_MAP,
-} from '@lfx-one/shared/constants';
-import { formatNumber, hexToRgba } from '@lfx-one/shared/utils';
+import { createHorizontalBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
+import { formatNumber, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { MarketingActionIconPipe } from '@pipes/marketing-action-icon.pipe';
 import { MessageService } from 'primeng/api';
 import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type { SocialMediaResponse, MarketingRecommendedAction, MarketingKeyInsight, MarketingActionType } from '@lfx-one/shared/interfaces';
+import type { SocialMediaResponse, MarketingRecommendedAction, MarketingKeyInsight } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-social-media-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, DrawerModule, ChartComponent, SkeletonModule, TableComponent, TagComponent],
+  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, ChartComponent, SkeletonModule, TableComponent, TagComponent, MarketingActionIconPipe],
   templateUrl: './social-media-drawer.component.html',
   styleUrl: './social-media-drawer.component.scss',
 })
@@ -63,6 +59,15 @@ export class SocialMediaDrawerComponent {
   protected readonly formattedTotalFollowers: Signal<string> = computed(() => formatNumber(this.drawerData().totalFollowers));
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
+  private readonly split: Signal<MarketingSplitByPriority> = computed(() => splitByPriority(this.recommendedActions(), this.keyInsights()));
+
+  protected readonly attentionActions: Signal<MarketingRecommendedAction[]> = computed(() => this.split().attentionActions);
+
+  protected readonly attentionInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().attentionInsights);
+
+  protected readonly performingActions: Signal<MarketingRecommendedAction[]> = computed(() => this.split().performingActions);
+
+  protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
   protected readonly followerTrendChartData: Signal<ChartData<'line'>> = this.initFollowerTrendChartData();
   protected readonly platformChartData: Signal<ChartData<'bar'>> = this.initPlatformChartData();
 
@@ -149,10 +154,6 @@ export class SocialMediaDrawerComponent {
     return this.platformIconMap[platformName] || 'fa-light fa-globe';
   }
 
-  protected actionIcon(type: MarketingActionType): string {
-    return MARKETING_ACTION_ICON_MAP[type];
-  }
-
   protected onClose(): void {
     this.visible.set(false);
   }
@@ -169,15 +170,15 @@ export class SocialMediaDrawerComponent {
     };
 
     const visible$ = toObservable(this.visible);
-    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.name || ''));
+    const foundation$ = toObservable(this.projectContextService.selectedFoundation).pipe(map((f) => f?.slug || ''));
 
     return toSignal(
       combineLatest([visible$, foundation$]).pipe(
-        filter(([isVisible, name]) => isVisible && !!name),
-        map(([, name]) => name),
+        filter(([isVisible, slug]) => isVisible && !!slug),
+        map(([, slug]) => slug),
         tap(() => this.drawerLoading.set(true)),
-        switchMap((foundationName) =>
-          this.analyticsService.getSocialMedia(foundationName).pipe(
+        switchMap((foundationSlug) =>
+          this.analyticsService.getSocialMedia(foundationSlug).pipe(
             tap(() => this.drawerLoading.set(false)),
             catchError(() => {
               this.drawerLoading.set(false);

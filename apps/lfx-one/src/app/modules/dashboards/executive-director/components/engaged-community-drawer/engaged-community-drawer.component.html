@@ -42,7 +42,7 @@
           @if (data().changePercentage !== 0) {
             <div class="flex items-center gap-2">
               <span class="text-2xl font-semibold" [class]="data().trend === 'up' ? 'text-green-600' : 'text-red-600'">
-                {{ data().changePercentage > 0 ? '+' : '' }}{{ data().changePercentage }}%
+                {{ data().changePercentage > 0 ? '+' : '' }}{{ data().changePercentage | number: '1.1-1' }}%
               </span>
               <i class="text-sm" [class]="data().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
             </div>
@@ -66,7 +66,7 @@
         @for (action of attentionActions(); track action.title) {
           <div class="flex items-start gap-3 p-4 bg-white border border-red-200 rounded-lg">
             <div class="flex items-center justify-center w-9 h-9 rounded-full bg-red-100 flex-shrink-0 mt-0.5">
-              <i [class]="actionIcon(action.actionType) + ' text-red-600'"></i>
+              <i [class]="(action.actionType | marketingActionIcon) + ' text-red-600'"></i>
             </div>
             <div class="flex-1 min-w-0">
               <div class="flex items-center justify-between gap-2">
@@ -105,7 +105,7 @@
         @for (action of performingActions(); track action.title) {
           <div class="flex items-start gap-3 p-4 bg-white border border-green-200 rounded-lg">
             <div class="flex items-center justify-center w-9 h-9 rounded-full bg-green-100 flex-shrink-0 mt-0.5">
-              <i [class]="actionIcon(action.actionType) + ' text-green-600'"></i>
+              <i [class]="(action.actionType | marketingActionIcon) + ' text-green-600'"></i>
             </div>
             <div class="flex-1 min-w-0">
               <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
@@ -155,5 +155,18 @@
         <lfx-chart type="bar" [data]="breakdownChartData()" [options]="breakdownChartOptions" height="100%"></lfx-chart>
       </div>
     </div>
+
+    <!-- Weekly Sessions Trend -->
+    @if (brandReachData().weeklyTrend.length > 0) {
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="engaged-community-drawer-daily-trend">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Weekly Sessions Trend</h3>
+          <p class="text-sm text-gray-600">Website sessions over the last 6 months (weekly)</p>
+        </div>
+        <div class="h-[240px]" data-testid="engaged-community-drawer-daily-chart">
+          <lfx-chart type="line" [data]="dailyTrendData()" [options]="dailyTrendOptions" height="100%"></lfx-chart>
+        </div>
+      </div>
+    }
   </div>
 </p-drawer>

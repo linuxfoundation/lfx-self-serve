@@ -2689,6 +2689,13 @@ export interface MarketingKeyInsight {
   type: 'driver' | 'warning' | 'info';
 }
 
+export interface MarketingSplitByPriority {
+  attentionActions: MarketingRecommendedAction[];
+  attentionInsights: MarketingKeyInsight[];
+  performingActions: MarketingRecommendedAction[];
+  performingInsights: MarketingKeyInsight[];
+}
+
 // ============================================
 // Social Reach (Marketing Dashboard)
 // ============================================

@@ -7,28 +7,23 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
-import {
-  createHorizontalBarChartOptions,
-  createLineChartOptions,
-  DASHBOARD_TOOLTIP_CONFIG,
-  lfxColors,
-  MARKETING_ACTION_ICON_MAP,
-} from '@lfx-one/shared/constants';
-import { formatNumber, hexToRgba } from '@lfx-one/shared/utils';
+import { createHorizontalBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
+import { formatNumber, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
+import { MarketingActionIconPipe } from '@pipes/marketing-action-icon.pipe';
 import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { SkeletonModule } from 'primeng/skeleton';
 
 import type { ChartData, ChartOptions } from 'chart.js';
-import type { WebActivitiesSummaryResponse, MarketingRecommendedAction, MarketingKeyInsight, MarketingActionType } from '@lfx-one/shared/interfaces';
+import type { WebActivitiesSummaryResponse, MarketingRecommendedAction, MarketingKeyInsight } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-website-visits-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, DrawerModule, ChartComponent, SkeletonModule, TagComponent],
+  imports: [ButtonComponent, CardComponent, DrawerModule, ChartComponent, SkeletonModule, TagComponent, MarketingActionIconPipe],
   templateUrl: './website-visits-drawer.component.html',
   styleUrl: './website-visits-drawer.component.scss',
 })
@@ -50,6 +45,15 @@ export class WebsiteVisitsDrawerComponent {
   protected readonly formattedTotalPageViews: Signal<string> = computed(() => formatNumber(this.drawerData().totalPageViews));
   protected readonly recommendedActions: Signal<MarketingRecommendedAction[]> = this.initRecommendedActions();
   protected readonly keyInsights: Signal<MarketingKeyInsight[]> = this.initKeyInsights();
+  private readonly split: Signal<MarketingSplitByPriority> = computed(() => splitByPriority(this.recommendedActions(), this.keyInsights()));
+
+  protected readonly attentionActions: Signal<MarketingRecommendedAction[]> = computed(() => this.split().attentionActions);
+
+  protected readonly attentionInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().attentionInsights);
+
+  protected readonly performingActions: Signal<MarketingRecommendedAction[]> = computed(() => this.split().performingActions);
+
+  protected readonly performingInsights: Signal<MarketingKeyInsight[]> = computed(() => this.split().performingInsights);
   protected readonly trendChartData: Signal<ChartData<'line'>> = this.initTrendChartData();
   protected readonly domainChartData: Signal<ChartData<'bar'>> = this.initDomainChartData();
 
@@ -130,10 +134,6 @@ export class WebsiteVisitsDrawerComponent {
     this.visible.set(false);
   }
 
-  protected actionIcon(type: MarketingActionType): string {
-    return MARKETING_ACTION_ICON_MAP[type];
-  }
-
   // === Private Initializers ===
   private initDrawerData(): Signal<WebActivitiesSummaryResponse> {
     const defaultValue: WebActivitiesSummaryResponse = {
@@ -180,19 +180,19 @@ export class WebsiteVisitsDrawerComponent {
         return actions;
       }
 
-      // Check for declining trend in recent days
-      if (dailyData.length >= 14) {
+      // Check for declining trend over the 6-month weekly series
+      if (dailyData.length >= 8) {
         const firstHalf = dailyData.slice(0, Math.floor(dailyData.length / 2));
         const secondHalf = dailyData.slice(Math.floor(dailyData.length / 2));
         const firstAvg = firstHalf.reduce((s, v) => s + v, 0) / firstHalf.length;
         const secondAvg = secondHalf.reduce((s, v) => s + v, 0) / secondHalf.length;
-        if (secondAvg < firstAvg * 0.9) {
+        if (firstAvg > 0 && secondAvg < firstAvg * 0.9) {
           const decline = Math.round(((firstAvg - secondAvg) / firstAvg) * 100);
           actions.push({
             title: 'Investigate traffic decline',
-            description: `Sessions dropped ~${decline}% in the recent period — review traffic sources and content changes`,
+            description: `Sessions dropped ~${decline}% over recent weeks — review traffic sources and content changes`,
             priority: 'high',
-            dueLabel: 'This week',
+            dueLabel: 'This month',
             actionType: 'decline',
           });
         }
@@ -270,20 +270,24 @@ export class WebsiteVisitsDrawerComponent {
         }
       }
 
-      // Daily trend
-      if (dailyData.length >= 14) {
+      // Weekly trend — first half vs second half of 6-month window
+      if (dailyData.length >= 8) {
         const firstHalf = dailyData.slice(0, Math.floor(dailyData.length / 2));
         const secondHalf = dailyData.slice(Math.floor(dailyData.length / 2));
         const firstAvg = firstHalf.reduce((s, v) => s + v, 0) / firstHalf.length;
         const secondAvg = secondHalf.reduce((s, v) => s + v, 0) / secondHalf.length;
-        if (secondAvg > firstAvg * 1.1) {
+        if (firstAvg === 0 && secondAvg > 0) {
+          insights.push({ text: 'Sessions started growing from a zero baseline over the last 6 months', type: 'driver' });
+        } else if (firstAvg === 0) {
+          insights.push({ text: 'No session activity over the last 6 months', type: 'info' });
+        } else if (secondAvg > firstAvg * 1.1) {
           const growth = Math.round(((secondAvg - firstAvg) / firstAvg) * 100);
-          insights.push({ text: `Sessions trending up ~${growth}% in recent days`, type: 'driver' });
+          insights.push({ text: `Sessions trending up ~${growth}% over the last 6 months`, type: 'driver' });
         } else if (secondAvg < firstAvg * 0.9) {
           const decline = Math.round(((firstAvg - secondAvg) / firstAvg) * 100);
-          insights.push({ text: `Sessions trending down ~${decline}% in recent days`, type: 'warning' });
+          insights.push({ text: `Sessions trending down ~${decline}% over the last 6 months`, type: 'warning' });
         } else {
-          insights.push({ text: 'Session volume stable over the last 30 days', type: 'info' });
+          insights.push({ text: 'Session volume stable over the last 6 months', type: 'info' });
         }
       }
 
