@@ -22,8 +22,6 @@
         control="foundationFilter"
         size="small"
         [options]="foundationOptions()"
-        placeholder="All Foundations"
-        [showClear]="true"
         styleClass="w-full"
         (onChange)="onFoundationFilterChange($event.value)"
         data-testid="foundation-filter-dropdown"></lfx-select>
@@ -31,15 +29,13 @@
   }
 
   <!-- Project Filter Dropdown -->
-  @if (showProjectFilter() && projectOptions().length > 0) {
+  @if (showProjectFilter()) {
     <div class="w-full sm:w-48">
       <lfx-select
         [form]="searchForm"
         control="projectFilter"
         size="small"
         [options]="projectOptions()"
-        placeholder="All Projects"
-        [showClear]="true"
         styleClass="w-full"
         (onChange)="onProjectFilterChange($event.value)"
         data-testid="project-filter-dropdown"></lfx-select>

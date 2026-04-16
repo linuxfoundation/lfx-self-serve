@@ -75,6 +75,16 @@ export interface Survey {
   is_project_survey: boolean;
   /** Associated committees */
   committees: SurveyCommittee[];
+  /** Primary project UID (flattened from committees for filtering) */
+  project_uid?: string;
+  /** Project display name (enriched for filtering) */
+  project_name?: string;
+  /** Project URL slug (enriched for filtering) */
+  project_slug?: string;
+  /** Whether the project is a foundation (top-level entity) */
+  is_foundation?: boolean;
+  /** Parent project UID (for subprojects under a foundation) */
+  parent_project_uid?: string;
   /** Committee category */
   committee_category: string;
   /** Total responses received */

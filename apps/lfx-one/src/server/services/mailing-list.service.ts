@@ -343,7 +343,7 @@ export class MailingListService {
    * Fetches mailing lists the current user is a member of.
    * Queries by both email and username to ensure complete coverage.
    */
-  public async getMyMailingLists(req: Request, projectUid?: string, foundationUid?: string): Promise<MyMailingList[]> {
+  public async getMyMailingLists(req: Request): Promise<MyMailingList[]> {
     // Get user identity from auth context
     const rawUsername = await getUsernameFromAuth(req);
     const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
@@ -352,7 +352,6 @@ export class MailingListService {
     logger.debug(req, 'get_my_mailing_lists', 'Fetching mailing lists for current user', {
       username,
       has_email: !!email,
-      project_uid: projectUid,
     });
 
     if (!username && !email) {
@@ -369,7 +368,7 @@ export class MailingListService {
             v: '1',
             type: 'groupsio_member',
             page_size: 100,
-            tags_all: projectUid ? [`email:${email}`, `project_uid:${projectUid}`] : [`email:${email}`],
+            tags_all: [`email:${email}`],
             ...(pageToken && { page_token: pageToken }),
           })
         )
@@ -383,7 +382,7 @@ export class MailingListService {
             v: '1',
             type: 'groupsio_member',
             page_size: 100,
-            tags_all: projectUid ? [`username:${username}`, `project_uid:${projectUid}`] : [`username:${username}`],
+            tags_all: [`username:${username}`],
             ...(pageToken && { page_token: pageToken }),
           })
         )
@@ -460,21 +459,13 @@ export class MailingListService {
       })
     );
 
-    const filtered = mailingLists.filter((ml): ml is MyMailingList => ml !== null);
-
-    // Post-fetch filtering by project_uid or foundation_uid
-    let result = filtered;
-    if (projectUid) {
-      result = filtered.filter((ml) => ml.project_uid === projectUid);
-    } else if (foundationUid) {
-      logger.debug(req, 'get_my_mailing_lists', 'Filtering by foundation', { foundation_uid: foundationUid });
-      const uids = await this.projectService.getFoundationProjectUids(req, foundationUid);
-      const uidSet = new Set(uids);
-      result = filtered.filter((ml) => uidSet.has(ml.project_uid));
-    }
+    const result = mailingLists.filter((ml): ml is MyMailingList => ml !== null);
 
     // Enrich with service data for correct email display in UI
-    return (await this.enrichWithServices(req, result)) as MyMailingList[];
+    const enrichedWithServices = (await this.enrichWithServices(req, result)) as MyMailingList[];
+
+    // Enrich with project data (name, slug, logo, etc.)
+    return this.projectService.enrichWithProjectData(req, enrichedWithServices);
   }
 
   // ============================================

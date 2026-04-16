@@ -93,22 +93,18 @@
                 control="foundationFilter"
                 size="small"
                 [options]="foundationOptions()"
-                placeholder="All Foundations"
-                [showClear]="true"
                 styleClass="w-full"
                 (onChange)="onFoundationFilterChange($event.value)"
                 data-testid="committee-foundation-filter"></lfx-select>
             </div>
           }
-          @if (showProjectFilter() && projectOptions().length > 0) {
+          @if (showProjectFilter()) {
             <div class="w-full sm:w-48">
               <lfx-select
                 [form]="searchForm"
                 control="projectFilter"
                 size="small"
                 [options]="projectOptions()"
-                placeholder="All Projects"
-                [showClear]="true"
                 styleClass="w-full"
                 (onChange)="onProjectFilterChange($event.value)"
                 data-testid="committee-project-filter"></lfx-select>

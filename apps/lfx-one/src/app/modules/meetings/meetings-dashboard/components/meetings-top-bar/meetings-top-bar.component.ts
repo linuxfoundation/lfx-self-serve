@@ -15,8 +15,8 @@ import { SelectComponent } from '@components/select/select.component';
 })
 export class MeetingsTopBarComponent implements OnInit {
   public meetingTypeOptions = input.required<{ label: string; value: string | null }[]>();
-  public foundationOptions = input<{ label: string; value: string }[]>([]);
-  public projectOptions = input<{ label: string; value: string }[]>([]);
+  public foundationOptions = input<{ label: string; value: string | null }[]>([]);
+  public projectOptions = input<{ label: string; value: string | null }[]>([]);
   public showFoundationFilter = input<boolean>(false);
   public showProjectFilter = input<boolean>(false);
   public readonly initialTimeFilter = input<'upcoming' | 'past'>('upcoming');

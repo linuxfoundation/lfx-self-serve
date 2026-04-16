@@ -45,15 +45,9 @@ export class SurveyService {
     return this.getSurveys(params);
   }
 
-  public getMySurveys(projectUid?: string, foundationUid?: string): Observable<Survey[]> {
-    let params = new HttpParams();
-    if (projectUid) {
-      params = params.set('project_uid', projectUid);
-    }
-    if (foundationUid) {
-      params = params.set('foundation_uid', foundationUid);
-    }
-    return this.http.get<Survey[]>('/api/surveys/my-surveys', { params }).pipe(catchError(() => of([])));
+  /** Returns surveys for the current user; foundation/project filtering is applied client-side. */
+  public getMySurveys(): Observable<Survey[]> {
+    return this.http.get<Survey[]>('/api/surveys/my-surveys').pipe(catchError(() => of([])));
   }
 
   public getSurvey(surveyUid: string, projectId?: string): Observable<Survey> {

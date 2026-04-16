@@ -90,8 +90,8 @@ export class CommitteeDashboardComponent {
   public canCreateGroup: Signal<boolean>;
 
   // Foundation and project filter options (separate dropdowns)
-  public foundationOptions: Signal<{ label: string; value: string }[]> = this.initializeFoundationOptions();
-  public projectOptions: Signal<{ label: string; value: string }[]> = this.initializeProjectOptions();
+  public foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initializeFoundationOptions();
+  public projectOptions: Signal<{ label: string; value: string | null }[]> = this.initializeProjectOptions();
 
   // Lens
   public readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
@@ -199,20 +199,16 @@ export class CommitteeDashboardComponent {
     const project$ = toObservable(this.project);
     const refresh$ = toObservable(this.refresh);
     const lens$ = toObservable(this.lensService.activeLens);
-    const projectFilter$ = toObservable(this.projectFilter);
-    const foundationFilter$ = toObservable(this.foundationFilter);
 
     return toSignal(
-      combineLatest([project$, refresh$, lens$, projectFilter$, foundationFilter$]).pipe(
-        switchMap(([project, , lens, projectFilter, foundationFilter]) => {
-          this.myCommitteesLoading.set(true);
+      combineLatest([project$, refresh$, lens$]).pipe(
+        switchMap(([project, , lens]) => {
           if (lens !== 'me' && !project?.uid) {
             this.myCommitteesLoading.set(false);
             return of([] as MyCommittee[]);
           }
-          const projectUid = lens === 'me' ? (projectFilter ?? undefined) : project!.uid;
-          const foundationUid = lens === 'me' ? (foundationFilter ?? undefined) : undefined;
-          return this.committeeService.getMyCommittees(projectUid, foundationUid).pipe(
+          this.myCommitteesLoading.set(true);
+          return this.committeeService.getMyCommittees().pipe(
             catchError((error) => {
               console.error('Failed to load my committees:', error);
               this.myCommitteesLoading.set(false);
@@ -316,22 +312,39 @@ export class CommitteeDashboardComponent {
     });
   }
 
-  private initializeFoundationOptions(): Signal<{ label: string; value: string }[]> {
+  private initializeFoundationOptions(): Signal<{ label: string; value: string | null }[]> {
     return computed(() => {
-      const projects = this.personaService.detectedProjects();
-      return projects.filter((p) => p.isFoundation).map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+      const items = this.myCommittees();
+      const seen = new Map<string, string>();
+      for (const item of items) {
+        if (item.is_foundation && item.project_uid && !seen.has(item.project_uid)) {
+          seen.set(item.project_uid, item.project_name || item.project_uid);
+        }
+      }
+      const options = [...seen.entries()]
+        .map(([uid, name]) => ({ label: name, value: uid }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+      return [{ label: 'All Foundations', value: null }, ...options];
     });
   }
 
-  private initializeProjectOptions(): Signal<{ label: string; value: string }[]> {
+  private initializeProjectOptions(): Signal<{ label: string; value: string | null }[]> {
     return computed(() => {
-      const projects = this.personaService.detectedProjects();
+      const items = this.myCommittees();
       const foundation = this.foundationFilter();
-      let candidates = projects.filter((p) => !p.isFoundation);
-      if (foundation) {
-        candidates = candidates.filter((p) => p.parentProjectUid === foundation);
+      const seen = new Map<string, string>();
+      for (const item of items) {
+        if (!item.is_foundation && item.project_uid && !seen.has(item.project_uid)) {
+          if (foundation && item.parent_project_uid !== foundation) {
+            continue;
+          }
+          seen.set(item.project_uid, item.project_name || item.project_uid);
+        }
       }
-      return candidates.map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+      const options = [...seen.entries()]
+        .map(([uid, name]) => ({ label: name, value: uid }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+      return [{ label: 'All Projects', value: null }, ...options];
     });
   }
 
@@ -372,18 +385,30 @@ export class CommitteeDashboardComponent {
 
   private initializeFilteredMyCommittees(): Signal<MyCommittee[]> {
     return computed(() => {
-      const committees = this.myCommittees();
-      const searchTerm = this.searchTerm()?.toLowerCase() || '';
-      if (!searchTerm) {
-        return committees;
+      let filtered: MyCommittee[] = this.myCommittees();
+
+      // Apply foundation/project filter (client-side)
+      const project = this.projectFilter();
+      const foundation = this.foundationFilter();
+      if (project) {
+        filtered = filtered.filter((c) => c.project_uid === project);
+      } else if (foundation) {
+        filtered = filtered.filter((c) => c.project_uid === foundation || (c.parent_project_uid === foundation && !c.is_foundation));
       }
-      return committees.filter(
-        (committee) =>
-          committee.name.toLowerCase().includes(searchTerm) ||
-          committee.display_name?.toLowerCase().includes(searchTerm) ||
-          committee.description?.toLowerCase().includes(searchTerm) ||
-          committee.category?.toLowerCase().includes(searchTerm)
-      );
+
+      // Apply search filter
+      const searchTerm = this.searchTerm()?.toLowerCase() || '';
+      if (searchTerm) {
+        filtered = filtered.filter(
+          (committee) =>
+            committee.name.toLowerCase().includes(searchTerm) ||
+            committee.display_name?.toLowerCase().includes(searchTerm) ||
+            committee.description?.toLowerCase().includes(searchTerm) ||
+            committee.category?.toLowerCase().includes(searchTerm)
+        );
+      }
+
+      return filtered;
     });
   }
 }

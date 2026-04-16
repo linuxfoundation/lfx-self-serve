@@ -132,15 +132,8 @@ export class CommitteeService {
 
   // ── My Committees ─────────────────────────────────────────────────────────
 
-  /** Get committees for the current user, optionally scoped to a project or foundation */
-  public getMyCommittees(projectUid?: string, foundationUid?: string): Observable<MyCommittee[]> {
-    let params = new HttpParams();
-    if (projectUid) {
-      params = params.set('project_uid', projectUid);
-    }
-    if (foundationUid) {
-      params = params.set('foundation_uid', foundationUid);
-    }
-    return this.http.get<MyCommittee[]>('/api/committees/my-committees', { params }).pipe(catchError(() => of([])));
+  /** Get all committees for the current user */
+  public getMyCommittees(): Observable<MyCommittee[]> {
+    return this.http.get<MyCommittee[]>('/api/committees/my-committees').pipe(catchError(() => of([])));
   }
 }

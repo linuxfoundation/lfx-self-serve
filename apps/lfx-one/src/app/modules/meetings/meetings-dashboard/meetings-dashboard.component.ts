@@ -69,8 +69,8 @@ export class MeetingsDashboardComponent {
   public projectFilter: WritableSignal<string | null>;
   public showFoundationFilter: Signal<boolean>;
   public showProjectFilter: Signal<boolean>;
-  public foundationOptions: Signal<{ label: string; value: string }[]>;
-  public projectOptions: Signal<{ label: string; value: string }[]>;
+  public foundationOptions: Signal<{ label: string; value: string | null }[]>;
+  public projectOptions: Signal<{ label: string; value: string | null }[]>;
   public project: Signal<ProjectContext | null>;
   public isMaintainer: Signal<boolean>;
   public isFoundationContext: Signal<boolean>;
@@ -83,6 +83,8 @@ export class MeetingsDashboardComponent {
   // Raw user meetings cached for client-side filtering (Me lens only)
   private rawUserMeetings: Signal<Meeting[]>;
   private rawUserPastMeetings: Signal<PastMeeting[]>;
+  // Time-filtered meetings for deriving filter options (applies hasMeetingEnded for upcoming)
+  private timeFilteredMeetings: Signal<(Meeting | PastMeeting)[]>;
 
   private upcomingPageToken = signal<string | undefined>(undefined);
   private pastPageToken = signal<string | undefined>(undefined);
@@ -117,10 +119,6 @@ export class MeetingsDashboardComponent {
     this.meetingTypeFilter = signal<string | null>(null);
     this.foundationFilter = signal<string | null>(null);
     this.projectFilter = signal<string | null>(null);
-    this.foundationOptions = this.initializeFoundationOptions();
-    this.projectOptions = this.initializeProjectOptions();
-    this.showFoundationFilter = computed(() => this.activeLens() === 'me' && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
-    this.showProjectFilter = computed(() => this.activeLens() === 'me' && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
     this.hasMore = computed(() => this.activeLens() !== 'me' && (this.timeFilter() === 'past' ? !!this.pastPageToken() : !!this.upcomingPageToken()));
 
     // Initialize meeting type options
@@ -129,6 +127,19 @@ export class MeetingsDashboardComponent {
     // Initialize Me lens data (fetched once, filtered client-side)
     this.rawUserMeetings = this.initializeRawUserMeetings();
     this.rawUserPastMeetings = this.initializeRawUserPastMeetings();
+    this.timeFilteredMeetings = computed(() => {
+      if (this.timeFilter() === 'past') {
+        return this.rawUserPastMeetings();
+      }
+      return this.filterAndSortUpcomingMeetings(this.rawUserMeetings());
+    });
+
+    // Filter options derived from time-filtered meetings (only show projects with meetings in current view)
+    this.foundationOptions = this.initializeFoundationOptions();
+    this.projectOptions = this.initializeProjectOptions();
+    // Show filter when there's at least one real option (beyond the "All" entry) and user has the right persona role
+    this.showFoundationFilter = computed(() => this.activeLens() === 'me' && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
+    this.showProjectFilter = computed(() => this.activeLens() === 'me' && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
 
     // Initialize data with reactive pattern
     this.upcomingMeetings = this.initializeUpcomingMeetings();
@@ -194,12 +205,14 @@ export class MeetingsDashboardComponent {
 
     // Me lens: client-side filtering on cached data (no additional API calls)
     const rawUserMeetings$ = toObservable(this.rawUserMeetings);
-    const meLens$ = combineLatest([lens$, timeFilter$, searchQuery$, meetingType$, rawUserMeetings$]).pipe(
-      switchMap(([lens, timeFilter, searchQuery, meetingType, rawMeetings]) => {
+    const foundationFilter$ = toObservable(this.foundationFilter);
+    const projectFilter$ = toObservable(this.projectFilter);
+    const meLens$ = combineLatest([lens$, timeFilter$, searchQuery$, meetingType$, rawUserMeetings$, foundationFilter$, projectFilter$]).pipe(
+      switchMap(([lens, timeFilter, searchQuery, meetingType, rawMeetings, foundation, project]) => {
         if (lens !== 'me' || timeFilter !== 'upcoming') {
           return of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true });
         }
-        const filtered = this.filterBySearchAndType(rawMeetings, searchQuery, meetingType);
+        const filtered = this.filterMeLensMeetings(rawMeetings, searchQuery, meetingType, foundation, project);
         return of<PageResult<Meeting>>({ data: filtered, page_token: undefined, reset: true });
       })
     );
@@ -269,12 +282,14 @@ export class MeetingsDashboardComponent {
 
     // Me lens: client-side filtering on cached data (no additional API calls)
     const rawUserPastMeetings$ = toObservable(this.rawUserPastMeetings);
-    const meLens$ = combineLatest([lens$, timeFilter$, searchQuery$, meetingType$, rawUserPastMeetings$]).pipe(
-      switchMap(([lens, timeFilter, searchQuery, meetingType, rawPastMeetings]) => {
+    const pastFoundationFilter$ = toObservable(this.foundationFilter);
+    const pastProjectFilter$ = toObservable(this.projectFilter);
+    const meLens$ = combineLatest([lens$, timeFilter$, searchQuery$, meetingType$, rawUserPastMeetings$, pastFoundationFilter$, pastProjectFilter$]).pipe(
+      switchMap(([lens, timeFilter, searchQuery, meetingType, rawPastMeetings, foundation, project]) => {
         if (lens !== 'me' || timeFilter !== 'past') {
           return of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: true });
         }
-        const filtered = this.filterBySearchAndType(rawPastMeetings, searchQuery, meetingType);
+        const filtered = this.filterMeLensMeetings(rawPastMeetings, searchQuery, meetingType, foundation, project);
         return of<PageResult<PastMeeting>>({ data: filtered, page_token: undefined, reset: true });
       })
     );
@@ -342,17 +357,15 @@ export class MeetingsDashboardComponent {
 
   private initializeRawUserMeetings(): Signal<Meeting[]> {
     const lens$ = toObservable(this.activeLens);
-    const projectFilter$ = toObservable(this.projectFilter);
-    const foundationFilter$ = toObservable(this.foundationFilter);
 
     return toSignal(
-      combineLatest([lens$, this.refresh$, projectFilter$, foundationFilter$]).pipe(
-        switchMap(([lens, , projectFilter, foundationFilter]) => {
+      combineLatest([lens$, this.refresh$]).pipe(
+        switchMap(([lens]) => {
           if (lens !== 'me') {
             return of([] as Meeting[]);
           }
           this.meetingsLoading.set(true);
-          return this.userService.getUserMeetings(undefined, projectFilter ?? undefined, foundationFilter ?? undefined).pipe(
+          return this.userService.getUserMeetings().pipe(
             tap(() => this.meetingsLoading.set(false)),
             catchError(() => {
               this.meetingsLoading.set(false);
@@ -367,17 +380,15 @@ export class MeetingsDashboardComponent {
 
   private initializeRawUserPastMeetings(): Signal<PastMeeting[]> {
     const lens$ = toObservable(this.activeLens);
-    const projectFilter$ = toObservable(this.projectFilter);
-    const foundationFilter$ = toObservable(this.foundationFilter);
 
     return toSignal(
-      combineLatest([lens$, this.refresh$, projectFilter$, foundationFilter$]).pipe(
-        switchMap(([lens, , projectFilter, foundationFilter]) => {
+      combineLatest([lens$, this.refresh$]).pipe(
+        switchMap(([lens]) => {
           if (lens !== 'me') {
             return of([] as PastMeeting[]);
           }
           this.pastMeetingsLoading.set(true);
-          return this.userService.getUserPastMeetings(undefined, projectFilter ?? undefined, foundationFilter ?? undefined).pipe(
+          return this.userService.getUserPastMeetings().pipe(
             tap(() => this.pastMeetingsLoading.set(false)),
             catchError(() => {
               this.pastMeetingsLoading.set(false);
@@ -425,6 +436,27 @@ export class MeetingsDashboardComponent {
     });
   }
 
+  private filterMeLensMeetings<T extends Meeting>(
+    items: T[],
+    searchQuery: string,
+    meetingType: string | null,
+    foundation: string | null,
+    project: string | null
+  ): T[] {
+    let filtered = items;
+
+    if (project) {
+      filtered = filtered.filter((m) => m.project_uid === project);
+    } else if (foundation) {
+      // Show meetings for the foundation itself and its non-foundation children only.
+      // Sub-foundations (is_foundation: true with parent = this foundation) are their own
+      // top-level filter entries, so exclude them and their children here.
+      filtered = filtered.filter((m) => m.project_uid === foundation || (m.parent_project_uid === foundation && !m.is_foundation));
+    }
+
+    return this.filterBySearchAndType(filtered, searchQuery, meetingType);
+  }
+
   private filterBySearchAndType<T extends { title?: string; meeting_type?: string | null }>(items: T[], searchQuery: string, meetingType: string | null): T[] {
     let filtered = items;
     if (searchQuery) {
@@ -437,27 +469,46 @@ export class MeetingsDashboardComponent {
     return filtered;
   }
 
-  private initializeFoundationOptions(): Signal<{ label: string; value: string }[]> {
+  private initializeFoundationOptions(): Signal<{ label: string; value: string | null }[]> {
     return computed(() => {
-      const projects = this.personaService.detectedProjects();
-      return projects.filter((p) => p.isFoundation).map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+      const meetings = this.timeFilteredMeetings();
+      const seen = new Map<string, string>();
+
+      for (const m of meetings) {
+        if (m.is_foundation && m.project_uid && !seen.has(m.project_uid)) {
+          seen.set(m.project_uid, m.project_name || m.project_uid);
+        }
+      }
+
+      const options = [...seen.entries()]
+        .map(([uid, name]) => ({ label: name, value: uid }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+
+      return [{ label: 'All Foundations', value: null }, ...options];
     });
   }
 
-  private initializeProjectOptions(): Signal<{ label: string; value: string }[]> {
+  private initializeProjectOptions(): Signal<{ label: string; value: string | null }[]> {
     return computed(() => {
-      const projects = this.personaService.detectedProjects();
+      const meetings = this.timeFilteredMeetings();
       const foundation = this.foundationFilter();
+      const seen = new Map<string, string>();
 
-      // Filter to non-foundation projects
-      let candidates = projects.filter((p) => !p.isFoundation);
-
-      // If a foundation is selected, show only its children
-      if (foundation) {
-        candidates = candidates.filter((p) => p.parentProjectUid === foundation);
+      for (const m of meetings) {
+        if (!m.is_foundation && m.project_uid && !seen.has(m.project_uid)) {
+          // If a foundation is selected, only show its children
+          if (foundation && m.parent_project_uid !== foundation) {
+            continue;
+          }
+          seen.set(m.project_uid, m.project_name || m.project_uid);
+        }
       }
 
-      return candidates.map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+      const options = [...seen.entries()]
+        .map(([uid, name]) => ({ label: name, value: uid }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+
+      return [{ label: 'All Projects', value: null }, ...options];
     });
   }
 

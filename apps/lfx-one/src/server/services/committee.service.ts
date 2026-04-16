@@ -21,6 +21,7 @@ import { Request } from 'express';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 
 import { ResourceNotFoundError } from '../errors';
+import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
@@ -466,19 +467,22 @@ export class CommitteeService {
       return [];
     }
 
-    // Fetch all committee_member records for the current user
+    // Fetch all committee_member records for the current user (paginated)
+    // When projectUid is provided (e.g. document service), scope the query for efficiency
     const tagsAll = [`username:${username}`];
     if (projectUid) {
       tagsAll.push(`project_uid:${projectUid}`);
     }
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-      v: '1',
-      type: 'committee_member',
-      tags_all: tagsAll,
-    });
-
-    const memberships = resources.map((r) => r.data);
+    const memberships = await fetchAllQueryResources<CommitteeMember>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        v: '1',
+        type: 'committee_member',
+        page_size: 100,
+        tags_all: tagsAll,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
 
     if (memberships.length === 0) {
       return [];
@@ -522,19 +526,19 @@ export class CommitteeService {
       })
     );
 
-    const result = committees.filter((c): c is MyCommittee => c !== null);
+    let result = committees.filter((c): c is MyCommittee => c !== null);
 
-    // Filter by project_uid server-side if provided
+    // Filter by project or foundation if specified (used by document service)
     if (projectUid) {
-      return result.filter((c) => c.project_uid === projectUid);
+      result = result.filter((c) => c.project_uid === projectUid);
     } else if (foundationUid) {
-      logger.debug(req, 'get_my_committees', 'Filtering by foundation', { foundation_uid: foundationUid });
       const uids = await this.projectService.getFoundationProjectUids(req, foundationUid);
       const uidSet = new Set(uids);
-      return result.filter((c) => uidSet.has(c.project_uid));
+      result = result.filter((c) => uidSet.has(c.project_uid));
     }
 
-    return result;
+    // Enrich with project data (name, slug, is_foundation, parent_project_uid)
+    return this.projectService.enrichWithProjectData(req, result);
   }
 
   // ── Join / Leave Methods ────────────────────────────────────────────────────

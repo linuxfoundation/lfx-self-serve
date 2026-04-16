@@ -169,7 +169,7 @@ export class SurveyService {
    * Fetches surveys the current user has responded to.
    * Queries survey_response records by email and username using filters_or.
    */
-  public async getMySurveys(req: Request, projectUid?: string, foundationUid?: string): Promise<Survey[]> {
+  public async getMySurveys(req: Request): Promise<Survey[]> {
     const rawUsername = await getUsernameFromAuth(req);
     const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
     const email = getEffectiveEmail(req);
@@ -177,8 +177,6 @@ export class SurveyService {
     logger.debug(req, 'get_my_surveys', 'Fetching surveys for current user', {
       username,
       has_email: !!email,
-      project_uid: projectUid,
-      foundation_uid: foundationUid,
     });
 
     if (!username && !email) {
@@ -201,7 +199,6 @@ export class SurveyService {
         type: 'survey_response',
         page_size: 100,
         filters_or: filtersOr,
-        ...(projectUid && { tags: `project_uid:${projectUid}` }),
         ...(pageToken && { page_token: pageToken }),
       })
     );
@@ -246,16 +243,15 @@ export class SurveyService {
         return new Date(b.survey_cutoff_date).getTime() - new Date(a.survey_cutoff_date).getTime();
       });
 
-    // Post-fetch safety net: filter by project_uid or foundation_uid if provided
-    if (projectUid) {
-      return sorted.filter((s) => s.committees?.some((c) => c.project_uid === projectUid));
-    } else if (foundationUid) {
-      logger.debug(req, 'get_my_surveys', 'Filtering by foundation', { foundation_uid: foundationUid });
-      const uids = await this.projectService.getFoundationProjectUids(req, foundationUid);
-      const uidSet = new Set(uids);
-      return sorted.filter((s) => s.committees?.some((c) => uidSet.has(c.project_uid)));
-    }
+    // Flatten project_uid from committees to top level for enrichment
+    const withProjectUid = sorted.map((s) => {
+      const projectUids = [...new Set((s.committees ?? []).map((c) => c.project_uid).filter(Boolean))];
+      return {
+        ...s,
+        project_uid: projectUids.length === 1 ? projectUids[0] : '',
+      };
+    });
 
-    return sorted;
+    return this.projectService.enrichWithProjectData(req, withProjectUid);
   }
 }

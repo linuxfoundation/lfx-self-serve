@@ -22,23 +22,19 @@
             control="foundationFilter"
             size="small"
             [options]="foundationOptions()"
-            placeholder="All Foundations"
-            [showClear]="true"
             styleClass="w-full"
             (onChange)="onFoundationFilterChange($event.value)"
             data-testid="surveys-foundation-filter"></lfx-select>
         </div>
       }
 
-      @if (showProjectFilter() && projectOptions().length > 0) {
+      @if (showProjectFilter()) {
         <div class="w-full sm:w-48">
           <lfx-select
             [form]="searchForm"
             control="projectFilter"
             size="small"
             [options]="projectOptions()"
-            placeholder="All Projects"
-            [showClear]="true"
             styleClass="w-full"
             (onChange)="projectFilterChange.emit($event.value)"
             data-testid="surveys-project-filter"></lfx-select>
@@ -51,8 +47,6 @@
           control="group"
           size="small"
           [options]="groupOptions()"
-          placeholder="All Groups"
-          [showClear]="true"
           (valueChange)="onGroupChange($event)"
           data-testid="surveys-group-filter"></lfx-select>
       </div>
@@ -63,8 +57,6 @@
           control="surveyType"
           size="small"
           [options]="typeOptions()"
-          placeholder="All Types"
-          [showClear]="true"
           (valueChange)="onTypeChange($event)"
           data-testid="surveys-type-filter"></lfx-select>
       </div>
@@ -75,8 +67,6 @@
           control="status"
           size="small"
           [options]="statusOptions()"
-          placeholder="All Statuses"
-          [showClear]="true"
           (valueChange)="onStatusChange($event)"
           data-testid="surveys-status-filter"></lfx-select>
       </div>

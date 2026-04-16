@@ -28,8 +28,8 @@ export class SurveysDashboardComponent {
   // === Services ===
   private readonly surveyService = inject(SurveyService);
   private readonly lensService = inject(LensService);
-  private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
+  private readonly projectContextService = inject(ProjectContextService);
 
   // === Constants ===
   protected readonly surveyLabel = SURVEY_LABEL.singular;
@@ -57,8 +57,9 @@ export class SurveysDashboardComponent {
   protected readonly surveys: Signal<Survey[]> = this.initSurveys();
   protected readonly selectedListSurvey: Signal<Survey | null> = this.initSelectedListSurvey();
   protected readonly mySurveys: Signal<Survey[]> = this.initMySurveys();
-  protected readonly foundationOptions: Signal<{ label: string; value: string }[]> = this.initializeFoundationOptions();
-  protected readonly projectOptions: Signal<{ label: string; value: string }[]> = this.initializeProjectOptions();
+  protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initializeFoundationOptions();
+  protected readonly projectOptions: Signal<{ label: string; value: string | null }[]> = this.initializeProjectOptions();
+  protected readonly filteredMySurveys: Signal<Survey[]> = this.initFilteredMySurveys();
 
   protected onViewResults(surveyId: string): void {
     this.selectedSurveyId.set(surveyId);
@@ -137,18 +138,16 @@ export class SurveysDashboardComponent {
 
   private initMySurveys(): Signal<Survey[]> {
     const lens$ = toObservable(this.lensService.activeLens);
-    const projectFilter$ = toObservable(this.projectFilter);
-    const foundationFilter$ = toObservable(this.foundationFilter);
 
     return toSignal(
-      combineLatest([lens$, this.refresh$, projectFilter$, foundationFilter$]).pipe(
-        switchMap(([lens, , projectFilter, foundationFilter]) => {
+      combineLatest([lens$, this.refresh$]).pipe(
+        switchMap(([lens]) => {
           if (lens !== 'me') {
             this.mySurveysLoading.set(false);
             return of([] as Survey[]);
           }
           this.mySurveysLoading.set(true);
-          return this.surveyService.getMySurveys(projectFilter ?? undefined, foundationFilter ?? undefined).pipe(
+          return this.surveyService.getMySurveys().pipe(
             catchError(() => {
               this.mySurveysLoading.set(false);
               return of([] as Survey[]);
@@ -161,27 +160,53 @@ export class SurveysDashboardComponent {
     );
   }
 
-  private initializeFoundationOptions(): Signal<{ label: string; value: string }[]> {
+  private initializeFoundationOptions(): Signal<{ label: string; value: string | null }[]> {
     return computed(() => {
-      const projects = this.personaService.detectedProjects();
-      return projects.filter((p) => p.isFoundation).map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+      const items = this.mySurveys();
+      const seen = new Map<string, string>();
+      for (const item of items) {
+        if (item.is_foundation && item.project_uid && !seen.has(item.project_uid)) {
+          seen.set(item.project_uid, item.project_name || item.project_uid);
+        }
+      }
+      const options = [...seen.entries()]
+        .map(([uid, name]) => ({ label: name, value: uid }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+      return [{ label: 'All Foundations', value: null }, ...options];
     });
   }
 
-  private initializeProjectOptions(): Signal<{ label: string; value: string }[]> {
+  private initializeProjectOptions(): Signal<{ label: string; value: string | null }[]> {
     return computed(() => {
-      const projects = this.personaService.detectedProjects();
+      const items = this.mySurveys();
+      const foundation = this.foundationFilter();
+      const seen = new Map<string, string>();
+      for (const item of items) {
+        if (!item.is_foundation && item.project_uid && !seen.has(item.project_uid)) {
+          if (foundation && item.parent_project_uid !== foundation) continue;
+          seen.set(item.project_uid, item.project_name || item.project_uid);
+        }
+      }
+      const options = [...seen.entries()]
+        .map(([uid, name]) => ({ label: name, value: uid }))
+        .sort((a, b) => a.label.localeCompare(b.label));
+      return [{ label: 'All Projects', value: null }, ...options];
+    });
+  }
+
+  private initFilteredMySurveys(): Signal<Survey[]> {
+    return computed(() => {
+      let filtered = this.mySurveys();
+      const project = this.projectFilter();
       const foundation = this.foundationFilter();
 
-      // Filter to non-foundation projects
-      let candidates = projects.filter((p) => !p.isFoundation);
-
-      // If a foundation is selected, show only its children
-      if (foundation) {
-        candidates = candidates.filter((p) => p.parentProjectUid === foundation);
+      if (project) {
+        filtered = filtered.filter((s) => s.project_uid === project);
+      } else if (foundation) {
+        filtered = filtered.filter((s) => s.project_uid === foundation || (s.parent_project_uid === foundation && !s.is_foundation));
       }
 
-      return candidates.map((p) => ({ label: p.projectName ?? p.projectSlug, value: p.projectUid }));
+      return filtered;
     });
   }
 }

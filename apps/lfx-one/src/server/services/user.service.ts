@@ -506,7 +506,9 @@ export class UserService {
 
     const limited = limit !== undefined && limit > 0 ? meetings.slice(0, limit) : meetings;
 
-    return this.accessCheckService.addAccessToResources(req, limited, 'v1_meeting', 'organizer');
+    const enriched = await this.meetingService.getMeetingProjectName(req, limited);
+
+    return this.accessCheckService.addAccessToResources(req, enriched, 'v1_meeting', 'organizer');
   }
 
   /**
@@ -620,7 +622,9 @@ export class UserService {
 
     const limited = limit !== undefined && limit > 0 ? pastMeetings.slice(0, limit) : pastMeetings;
 
-    return this.accessCheckService.addAccessToResources(req, limited, 'v1_past_meeting', 'organizer');
+    const enriched = await this.meetingService.getMeetingProjectName(req, limited);
+
+    return this.accessCheckService.addAccessToResources(req, enriched, 'v1_past_meeting', 'organizer');
   }
 
   /**

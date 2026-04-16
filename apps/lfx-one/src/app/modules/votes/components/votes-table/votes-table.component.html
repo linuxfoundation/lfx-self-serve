@@ -22,8 +22,6 @@
             control="foundationFilter"
             size="small"
             [options]="foundationOptions()"
-            placeholder="All Foundations"
-            [showClear]="true"
             [filter]="true"
             filterPlaceholder="Search foundations..."
             styleClass="w-full"
@@ -32,15 +30,13 @@
           </lfx-select>
         </div>
       }
-      @if (showProjectFilter() && projectOptions().length > 0) {
+      @if (showProjectFilter()) {
         <div class="w-full sm:w-56">
           <lfx-select
             [form]="searchForm"
             control="projectFilter"
             size="small"
             [options]="projectOptions()"
-            placeholder="All Projects"
-            [showClear]="true"
             [filter]="true"
             filterPlaceholder="Search projects..."
             styleClass="w-full"
@@ -56,8 +52,6 @@
           control="group"
           size="small"
           [options]="groupOptions()"
-          placeholder="All Groups"
-          [showClear]="true"
           [filter]="true"
           filterPlaceholder="Search groups..."
           data-testid="votes-group-filter"></lfx-select>
@@ -69,8 +63,6 @@
           control="status"
           size="small"
           [options]="statusOptions()"
-          placeholder="All Statuses"
-          [showClear]="true"
           data-testid="votes-status-filter"></lfx-select>
       </div>
 

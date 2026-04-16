@@ -156,6 +156,12 @@ export interface Committee {
   project_uid: string;
   /** Associated project name (populated from project data) */
   project_name?: string;
+  /** Project URL slug (enriched for filtering) */
+  project_slug?: string;
+  /** Whether the project is a foundation (top-level entity) */
+  is_foundation?: boolean;
+  /** Parent project UID (for subprojects under a foundation) */
+  parent_project_uid?: string;
   /** Foundation name this committee belongs to (populated from project hierarchy) */
   foundation_name?: string;
   /** Calendar visibility settings */

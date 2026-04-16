@@ -51,7 +51,7 @@
     </lfx-card>
   } @else {
     <lfx-surveys-table
-      [surveys]="isMeLens() ? mySurveys() : surveys()"
+      [surveys]="isMeLens() ? filteredMySurveys() : surveys()"
       [hasPMOAccess]="!isMeLens() && hasPMOAccess()"
       [loading]="isMeLens() ? mySurveysLoading() : loading()"
       [foundationOptions]="foundationOptions()"

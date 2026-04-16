@@ -47,10 +47,10 @@
     </lfx-card>
   } @else {
     <lfx-votes-table
-      [votes]="isMeLens() ? myVotes() : votes()"
+      [votes]="isMeLens() ? filteredMyVotes() : votes()"
       [hasPMOAccess]="!isMeLens() && hasPMOAccess()"
       [loading]="isMeLens() ? myVotesLoading() : loading()"
-      [totalRecords]="isMeLens() ? myVotes().length : totalRecords()"
+      [totalRecords]="isMeLens() ? filteredMyVotes().length : totalRecords()"
       [rowsPerPage]="rowsPerPage()"
       [first]="isMeLens() ? 0 : currentFirst()"
       [lazy]="!isMeLens()"

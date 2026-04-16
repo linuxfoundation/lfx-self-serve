@@ -25,8 +25,6 @@
             control="foundationFilter"
             size="small"
             [options]="foundationOptions()"
-            placeholder="All Foundations"
-            [showClear]="true"
             styleClass="w-full"
             (onChange)="foundationFilterChange.emit($event.value)"
             data-testid="mailing-list-foundation-filter">
@@ -34,15 +32,13 @@
         </div>
       }
       <!-- Project Filter Dropdown (Me lens only, cascading from foundation) -->
-      @if (showProjectFilter() && projectOptions().length > 0) {
+      @if (showProjectFilter()) {
         <div class="w-full sm:w-48">
           <lfx-select
             [form]="searchForm()"
             control="projectFilter"
             size="small"
             [options]="projectOptions()"
-            placeholder="All Projects"
-            [showClear]="true"
             styleClass="w-full"
             (onChange)="projectFilterChange.emit($event.value)"
             data-testid="mailing-list-project-filter">

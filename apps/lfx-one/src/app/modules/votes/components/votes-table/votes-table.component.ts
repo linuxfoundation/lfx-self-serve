@@ -64,8 +64,8 @@ export class VotesTableComponent implements OnInit {
   public readonly first = input<number>(0);
   public readonly lazy = input<boolean>(false);
   public readonly groupOptions = input<{ label: string; value: string | null }[]>([{ label: 'All Groups', value: null }]);
-  public readonly foundationOptions = input<{ label: string; value: string }[]>([]);
-  public readonly projectOptions = input<{ label: string; value: string }[]>([]);
+  public readonly foundationOptions = input<{ label: string; value: string | null }[]>([]);
+  public readonly projectOptions = input<{ label: string; value: string | null }[]>([]);
   public readonly showFoundationFilter = input<boolean>(false);
   public readonly showProjectFilter = input<boolean>(false);
 

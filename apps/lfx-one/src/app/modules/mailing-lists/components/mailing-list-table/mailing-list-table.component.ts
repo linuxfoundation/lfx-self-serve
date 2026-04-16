@@ -54,8 +54,8 @@ export class MailingListTableComponent {
   public searchForm = input.required<FormGroup>();
   public committeeFilterOptions = input.required<FilterOption[]>();
   public statusFilterOptions = input.required<FilterOption[]>();
-  public foundationOptions = input<{ label: string; value: string }[]>([]);
-  public projectOptions = input<{ label: string; value: string }[]>([]);
+  public foundationOptions = input<{ label: string; value: string | null }[]>([]);
+  public projectOptions = input<{ label: string; value: string | null }[]>([]);
   public showFoundationFilter = input<boolean>(false);
   public showProjectFilter = input<boolean>(false);
   public loading = input<boolean>(false);

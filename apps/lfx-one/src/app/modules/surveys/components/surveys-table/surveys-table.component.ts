@@ -53,8 +53,8 @@ export class SurveysTableComponent {
   public readonly surveys = input.required<Survey[]>();
   public readonly hasPMOAccess = input<boolean>(false);
   public readonly loading = input<boolean>(false);
-  public readonly foundationOptions = input<{ label: string; value: string }[]>([]);
-  public readonly projectOptions = input<{ label: string; value: string }[]>([]);
+  public readonly foundationOptions = input<{ label: string; value: string | null }[]>([]);
+  public readonly projectOptions = input<{ label: string; value: string | null }[]>([]);
   public readonly showFoundationFilter = input<boolean>(false);
   public readonly showProjectFilter = input<boolean>(false);
 
