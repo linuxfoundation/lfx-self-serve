@@ -176,4 +176,7 @@ router.get('/brand-reach', (req, res, next) => analyticsController.getBrandReach
 router.get('/brand-health', (req, res, next) => analyticsController.getBrandHealth(req, res, next));
 router.get('/revenue-impact', (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
 
+// Multi-foundation summary endpoint (multi-foundation dashboard)
+router.get('/multi-foundation-summary', (req, res, next) => analyticsController.getMultiFoundationSummary(req, res, next));
+
 export default router;

@@ -404,7 +404,7 @@ export class PersonaDetectionService {
 
       if (detection.source === 'cdp_roles' && detection.extra) {
         const roles = detection.extra['roles'] as { role: string }[] | undefined;
-        if (roles?.some((r) => r.role === 'Maintainer')) {
+        if (roles?.some((r) => typeof r.role === 'string' && r.role.toLowerCase() === 'maintainer')) {
           personas.add('maintainer');
           continue;
         }
@@ -415,6 +415,13 @@ export class PersonaDetectionService {
 
     if (personas.size === 0) {
       personas.add('contributor');
+    }
+
+    // Contributor is implied by any specific role — if a project already has
+    // board-member, executive-director, or maintainer, drop contributor so the
+    // project only appears under the more specific persona(s).
+    if (personas.size > 1 && personas.has('contributor')) {
+      personas.delete('contributor');
     }
 
     return Array.from(personas);

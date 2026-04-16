@@ -1,0 +1,115 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+:host {
+  display: block;
+}
+
+.role-label {
+  @apply inline-flex items-center gap-1.5 whitespace-nowrap text-sm font-semibold text-gray-800;
+
+  &__dot {
+    @apply inline-block h-2 w-2 rounded-full bg-gray-400;
+
+    &[data-role='Executive Director'],
+    &[data-role='Board Member'] {
+      @apply bg-red-500;
+    }
+
+    &[data-role='Chair'],
+    &[data-role='Vice Chair'] {
+      @apply bg-orange-500;
+    }
+
+    &[data-role='Treasurer'] {
+      @apply bg-emerald-500;
+    }
+
+    &[data-role='Secretary'] {
+      @apply bg-purple-500;
+    }
+
+    &[data-role='Counsel'] {
+      @apply bg-red-400;
+    }
+
+    &[data-role='Maintainer'] {
+      @apply bg-blue-500;
+    }
+  }
+}
+
+.type-badge {
+  @apply inline-block rounded-md px-2.5 py-1 text-xs font-medium;
+
+  &--foundation {
+    @apply border border-orange-200 bg-orange-50 text-orange-700;
+  }
+
+  &--project {
+    @apply border border-blue-200 bg-blue-50 text-blue-700;
+  }
+}
+
+.role-badge {
+  @apply inline-block rounded-md border border-blue-200 bg-blue-50 px-2.5 py-1 text-xs font-medium text-blue-700;
+
+  &[data-role='Executive Director'],
+  &[data-role='Board Member'] {
+    @apply border-red-200 bg-red-50 text-red-700;
+  }
+
+  &[data-role='Chair'],
+  &[data-role='Vice Chair'] {
+    @apply border-orange-200 bg-orange-50 text-orange-700;
+  }
+
+  &[data-role='Treasurer'] {
+    @apply border-emerald-200 bg-emerald-50 text-emerald-700;
+  }
+
+  &[data-role='Secretary'] {
+    @apply border-purple-200 bg-purple-50 text-purple-700;
+  }
+
+  &[data-role='Counsel'] {
+    @apply border-red-200 bg-red-50 text-red-600;
+  }
+
+  &[data-role='Maintainer'] {
+    @apply border-blue-200 bg-blue-50 text-blue-700;
+  }
+
+  &[data-role='Contributor'],
+  &[data-role='Member'] {
+    @apply border-gray-200 bg-gray-50 text-gray-600;
+  }
+}
+
+.health-dot {
+  @apply inline-block h-2.5 w-2.5 flex-shrink-0 rounded-full;
+
+  &--on-track {
+    @apply bg-emerald-500;
+  }
+
+  &--watch {
+    @apply bg-amber-500;
+  }
+
+  &--needs-attention {
+    @apply bg-red-500;
+  }
+}
+
+.voting-badge {
+  @apply inline-block rounded-md border border-gray-200 bg-gray-50 px-2.5 py-1 text-xs font-medium text-gray-700;
+
+  &--voting-rep {
+    @apply border-blue-200 bg-blue-50 text-blue-700;
+  }
+
+  &--alternate {
+    @apply border-yellow-200 bg-yellow-50 text-yellow-700;
+  }
+}

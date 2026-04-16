@@ -1,0 +1,30 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+.persona-spinner {
+  @apply h-8 w-8 rounded-full border-[3px] border-gray-200;
+
+  border-top-color: theme('colors.blue.600');
+  animation: spin 0.8s linear infinite;
+}
+
+.persona-loading-text {
+  animation: fade-cycle 2s ease-in-out infinite;
+}
+
+@keyframes spin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+@keyframes fade-cycle {
+  0%,
+  100% {
+    opacity: 0.4;
+  }
+
+  50% {
+    opacity: 1;
+  }
+}

@@ -56,6 +56,9 @@ export class PersonaService {
   /** Whether the user holds any project-scoped persona (maintainer, contributor) */
   public readonly hasProjectRole: Signal<boolean>;
 
+  /** Whether persona data has been loaded from the API after hydration */
+  public readonly personaLoaded: WritableSignal<boolean>;
+
   public constructor() {
     const stored = this.loadFromCookie();
     this.currentPersona = signal<PersonaType>(stored?.primary ?? 'contributor');
@@ -67,6 +70,10 @@ export class PersonaService {
     this.isBoardScoped = computed(() => isBoardScopedPersona(this.currentPersona()));
     this.hasBoardRole = this.initHasBoardRole();
     this.hasProjectRole = this.initHasProjectRole();
+    // Always start as not loaded — SSR renders the loading skeleton, browser hydrates it,
+    // then the API response sets this to true and renders the correct dashboard.
+    // This avoids the flash of stale cookie data (contributor) before the real persona loads.
+    this.personaLoaded = signal(false);
 
     // Always refresh persona data from API after hydration (browser only).
     // Cookie provides initial SSR values; the API is the primary source of truth
@@ -119,6 +126,7 @@ export class PersonaService {
             currentPersona: this.currentPersona(),
             allPersonas: this.allPersonas(),
           });
+          this.personaLoaded.set(true);
           return;
         }
 
@@ -150,6 +158,8 @@ export class PersonaService {
           }
           this.accountContextService.initializeUserOrganizations(response.organizations);
         }
+
+        this.personaLoaded.set(true);
       });
   }
 

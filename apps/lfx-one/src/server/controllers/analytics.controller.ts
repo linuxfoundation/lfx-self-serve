@@ -2539,4 +2539,75 @@ export class AnalyticsController {
       return next(error);
     }
   }
+
+  /**
+   * GET /api/analytics/multi-foundation-summary
+   * Aggregate analytics across multiple foundations in a single request
+   * Query params: slugs (required, comma-separated foundation slugs, max 10)
+   */
+  public async getMultiFoundationSummary(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_multi_foundation_summary');
+
+    try {
+      const slugs = this.parseAndValidateSlugs(req);
+
+      const response = await this.projectService.getMultiFoundationSummary(req, slugs);
+
+      logger.success(req, 'get_multi_foundation_summary', startTime, {
+        slug_count: slugs.length,
+        foundations_returned: Object.keys(response.perFoundation).length,
+        aggregated_projects: response.aggregated.totalProjects,
+        aggregated_members: response.aggregated.totalMembers,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
+   * Parse and validate a comma-separated slugs query parameter.
+   * @throws ServiceValidationError if the parameter is missing, empty, exceeds max count, or has invalid format
+   */
+  private parseAndValidateSlugs(req: Request, maxCount: number = 10): string[] {
+    const slugsParam = getStringQueryParam(req, 'slugs');
+
+    if (!slugsParam) {
+      throw ServiceValidationError.forField('slugs', 'slugs query parameter is required', {
+        operation: 'get_multi_foundation_summary',
+      });
+    }
+
+    const slugs = [
+      ...new Set(
+        slugsParam
+          .split(',')
+          .map((s) => s.trim())
+          .filter((s) => s.length > 0)
+      ),
+    ];
+
+    if (slugs.length === 0) {
+      throw ServiceValidationError.forField('slugs', 'At least one foundation slug is required', {
+        operation: 'get_multi_foundation_summary',
+      });
+    }
+
+    if (slugs.length > maxCount) {
+      throw ServiceValidationError.forField('slugs', `Maximum of ${maxCount} foundation slugs allowed per request`, {
+        operation: 'get_multi_foundation_summary',
+      });
+    }
+
+    for (const slug of slugs) {
+      if (!SLUG_PATTERN.test(slug) || slug.length > NAME_MAX_LENGTH) {
+        throw ServiceValidationError.forField('slugs', `Invalid foundation slug format: ${slug}`, {
+          operation: 'get_multi_foundation_summary',
+        });
+      }
+    }
+
+    return slugs;
+  }
 }

@@ -67,6 +67,7 @@ import {
   BrandReachResponse,
   BrandHealthResponse,
   RevenueImpactResponse,
+  MultiFoundationSummaryResponse,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of } from 'rxjs';
 
@@ -1248,5 +1249,25 @@ export class AnalyticsService {
         })
       )
     );
+  }
+
+  /**
+   * Get aggregated analytics across multiple foundations
+   * @param slugs - Array of foundation slugs
+   * @returns Observable of multi-foundation summary response
+   */
+  public getMultiFoundationSummary(slugs: string[]): Observable<MultiFoundationSummaryResponse> {
+    return this.http
+      .get<MultiFoundationSummaryResponse>('/api/analytics/multi-foundation-summary', {
+        params: { slugs: slugs.join(',') },
+      })
+      .pipe(
+        catchError(() => {
+          return of({
+            aggregated: { totalValue: 0, totalProjects: 0, totalMembers: 0 },
+            perFoundation: {},
+          });
+        })
+      );
   }
 }
