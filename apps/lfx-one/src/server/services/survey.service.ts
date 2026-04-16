@@ -36,18 +36,22 @@ export class SurveyService {
       query_params: Object.keys(query),
     });
 
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
     const params = {
-      ...query,
+      ...queryFilters,
       type: 'survey',
     };
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Survey>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
-
-    logger.debug(req, 'get_surveys', 'Fetched resources from query service', {
-      count: resources.length,
-    });
-
-    const surveys: Survey[] = resources.map((resource) => resource.data);
+    const surveys = await fetchAllQueryResources<Survey>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<Survey>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        page_size: 100,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
 
     logger.debug(req, 'get_surveys', 'Completed survey fetch', {
       final_count: surveys.length,

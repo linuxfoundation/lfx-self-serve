@@ -49,20 +49,22 @@ export class MailingListService {
    * Fetches all Groups.io services based on query parameters
    */
   public async getServices(req: Request, query: Record<string, unknown> = {}): Promise<GroupsIOService[]> {
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
     const params = {
-      ...query,
+      ...queryFilters,
       type: 'groupsio_service',
     };
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOService>>(
-      req,
-      'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      params
+    const services = await fetchAllQueryResources<GroupsIOService>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOService>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        page_size: 100,
+        ...(pageToken && { page_token: pageToken }),
+      })
     );
-
-    const services = resources.map((resource) => resource.data);
 
     // Add writer access field to all services
     return await this.accessCheckService.addAccessToResources(req, services, 'groupsio_service');
@@ -184,20 +186,22 @@ export class MailingListService {
    * Fetches all mailing lists based on query parameters
    */
   public async getMailingLists(req: Request, query: Record<string, unknown> = {}): Promise<GroupsIOMailingList[]> {
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
     const params = {
-      ...query,
+      ...queryFilters,
       type: 'groupsio_mailing_list',
     };
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(
-      req,
-      'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      params
+    let mailingLists = await fetchAllQueryResources<GroupsIOMailingList>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        page_size: 100,
+        ...(pageToken && { page_token: pageToken }),
+      })
     );
-
-    let mailingLists = resources.map((resource) => resource.data);
 
     // Enrich with service data
     mailingLists = await this.enrichWithServices(req, mailingLists);
@@ -476,21 +480,23 @@ export class MailingListService {
    * Fetches all members for a mailing list using query service
    */
   public async getMembers(req: Request, mailingListId: string, query: Record<string, unknown> = {}): Promise<MailingListMember[]> {
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
     const params = {
-      ...query,
+      ...queryFilters,
       type: 'groupsio_member',
       tags: `mailing_list_uid:${mailingListId}`,
     };
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(
-      req,
-      'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      params
+    const members = await fetchAllQueryResources<MailingListMember>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        page_size: 100,
+        ...(pageToken && { page_token: pageToken }),
+      })
     );
-
-    const members = resources.map((resource) => resource.data);
 
     // Add writer access field to all members
     return await this.accessCheckService.addAccessToResources(req, members, 'groupsio_member');

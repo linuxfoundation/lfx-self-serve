@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { EMPTY_MY_EVENTS_RESPONSE } from '@lfx-one/shared/constants';
-import { MyEvent, MyEventsResponse, TimeFilterValue } from '@lfx-one/shared/interfaces';
+import { MyEvent, TimeFilterValue } from '@lfx-one/shared/interfaces';
 import { catchError, combineLatest, debounceTime, EMPTY, finalize, of, scan, skip, switchMap, tap } from 'rxjs';
 import { EVENT_SELECTION_PAGE_SIZE } from '@lfx-one/shared/constants/events.constants';
 @Component({

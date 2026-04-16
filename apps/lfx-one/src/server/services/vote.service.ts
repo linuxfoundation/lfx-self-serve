@@ -3,7 +3,6 @@
 
 import {
   CreateVoteRequest,
-  PaginatedResponse,
   QueryServiceCountResponse,
   QueryServiceResponse,
   UpdateVoteRequest,
@@ -34,37 +33,34 @@ export class VoteService {
 
   /**
    * Fetches all votes based on query parameters
-   * Uses query service which returns Vote entities with pagination support
    */
-  public async getVotes(req: Request, query: Record<string, any> = {}): Promise<PaginatedResponse<Vote>> {
+  public async getVotes(req: Request, query: Record<string, any> = {}): Promise<Vote[]> {
     logger.debug(req, 'get_votes', 'Starting vote fetch', {
       query_params: Object.keys(query),
     });
 
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
     const params = {
-      ...query,
+      ...queryFilters,
       type: 'vote',
     };
 
-    const { resources, page_token } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Vote>>(
-      req,
-      'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      params
+    const votes = await fetchAllQueryResources<Vote>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<Vote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        page_size: 100,
+        ...(pageToken && { page_token: pageToken }),
+      })
     );
-
-    logger.debug(req, 'get_votes', 'Fetched resources from query service', {
-      count: resources.length,
-    });
-
-    const votes: Vote[] = resources.map((resource) => resource.data);
 
     logger.debug(req, 'get_votes', 'Completed vote fetch', {
       final_count: votes.length,
     });
 
-    return { data: votes, page_token };
+    return votes;
   }
 
   /**

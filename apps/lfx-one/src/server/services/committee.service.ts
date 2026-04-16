@@ -73,14 +73,22 @@ export class CommitteeService {
    * Fetches all committees based on query parameters
    */
   public async getCommittees(req: Request, query: Record<string, any> = {}): Promise<Committee[]> {
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
     const params = {
-      ...query,
+      ...queryFilters,
       type: 'committee',
     };
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
-
-    let committees = resources.map((resource) => resource.data);
+    let committees = await fetchAllQueryResources<Committee>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        page_size: 100,
+        ...(pageToken && { page_token: pageToken }),
+      })
+    );
 
     // Get member count for each committee in parallel
     committees = await Promise.all(
@@ -286,21 +294,23 @@ export class CommitteeService {
    * Fetches all members for a specific committee
    */
   public async getCommitteeMembers(req: Request, committeeId: string, query: Record<string, any> = {}): Promise<CommitteeMember[]> {
+    const queryFilters = { ...query };
+    delete queryFilters['page_token'];
+    delete queryFilters['page_size'];
+
     const params = {
-      ...query,
+      ...queryFilters,
       type: 'committee_member',
       tags: `committee_uid:${committeeId}`,
     };
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(
-      req,
-      'LFX_V2_SERVICE',
-      `/query/resources`,
-      'GET',
-      params
+    return fetchAllQueryResources<CommitteeMember>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        page_size: 100,
+        ...(pageToken && { page_token: pageToken }),
+      })
     );
-
-    return resources.map((resource) => resource.data);
   }
 
   /**
@@ -440,15 +450,13 @@ export class CommitteeService {
       tags_all: [`username:${username}`, `committee_category:${category}`],
     };
 
-    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(
-      req,
-      'LFX_V2_SERVICE',
-      '/query/resources',
-      'GET',
-      params
+    const userMemberships = await fetchAllQueryResources<CommitteeMember>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        ...params,
+        page_size: 100,
+        ...(pageToken && { page_token: pageToken }),
+      })
     );
-
-    const userMemberships = resources.map((resource) => resource.data);
 
     logger.debug(req, 'get_committee_members_by_category', 'Committee memberships retrieved', {
       username,
