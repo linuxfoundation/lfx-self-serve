@@ -278,8 +278,10 @@ Before creating a wrapper, **always research the PrimeNG component thoroughly**:
 
 ```bash
 # In the apps/lfx-one directory
-ng generate component shared/components/[component-name] --standalone --skip-tests
+ng generate component shared/components/[component-name] --skip-tests
 ```
+
+> **Note**: The `--standalone` flag is no longer needed — Angular defaults components, directives, and pipes to standalone.
 
 #### Step 2: Define Input/Output Signals
 

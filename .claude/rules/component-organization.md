@@ -112,3 +112,8 @@ interface RelativeDateInfo {
 // Import from shared package
 import { RelativeDateInfo } from '@lfx-one/shared/interfaces';
 ```
+
+## 6. Do NOT flag these as issues
+
+- **`ChangeDetectionStrategy.OnPush`** is NOT required. With zoneless change detection and signals, OnPush is unnecessary. Do not flag its absence.
+- **`standalone: true`** is NOT required on components, directives, or pipes. Angular defaults components, directives, and pipes to standalone. Do not flag its absence.
