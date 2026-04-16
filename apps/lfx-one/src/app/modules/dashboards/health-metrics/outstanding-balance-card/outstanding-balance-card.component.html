@@ -1,10 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div
-  class="flex h-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5"
-  data-testid="outstanding-balance-card"
->
+<div class="flex h-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5" data-testid="outstanding-balance-card">
   <!-- Header -->
   <div class="flex items-center justify-between" data-testid="outstanding-balance-card-header">
     <div class="flex items-center gap-2">
@@ -13,15 +10,15 @@
         class="rounded-full bg-amber-100 px-2 py-0.5 text-xs font-medium text-amber-700"
         aria-label="Watch status badge"
         data-testid="outstanding-balance-card-watch-badge"
-      >Watch</span>
+        >Watch</span
+      >
     </div>
     <button
       class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600 disabled:cursor-not-allowed disabled:opacity-50"
       [disabled]="loading()"
       (click)="downloadCard()"
       aria-label="Download card as image"
-      data-testid="outstanding-balance-card-download"
-    >
+      data-testid="outstanding-balance-card-download">
       <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
     </button>
   </div>
@@ -51,7 +48,8 @@
           [class.text-amber-700]="primaryRiskLevel() === 'Medium'"
           [class.bg-red-100]="primaryRiskLevel() === 'High'"
           [class.text-red-700]="primaryRiskLevel() === 'High'"
-        >{{ primaryRiskLabel() }}</span>
+          >{{ primaryRiskLabel() }}</span
+        >
         <span class="text-sm font-semibold text-gray-900">{{ formattedPrimaryRiskAmount() }}</span>
       </div>
     } @else {
@@ -75,8 +73,7 @@
         class="flex items-center gap-2 rounded-md bg-amber-50 px-3 py-2"
         role="alert"
         aria-label="Members at risk warning"
-        data-testid="outstanding-balance-card-warning-banner"
-      >
+        data-testid="outstanding-balance-card-warning-banner">
         <i class="fa-solid fa-triangle-exclamation text-sm text-amber-500"></i>
         <span class="text-sm font-semibold text-amber-800">{{ warningBannerText() }}</span>
       </div>
@@ -90,8 +87,7 @@
       target="_blank"
       rel="noopener noreferrer"
       class="ignore-download text-sm font-medium text-blue-600 hover:text-blue-800"
-      data-testid="outstanding-balance-card-explore-more"
-    >
+      data-testid="outstanding-balance-card-explore-more">
       Explore more &rarr;
     </a>
   }

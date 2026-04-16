@@ -972,6 +972,17 @@ export class AnalyticsService {
             convertedToCommunity: 0,
             convertedToWorkingGroup: 0,
           },
+          reengagement: {
+            totalReengaged: 0,
+            reengagementRate: 0,
+            reengagementMomChange: 0,
+            reengagedToNewsletter: 0,
+            reengagedToCommunity: 0,
+            reengagedToWorkingGroup: 0,
+            reengagedToTraining: 0,
+            reengagedToCode: 0,
+            reengagedToWeb: 0,
+          },
           monthlyData: [],
         });
       })
@@ -983,10 +994,7 @@ export class AnalyticsService {
    * @param foundationSlug - Foundation slug for Snowflake project resolution
    * @returns Observable of NPS summary response; degrades to zeros on error
    */
-  public getNpsSummary(
-    foundationSlug: string,
-    range: string = 'YTD'
-  ): Observable<NpsSummaryResponse> {
+  public getNpsSummary(foundationSlug: string, range: string = 'YTD'): Observable<NpsSummaryResponse> {
     const params: Record<string, string> = { foundationSlug };
     if (range && range !== 'YTD') {
       params['range'] = range;
@@ -1012,10 +1020,7 @@ export class AnalyticsService {
    * @param foundationSlug - Foundation slug for Snowflake project_slug filter
    * @returns Observable of participating orgs summary response
    */
-  public getParticipatingOrgsSummary(
-    foundationSlug: string,
-    range: string = 'YTD'
-  ): Observable<ParticipatingOrgsSummaryResponse> {
+  public getParticipatingOrgsSummary(foundationSlug: string, range: string = 'YTD'): Observable<ParticipatingOrgsSummaryResponse> {
     const params: Record<string, string> = { foundationSlug };
     if (range && range !== 'YTD') {
       params['range'] = range;
@@ -1040,28 +1045,23 @@ export class AnalyticsService {
    * @param range - Reporting range (default 'YTD')
    * @returns Observable of churn summary; degrades to zeros on error
    */
-  public getMembershipChurnPerTierSummary(
-    foundationSlug: string,
-    range: string = 'YTD'
-  ): Observable<MembershipChurnPerTierSummaryResponse> {
+  public getMembershipChurnPerTierSummary(foundationSlug: string, range: string = 'YTD'): Observable<MembershipChurnPerTierSummaryResponse> {
     const params: Record<string, string> = { foundationSlug };
     if (range && range !== 'YTD') {
       params['range'] = range;
     }
-    return this.http
-      .get<MembershipChurnPerTierSummaryResponse>('/api/analytics/membership-churn-per-tier-summary', { params })
-      .pipe(
-        catchError(() => {
-          return of({
-            projectId: '',
-            range: 'YTD',
-            comparisonAvailable: false,
-            currentPeriod: { churnRatePct: 0, valueLost: 0, membersLost: 0 },
-            previousYear: null,
-            trend: null,
-          });
-        })
-      );
+    return this.http.get<MembershipChurnPerTierSummaryResponse>('/api/analytics/membership-churn-per-tier-summary', { params }).pipe(
+      catchError(() => {
+        return of({
+          projectId: '',
+          range: 'YTD',
+          comparisonAvailable: false,
+          currentPeriod: { churnRatePct: 0, valueLost: 0, membersLost: 0 },
+          previousYear: null,
+          trend: null,
+        });
+      })
+    );
   }
 
   /**
@@ -1069,10 +1069,7 @@ export class AnalyticsService {
    * @param foundationSlug - Foundation slug for Snowflake project resolution
    * @returns Observable of events summary; degrades to zeros on error
    */
-  public getEventsSummary(
-    foundationSlug: string,
-    range: string = 'YTD'
-  ): Observable<EventsSummaryResponse> {
+  public getEventsSummary(foundationSlug: string, range: string = 'YTD'): Observable<EventsSummaryResponse> {
     const params: Record<string, string> = { foundationSlug };
     if (range && range !== 'YTD') {
       params['range'] = range;
@@ -1094,55 +1091,45 @@ export class AnalyticsService {
     );
   }
 
-  public getTrainingCertificationSummary(
-    foundationSlug: string,
-    range: string = 'YTD'
-  ): Observable<TrainingCertificationSummaryResponse> {
+  public getTrainingCertificationSummary(foundationSlug: string, range: string = 'YTD'): Observable<TrainingCertificationSummaryResponse> {
     const params: Record<string, string> = { foundationSlug };
     if (range && range !== 'YTD') {
       params['range'] = range;
     }
-    return this.http
-      .get<TrainingCertificationSummaryResponse>('/api/analytics/training-certification-summary', { params })
-      .pipe(
-        catchError(() => {
-          return of({
-            projectId: '',
-            range: (range || 'YTD') as TrainingCertificationSummaryResponse['range'],
-            enrollment: { instructorLed: 0, eLearning: 0, certExams: 0, edx: 0 },
-            revenue: { instructorLed: 0, eLearning: 0, certExams: 0 },
-          });
-        })
-      );
+    return this.http.get<TrainingCertificationSummaryResponse>('/api/analytics/training-certification-summary', { params }).pipe(
+      catchError(() => {
+        return of({
+          projectId: '',
+          range: (range || 'YTD') as TrainingCertificationSummaryResponse['range'],
+          enrollment: { instructorLed: 0, eLearning: 0, certExams: 0, edx: 0 },
+          revenue: { instructorLed: 0, eLearning: 0, certExams: 0 },
+        });
+      })
+    );
   }
 
-  public getCodeContributionSummary(
-    foundationSlug: string,
-    range: string = 'YTD'
-  ): Observable<CodeContributionSummaryResponse> {
+  public getCodeContributionSummary(foundationSlug: string, range: string = 'YTD'): Observable<CodeContributionSummaryResponse> {
     const params: Record<string, string> = { foundationSlug };
     if (range && range !== 'YTD') {
       params['range'] = range;
     }
-    return this.http
-      .get<CodeContributionSummaryResponse>('/api/analytics/code-contribution-summary', { params })
-      .pipe(
-        catchError(() => {
-          return of({
-            dataAvailable: false,
-            projectId: '',
-            projectSlug: '',
-            range: (range || 'YTD') as CodeContributionSummaryResponse['range'],
-            totalContributors: 0,
-            totalContributorsChange: 0,
-            newContributors: 0,
-            newContributorsChange: 0,
-            committers: 0,
-            maintainers: 0,
-            reviewers: 0,
-          });
-        })
-      );
+    return this.http.get<CodeContributionSummaryResponse>('/api/analytics/code-contribution-summary', { params }).pipe(
+      catchError(() => {
+        return of({
+          dataAvailable: false,
+          projectId: '',
+          projectSlug: '',
+          range: (range || 'YTD') as CodeContributionSummaryResponse['range'],
+          totalContributors: 0,
+          totalContributorsChange: 0,
+          newContributors: 0,
+          newContributorsChange: 0,
+          committers: 0,
+          maintainers: 0,
+          reviewers: 0,
+        });
+      })
+    );
   }
 
   public getOutstandingBalanceSummary(foundationSlug: string): Observable<OutstandingBalanceSummaryResponse> {

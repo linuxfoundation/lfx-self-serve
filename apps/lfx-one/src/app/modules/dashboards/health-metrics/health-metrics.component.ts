@@ -31,7 +31,17 @@ const DEFAULT_DATA: HealthMetricsData = {
 @Component({
   selector: 'lfx-health-metrics',
   standalone: true,
-  imports: [NgClass, SkeletonModule, MembershipChurnTierCardComponent, NpsCardComponent, OutstandingBalanceCardComponent, ParticipatingOrgsCardComponent, EventsCardComponent, TrainingCertificationCardComponent, CodeContributionCardComponent],
+  imports: [
+    NgClass,
+    SkeletonModule,
+    MembershipChurnTierCardComponent,
+    NpsCardComponent,
+    OutstandingBalanceCardComponent,
+    ParticipatingOrgsCardComponent,
+    EventsCardComponent,
+    TrainingCertificationCardComponent,
+    CodeContributionCardComponent,
+  ],
   templateUrl: './health-metrics.component.html',
   styleUrl: './health-metrics.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,

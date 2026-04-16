@@ -2894,6 +2894,245 @@ export interface FlywheelConversionResponse {
     convertedToNewsletter: number;
     convertedToCommunity: number;
     convertedToWorkingGroup: number;
+    convertedToTraining?: number;
+    convertedToCode?: number;
+    convertedToWeb?: number;
+  };
+  reengagement: {
+    totalReengaged: number;
+    reengagementRate: number;
+    reengagementMomChange: number;
+    reengagedToNewsletter: number;
+    reengagedToCommunity: number;
+    reengagedToWorkingGroup: number;
+    reengagedToTraining: number;
+    reengagedToCode: number;
+    reengagedToWeb: number;
   };
   monthlyData: NorthStarMonthlyDataPoint[];
+}
+
+/**
+ * Top event row for Event Growth drill-down
+ */
+export interface EventGrowthTopEvent {
+  name: string;
+  date: string;
+  attendees: number;
+  revenue: number;
+}
+
+/**
+ * API response for Event Growth metric
+ * Total event attendees, event count, revenue, YoY growth, top events
+ */
+export interface EventGrowthResponse {
+  totalAttendees: number;
+  totalRegistrants: number;
+  totalEvents: number;
+  totalRevenue: number;
+  revenuePerAttendee: number;
+  attendeeYoyChange: number;
+  registrantYoyChange: number;
+  revenueYoyChange: number;
+  trend: 'up' | 'down';
+  monthlyData: NorthStarMonthlyDataPoint[];
+  topEvents: EventGrowthTopEvent[];
+}
+
+/**
+ * Social platform identifier — maps to a presentation icon + color in the shared constants layer
+ * New platforms must be added to MARKETING_SOCIAL_PLATFORM_MAP in @lfx-one/shared/constants/dashboard-metrics.constants.ts
+ */
+export type BrandReachPlatformType = 'linkedin' | 'twitter' | 'youtube' | 'facebook' | 'mastodon' | 'bluesky' | 'other';
+
+/**
+ * Social platform row for Brand Reach drill-down
+ * Icon + color mapping is handled in the component, not the data layer
+ */
+export interface BrandReachSocialPlatform {
+  name: string;
+  platformType: BrandReachPlatformType;
+  followers: number;
+}
+
+/**
+ * Website domain row for Brand Reach drill-down
+ */
+export interface BrandReachWebsiteDomain {
+  domain: string;
+  sessions: number;
+}
+
+/**
+ * Weekly sessions data point for Brand Reach drill-down (bucketed by ISO week)
+ */
+export interface BrandReachWeeklyDataPoint {
+  week: string;
+  sessions: number;
+}
+
+/**
+ * API response for Brand Reach metric
+ * Digital reach across social platforms and owned websites
+ */
+export interface BrandReachResponse {
+  totalSocialFollowers: number;
+  totalMonthlySessions: number;
+  activePlatforms: number;
+  changePercentage: number;
+  trend: 'up' | 'down';
+  socialPlatforms: BrandReachSocialPlatform[];
+  websiteDomains: BrandReachWebsiteDomain[];
+  weeklyTrend: BrandReachWeeklyDataPoint[];
+}
+
+/**
+ * Top project row for Brand Health drill-down
+ */
+export interface BrandHealthTopProject {
+  name: string;
+  mentions: number;
+}
+
+/**
+ * Sentiment breakdown for Brand Health drill-down
+ * Percentages out of 100
+ */
+export interface BrandHealthSentimentBreakdown {
+  positive: number;
+  neutral: number;
+  negative: number;
+}
+
+/**
+ * API response for Brand Health metric
+ * Total mentions, sentiment breakdown, monthly mentions trend, top projects
+ */
+export interface BrandHealthResponse {
+  totalMentions: number;
+  sentiment: BrandHealthSentimentBreakdown;
+  sentimentMomChangePp: number;
+  trend: 'up' | 'down';
+  monthlyMentions: NorthStarMonthlyDataPoint[];
+  topProjects: BrandHealthTopProject[];
+}
+
+/**
+ * Engagement-type attribution row for Revenue Impact drill-down
+ */
+export interface RevenueImpactEngagementType {
+  type: string;
+  percentage: number;
+}
+
+/**
+ * Attribution model comparison for Revenue Impact drill-down
+ */
+export interface RevenueImpactAttributionModels {
+  linear: number;
+  firstTouch: number;
+  lastTouch: number;
+}
+
+/**
+ * Paid media metrics for Revenue Impact drill-down
+ */
+export interface RevenueImpactPaidMedia {
+  roas: number;
+  impressions: number;
+  adSpend: number;
+  adRevenue: number;
+  monthlyTrend: RevenueImpactPaidMediaMonth[];
+}
+
+/**
+ * Monthly paid media trend row for Revenue Impact drill-down
+ */
+export interface RevenueImpactPaidMediaMonth {
+  month: string;
+  spend: number;
+  revenue: number;
+  impressions: number;
+  roas: number;
+}
+
+/**
+ * Attribution channel breakdown row for Revenue Impact drill-down
+ */
+export interface RevenueImpactAttributionChannel {
+  channel: string;
+  impressions: number;
+  percentage: number;
+}
+
+/**
+ * Per-project paid-media breakdown for Revenue Impact drill-down.
+ * channelImpressions maps channel name → impressions in the last 6 months.
+ */
+export interface RevenueImpactProjectBreakdown {
+  project: string;
+  totalImpressions: number;
+  channelImpressions: Record<string, number>;
+}
+
+/**
+ * Event-registration attribution per-channel totals (last 6 complete months).
+ */
+export interface EventRegistrationAttributionChannel {
+  channel: string;
+  sessions: number;
+  uniqueVisitors: number;
+  lastTouchRevenue: number;
+}
+
+/**
+ * Event-registration attribution monthly row (for stacked bar).
+ */
+export interface EventRegistrationAttributionMonth {
+  month: string;
+  channel: string;
+  sessions: number;
+  lastTouchRevenue: number;
+}
+
+/**
+ * Event-registration attribution block on the Revenue Impact response.
+ */
+export interface EventRegistrationAttribution {
+  channelBreakdown: EventRegistrationAttributionChannel[];
+  monthlyTrend: EventRegistrationAttributionMonth[];
+}
+
+/**
+ * API response for Revenue Impact (Marketing Attribution) metric
+ * Pipeline, revenue, attribution models, engagement channels, paid media
+ */
+export interface RevenueImpactResponse {
+  pipelineInfluenced: number;
+  revenueAttributed: number;
+  matchRate: number;
+  changePercentage: number;
+  trend: 'up' | 'down';
+  attributionModels: RevenueImpactAttributionModels;
+  engagementTypes: RevenueImpactEngagementType[];
+  paidMedia: RevenueImpactPaidMedia;
+  attributionChannels: RevenueImpactAttributionChannel[];
+  projectBreakdown: RevenueImpactProjectBreakdown[];
+  eventRegistrationAttribution: EventRegistrationAttribution;
+}
+
+/**
+ * Aggregated response for all ED Evolution dashboard API calls.
+ * Used by buildEdEvolutionMetrics() to convert API data into card UI models.
+ */
+export interface EdEvolutionData {
+  flywheel: FlywheelConversionResponse;
+  memberAcquisition: MemberAcquisitionResponse;
+  memberRetention: MemberRetentionResponse;
+  engagedCommunity: EngagedCommunitySizeResponse;
+  eventGrowth: EventGrowthResponse;
+  brandReach: BrandReachResponse;
+  brandHealth: BrandHealthResponse;
+  revenueImpact: RevenueImpactResponse;
 }

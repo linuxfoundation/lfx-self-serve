@@ -10,8 +10,7 @@
       [disabled]="loading()"
       (click)="downloadCard()"
       aria-label="Download card as image"
-      data-testid="membership-churn-tier-card-download"
-    >
+      data-testid="membership-churn-tier-card-download">
       <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
     </button>
   </div>
@@ -40,11 +39,7 @@
     <div class="flex gap-6" data-testid="membership-churn-tier-card-metrics">
       <div class="flex flex-1 flex-col gap-1">
         <span class="text-xs font-medium text-gray-500">Churn Rate</span>
-        <span
-          class="text-2xl font-bold"
-          [class.text-red-600]="isChurnWorsening()"
-          [class.text-gray-900]="!isChurnWorsening()"
-        >{{ formattedChurnRate() }}</span>
+        <span class="text-2xl font-bold" [class.text-red-600]="isChurnWorsening()" [class.text-gray-900]="!isChurnWorsening()">{{ formattedChurnRate() }}</span>
       </div>
       <div class="flex flex-1 flex-col gap-1">
         <span class="text-xs font-medium text-gray-500">Value Lost</span>
@@ -80,13 +75,8 @@
           [class.fa-arrow-trend-up]="t.direction === 'up'"
           [class.fa-arrow-trend-down]="t.direction === 'down'"
           [class.text-red-600]="t.direction === 'up'"
-          [class.text-emerald-600]="t.direction === 'down'"
-        ></i>
-        <span
-          class="text-sm font-medium"
-          [class.text-red-600]="t.direction === 'up'"
-          [class.text-emerald-600]="t.direction === 'down'"
-        >
+          [class.text-emerald-600]="t.direction === 'down'"></i>
+        <span class="text-sm font-medium" [class.text-red-600]="t.direction === 'up'" [class.text-emerald-600]="t.direction === 'down'">
           <strong>{{ t.multiplier }}x</strong> {{ t.direction === 'up' ? 'increase' : 'decrease' }} vs previous year
         </span>
       </div>
@@ -100,8 +90,7 @@
       target="_blank"
       rel="noopener noreferrer"
       class="ignore-download text-sm font-medium text-blue-600 hover:text-blue-800"
-      data-testid="membership-churn-tier-card-explore-more"
-    >
+      data-testid="membership-churn-tier-card-explore-more">
       Explore more &rarr;
     </a>
   }

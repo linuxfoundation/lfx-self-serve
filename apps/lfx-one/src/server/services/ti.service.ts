@@ -3,7 +3,7 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { TiCacheEntry, TiContentItem, TiContentResponse } from '@lfx-one/shared/interfaces';
+import { TiCacheEntry, TiContentResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { logger } from './logger.service';
@@ -24,7 +24,7 @@ export class TiService {
   private static instance: TiService | null = null;
 
   private readonly apiKey: string;
-  private readonly cache: Map<string, TiCacheEntry> = new Map();
+  private readonly cache = new Map<string, TiCacheEntry>();
 
   private constructor() {
     this.apiKey = process.env['TI_API_KEY'] || '';

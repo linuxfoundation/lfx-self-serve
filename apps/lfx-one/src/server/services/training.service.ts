@@ -97,11 +97,7 @@ export class TrainingService {
    * Enriches items with logo URLs fetched from the TI API.
    * Course IDs that are null or have no TI match are left with their existing imageUrl.
    */
-  private async enrichWithTiLogos<T extends { imageUrl: string }>(
-    req: Request,
-    items: T[],
-    courseIds: (string | null)[],
-  ): Promise<T[]> {
+  private async enrichWithTiLogos<T extends { imageUrl: string }>(req: Request, items: T[], courseIds: (string | null)[]): Promise<T[]> {
     const validIds = courseIds.filter((id): id is string => Boolean(id));
     if (validIds.length === 0) return items;
 

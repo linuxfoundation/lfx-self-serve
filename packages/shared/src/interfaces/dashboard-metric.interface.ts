@@ -20,6 +20,8 @@ export type MetricCategory =
   | 'code'
   | 'projectHealth'
   | 'marketing'
+  | 'brand'
+  | 'influence'
   // Reserved for future ED dashboard categories
   | 'memberships'
   | 'education'
@@ -29,7 +31,7 @@ export type MetricCategory =
  * Custom content type for specialized metric cards
  * @description Determines what type of custom content to render in the metric card
  */
-export type CustomContentType = 'bar-chart' | 'top-projects' | 'bus-factor' | 'health-scores';
+export type CustomContentType = 'bar-chart' | 'top-projects' | 'bus-factor' | 'health-scores' | 'dual-signal' | 'funnel';
 
 /**
  * Unified dashboard metric card interface
@@ -100,6 +102,23 @@ export interface DashboardMetricCard {
 
   /** Loading state for the card - when true, shows skeleton UI */
   loading?: boolean;
+
+  // ============================================
+  // Dual-Signal Card (Brand Reach, Brand Health, Revenue Impact)
+  // ============================================
+
+  /** Two-signal rows for dual-signal cards (e.g., Brand Reach, Brand Health, Revenue Impact) */
+  dualSignals?: DualSignalRow[];
+
+  /** Caption text below dual-signal card (e.g., "$X attributed of $Y total (Z% match rate)") */
+  caption?: string;
+
+  // ============================================
+  // Funnel Card (Flywheel Conversion)
+  // ============================================
+
+  /** Steps for the funnel card (e.g., Attendees → Newsletter → Community → WG) */
+  funnelSteps?: FunnelStep[];
 
   // ============================================
   // Foundation Health Specific
@@ -213,6 +232,10 @@ export enum DashboardDrawerType {
   NorthStarMemberAcquisition = 'north-star-member-acquisition',
   NorthStarMemberRetention = 'north-star-member-retention',
   NorthStarFlywheelConversion = 'north-star-flywheel-conversion',
+  NorthStarEventGrowth = 'north-star-event-growth',
+  BrandReach = 'brand-reach',
+  BrandHealth = 'brand-health',
+  RevenueImpact = 'revenue-impact',
 }
 
 /** Lifecycle stage of a foundation project */
@@ -278,6 +301,34 @@ export interface FilterPillOption {
   id: string;
   /** Display label for the filter pill */
   label: string;
+}
+
+/**
+ * A single signal row within a dual-signal metric card
+ * @description Used for cards that show two independent metrics stacked vertically (e.g., Brand Reach, Revenue Impact)
+ */
+export interface DualSignalRow {
+  /** Label for this signal (e.g., "Social Followers", "Monthly Sessions") */
+  label: string;
+  /** Display value (e.g., "474K", "$2.1M") */
+  value: string;
+  /** Change percentage display (e.g., "+8.2% MoM") */
+  changePercentage?: string;
+  /** Trend direction */
+  trend?: 'up' | 'down';
+  /** Sparkline chart data for this signal */
+  chartData?: ChartData<ChartType>;
+}
+
+/**
+ * A single step in a funnel visualization on a metric card
+ * @description Used for the Flywheel Conversion card to show the step-down funnel
+ */
+export interface FunnelStep {
+  /** Short label (e.g., "Attendees", "Newsletter") */
+  label: string;
+  /** Display value (e.g., "8.2K", "1.4K") */
+  value: string;
 }
 
 /**

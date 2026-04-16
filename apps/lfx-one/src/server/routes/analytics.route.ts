@@ -170,4 +170,10 @@ router.get('/training-certification-summary', (req, res, next) => analyticsContr
 // Code Contribution summary endpoint (health metrics page)
 router.get('/code-contribution-summary', (req, res, next) => analyticsController.getCodeContributionSummary(req, res, next));
 
+// ED dashboard marketing endpoints — backed by ANALYTICS.PLATINUM_LFX_ONE.* Snowflake views
+router.get('/event-growth', (req, res, next) => analyticsController.getEventGrowth(req, res, next));
+router.get('/brand-reach', (req, res, next) => analyticsController.getBrandReach(req, res, next));
+router.get('/brand-health', (req, res, next) => analyticsController.getBrandHealth(req, res, next));
+router.get('/revenue-impact', (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
+
 export default router;

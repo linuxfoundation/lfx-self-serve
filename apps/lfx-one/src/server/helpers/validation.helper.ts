@@ -104,6 +104,38 @@ export function validateRequiredParameter<T>(
 }
 
 /**
+ * Safely extracts a string query parameter. Returns undefined if the param is
+ * missing or not a string (e.g. client sent repeated keys producing an array).
+ * Prevents type confusion via parameter tampering (CodeQL js/type-confusion-through-parameter-tampering).
+ *
+ * NOTE: This only ensures the value is a string — callers are still responsible
+ * for validating format (e.g. SLUG_PATTERN.test()) and length constraints
+ * (e.g. NAME_MAX_LENGTH) before passing the value to downstream services or queries.
+ *
+ * @param req Express request object
+ * @param name Query parameter name
+ * @returns The string value, or undefined if missing or not a string
+ */
+export function getStringQueryParam(req: Request, name: string): string | undefined {
+  const value = req.query[name];
+  return typeof value === 'string' ? value : undefined;
+}
+
+const VALID_ENTITY_TYPES = ['foundation', 'project'] as const;
+export type EntityType = (typeof VALID_ENTITY_TYPES)[number];
+
+export function parseEntityType(req: Request, operation: string): EntityType {
+  const raw = getStringQueryParam(req, 'entityType');
+  if (!raw) {
+    throw ServiceValidationError.forField('entityType', 'entityType query parameter is required', { operation });
+  }
+  if (!VALID_ENTITY_TYPES.includes(raw as EntityType)) {
+    throw ServiceValidationError.forField('entityType', 'entityType must be "foundation" or "project"', { operation });
+  }
+  return raw as EntityType;
+}
+
+/**
  * Validates that a request body exists
  * @param body The request body to validate
  * @param req Express request object

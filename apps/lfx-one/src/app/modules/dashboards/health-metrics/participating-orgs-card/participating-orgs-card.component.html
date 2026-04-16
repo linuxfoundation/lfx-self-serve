@@ -60,11 +60,7 @@
       <div class="flex flex-col gap-2" data-testid="participating-orgs-engagement-bar">
         <div class="flex h-5 w-full overflow-hidden rounded-md">
           @for (segment of segments(); track segment.label) {
-            <div
-              class="h-full transition-all"
-              [style.width.%]="segment.percent"
-              [style.backgroundColor]="segment.color">
-            </div>
+            <div class="h-full transition-all" [style.width.%]="segment.percent" [style.backgroundColor]="segment.color"></div>
           }
         </div>
         <div class="flex items-center gap-4">
@@ -93,7 +89,7 @@
     <!-- Footer -->
     @if (exploreMoreUrl()) {
       <a
-      class="ignore-download text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
+        class="ignore-download text-sm font-medium text-blue-600 hover:text-blue-800 transition-colors"
         [href]="exploreMoreUrl()"
         target="_blank"
         rel="noopener noreferrer"

@@ -84,9 +84,7 @@ export class OutstandingBalanceCardComponent {
           this.summaryData.set(HEALTH_METRICS_OUTSTANDING_BALANCE_DEFAULT_SUMMARY);
         }),
         switchMap((slug) =>
-          this.analyticsService.getOutstandingBalanceSummary(slug).pipe(
-            catchError(() => of(HEALTH_METRICS_OUTSTANDING_BALANCE_DEFAULT_SUMMARY))
-          )
+          this.analyticsService.getOutstandingBalanceSummary(slug).pipe(catchError(() => of(HEALTH_METRICS_OUTSTANDING_BALANCE_DEFAULT_SUMMARY)))
         ),
         takeUntilDestroyed(this.destroyRef)
       )

@@ -1,10 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div
-  class="flex h-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5"
-  data-testid="code-contribution-card"
->
+<div class="flex h-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5" data-testid="code-contribution-card">
   <!-- Header -->
   <div class="flex items-center justify-between" data-testid="code-contribution-card-header">
     <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase">Code Contribution</h3>
@@ -13,8 +10,7 @@
       [disabled]="loading()"
       (click)="downloadCard()"
       aria-label="Download card as image"
-      data-testid="code-contribution-card-download"
-    >
+      data-testid="code-contribution-card-download">
       <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
     </button>
   </div>
@@ -95,24 +91,21 @@
           <div class="flex items-center gap-3" data-testid="code-contribution-bar-committers">
             <span class="w-24 text-right text-sm text-gray-600">Committers</span>
             <div class="flex-1 h-6 rounded bg-gray-100">
-              <div class="code-contribution-bar-committers h-full rounded transition-all duration-300"
-                [style.width.%]="committersWidthPct()"></div>
+              <div class="code-contribution-bar-committers h-full rounded transition-all duration-300" [style.width.%]="committersWidthPct()"></div>
             </div>
             <span class="w-16 text-right text-sm font-semibold text-gray-900">{{ formattedCommitters() }}</span>
           </div>
           <div class="flex items-center gap-3" data-testid="code-contribution-bar-maintainers">
             <span class="w-24 text-right text-sm text-gray-600">Maintainers</span>
             <div class="flex-1 h-6 rounded bg-gray-100">
-              <div class="code-contribution-bar-maintainers h-full rounded transition-all duration-300"
-                [style.width.%]="maintainersWidthPct()"></div>
+              <div class="code-contribution-bar-maintainers h-full rounded transition-all duration-300" [style.width.%]="maintainersWidthPct()"></div>
             </div>
             <span class="w-16 text-right text-sm font-semibold text-gray-900">{{ formattedMaintainers() }}</span>
           </div>
           <div class="flex items-center gap-3" data-testid="code-contribution-bar-reviewers">
             <span class="w-24 text-right text-sm text-gray-600">Reviewers</span>
             <div class="flex-1 h-6 rounded bg-gray-100">
-              <div class="code-contribution-bar-reviewers h-full rounded transition-all duration-300"
-                [style.width.%]="reviewersWidthPct()"></div>
+              <div class="code-contribution-bar-reviewers h-full rounded transition-all duration-300" [style.width.%]="reviewersWidthPct()"></div>
             </div>
             <span class="w-16 text-right text-sm font-semibold text-gray-900">{{ formattedReviewers() }}</span>
           </div>
@@ -133,8 +126,7 @@
       target="_blank"
       rel="noopener noreferrer"
       class="ignore-download text-sm font-medium text-blue-600 hover:text-blue-800"
-      data-testid="code-contribution-card-explore-more"
-    >
+      data-testid="code-contribution-card-explore-more">
       Explore more &rarr;
     </a>
   }
