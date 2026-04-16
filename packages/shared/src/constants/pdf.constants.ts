@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { PDFTemplateDetails } from '../interfaces/my-event.interface';
+import { PDFTemplateDetails } from '../interfaces/events.interface';
 
 export const DEFAULT_TEMPLATE: PDFTemplateDetails = {
   link: 'https://www.linuxfoundation.org/',

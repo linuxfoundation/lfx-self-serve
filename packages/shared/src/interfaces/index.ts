@@ -104,9 +104,8 @@ export * from './lens.interface';
 // Persona detection interfaces
 export * from './persona-detection.interface';
 
-// My Event interfaces
-export * from './my-event.interface';
-
+// Events interfaces (my events, foundation events, travel fund, visa request)
+export * from './events.interface';
 // Training interfaces
 export * from './training.interface';
 

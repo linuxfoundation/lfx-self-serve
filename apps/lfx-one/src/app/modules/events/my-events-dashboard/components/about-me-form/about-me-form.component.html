@@ -1,0 +1,185 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form" class="flex flex-col gap-4" data-testid="about-me-form">
+  <!-- Row 1: First Name | Last Name -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class="flex flex-col gap-1">
+      <label for="about-me-first-name" class="text-sm font-medium text-gray-700"> First Name <span class="text-red-500">*</span> </label>
+      <lfx-input-text
+        [form]="form"
+        control="firstName"
+        id="about-me-first-name"
+        size="small"
+        placeholder="Jane"
+        styleClass="w-full"
+        dataTest="about-me-first-name" />
+      @if (form.get('firstName')?.invalid && form.get('firstName')?.touched) {
+        <span class="text-xs text-red-500" data-testid="about-me-first-name-error">First name is required</span>
+      }
+    </div>
+    <div class="flex flex-col gap-1">
+      <label for="about-me-last-name" class="text-sm font-medium text-gray-700"> Last Name <span class="text-red-500">*</span> </label>
+      <lfx-input-text
+        [form]="form"
+        control="lastName"
+        id="about-me-last-name"
+        size="small"
+        placeholder="Smith"
+        styleClass="w-full"
+        dataTest="about-me-last-name" />
+      @if (form.get('lastName')?.invalid && form.get('lastName')?.touched) {
+        <span class="text-xs text-red-500" data-testid="about-me-last-name-error">Last name is required</span>
+      }
+    </div>
+  </div>
+
+  <!-- Row 2: Email | Citizenship Country -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class="flex flex-col gap-1">
+      <label for="about-me-email" class="text-sm font-medium text-gray-700">Email</label>
+      <lfx-input-text [form]="form" control="email" id="about-me-email" type="email" size="small" styleClass="w-full" dataTest="about-me-email" />
+    </div>
+    <div class="flex flex-col gap-1">
+      <label for="about-me-citizenship-country" class="text-sm font-medium text-gray-700">
+        What country are you a citizen of? <span class="text-red-500">*</span>
+      </label>
+      <lfx-select
+        [form]="form"
+        control="citizenshipCountry"
+        [options]="countryOptions"
+        placeholder="Select country"
+        [filter]="true"
+        styleClass="w-full"
+        dataTest="about-me-citizenship-country" />
+      @if (form.get('citizenshipCountry')?.invalid && form.get('citizenshipCountry')?.touched) {
+        <span class="text-xs text-red-500" data-testid="about-me-citizenship-country-error">Country of citizenship is required</span>
+      }
+    </div>
+  </div>
+
+  <!-- Row 3: Profile Link | Company -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class="flex flex-col gap-1">
+      <label for="about-me-profile-link" class="text-sm font-medium text-gray-700">
+        Link to your LinkedIn, personal website or GitHub page <span class="text-red-500">*</span>
+      </label>
+      <lfx-input-text
+        [form]="form"
+        control="profileLink"
+        id="about-me-profile-link"
+        size="small"
+        placeholder="https://"
+        styleClass="w-full"
+        dataTest="about-me-profile-link" />
+      @if (form.get('profileLink')?.invalid && form.get('profileLink')?.touched) {
+        <span class="text-xs text-red-500" data-testid="about-me-profile-link-error">Profile link is required</span>
+      }
+    </div>
+    <div class="flex flex-col gap-1">
+      <label for="about-me-company" class="text-sm font-medium text-gray-700"> Company <span class="text-red-500">*</span> </label>
+      <lfx-input-text
+        [form]="form"
+        control="company"
+        placeholder="Company Name"
+        id="about-me-company"
+        size="small"
+        styleClass="w-full"
+        dataTest="about-me-company" />
+      @if (form.get('company')?.invalid && form.get('company')?.touched) {
+        <span class="text-xs text-red-500" data-testid="about-me-company-error">Company is required</span>
+      }
+    </div>
+  </div>
+
+  <!-- Row 4: Can Receive Funds | Travel From Country -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700"> Can you receive funds from your organization? <span class="text-red-500">*</span> </label>
+      <lfx-select
+        [form]="form"
+        control="canReceiveFunds"
+        [options]="yesNoOptions"
+        placeholder="- Select -"
+        styleClass="w-full"
+        dataTest="about-me-can-receive-funds" />
+      @if (form.get('canReceiveFunds')?.invalid && form.get('canReceiveFunds')?.touched) {
+        <span class="text-xs text-red-500" data-testid="about-me-can-receive-funds-error">This field is required</span>
+      }
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700"> What country would you be travelling from? <span class="text-red-500">*</span> </label>
+      <lfx-select
+        [form]="form"
+        control="travelFromCountry"
+        [options]="countryOptions"
+        placeholder="Select country"
+        [filter]="true"
+        styleClass="w-full"
+        dataTest="about-me-travel-from-country" />
+      @if (form.get('travelFromCountry')?.invalid && form.get('travelFromCountry')?.touched) {
+        <span class="text-xs text-red-500" data-testid="about-me-travel-from-country-error">Travel from country is required</span>
+      }
+    </div>
+  </div>
+
+  <!-- Row 5: Open Source Involvement (full width) -->
+  <div class="flex flex-col gap-1">
+    <label class="text-sm font-medium text-gray-700">
+      Briefly describe your involvement in open source communities and why you'd like to attend
+      <span class="text-red-500">*</span>
+    </label>
+    <lfx-textarea
+      [form]="form"
+      control="openSourceInvolvement"
+      [rows]="4"
+      placeholder="Tell us about your contributions and motivation..."
+      styleClass="w-full"
+      dataTest="about-me-open-source-involvement" />
+    @if (form.get('openSourceInvolvement')?.invalid && form.get('openSourceInvolvement')?.touched) {
+      <span class="text-xs text-red-500" data-testid="about-me-open-source-involvement-error">This field is required</span>
+    }
+  </div>
+
+  <!-- Row 6: Underrepresented Groups -->
+  <div class="flex flex-col gap-2" data-testid="about-me-underrepresented-groups">
+    <label class="text-sm font-medium text-gray-700"> Do you belong to an underrepresented and/or marginalized group? Check all that apply: </label>
+    <div class="flex flex-wrap items-center gap-x-6 gap-y-2">
+      <lfx-checkbox [form]="form" control="isLgbtqia" label="LGBTQIA+" />
+      <lfx-checkbox [form]="form" control="isWoman" label="Woman" />
+      <lfx-checkbox [form]="form" control="isPersonWithDisability" label="Person with Disability" />
+      <lfx-checkbox [form]="form" control="isDiversityOther" label="Other" />
+      <lfx-checkbox [form]="form" control="preferNotToAnswer" label="Prefer not to answer" />
+    </div>
+  </div>
+
+  <!-- Row 7: Attending for Company | Willing to Blog -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700"> Are you attending on behalf of a company? <span class="text-red-500">*</span> </label>
+      <lfx-select
+        [form]="form"
+        control="attendingForCompany"
+        [options]="yesNoOptions"
+        placeholder="- Select -"
+        styleClass="w-full"
+        dataTest="about-me-attending-for-company" />
+      @if (form.get('attendingForCompany')?.invalid && form.get('attendingForCompany')?.touched) {
+        <span class="text-xs text-red-500" data-testid="about-me-attending-for-company-error">This field is required</span>
+      }
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700"> Are you willing to write a blog about the event? <span class="text-red-500">*</span> </label>
+      <lfx-select
+        [form]="form"
+        control="willingToBlog"
+        [options]="yesNoOptions"
+        placeholder="- Select -"
+        styleClass="w-full"
+        dataTest="about-me-willing-to-blog" />
+      @if (form.get('willingToBlog')?.invalid && form.get('willingToBlog')?.touched) {
+        <span class="text-xs text-red-500" data-testid="about-me-willing-to-blog-error">This field is required</span>
+      }
+    </div>
+  </div>
+</form>

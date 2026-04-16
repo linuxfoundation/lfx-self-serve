@@ -5,8 +5,8 @@ import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { TagComponent } from '@app/shared/components/tag/tag.component';
 import { PersonaService } from '@app/shared/services/persona.service';
 import { ProjectContextService } from '@app/shared/services/project-context.service';
-import { LINKS_CONFIG } from '@lfx-one/shared/constants';
-import { EventTabId } from '@lfx-one/shared/interfaces';
+import { LINKS_CONFIG, MY_EVENT_STATUS_OPTIONS, VISA_REQUEST_STATUS_OPTIONS } from '@lfx-one/shared/constants';
+import { EventTabId, FilterOption } from '@lfx-one/shared/interfaces';
 import { DiscoverEventsButtonComponent } from '../components/discover-events-button/discover-events-button.component';
 import { EventsTopBarComponent } from '../components/events-top-bar/events-top-bar.component';
 import { EventsInfoBannersComponent } from './components/events-info-banners/events-info-banners.component';
@@ -32,6 +32,11 @@ export class MyEventsDashboardComponent {
   protected readonly selectedStatus = signal<string | null>(null);
   protected readonly selectedSearchQuery = signal('');
 
+  /** True when the active tab uses request-style filters (no role, no foundation, different statuses). */
+  protected readonly isRequestTab = computed(() => this.activeTab() === 'visa-letters' || this.activeTab() === 'travel-funding');
+
+  protected readonly currentStatusOptions = computed<FilterOption[]>(() => (this.isRequestTab() ? VISA_REQUEST_STATUS_OPTIONS : MY_EVENT_STATUS_OPTIONS));
+
   protected readonly foundationLabel: Signal<string> = this.initFoundationLabel();
 
   protected onFoundationChange(value: string | null): void {
@@ -52,8 +57,11 @@ export class MyEventsDashboardComponent {
 
   protected onActiveTabChange(tab: EventTabId): void {
     this.activeTab.set(tab);
-    // Reset foundation filter when switching tabs — each tab has a different foundation list
+    // Reset all filters when switching tabs — each tab has different filter sets
     this.selectedFoundation.set(null);
+    this.selectedRole.set(null);
+    this.selectedStatus.set(null);
+    this.selectedSearchQuery.set('');
   }
 
   private initFoundationLabel(): Signal<string> {

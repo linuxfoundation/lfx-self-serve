@@ -15,7 +15,18 @@ import {
   VALID_EVENT_STATUS_VALUES,
   VALID_MY_EVENT_STATUS_VALUES,
 } from '@lfx-one/shared/constants';
-import { EventSortOrder, EventStatusFilter, GetEventOrganizationsOptions, GetEventsOptions } from '@lfx-one/shared/interfaces';
+import {
+  EventSortOrder,
+  EventStatusFilter,
+  GetEventOrganizationsOptions,
+  GetEventRequestsOptions,
+  GetEventsOptions,
+  GetUpcomingCountriesResponse,
+  TravelFundApplication,
+  TravelFundRequestsResponse,
+  VisaRequestApplication,
+  VisaRequestsResponse,
+} from '@lfx-one/shared/interfaces';
 import { EventsService } from '../services/events.service';
 import { PersonaDetectionService } from '../services/persona-detection.service';
 import { getEffectiveEmail, getEffectiveName } from '../utils/auth-helper';
@@ -55,6 +66,10 @@ export class EventsController {
       const rawMyEventStatus = req.query['status'] ? String(req.query['status']) : undefined;
       const status = rawMyEventStatus && VALID_MY_EVENT_STATUS_VALUES.has(rawMyEventStatus) ? rawMyEventStatus : undefined;
       const sortField = req.query['sortField'] ? String(req.query['sortField']) : undefined;
+      const registeredOnly = req.query['registeredOnly'] === 'true';
+      const startDateFrom = req.query['startDateFrom'] ? String(req.query['startDateFrom']) : undefined;
+      const startDateTo = req.query['startDateTo'] ? String(req.query['startDateTo']) : undefined;
+      const country = req.query['country'] ? String(req.query['country']) : undefined;
 
       const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_EVENTS_PAGE_SIZE ? rawPageSize : DEFAULT_EVENTS_PAGE_SIZE;
       const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
@@ -85,6 +100,10 @@ export class EventsController {
         pageSize,
         offset,
         sortOrder,
+        registeredOnly,
+        startDateFrom,
+        startDateTo,
+        country,
         affiliatedProjectSlugs,
       });
 
@@ -215,6 +234,46 @@ export class EventsController {
   }
 
   /**
+   * GET /api/events/visa-requests
+   * Get paginated visa letter requests for the authenticated user
+   * Query params: eventId (string), projectName (string), searchQuery (string), status (string),
+   *               sortField (string), pageSize (number), offset (number), sortOrder (ASC|DESC)
+   */
+  public async getVisaRequests(req: Request, res: Response, next: NextFunction): Promise<void> {
+    return this.handleEventRequestsEndpoint(req, res, next, 'get_visa_requests', (r, email, opts) => this.eventsService.getVisaRequests(r, email, opts));
+  }
+
+  /**
+   * GET /api/events/travel-fund-requests
+   * Get paginated travel fund requests for the authenticated user
+   * Query params: eventId (string), projectName (string), searchQuery (string), status (string),
+   *               sortField (string), pageSize (number), offset (number), sortOrder (ASC|DESC)
+   */
+  public async getTravelFundRequests(req: Request, res: Response, next: NextFunction): Promise<void> {
+    return this.handleEventRequestsEndpoint(req, res, next, 'get_travel_fund_requests', (r, email, opts) =>
+      this.eventsService.getTravelFundRequests(r, email, opts)
+    );
+  }
+
+  /**
+   * GET /api/events/countries
+   * Get distinct country names for upcoming events (for the location filter dropdown)
+   */
+  public async getUpcomingCountries(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_upcoming_countries', {});
+
+    try {
+      const response: GetUpcomingCountriesResponse = await this.eventsService.getUpcomingCountries(req);
+
+      logger.success(req, 'get_upcoming_countries', startTime, { result_count: response.data.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/events/certificate
    * Download attendance certificate as a PDF for the authenticated user
    * Query params: eventId (string, required)
@@ -257,6 +316,140 @@ export class EventsController {
       res.setHeader('Content-Disposition', `attachment; filename="certificate-${safeEventId}.pdf"`);
       res.setHeader('Content-Length', pdfBuffer.length);
       res.send(pdfBuffer);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/events/visa-applications
+   * Submit a visa letter application
+   * TODO: Wire to upstream microservice once available.
+   */
+  public async submitVisaRequestApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'submit_visa_request_application', {});
+
+    try {
+      const userEmail = getEffectiveEmail(req);
+
+      if (!userEmail) {
+        throw new AuthenticationError('User authentication required', { operation: 'submit_visa_request_application' });
+      }
+
+      const payload = req.body as VisaRequestApplication;
+
+      if (!payload?.eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId is required', { operation: 'submit_visa_request_application' });
+      }
+
+      if (!payload?.applicantInfo) {
+        throw ServiceValidationError.forField('applicantInfo', 'applicantInfo is required', { operation: 'submit_visa_request_application' });
+      }
+
+      if (!payload?.termsAccepted) {
+        throw ServiceValidationError.forField('termsAccepted', 'termsAccepted must be true', { operation: 'submit_visa_request_application' });
+      }
+
+      // Overwrite client-provided email with session email for data integrity
+      payload.applicantInfo.email = userEmail;
+
+      const result = await this.eventsService.submitVisaRequestApplication(req, payload);
+      logger.success(req, 'submit_visa_request_application', startTime, { event_id: payload.eventId });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/events/travel-fund-applications
+   * Submit a travel fund application
+   * TODO: Wire to upstream microservice once available.
+   */
+  public async submitTravelFundApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'submit_travel_fund_application', {});
+
+    try {
+      const userEmail = getEffectiveEmail(req);
+
+      if (!userEmail) {
+        throw new AuthenticationError('User authentication required', { operation: 'submit_travel_fund_application' });
+      }
+
+      const payload = req.body as TravelFundApplication;
+
+      if (!payload?.eventId) {
+        throw ServiceValidationError.forField('eventId', 'eventId is required', { operation: 'submit_travel_fund_application' });
+      }
+
+      if (!payload?.aboutMe) {
+        throw ServiceValidationError.forField('aboutMe', 'aboutMe is required', { operation: 'submit_travel_fund_application' });
+      }
+
+      if (!payload?.termsAccepted) {
+        throw ServiceValidationError.forField('termsAccepted', 'termsAccepted must be true', { operation: 'submit_travel_fund_application' });
+      }
+
+      if (!payload?.expenses) {
+        throw ServiceValidationError.forField('expenses', 'expenses is required', { operation: 'submit_travel_fund_application' });
+      }
+
+      // Overwrite client-provided email with session email for data integrity
+      payload.aboutMe.email = userEmail;
+
+      const result = await this.eventsService.submitTravelFundApplication(req, payload);
+      logger.success(req, 'submit_travel_fund_application', startTime, { event_id: payload.eventId });
+      res.json(result);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  private async handleEventRequestsEndpoint(
+    req: Request,
+    res: Response,
+    next: NextFunction,
+    operationName: string,
+    fetchFn: (req: Request, userEmail: string, options: GetEventRequestsOptions) => Promise<VisaRequestsResponse | TravelFundRequestsResponse>
+  ): Promise<void> {
+    const startTime = logger.startOperation(req, operationName, {
+      has_query: Object.keys(req.query).length > 0,
+    });
+
+    try {
+      const userEmail = getEffectiveEmail(req);
+
+      if (!userEmail) {
+        throw new AuthenticationError('User authentication required', { operation: operationName });
+      }
+
+      const rawPageSize = parseInt(String(req.query['pageSize'] ?? DEFAULT_EVENTS_PAGE_SIZE), 10);
+      const rawOffset = parseInt(String(req.query['offset'] ?? 0), 10);
+      const rawSortOrder = String(req.query['sortOrder'] ?? 'DESC').toUpperCase() as EventSortOrder;
+
+      const pageSize = Number.isFinite(rawPageSize) && rawPageSize > 0 && rawPageSize <= MAX_EVENTS_PAGE_SIZE ? rawPageSize : DEFAULT_EVENTS_PAGE_SIZE;
+      const offset = Number.isFinite(rawOffset) && rawOffset >= 0 ? rawOffset : 0;
+      const sortOrder: EventSortOrder = VALID_EVENT_SORT_ORDERS.includes(rawSortOrder) ? rawSortOrder : 'DESC';
+
+      const options: GetEventRequestsOptions = {
+        eventId: req.query['eventId'] ? String(req.query['eventId']) : undefined,
+        projectName: req.query['projectName'] ? String(req.query['projectName']) : undefined,
+        searchQuery: req.query['searchQuery'] ? String(req.query['searchQuery']).trim() : undefined,
+        status: req.query['status'] ? String(req.query['status']) : undefined,
+        sortField: req.query['sortField'] ? String(req.query['sortField']) : undefined,
+        pageSize,
+        offset,
+        sortOrder,
+      };
+
+      const response = await fetchFn(req, userEmail, options);
+
+      logger.success(req, operationName, startTime, {
+        result_count: response.data.length,
+        total: response.total,
+      });
+
+      res.json(response);
     } catch (error) {
       next(error);
     }

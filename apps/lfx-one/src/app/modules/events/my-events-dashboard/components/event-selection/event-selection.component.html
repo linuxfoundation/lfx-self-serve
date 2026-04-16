@@ -1,0 +1,89 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-4" data-testid="event-selection">
+  <!-- Filters -->
+  <div class="flex items-center gap-3" data-testid="event-selection-filters">
+    <!-- Search -->
+    <lfx-input-text
+      class="flex-1"
+      [form]="searchForm"
+      control="searchQuery"
+      icon="fa-light fa-magnifying-glass"
+      placeholder="Filter by Name"
+      styleClass="w-full"
+      data-testid="event-selection-search" />
+
+    <!-- Time filter -->
+    <lfx-select [form]="filtersForm" control="timeFilter" [options]="timeFilterOptions" data-testid="event-selection-time-filter" />
+
+    <!-- Location filter -->
+    <lfx-select [form]="filtersForm" control="locationFilter" [options]="availableLocations()" data-testid="event-selection-location-filter" />
+  </div>
+
+  <!-- Events grid -->
+  <div class="events-scroll-area overflow-y-auto" data-testid="event-selection-grid">
+    @if (loading()) {
+      <div class="flex items-center justify-center py-16">
+        <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+      </div>
+    } @else if (allEvents().length === 0) {
+      <div class="flex flex-col items-center justify-center gap-2 py-16 text-center">
+        <i class="fa-light fa-calendar-xmark text-3xl text-gray-300"></i>
+        <p class="text-sm text-gray-500">No registered events found</p>
+        <p class="text-xs text-gray-400">Register for an event to continue</p>
+      </div>
+    } @else {
+      <div class="grid grid-cols-3 gap-3">
+        @for (event of allEvents(); track event.id) {
+          <div
+            class="event-card registered flex flex-col gap-2 rounded-lg border border-gray-200 p-3 transition-colors"
+            [class.selected]="selectedEvent()?.id === event.id"
+            (click)="onSelectEvent(event)"
+            [attr.data-testid]="'event-selection-card-' + event.id">
+            <!-- Event name -->
+            <p class="text-sm font-semibold leading-snug text-gray-900" [attr.data-testid]="'event-selection-name-' + event.id">
+              {{ event.name }}
+            </p>
+            <!-- Date -->
+            <div class="flex items-center gap-1.5 text-xs text-gray-500" [attr.data-testid]="'event-selection-date-' + event.id">
+              <i class="fa-light fa-calendar-days shrink-0"></i>
+              <span>{{ event.date }}</span>
+            </div>
+            <!-- Location -->
+            <div class="flex items-center gap-1.5 text-xs text-gray-500" [attr.data-testid]="'event-selection-location-' + event.id">
+              <i class="fa-light fa-location-dot shrink-0"></i>
+              <span>{{ event.location }}</span>
+            </div>
+            <!-- Button: Selected | Select -->
+            @if (selectedEvent()?.id === event.id) {
+              <lfx-button label="Selected" severity="primary" size="small" [fluid]="true" [attr.data-testid]="'event-selection-selected-' + event.id" />
+            } @else {
+              <lfx-button
+                label="Select"
+                [text]="true"
+                size="small"
+                [fluid]="true"
+                (onClick)="onSelectEvent(event); $event.stopPropagation()"
+                [attr.data-testid]="'event-selection-select-' + event.id" />
+            }
+          </div>
+        }
+      </div>
+
+      <!-- Load more -->
+      @if (hasMore()) {
+        <div class="flex justify-center pt-4" data-testid="event-selection-load-more">
+          <lfx-button
+            label="Load More"
+            severity="secondary"
+            [outlined]="true"
+            size="small"
+            [loading]="loadingMore()"
+            [disabled]="loadingMore()"
+            (onClick)="onLoadMore()" />
+        </div>
+      }
+    }
+  </div>
+</div>

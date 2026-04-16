@@ -2,19 +2,21 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, inject, input, output, Signal, signal, WritableSignal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, output, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EventsService } from '@app/shared/services/events.service';
 import { DEFAULT_EVENTS_PAGE_SIZE, EMPTY_MY_EVENTS_RESPONSE } from '@lfx-one/shared/constants';
 import { EventTab, EventTabId, MyEventsResponse, PageChangeEvent, SortChangeEvent } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { catchError, combineLatest, debounceTime, finalize, of, skip, switchMap, tap } from 'rxjs';
+import { EventRequestListComponent } from '../event-request-list/event-request-list.component';
 import { EventsTableComponent } from '../events-table/events-table.component';
 
 @Component({
   selector: 'lfx-events-list',
-  imports: [NgClass, EventsTableComponent],
+  imports: [NgClass, EventsTableComponent, EventRequestListComponent],
   templateUrl: './events-list.component.html',
+  changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class EventsListComponent {
   private readonly eventsService = inject(EventsService);

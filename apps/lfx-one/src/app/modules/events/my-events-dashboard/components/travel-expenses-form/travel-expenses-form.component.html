@@ -1,0 +1,95 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form" class="flex flex-col gap-4 pb-4" data-testid="travel-expenses-form">
+  <!-- Header -->
+  <div class="flex flex-col gap-1">
+    <h3 class="text-base font-semibold text-gray-900">Estimated Travel Expenses</h3>
+    <p class="text-sm text-gray-500">Provide your best estimates for each category. All amounts in USD.</p>
+  </div>
+
+  <!-- Expenses table -->
+  <div class="flex flex-col" data-testid="travel-expenses-table">
+    <!-- Table header -->
+    <div class="grid grid-cols-[2fr_130px_2fr] gap-4 pb-2 border-b border-gray-200">
+      <span class="text-xs font-semibold uppercase tracking-wide text-gray-500">Expense Category</span>
+      <span class="text-xs font-semibold uppercase tracking-wide text-gray-500">Estimated Cost ($US)</span>
+      <span class="text-xs font-semibold uppercase tracking-wide text-gray-500">Notes</span>
+    </div>
+
+    <!-- Airfare row -->
+    <div class="grid grid-cols-[2fr_130px_2fr] gap-4 items-center border-b border-gray-100 py-3" data-testid="expenses-airfare-row">
+      <div class="flex items-center gap-2 text-sm text-gray-700">
+        <i class="fa-light fa-plane w-4 text-blue-500"></i>
+        <span>Airfare (coach)</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="text-sm text-gray-500">$</span>
+        <lfx-input-text [form]="form" control="airfareCost" type="number" size="small" styleClass="w-full" dataTest="expenses-airfare-cost" />
+      </div>
+      <lfx-input-text
+        [form]="form"
+        control="airfareNotes"
+        size="small"
+        placeholder="Departure city, airline..."
+        styleClass="w-full"
+        dataTest="expenses-airfare-notes" />
+    </div>
+
+    <!-- Hotel row -->
+    <div class="grid grid-cols-[2fr_130px_2fr] gap-4 items-center border-b border-gray-100 py-3" data-testid="expenses-hotel-row">
+      <div class="flex items-center gap-2 text-sm text-gray-700">
+        <i class="fa-light fa-hotel w-4 text-blue-500"></i>
+        <span>Hotel accommodation</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="text-sm text-gray-500">$</span>
+        <lfx-input-text [form]="form" control="hotelCost" type="number" size="small" styleClass="w-full" dataTest="expenses-hotel-cost" />
+      </div>
+      <lfx-input-text
+        [form]="form"
+        control="hotelNotes"
+        size="small"
+        placeholder="Number of nights (max 4)..."
+        styleClass="w-full"
+        dataTest="expenses-hotel-notes" />
+    </div>
+
+    <!-- Ground transportation row -->
+    <div class="grid grid-cols-[2fr_130px_2fr] gap-4 items-center border-b border-gray-100 py-3" data-testid="expenses-ground-transport-row">
+      <div class="flex items-center gap-2 text-sm text-gray-700">
+        <i class="fa-light fa-car w-4 text-blue-500"></i>
+        <span>Ground transportation</span>
+      </div>
+      <div class="flex items-center gap-1">
+        <span class="text-sm text-gray-500">$</span>
+        <lfx-input-text [form]="form" control="groundTransportCost" type="number" size="small" styleClass="w-full" dataTest="expenses-ground-transport-cost" />
+      </div>
+      <lfx-input-text
+        [form]="form"
+        control="groundTransportNotes"
+        size="small"
+        placeholder="Airport transfers..."
+        styleClass="w-full"
+        dataTest="expenses-ground-transport-notes" />
+    </div>
+
+    <!-- Estimated total row -->
+    <div class="flex items-center justify-end gap-2 py-3">
+      <span class="text-sm font-medium text-gray-600">Estimated Total:</span>
+      <span class="text-sm font-semibold text-gray-900" data-testid="expenses-estimated-total">
+        {{ estimatedTotal() | currency: 'USD' : 'symbol' : '1.2-2' }}
+      </span>
+    </div>
+  </div>
+
+  <!-- Reminder banner -->
+  <lfx-message severity="warn" icon="fa-light fa-circle-exclamation">
+    <ng-template #content>
+      <p class="text-sm text-warning-500">
+        <span class="font-bold text-warning-800">Reminder:</span>
+        Lower cost requests are more likely to be approved. Funds may not be used for food, visa costs, non-airport transportation, or baggage fees.
+      </p>
+    </ng-template>
+  </lfx-message>
+</form>

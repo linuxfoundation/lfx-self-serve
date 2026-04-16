@@ -3,19 +3,35 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { COMING_SOON_SENTINEL, DEFAULT_EVENT_SORT_FIELD, VALID_EVENT_SORT_FIELDS } from '@lfx-one/shared/constants';
+import {
+  COMING_SOON_SENTINEL,
+  DEFAULT_EVENT_SORT_FIELD,
+  DEFAULT_VISA_REQUEST_SORT_FIELD,
+  VALID_EVENT_SORT_FIELDS,
+  VALID_VISA_REQUEST_SORT_FIELDS,
+} from '@lfx-one/shared/constants';
 import {
   EventRow,
   EventSortOrder,
   EventsResponse,
   FoundationEvent,
   GetEventOrganizationsOptions,
+  GetEventRequestsOptions,
   GetEventsOptions,
   GetMyEventsOptions,
+  GetUpcomingCountriesResponse,
   MyEvent,
   MyEventOrganizationsResponse,
   MyEventRow,
   MyEventsResponse,
+  TravelFundApplication,
+  TravelFundApplicationResponse,
+  TravelFundRequestsResponse,
+  VisaRequest,
+  VisaRequestApplication,
+  VisaRequestApplicationResponse,
+  VisaRequestRow,
+  VisaRequestsResponse,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -30,7 +46,23 @@ export class EventsService {
   }
 
   public async getMyEvents(req: Request, userEmail: string, options: GetMyEventsOptions): Promise<MyEventsResponse> {
-    const { isPast, eventId, projectName, searchQuery, role, status, sortField: rawSortField, pageSize, offset, sortOrder, affiliatedProjectSlugs } = options;
+    const {
+      isPast,
+      eventId,
+      projectName,
+      searchQuery,
+      role,
+      status,
+      sortField: rawSortField,
+      pageSize,
+      offset,
+      sortOrder,
+      registeredOnly,
+      startDateFrom,
+      startDateTo,
+      country,
+      affiliatedProjectSlugs,
+    } = options;
     const sortField = rawSortField && VALID_EVENT_SORT_FIELDS.has(rawSortField) ? rawSortField : DEFAULT_EVENT_SORT_FIELD;
     const normalizedSortOrder: EventSortOrder = sortOrder === 'DESC' ? 'DESC' : 'ASC';
     const normalizedPageSize = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : 10;
@@ -60,6 +92,10 @@ export class EventsService {
       const searchQueryFilter = searchQuery ? 'AND e.EVENT_NAME ILIKE ?' : '';
       const roleFilterResult = role ? this.buildUpcomingRoleFilter(role) : { filter: '', binds: [] as string[] };
       const statusFilterResult = status ? this.buildUpcomingStatusFilter(status) : { filter: '', binds: [] as string[] };
+      const startDateFromFilter = startDateFrom ? 'AND e.EVENT_START_DATE >= ?' : '';
+      const startDateToFilter = startDateTo ? 'AND e.EVENT_START_DATE <= ?' : '';
+      const countryFilter = country ? 'AND e.EVENT_COUNTRY = ?' : '';
+      const registeredOnlyFilter = registeredOnly ? "AND r.EVENT_ID IS NOT NULL AND r.REGISTRATION_STATUS = 'Accepted'" : '';
 
       const slugs = affiliatedProjectSlugs ?? [];
       const hasAffiliatedSlugs = slugs.length > 0;
@@ -166,6 +202,10 @@ export class EventsService {
           ${searchQueryFilter}
           ${roleFilterResult.filter}
           ${statusFilterResult.filter}
+          ${startDateFromFilter}
+          ${startDateToFilter}
+          ${countryFilter}
+          ${registeredOnlyFilter}
         ORDER BY ${sortField} ${normalizedSortOrder}
         LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
       `;
@@ -428,6 +468,149 @@ export class EventsService {
     return { data };
   }
 
+  public async getUpcomingCountries(req: Request): Promise<GetUpcomingCountriesResponse> {
+    logger.debug(req, 'get_upcoming_countries', 'Fetching distinct countries for upcoming events');
+
+    const sql = `
+      SELECT DISTINCT EVENT_COUNTRY
+      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+      WHERE IS_PAST_EVENT = FALSE
+        AND EVENT_COUNTRY IS NOT NULL
+      ORDER BY EVENT_COUNTRY
+    `;
+
+    let result;
+    try {
+      result = await this.snowflakeService.execute<{ EVENT_COUNTRY: string }>(sql, []);
+    } catch (error) {
+      logger.warning(req, 'get_upcoming_countries', 'Snowflake query failed, returning empty countries', {
+        error: error instanceof Error ? error.message : String(error),
+      });
+      return { data: [] };
+    }
+
+    const data = result.rows.map((row) => row.EVENT_COUNTRY);
+
+    logger.debug(req, 'get_upcoming_countries', 'Fetched countries', { count: data.length });
+
+    return { data };
+  }
+
+  public async getVisaRequests(req: Request, userEmail: string, options: GetEventRequestsOptions): Promise<VisaRequestsResponse> {
+    return this.executeEventRequestsQuery(req, userEmail, options, 'VL_REQUEST_STATUS', 'VL_APPLICATION_DATE', 'get_visa_requests');
+  }
+
+  public async getTravelFundRequests(req: Request, userEmail: string, options: GetEventRequestsOptions): Promise<TravelFundRequestsResponse> {
+    return this.executeEventRequestsQuery(req, userEmail, options, 'TF_REQUEST_STATUS', 'TF_APPLICATION_DATE', 'get_travel_fund_requests');
+  }
+
+  /**
+   * Stub: Submit a visa letter application.
+   * TODO: Replace with upstream microservice call once the API is available.
+   */
+  public async submitVisaRequestApplication(req: Request, payload: VisaRequestApplication): Promise<VisaRequestApplicationResponse> {
+    logger.debug(req, 'submit_visa_request_application', 'Received visa letter application', {
+      event_id: payload.eventId,
+      event_name: payload.eventName,
+    });
+
+    return { success: true, message: 'Your visa letter application has been submitted successfully.' };
+  }
+
+  /**
+   * Stub: Submit a travel fund application.
+   * TODO: Replace with upstream microservice call once the API is available.
+   */
+  public async submitTravelFundApplication(req: Request, payload: TravelFundApplication): Promise<TravelFundApplicationResponse> {
+    logger.debug(req, 'submit_travel_fund_application', 'Received travel fund application', {
+      event_id: payload.eventId,
+      event_name: payload.eventName,
+      estimated_total: payload.expenses.estimatedTotal,
+    });
+
+    return { success: true, message: 'Your travel fund application has been submitted successfully.' };
+  }
+
+  private async executeEventRequestsQuery(
+    req: Request,
+    userEmail: string,
+    options: GetEventRequestsOptions,
+    statusColumn: string,
+    applicationDateColumn: string,
+    operationName: string
+  ): Promise<VisaRequestsResponse> {
+    const { eventId, projectName, searchQuery, status, sortField: rawSortField, pageSize, offset, sortOrder } = options;
+    const sortField = rawSortField && VALID_VISA_REQUEST_SORT_FIELDS.has(rawSortField) ? rawSortField : DEFAULT_VISA_REQUEST_SORT_FIELD;
+    const normalizedSortOrder: EventSortOrder = sortOrder === 'DESC' ? 'DESC' : 'ASC';
+    const normalizedPageSize = Number.isInteger(pageSize) && pageSize > 0 ? pageSize : 10;
+    const normalizedOffset = Number.isInteger(offset) && offset >= 0 ? offset : 0;
+
+    logger.debug(req, operationName, 'Building event requests query', {
+      has_event_id: !!eventId,
+      has_project_name: !!projectName,
+      has_search_query: !!searchQuery,
+      status,
+      page_size: normalizedPageSize,
+      offset: normalizedOffset,
+      sort_order: normalizedSortOrder,
+    });
+
+    const eventIdFilter = eventId ? 'AND EVENT_ID = ?' : '';
+    const projectNameFilter = projectName ? 'AND PROJECT_NAME = ?' : '';
+    const searchQueryFilter = searchQuery ? 'AND EVENT_NAME ILIKE ?' : '';
+    const statusFilter = status ? `AND ${statusColumn} = ?` : '';
+
+    const sql = `
+      SELECT
+        EVENT_ID,
+        EVENT_NAME,
+        EVENT_URL,
+        EVENT_LOCATION,
+        EVENT_CITY,
+        EVENT_COUNTRY,
+        ${applicationDateColumn} AS APPLICATION_DATE,
+        ${statusColumn} AS REQUEST_STATUS,
+        COUNT(*) OVER() AS TOTAL_RECORDS
+      FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+      WHERE ${statusColumn} IS NOT NULL
+        AND USER_EMAIL = ?
+        ${eventIdFilter}
+        ${projectNameFilter}
+        ${searchQueryFilter}
+        ${statusFilter}
+      -- sortField is validated against VALID_VISA_REQUEST_SORT_FIELDS allowlist above; safe to interpolate
+      ORDER BY ${sortField} ${normalizedSortOrder}
+      LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
+    `;
+
+    const binds: string[] = [userEmail];
+    if (eventId) binds.push(eventId);
+    if (projectName) binds.push(projectName);
+    if (searchQuery) binds.push(`%${searchQuery}%`);
+    if (status) binds.push(status);
+
+    logger.debug(req, operationName, 'Executing event requests query', { bind_count: binds.length });
+
+    let result;
+    try {
+      result = await this.snowflakeService.execute<VisaRequestRow>(sql, binds);
+    } catch (error) {
+      logger.warning(req, operationName, 'Snowflake query failed, returning empty results', {
+        error: error instanceof Error ? error.message : String(error),
+        page_size: normalizedPageSize,
+        offset: normalizedOffset,
+      });
+      return { data: [], total: 0, pageSize: normalizedPageSize, offset: normalizedOffset };
+    }
+
+    const total = result.rows.length > 0 ? result.rows[0].TOTAL_RECORDS : 0;
+    const data = result.rows.map((row) => this.mapRowToVisaRequest(row));
+
+    logger.debug(req, operationName, 'Fetched event requests', { count: data.length, total });
+
+    return { data, total, pageSize: normalizedPageSize, offset: normalizedOffset };
+  }
+
   /** Status filter for the past events query (unqualified column names, no IS NULL support). */
   private buildStatusFilter(status: string): { filter: string; binds: string[] } {
     switch (status) {
@@ -492,6 +675,19 @@ export class EventsService {
     }
   }
 
+  private mapRowToVisaRequest(row: VisaRequestRow): VisaRequest {
+    return {
+      id: row.EVENT_ID,
+      name: row.EVENT_NAME,
+      url: row.EVENT_URL ?? '',
+      location: this.formatLocation(row.EVENT_LOCATION, row.EVENT_CITY, row.EVENT_COUNTRY),
+      applicationDate: row.APPLICATION_DATE
+        ? new Date(row.APPLICATION_DATE).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
+        : '—',
+      status: row.REQUEST_STATUS,
+    };
+  }
+
   private mapRowToFoundationEvent(row: EventRow): FoundationEvent {
     return {
       id: row.EVENT_ID,
@@ -527,6 +723,7 @@ export class EventsService {
       url: row.EVENT_URL ?? '',
       registrationUrl: row.EVENT_REGISTRATION_URL ?? null,
       foundation: row.PROJECT_NAME,
+      startDate: new Date(row.EVENT_START_DATE).toISOString(),
       date: this.formatDateRange(row.EVENT_START_DATE, row.EVENT_END_DATE),
       location: this.formatLocation(row.EVENT_LOCATION, row.EVENT_CITY, row.EVENT_COUNTRY),
       role: row.USER_ROLE ?? '',

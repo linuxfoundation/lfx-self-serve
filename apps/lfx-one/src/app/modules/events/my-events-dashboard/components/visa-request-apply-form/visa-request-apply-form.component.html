@@ -1,0 +1,130 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<form [formGroup]="form" class="flex flex-col gap-4" data-testid="visa-request-apply-form">
+  <h3 class="text-base font-semibold text-gray-900" data-testid="visa-request-apply-form-title">Applicant Information</h3>
+
+  <!-- Row 1: First Name | Last Name -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class="flex flex-col gap-1">
+      <label for="visa-first-name" class="text-sm font-medium text-gray-700">First Name <span class="text-red-500">*</span></label>
+      <lfx-input-text
+        [form]="form"
+        control="firstName"
+        id="visa-first-name"
+        size="small"
+        placeholder="Jane"
+        styleClass="w-full"
+        dataTest="visa-apply-first-name" />
+      @if (form.get('firstName')?.invalid && form.get('firstName')?.touched) {
+        <span class="text-xs text-red-500" data-testid="visa-apply-first-name-error">First name is required</span>
+      }
+    </div>
+    <div class="flex flex-col gap-1">
+      <label for="visa-last-name" class="text-sm font-medium text-gray-700">Last Name <span class="text-red-500">*</span></label>
+      <lfx-input-text
+        [form]="form"
+        control="lastName"
+        id="visa-last-name"
+        size="small"
+        placeholder="Smith"
+        styleClass="w-full"
+        dataTest="visa-apply-last-name" />
+      @if (form.get('lastName')?.invalid && form.get('lastName')?.touched) {
+        <span class="text-xs text-red-500" data-testid="visa-apply-last-name-error">Last name is required</span>
+      }
+    </div>
+  </div>
+
+  <!-- Row 2: Email | Passport Number -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class="flex flex-col gap-1">
+      <label for="visa-email" class="text-sm font-medium text-gray-700">Email</label>
+      <lfx-input-text [form]="form" control="email" id="visa-email" type="email" size="small" styleClass="w-full" dataTest="visa-apply-email" />
+    </div>
+    <div class="flex flex-col gap-1">
+      <label for="visa-passport-number" class="text-sm font-medium text-gray-700">Passport Number <span class="text-red-500">*</span></label>
+      <lfx-input-text
+        [form]="form"
+        control="passportNumber"
+        id="visa-passport-number"
+        size="small"
+        placeholder="Enter passport number"
+        styleClass="w-full"
+        autocomplete="off"
+        dataTest="visa-apply-passport-number" />
+      @if (form.get('passportNumber')?.invalid && form.get('passportNumber')?.touched) {
+        <span class="text-xs text-red-500" data-testid="visa-apply-passport-number-error">Passport number is required</span>
+      }
+    </div>
+  </div>
+
+  <!-- Row 3: Country of Citizenship | Passport Expiry Date -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">Country of Citizenship <span class="text-red-500">*</span></label>
+      <lfx-select
+        [form]="form"
+        control="citizenshipCountry"
+        [options]="countryOptions"
+        placeholder="Select country"
+        [filter]="true"
+        styleClass="w-full"
+        dataTest="visa-apply-citizenship-country" />
+      @if (form.get('citizenshipCountry')?.invalid && form.get('citizenshipCountry')?.touched) {
+        <span class="text-xs text-red-500" data-testid="visa-apply-citizenship-country-error">Country of citizenship is required</span>
+      }
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">Passport Expiry Date <span class="text-red-500">*</span></label>
+      <lfx-calendar [form]="form" control="passportExpiryDate" placeholder="MM/DD/YYYY" styleClass="w-full" />
+      @if (form.get('passportExpiryDate')?.invalid && form.get('passportExpiryDate')?.touched) {
+        <span class="text-xs text-red-500" data-testid="visa-apply-passport-expiry-error">Passport expiry date is required</span>
+      }
+    </div>
+  </div>
+
+  <!-- Row 4: Embassy / Consulate City | Company / Organization -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class="flex flex-col gap-1">
+      <label for="visa-embassy-city" class="text-sm font-medium text-gray-700">Embassy / Consulate City <span class="text-red-500">*</span></label>
+      <lfx-input-text
+        [form]="form"
+        control="embassyCity"
+        id="visa-embassy-city"
+        size="small"
+        placeholder="City where you'll apply for visa"
+        styleClass="w-full"
+        dataTest="visa-apply-embassy-city" />
+      @if (form.get('embassyCity')?.invalid && form.get('embassyCity')?.touched) {
+        <span class="text-xs text-red-500" data-testid="visa-apply-embassy-city-error">Embassy city is required</span>
+      }
+    </div>
+    <div class="flex flex-col gap-1">
+      <label for="visa-company" class="text-sm font-medium text-gray-700">Company / Organization</label>
+      <lfx-input-text
+        [form]="form"
+        control="company"
+        id="visa-company"
+        size="small"
+        placeholder="Acme Corp"
+        styleClass="w-full"
+        dataTest="visa-apply-company" />
+    </div>
+  </div>
+
+  <!-- Row 5: Mailing Address (full width) -->
+  <div class="flex flex-col gap-1">
+    <label class="text-sm font-medium text-gray-700">Mailing Address <span class="text-red-500">*</span></label>
+    <lfx-textarea
+      [form]="form"
+      control="mailingAddress"
+      [rows]="4"
+      placeholder="Full address for the invitation letter"
+      styleClass="w-full"
+      dataTest="visa-apply-mailing-address" />
+    @if (form.get('mailingAddress')?.invalid && form.get('mailingAddress')?.touched) {
+      <span class="text-xs text-red-500" data-testid="visa-apply-mailing-address-error">Mailing address is required</span>
+    }
+  </div>
+</form>

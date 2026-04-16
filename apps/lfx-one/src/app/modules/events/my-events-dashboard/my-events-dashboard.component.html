@@ -19,8 +19,10 @@
     <!-- Search and Filters -->
     <div class="bg-white rounded-lg border border-gray-200 p-4">
       <lfx-events-top-bar
-        [isFoundationFilter]="true"
+        [isFoundationFilter]="!isRequestTab()"
+        [showRoleFilter]="!isRequestTab()"
         [isPast]="isPast()"
+        [statusOptions]="currentStatusOptions()"
         (searchQueryChange)="onSearchQueryChange($event)"
         (foundationChange)="onFoundationChange($event)"
         (roleChange)="onRoleChange($event)"

@@ -42,10 +42,9 @@
       (pageChange)="onPastPageChange($event)"
       (sortChange)="onPastSortChange($event)"
       data-testid="events-past-table" />
-  } @else {
-    <div class="flex flex-col items-center justify-center py-16 gap-3 text-gray-400" data-testid="events-coming-soon">
-      <i class="fa-light fa-clock text-3xl"></i>
-      <p class="text-sm">Coming soon</p>
-    </div>
+  } @else if (activeTab() === 'visa-letters') {
+    <lfx-event-request-list requestType="visa" [searchQuery]="searchQuery()" [status]="status()" data-testid="visa-requests-table" />
+  } @else if (activeTab() === 'travel-funding') {
+    <lfx-event-request-list requestType="travel-fund" [searchQuery]="searchQuery()" [status]="status()" data-testid="travel-funding-table" />
   }
 </div>

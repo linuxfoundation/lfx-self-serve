@@ -64,6 +64,23 @@ export class EventsTopBarComponent {
       .subscribe(() => {
         this.searchForm.get('foundation')?.setValue(null, { emitEvent: false });
       });
+
+    // Clear status when the available options change (e.g. switching between event tabs
+    // and visa/TF tabs which have different status sets).
+    toObservable(this.statusOptions)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe(() => {
+        this.searchForm.get('status')?.setValue(null);
+      });
+
+    // Clear role when the role filter is hidden so stale values don't persist.
+    toObservable(this.showRoleFilter)
+      .pipe(skip(1), takeUntilDestroyed())
+      .subscribe((show) => {
+        if (!show) {
+          this.searchForm.get('role')?.setValue(null);
+        }
+      });
   }
 
   public clearSearch(): void {
