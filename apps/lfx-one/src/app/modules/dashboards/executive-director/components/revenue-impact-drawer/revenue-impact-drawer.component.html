@@ -1,0 +1,255 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="revenue-impact-drawer">
+  <!-- Header -->
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full" data-testid="revenue-impact-drawer-header">
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="revenue-impact-drawer-title">Attribution</h2>
+        <p class="text-sm text-gray-500">Executive Director · Influence Metric</p>
+      </div>
+      <lfx-button
+        icon="fa-light fa-xmark"
+        [text]="true"
+        [rounded]="true"
+        severity="secondary"
+        ariaLabel="Close panel"
+        (onClick)="onClose()"
+        data-testid="revenue-impact-drawer-close" />
+    </div>
+  </ng-template>
+
+  <!-- Content -->
+  <div class="flex flex-col gap-6 pb-2" data-testid="revenue-impact-drawer-content">
+    <!-- FIRST FOLD: Needs Your Attention -->
+    @if (attentionActions().length > 0 || attentionInsights().length > 0) {
+      <div class="flex flex-col gap-4 p-4 bg-red-50 border border-red-200 rounded-lg" data-testid="revenue-impact-drawer-attention">
+        <div class="flex items-center gap-2">
+          <h3 class="flex items-center gap-2 text-sm font-semibold text-red-800">
+            <i class="fa-light fa-triangle-exclamation text-red-500"></i>
+            Needs Your Attention
+          </h3>
+        </div>
+
+        @for (action of attentionActions(); track action.title) {
+          <div class="flex items-start gap-3 p-4 bg-white border border-red-200 rounded-lg">
+            <div class="flex items-center justify-center w-9 h-9 rounded-full bg-red-100 flex-shrink-0 mt-0.5">
+              <i [class]="(action.actionType | marketingActionIcon) + ' text-red-600'"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+                @if (action.priority === 'high') {
+                  <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
+                } @else {
+                  <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
+                }
+              </div>
+              <p class="text-sm text-gray-500 mt-0.5">{{ action.description }}</p>
+              <p class="text-xs text-gray-400 mt-1">Due: {{ action.dueLabel }}</p>
+            </div>
+          </div>
+        }
+
+        @for (insight of attentionInsights(); track insight.text) {
+          <div class="flex items-center gap-2 text-sm px-1">
+            <i class="fa-light fa-triangle-exclamation text-red-500"></i>
+            <span class="text-red-800">{{ insight.text }}</span>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- SECOND FOLD: Performing Well -->
+    @if (performingActions().length > 0 || performingInsights().length > 0) {
+      <div class="flex flex-col gap-4 p-4 bg-green-50 border border-green-200 rounded-lg" data-testid="revenue-impact-drawer-performing">
+        <div class="flex items-center gap-2">
+          <h3 class="flex items-center gap-2 text-sm font-semibold text-green-800">
+            <i class="fa-light fa-check-circle text-green-500"></i>
+            Performing Well
+          </h3>
+        </div>
+
+        @for (action of performingActions(); track action.title) {
+          <div class="flex items-start gap-3 p-4 bg-white border border-green-200 rounded-lg">
+            <div class="flex items-center justify-center w-9 h-9 rounded-full bg-green-100 flex-shrink-0 mt-0.5">
+              <i [class]="(action.actionType | marketingActionIcon) + ' text-green-600'"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+              <p class="text-sm text-gray-500 mt-0.5">{{ action.description }}</p>
+            </div>
+          </div>
+        }
+
+        @for (insight of performingInsights(); track insight.text) {
+          <div class="flex items-center gap-2 text-sm px-1">
+            @if (insight.type === 'driver') {
+              <i class="fa-light fa-bullseye text-green-500"></i>
+            } @else {
+              <i class="fa-light fa-circle-info text-blue-500"></i>
+            }
+            <span class="text-green-800">{{ insight.text }}</span>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Event Registration Attribution -->
+    @if (data().eventRegistrationAttribution.channelBreakdown.length > 0) {
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="revenue-impact-drawer-event-attr">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Event Registration Attribution</h3>
+          <p class="text-sm text-gray-600">Event page traffic and last-touch revenue by channel over the last 6 months</p>
+        </div>
+        <div class="h-[260px]" data-testid="revenue-impact-drawer-event-attr-chart">
+          <lfx-chart type="bar" [data]="eventAttrChartData()" [options]="eventAttrChartOptions" height="100%"></lfx-chart>
+        </div>
+        <div class="flex flex-col gap-0">
+          <div class="flex items-center justify-between py-2 px-1 text-xs font-semibold text-gray-500 uppercase border-b border-gray-200">
+            <span class="flex-1">Channel</span>
+            <button
+              type="button"
+              class="w-24 text-right cursor-pointer hover:text-gray-900 flex items-center justify-end gap-1"
+              [class.text-gray-900]="eventAttrSortBy() === 'sessions'"
+              (click)="eventAttrSortBy.set('sessions')"
+              data-testid="revenue-impact-drawer-event-attr-sort-sessions">
+              Sessions
+              @if (eventAttrSortBy() === 'sessions') {
+                <i class="fa-light fa-arrow-down text-xs"></i>
+              }
+            </button>
+            <button
+              type="button"
+              class="w-28 text-right cursor-pointer hover:text-gray-900 flex items-center justify-end gap-1"
+              [class.text-gray-900]="eventAttrSortBy() === 'visitors'"
+              (click)="eventAttrSortBy.set('visitors')"
+              data-testid="revenue-impact-drawer-event-attr-sort-visitors">
+              Unique Visitors
+              @if (eventAttrSortBy() === 'visitors') {
+                <i class="fa-light fa-arrow-down text-xs"></i>
+              }
+            </button>
+            <button
+              type="button"
+              class="w-32 text-right cursor-pointer hover:text-gray-900 flex items-center justify-end gap-1"
+              [class.text-gray-900]="eventAttrSortBy() === 'revenue'"
+              (click)="eventAttrSortBy.set('revenue')"
+              data-testid="revenue-impact-drawer-event-attr-sort-revenue">
+              Last-Touch Revenue
+              @if (eventAttrSortBy() === 'revenue') {
+                <i class="fa-light fa-arrow-down text-xs"></i>
+              }
+            </button>
+          </div>
+          @for (row of sortedEventAttrChannels(); track row.channel) {
+            <div class="flex items-center justify-between py-3 px-1 border-b border-gray-100" data-testid="revenue-impact-drawer-event-attr-row">
+              <span class="flex-1 text-sm font-medium text-gray-900">{{ row.channel }}</span>
+              <span class="w-24 text-right text-sm font-semibold text-gray-900">{{ row.sessions | number }}</span>
+              <span class="w-28 text-right text-sm font-semibold text-gray-900">{{ row.uniqueVisitors | number }}</span>
+              <span class="w-32 text-right text-sm font-semibold text-gray-900">{{ row.formattedLastTouchRevenue }}</span>
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- Paid Media by Project -->
+    @if (data().projectBreakdown.length > 0) {
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="revenue-impact-drawer-project-breakdown">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Paid Media by Project</h3>
+          <p class="text-sm text-gray-600">Impressions by project and channel over the last 6 months</p>
+        </div>
+
+        <div class="flex flex-wrap items-center gap-x-4 gap-y-2" data-testid="revenue-impact-drawer-project-breakdown-legend">
+          @for (legend of projectBreakdownLegend(); track legend.channel) {
+            <div class="flex items-center gap-2 text-xs text-gray-600">
+              <span class="inline-block w-3 h-3 rounded-sm" [class]="legend.bgClass"></span>
+              <span>{{ legend.label }}</span>
+            </div>
+          }
+        </div>
+
+        <div class="flex flex-col gap-0">
+          <div class="flex items-center justify-between py-2 px-1 text-xs font-semibold text-gray-500 uppercase border-b border-gray-200">
+            <span class="flex-1">Project</span>
+            <span class="flex-[2] px-2">Channel Mix</span>
+            <span class="w-32 text-right">Total Impressions</span>
+          </div>
+          @for (project of sortedProjectBreakdown(); track project.project) {
+            <div class="flex items-center justify-between py-3 px-1 border-b border-gray-100" data-testid="revenue-impact-drawer-project-breakdown-row">
+              <span class="flex-1 text-sm font-medium text-gray-900 truncate pr-2">{{ project.project }}</span>
+              <div class="flex-[2] px-2">
+                <div class="flex w-full h-3 rounded-sm overflow-hidden bg-gray-100">
+                  @for (segment of project.segments; track segment.channel) {
+                    <div class="h-full" [class]="segment.bgClass" [style.width.%]="segment.sharePercent" [title]="segment.title"></div>
+                  }
+                </div>
+              </div>
+              <span class="w-32 text-right text-sm font-semibold text-gray-900">{{ project.formattedTotalImpressions }}</span>
+            </div>
+          }
+        </div>
+
+        <p class="text-xs text-gray-400">Spend and revenue are only available at the foundation level, not per project.</p>
+      </div>
+    }
+
+    <!-- Attribution Channels -->
+    @if (attributionChannelsView().length > 0) {
+      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="revenue-impact-drawer-channels">
+        <div class="flex flex-col gap-1">
+          <h3 class="text-sm font-semibold text-gray-900">Attribution Channels</h3>
+          <p class="text-sm text-gray-600">Impression share by paid media channel over the last 6 months</p>
+        </div>
+        <div class="flex flex-col gap-3">
+          @for (channel of attributionChannelsView(); track channel.channel) {
+            <div class="flex flex-col gap-1" data-testid="revenue-impact-drawer-channel-row">
+              <div class="flex items-center justify-between">
+                <span class="text-sm font-medium text-gray-900">{{ channel.label }}</span>
+                <span class="text-sm font-semibold text-gray-900">{{ channel.impressions | number }} · {{ channel.formattedPercentage }}%</span>
+              </div>
+              <div class="w-full h-2 bg-gray-100 rounded-full">
+                <div class="h-2 bg-blue-500 rounded-full" [style.width.%]="channel.percentage"></div>
+              </div>
+            </div>
+          }
+        </div>
+      </div>
+    }
+
+    <!-- SECTION 2: Paid Media (Marketing Attribution) -->
+    @if (data().paidMedia.monthlyTrend.length > 1) {
+      <div class="flex flex-col gap-4" data-testid="revenue-impact-drawer-paid-media">
+        <h3 class="text-sm font-semibold text-gray-900">Paid Media</h3>
+        <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="revenue-impact-drawer-paid-media-trend">
+          <div class="flex flex-col gap-1">
+            <h3 class="text-sm font-semibold text-gray-900">Paid Media Trend</h3>
+            <p class="text-sm text-gray-600">Monthly spend vs first-touch revenue over the last 6 months</p>
+          </div>
+          <div class="h-[240px]" data-testid="revenue-impact-drawer-paid-media-chart">
+            <lfx-chart type="bar" [data]="paidMediaTrendChartData()" [options]="paidMediaTrendChartOptions" height="100%"></lfx-chart>
+          </div>
+          <div class="grid grid-cols-2 gap-2 text-xs text-gray-500">
+            <div class="flex items-center gap-2">
+              <span class="inline-block w-3 h-3 rounded-sm bg-blue-500"></span>
+              <span>Spend — dollars per month</span>
+            </div>
+            <div class="flex items-center gap-2">
+              <span class="inline-block w-3 h-3 rounded-sm bg-emerald-600"></span>
+              <span>Revenue — first-touch attributed revenue per month</span>
+            </div>
+          </div>
+        </div>
+      </div>
+    }
+  </div>
+</p-drawer>

@@ -2923,6 +2923,14 @@ export interface EventGrowthTopEvent {
 }
 
 /**
+ * Presentation-ready top event row with pre-formatted revenue string
+ * Used by the drawer component to avoid calling formatters from templates
+ */
+export interface EventGrowthTopEventView extends EventGrowthTopEvent {
+  formattedRevenue: string;
+}
+
+/**
  * API response for Event Growth metric
  * Total event attendees, event count, revenue, YoY growth, top events
  */
@@ -2954,6 +2962,15 @@ export interface BrandReachSocialPlatform {
   name: string;
   platformType: BrandReachPlatformType;
   followers: number;
+}
+
+/**
+ * View-layer extension of BrandReachSocialPlatform that adds resolved presentation
+ * (icon class, color class) from MARKETING_SOCIAL_PLATFORM_MAP.
+ */
+export interface BrandReachSocialPlatformView extends BrandReachSocialPlatform {
+  icon: string;
+  colorClass: string;
 }
 
 /**
@@ -3102,6 +3119,44 @@ export interface EventRegistrationAttributionMonth {
 export interface EventRegistrationAttribution {
   channelBreakdown: EventRegistrationAttributionChannel[];
   monthlyTrend: EventRegistrationAttributionMonth[];
+}
+
+/**
+ * Presentation-ready event-attribution channel row with formatted last-touch revenue.
+ */
+export interface EventRegistrationAttributionChannelView extends EventRegistrationAttributionChannel {
+  formattedLastTouchRevenue: string;
+}
+
+/**
+ * Channel legend entry pre-computed for the project-breakdown table.
+ * Includes the Tailwind background class name so the template avoids [style.background-color].
+ */
+export interface RevenueImpactChannelLegendView {
+  channel: string;
+  label: string;
+  bgClass: string;
+}
+
+/**
+ * Per-project paid-media breakdown row enriched with per-channel segment data for rendering.
+ */
+export interface RevenueImpactProjectBreakdownView extends RevenueImpactProjectBreakdown {
+  formattedTotalImpressions: string;
+  segments: {
+    channel: string;
+    bgClass: string;
+    sharePercent: number;
+    title: string;
+  }[];
+}
+
+/**
+ * Attribution channel row enriched with formatted display strings for the template.
+ */
+export interface RevenueImpactAttributionChannelView extends RevenueImpactAttributionChannel {
+  label: string;
+  formattedPercentage: string;
 }
 
 /**

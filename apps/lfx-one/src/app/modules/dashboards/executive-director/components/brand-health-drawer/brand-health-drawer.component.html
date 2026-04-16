@@ -1,0 +1,214 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[45%] lg:w-[55%] md:w-[70%] sm:w-[90%] w-full"
+  data-testid="brand-health-drawer">
+  <!-- Header -->
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full" data-testid="brand-health-drawer-header">
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="brand-health-drawer-title">Brand Health</h2>
+        <p class="text-sm text-gray-500">Executive Director · Brand Metric</p>
+      </div>
+      <lfx-button
+        icon="fa-light fa-xmark"
+        [text]="true"
+        [rounded]="true"
+        severity="secondary"
+        ariaLabel="Close panel"
+        (onClick)="onClose()"
+        data-testid="brand-health-drawer-close" />
+    </div>
+  </ng-template>
+
+  <!-- Content -->
+  <div class="flex flex-col gap-6 pb-2" data-testid="brand-health-drawer-content">
+    <!-- Summary Stats -->
+    <div class="flex gap-4" data-testid="brand-health-drawer-stats">
+      <lfx-card styleClass="flex-1">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm text-gray-500">Total Mentions</span>
+          @if (data().totalMentions > 0) {
+            <span class="text-2xl font-semibold text-gray-900">{{ data().totalMentions | number }}</span>
+          } @else {
+            <span class="text-2xl font-semibold text-gray-400">—</span>
+          }
+        </div>
+      </lfx-card>
+      <lfx-card styleClass="flex-1">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm text-gray-500">Positive Sentiment</span>
+          @if (data().totalMentions > 0) {
+            <span class="text-2xl font-semibold text-gray-900">{{ data().sentiment.positive | number: '1.1-1' }}%</span>
+          } @else {
+            <span class="text-2xl font-semibold text-gray-400">—</span>
+          }
+        </div>
+      </lfx-card>
+      <lfx-card styleClass="flex-1">
+        <div class="flex flex-col gap-1">
+          <span class="text-sm text-gray-500">MoM Growth</span>
+          @if (data().sentimentMomChangePp !== 0) {
+            <span
+              class="text-2xl font-semibold"
+              [class.text-green-600]="data().sentimentMomChangePp > 0"
+              [class.text-red-600]="data().sentimentMomChangePp < 0">
+              {{ formattedSentimentMom() }}pp
+            </span>
+          } @else {
+            <span class="text-2xl font-semibold text-gray-400">—</span>
+          }
+        </div>
+      </lfx-card>
+    </div>
+
+    <!-- FIRST FOLD: Needs Your Attention -->
+    @if (attentionActions().length > 0 || attentionInsights().length > 0) {
+      <div class="flex flex-col gap-4 p-4 bg-red-50 border border-red-200 rounded-lg" data-testid="brand-health-drawer-attention">
+        <div class="flex items-center gap-2">
+          <h3 class="flex items-center gap-2 text-sm font-semibold text-red-800">
+            <i class="fa-light fa-triangle-exclamation text-red-500"></i>
+            Needs Your Attention
+          </h3>
+        </div>
+
+        @for (action of attentionActions(); track action.title) {
+          <div class="flex items-start gap-3 p-4 bg-white border border-red-200 rounded-lg">
+            <div class="flex items-center justify-center w-9 h-9 rounded-full bg-red-100 flex-shrink-0 mt-0.5">
+              <i [class]="(action.actionType | marketingActionIcon) + ' text-red-600'"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center justify-between gap-2">
+                <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+                @if (action.priority === 'high') {
+                  <lfx-tag value="High Priority" severity="danger" [rounded]="true" />
+                } @else {
+                  <lfx-tag value="Medium Priority" severity="warn" [rounded]="true" />
+                }
+              </div>
+              <p class="text-sm text-gray-500 mt-0.5">{{ action.description }}</p>
+              <p class="text-xs text-gray-400 mt-1">Due: {{ action.dueLabel }}</p>
+            </div>
+          </div>
+        }
+
+        @for (insight of attentionInsights(); track insight.text) {
+          <div class="flex items-center gap-2 text-sm px-1">
+            <i class="fa-light fa-triangle-exclamation text-red-500"></i>
+            <span class="text-red-800">{{ insight.text }}</span>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- SECOND FOLD: Performing Well -->
+    @if (performingActions().length > 0 || performingInsights().length > 0) {
+      <div class="flex flex-col gap-4 p-4 bg-green-50 border border-green-200 rounded-lg" data-testid="brand-health-drawer-performing">
+        <div class="flex items-center gap-2">
+          <h3 class="flex items-center gap-2 text-sm font-semibold text-green-800">
+            <i class="fa-light fa-check-circle text-green-500"></i>
+            Performing Well
+          </h3>
+        </div>
+
+        @for (action of performingActions(); track action.title) {
+          <div class="flex items-start gap-3 p-4 bg-white border border-green-200 rounded-lg">
+            <div class="flex items-center justify-center w-9 h-9 rounded-full bg-green-100 flex-shrink-0 mt-0.5">
+              <i [class]="(action.actionType | marketingActionIcon) + ' text-green-600'"></i>
+            </div>
+            <div class="flex-1 min-w-0">
+              <span class="text-sm font-semibold text-gray-900">{{ action.title }}</span>
+              <p class="text-sm text-gray-500 mt-0.5">{{ action.description }}</p>
+            </div>
+          </div>
+        }
+
+        @for (insight of performingInsights(); track insight.text) {
+          <div class="flex items-center gap-2 text-sm px-1">
+            @if (insight.type === 'driver') {
+              <i class="fa-light fa-bullseye text-green-500"></i>
+            } @else {
+              <i class="fa-light fa-circle-info text-blue-500"></i>
+            }
+            <span class="text-green-800">{{ insight.text }}</span>
+          </div>
+        }
+      </div>
+    }
+
+    <!-- Mentions Trend -->
+    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="brand-health-drawer-mentions-trend">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-semibold text-gray-900">Mentions Trend</h3>
+        <p class="text-sm text-gray-600">Total brand mentions over the last 6 months (Octolens)</p>
+      </div>
+      @if (data().monthlyMentions.length > 0) {
+        <div class="h-[240px]" data-testid="brand-health-drawer-mentions-chart">
+          <lfx-chart type="line" [data]="mentionsTrendData()" [options]="mentionsTrendOptions" height="100%"></lfx-chart>
+        </div>
+      } @else {
+        <div class="flex items-center justify-center h-[120px] text-sm text-gray-400" data-testid="brand-health-drawer-mentions-empty">
+          Mentions trend data not yet available
+        </div>
+      }
+    </div>
+
+    <!-- Sentiment Breakdown -->
+    <div class="flex flex-col gap-4" data-testid="brand-health-drawer-sentiment">
+      <h3 class="text-sm font-semibold text-gray-900">Sentiment Breakdown</h3>
+      @if (data().sentiment.positive + data().sentiment.neutral + data().sentiment.negative > 0) {
+        <div class="flex gap-4">
+          <lfx-card styleClass="flex-1">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Positive</span>
+              <span class="text-2xl font-semibold text-green-600">{{ data().sentiment.positive | number: '1.1-1' }}%</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Neutral</span>
+              <span class="text-2xl font-semibold text-gray-600">{{ data().sentiment.neutral | number: '1.1-1' }}%</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Negative</span>
+              <span class="text-2xl font-semibold text-red-600">{{ data().sentiment.negative | number: '1.1-1' }}%</span>
+            </div>
+          </lfx-card>
+        </div>
+      } @else {
+        <div class="flex items-center justify-center h-[80px] text-sm text-gray-400" data-testid="brand-health-drawer-sentiment-empty">
+          Sentiment data not yet available
+        </div>
+      }
+    </div>
+
+    <!-- Top Mentioned Projects -->
+    <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="brand-health-drawer-top-projects">
+      <div class="flex flex-col gap-1">
+        <h3 class="text-sm font-semibold text-gray-900">Top Mentioned Projects</h3>
+        <p class="text-sm text-gray-600">Projects with the most brand mentions in the last 30 days</p>
+      </div>
+      @if (data().topProjects.length > 0) {
+        <div class="flex flex-col gap-0">
+          @for (project of data().topProjects; track project.name) {
+            <div class="flex items-center justify-between py-3 px-1 border-b border-gray-100" data-testid="brand-health-drawer-project-row">
+              <span class="text-sm font-medium text-gray-900">{{ project.name }}</span>
+              <span class="text-sm font-semibold text-gray-900">{{ project.mentions | number }}</span>
+            </div>
+          }
+        </div>
+      } @else {
+        <div class="flex items-center justify-center h-[80px] text-sm text-gray-400" data-testid="brand-health-drawer-top-projects-empty">
+          Top projects data not yet available
+        </div>
+      }
+    </div>
+  </div>
+</p-drawer>
