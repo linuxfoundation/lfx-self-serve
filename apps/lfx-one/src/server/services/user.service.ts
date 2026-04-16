@@ -28,7 +28,7 @@ import {
 import { parseToInt } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
-import { ResourceNotFoundError } from '../errors';
+import { MicroserviceError, ResourceNotFoundError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
@@ -763,6 +763,53 @@ export class UserService {
   }
 
   /**
+   * TODO: TEMPORARY — Proxy call to GET ${API_GW_AUDIENCE}/user-service/v1/me?basic=true
+   * Used to validate the API Gateway token end-to-end. Will be removed once the API Gateway
+   * integration is confirmed working in all environments.
+   */
+  public async getApiGatewayProfile(req: Request): Promise<{ status: number; body: unknown }> {
+    if (!req.apiGatewayToken) {
+      throw new MicroserviceError('API Gateway token not available — check API_GW_AUDIENCE env var and auth logs', 503, 'API_GATEWAY_UNAVAILABLE', {
+        operation: 'get_salesforce_id',
+        service: 'user_service',
+      });
+    }
+
+    const apiGwAudience = process.env['API_GW_AUDIENCE'];
+
+    if (!apiGwAudience) {
+      throw new MicroserviceError('API_GW_AUDIENCE environment variable is not configured', 503, 'API_GATEWAY_MISCONFIGURED', {
+        operation: 'get_salesforce_id',
+        service: 'user_service',
+      });
+    }
+
+    logger.debug(req, 'get_api_gateway_profile', 'Calling API Gateway /user-service/v1/me');
+
+    const apiGwBaseUrl = `${apiGwAudience.replace(/\/+$/, '')}/user-service`;
+    const targetUrl = `${apiGwBaseUrl}/v1/me?basic=true`;
+
+    const upstream = await fetch(targetUrl, {
+      headers: { Authorization: `Bearer ${req.apiGatewayToken}` },
+      signal: AbortSignal.timeout(30000),
+    });
+
+    const rawBody = await upstream.text();
+
+    let body: unknown;
+
+    try {
+      body = JSON.parse(rawBody);
+    } catch {
+      body = { raw: rawBody };
+    }
+
+    logger.debug(req, 'get_api_gateway_profile', 'API Gateway response received', { upstream_status: upstream.status, body_length: rawBody.length });
+
+    return { status: upstream.status, body };
+  }
+
+  /**
    * Fetches resources by ID in parallel, filters by project, and applies limit.
    * Shared by getUserMeetings and getUserPastMeetings.
    */
@@ -985,4 +1032,5 @@ export class UserService {
       };
     }
   }
+
 }

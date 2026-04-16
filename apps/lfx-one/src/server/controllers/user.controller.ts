@@ -220,4 +220,24 @@ export class UserController {
       next(error);
     }
   }
+
+  /**
+   * GET /api/user/salesforce-id - Proxy test for the API Gateway token
+   * TODO: TEMPORARY — calls UserService.getApiGatewayProfile() which proxies
+   * GET ${API_GW_AUDIENCE}/user-service/v1/me?basic=true and returns the raw
+   * response to verify the token works end-to-end.
+   */
+  public async getSalesforceId(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_salesforce_id', {});
+
+    try {
+      const { status, body } = await this.userService.getApiGatewayProfile(req);
+
+      logger.success(req, 'get_salesforce_id', startTime, { upstream_status: status });
+
+      res.status(status).json(body);
+    } catch (error) {
+      next(error);
+    }
+  }
 }

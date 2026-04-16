@@ -69,6 +69,11 @@ of conduct, development process, and how to submit pull requests.
    - Set `PCC_AUTH0_SECRET` to a sufficiently long random string (32+ characters)
      - Generate a random 32 characters long string
 
+   **API Gateway:**
+   - Set `API_GW_AUDIENCE` to the audience for the secondary API Gateway access token
+     - This token is fetched silently alongside the primary bearer token on each authenticated request
+     - Local Development: `https://api-gw.dev.platform.linuxfoundation.org/`
+
    **M2M (Machine-to-Machine) Authentication:**
    - Set `M2M_AUTH_CLIENT_ID` and `M2M_AUTH_CLIENT_SECRET` for server-side API calls
    - Configure `M2M_AUTH_ISSUER_BASE_URL` (typically same as Auth0 base URL)
