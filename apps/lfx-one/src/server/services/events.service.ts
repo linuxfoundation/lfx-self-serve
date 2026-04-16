@@ -218,6 +218,9 @@ export class EventsService {
         ...(searchQuery ? [`%${searchQuery}%`] : []),
         ...roleFilterResult.binds,
         ...statusFilterResult.binds,
+        ...(startDateFrom ? [startDateFrom] : []),
+        ...(startDateTo ? [startDateTo] : []),
+        ...(country ? [country] : []),
       ];
       binds = [...affiliatedUpcomingBinds, ...registeredEventsBinds, ...userRegBinds, ...whereBinds];
 
