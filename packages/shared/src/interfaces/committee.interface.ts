@@ -189,6 +189,8 @@ export interface Committee {
   join_mode?: JoinMode;
 
   // ── Communication Channels ──
+  /** Whether the committee has any associated mailing lists (enriched by BFF via query-service association counts) */
+  has_mailing_list?: boolean;
   /** Mailing list email address associated with the group (plain string from upstream). Set to null to clear. */
   mailing_list?: string | null;
   /** Chat channel URL or identifier associated with the group (plain string from upstream). Set to null to clear. */

@@ -200,7 +200,7 @@
                           <span>Voting</span>
                         </div>
                       }
-                      <!-- Channels: mailing_list and chat_channel are plain strings from upstream -->
+                      <!-- Channels: mailing_list is the direct email string; has_mailing_list is an enriched boolean from query-service association -->
                       @if (committee.mailing_list) {
                         <a
                           [href]="'mailto:' + committee.mailing_list"
@@ -211,9 +211,23 @@
                           aria-label="Mailing list">
                           <i class="fa-light fa-envelope w-3.5 h-3.5" aria-hidden="true"></i>
                         </a>
+                      } @else if (committee.has_mailing_list) {
+                        <span
+                          class="flex items-center gap-1 text-sm text-gray-500 cursor-default"
+                          pTooltip="Mailing list associated"
+                          tooltipPosition="top"
+                          tabindex="0"
+                          aria-label="Mailing list associated">
+                          <i class="fa-light fa-envelope w-3.5 h-3.5" aria-hidden="true"></i>
+                        </span>
                       } @else {
-                        <span class="flex items-center gap-1 text-gray-300 cursor-default" pTooltip="No mailing list" tooltipPosition="top">
-                          <i class="fa-light fa-envelope w-3.5 h-3.5"></i>
+                        <span
+                          class="flex items-center gap-1 text-gray-300 cursor-default"
+                          pTooltip="No mailing list"
+                          tooltipPosition="top"
+                          tabindex="0"
+                          aria-label="No mailing list">
+                          <i class="fa-light fa-envelope w-3.5 h-3.5" aria-hidden="true"></i>
                         </span>
                       }
                       @if (committee.chat_channel) {

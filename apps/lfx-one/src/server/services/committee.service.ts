@@ -90,13 +90,17 @@ export class CommitteeService {
       })
     );
 
-    // Get member count for each committee in parallel
+    // Get member count and mailing list association for each committee in parallel
     committees = await Promise.all(
       committees.map(async (committee) => {
-        const memberCount = await this.getCommitteeMembersCount(req, committee.uid);
+        const [memberCount, mlCount] = await Promise.all([
+          this.getCommitteeMembersCount(req, committee.uid),
+          this.getMailingListCountByCommittee(req, committee.uid),
+        ]);
         return {
           ...committee,
           total_members: memberCount,
+          has_mailing_list: mlCount > 0,
         };
       })
     );
@@ -510,17 +514,21 @@ export class CommitteeService {
       });
     }
 
-    // Fetch committee details for each membership in parallel
+    // Fetch committee details, member count, and mailing list association in parallel
     const committeeUids = Array.from(membershipMap.keys());
     const committees = await Promise.all(
       committeeUids.map(async (uid) => {
         try {
-          const committee = await this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${uid}`, 'GET');
-          const memberCount = await this.getCommitteeMembersCount(req, uid);
+          const [committee, memberCount, mlCount] = await Promise.all([
+            this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${uid}`, 'GET'),
+            this.getCommitteeMembersCount(req, uid),
+            this.getMailingListCountByCommittee(req, uid),
+          ]);
           const membership = membershipMap.get(uid)!;
           return {
             ...committee,
             total_members: memberCount,
+            has_mailing_list: mlCount > 0,
             my_role: membership.role,
             my_member_uid: membership.member_uid,
           } as MyCommittee;
@@ -768,5 +776,25 @@ export class CommitteeService {
       committee_uid: committeeId,
       settings_data: settingsData,
     });
+  }
+
+  /**
+   * Fetches count of mailing lists associated with a specific committee.
+   * Used to determine the has_mailing_list flag for committee list views.
+   */
+  private async getMailingListCountByCommittee(req: Request, committeeId: string): Promise<number> {
+    try {
+      const { count } = await this.microserviceProxy.proxyRequest<QueryServiceCountResponse>(req, 'LFX_V2_SERVICE', '/query/resources/count', 'GET', {
+        type: 'groupsio_mailing_list',
+        tags: `committee_uid:${committeeId}`,
+      });
+      return count;
+    } catch (error) {
+      logger.debug(req, 'get_mailing_list_count_by_committee', 'Failed to fetch mailing list count, defaulting to 0', {
+        committee_uid: committeeId,
+        error: error instanceof Error ? error.message : 'Unknown error',
+      });
+      return 0;
+    }
   }
 }
