@@ -1199,5 +1199,4 @@ export class MeetingService {
 
     return nameMap;
   }
-
 }

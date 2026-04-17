@@ -288,9 +288,7 @@ export class VotesDashboardComponent {
           seen.set(item.project_uid, item.project_name || item.project_uid);
         }
       }
-      const options = [...seen.entries()]
-        .map(([uid, name]) => ({ label: name, value: uid }))
-        .sort((a, b) => a.label.localeCompare(b.label));
+      const options = [...seen.entries()].map(([uid, name]) => ({ label: name, value: uid })).sort((a, b) => a.label.localeCompare(b.label));
       return [{ label: 'All Foundations', value: null }, ...options];
     });
   }
@@ -306,9 +304,7 @@ export class VotesDashboardComponent {
           seen.set(item.project_uid, item.project_name || item.project_uid);
         }
       }
-      const options = [...seen.entries()]
-        .map(([uid, name]) => ({ label: name, value: uid }))
-        .sort((a, b) => a.label.localeCompare(b.label));
+      const options = [...seen.entries()].map(([uid, name]) => ({ label: name, value: uid })).sort((a, b) => a.label.localeCompare(b.label));
       return [{ label: 'All Projects', value: null }, ...options];
     });
   }

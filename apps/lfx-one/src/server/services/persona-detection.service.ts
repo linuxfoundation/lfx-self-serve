@@ -26,7 +26,7 @@ const DETECTION_SOURCE_MAP: Record<string, PersonaType> = {
 };
 
 /** Persona priority order (highest first) for sorting */
-const PERSONA_PRIORITY: PersonaType[] = ['board-member', 'executive-director', 'maintainer', 'contributor'];
+const PERSONA_PRIORITY: PersonaType[] = ['executive-director', 'board-member', 'maintainer', 'contributor'];
 
 /** TTL for the affiliated-project-UIDs cache, in milliseconds */
 const AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS = 15_000;

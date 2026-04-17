@@ -1,14 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import {
-  CreateVoteRequest,
-  QueryServiceCountResponse,
-  QueryServiceResponse,
-  UpdateVoteRequest,
-  Vote,
-  VoteResultsResponse,
-} from '@lfx-one/shared/interfaces';
+import { CreateVoteRequest, QueryServiceCountResponse, QueryServiceResponse, UpdateVoteRequest, Vote, VoteResultsResponse } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
