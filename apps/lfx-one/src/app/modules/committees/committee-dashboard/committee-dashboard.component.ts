@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe, NgClass } from '@angular/common';
+import { NgClass } from '@angular/common';
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
@@ -31,7 +31,6 @@ import { CommitteeTableComponent } from '../components/committee-table/committee
 @Component({
   selector: 'lfx-committee-dashboard',
   imports: [
-    DecimalPipe,
     NgClass,
     ReactiveFormsModule,
     ButtonComponent,

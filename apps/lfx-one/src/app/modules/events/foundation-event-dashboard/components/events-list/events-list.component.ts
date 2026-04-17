@@ -26,8 +26,8 @@ export class EventsListComponent {
 
   protected readonly activeTab = signal<EventTabId>('upcoming');
 
-  protected readonly upcomingEventsLoading = signal(true);
-  protected readonly pastEventsLoading = signal(true);
+  public readonly upcomingEventsLoading = signal(true);
+  public readonly pastEventsLoading = signal(true);
 
   protected readonly upcomingEventsPage = signal<PageChangeEvent>({ offset: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE });
   protected readonly pastEventsPage = signal<PageChangeEvent>({ offset: 0, pageSize: DEFAULT_EVENTS_PAGE_SIZE });
@@ -45,10 +45,12 @@ export class EventsListComponent {
     { id: 'past', label: 'Past', countKey: 'past' },
   ];
 
-  protected readonly tabCounts = computed(() => ({
+  public readonly tabCounts = computed(() => ({
     upcoming: this.upcomingEvents().total,
     past: this.pastEvents().total,
   }));
+
+  public readonly eventsStatsLoading = computed(() => this.upcomingEventsLoading() || this.pastEventsLoading());
 
   public constructor() {
     // Reset both tabs to page 1 when shared filters change

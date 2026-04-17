@@ -11,6 +11,53 @@
       <lfx-discover-events-button testId="foundation-event-discover-button" />
     </div>
 
+    <!-- Summary Stat Cards -->
+    <div data-testid="foundation-events-stats">
+      <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+        <div class="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
+          <div class="flex items-center gap-3 p-4">
+            <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
+              <i class="fa-light fa-ticket text-xl"></i>
+            </div>
+            <div class="flex flex-col gap-0.5">
+              @if (eventsList.eventsStatsLoading()) {
+                <p class="text-xl font-medium text-gray-400">&mdash;</p>
+              } @else {
+                <p class="text-xl font-medium text-gray-900">{{ eventsList.tabCounts().upcoming + eventsList.tabCounts().past }}</p>
+              }
+              <p class="text-sm font-normal text-gray-900">Total Events</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-4">
+            <div class="flex items-center justify-center w-11 h-11 rounded-full bg-emerald-100 text-emerald-600 flex-shrink-0">
+              <i class="fa-light fa-calendar-check text-xl"></i>
+            </div>
+            <div class="flex flex-col gap-0.5">
+              @if (eventsList.eventsStatsLoading()) {
+                <p class="text-xl font-medium text-gray-400">&mdash;</p>
+              } @else {
+                <p class="text-xl font-medium text-gray-900">{{ eventsList.tabCounts().past }}</p>
+              }
+              <p class="text-sm font-normal text-gray-900">Past Events</p>
+            </div>
+          </div>
+          <div class="flex items-center gap-3 p-4">
+            <div class="flex items-center justify-center w-11 h-11 rounded-full bg-gray-200 text-gray-500 flex-shrink-0">
+              <i class="fa-light fa-calendar-plus text-xl"></i>
+            </div>
+            <div class="flex flex-col gap-0.5">
+              @if (eventsList.eventsStatsLoading()) {
+                <p class="text-xl font-medium text-gray-400">&mdash;</p>
+              } @else {
+                <p class="text-xl font-medium text-gray-900">{{ eventsList.tabCounts().upcoming }}</p>
+              }
+              <p class="text-sm font-normal text-gray-900">Upcoming Events</p>
+            </div>
+          </div>
+        </div>
+      </lfx-card>
+    </div>
+
     <!-- Search and Filters -->
     <div class="bg-white rounded-lg border border-gray-200 p-4">
       <lfx-events-top-bar
@@ -21,6 +68,6 @@
     </div>
 
     <!-- Events List (Tabs + Table) -->
-    <lfx-foundation-events-list [foundation]="userFoundation()" [searchQuery]="selectedSearchQuery()" [status]="selectedStatus()" />
+    <lfx-foundation-events-list #eventsList [foundation]="userFoundation()" [searchQuery]="selectedSearchQuery()" [status]="selectedStatus()" />
   </div>
 </div>

@@ -12,6 +12,53 @@
   <div class="flex flex-col lg:flex-row gap-6 items-start" data-testid="trainings-layout">
     <!-- ── Left / Main column ─────────────────────────────────────────────── -->
     <div class="flex-1 min-w-0" data-testid="trainings-main-col">
+      <!-- Summary Stat Cards -->
+      <div class="mb-6" data-testid="trainings-stats">
+        <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+          <div class="grid grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
+            <div class="flex items-center gap-3 p-4">
+              <div class="flex items-center justify-center w-11 h-11 rounded-full bg-purple-100 text-purple-600 flex-shrink-0">
+                <i class="fa-light fa-award text-xl"></i>
+              </div>
+              <div class="flex flex-col gap-0.5">
+                @if (trainingsStatsLoading()) {
+                  <p class="text-xl font-medium text-gray-400">&mdash;</p>
+                } @else {
+                  <p class="text-xl font-medium text-gray-900">{{ certificatesCount() }}</p>
+                }
+                <p class="text-sm font-normal text-gray-900">Certificates Earned</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-4">
+              <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
+                <i class="fa-light fa-book-open text-xl"></i>
+              </div>
+              <div class="flex flex-col gap-0.5">
+                @if (trainingsStatsLoading()) {
+                  <p class="text-xl font-medium text-gray-400">&mdash;</p>
+                } @else {
+                  <p class="text-xl font-medium text-gray-900">{{ enrolledCount() }}</p>
+                }
+                <p class="text-sm font-normal text-gray-900">Enrolled Trainings</p>
+              </div>
+            </div>
+            <div class="flex items-center gap-3 p-4">
+              <div class="flex items-center justify-center w-11 h-11 rounded-full bg-emerald-100 text-emerald-600 flex-shrink-0">
+                <i class="fa-light fa-circle-check text-xl"></i>
+              </div>
+              <div class="flex flex-col gap-0.5">
+                @if (trainingsStatsLoading()) {
+                  <p class="text-xl font-medium text-gray-400">&mdash;</p>
+                } @else {
+                  <p class="text-xl font-medium text-gray-900">{{ completedCount() }}</p>
+                }
+                <p class="text-sm font-normal text-gray-900">Completed Trainings</p>
+              </div>
+            </div>
+          </div>
+        </lfx-card>
+      </div>
+
       <!-- Tab switcher -->
       <div class="mb-6" data-testid="trainings-tabs">
         <lfx-filter-pills [options]="tabOptions" [selectedFilter]="activeTab()" (filterChange)="onTabChange($event)" />

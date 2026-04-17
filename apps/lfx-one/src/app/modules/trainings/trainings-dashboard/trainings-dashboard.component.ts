@@ -3,12 +3,13 @@
 
 // Generated with [Claude Code](https://claude.ai/code)
 
-import { ChangeDetectionStrategy, Component, inject, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { Certification, FilterPillOption, TrainingEnrollment } from '@lfx-one/shared/interfaces';
 import { CERTIFICATION_PRODUCT_TYPE, TRAINING_PRODUCT_TYPE } from '@lfx-one/shared/constants';
 
 import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TrainingService } from '@shared/services/training.service';
 import { CertificationCardComponent } from '../components/certification-card/certification-card.component';
@@ -42,7 +43,7 @@ const USEFUL_LINKS = [
 
 @Component({
   selector: 'lfx-trainings-dashboard',
-  imports: [ButtonComponent, CertificationCardComponent, FilterPillsComponent, TrainingCardComponent],
+  imports: [ButtonComponent, CardComponent, CertificationCardComponent, FilterPillsComponent, TrainingCardComponent],
   templateUrl: './trainings-dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -62,6 +63,14 @@ export class TrainingsDashboardComponent {
   protected readonly certifications: Signal<Certification[] | undefined> = this.initCertifications();
   protected readonly enrollments: Signal<TrainingEnrollment[] | undefined> = this.initEnrollments();
   protected readonly completedTrainings: Signal<Certification[] | undefined> = this.initCompletedTrainings();
+
+  // ─── Stat Card Signals ─────────────────────────────────────────────────────
+  protected readonly trainingsStatsLoading = computed(
+    () => this.certifications() === undefined || this.enrollments() === undefined || this.completedTrainings() === undefined
+  );
+  protected readonly enrolledCount = computed(() => this.enrollments()?.length ?? 0);
+  protected readonly completedCount = computed(() => this.completedTrainings()?.length ?? 0);
+  protected readonly certificatesCount = computed(() => this.certifications()?.length ?? 0);
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected onTabChange(tabId: string): void {

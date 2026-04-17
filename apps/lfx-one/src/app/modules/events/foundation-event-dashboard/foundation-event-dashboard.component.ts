@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, signal } from '@angular/core';
+import { CardComponent } from '@components/card/card.component';
 import { ProjectContextService } from '@app/shared/services/project-context.service';
 import { FOUNDATION_EVENT_STATUS_OPTIONS } from '@lfx-one/shared/constants';
 import { DiscoverEventsButtonComponent } from '../components/discover-events-button/discover-events-button.component';
@@ -10,7 +11,7 @@ import { EventsListComponent } from './components/events-list/events-list.compon
 
 @Component({
   selector: 'lfx-foundation-event-dashboard',
-  imports: [DiscoverEventsButtonComponent, EventsTopBarComponent, EventsListComponent],
+  imports: [CardComponent, DiscoverEventsButtonComponent, EventsTopBarComponent, EventsListComponent],
   templateUrl: './foundation-event-dashboard.component.html',
   styleUrl: './foundation-event-dashboard.component.scss',
 })

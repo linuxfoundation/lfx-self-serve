@@ -52,10 +52,17 @@ export class EventsListComponent {
     { id: 'travel-funding', label: 'Travel Funding' },
   ];
 
-  protected readonly tabCounts = computed(() => ({
+  public readonly tabCounts = computed(() => ({
     upcoming: this.upcomingEvents().total,
     past: this.pastEvents().total,
   }));
+
+  // Me lens stat cards (public so parent can render them above filters)
+  public readonly eventsStatsLoading = computed(() => this.upcomingEventsLoading() || this.pastEventsLoading());
+  public readonly registeredCount = computed(() => this.upcomingEvents().data.filter((e) => e.isRegistered).length);
+  public readonly attendedCount = computed(() => this.pastEvents().total);
+  public readonly nextEventName = computed(() => this.upcomingEvents().data[0]?.name ?? '');
+  public readonly availableToJoinCount = computed(() => this.upcomingEvents().data.filter((e) => !e.isRegistered).length);
 
   public constructor() {
     // Reset both tabs to page 1 when shared filters change
