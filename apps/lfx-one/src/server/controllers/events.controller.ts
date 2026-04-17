@@ -22,6 +22,7 @@ import {
   GetEventRequestsOptions,
   GetEventsOptions,
   GetUpcomingCountriesResponse,
+  OrgSearchResponse,
   TravelFundApplication,
   TravelFundRequestsResponse,
   VisaRequestApplication,
@@ -322,9 +323,37 @@ export class EventsController {
   }
 
   /**
+   * GET /api/events/search-organizations
+   * Search organizations by name via the API Gateway organization-service.
+   * Query params: name (string, required)
+   */
+  public async searchOrganizations(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const name = req.query['name'] ? String(req.query['name']).trim() : '';
+
+    const startTime = logger.startOperation(req, 'search_organizations', { name });
+
+    try {
+      if (!name) {
+        throw ServiceValidationError.forField('name', 'name query parameter is required', {
+          operation: 'search_organizations',
+          service: 'events_controller',
+          path: req.path,
+        });
+      }
+
+      const response: OrgSearchResponse = await this.eventsService.searchOrganizations(req, name);
+
+      logger.success(req, 'search_organizations', startTime, { result_count: response.data.length });
+
+      res.json(response);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * POST /api/events/visa-applications
    * Submit a visa letter application
-   * TODO: Wire to upstream microservice once available.
    */
   public async submitVisaRequestApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'submit_visa_request_application', {});
@@ -364,7 +393,6 @@ export class EventsController {
   /**
    * POST /api/events/travel-fund-applications
    * Submit a travel fund application
-   * TODO: Wire to upstream microservice once available.
    */
   public async submitTravelFundApplication(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'submit_travel_fund_application', {});

@@ -19,6 +19,7 @@ import {
   PastMeeting,
   ProfileAuthStatus,
   ProfileUpdateRequest,
+  SalesforceIdResponse,
   SendEmailVerificationResponse,
   TwoFactorSettings,
   UpdateEmailPreferencesRequest,
@@ -44,6 +45,9 @@ export class UserService {
   public impersonator: WritableSignal<Impersonator | null> = signal<Impersonator | null>(null);
   public canImpersonate: WritableSignal<boolean> = signal<boolean>(false);
   public readonly userInitials: Signal<string> = this.initUserInitials();
+
+  /** Cached Salesforce user ID from the API Gateway — null until first fetch */
+  public readonly apiGatewayUserId = signal<string | null>(null);
 
   // Create a new user with permissions
   public createUserWithPermissions(userData: CreateUserPermissionRequest): Observable<any> {
@@ -278,6 +282,13 @@ export class UserService {
    */
   public verifyAndLinkEmail(email: string, otp: string): Observable<VerifyAndLinkEmailResponse> {
     return this.http.post<VerifyAndLinkEmailResponse>('/api/profile/identities/email/verify', { email, otp }).pipe(take(1));
+  }
+
+  /**
+   * Fetches the current user's API Gateway profile (includes Salesforce ID).
+   */
+  public getSalesforceId(): Observable<SalesforceIdResponse> {
+    return this.http.get<SalesforceIdResponse>('/api/user/salesforce-id').pipe(take(1));
   }
 
   private initUserInitials(): Signal<string> {

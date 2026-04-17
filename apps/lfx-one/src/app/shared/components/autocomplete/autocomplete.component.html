@@ -15,6 +15,7 @@
     (completeMethod)="searchCompleted($event)"
     (onSelect)="optionSelected($event)"
     (onClear)="onClear.emit()"
+    (onBlur)="onBlur.emit()"
     [attr.data-testid]="dataTestId()"
     [autoOptionFocus]="autoOptionFocus()"
     [completeOnFocus]="completeOnFocus()"

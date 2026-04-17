@@ -4,9 +4,10 @@
 <div class="flex justify-end my-4 pr-4">
   <lfx-button
     [label]="config().buttonLabel"
-    icon="fa-light fa-plus"
+    [icon]="isSalesforceIdLoading() ? 'fa-light fa-spinner-third fa-spin' : 'fa-light fa-plus'"
     severity="primary"
     size="small"
+    [disabled]="!isCreateEnabled()"
     (onClick)="openApplicationDialog()"
     [attr.data-testid]="config().testIdPrefix + '-discover-button'" />
 </div>

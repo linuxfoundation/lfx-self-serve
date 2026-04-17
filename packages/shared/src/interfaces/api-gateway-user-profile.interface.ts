@@ -5,8 +5,9 @@
  * NOTE: Property names in these interfaces intentionally use PascalCase to match the upstream
  * API Gateway response contract (Salesforce-backed). This deviates from the project's camelCase
  * convention; the casing must be preserved to correctly deserialize the raw JSON response.
- * Shape derived from manual inspection of GET ${API_GW_AUDIENCE}/user-service/v1/me?basic=true.
- * @source API Gateway /user-service/v1/me endpoint (no published OpenAPI spec)
+ * @source API Gateway /user-service/v1/me endpoint
+ * @see https://api-gw.dev.platform.linuxfoundation.org/user-service/v1/api-docs#tag/me (ReDoc UI)
+ * @see https://api-gw.dev.platform.linuxfoundation.org/user-service/swagger.json (OpenAPI spec)
  */
 
 /**

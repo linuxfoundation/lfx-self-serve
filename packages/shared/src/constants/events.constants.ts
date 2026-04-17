@@ -3,6 +3,8 @@
 
 import { FoundationEventStatus } from '../enums';
 import {
+  AttendeeAccommodationPaidBy,
+  AttendeeType,
   FilterOption,
   MyEventsResponse,
   EventsResponse,
@@ -84,6 +86,18 @@ export const EMPTY_TRAVEL_FUND_REQUESTS_RESPONSE: TravelFundRequestsResponse = {
 export const YES_NO_OPTIONS: FilterOption[] = [
   { label: 'Yes', value: 'yes' },
   { label: 'No', value: 'no' },
+];
+
+export const ATTENDEE_TYPE_OPTIONS: { label: string; value: AttendeeType }[] = [
+  { label: 'Attendee', value: 'attendee' },
+  { label: 'Speaker', value: 'speaker' },
+];
+
+export const ACCOMMODATION_PAID_BY_OPTIONS: { label: string; value: AttendeeAccommodationPaidBy }[] = [
+  { label: 'Delegate (self-paid)', value: 'delegate' },
+  { label: "Delegate's Company", value: 'delegates_company' },
+  { label: 'The Linux Foundation', value: 'the_linux_foundation' },
+  { label: 'CNCF', value: 'cncf' },
 ];
 
 export const TRAVEL_FUND_STEP_ORDER: TravelFundStep[] = ['select-event', 'terms', 'about-me', 'expenses'];

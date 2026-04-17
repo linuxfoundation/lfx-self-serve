@@ -84,6 +84,45 @@
     </div>
   </div>
 
+  <!-- Row 3b: Date of Birth | Attendee Type -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">Date of Birth <span class="text-red-500">*</span></label>
+      <lfx-calendar [form]="form" control="birthDate" placeholder="MM/DD/YYYY" styleClass="w-full" dataTest="visa-apply-birth-date" />
+      @if (form.get('birthDate')?.invalid && form.get('birthDate')?.touched) {
+        <span class="text-xs text-red-500" data-testid="visa-apply-birth-date-error">Date of birth is required</span>
+      }
+    </div>
+    <div class="flex flex-col gap-1">
+      <label class="text-sm font-medium text-gray-700">Attendee Type <span class="text-red-500">*</span></label>
+      <lfx-select
+        [form]="form"
+        control="attendeeType"
+        [options]="attendeeTypeOptions"
+        placeholder="Select attendee type"
+        styleClass="w-full"
+        dataTest="visa-apply-attendee-type" />
+      @if (form.get('attendeeType')?.invalid && form.get('attendeeType')?.touched) {
+        <span class="text-xs text-red-500" data-testid="visa-apply-attendee-type-error">Attendee type is required</span>
+      }
+    </div>
+  </div>
+
+  <!-- Row 3c: Accommodation Paid By (full width) -->
+  <div class="flex flex-col gap-1">
+    <label class="text-sm font-medium text-gray-700">Accommodation Paid By <span class="text-red-500">*</span></label>
+    <lfx-select
+      [form]="form"
+      control="attendeeAccommodationPaidBy"
+      [options]="accommodationOptions"
+      placeholder="Select who pays for accommodation"
+      styleClass="w-full"
+      dataTest="visa-apply-accommodation-paid-by" />
+    @if (form.get('attendeeAccommodationPaidBy')?.invalid && form.get('attendeeAccommodationPaidBy')?.touched) {
+      <span class="text-xs text-red-500" data-testid="visa-apply-accommodation-paid-by-error">Accommodation paid by is required</span>
+    }
+  </div>
+
   <!-- Row 4: Embassy / Consulate City | Company / Organization -->
   <div class="grid grid-cols-2 gap-4">
     <div class="flex flex-col gap-1">
@@ -100,17 +139,7 @@
         <span class="text-xs text-red-500" data-testid="visa-apply-embassy-city-error">Embassy city is required</span>
       }
     </div>
-    <div class="flex flex-col gap-1">
-      <label for="visa-company" class="text-sm font-medium text-gray-700">Company / Organization</label>
-      <lfx-input-text
-        [form]="form"
-        control="company"
-        id="visa-company"
-        size="small"
-        placeholder="Acme Corp"
-        styleClass="w-full"
-        dataTest="visa-apply-company" />
-    </div>
+    <lfx-org-search-field [form]="form" />
   </div>
 
   <!-- Row 5: Mailing Address (full width) -->

@@ -2,47 +2,57 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col" data-testid="visa-request-application-dialog">
-  <!-- Step indicator -->
-  <lfx-step-indicator [stepStates]="stepStates()" testIdPrefix="visa-request" />
+  @if (submitted()) {
+    <!-- Success screen -->
+    <lfx-application-success [eventName]="submittedEventName()" requestType="visa" />
 
-  <!-- Step content -->
-  @if (step() === 'select-event') {
-    <div class="scroll-area overflow-y-auto pr-1">
-      <lfx-event-selection [(selectedEvent)]="selectedEvent" />
+    <!-- Footer -->
+    <div class="mt-5 flex items-center justify-end border-t border-gray-100 pt-4" data-testid="visa-request-footer">
+      <lfx-button label="Close" severity="primary" size="small" (onClick)="onCancel()" data-testid="visa-request-close" />
     </div>
-  } @else if (step() === 'terms') {
-    <lfx-visa-request-terms />
-  } @else if (step() === 'apply') {
-    <lfx-visa-request-apply-form (formValidityChange)="applyFormValid.set($event)" (formChange)="applicantData.set($event)" />
+  } @else {
+    <!-- Step indicator -->
+    <lfx-step-indicator [stepStates]="stepStates()" testIdPrefix="visa-request" />
+
+    <!-- Step content -->
+    @if (step() === 'select-event') {
+      <div class="scroll-area overflow-y-auto pr-1">
+        <lfx-event-selection [(selectedEvent)]="selectedEvent" />
+      </div>
+    } @else if (step() === 'terms') {
+      <lfx-visa-request-terms />
+    } @else if (step() === 'apply') {
+      <lfx-visa-request-apply-form (formValidityChange)="applyFormValid.set($event)" (formChange)="applicantData.set($event)" />
+    }
+
+    <!-- Footer -->
+    <div class="mt-5 flex items-center justify-between border-t border-gray-100 pt-4" data-testid="visa-request-footer">
+      <lfx-button label="Cancel" severity="secondary" size="small" (onClick)="onCancel()" data-testid="visa-request-cancel" />
+      <div class="flex items-center gap-2">
+        @if (step() !== 'select-event') {
+          <lfx-button label="Previous Step" [outlined]="true" size="small" (onClick)="onPreviousStep()" data-testid="visa-request-previous-step" />
+        }
+        @if (step() === 'terms') {
+          <lfx-button label="I Agree" severity="primary" size="small" (onClick)="onNextStep()" data-testid="visa-request-agree" />
+        } @else if (step() === 'apply') {
+          <lfx-button
+            label="Submit Application"
+            severity="primary"
+            size="small"
+            [disabled]="isNextDisabled() || submitting()"
+            [loading]="submitting()"
+            (onClick)="onSubmitApplication()"
+            data-testid="visa-request-submit" />
+        } @else {
+          <lfx-button
+            label="Next Step"
+            severity="primary"
+            size="small"
+            [disabled]="isNextDisabled()"
+            (onClick)="onNextStep()"
+            data-testid="visa-request-next-step" />
+        }
+      </div>
+    </div>
   }
-
-  <!-- Footer -->
-  <div class="mt-5 flex items-center justify-between border-t border-gray-100 pt-4" data-testid="visa-request-footer">
-    <lfx-button label="Cancel" severity="secondary" size="small" (onClick)="onCancel()" data-testid="visa-request-cancel" />
-    <div class="flex items-center gap-2">
-      @if (step() !== 'select-event') {
-        <lfx-button label="Previous Step" [outlined]="true" size="small" (onClick)="onPreviousStep()" data-testid="visa-request-previous-step" />
-      }
-      @if (step() === 'terms') {
-        <lfx-button label="I Agree" severity="primary" size="small" (onClick)="onNextStep()" data-testid="visa-request-agree" />
-      } @else if (step() === 'apply') {
-        <lfx-button
-          label="Submit Application"
-          severity="primary"
-          size="small"
-          [disabled]="isNextDisabled() || submitting()"
-          [loading]="submitting()"
-          (onClick)="onSubmitApplication()"
-          data-testid="visa-request-submit" />
-      } @else {
-        <lfx-button
-          label="Next Step"
-          severity="primary"
-          size="small"
-          [disabled]="isNextDisabled()"
-          (onClick)="onNextStep()"
-          data-testid="visa-request-next-step" />
-      }
-    </div>
-  </div>
 </div>

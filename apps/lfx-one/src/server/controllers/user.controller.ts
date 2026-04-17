@@ -222,20 +222,28 @@ export class UserController {
   }
 
   /**
-   * GET /api/user/salesforce-id - Proxy test for the API Gateway token
-   * TODO: TEMPORARY — calls UserService.getApiGatewayProfile() which proxies
-   * GET ${API_GW_AUDIENCE}/user-service/v1/me?basic=true and returns the raw
-   * response to verify the token works end-to-end.
+   * GET /api/user/salesforce-id - Returns the current user's Salesforce ID
+   * Proxies GET ${API_GW_AUDIENCE}/user-service/v1/me?basic=true and returns only
+   * an object containing the profile ID in the shape `{ id: profile.ID }`.
+   * The ID field is used by downstream operations such as visa letter and travel
+   * fund applications.
    */
   public async getSalesforceId(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_salesforce_id', {});
 
     try {
-      const { status, body } = await this.userService.getApiGatewayProfile(req);
+      const profile = await this.userService.getApiGatewayProfile(req);
 
-      logger.success(req, 'get_salesforce_id', startTime, { upstream_status: status });
+      if (!profile.ID) {
+        throw new ServiceValidationError(
+          [{ field: 'id', message: 'Salesforce ID not found for this user', code: 'SALESFORCE_ID_NOT_FOUND' }],
+          'Salesforce ID not found'
+        );
+      }
 
-      res.status(status).json(body);
+      logger.success(req, 'get_salesforce_id', startTime, {});
+
+      res.json({ id: profile.ID });
     } catch (error) {
       next(error);
     }

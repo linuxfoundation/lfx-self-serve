@@ -437,6 +437,7 @@ export interface TravelFundAboutMe {
   citizenshipCountry: string;
   profileLink: string;
   company: string;
+  organizationID?: string;
   canReceiveFunds: string;
   travelFromCountry: string;
   openSourceInvolvement: string;
@@ -463,6 +464,8 @@ export interface TravelFundApplication {
   eventId: string;
   eventName: string;
   termsAccepted: boolean;
+  /** Salesforce user record ID — client-provided in the request shape; the server should ignore it and derive/validate the effective user from the session */
+  userId: string;
   aboutMe: TravelFundAboutMe;
   expenses: TravelFundExpenses;
 }
@@ -476,22 +479,39 @@ export interface TravelFundApplicationResponse {
 // Visa Request Application
 // ---------------------------------------------------------------------------
 
+/** Who pays for the attendee's accommodation — maps to attendeeAccommodationPaidBy in the user-service API */
+export type AttendeeAccommodationPaidBy = 'delegate' | 'delegates_company' | 'the_linux_foundation' | 'cncf';
+
+/** Attendee role at the event — maps to attendeeType in the user-service API */
+export type AttendeeType = 'attendee' | 'speaker';
+
 export interface VisaRequestApplicantInfo {
   firstName: string;
   lastName: string;
   email: string;
   passportNumber: string;
+  /** Country of citizenship — maps to birthCountry in the user-service API */
   citizenshipCountry: string;
   passportExpiryDate: Date | null;
   embassyCity: string;
+  /** Organization ID — selected from the autocomplete component */
+  organizationID: string;
   company: string;
   mailingAddress: string;
+  /** Who pays for the attendee's accommodation */
+  attendeeAccommodationPaidBy: AttendeeAccommodationPaidBy;
+  /** Attendee role at the event */
+  attendeeType: AttendeeType;
+  /** Date of birth */
+  birthDate: Date | null;
 }
 
 export interface VisaRequestApplication {
   eventId: string;
   eventName: string;
   termsAccepted: boolean;
+  /** Salesforce user record ID — ignored by the server; the server derives this from the authenticated session via the API Gateway profile */
+  userId: string;
   applicantInfo: VisaRequestApplicantInfo;
 }
 
@@ -502,3 +522,34 @@ export interface VisaRequestApplicationResponse {
 
 export type RequestType = 'visa' | 'travel-fund';
 export type TimeFilterValue = 'any' | 'this-month' | 'next-3-months';
+
+// ---------------------------------------------------------------------------
+// Organization Search
+// ---------------------------------------------------------------------------
+
+/**
+ * A single organization result from the API Gateway organization search endpoint.
+ * Only ID and Name are surfaced — the upstream response contains many additional fields.
+ */
+export interface OrgSearchResult {
+  id: string;
+  name: string;
+}
+
+/**
+ * Response for organization name search
+ */
+export interface OrgSearchResponse {
+  data: OrgSearchResult[];
+}
+
+// ---------------------------------------------------------------------------
+// Salesforce ID
+// ---------------------------------------------------------------------------
+
+/**
+ * Response from the /api/user/salesforce-id endpoint.
+ */
+export interface SalesforceIdResponse {
+  id: string;
+}

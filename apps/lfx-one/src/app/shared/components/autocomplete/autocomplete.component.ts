@@ -43,6 +43,7 @@ export class AutocompleteComponent {
   public readonly completeMethod = output<AutoCompleteCompleteEvent>();
   public readonly onSelect = output<AutoCompleteSelectEvent>();
   public readonly onClear = output<void>();
+  public readonly onBlur = output<void>();
 
   // Computed style class that includes dropdown-mode and has-clear when applicable
   public readonly computedStyleClass: Signal<string> = this.initComputedStyleClass();

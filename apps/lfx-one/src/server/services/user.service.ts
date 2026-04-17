@@ -6,6 +6,7 @@ import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
   ActiveWeeksStreakRow,
+  ApiGatewayUserProfile,
   Meeting,
   MeetingOccurrence,
   MeetingRegistrant,
@@ -763,14 +764,14 @@ export class UserService {
   }
 
   /**
-   * TODO: TEMPORARY — Proxy call to GET ${API_GW_AUDIENCE}/user-service/v1/me?basic=true
-   * Used to validate the API Gateway token end-to-end. Will be removed once the API Gateway
-   * integration is confirmed working in all environments.
+   * Fetches the current user's profile from the API Gateway (/user-service/v1/me).
+   * Returns the Salesforce-backed user profile including the Salesforce record ID (ID field).
+   * Used by downstream operations that require the user's Salesforce ID (e.g. visa and travel fund submissions).
    */
-  public async getApiGatewayProfile(req: Request): Promise<{ status: number; body: unknown }> {
+  public async getApiGatewayProfile(req: Request): Promise<ApiGatewayUserProfile> {
     if (!req.apiGatewayToken) {
       throw new MicroserviceError('API Gateway token not available — check API_GW_AUDIENCE env var and auth logs', 503, 'API_GATEWAY_UNAVAILABLE', {
-        operation: 'get_salesforce_id',
+        operation: 'get_api_gateway_profile',
         service: 'user_service',
       });
     }
@@ -779,7 +780,7 @@ export class UserService {
 
     if (!apiGwAudience) {
       throw new MicroserviceError('API_GW_AUDIENCE environment variable is not configured', 503, 'API_GATEWAY_MISCONFIGURED', {
-        operation: 'get_salesforce_id',
+        operation: 'get_api_gateway_profile',
         service: 'user_service',
       });
     }
@@ -794,19 +795,29 @@ export class UserService {
       signal: AbortSignal.timeout(30000),
     });
 
-    const rawBody = await upstream.text();
-
-    let body: unknown;
-
-    try {
-      body = JSON.parse(rawBody);
-    } catch {
-      body = { raw: rawBody };
+    if (!upstream.ok) {
+      throw new MicroserviceError(`API Gateway returned ${upstream.status}`, upstream.status, 'API_GATEWAY_ERROR', {
+        operation: 'get_api_gateway_profile',
+        service: 'user_service',
+      });
     }
 
-    logger.debug(req, 'get_api_gateway_profile', 'API Gateway response received', { upstream_status: upstream.status, body_length: rawBody.length });
+    const rawBody = await upstream.text().catch(() => '');
+    let profile: ApiGatewayUserProfile;
 
-    return { status: upstream.status, body };
+    try {
+      profile = JSON.parse(rawBody) as ApiGatewayUserProfile;
+    } catch {
+      throw new MicroserviceError('API Gateway returned invalid JSON', 502, 'API_GATEWAY_INVALID_RESPONSE', {
+        operation: 'get_api_gateway_profile',
+        service: 'user_service',
+        errorBody: rawBody.slice(0, 500),
+      });
+    }
+
+    logger.debug(req, 'get_api_gateway_profile', 'API Gateway profile received', { salesforce_id: Boolean(profile.ID) });
+
+    return profile;
   }
 
   /**

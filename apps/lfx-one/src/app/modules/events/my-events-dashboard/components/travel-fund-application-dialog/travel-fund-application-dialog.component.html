@@ -2,49 +2,59 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex flex-col" data-testid="travel-fund-application-dialog">
-  <!-- Step indicator -->
-  <lfx-step-indicator [stepStates]="stepStates()" testIdPrefix="travel-fund" />
+  @if (submitted()) {
+    <!-- Success screen -->
+    <lfx-application-success [eventName]="submittedEventName()" requestType="travel-fund" />
 
-  <!-- Step content -->
-  <div class="scroll-area overflow-y-auto pr-1">
-    @if (step() === 'select-event') {
-      <lfx-event-selection [(selectedEvent)]="selectedEvent" />
-    } @else if (step() === 'terms') {
-      <lfx-travel-fund-terms />
-    } @else if (step() === 'about-me') {
-      <lfx-about-me-form (formValidityChange)="aboutMeFormValid.set($event)" (formChange)="aboutMeData.set($event)" />
-    } @else if (step() === 'expenses') {
-      <lfx-travel-expenses-form (formValidityChange)="expensesFormValid.set($event)" (formChange)="expensesData.set($event)" />
-    }
-  </div>
+    <!-- Footer -->
+    <div class="mt-5 flex items-center justify-end border-t border-gray-100 pt-4" data-testid="travel-fund-footer">
+      <lfx-button label="Close" severity="primary" size="small" (onClick)="onCancel()" data-testid="travel-fund-close" />
+    </div>
+  } @else {
+    <!-- Step indicator -->
+    <lfx-step-indicator [stepStates]="stepStates()" testIdPrefix="travel-fund" />
 
-  <!-- Footer -->
-  <div class="mt-5 flex items-center justify-between border-t border-gray-100 pt-4" data-testid="travel-fund-footer">
-    <lfx-button label="Cancel" severity="secondary" size="small" (onClick)="onCancel()" data-testid="travel-fund-cancel" />
-    <div class="flex items-center gap-2">
-      @if (step() !== 'select-event') {
-        <lfx-button label="Previous Step" [outlined]="true" size="small" (onClick)="onPreviousStep()" data-testid="travel-fund-previous-step" />
-      }
-      @if (step() === 'terms') {
-        <lfx-button label="I Agree" severity="primary" size="small" (onClick)="onNextStep()" data-testid="travel-fund-agree" />
+    <!-- Step content -->
+    <div class="scroll-area overflow-y-auto pr-1">
+      @if (step() === 'select-event') {
+        <lfx-event-selection [(selectedEvent)]="selectedEvent" />
+      } @else if (step() === 'terms') {
+        <lfx-travel-fund-terms />
+      } @else if (step() === 'about-me') {
+        <lfx-about-me-form (formValidityChange)="aboutMeFormValid.set($event)" (formChange)="aboutMeData.set($event)" />
       } @else if (step() === 'expenses') {
-        <lfx-button
-          label="Submit Application"
-          severity="primary"
-          size="small"
-          [loading]="submitting()"
-          [disabled]="submitting() || !expensesFormValid()"
-          (onClick)="onSubmitApplication()"
-          data-testid="travel-fund-submit" />
-      } @else {
-        <lfx-button
-          label="Next Step"
-          severity="primary"
-          size="small"
-          [disabled]="isNextDisabled()"
-          (onClick)="onNextStep()"
-          data-testid="travel-fund-next-step" />
+        <lfx-travel-expenses-form (formValidityChange)="expensesFormValid.set($event)" (formChange)="expensesData.set($event)" />
       }
     </div>
-  </div>
+
+    <!-- Footer -->
+    <div class="mt-5 flex items-center justify-between border-t border-gray-100 pt-4" data-testid="travel-fund-footer">
+      <lfx-button label="Cancel" severity="secondary" size="small" (onClick)="onCancel()" data-testid="travel-fund-cancel" />
+      <div class="flex items-center gap-2">
+        @if (step() !== 'select-event') {
+          <lfx-button label="Previous Step" [outlined]="true" size="small" (onClick)="onPreviousStep()" data-testid="travel-fund-previous-step" />
+        }
+        @if (step() === 'terms') {
+          <lfx-button label="I Agree" severity="primary" size="small" (onClick)="onNextStep()" data-testid="travel-fund-agree" />
+        } @else if (step() === 'expenses') {
+          <lfx-button
+            label="Submit Application"
+            severity="primary"
+            size="small"
+            [loading]="submitting()"
+            [disabled]="submitting() || !expensesFormValid()"
+            (onClick)="onSubmitApplication()"
+            data-testid="travel-fund-submit" />
+        } @else {
+          <lfx-button
+            label="Next Step"
+            severity="primary"
+            size="small"
+            [disabled]="isNextDisabled()"
+            (onClick)="onNextStep()"
+            data-testid="travel-fund-next-step" />
+        }
+      </div>
+    </div>
+  }
 </div>

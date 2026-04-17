@@ -76,20 +76,7 @@
         <span class="text-xs text-red-500" data-testid="about-me-profile-link-error">Profile link is required</span>
       }
     </div>
-    <div class="flex flex-col gap-1">
-      <label for="about-me-company" class="text-sm font-medium text-gray-700"> Company <span class="text-red-500">*</span> </label>
-      <lfx-input-text
-        [form]="form"
-        control="company"
-        placeholder="Company Name"
-        id="about-me-company"
-        size="small"
-        styleClass="w-full"
-        dataTest="about-me-company" />
-      @if (form.get('company')?.invalid && form.get('company')?.touched) {
-        <span class="text-xs text-red-500" data-testid="about-me-company-error">Company is required</span>
-      }
-    </div>
+    <lfx-org-search-field [form]="form" />
   </div>
 
   <!-- Row 4: Can Receive Funds | Travel From Country -->

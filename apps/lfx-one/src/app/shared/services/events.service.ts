@@ -15,6 +15,7 @@ import {
   GetUpcomingCountriesResponse,
   MyEventOrganizationsResponse,
   MyEventsResponse,
+  OrgSearchResponse,
   TravelFundApplication,
   TravelFundApplicationResponse,
   TravelFundRequestsResponse,
@@ -116,6 +117,12 @@ export class EventsService {
 
   public submitTravelFundApplication(payload: TravelFundApplication): Observable<TravelFundApplicationResponse> {
     return this.http.post<TravelFundApplicationResponse>('/api/events/travel-fund-applications', payload);
+  }
+
+  public searchOrganizations(name: string): Observable<OrgSearchResponse> {
+    const params = new HttpParams().set('name', name);
+
+    return this.http.get<OrgSearchResponse>('/api/events/search-organizations', { params });
   }
 
   public getCertificate(params: GetCertificateParams): Observable<Blob> {

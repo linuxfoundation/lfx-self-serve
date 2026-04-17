@@ -13,10 +13,11 @@ import { COUNTRIES } from '@lfx-one/shared/constants';
 import { TravelFundAboutMe } from '@lfx-one/shared/interfaces';
 import { YES_NO_OPTIONS } from '@lfx-one/shared/constants/events.constants';
 import { startWith } from 'rxjs';
+import { OrgSearchFieldComponent } from '../org-search-field/org-search-field.component';
 
 @Component({
   selector: 'lfx-about-me-form',
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, TextareaComponent, CheckboxComponent],
+  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, TextareaComponent, CheckboxComponent, OrgSearchFieldComponent],
   templateUrl: './about-me-form.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -34,6 +35,7 @@ export class AboutMeFormComponent {
     citizenshipCountry: ['', Validators.required],
     profileLink: ['', Validators.required],
     company: ['', Validators.required],
+    organizationID: [''],
     canReceiveFunds: ['', Validators.required],
     travelFromCountry: ['', Validators.required],
     openSourceInvolvement: ['', Validators.required],

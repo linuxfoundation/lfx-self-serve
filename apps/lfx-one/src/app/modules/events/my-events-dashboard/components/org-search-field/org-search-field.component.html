@@ -1,0 +1,24 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex flex-col gap-1">
+  <label class="text-sm font-medium text-gray-700">Company / Organization <span class="text-red-500">*</span></label>
+  <lfx-autocomplete
+    [form]="orgForm"
+    control="company"
+    [suggestions]="orgSuggestions()"
+    optionLabel="name"
+    placeholder="Search organization..."
+    styleClass="w-full"
+    [forceSelection]="true"
+    [showClear]="true"
+    [delay]="0"
+    dataTestId="org-search-company"
+    (completeMethod)="onOrgSearch($event)"
+    (onSelect)="onOrgSelect($event)"
+    (onClear)="onOrgClear()"
+    (onBlur)="onOrgBlur()" />
+  @if (isCompanyInvalid()) {
+    <span class="text-xs text-red-500" data-testid="org-search-company-error">Company / Organization is required</span>
+  }
+</div>

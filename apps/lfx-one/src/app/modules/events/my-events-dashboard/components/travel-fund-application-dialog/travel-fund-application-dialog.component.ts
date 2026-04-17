@@ -4,10 +4,12 @@
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { EventsService } from '@app/shared/services/events.service';
+import { UserService } from '@app/shared/services/user.service';
 import { ButtonComponent } from '@components/button/button.component';
 import { MyEvent, TravelFundAboutMe, TravelFundApplication, TravelFundExpenses, TravelFundStep } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogRef } from 'primeng/dynamicdialog';
+import { ApplicationSuccessComponent } from '../application-success/application-success.component';
 import { EventSelectionComponent } from '../event-selection/event-selection.component';
 import { StepIndicatorComponent } from '../step-indicator/step-indicator.component';
 import { TravelFundTermsComponent } from '../travel-fund-terms/travel-fund-terms.component';
@@ -17,7 +19,15 @@ import { TRAVEL_FUND_STEP_ORDER } from '@lfx-one/shared/constants/events.constan
 
 @Component({
   selector: 'lfx-travel-fund-application-dialog',
-  imports: [ButtonComponent, EventSelectionComponent, StepIndicatorComponent, TravelFundTermsComponent, AboutMeFormComponent, TravelExpensesFormComponent],
+  imports: [
+    ApplicationSuccessComponent,
+    ButtonComponent,
+    EventSelectionComponent,
+    StepIndicatorComponent,
+    TravelFundTermsComponent,
+    AboutMeFormComponent,
+    TravelExpensesFormComponent,
+  ],
   templateUrl: './travel-fund-application-dialog.component.html',
   styleUrl: './travel-fund-application-dialog.component.scss',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -25,6 +35,7 @@ import { TRAVEL_FUND_STEP_ORDER } from '@lfx-one/shared/constants/events.constan
 export class TravelFundApplicationDialogComponent {
   private readonly ref = inject(DynamicDialogRef);
   private readonly eventsService = inject(EventsService);
+  private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
   private readonly destroyRef = inject(DestroyRef);
 
@@ -36,6 +47,8 @@ export class TravelFundApplicationDialogComponent {
   protected aboutMeData = signal<TravelFundAboutMe | null>(null);
   protected expensesData = signal<TravelFundExpenses | null>(null);
   protected submitting = signal(false);
+  protected submitted = signal(false);
+  protected submittedEventName = signal('');
 
   protected readonly isNextDisabled = computed(() => {
     if (this.step() === 'select-event') return !this.selectedEvent();
@@ -78,13 +91,17 @@ export class TravelFundApplicationDialogComponent {
   public onSubmitApplication(): void {
     const event = this.selectedEvent();
     const aboutMe = this.aboutMeData();
+    const userId = this.userService.apiGatewayUserId();
 
-    if (!event || !aboutMe) return;
+    if (!event || !aboutMe || !userId) return;
+
+    this.submitting.set(true);
 
     const payload: TravelFundApplication = {
       eventId: event.id,
       eventName: event.name,
       termsAccepted: this.termsAccepted(),
+      userId,
       aboutMe,
       expenses: this.expensesData() ?? {
         airfareCost: 0,
@@ -97,20 +114,14 @@ export class TravelFundApplicationDialogComponent {
       },
     };
 
-    this.submitting.set(true);
-
     this.eventsService
       .submitTravelFundApplication(payload)
       .pipe(takeUntilDestroyed(this.destroyRef))
       .subscribe({
         next: (response) => {
           if (response.success) {
-            this.messageService.add({
-              severity: 'success',
-              summary: 'Success',
-              detail: 'Your travel fund application has been submitted successfully.',
-            });
-            this.ref.close({ submitted: true });
+            this.submittedEventName.set(event.name);
+            this.submitted.set(true);
           } else {
             this.messageService.add({
               severity: 'error',
