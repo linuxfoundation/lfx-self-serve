@@ -19,14 +19,26 @@
     display: none !important;
   }
 
-  // Force horizontal position to the right of the full sidebar (64px lens + 280px nav = 344px)
-  left: 344px !important;
+  // Desktop only — on mobile the sidebar is a drawer with a different layout;
+  // scoping to lg+ avoids anchoring the panel off-screen on narrow viewports
+  @media (min-width: 1024px) {
+    // Fixed positioning so the panel stays in place when the page scrolls.
+    // `@apply !fixed` is not usable here: Dart Sass compiles SCSS before PostCSS/Tailwind,
+    // so the `!` modifier causes a parse error. `!important` is also load-bearing —
+    // PrimeNG's absolutePosition() sets `position: absolute` as an inline style via JS;
+    // without !important the inline style takes precedence and the fix has no effect.
+    // stylelint-disable-next-line declaration-no-important
+    position: fixed !important;
 
-  // Align popover top with the trigger top (sidebar top + py-4 padding = 16px)
-  top: 4px !important;
+    // Force horizontal position to the right of the full sidebar (64px lens + 280px nav = 344px)
+    left: 344px !important;
 
-  // When dev toolbar is visible, offset by its height (48px)
-  &.project-selector-panel--with-toolbar {
-    top: 52px !important; // 48px toolbar + 4px
+    // Pin the popover 4px from the top of the viewport
+    top: 4px !important;
+
+    // When dev toolbar is visible, offset by its height (48px)
+    &.project-selector-panel--with-toolbar {
+      top: 52px !important; // 48px toolbar + 4px
+    }
   }
 }

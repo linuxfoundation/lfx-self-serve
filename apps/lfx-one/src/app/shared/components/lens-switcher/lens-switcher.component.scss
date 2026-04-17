@@ -19,6 +19,14 @@
     @apply p-0;
   }
 
+  // Fixed positioning so the panel stays in place when the page scrolls.
+  // `@apply !fixed` is not usable here: Dart Sass compiles SCSS before PostCSS/Tailwind,
+  // so the `!` modifier causes a parse error. `!important` is also load-bearing —
+  // PrimeNG's absolutePosition() sets `position: absolute` as an inline style via JS;
+  // without !important the inline style takes precedence and the fix has no effect.
+  // stylelint-disable-next-line declaration-no-important
+  position: fixed !important;
+
   // Force position to the right of the avatar (override absolutePosition)
   left: 72px !important;
   bottom: 16px !important;
