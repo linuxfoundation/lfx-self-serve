@@ -14,7 +14,6 @@ import { TagComponent } from '@components/tag/tag.component';
 import { DOCUMENT_LABEL } from '@lfx-one/shared/constants';
 import { MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
 import { DocumentService } from '@services/document.service';
-import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap } from 'rxjs';
 import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-tag.pipe';
@@ -39,10 +38,15 @@ export class DocumentsDashboardComponent {
   // === Services ===
   private readonly documentService = inject(DocumentService);
   private readonly projectContextService = inject(ProjectContextService);
-  private readonly personaService = inject(PersonaService);
 
   // === Constants ===
   protected readonly documentLabel = DOCUMENT_LABEL;
+  protected readonly sourceOptions: { label: string; value: MyDocumentSource | null }[] = [
+    { label: 'All Sources', value: null },
+    { label: 'Link', value: 'link' as MyDocumentSource },
+    { label: 'Meeting', value: 'meeting' as MyDocumentSource },
+    { label: 'Mailing List', value: 'mailing_list' as MyDocumentSource },
+  ];
 
   // === Forms ===
   protected readonly filterForm = new FormGroup({
@@ -57,17 +61,8 @@ export class DocumentsDashboardComponent {
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
 
-  // === Static Options ===
-  protected readonly sourceOptions: { label: string; value: MyDocumentSource | null }[] = [
-    { label: 'All Sources', value: null },
-    { label: 'Link', value: 'link' as MyDocumentSource },
-    { label: 'Meeting', value: 'meeting' as MyDocumentSource },
-    { label: 'Mailing List', value: 'mailing_list' as MyDocumentSource },
-  ];
-
   // === Computed Signals ===
   protected readonly project = this.projectContextService.activeContext;
-  protected readonly foundationLabel: Signal<string> = this.initFoundationLabel();
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
   protected readonly foundationFilter: Signal<string | null> = this.initFoundationFilter();
   protected readonly groupFilter: Signal<string | null> = this.initGroupFilter();
@@ -95,45 +90,6 @@ export class DocumentsDashboardComponent {
   }
 
   // === Private Initializers ===
-  private initFoundationLabel(): Signal<string> {
-    return computed(() => {
-      if (this.personaService.multiFoundation() || this.personaService.multiProject()) {
-        return 'Cross-foundation';
-      }
-
-      if (this.personaService.isBoardScoped()) {
-        const foundation = this.projectContextService.selectedFoundation();
-        return foundation?.name ?? 'Cross-foundation';
-      }
-
-      const projects = this.projectContextService.availableProjects();
-      const selectedProject = this.projectContextService.selectedProject();
-      if (selectedProject) {
-        const fullProject = projects.find((p) => p.uid === selectedProject.uid);
-        if (fullProject?.parent_uid) {
-          const parentFoundation = projects.find((p) => p.uid === fullProject.parent_uid);
-          if (parentFoundation) {
-            return parentFoundation.name;
-          }
-        }
-      }
-
-      const foundation = this.projectContextService.selectedFoundation();
-      if (foundation) {
-        const fullProject = projects.find((p) => p.uid === foundation.uid);
-        if (fullProject?.parent_uid) {
-          const parentFoundation = projects.find((p) => p.uid === fullProject.parent_uid);
-          if (parentFoundation) {
-            return parentFoundation.name;
-          }
-        }
-        return foundation.name;
-      }
-
-      return 'Cross-foundation';
-    });
-  }
-
   private initSearchQuery(): Signal<string> {
     return toSignal(
       this.filterForm.controls.search.valueChanges.pipe(

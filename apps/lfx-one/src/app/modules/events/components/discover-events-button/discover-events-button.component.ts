@@ -2,8 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, input } from '@angular/core';
-import { ButtonComponent } from '@app/shared/components/button/button.component';
 import { LINKS_CONFIG } from '@lfx-one/shared/constants';
+import { ButtonComponent } from '@components/button/button.component';
 
 @Component({
   selector: 'lfx-discover-events-button',

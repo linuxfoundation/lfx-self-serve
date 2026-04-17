@@ -10,6 +10,41 @@
 
   <!-- Dashboard Sections -->
   <div class="flex flex-col gap-6" data-testid="user-dashboard-sections">
+    <!-- My Meetings (always first) -->
+    @defer (on idle) {
+      <lfx-my-meetings />
+    } @placeholder {
+      <section class="flex flex-col flex-1" data-testid="user-dashboard-my-meetings-placeholder">
+        <div class="flex items-center justify-between mb-4 h-8">
+          <div class="flex items-center gap-2">
+            <p-skeleton width="1.125rem" height="1.125rem" borderRadius="4px" />
+            <p-skeleton width="7rem" height="1rem" />
+          </div>
+          <p-skeleton width="4rem" height="1rem" />
+        </div>
+        <div class="flex flex-col gap-3">
+          <p-skeleton width="100%" height="140px" />
+        </div>
+      </section>
+    }
+
+    <!-- Pending Actions (always second) -->
+    @defer (on idle) {
+      <lfx-pending-actions [pendingActions]="pendingActions()" (actionClick)="handleActionClick()" />
+    } @placeholder {
+      <section class="flex flex-col flex-1" data-testid="user-dashboard-pending-actions-placeholder">
+        <div class="flex items-center justify-between mb-4 px-2 h-8">
+          <div class="flex items-center gap-2">
+            <p-skeleton width="1.125rem" height="1.125rem" borderRadius="4px" />
+            <p-skeleton width="9rem" height="1rem" />
+          </div>
+        </div>
+        <div class="flex flex-col gap-3 px-2">
+          <p-skeleton width="100%" height="140px" />
+        </div>
+      </section>
+    }
+
     <!-- Board/ED: Foundation Health | Contributor/Maintainer: Recent Progress -->
     @if (isBoardScoped()) {
       @defer (on idle) {
@@ -82,39 +117,5 @@
       }
     }
 
-    <!-- My Meetings -->
-    @defer (on idle) {
-      <lfx-my-meetings />
-    } @placeholder {
-      <section class="flex flex-col flex-1" data-testid="user-dashboard-my-meetings-placeholder">
-        <div class="flex items-center justify-between mb-4 h-8">
-          <div class="flex items-center gap-2">
-            <p-skeleton width="1.125rem" height="1.125rem" borderRadius="4px" />
-            <p-skeleton width="7rem" height="1rem" />
-          </div>
-          <p-skeleton width="4rem" height="1rem" />
-        </div>
-        <div class="flex flex-col gap-3">
-          <p-skeleton width="100%" height="140px" />
-        </div>
-      </section>
-    }
-
-    <!-- Pending Actions -->
-    @defer (on idle) {
-      <lfx-pending-actions [pendingActions]="pendingActions()" (actionClick)="handleActionClick()" />
-    } @placeholder {
-      <section class="flex flex-col flex-1" data-testid="user-dashboard-pending-actions-placeholder">
-        <div class="flex items-center justify-between mb-4 px-2 h-8">
-          <div class="flex items-center gap-2">
-            <p-skeleton width="1.125rem" height="1.125rem" borderRadius="4px" />
-            <p-skeleton width="9rem" height="1rem" />
-          </div>
-        </div>
-        <div class="flex flex-col gap-3 px-2">
-          <p-skeleton width="100%" height="140px" />
-        </div>
-      </section>
-    }
   </div>
 </div>

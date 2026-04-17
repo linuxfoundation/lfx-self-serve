@@ -8,13 +8,21 @@
       <div>
         <h1 class="font-display font-light text-2xl" data-testid="my-events-page-title">My Events</h1>
         <p class="mt-1 text-sm text-gray-500" data-testid="my-events-description">Events you are registered to attend across all foundations.</p>
-        <lfx-tag [value]="foundationLabel()" severity="info" styleClass="mt-1" />
       </div>
-      <lfx-discover-events-button testId="my-events-discover-button" />
+      <div class="flex items-center gap-6">
+        <span
+          class="flex items-center gap-1.5 text-sm text-gray-600 cursor-help"
+          tabindex="0"
+          pTooltip="Event registrations might take a while to show up. Just registered? It may take up to 1 hour to appear in your list."
+          tooltipPosition="bottom"
+          appendTo="body"
+          data-testid="my-events-registration-delay-hint">
+          <i class="fa-light fa-face-monocle text-lg" aria-hidden="true"></i>
+          <span class="underline decoration-dotted">Can't see your registered event?</span>
+        </span>
+        <lfx-discover-events-button testId="my-events-discover-button" />
+      </div>
     </div>
-
-    <!-- Info Banners -->
-    <lfx-events-info-banners [discoverUrl]="linksConfig.EVENTS.DISCOVER" />
 
     <!-- Search and Filters -->
     <div class="bg-white rounded-lg border border-gray-200 p-4">
