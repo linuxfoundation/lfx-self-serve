@@ -2,7 +2,6 @@
 // SPDX-License-Identifier: MIT
 
 import type { Account } from './account.interface';
-import type { EnrichedPersonaProject } from './persona-detection.interface';
 
 /**
  * Available persona types for UI customization
@@ -44,8 +43,6 @@ export interface PersistedPersonaState {
   multiFoundation?: boolean;
   /** User's organizations from board member detections */
   organizations?: Account[];
-  /** Enriched projects from persona detection — fallback when API is unavailable */
-  projects?: EnrichedPersonaProject[];
 }
 
 /**
