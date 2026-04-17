@@ -122,11 +122,11 @@
 
                   <!-- RSVP Status Badge Overlay -->
                   <div class="absolute -bottom-0.5 -right-0.5 w-4 h-4 bg-white rounded-full flex items-center justify-center">
-                    @if (registrant.rsvp?.response === 'accepted' || registrant.invite_accepted === true) {
+                    @if (registrant.rsvp?.response_type === 'accepted' || registrant.invite_accepted === true) {
                       <i class="fa-solid fa-check-circle text-emerald-600 text-base" pTooltip="Accepted"></i>
-                    } @else if (registrant.rsvp?.response === 'maybe') {
+                    } @else if (registrant.rsvp?.response_type === 'maybe') {
                       <i class="fa-solid fa-circle-question text-amber-600 text-base" pTooltip="Maybe"></i>
-                    } @else if (registrant.rsvp?.response === 'declined' || registrant.invite_accepted === false) {
+                    } @else if (registrant.rsvp?.response_type === 'declined' || registrant.invite_accepted === false) {
                       <i class="fa-solid fa-times-circle text-red-600 text-base" pTooltip="Declined"></i>
                     } @else {
                       <i class="fa-solid fa-clock text-gray-400 text-sm" pTooltip="Pending"></i>

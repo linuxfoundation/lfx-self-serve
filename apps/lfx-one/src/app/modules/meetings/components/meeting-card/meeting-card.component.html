@@ -273,7 +273,27 @@
               </lfx-meeting-rsvp-details>
             }
           } @placeholder {
-            <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60 animate-pulse min-h-[80px]"></div>
+            <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60 min-h-[80px]">
+              <div class="flex items-center justify-between gap-2">
+                <div class="flex items-center gap-2 text-xs tracking-wide text-gray-600">
+                  <i class="fa-light fa-users text-xs"></i>
+                  <span>{{ pastMeeting() ? 'Attendees' : 'People Invited' }}</span>
+                </div>
+                <div class="h-3 w-10 rounded bg-gray-300 animate-pulse"></div>
+              </div>
+              <div class="flex flex-col gap-2">
+                <div class="flex items-center justify-between">
+                  <div class="h-3 w-28 rounded bg-gray-300 animate-pulse"></div>
+                  <div class="h-3 w-8 rounded bg-gray-300 animate-pulse"></div>
+                </div>
+                <div class="w-full h-[5.25px] rounded-full bg-gray-300 animate-pulse"></div>
+                <div class="flex items-center justify-between text-gray-600">
+                  <div class="h-3 w-12 rounded bg-gray-300 animate-pulse"></div>
+                  <div class="h-3 w-16 rounded bg-gray-300 animate-pulse"></div>
+                  <div class="h-3 w-10 rounded bg-gray-300 animate-pulse"></div>
+                </div>
+              </div>
+            </div>
           }
         } @else if (!pastMeeting()) {
           <!-- Show RSVP Selection for authenticated invited non-organizers (upcoming meetings only) -->

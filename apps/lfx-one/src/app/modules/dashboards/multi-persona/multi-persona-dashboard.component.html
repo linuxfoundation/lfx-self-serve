@@ -35,39 +35,41 @@
       </div>
 
       <!-- Summary Pills -->
-      @if (summaryPillsLoading()) {
-        <div
-          class="mb-4 inline-flex items-center gap-px overflow-hidden rounded-lg border border-blue-200 bg-blue-200"
-          data-testid="multi-persona-summary-pills-loading">
-          @for (i of [1, 2, 3, 4]; track i) {
-            <div class="bg-blue-50 px-4 py-2.5">
-              <p-skeleton width="6rem" height="1rem" />
-            </div>
-          }
-        </div>
-      } @else {
-        <div
-          class="mb-4 inline-flex flex-wrap items-center gap-px overflow-hidden rounded-lg border border-blue-200 bg-blue-200 text-sm"
-          data-testid="multi-persona-summary-pills">
-          @if (hasFoundations()) {
-            <div class="flex items-center gap-2 bg-blue-50 px-4 py-2.5">
-              <i class="fa-solid fa-building-columns text-blue-600"></i>
-              <span class="font-semibold text-gray-900">{{ summaryPills().foundationCount }} foundations</span>
-            </div>
-          }
-          @if (hasProjects()) {
-            <div class="flex items-center gap-2 bg-blue-50 px-4 py-2.5">
-              <i class="fa-solid fa-laptop-code text-blue-600"></i>
-              <span class="font-semibold text-gray-900">{{ summaryPills().projectCount }} projects</span>
-            </div>
-          }
+      <div
+        class="mb-4 inline-flex flex-wrap items-center gap-px overflow-hidden rounded-lg border border-blue-200 bg-blue-200 text-sm"
+        data-testid="multi-persona-summary-pills">
+        @if (hasFoundations()) {
+          <div class="flex items-center gap-2 bg-blue-50 px-4 py-2.5">
+            <i class="fa-solid fa-building-columns text-blue-600"></i>
+            <span class="font-semibold text-gray-900">{{ foundationCount() }} foundations</span>
+          </div>
+        }
+        @if (hasProjects()) {
+          <div class="flex items-center gap-2 bg-blue-50 px-4 py-2.5">
+            <i class="fa-solid fa-laptop-code text-blue-600"></i>
+            <span class="font-semibold text-gray-900">{{ projectCount() }} projects</span>
+          </div>
+        }
+        @if (summaryPillsLoading()) {
+          <div class="bg-blue-50 px-4 py-2.5">
+            <p-skeleton width="6rem" height="1rem" />
+          </div>
+          <div class="bg-blue-50 px-4 py-2.5">
+            <p-skeleton width="6rem" height="1rem" />
+          </div>
+        } @else {
           <div class="flex items-center gap-2 bg-blue-50 px-4 py-2.5">
             <i class="fa-solid fa-square-poll-horizontal text-blue-600"></i>
             <span class="text-gray-700">{{ summaryPills().openSurveys }} surveys open</span>
           </div>
           <div class="flex items-center gap-2 bg-blue-50 px-4 py-2.5">
             <i class="fa-solid fa-calendar text-blue-600"></i>
-            <span class="text-gray-700">{{ summaryPills().meetingsThisWeek }} meetings this week</span>
+            <span class="text-gray-700"
+              >{{ totalMeetingsThisWeek() }} meetings this week
+              @if (summaryPills().meetingsUpcomingThisWeek > 0) {
+                <span> ({{ summaryPills().meetingsUpcomingThisWeek }} upcoming)</span>
+              }
+            </span>
           </div>
           @if (summaryPills().itemsNeedReview > 0) {
             <div class="flex items-center gap-2 bg-blue-50 px-4 py-2.5">
@@ -75,8 +77,8 @@
               <span class="text-gray-700">{{ summaryPills().itemsNeedReview }} items need review</span>
             </div>
           }
-        </div>
-      }
+        }
+      </div>
 
       <!-- Projects Table -->
       <div class="overflow-x-auto" data-testid="multi-persona-table">

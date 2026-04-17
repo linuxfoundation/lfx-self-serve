@@ -458,7 +458,7 @@ export class CommitteeDocumentsComponent implements OnInit {
         filter((c) => !!c?.uid),
         switchMap((c) => {
           this.meetingLoading.set(true);
-          return this.meetingService.getMeetingsByCommittee(c.uid, 100).pipe(
+          return this.meetingService.getMeetingsByCommittee(c.uid).pipe(
             switchMap((meetings) => {
               if (meetings.length === 0) return of([]);
 

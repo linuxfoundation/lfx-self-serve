@@ -46,14 +46,29 @@ async function fetchWithRetry<T>(req: Request, fn: () => Promise<T>, context: Re
   throw new Error('fetchWithRetry: exhausted retries');
 }
 
+export interface FetchAllQueryResourcesOptions {
+  /**
+   * If true, throw when any page fetch fails instead of returning partial results.
+   * Callers that rely on complete result sets for correctness (filtering, set
+   * membership, counting) should set this to true and handle the thrown error.
+   * Defaults to false — partial results are returned on later-page failures.
+   */
+  failOnPartial?: boolean;
+}
+
 /**
  * Fetches all pages from the query service by following page_token pagination.
  * Retries individual page fetches on 5xx errors before giving up.
  * Accepts a callback that performs the actual proxy request, keeping this helper
  * decoupled from any specific service or proxy implementation.
  *
+ * By default, returns whatever pages were successfully fetched when a later page
+ * fails (partial results). Pass `failOnPartial: true` when completeness is
+ * required for correctness.
+ *
  * @param req - Express request object for log correlation
  * @param fetchPage - Callback that fetches a single page given an optional page_token
+ * @param options - Behavior options (see FetchAllQueryResourcesOptions)
  * @returns All resource data items accumulated across all pages
  *
  * @example
@@ -64,7 +79,12 @@ async function fetchWithRetry<T>(req: Request, fn: () => Promise<T>, context: Re
  *   )
  * );
  */
-export async function fetchAllQueryResources<T>(req: Request, fetchPage: (pageToken?: string) => Promise<QueryServiceResponse<T>>): Promise<T[]> {
+export async function fetchAllQueryResources<T>(
+  req: Request,
+  fetchPage: (pageToken?: string) => Promise<QueryServiceResponse<T>>,
+  options: FetchAllQueryResourcesOptions = {}
+): Promise<T[]> {
+  const { failOnPartial = false } = options;
   const results: T[] = [];
 
   let response = await fetchWithRetry(req, () => fetchPage(), { page: 1 });
@@ -77,8 +97,25 @@ export async function fetchAllQueryResources<T>(req: Request, fetchPage: (pageTo
       page,
       accumulated_count: results.length,
     });
-    response = await fetchWithRetry(req, () => fetchPage(response.page_token), { page });
-    results.push(...response.resources.map((resource) => resource.data));
+    try {
+      response = await fetchWithRetry(req, () => fetchPage(response.page_token), { page });
+      results.push(...response.resources.map((resource) => resource.data));
+    } catch (error) {
+      if (failOnPartial) {
+        logger.warning(req, 'fetch_all_query_resources', 'Pagination failed with failOnPartial=true, rethrowing', {
+          page,
+          accumulated_count: results.length,
+          err: error,
+        });
+        throw error;
+      }
+      logger.warning(req, 'fetch_all_query_resources', 'Pagination failed, returning partial results', {
+        page,
+        accumulated_count: results.length,
+        err: error,
+      });
+      break;
+    }
   }
 
   if (page > 1) {

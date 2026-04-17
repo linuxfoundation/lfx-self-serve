@@ -163,7 +163,7 @@ export class CommitteeMeetingsComponent {
           // name_asc/desc, updated_asc/desc. There is no start_time sort upstream.
           // The `order=start_time.asc` param passed here is silently ignored;
           // the client-side sort below (lines 178-185) is the actual sorting mechanism.
-          this.meetingService.getMeetingsByCommittee(c.uid, 100, 'start_time.asc').pipe(
+          this.meetingService.getMeetingsByCommittee(c.uid, 'start_time.asc').pipe(
             map((meetings) => {
               const active = meetings.filter((m) => {
                 if (m.occurrences?.length) {

@@ -898,7 +898,7 @@ export interface MeetingRsvp {
   /** User's email address */
   email: string;
   /** User's RSVP response */
-  response: RsvpResponse;
+  response_type: RsvpResponse;
   /** Scope of the RSVP (which occurrences it applies to) */
   scope: RsvpScope;
   /** Occurrence ID (empty string when no specific occurrence) */

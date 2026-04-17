@@ -87,10 +87,6 @@ export interface UserSearchParams {
   tags?: string;
   /** Type of resource to search */
   type: 'committee_member' | 'meeting_registrant';
-  /** Maximum number of results to return (optional) */
-  limit?: number;
-  /** Number of results to skip for pagination (optional) */
-  offset?: number;
 }
 
 /**

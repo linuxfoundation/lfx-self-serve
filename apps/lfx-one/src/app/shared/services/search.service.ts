@@ -20,7 +20,7 @@ export class SearchService {
       return of([]);
     }
 
-    let params = new HttpParams().set('type', type).set('limit', '20');
+    let params = new HttpParams().set('type', type);
 
     // if name is an email, search for users by email
     if (name.includes('@')) {

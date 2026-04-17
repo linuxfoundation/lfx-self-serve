@@ -48,7 +48,6 @@ export class SurveyService {
     const surveys = await fetchAllQueryResources<Survey>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<Survey>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         ...params,
-        page_size: 100,
         ...(pageToken && { page_token: pageToken }),
       })
     );
@@ -201,7 +200,6 @@ export class SurveyService {
       this.microserviceProxy.proxyRequest<QueryServiceResponse<{ survey_uid: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         v: '1',
         type: 'survey_response',
-        page_size: 100,
         filters_or: filtersOr,
         ...(pageToken && { page_token: pageToken }),
       })

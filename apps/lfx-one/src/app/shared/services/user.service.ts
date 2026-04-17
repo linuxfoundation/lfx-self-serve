@@ -3,6 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
 import {
   AddEmailRequest,
@@ -30,7 +31,7 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { catchError, Observable, of, take } from 'rxjs';
+import { catchError, distinctUntilChanged, map, Observable, of, shareReplay, skip, startWith, Subject, switchMap, take } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -46,6 +47,31 @@ export class UserService {
   public canImpersonate: WritableSignal<boolean> = signal<boolean>(false);
   public readonly userInitials: Signal<string> = this.initUserInitials();
 
+  private readonly userMeetingsRefresh$ = new Subject<void>();
+  private readonly userPastMeetingsRefresh$ = new Subject<void>();
+  private userMeetings$: Observable<Meeting[]> | null = null;
+  private userPastMeetings$: Observable<PastMeeting[]> | null = null;
+
+  public constructor() {
+    // Invalidate cached user-scoped observables when the authenticated user or
+    // impersonation changes, so existing subscribers don't see stale data from
+    // the previous user. Keyed on username (covers both login/logout and
+    // impersonation start/stop). Skip the initial emission since the caches
+    // are lazy-initialized and haven't been populated yet.
+    toObservable(this.user)
+      .pipe(
+        map((u) => u?.username ?? null),
+        distinctUntilChanged(),
+        skip(1),
+        takeUntilDestroyed()
+      )
+      .subscribe(() => {
+        this.userMeetings$ = null;
+        this.userPastMeetings$ = null;
+        this.userMeetingsRefresh$.next();
+        this.userPastMeetingsRefresh$.next();
+      });
+  }
   /** Cached Salesforce user ID from the API Gateway — null until first fetch */
   public readonly apiGatewayUserId = signal<string | null>(null);
 
@@ -147,28 +173,63 @@ export class UserService {
   }
 
   /**
-   * Gets all meetings for the current authenticated user
-   * Returns meetings the user is registered for across all projects
+   * Gets all meetings for the current authenticated user.
+   * Returns a shared, cached observable. Call refreshUserMeetings() after
+   * any mutation that could change the list (e.g. new registration) to
+   * push fresh data to all subscribers.
    */
   public getUserMeetings(): Observable<Meeting[]> {
-    return this.http.get<Meeting[]>('/api/user/meetings').pipe(
-      catchError((error) => {
-        console.error('Failed to load user meetings:', error);
-        return of([]);
-      })
-    );
+    if (!this.userMeetings$) {
+      this.userMeetings$ = this.userMeetingsRefresh$.pipe(
+        startWith(undefined),
+        switchMap(() =>
+          this.http.get<Meeting[]>('/api/user/meetings').pipe(
+            catchError((error) => {
+              console.error('Failed to load user meetings:', error);
+              return of([]);
+            })
+          )
+        ),
+        shareReplay({ bufferSize: 1, refCount: true })
+      );
+    }
+    return this.userMeetings$;
   }
 
   /**
-   * Gets past meetings for the current authenticated user
+   * Gets past meetings for the current authenticated user.
+   * Call refreshUserPastMeetings() to re-fetch.
    */
   public getUserPastMeetings(): Observable<PastMeeting[]> {
-    return this.http.get<PastMeeting[]>('/api/user/past-meetings').pipe(
-      catchError((error) => {
-        console.error('Failed to load user past meetings:', error);
-        return of([]);
-      })
-    );
+    if (!this.userPastMeetings$) {
+      this.userPastMeetings$ = this.userPastMeetingsRefresh$.pipe(
+        startWith(undefined),
+        switchMap(() =>
+          this.http.get<PastMeeting[]>('/api/user/past-meetings').pipe(
+            catchError((error) => {
+              console.error('Failed to load user past meetings:', error);
+              return of([]);
+            })
+          )
+        ),
+        shareReplay({ bufferSize: 1, refCount: true })
+      );
+    }
+    return this.userPastMeetings$;
+  }
+
+  /**
+   * Re-fetch the user's upcoming meetings. All current subscribers receive the new data.
+   */
+  public refreshUserMeetings(): void {
+    this.userMeetingsRefresh$.next();
+  }
+
+  /**
+   * Re-fetch the user's past meetings. All current subscribers receive the new data.
+   */
+  public refreshUserPastMeetings(): void {
+    this.userPastMeetingsRefresh$.next();
   }
 
   /**

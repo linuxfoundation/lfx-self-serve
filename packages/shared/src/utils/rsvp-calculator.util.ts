@@ -47,11 +47,11 @@ export function calculateRsvpCounts(occurrence: MeetingOccurrence | null, allRsv
   };
 
   for (const rsvp of applicableRsvps) {
-    if (rsvp.response === 'accepted') {
+    if (rsvp.response_type === 'accepted') {
       counts.accepted++;
-    } else if (rsvp.response === 'declined') {
+    } else if (rsvp.response_type === 'declined') {
       counts.declined++;
-    } else if (rsvp.response === 'maybe') {
+    } else if (rsvp.response_type === 'maybe') {
       counts.maybe++;
     }
   }
@@ -137,7 +137,7 @@ export function mapITXResponseToMeetingRsvp(result: ITXMeetingResponseResult): M
     registrant_id: result.registrant_id,
     username: result.username,
     email: result.email,
-    response: result.response,
+    response_type: result.response,
     scope: result.scope,
     occurrence_id: result.occurrence_id,
     created_at: result.created_at,

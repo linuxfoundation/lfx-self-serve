@@ -2,12 +2,12 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, inject, input, InputSignal, Signal } from '@angular/core';
+import { Component, computed, inject, input, InputSignal, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { calculateRsvpCounts, Meeting, MeetingOccurrence, MeetingRsvp, PastMeeting, Project, RsvpCounts } from '@lfx-one/shared';
 import { MeetingService } from '@services/meeting.service';
-import { catchError, of, switchMap } from 'rxjs';
+import { catchError, of, switchMap, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-meeting-rsvp-details',
@@ -29,6 +29,7 @@ export class MeetingRsvpDetailsComponent {
   public readonly disabled: InputSignal<boolean> = input<boolean>(false);
   public readonly disabledMessage: InputSignal<string> = input<string>('RSVP not available for this meeting');
 
+  public readonly loading: WritableSignal<boolean> = signal(true);
   public readonly rsvps: Signal<MeetingRsvp[]> = this.initializeRsvps();
   public readonly rsvpCounts: Signal<RsvpCounts> = this.initializeRsvpCounts();
   public readonly acceptedCount: Signal<number> = computed(() => this.rsvpCounts().accepted);
@@ -47,14 +48,21 @@ export class MeetingRsvpDetailsComponent {
   private initializeRsvps(): Signal<MeetingRsvp[]> {
     return toSignal(
       toObservable(this.meeting).pipe(
-        switchMap((meeting) =>
-          this.meetingService.getMeetingRsvps(meeting.id).pipe(
+        tap(() => this.loading.set(true)),
+        switchMap((meeting) => {
+          // Past meetings use attended_count/participant_count from the meeting data
+          // RSVPs only apply to upcoming meetings
+          if (this.pastMeeting()) {
+            return of([] as MeetingRsvp[]);
+          }
+          return this.meetingService.getMeetingRsvps(meeting.id).pipe(
             catchError((error) => {
               console.error('Failed to fetch meeting RSVPs:', error);
               return of([]);
             })
-          )
-        )
+          );
+        }),
+        tap(() => this.loading.set(false))
       ),
       { initialValue: [] }
     );
@@ -72,8 +80,14 @@ export class MeetingRsvpDetailsComponent {
   private initializeMeetingRegistrantCount(): Signal<number> {
     return computed(() => {
       const meeting = this.meeting();
-      const baseCount = (meeting.individual_registrants_count || 0) + (meeting.committee_members_count || 0);
       const additionalCount = this.additionalRegistrantsCount();
+
+      if (this.pastMeeting()) {
+        return (meeting.participant_count || 0) + additionalCount;
+      }
+
+      const splitCount = (meeting.individual_registrants_count || 0) + (meeting.committee_members_count || 0);
+      const baseCount = splitCount > 0 ? splitCount : meeting.registrant_count || 0;
       return baseCount + additionalCount;
     });
   }

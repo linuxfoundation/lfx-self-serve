@@ -114,7 +114,7 @@ export class SurveysDashboardComponent {
           }
 
           this.loading.set(true);
-          return this.surveyService.getSurveysByProject(project.uid, 100).pipe(
+          return this.surveyService.getSurveysByProject(project.uid).pipe(
             catchError((error) => {
               console.error('Failed to load surveys:', error);
               return of([]);

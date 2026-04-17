@@ -18,11 +18,10 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
-import { getUsernameFromAuth } from '../utils/auth-helper';
-
 import { ResourceNotFoundError } from '../errors';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
 import { logger } from '../services/logger.service';
+import { getUsernameFromAuth } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { ETagService } from './etag.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -85,7 +84,6 @@ export class CommitteeService {
     let committees = await fetchAllQueryResources<Committee>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         ...params,
-        page_size: 100,
         ...(pageToken && { page_token: pageToken }),
       })
     );
@@ -311,7 +309,6 @@ export class CommitteeService {
     return fetchAllQueryResources<CommitteeMember>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         ...params,
-        page_size: 100,
         ...(pageToken && { page_token: pageToken }),
       })
     );
@@ -457,7 +454,6 @@ export class CommitteeService {
     const userMemberships = await fetchAllQueryResources<CommitteeMember>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         ...params,
-        page_size: 100,
         ...(pageToken && { page_token: pageToken }),
       })
     );
@@ -490,7 +486,6 @@ export class CommitteeService {
       this.microserviceProxy.proxyRequest<QueryServiceResponse<CommitteeMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         v: '1',
         type: 'committee_member',
-        page_size: 100,
         tags_all: tagsAll,
         ...(pageToken && { page_token: pageToken }),
       })

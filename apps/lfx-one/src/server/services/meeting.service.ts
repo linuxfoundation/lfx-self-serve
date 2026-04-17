@@ -9,6 +9,8 @@ import {
   CreateMeetingRegistrantRequest,
   CreateMeetingRequest,
   CreateMeetingRsvpRequest,
+  ITXCreateMeetingResponseRequest,
+  ITXMeetingResponseResult,
   Meeting,
   MeetingAttachment,
   MeetingJoinURL,
@@ -28,8 +30,6 @@ import {
   UpdateMeetingRegistrantRequest,
   UpdateMeetingRequest,
   UpdatePastMeetingSummaryRequest,
-  ITXCreateMeetingResponseRequest,
-  ITXMeetingResponseResult,
 } from '@lfx-one/shared/interfaces';
 import { mapITXResponseToMeetingRsvp, transformV1SummaryToV2 } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -381,7 +381,6 @@ export class MeetingService {
     const params: Record<string, any> = {
       type: 'v1_meeting_registrant',
       tags: `meeting_id:${meetingUid}`,
-      page_size: 100,
     };
 
     logger.debug(req, 'get_meeting_registrants', 'Fetching meeting registrants', { meeting_id: meetingUid, params });
@@ -443,7 +442,6 @@ export class MeetingService {
       type: 'v1_meeting_registrant',
       parent: '',
       tags_all: [`email:${email}`, `meeting_id:${meetingUid}`],
-      page_size: 100,
     };
 
     logger.debug(req, 'get_meeting_registrants_by_email', 'Fetching meeting registrants by email params', { meeting_id: meetingUid, email, params });
@@ -473,7 +471,6 @@ export class MeetingService {
       type: 'v1_meeting_registrant',
       parent: '',
       tags_all: [`username:${plainUsername}`, `meeting_id:${meetingUid}`],
-      page_size: 100,
     };
 
     logger.debug(req, 'get_meeting_registrants_by_username', 'Fetching meeting registrants by username', { meeting_id: meetingUid, username: plainUsername });
@@ -595,7 +592,6 @@ export class MeetingService {
     const params = {
       type: 'v1_past_meeting_participant',
       tags: `meeting_and_occurrence_id:${pastMeetingUid}`,
-      page_size: 100,
     };
 
     return fetchAllQueryResources<PastMeetingParticipant>(req, (pageToken) =>
@@ -626,7 +622,6 @@ export class MeetingService {
         {
           type: 'v1_past_meeting_participant',
           tags_all: [`meeting_and_occurrence_id:${pastMeetingUid}`, `email:${email}`],
-          page_size: 1,
         }
       );
 
@@ -644,7 +639,6 @@ export class MeetingService {
         {
           type: 'v1_past_meeting_participant',
           tags_all: [`meeting_and_occurrence_id:${pastMeetingUid}`, `username:${plainUsername}`],
-          page_size: 1,
         }
       );
 
@@ -828,7 +822,7 @@ export class MeetingService {
       operation: 'create_meeting_rsvp_poll',
       pollFn: async () => {
         const allRsvps = await this.getMeetingRsvps(req, meetingUid);
-        return allRsvps.some((r) => r.id === rsvp.id && r.response === rsvp.response);
+        return allRsvps.some((r) => r.id === rsvp.id && r.response_type === rsvp.response_type);
       },
       maxRetries: 5,
       retryDelayMs: 1000,
@@ -893,28 +887,71 @@ export class MeetingService {
   }
 
   /**
-   * Get all RSVPs for a meeting
+   * Get all RSVPs for a meeting, filtered to current registrants only.
+   * The v1_meeting_rsvp records persist historical RSVPs including for registrants
+   * who have since been removed or re-registered with a new registrant_id. We filter
+   * to only those RSVPs whose registrant_id matches a currently-active registrant.
    */
   public async getMeetingRsvps(req: Request, meetingUid: string): Promise<MeetingRsvp[]> {
     logger.debug(req, 'get_meeting_rsvps', 'Fetching meeting RSVPs', { meeting_id: meetingUid });
 
     try {
-      const params = {
+      const rsvpParams = {
         tags: `meeting_id:${meetingUid}`,
         type: 'v1_meeting_rsvp',
-        page_size: 100,
       };
 
-      return await fetchAllQueryResources<MeetingRsvp>(req, (pageToken) =>
-        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-          ...params,
-          ...(pageToken && { page_token: pageToken }),
-        })
-      );
+      const registrantParams = {
+        type: 'v1_meeting_registrant',
+        parent: `meeting:${meetingUid}`,
+      };
+
+      let registrantsFetchFailed = false;
+      const [rsvps, registrants] = await Promise.all([
+        fetchAllQueryResources<MeetingRsvp>(req, (pageToken) =>
+          this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+            ...rsvpParams,
+            ...(pageToken && { page_token: pageToken }),
+          })
+        ),
+        fetchAllQueryResources<MeetingRegistrant>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              ...registrantParams,
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        ).catch((error) => {
+          registrantsFetchFailed = true;
+          logger.warning(req, 'get_meeting_rsvps', 'Failed to fetch complete registrants for RSVP filtering, returning unfiltered RSVPs', {
+            meeting_id: meetingUid,
+            err: error,
+          });
+          return [] as MeetingRegistrant[];
+        }),
+      ]);
+
+      // If the registrant fetch failed, return unfiltered RSVPs rather than hiding data.
+      if (registrantsFetchFailed) {
+        return rsvps;
+      }
+
+      const activeRegistrantIds = new Set(registrants.map((r) => r.uid).filter(Boolean));
+      const filtered = rsvps.filter((rsvp) => activeRegistrantIds.has(rsvp.registrant_id));
+
+      logger.debug(req, 'get_meeting_rsvps', 'Filtered RSVPs to active registrants', {
+        meeting_id: meetingUid,
+        raw_rsvp_count: rsvps.length,
+        active_registrant_count: activeRegistrantIds.size,
+        filtered_rsvp_count: filtered.length,
+      });
+
+      return filtered;
     } catch (error) {
       logger.warning(req, 'get_meeting_rsvps', 'Failed to fetch meeting RSVPs, returning empty array', {
         meeting_id: meetingUid,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        err: error,
       });
       return [];
     }

@@ -50,7 +50,7 @@ export class CommitteeSurveysComponent {
         filter((c) => !!c?.uid),
         tap(() => this.loading.set(true)),
         switchMap((c) =>
-          this.surveyService.getSurveysByCommittee(c.uid, undefined, 'last_modified_at.desc').pipe(
+          this.surveyService.getSurveysByCommittee(c.uid, 'last_modified_at.desc').pipe(
             catchError(() => {
               this.messageService.add({
                 severity: 'error',

@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { MailingListMemberDeliveryMode, MailingListMemberModStatus } from '@lfx-one/shared/enums';
 import {
   CreateGroupsIOServiceRequest,
   CreateMailingListMemberRequest,
@@ -14,13 +15,12 @@ import {
   UpdateGroupsIOServiceRequest,
   UpdateMailingListMemberRequest,
 } from '@lfx-one/shared/interfaces';
-import { MailingListMemberDeliveryMode, MailingListMemberModStatus } from '@lfx-one/shared/enums';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
-import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { pollEndpoint, pollUntilIndexed } from '../helpers/poll-endpoint.helper';
 import { fetchAllQueryResources } from '../helpers/query-service.helper';
+import { getEffectiveEmail, getUsernameFromAuth, stripAuthPrefix } from '../utils/auth-helper';
 import { AccessCheckService } from './access-check.service';
 import { logger } from './logger.service';
 import { MicroserviceProxyService } from './microservice-proxy.service';
@@ -61,7 +61,6 @@ export class MailingListService {
     const services = await fetchAllQueryResources<GroupsIOService>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOService>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         ...params,
-        page_size: 100,
         ...(pageToken && { page_token: pageToken }),
       })
     );
@@ -198,7 +197,6 @@ export class MailingListService {
     let mailingLists = await fetchAllQueryResources<GroupsIOMailingList>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOMailingList>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         ...params,
-        page_size: 100,
         ...(pageToken && { page_token: pageToken }),
       })
     );
@@ -371,7 +369,6 @@ export class MailingListService {
           this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             v: '1',
             type: 'groupsio_member',
-            page_size: 100,
             tags_all: [`email:${email}`],
             ...(pageToken && { page_token: pageToken }),
           })
@@ -385,7 +382,6 @@ export class MailingListService {
           this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             v: '1',
             type: 'groupsio_member',
-            page_size: 100,
             tags_all: [`username:${username}`],
             ...(pageToken && { page_token: pageToken }),
           })
@@ -493,7 +489,6 @@ export class MailingListService {
     const members = await fetchAllQueryResources<MailingListMember>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<MailingListMember>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
         ...params,
-        page_size: 100,
         ...(pageToken && { page_token: pageToken }),
       })
     );

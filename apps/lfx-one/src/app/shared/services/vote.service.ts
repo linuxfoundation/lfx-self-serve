@@ -29,10 +29,6 @@ export class VoteService {
   public getVotesByProject(projectUid: string, pageSize?: number, orderBy?: string): Observable<Vote[]> {
     let params = new HttpParams().set('parent', `project:${projectUid}`);
 
-    if (pageSize) {
-      params = params.set('page_size', pageSize.toString());
-    }
-
     if (orderBy) {
       params = params.set('order', orderBy);
     }
@@ -48,10 +44,6 @@ export class VoteService {
     filters?: string[]
   ): Observable<PaginatedResponse<Vote>> {
     let params = new HttpParams().set('parent', `project:${projectUid}`);
-
-    if (pageSize) {
-      params = params.set('page_size', pageSize.toString());
-    }
 
     if (pageToken) {
       params = params.set('page_token', pageToken);
@@ -90,8 +82,8 @@ export class VoteService {
   }
 
   /** Fetches votes scoped to a committee via `tags=committee_uid:{uid}` query parameter. */
-  public getVotesByCommittee(committeeUid: string, orderBy?: string, pageSize: number = 1000): Observable<Vote[]> {
-    let params = new HttpParams().set('tags', `committee_uid:${committeeUid}`).set('page_size', pageSize.toString());
+  public getVotesByCommittee(committeeUid: string, orderBy?: string): Observable<Vote[]> {
+    let params = new HttpParams().set('tags', `committee_uid:${committeeUid}`);
 
     if (orderBy) {
       params = params.set('order', orderBy);

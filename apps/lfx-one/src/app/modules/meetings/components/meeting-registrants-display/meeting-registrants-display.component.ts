@@ -181,15 +181,15 @@ export class MeetingRegistrantsDisplayComponent {
         let matchesRsvp = true;
         if (rsvp !== 'all') {
           if (rsvp === 'yes') {
-            // Accepted: rsvp.response === 'accepted' OR invite_accepted === true
-            matchesRsvp = registrant.rsvp?.response === 'accepted' || registrant.invite_accepted === true;
+            // Accepted: rsvp.response_type === 'accepted' OR invite_accepted === true
+            matchesRsvp = registrant.rsvp?.response_type === 'accepted' || registrant.invite_accepted === true;
           } else if (rsvp === 'no') {
-            // Declined: rsvp.response === 'declined' OR invite_accepted === false
-            matchesRsvp = registrant.rsvp?.response === 'declined' || registrant.invite_accepted === false;
+            // Declined: rsvp.response_type === 'declined' OR invite_accepted === false
+            matchesRsvp = registrant.rsvp?.response_type === 'declined' || registrant.invite_accepted === false;
           } else if (rsvp === 'pending') {
             // Pending: NOT accepted AND NOT declined (includes maybe and no response)
-            const isAccepted = registrant.rsvp?.response === 'accepted' || registrant.invite_accepted === true;
-            const isDeclined = registrant.rsvp?.response === 'declined' || registrant.invite_accepted === false;
+            const isAccepted = registrant.rsvp?.response_type === 'accepted' || registrant.invite_accepted === true;
+            const isDeclined = registrant.rsvp?.response_type === 'declined' || registrant.invite_accepted === false;
             matchesRsvp = !isAccepted && !isDeclined;
           }
         }

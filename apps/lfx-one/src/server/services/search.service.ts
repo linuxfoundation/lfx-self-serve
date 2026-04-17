@@ -21,12 +21,10 @@ export class SearchService {
    */
   public async searchUsers(req: Request, params: UserSearchParams): Promise<UserSearchResponse> {
     const queryParams = {
-      v: 1,
+      v: '1',
       ...(params.name ? { name: params.name } : {}),
       ...(params.tags ? { tags: params.tags } : {}),
       type: params.type,
-      limit: params.limit || 50,
-      offset: params.offset || 0,
     };
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant | CommitteeMember>>(
@@ -85,7 +83,6 @@ export class SearchService {
     return {
       results,
       total: results.length,
-      has_more: results.length === queryParams.limit,
     };
   }
 }

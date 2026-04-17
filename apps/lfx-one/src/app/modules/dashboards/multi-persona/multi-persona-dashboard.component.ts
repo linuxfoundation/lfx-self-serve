@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, signal, Signal } from '@angular/core';
+import { Router } from '@angular/router';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import {
   BoardMemberDetectionExtra,
@@ -10,6 +11,7 @@ import {
   EnrichedPersonaProject,
   FoundationHealthScoreDistributionResponse,
   MultiFoundationSummaryResponse,
+  PastMeeting,
   PendingActionItem,
   PerFoundationAnalytics,
   PersonaProjectRow,
@@ -19,6 +21,7 @@ import {
 } from '@lfx-one/shared/interfaces';
 import { SurveyStatus } from '@lfx-one/shared/enums';
 import { getActiveOccurrences } from '@lfx-one/shared/utils';
+
 import { AnalyticsService } from '@services/analytics.service';
 import { HiddenActionsService } from '@services/hidden-actions.service';
 import { LensService } from '@services/lens.service';
@@ -67,6 +70,7 @@ export class MultiPersonaDashboardComponent {
   private readonly projectService = inject(ProjectService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly lensService = inject(LensService);
+  private readonly router = inject(Router);
   private readonly hiddenActionsService = inject(HiddenActionsService);
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
@@ -95,6 +99,12 @@ export class MultiPersonaDashboardComponent {
   protected readonly projectRows: Signal<PersonaProjectRow[]> = this.initProjectRows();
   protected readonly summaryPillsLoading = signal(true);
   protected readonly summaryPills: Signal<DashboardSummaryPills> = this.initSummaryPills();
+  protected readonly foundationCount: Signal<number> = computed(() => this.userFoundations().length);
+  protected readonly projectCount: Signal<number> = computed(() => this.allProjects().length - this.userFoundations().length);
+  protected readonly totalMeetingsThisWeek: Signal<number> = computed(() => {
+    const s = this.summaryPills();
+    return s.meetingsCompletedThisWeek + s.meetingsUpcomingThisWeek;
+  });
   protected readonly pendingActionsLoading = signal(true);
   protected readonly pendingActions: Signal<PendingActionItem[]> = this.initPendingActions();
 
@@ -107,9 +117,11 @@ export class MultiPersonaDashboardComponent {
     if (row.type === 'foundation') {
       this.projectContextService.setFoundation(context);
       this.lensService.setLens('foundation');
+      this.router.navigate(['/foundation/overview']);
     } else {
       this.projectContextService.setProject(context);
       this.lensService.setLens('project');
+      this.router.navigate(['/project/overview']);
     }
   }
 
@@ -223,27 +235,32 @@ export class MultiPersonaDashboardComponent {
   private initSummaryPills(): Signal<DashboardSummaryPills> {
     return toSignal(
       combineLatest([
-        toObservable(this.allProjects),
         this.surveyService.getMySurveys().pipe(catchError(() => of([]))),
         this.userService.getUserMeetings().pipe(catchError(() => of([]))),
+        this.userService.getUserPastMeetings().pipe(catchError(() => of([]))),
       ]).pipe(
-        map(([projects, surveys, meetings]) => {
+        map(([surveys, meetings, pastMeetings]) => {
           this.summaryPillsLoading.set(false);
-          const foundationCount = projects.filter((p) => p.isFoundation).length;
-          const projectCount = projects.filter((p) => !p.isFoundation).length;
           const openSurveys = surveys.filter((s) => s.survey_status === SurveyStatus.OPEN || s.survey_status === SurveyStatus.SENT).length;
-          const meetingsThisWeek = this.countMeetingsThisWeek(meetings);
+          const upcoming = this.countUpcomingMeetingsThisWeek(meetings);
+          const completed = this.countCompletedMeetingsThisWeek(pastMeetings);
 
           return {
-            foundationCount,
-            projectCount,
             openSurveys,
-            meetingsThisWeek,
+            meetingsCompletedThisWeek: completed,
+            meetingsUpcomingThisWeek: upcoming,
             itemsNeedReview: 0,
           };
         })
       ),
-      { initialValue: { foundationCount: 0, projectCount: 0, openSurveys: 0, meetingsThisWeek: 0, itemsNeedReview: 0 } }
+      {
+        initialValue: {
+          openSurveys: 0,
+          meetingsCompletedThisWeek: 0,
+          meetingsUpcomingThisWeek: 0,
+          itemsNeedReview: 0,
+        },
+      }
     );
   }
 
@@ -358,30 +375,42 @@ export class MultiPersonaDashboardComponent {
     return 'On Track';
   }
 
-  private countMeetingsThisWeek(meetings: Meeting[]): number {
+  private countUpcomingMeetingsThisWeek(meetings: Meeting[]): number {
     const now = new Date();
-    const startOfWeek = new Date(now);
-    startOfWeek.setDate(now.getDate() - now.getDay());
-    startOfWeek.setHours(0, 0, 0, 0);
-    const endOfWeek = new Date(startOfWeek);
-    endOfWeek.setDate(startOfWeek.getDate() + 7);
+    const endOfWeek = new Date(now);
+    endOfWeek.setDate(now.getDate() + (7 - now.getDay()));
+    endOfWeek.setHours(0, 0, 0, 0);
 
     let count = 0;
     for (const meeting of meetings) {
       if (meeting.occurrences?.length > 0) {
-        // Recurring meeting: count active occurrences this week
         for (const occ of getActiveOccurrences(meeting.occurrences)) {
           const occDate = new Date(occ.start_time);
-          if (occDate >= startOfWeek && occDate < endOfWeek) {
+          if (occDate >= now && occDate < endOfWeek) {
             count++;
           }
         }
       } else {
-        // One-off meeting: check series start_time
         const meetingDate = new Date(meeting.start_time);
-        if (meetingDate >= startOfWeek && meetingDate < endOfWeek) {
+        if (meetingDate >= now && meetingDate < endOfWeek) {
           count++;
         }
+      }
+    }
+    return count;
+  }
+
+  private countCompletedMeetingsThisWeek(pastMeetings: PastMeeting[]): number {
+    const now = new Date();
+    const startOfWeek = new Date(now);
+    startOfWeek.setDate(now.getDate() - now.getDay());
+    startOfWeek.setHours(0, 0, 0, 0);
+
+    let count = 0;
+    for (const pm of pastMeetings) {
+      const pmDate = new Date(pm.scheduled_start_time ?? pm.start_time);
+      if (pmDate >= startOfWeek && pmDate < now) {
+        count++;
       }
     }
     return count;

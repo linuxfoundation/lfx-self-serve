@@ -1,29 +1,29 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
-import { DialogService } from 'primeng/dynamicdialog';
-import { SkeletonModule } from 'primeng/skeleton';
+import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
+import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { MessageComponent } from '@components/message/message.component';
-import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dialog.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
-import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
-
-import { Committee, CommitteeMember, Meeting, PastMeeting, PendingActionItem, Survey, Vote } from '@lfx-one/shared/interfaces';
 import { CommitteeMemberRole, PollStatus } from '@lfx-one/shared/enums';
+import { Committee, CommitteeMember, Meeting, PastMeeting, PendingActionItem, Survey, Vote } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
-import { VoteService } from '@services/vote.service';
 import { SurveyService } from '@services/survey.service';
-import { MessageService } from 'primeng/api';
-import { catchError, filter, finalize, forkJoin, of, switchMap, take } from 'rxjs';
+import { VoteService } from '@services/vote.service';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
+import { MessageService } from 'primeng/api';
+import { DialogService } from 'primeng/dynamicdialog';
+import { SkeletonModule } from 'primeng/skeleton';
+import { catchError, filter, finalize, forkJoin, of, switchMap, take } from 'rxjs';
+
+import { DashboardMeetingCardComponent } from '../../../dashboards/components/dashboard-meeting-card/dashboard-meeting-card.component';
+import { VoteResultsDrawerComponent } from '../../../votes/components/vote-results-drawer/vote-results-drawer.component';
+import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dialog.component';
 
 @Component({
   selector: 'lfx-committee-overview',
@@ -326,7 +326,7 @@ export class CommitteeOverviewComponent {
         filter((c) => !!c?.uid),
         switchMap((c) => {
           this.pastMeetingsLoading.set(true);
-          return this.meetingService.getPastMeetingsByCommittee(c.uid, 20, 'updated_desc').pipe(
+          return this.meetingService.getPastMeetingsByCommittee(c.uid, 'updated_desc').pipe(
             catchError(() => of([])),
             finalize(() => this.pastMeetingsLoading.set(false))
           );
@@ -342,7 +342,7 @@ export class CommitteeOverviewComponent {
         filter((c) => !!c?.uid),
         switchMap((c) => {
           this.votesLoading.set(true);
-          return this.voteService.getVotesByCommittee(c.uid, 'updated_at.desc', 50).pipe(
+          return this.voteService.getVotesByCommittee(c.uid, 'updated_at.desc').pipe(
             catchError(() => of([])),
             finalize(() => this.votesLoading.set(false))
           );
@@ -395,7 +395,7 @@ export class CommitteeOverviewComponent {
         filter((c) => !!c?.uid),
         switchMap((c) => {
           this.surveysLoading.set(true);
-          return this.surveyService.getSurveysByCommittee(c.uid, 50).pipe(
+          return this.surveyService.getSurveysByCommittee(c.uid).pipe(
             catchError(() => of([])),
             finalize(() => this.surveysLoading.set(false))
           );

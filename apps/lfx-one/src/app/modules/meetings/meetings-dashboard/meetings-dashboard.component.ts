@@ -235,7 +235,7 @@ export class MeetingsDashboardComponent {
 
         this.meetingsLoading.set(true);
         const filters = this.buildMeetingTypeFilters(meetingType);
-        return this.meetingService.getMeetingsByProjectPaginated(project.uid, 50, undefined, undefined, searchQuery || undefined, filters).pipe(
+        return this.meetingService.getMeetingsByProjectPaginated(project.uid, undefined, undefined, searchQuery || undefined, filters).pipe(
           map((r): PageResult<Meeting> => ({ ...r, reset: true })),
           catchError(() => of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true })),
           finalize(() => this.meetingsLoading.set(false))
@@ -253,7 +253,7 @@ export class MeetingsDashboardComponent {
         this.loadingMore.set(true);
         const searchName = this.debouncedSearchQuery() || undefined;
         const filters = this.buildMeetingTypeFilters(this.meetingTypeFilter());
-        return this.meetingService.getMeetingsByProjectPaginated(projectUid, 50, undefined, pageToken, searchName, filters).pipe(
+        return this.meetingService.getMeetingsByProjectPaginated(projectUid, undefined, pageToken, searchName, filters).pipe(
           map((r): PageResult<Meeting> => ({ ...r, reset: false })),
           catchError(() => of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: false })),
           finalize(() => this.loadingMore.set(false))
@@ -312,7 +312,7 @@ export class MeetingsDashboardComponent {
 
         this.pastMeetingsLoading.set(true);
         const filters = this.buildMeetingTypeFilters(meetingType);
-        return this.meetingService.getPastMeetingsByProjectPaginated(project.uid, 50, undefined, searchQuery || undefined, filters).pipe(
+        return this.meetingService.getPastMeetingsByProjectPaginated(project.uid, undefined, searchQuery || undefined, filters).pipe(
           map((r): PageResult<PastMeeting> => ({ ...r, reset: true })),
           catchError(() => of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: true })),
           finalize(() => this.pastMeetingsLoading.set(false))
@@ -330,7 +330,7 @@ export class MeetingsDashboardComponent {
         this.loadingMore.set(true);
         const searchName = this.debouncedSearchQuery() || undefined;
         const filters = this.buildMeetingTypeFilters(this.meetingTypeFilter());
-        return this.meetingService.getPastMeetingsByProjectPaginated(projectUid, 50, pageToken, searchName, filters).pipe(
+        return this.meetingService.getPastMeetingsByProjectPaginated(projectUid, pageToken, searchName, filters).pipe(
           map((r): PageResult<PastMeeting> => ({ ...r, reset: false })),
           catchError(() => of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: false })),
           finalize(() => this.loadingMore.set(false))
@@ -344,8 +344,8 @@ export class MeetingsDashboardComponent {
         scan((acc: PastMeeting[], response: PageResult<PastMeeting>) => {
           // TODO: Remove client-side sorting once API supports sorting by scheduled_start_time
           const sorted = response.data.sort((a, b) => {
-            const timeA = new Date(a.scheduled_start_time).getTime();
-            const timeB = new Date(b.scheduled_start_time).getTime();
+            const timeA = new Date(a.scheduled_start_time ?? a.start_time).getTime();
+            const timeB = new Date(b.scheduled_start_time ?? b.start_time).getTime();
             return timeB - timeA;
           });
           return response.reset ? sorted : [...acc, ...sorted];

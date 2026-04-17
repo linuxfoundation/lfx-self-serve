@@ -173,6 +173,6 @@ export class RsvpButtonGroupComponent {
   }
 
   private initializeSelectedResponse(): Signal<RsvpResponse | null> {
-    return computed(() => this.currentRsvp()?.response ?? null);
+    return computed(() => this.currentRsvp()?.response_type ?? null);
   }
 }
