@@ -94,7 +94,8 @@ export class MeetingsDashboardComponent {
   // Raw FP/project meetings for stat cards (independent of time-filter tab)
   private rawFpUpcomingMeetings: Signal<Meeting[]>;
   private rawFpPastMeetings: Signal<PastMeeting[]>;
-  // Time-filtered meetings for deriving filter options (applies hasMeetingEnded for upcoming)
+  // Time-filtered meetings for deriving filter options. Server pre-filters past from upcoming;
+  // the filter inside filterAndSortUpcomingMeetings is a safety net for SWR-cached responses.
   private timeFilteredMeetings: Signal<(Meeting | PastMeeting)[]>;
 
   // Me lens stat cards
@@ -453,7 +454,8 @@ export class MeetingsDashboardComponent {
   }
 
   private filterAndSortUpcomingMeetings(meetings: Meeting[]): Meeting[] {
-    // TODO: Remove client-side filtering once API supports filtering by end time + 40-minute buffer
+    // Server filters past meetings before sending, but HTTP SWR cache can serve responses up to
+    // ~150s old. Re-apply the filter here as a safety net for meetings that ended after caching.
     const activeMeetings = meetings.filter((meeting) => {
       if (meeting.occurrences && meeting.occurrences.length > 0) {
         return meeting.occurrences.some((occurrence) => occurrence.status !== 'cancel' && !hasMeetingEnded(meeting, occurrence));

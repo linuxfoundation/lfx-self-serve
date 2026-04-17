@@ -15,20 +15,13 @@
   </div>
 }
 
-<!-- Dev Toolbar (fixed at top) -->
-<lfx-dev-toolbar></lfx-dev-toolbar>
-
-<div
-  class="flex min-h-screen"
-  [ngClass]="{
-    'pt-12': showDevToolbar(),
-  }">
+<div class="flex min-h-screen" [ngClass]="{ 'pt-12': userService.impersonating() }">
   <!-- Sidebar - Desktop: lens switcher (64px) + nav panel (280px) = 344px -->
   <div
     class="hidden lg:flex flex-row flex-shrink-0 fixed left-0 bottom-0 z-40"
     [ngClass]="{
-      'top-12': showDevToolbar(),
-      'top-0': !showDevToolbar(),
+      'top-12': userService.impersonating(),
+      'top-0': !userService.impersonating(),
     }">
     <!-- Lens Switcher Column (64px) -->
     <div class="w-16 flex-shrink-0" data-testid="lens-switcher-column">
@@ -81,8 +74,8 @@
   <div
     class="hidden lg:block fixed inset-0 bg-black/10 z-30 transition-opacity duration-300"
     [ngClass]="{
-      'top-12': showDevToolbar(),
-      'top-0': !showDevToolbar(),
+      'top-12': userService.impersonating(),
+      'top-0': !userService.impersonating(),
       'opacity-100 pointer-events-auto': selectorPanelOpen(),
       'opacity-0 pointer-events-none': !selectorPanelOpen(),
     }"
@@ -92,7 +85,9 @@
   <!-- Main Content Area -->
   <main class="flex-1 min-w-0 transition-all duration-300 lg:ml-[344px] flex flex-col" data-testid="main-content">
     <!-- Mobile Menu Button -->
-    <div class="lg:hidden sticky z-30 bg-white border-b border-gray-200 px-5 py-3" [ngClass]="{ 'top-12': showDevToolbar(), 'top-0': !showDevToolbar() }">
+    <div
+      class="lg:hidden sticky z-30 bg-white border-b border-gray-200 px-5 py-3"
+      [ngClass]="{ 'top-12': userService.impersonating(), 'top-0': !userService.impersonating() }">
       <button
         type="button"
         class="flex items-center justify-center w-10 h-10 rounded-lg hover:bg-gray-100 transition-colors"

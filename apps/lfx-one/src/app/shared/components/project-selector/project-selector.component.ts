@@ -4,7 +4,7 @@
 import { Component, computed, inject, input, model, output, signal } from '@angular/core';
 import { EnrichedPersonaProject } from '@lfx-one/shared/interfaces';
 import { isFoundationProject } from '@lfx-one/shared/utils';
-import { FeatureFlagService } from '@services/feature-flag.service';
+import { UserService } from '@services/user.service';
 import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
 import { Popover, PopoverModule } from 'primeng/popover';
@@ -16,7 +16,7 @@ import { Popover, PopoverModule } from 'primeng/popover';
   styleUrl: './project-selector.component.scss',
 })
 export class ProjectSelectorComponent {
-  private readonly featureFlagService = inject(FeatureFlagService);
+  private readonly userService = inject(UserService);
 
   public readonly projects = input.required<EnrichedPersonaProject[]>();
   public readonly selectedProject = input<EnrichedPersonaProject | null>(null);
@@ -26,9 +26,9 @@ export class ProjectSelectorComponent {
   public readonly projectChange = output<EnrichedPersonaProject>();
   public readonly isPanelOpen = model<boolean>(false);
 
-  protected readonly showDevToolbar = this.featureFlagService.getBooleanFlag('dev-toolbar', true);
+  // Offset the fixed-positioned popover when the impersonation banner is visible so it doesn't slide under it.
   protected readonly panelStyleClass = computed(() =>
-    this.showDevToolbar() ? 'project-selector-panel project-selector-panel--with-toolbar' : 'project-selector-panel'
+    this.userService.impersonating() ? 'project-selector-panel project-selector-panel--with-banner' : 'project-selector-panel'
   );
   protected readonly searchQuery = signal<string>('');
 

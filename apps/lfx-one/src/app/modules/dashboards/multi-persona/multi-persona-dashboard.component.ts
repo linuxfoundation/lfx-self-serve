@@ -31,7 +31,7 @@ import { ProjectService } from '@services/project.service';
 import { SurveyService } from '@services/survey.service';
 import { UserService } from '@services/user.service';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BehaviorSubject, catchError, combineLatest, filter, forkJoin, map, of, switchMap, take } from 'rxjs';
+import { BehaviorSubject, catchError, combineLatest, filter, forkJoin, map, of, switchMap, take, tap } from 'rxjs';
 
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
@@ -97,8 +97,17 @@ export class MultiPersonaDashboardComponent {
   protected readonly roleGroups: Signal<RoleGroup[]> = this.initRoleGroups();
   protected readonly analyticsSummary: Signal<MultiFoundationSummaryResponse | null> = this.initAnalyticsSummary();
   protected readonly projectRows: Signal<PersonaProjectRow[]> = this.initProjectRows();
-  protected readonly summaryPillsLoading = signal(true);
-  protected readonly summaryPills: Signal<DashboardSummaryPills> = this.initSummaryPills();
+  // Independent loading signals so each pill renders as its source lands (no combineLatest gate).
+  protected readonly openSurveysLoading = signal(true);
+  protected readonly meetingsPillLoading = signal(true);
+  private readonly openSurveysCount: Signal<number> = this.initOpenSurveysCount();
+  private readonly meetingsThisWeek: Signal<{ completed: number; upcoming: number }> = this.initMeetingsThisWeek();
+  protected readonly summaryPills: Signal<DashboardSummaryPills> = computed(() => ({
+    openSurveys: this.openSurveysCount(),
+    meetingsCompletedThisWeek: this.meetingsThisWeek().completed,
+    meetingsUpcomingThisWeek: this.meetingsThisWeek().upcoming,
+    itemsNeedReview: 0,
+  }));
   protected readonly foundationCount: Signal<number> = computed(() => this.userFoundations().length);
   protected readonly projectCount: Signal<number> = computed(() => this.allProjects().length - this.userFoundations().length);
   protected readonly totalMeetingsThisWeek: Signal<number> = computed(() => {
@@ -232,35 +241,30 @@ export class MultiPersonaDashboardComponent {
     });
   }
 
-  private initSummaryPills(): Signal<DashboardSummaryPills> {
+  private initOpenSurveysCount(): Signal<number> {
+    return toSignal(
+      this.surveyService.getMySurveys().pipe(
+        map((surveys) => surveys.filter((s) => s.survey_status === SurveyStatus.OPEN || s.survey_status === SurveyStatus.SENT).length),
+        catchError(() => of(0)),
+        tap(() => this.openSurveysLoading.set(false))
+      ),
+      { initialValue: 0 }
+    );
+  }
+
+  private initMeetingsThisWeek(): Signal<{ completed: number; upcoming: number }> {
     return toSignal(
       combineLatest([
-        this.surveyService.getMySurveys().pipe(catchError(() => of([]))),
-        this.userService.getUserMeetings().pipe(catchError(() => of([]))),
-        this.userService.getUserPastMeetings().pipe(catchError(() => of([]))),
+        this.userService.getUserMeetings().pipe(catchError(() => of([] as Meeting[]))),
+        this.userService.getUserPastMeetings().pipe(catchError(() => of([] as PastMeeting[]))),
       ]).pipe(
-        map(([surveys, meetings, pastMeetings]) => {
-          this.summaryPillsLoading.set(false);
-          const openSurveys = surveys.filter((s) => s.survey_status === SurveyStatus.OPEN || s.survey_status === SurveyStatus.SENT).length;
-          const upcoming = this.countUpcomingMeetingsThisWeek(meetings);
-          const completed = this.countCompletedMeetingsThisWeek(pastMeetings);
-
-          return {
-            openSurveys,
-            meetingsCompletedThisWeek: completed,
-            meetingsUpcomingThisWeek: upcoming,
-            itemsNeedReview: 0,
-          };
-        })
+        map(([meetings, pastMeetings]) => ({
+          upcoming: this.countUpcomingMeetingsThisWeek(meetings),
+          completed: this.countCompletedMeetingsThisWeek(pastMeetings),
+        })),
+        tap(() => this.meetingsPillLoading.set(false))
       ),
-      {
-        initialValue: {
-          openSurveys: 0,
-          meetingsCompletedThisWeek: 0,
-          meetingsUpcomingThisWeek: 0,
-          itemsNeedReview: 0,
-        },
-      }
+      { initialValue: { completed: 0, upcoming: 0 } }
     );
   }
 

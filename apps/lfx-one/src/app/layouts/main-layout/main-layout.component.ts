@@ -10,7 +10,6 @@ import { SidebarComponent } from '@components/sidebar/sidebar.component';
 import { ALL_LENSES, COMMITTEE_LABEL, DOCUMENT_LABEL, MAILING_LIST_LABEL, SURVEY_LABEL, VOTE_LABEL } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
 import { AppService } from '@services/app.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { ImpersonationService } from '@services/impersonation.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -19,11 +18,10 @@ import { DrawerModule } from 'primeng/drawer';
 import { filter, take } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
-import { DevToolbarComponent } from '../dev-toolbar/dev-toolbar.component';
 
 @Component({
   selector: 'lfx-main-layout',
-  imports: [NgClass, RouterModule, SidebarComponent, DrawerModule, DevToolbarComponent, LensSwitcherComponent, ButtonComponent],
+  imports: [NgClass, RouterModule, SidebarComponent, DrawerModule, LensSwitcherComponent, ButtonComponent],
   templateUrl: './main-layout.component.html',
   styleUrl: './main-layout.component.scss',
   schemas: [CUSTOM_ELEMENTS_SCHEMA],
@@ -32,7 +30,6 @@ export class MainLayoutComponent {
   private readonly router = inject(Router);
   private readonly route = inject(ActivatedRoute);
   private readonly appService = inject(AppService);
-  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
   private readonly impersonationService = inject(ImpersonationService);
@@ -43,9 +40,6 @@ export class MainLayoutComponent {
 
   // Project/foundation selector panel open state (drives the main-content backdrop)
   protected readonly selectorPanelOpen = model(false);
-
-  // Feature flags
-  protected readonly showDevToolbar = this.featureFlagService.getBooleanFlag('dev-toolbar', true);
 
   // Active lens from service
   protected readonly activeLens = this.lensService.activeLens;

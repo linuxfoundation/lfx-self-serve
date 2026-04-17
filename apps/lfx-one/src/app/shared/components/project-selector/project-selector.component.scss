@@ -36,9 +36,9 @@
     // Pin the popover 4px from the top of the viewport
     top: 4px !important;
 
-    // When dev toolbar is visible, offset by its height (48px)
-    &.project-selector-panel--with-toolbar {
-      top: 52px !important; // 48px toolbar + 4px
+    // When the impersonation banner is visible, offset by its height (48px)
+    &.project-selector-panel--with-banner {
+      top: 52px !important; // 48px banner + 4px
     }
   }
 }

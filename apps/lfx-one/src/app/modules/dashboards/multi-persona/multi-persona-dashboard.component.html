@@ -36,33 +36,36 @@
 
       <!-- Summary Pills -->
       <div
-        class="mb-4 inline-flex flex-wrap items-center gap-px overflow-hidden rounded-lg border border-blue-200 bg-blue-200 text-sm"
+        class="mb-4 inline-flex flex-wrap items-center divide-x divide-blue-200 overflow-hidden rounded-lg border border-blue-200 text-sm"
         data-testid="multi-persona-summary-pills">
         @if (hasFoundations()) {
-          <div class="flex items-center gap-2 bg-blue-50 px-4 py-2.5">
+          <div class="flex items-center gap-2 px-4 py-2.5">
             <i class="fa-solid fa-building-columns text-blue-600"></i>
             <span class="font-semibold text-gray-900">{{ foundationCount() }} foundations</span>
           </div>
         }
         @if (hasProjects()) {
-          <div class="flex items-center gap-2 bg-blue-50 px-4 py-2.5">
+          <div class="flex items-center gap-2 px-4 py-2.5">
             <i class="fa-solid fa-laptop-code text-blue-600"></i>
             <span class="font-semibold text-gray-900">{{ projectCount() }} projects</span>
           </div>
         }
-        @if (summaryPillsLoading()) {
-          <div class="bg-blue-50 px-4 py-2.5">
-            <p-skeleton width="6rem" height="1rem" />
-          </div>
-          <div class="bg-blue-50 px-4 py-2.5">
+        @if (openSurveysLoading()) {
+          <div class="px-4 py-2.5">
             <p-skeleton width="6rem" height="1rem" />
           </div>
         } @else {
-          <div class="flex items-center gap-2 bg-blue-50 px-4 py-2.5">
+          <div class="flex items-center gap-2 px-4 py-2.5">
             <i class="fa-solid fa-square-poll-horizontal text-blue-600"></i>
             <span class="text-gray-700">{{ summaryPills().openSurveys }} surveys open</span>
           </div>
-          <div class="flex items-center gap-2 bg-blue-50 px-4 py-2.5">
+        }
+        @if (meetingsPillLoading()) {
+          <div class="px-4 py-2.5">
+            <p-skeleton width="6rem" height="1rem" />
+          </div>
+        } @else {
+          <div class="flex items-center gap-2 px-4 py-2.5">
             <i class="fa-solid fa-calendar text-blue-600"></i>
             <span class="text-gray-700"
               >{{ totalMeetingsThisWeek() }} meetings this week
@@ -71,12 +74,12 @@
               }
             </span>
           </div>
-          @if (summaryPills().itemsNeedReview > 0) {
-            <div class="flex items-center gap-2 bg-blue-50 px-4 py-2.5">
-              <i class="fa-solid fa-circle-check text-blue-600"></i>
-              <span class="text-gray-700">{{ summaryPills().itemsNeedReview }} items need review</span>
-            </div>
-          }
+        }
+        @if (summaryPills().itemsNeedReview > 0) {
+          <div class="flex items-center gap-2 px-4 py-2.5">
+            <i class="fa-solid fa-circle-check text-blue-600"></i>
+            <span class="text-gray-700">{{ summaryPills().itemsNeedReview }} items need review</span>
+          </div>
         }
       </div>
 

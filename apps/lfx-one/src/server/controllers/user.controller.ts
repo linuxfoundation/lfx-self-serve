@@ -87,6 +87,10 @@ export class UserController {
         action_count: pendingActions.length,
       });
 
+      // Private, revalidate-every-time — server recomputes the response for the real
+      // authenticated identity on every hit, so 304 (cache-reuse) only fires when the server
+      // confirms the body is unchanged for this user. See getUserMeetings for full rationale.
+      res.set('Cache-Control', 'private, no-cache');
       res.json(pendingActions);
     } catch (error) {
       next(error);
@@ -130,6 +134,12 @@ export class UserController {
         meeting_count: meetings.length,
       });
 
+      // Private, revalidate-every-time. Browser stores the body + ETag, but must check with the
+      // server (If-None-Match) before serving. The server recomputes the response for the real
+      // authenticated identity on every hit, so cross-user cache reads are impossible: different
+      // users produce different bodies → different ETags → 200 with fresh data. 304 responses
+      // skip the body entirely, which is where the bandwidth/parse savings come from.
+      res.set('Cache-Control', 'private, no-cache');
       res.json(meetings);
     } catch (error) {
       next(error);
@@ -173,6 +183,8 @@ export class UserController {
         past_meeting_count: pastMeetings.length,
       });
 
+      // Private, revalidate-every-time — see getUserMeetings for full rationale.
+      res.set('Cache-Control', 'private, no-cache');
       res.json(pastMeetings);
     } catch (error) {
       next(error);

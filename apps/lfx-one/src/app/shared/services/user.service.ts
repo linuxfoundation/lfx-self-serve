@@ -52,6 +52,9 @@ export class UserService {
   private userMeetings$: Observable<Meeting[]> | null = null;
   private userPastMeetings$: Observable<PastMeeting[]> | null = null;
 
+  /** Cached Salesforce user ID from the API Gateway — null until first fetch */
+  public readonly apiGatewayUserId = signal<string | null>(null);
+
   public constructor() {
     // Invalidate cached user-scoped observables when the authenticated user or
     // impersonation changes, so existing subscribers don't see stale data from
@@ -72,8 +75,6 @@ export class UserService {
         this.userPastMeetingsRefresh$.next();
       });
   }
-  /** Cached Salesforce user ID from the API Gateway — null until first fetch */
-  public readonly apiGatewayUserId = signal<string | null>(null);
 
   // Create a new user with permissions
   public createUserWithPermissions(userData: CreateUserPermissionRequest): Observable<any> {

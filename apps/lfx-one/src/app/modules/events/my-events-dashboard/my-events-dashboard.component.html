@@ -24,7 +24,6 @@
       </div>
     </div>
 
-
     <!-- Me lens stat cards -->
     <div class="mb-0" data-testid="events-me-stats">
       <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
@@ -41,7 +40,9 @@
               }
               <p class="text-sm font-normal text-gray-900">Registered Events</p>
               @if (!eventsList.eventsStatsLoading() && eventsList.nextEventName()) {
-                <p class="text-xs text-gray-400 truncate max-w-[200px]" [pTooltip]="eventsList.nextEventName()" tooltipPosition="top">Next: {{ eventsList.nextEventName() }}</p>
+                <p class="text-xs text-gray-400 truncate max-w-[200px]" [pTooltip]="eventsList.nextEventName()" tooltipPosition="top">
+                  Next: {{ eventsList.nextEventName() }}
+                </p>
               }
             </div>
           </div>
