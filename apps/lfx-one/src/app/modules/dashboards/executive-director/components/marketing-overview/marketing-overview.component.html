@@ -6,31 +6,28 @@
     <div class="flex flex-col gap-1">
       <h2 class="mb-0">Executive Director Overview</h2>
       <p class="text-sm text-gray-500 mb-0">North Star KPIs · Brand · Influence</p>
-    </div>
-
-    <div class="flex items-center gap-4">
       <!-- Filter Pills -->
       <lfx-filter-pills [options]="filterOptions" [selectedFilter]="selectedFilter()" (filterChange)="setFilter($event)" data-testid="ed-evolution-filters" />
+    </div>
 
-      <!-- Carousel Controls -->
-      <div class="flex items-center gap-2">
-        <lfx-button
-          icon="fa-light fa-chevron-left"
-          [outlined]="true"
-          severity="secondary"
-          size="small"
-          ariaLabel="Scroll left"
-          (onClick)="scrollShadowDirective()?.scrollLeft()"
-          data-testid="ed-evolution-carousel-prev" />
-        <lfx-button
-          icon="fa-light fa-chevron-right"
-          [outlined]="true"
-          severity="secondary"
-          size="small"
-          ariaLabel="Scroll right"
-          (onClick)="scrollShadowDirective()?.scrollRight()"
-          data-testid="ed-evolution-carousel-next" />
-      </div>
+    <!-- Carousel Controls -->
+    <div class="flex items-center gap-2">
+      <lfx-button
+        icon="fa-light fa-chevron-left"
+        [outlined]="true"
+        severity="secondary"
+        size="small"
+        ariaLabel="Scroll left"
+        (onClick)="scrollShadowDirective()?.scrollLeft()"
+        data-testid="ed-evolution-carousel-prev" />
+      <lfx-button
+        icon="fa-light fa-chevron-right"
+        [outlined]="true"
+        severity="secondary"
+        size="small"
+        ariaLabel="Scroll right"
+        (onClick)="scrollShadowDirective()?.scrollRight()"
+        data-testid="ed-evolution-carousel-next" />
     </div>
   </div>
 
