@@ -45,3 +45,4 @@ export * from './committee-documents.constants';
 export * from './lens.constants';
 export * from './training.constants';
 export * from './documents.constants';
+export * from './transaction.constants';

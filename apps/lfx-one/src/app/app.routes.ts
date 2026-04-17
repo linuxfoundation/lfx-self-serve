@@ -83,6 +83,10 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/trainings/trainings.routes').then((m) => m.TRAINING_ROUTES),
       },
       {
+        path: 'me/transactions',
+        loadChildren: () => import('./modules/transactions/transactions.routes').then((m) => m.TRANSACTION_ROUTES),
+      },
+      {
         path: 'events',
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
       },
