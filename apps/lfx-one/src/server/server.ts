@@ -249,6 +249,8 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     auth.persona = personaResult.persona;
     auth.personas = personaResult.personas;
     auth.organizations = personaResult.organizations ?? [];
+    auth.projects = personaResult.projects;
+    auth.personaProjects = personaResult.personaProjects;
   }
 
   // Check if user can impersonate (from access token custom claim)

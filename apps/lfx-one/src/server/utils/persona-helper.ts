@@ -95,7 +95,13 @@ async function resolveFromNats(req: Request, res: Response): Promise<SsrPersonaR
       personas,
     });
 
-    return { persona, personas, organizations };
+    return {
+      persona,
+      personas,
+      organizations,
+      projects: personaResult.projects,
+      personaProjects: personaResult.personaProjects,
+    };
   } catch (error) {
     logger.warning(req, 'ssr_persona', 'Persona detection failed during SSR, defaulting to contributor', {
       error: error instanceof Error ? error.message : 'Unknown error',

@@ -2,10 +2,11 @@
 // SPDX-License-Identifier: MIT
 
 import { HttpClient } from '@angular/common/http';
-import { afterNextRender, computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
+import { afterNextRender, computed, inject, Injectable, makeStateKey, Signal, signal, TransferState, WritableSignal } from '@angular/core';
 import { PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import {
   Account,
+  AuthContext,
   EnrichedPersonaProject,
   isBoardScopedPersona,
   isProjectScopedPersona,
@@ -29,6 +30,7 @@ export class PersonaService {
   private readonly cookieService = inject(SsrCookieService);
   private readonly cookieRegistry = inject(CookieRegistryService);
   private readonly accountContextService = inject(AccountContextService);
+  private readonly transferState = inject(TransferState);
 
   public readonly currentPersona: WritableSignal<PersonaType>;
   public readonly allPersonas: WritableSignal<PersonaType[]>;
@@ -65,8 +67,9 @@ export class PersonaService {
     this.allPersonas = signal<PersonaType[]>(stored?.all ?? ['contributor']);
     this.multiProject = signal<boolean>(stored?.multiProject ?? false);
     this.multiFoundation = signal<boolean>(stored?.multiFoundation ?? false);
-    this.personaProjects = signal<Partial<Record<PersonaType, PersonaProject[]>>>({});
-    this.detectedProjects = signal<EnrichedPersonaProject[]>([]);
+    const authState = this.transferState.get(makeStateKey<AuthContext>('auth'), { authenticated: false, user: null });
+    this.personaProjects = signal<Partial<Record<PersonaType, PersonaProject[]>>>(authState.personaProjects ?? {});
+    this.detectedProjects = signal<EnrichedPersonaProject[]>(authState.projects ?? []);
     this.isBoardScoped = computed(() => isBoardScopedPersona(this.currentPersona()));
     this.hasBoardRole = this.initHasBoardRole();
     this.hasProjectRole = this.initHasProjectRole();

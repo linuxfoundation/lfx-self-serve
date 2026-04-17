@@ -101,6 +101,10 @@ export interface SsrPersonaResult {
   personas: PersonaType[];
   /** User's organizations from board member detections (optional — empty for non-board personas) */
   organizations?: Account[];
+  /** Enriched projects from NATS detection — transferred to client via TransferState */
+  projects?: EnrichedPersonaProject[];
+  /** Persona-to-project mapping from NATS detection — transferred to client via TransferState */
+  personaProjects?: Partial<Record<PersonaType, PersonaProject[]>>;
 }
 
 /**
