@@ -83,12 +83,26 @@ export const routes: Routes = [
         loadChildren: () => import('./modules/trainings/trainings.routes').then((m) => m.TRAINING_ROUTES),
       },
       {
+        path: 'badges',
+        loadChildren: () => import('./modules/badges/badges.routes').then((m) => m.BADGE_ROUTES),
+      },
+      {
         path: 'me/transactions',
         loadChildren: () => import('./modules/transactions/transactions.routes').then((m) => m.TRANSACTION_ROUTES),
       },
       {
         path: 'events',
         loadChildren: () => import('./modules/events/events.routes').then((m) => m.EVENTS_ROUTES),
+      },
+      {
+        path: 'me/events',
+        redirectTo: 'events',
+        pathMatch: 'full',
+      },
+      {
+        path: 'me/badges',
+        redirectTo: 'badges',
+        pathMatch: 'full',
       },
     ],
   },

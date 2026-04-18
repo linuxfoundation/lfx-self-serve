@@ -1,0 +1,151 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="container mx-auto px-4 sm:px-6 lg:px-8">
+  <!-- Page Header -->
+  <div #pageTopAnchor class="mb-8">
+    <h1 data-testid="badges-dashboard-title">{{ badgeLabelPlural }}</h1>
+    <p class="mt-2 text-gray-500" data-testid="badges-dashboard-description">
+      Discover, recognize achievements in community engagement, event participation, and project contributions.
+    </p>
+  </div>
+
+  <!-- Filter Bar -->
+  <div class="mb-4 flex items-center justify-between gap-4 flex-wrap">
+    <lfx-filter-pills [options]="filterOptions" [selectedFilter]="selectedFilter()" (filterChange)="onFilterChange($event)" data-testid="badges-filter-pills">
+    </lfx-filter-pills>
+    <div class="relative">
+      <button type="button" class="badge-filter-btn" (click)="toggleFiltersPanel($event)" [attr.aria-label]="filterButtonAriaLabel()" data-testid="badges-filter-btn">
+        <i class="fa-light fa-sliders text-xs"></i>
+        Filters
+        @if (hasActiveFilters()) {
+          <span class="badge-filter-dot" aria-label="Filters active"></span>
+        }
+      </button>
+      <p-popover #filtersPopover data-testid="badges-filter-popover">
+        <div class="flex flex-col gap-4 p-1 w-48">
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Visibility</span>
+            <lfx-select
+              [form]="visibilityForm"
+              control="visibility"
+              size="small"
+              [options]="visibilitySelectOptions"
+              styleClass="w-full"
+              data-testid="badges-visibility-select">
+            </lfx-select>
+          </div>
+          <div class="flex flex-col gap-1.5">
+            <span class="text-xs font-medium text-gray-500 uppercase tracking-wide">Status</span>
+            <lfx-select
+              [form]="statusForm"
+              control="status"
+              size="small"
+              [options]="statusSelectOptions"
+              styleClass="w-full"
+              data-testid="badges-status-select">
+            </lfx-select>
+          </div>
+        </div>
+      </p-popover>
+    </div>
+  </div>
+
+  <!-- Loading State -->
+  @if (loading()) {
+    <p class="mb-6 text-sm text-gray-500">Loading badges…</p>
+    <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="badges-loading-grid">
+      @for (_ of skeletonItems; track $index) {
+        <lfx-card [attr.data-testid]="'badge-skeleton-' + $index">
+          <div class="p-4 flex flex-col gap-3">
+            <div class="flex items-start justify-between">
+              <p-skeleton width="4rem" height="4rem" borderRadius="8px" />
+              <div class="flex gap-1.5">
+                <p-skeleton width="4.5rem" height="1.25rem" borderRadius="9999px" />
+                <p-skeleton width="3.5rem" height="1.25rem" borderRadius="9999px" />
+              </div>
+            </div>
+            <div class="flex flex-col gap-1 mt-1">
+              <p-skeleton width="75%" height="1rem" />
+              <p-skeleton width="100%" height="0.875rem" />
+              <p-skeleton width="85%" height="0.875rem" />
+            </div>
+            <div class="border-t border-gray-200"></div>
+            <div class="flex flex-col gap-2">
+              <div class="flex flex-col gap-0.5">
+                <p-skeleton width="3.5rem" height="0.625rem" />
+                <p-skeleton width="7rem" height="0.75rem" />
+              </div>
+              <div class="flex flex-col gap-0.5">
+                <p-skeleton width="3.5rem" height="0.625rem" />
+                <p-skeleton width="5rem" height="0.75rem" />
+              </div>
+              <div class="flex flex-col gap-0.5">
+                <p-skeleton width="4rem" height="0.625rem" />
+                <p-skeleton width="10rem" height="0.75rem" />
+              </div>
+              <div class="flex gap-2 mt-2">
+                <p-skeleton width="5.5rem" height="1.75rem" borderRadius="6px" />
+                <p-skeleton width="7rem" height="1.75rem" borderRadius="6px" />
+              </div>
+            </div>
+          </div>
+        </lfx-card>
+      }
+    </div>
+  } @else if (hasError()) {
+    <!-- Error State -->
+    <lfx-card data-testid="badges-error-state-card">
+      <div class="p-8 md:p-12">
+        <div class="max-w-2xl mx-auto text-center flex flex-col gap-6">
+          <div class="flex justify-center">
+            <div class="w-20 h-20 rounded-full bg-red-100 flex items-center justify-center">
+              <i class="fa-light fa-circle-exclamation text-4xl text-red-600"></i>
+            </div>
+          </div>
+          <h2 class="text-xl font-semibold text-gray-900">Unable to load badges</h2>
+          <p class="text-gray-600">Something went wrong while fetching your badges. Please try again later.</p>
+        </div>
+      </div>
+    </lfx-card>
+  } @else {
+    <!-- Badge Count -->
+    <p class="mb-6 text-sm text-gray-500" data-testid="badges-count">{{ badgeCountLabel() }}</p>
+
+    <!-- Badge Grid -->
+    @if (filteredBadgesCount() === 0) {
+      <lfx-card data-testid="badges-empty-state-card">
+        <div class="p-8 md:p-12">
+          <div class="max-w-2xl mx-auto text-center flex flex-col gap-6">
+            <div class="flex justify-center">
+              <div class="w-20 h-20 rounded-full bg-blue-100 flex items-center justify-center">
+                <i class="fa-light fa-award text-4xl text-blue-600"></i>
+              </div>
+            </div>
+            <h2 class="text-xl font-semibold text-gray-900">No badges found</h2>
+            <p class="text-gray-600">No badges match the selected filter. Try selecting a different category.</p>
+          </div>
+        </div>
+      </lfx-card>
+    } @else {
+      <div class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6" data-testid="badges-grid">
+        @for (badge of paginatedBadges(); track badge.id) {
+          <div class="h-full">
+            <lfx-badge-card [badge]="badge" />
+          </div>
+        }
+      </div>
+
+      @if (filteredBadgesCount() > rowsPerPage) {
+        <p-paginator
+          [first]="paginatorFirst()"
+          [rows]="rowsPerPage"
+          [totalRecords]="filteredBadgesCount()"
+          (onPageChange)="onPageChange($event)"
+          styleClass="mt-6"
+          data-testid="badges-paginator">
+        </p-paginator>
+      }
+    }
+  }
+</div>

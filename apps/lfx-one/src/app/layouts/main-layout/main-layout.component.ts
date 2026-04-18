@@ -125,7 +125,7 @@ export class MainLayoutComponent {
         {
           label: 'Badges',
           icon: 'fa-light fa-award',
-          routerLink: '/me/badges',
+          routerLink: '/badges',
         },
       ],
     },

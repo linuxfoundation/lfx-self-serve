@@ -1,0 +1,31 @@
+// Copyright The Linux Foundation and each contributor to LFX.
+// SPDX-License-Identifier: MIT
+
+.badge-filter-btn {
+  @apply relative inline-flex items-center gap-1.5 px-2.5 py-1 w-fit
+    rounded-md border border-gray-300 text-xs font-medium text-gray-700
+    hover:bg-gray-50 transition-colors bg-white cursor-pointer;
+}
+
+.badge-filter-dot {
+  @apply absolute -top-1 -right-1 w-2 h-2 rounded-full bg-blue-500;
+}
+
+:host ::ng-deep [data-testid='badges-grid'] {
+  > div {
+    @apply h-full;
+  }
+
+  lfx-card {
+    @apply block h-full;
+  }
+
+  .p-card {
+    @apply h-full;
+  }
+
+  .p-card-body,
+  .p-card-content {
+    @apply h-full;
+  }
+}

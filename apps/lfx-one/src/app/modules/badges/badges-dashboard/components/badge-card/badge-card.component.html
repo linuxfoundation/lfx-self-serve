@@ -1,0 +1,120 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card [attr.data-testid]="'badge-card-' + badge().id">
+  <div class="p-4 flex flex-col gap-3 h-full relative">
+    @if (badge().credlyUrl) {
+      <a
+        [href]="badge().credlyUrl"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="badge-card-overlay-link"
+        [attr.aria-label]="'View ' + badge().title + ' credential on Credly'"
+        [attr.data-testid]="'badge-card-link-' + badge().id">
+      </a>
+    }
+    <!-- Top Row: Image + Tags -->
+    <div class="flex items-start justify-between">
+      @if (badge().imageUrl) {
+        <img [src]="badge().imageUrl" [alt]="badge().title" class="w-16 h-16 object-contain" [attr.data-testid]="'badge-image-' + badge().id" />
+      } @else {
+        <div class="w-16 h-16 rounded-lg bg-blue-50 flex items-center justify-center shrink-0">
+          <i class="fa-solid fa-shield-check text-2xl text-blue-600"></i>
+        </div>
+      }
+      <div class="flex items-center gap-1.5 flex-wrap justify-end">
+        <span class="inline-flex items-center px-1.5 py-px rounded-full text-xs font-medium border border-gray-300 text-gray-600">
+          {{ badge().categoryLabel }}
+        </span>
+        @if (badge().isPending) {
+          <span class="badge-tag border-yellow-200 text-yellow-700">
+            <i class="fa-solid fa-clock text-yellow-500 text-xs"></i>
+            Pending
+          </span>
+        } @else if (badge().isExpired) {
+          <span class="badge-tag border-orange-200 text-orange-600">
+            <i class="fa-solid fa-clock text-orange-500 text-xs"></i>
+            Expired
+          </span>
+        }
+        @if (badge().isPublic) {
+          <span class="badge-tag border-green-200 text-green-600">
+            <i class="fa-solid fa-globe text-green-500 text-xs"></i>
+            Public
+          </span>
+        } @else {
+          <span class="badge-tag border-gray-200 text-gray-500">
+            <i class="fa-solid fa-lock text-gray-400 text-xs"></i>
+            Private
+          </span>
+        }
+      </div>
+    </div>
+
+    <!-- Title + Description -->
+    <div class="flex flex-col gap-1 flex-1 mt-1">
+      <h3 class="text-base font-semibold text-gray-900 leading-snug">{{ badge().title }}</h3>
+      <p class="text-sm leading-normal text-gray-500 line-clamp-4">
+        {{ badge().description }}
+      </p>
+    </div>
+
+    <!-- Divider -->
+    <div class="border-t border-gray-200"></div>
+
+    <!-- Metadata Section -->
+    <div class="flex flex-col gap-2 mt-auto">
+      <div class="flex flex-col">
+        <span class="text-xs text-gray-400">Issued by:</span>
+        <span class="text-xs text-gray-900">{{ badge().issuer }}</span>
+      </div>
+
+      <div class="flex flex-col">
+        <span class="text-xs text-gray-400">Issued on:</span>
+        <span class="text-xs text-gray-900">{{ badge().issuedDate | date: 'MMMM d, y' }}</span>
+      </div>
+
+      @if (badge().expiresDate) {
+        <div class="flex flex-col">
+          <span class="text-xs text-gray-400">{{ badge().isExpired ? 'Expired on:' : 'Expires on:' }}</span>
+          <span class="text-xs" [class.text-orange-600]="badge().isExpired" [class.text-gray-900]="!badge().isExpired">
+            {{ badge().expiresDate | date: 'MMMM d, y' }}
+          </span>
+        </div>
+      }
+
+      <div class="flex flex-col">
+        <span class="text-xs text-gray-400">Credential ID:</span>
+        <span class="text-xs text-gray-900">{{ badge().credentialId }}</span>
+      </div>
+
+      <!-- Action Buttons -->
+      @if (badge().credlyUrl) {
+        <div class="flex items-center gap-2 mt-3 relative z-20">
+          <a
+            [href]="badge().credlyUrl"
+            target="_blank"
+            rel="noopener noreferrer"
+            [class]="badge().isPending ? 'badge-accept-btn' : 'badge-credly-btn'"
+            [attr.aria-label]="
+              badge().isPending
+                ? 'Accept ' + badge().title + ' credential on Credly'
+                : !badge().isPublic
+                  ? 'Manage privacy for ' + badge().title + ' credential on Credly'
+                  : 'View ' + badge().title + ' credential on Credly'
+            "
+            [attr.data-testid]="'badge-credly-link-' + badge().id">
+            <i class="fa-light fa-arrow-up-right-from-square text-xs"></i>
+            {{ badge().isPending ? 'Accept Badge' : badge().isPublic ? 'View in Credly' : 'Manage Privacy' }}
+          </a>
+          @if (badge().shareUrl && badge().isPublic) {
+            <button type="button" class="badge-share-btn" (click)="shareBadge(badge().shareUrl!)" aria-label="Copy badge URL to clipboard" [attr.data-testid]="'badge-share-btn-' + badge().id">
+              <i class="fa-light fa-link text-xs"></i>
+              Share Badge
+            </button>
+          }
+        </div>
+      }
+    </div>
+  </div>
+</lfx-card>
