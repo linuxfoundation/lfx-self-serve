@@ -3,9 +3,9 @@
 
 <div class="flex flex-col gap-4" data-testid="summary-modal-container">
   <!-- Meeting Title -->
-  <div class="mb-4">
-    <h4 class="text-lg font-semibold text-gray-900 mb-1">{{ meetingTitle }}</h4>
-    <p class="text-sm text-gray-600">AI-generated meeting summary</p>
+  <div>
+    <h4 class="text-lg font-semibold text-gray-900">{{ meetingTitle }}</h4>
+    <p class="text-sm text-gray-500">AI-generated meeting summary</p>
   </div>
 
   <!-- Summary Content Display -->
@@ -23,39 +23,47 @@
     </div>
   } @else {
     <div class="bg-gray-50 rounded-lg p-6 border border-gray-200 max-h-[500px] overflow-y-auto" data-testid="summary-content-container">
-      <div class="prose prose-sm max-w-none text-gray-900 whitespace-pre-wrap" [innerHTML]="summaryContent()" data-testid="summary-content"></div>
+      @if (summaryContent()) {
+        <lfx-markdown-renderer [content]="summaryContent()" data-testid="summary-content" />
+      } @else {
+        <p class="text-sm text-gray-500 text-center py-4">No summary content available.</p>
+      }
     </div>
   }
 
   <!-- Action Buttons -->
-  <div class="flex justify-between gap-2 mt-6">
+  <div class="flex justify-between gap-2 mt-2">
     @if (isEditMode()) {
       <div class="flex gap-2">
         <lfx-button label="Cancel" size="small" severity="secondary" data-testid="cancel-edit-button" (click)="cancelEdit()"></lfx-button>
       </div>
       <lfx-button label="Save" size="small" severity="info" [loading]="isSaving()" data-testid="save-edit-button" (click)="saveEdit()"></lfx-button>
     } @else {
-      <div class="flex gap-2">
-        <lfx-button label="Edit" icon="fa-light fa-pen" size="small" severity="secondary" data-testid="edit-button" (click)="enterEditMode()"></lfx-button>
-        @if (!isApproved()) {
-          <lfx-button
-            label="Approve"
-            icon="fa-light fa-check"
-            size="small"
-            severity="success"
-            [loading]="isApproving()"
-            data-testid="approve-button"
-            (click)="approve()"></lfx-button>
-        } @else {
-          <lfx-button
-            label="Approved"
-            icon="fa-light fa-check-circle"
-            size="small"
-            severity="success"
-            [disabled]="true"
-            data-testid="approved-badge"></lfx-button>
-        }
-      </div>
+      @if (!readOnly()) {
+        <div class="flex gap-2">
+          <lfx-button label="Edit" icon="fa-light fa-pen" size="small" severity="secondary" data-testid="edit-button" (click)="enterEditMode()"></lfx-button>
+          @if (!isApproved()) {
+            <lfx-button
+              label="Approve"
+              icon="fa-light fa-check"
+              size="small"
+              severity="success"
+              [loading]="isApproving()"
+              data-testid="approve-button"
+              (click)="approve()"></lfx-button>
+          } @else {
+            <lfx-button
+              label="Approved"
+              icon="fa-light fa-check-circle"
+              size="small"
+              severity="success"
+              [disabled]="true"
+              data-testid="approved-badge"></lfx-button>
+          }
+        </div>
+      } @else {
+        <span></span>
+      }
       <lfx-button label="Close" size="small" severity="secondary" data-testid="close-button" (click)="onClose()"></lfx-button>
     }
   </div>

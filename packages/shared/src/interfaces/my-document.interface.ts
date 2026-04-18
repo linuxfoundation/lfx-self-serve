@@ -60,6 +60,10 @@ export interface PastMeetingSummaryQueryResult {
   zoom_meeting_topic?: string;
   summary_start_time?: string;
   created_at: string;
+  /** Consolidated markdown of the summary (indexer contract field) */
+  content?: string;
+  /** Edited markdown content, takes precedence over content when present */
+  edited_content?: string;
 }
 
 /** Raw shape returned by query service for `v1_meeting` resource type (minimal fields for ID extraction) */
@@ -118,4 +122,8 @@ export interface MyDocumentItem {
   mailingListId?: string;
   /** File extension or MIME type for icon display (e.g., 'pdf', 'pptx') */
   fileType?: string;
+  /** Raw markdown content for summary-type documents — used by the preview dialog */
+  summaryContent?: string;
+  /** Summary record UID — used by the preview dialog to support edit/approve actions */
+  summaryUid?: string;
 }

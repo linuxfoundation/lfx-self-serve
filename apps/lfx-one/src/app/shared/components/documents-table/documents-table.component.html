@@ -32,10 +32,28 @@
       <td>
         <div class="flex items-center gap-2 min-w-0">
           <i [class]="(doc.source | myDocumentSourceTag: 'icon') + ' ' + (doc.source | myDocumentSourceTag: 'iconClass')" class="text-base shrink-0"></i>
-          @if (doc.url) {
+          @if (doc.source === 'summary' && doc.summaryContent) {
             <button
               type="button"
-              class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0 truncate max-w-full"
+              class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0 truncate min-w-0"
+              (click)="previewSummary(doc)"
+              [pTooltip]="doc.name"
+              tooltipPosition="top"
+              [attr.data-testid]="testIdPrefix() + '-name-' + doc.id">
+              {{ doc.name }}
+            </button>
+          } @else if (doc.source === 'summary') {
+            <span
+              class="text-xs text-gray-900 truncate min-w-0"
+              [pTooltip]="doc.name"
+              tooltipPosition="top"
+              [attr.data-testid]="testIdPrefix() + '-name-' + doc.id"
+              >{{ doc.name }}</span
+            >
+          } @else if (doc.url) {
+            <button
+              type="button"
+              class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0 truncate min-w-0"
               (click)="openDocument(doc)"
               [pTooltip]="doc.name"
               tooltipPosition="top"
@@ -43,7 +61,13 @@
               {{ doc.name }}
             </button>
           } @else {
-            <span class="text-xs text-gray-900 truncate block max-w-full" [pTooltip]="doc.name" tooltipPosition="top">{{ doc.name }}</span>
+            <span
+              class="text-xs text-gray-900 truncate min-w-0"
+              [pTooltip]="doc.name"
+              tooltipPosition="top"
+              [attr.data-testid]="testIdPrefix() + '-name-' + doc.id"
+              >{{ doc.name }}</span
+            >
           }
         </div>
       </td>
@@ -99,7 +123,19 @@
               tooltip="Play recording"
               tooltipPosition="top">
             </lfx-button>
-          } @else if ((doc.source === 'transcript' || doc.source === 'summary') && doc.url) {
+          } @else if (doc.source === 'summary') {
+            <span [pTooltip]="doc.summaryContent ? 'Preview' : 'Summary not available'" tooltipPosition="top" class="inline-flex">
+              <lfx-button
+                icon="fa-solid fa-eye"
+                severity="primary"
+                size="small"
+                [text]="true"
+                [disabled]="!doc.summaryContent"
+                (onClick)="previewSummary(doc)"
+                [attr.data-testid]="testIdPrefix() + '-preview-' + doc.id">
+              </lfx-button>
+            </span>
+          } @else if (doc.source === 'transcript' && doc.url) {
             <lfx-button
               icon="fa-solid fa-arrow-up-right-from-square"
               severity="primary"
