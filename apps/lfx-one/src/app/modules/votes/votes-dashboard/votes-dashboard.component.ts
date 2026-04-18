@@ -45,7 +45,7 @@ export class VotesDashboardComponent {
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
-  protected readonly hasPMOAccess = signal<boolean>(true);
+  protected readonly canWrite = this.projectContextService.canWrite;
   protected readonly resultsDrawerVisible = signal<boolean>(false);
   protected readonly selectedVoteId = signal<string | null>(null);
   protected readonly rowsPerPage = signal<number>(10);

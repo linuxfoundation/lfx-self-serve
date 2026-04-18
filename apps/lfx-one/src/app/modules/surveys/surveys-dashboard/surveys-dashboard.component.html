@@ -14,7 +14,7 @@
         }}
       </p>
     </div>
-    @if (!isMeLens() && hasPMOAccess()) {
+    @if (!isMeLens() && canWrite()) {
       <lfx-button
         [label]="'Create ' + surveyLabel"
         size="small"
@@ -52,7 +52,7 @@
   } @else {
     <lfx-surveys-table
       [surveys]="isMeLens() ? filteredMySurveys() : surveys()"
-      [hasPMOAccess]="!isMeLens() && hasPMOAccess()"
+      [hasPMOAccess]="!isMeLens() && canWrite()"
       [loading]="isMeLens() ? mySurveysLoading() : loading()"
       [foundationOptions]="foundationOptions()"
       [projectOptions]="projectOptions()"
@@ -73,7 +73,7 @@
   [(visible)]="resultsDrawerVisible"
   [surveyId]="selectedSurveyId()"
   [listSurvey]="selectedListSurvey()"
-  [hasPMOAccess]="hasPMOAccess()"
+  [hasPMOAccess]="!isMeLens() && canWrite()"
   (duplicate)="onDuplicateSurvey($event)"
   (closeSurvey)="onCloseSurvey($event)"
   data-testid="survey-results-drawer">

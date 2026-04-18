@@ -42,7 +42,7 @@
       <!-- Page Title with Add Mailing List Button -->
       <div class="flex justify-between items-center w-full gap-4">
         <h1 class="font-display font-light text-2xl">{{ isMeLens() ? 'My ' + mailingListLabelPlural : mailingListLabelPlural }}</h1>
-        @if (canCreateMailingList()) {
+        @if (!isMeLens() && canWrite()) {
           <lfx-button
             [label]="'Add ' + mailingListLabel"
             icon="fa-light fa-envelope mr-1"
@@ -80,7 +80,7 @@
         <lfx-mailing-list-table
           [mailingLists]="filteredMailingLists()"
           [loading]="isMeLens() && myMailingListsLoading()"
-          [isMaintainer]="isMaintainer()"
+          [isMaintainer]="canWrite()"
           [mailingListLabel]="mailingListLabel"
           [searchForm]="searchForm"
           [committeeFilterOptions]="committeeOptions()"

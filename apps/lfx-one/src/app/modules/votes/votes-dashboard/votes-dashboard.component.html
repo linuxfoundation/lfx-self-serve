@@ -10,7 +10,7 @@
         {{ isMeLens() ? voteLabelPlural + ' you have been invited to across all foundations and projects.' : 'Make decisions with your project groups.' }}
       </p>
     </div>
-    @if (!isMeLens() && hasPMOAccess()) {
+    @if (!isMeLens() && canWrite()) {
       <lfx-button
         [label]="'Create ' + voteLabel"
         size="small"
@@ -48,7 +48,7 @@
   } @else {
     <lfx-votes-table
       [votes]="isMeLens() ? filteredMyVotes() : votes()"
-      [hasPMOAccess]="!isMeLens() && hasPMOAccess()"
+      [hasPMOAccess]="!isMeLens() && canWrite()"
       [loading]="isMeLens() ? myVotesLoading() : loading()"
       [totalRecords]="isMeLens() ? filteredMyVotes().length : totalRecords()"
       [rowsPerPage]="rowsPerPage()"

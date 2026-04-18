@@ -7,7 +7,7 @@
     <div class="mt-3 mb-6">
       <div class="flex justify-between items-center w-full gap-4">
         <h1 class="font-display font-light text-2xl">{{ isMeLens() ? 'My ' + committeeLabel.plural : committeeLabel.plural }}</h1>
-        @if (canCreateGroup()) {
+        @if (!isMeLens() && canWrite()) {
           <lfx-button
             [label]="'Create ' + committeeLabel.singular"
             icon="fa-light fa-users mr-1"
@@ -380,7 +380,7 @@
           } @else {
             <lfx-committee-table
               [committees]="filteredCommittees()"
-              [canManageCommittee]="canCreateGroup()"
+              [canManageCommittee]="canWrite()"
               [myCommitteeUids]="myCommitteeUids()"
               [searchForm]="searchForm"
               [categoryOptions]="categories()"

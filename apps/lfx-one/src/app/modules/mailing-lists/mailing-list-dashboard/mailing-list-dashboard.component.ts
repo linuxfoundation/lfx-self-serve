@@ -66,9 +66,7 @@ export class MailingListDashboardComponent {
 
   // Complex computed/toSignal signals
   public readonly project: Signal<ProjectContext | null> = this.initProject();
-  public readonly isMaintainer: Signal<boolean> = this.initIsMaintainer();
-  public readonly isFoundationContext: Signal<boolean> = this.initIsFoundationContext();
-  public readonly canCreateMailingList: Signal<boolean> = this.initCanCreateMailingList();
+  protected readonly canWrite = this.projectContextService.canWrite;
   public readonly mailingLists: Signal<GroupsIOMailingList[]> = this.initMailingLists();
   public readonly myMailingLists: Signal<MyMailingList[]> = this.initMyMailingLists();
   public readonly committeeOptions: Signal<FilterOption[]> = this.initCommitteeOptions();
@@ -155,18 +153,6 @@ export class MailingListDashboardComponent {
 
   private initProject(): Signal<ProjectContext | null> {
     return computed(() => this.projectContextService.activeContext());
-  }
-
-  private initIsMaintainer(): Signal<boolean> {
-    return computed(() => this.personaService.currentPersona() === 'maintainer');
-  }
-
-  private initIsFoundationContext(): Signal<boolean> {
-    return computed(() => this.projectContextService.isFoundationContext());
-  }
-
-  private initCanCreateMailingList(): Signal<boolean> {
-    return computed(() => !this.isMeLens() && this.isMaintainer() && !this.isFoundationContext());
   }
 
   private initMailingLists(): Signal<GroupsIOMailingList[]> {

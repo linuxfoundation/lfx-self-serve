@@ -40,7 +40,7 @@ export class SurveysDashboardComponent {
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
-  protected readonly hasPMOAccess = signal<boolean>(true);
+  protected readonly canWrite = this.projectContextService.canWrite;
   protected readonly resultsDrawerVisible = signal<boolean>(false);
   protected readonly selectedSurveyId = signal<string | null>(null);
   protected readonly mySurveysLoading = signal<boolean>(true);

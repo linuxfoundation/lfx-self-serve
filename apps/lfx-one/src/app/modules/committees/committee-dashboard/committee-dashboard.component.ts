@@ -14,7 +14,6 @@ import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { Committee, MyCommittee, ProjectContext } from '@lfx-one/shared/interfaces';
 import { RoleBadgeClassPipe } from '@pipes/role-badge-class.pipe';
 import { CommitteeService } from '@services/committee.service';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -52,7 +51,6 @@ export class CommitteeDashboardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly committeeService = inject(CommitteeService);
   private readonly personaService = inject(PersonaService);
-  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly router = inject(Router);
   private readonly lensService = inject(LensService);
   private readonly messageService = inject(MessageService);
@@ -81,19 +79,13 @@ export class CommitteeDashboardComponent {
   public categoryFilter: Signal<string | null>;
   public votingStatusFilter: Signal<string | null>;
 
-  // Permission signals
-  public isMaintainer: Signal<boolean>;
-  public isBoardMember: Signal<boolean>;
-  public isFoundationContext: Signal<boolean>;
-  public foundationCreateCommitteeFlag: Signal<boolean>;
-  public canCreateGroup: Signal<boolean>;
-
   // Foundation and project filter options (separate dropdowns)
   public foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initializeFoundationOptions();
   public projectOptions: Signal<{ label: string; value: string | null }[]> = this.initializeProjectOptions();
 
-  // Lens
+  // Lens & permissions
   public readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
+  protected readonly canWrite = this.projectContextService.canWrite;
   public showFoundationFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasBoardRole() && this.foundationOptions().length > 1);
   public showProjectFilter: Signal<boolean> = computed(() => this.isMeLens() && this.personaService.hasProjectRole() && this.projectOptions().length > 1);
 
@@ -113,24 +105,6 @@ export class CommitteeDashboardComponent {
   public constructor() {
     // Initialize project context
     this.project = computed(() => this.projectContextService.activeContext());
-
-    // Initialize permission checks
-    this.isMaintainer = computed(() => this.personaService.currentPersona() === 'maintainer');
-    this.isBoardMember = computed(() => this.personaService.currentPersona() === 'board-member');
-    this.isFoundationContext = computed(() => this.projectContextService.isFoundationContext());
-    this.foundationCreateCommitteeFlag = this.featureFlagService.getBooleanFlag('foundation-create-committee', false);
-    this.canCreateGroup = computed(() => {
-      if (this.isMeLens()) {
-        return false;
-      }
-      // Board members cannot manage committees
-      if (this.isBoardMember()) {
-        return false;
-      }
-      const isMaintainerAndNotFoundation = this.isMaintainer() && !this.isFoundationContext();
-      const hasFeatureFlag = this.foundationCreateCommitteeFlag();
-      return isMaintainerAndNotFoundation || hasFeatureFlag;
-    });
 
     // Initialize data
     this.committees = this.initializeCommittees();

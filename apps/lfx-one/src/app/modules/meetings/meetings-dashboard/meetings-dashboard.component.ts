@@ -10,7 +10,6 @@ import { CardComponent } from '@components/card/card.component';
 import { MEETING_TYPE_CONFIGS } from '@lfx-one/shared/constants';
 import { Lens, Meeting, PageResult, PastMeeting, ProjectContext } from '@lfx-one/shared/interfaces';
 import { getCurrentOrNextOccurrence, hasMeetingEnded } from '@lfx-one/shared/utils';
-import { FeatureFlagService } from '@services/feature-flag.service';
 import { LensService } from '@services/lens.service';
 import { MeetingService } from '@services/meeting.service';
 import { PersonaService } from '@services/persona.service';
@@ -49,7 +48,6 @@ export class MeetingsDashboardComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
-  private readonly featureFlagService = inject(FeatureFlagService);
   private readonly lensService = inject(LensService);
   private readonly userService = inject(UserService);
   private readonly router = inject(Router);
@@ -75,10 +73,7 @@ export class MeetingsDashboardComponent {
   public foundationOptions: Signal<{ label: string; value: string | null }[]>;
   public projectOptions: Signal<{ label: string; value: string | null }[]>;
   public project: Signal<ProjectContext | null>;
-  public isMaintainer: Signal<boolean>;
-  public isFoundationContext: Signal<boolean>;
-  public foundationCreateMeetingFlag: Signal<boolean>;
-  public canCreateMeeting: Signal<boolean>;
+  protected readonly canWrite = this.projectContextService.canWrite;
   public loadingMore = signal(false);
   public hasMore: Signal<boolean>;
   public autoLoadTriggerIndex: Signal<number>;
@@ -123,19 +118,6 @@ export class MeetingsDashboardComponent {
   public constructor() {
     // Initialize project context first (needed for reactive data loading)
     this.project = computed(() => this.projectContextService.activeContext());
-
-    // Initialize permission checks
-    this.isMaintainer = computed(() => this.personaService.currentPersona() === 'maintainer');
-    this.isFoundationContext = computed(() => this.projectContextService.isFoundationContext());
-    this.foundationCreateMeetingFlag = this.featureFlagService.getBooleanFlag('foundation-create-meeting', false);
-    this.canCreateMeeting = computed(() => {
-      if (this.activeLens() === 'me') {
-        return false;
-      }
-      const isMaintainerAndNotFoundation = this.isMaintainer() && !this.isFoundationContext();
-      const hasFeatureFlag = this.foundationCreateMeetingFlag();
-      return isMaintainerAndNotFoundation || hasFeatureFlag;
-    });
 
     // Initialize state
     this.meetingsLoading = signal<boolean>(true);
