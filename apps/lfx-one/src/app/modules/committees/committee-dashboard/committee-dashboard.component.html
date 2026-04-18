@@ -195,7 +195,7 @@
           }
         </div>
       </div>
-    } @else if (myCommittees().length > 0) {
+    } @else if (myCommittees().length > 0 && isMeLens()) {
       <div>
         <div class="flex items-center gap-2 mb-4">
           <h2 class="text-lg font-semibold text-gray-900">My {{ committeeLabel.plural }}</h2>
