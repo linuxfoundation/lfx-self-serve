@@ -1,227 +1,45 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex flex-col gap-4 pt-2" data-testid="committee-documents-tab">
-  <!-- Header with title + action buttons -->
-  @if (canEdit()) {
-    <div class="flex items-center justify-between">
-      <div>
-        <h3 class="text-base font-semibold text-gray-900">Documents</h3>
-        <p class="mt-1 text-sm text-gray-500">Links and meeting attachments shared with this group</p>
+<lfx-card data-testid="committee-documents-card">
+  <!-- Filters -->
+  <div class="pb-3 mb-3 border-b border-gray-100">
+    <div class="flex flex-wrap items-center gap-2">
+      <!-- Search -->
+      <div class="flex-1 min-w-48">
+        <lfx-input-text
+          [form]="filterForm"
+          control="search"
+          placeholder="Search documents..."
+          icon="fa-light fa-search"
+          styleClass="w-full"
+          size="small"
+          data-testid="committee-documents-search-input">
+        </lfx-input-text>
       </div>
-      <div class="flex items-center gap-2">
-        <lfx-button
-          label="New Folder"
-          icon="fa-light fa-folder-plus"
+
+      <!-- Source filter -->
+      <div class="w-36 shrink-0 overflow-hidden">
+        <lfx-select
+          [form]="filterForm"
+          control="source"
           size="small"
-          severity="secondary"
-          [outlined]="true"
-          [disabled]="cascadeDeleting()"
-          (onClick)="openNewFolderDialog()"
-          data-testid="committee-documents-new-folder-button"></lfx-button>
-        <lfx-button
-          label="Add Link"
-          icon="fa-light fa-link"
-          size="small"
-          severity="secondary"
-          [outlined]="true"
-          [disabled]="cascadeDeleting()"
-          (onClick)="openAddLinkDialog()"
-          data-testid="committee-documents-add-link-button"></lfx-button>
+          [options]="sourceOptions"
+          placeholder="All Sources"
+          [showClear]="true"
+          styleClass="w-full"
+          data-testid="committee-documents-source-filter">
+        </lfx-select>
       </div>
     </div>
-  }
+  </div>
 
-  @if (loading() || filteredDocuments().length > 0 || allDocuments().length > 0) {
-    <lfx-card>
-      <!-- Search & Filter bar -->
-      @if (!loading() && allDocuments().length > 0) {
-        <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4 pb-2 mb-2">
-          <div class="flex-1">
-            <lfx-input-text
-              [form]="searchForm"
-              control="search"
-              placeholder="Search documents..."
-              icon="fa-light fa-search"
-              styleClass="w-full"
-              size="small"
-              dataTest="committee-documents-search"></lfx-input-text>
-          </div>
-          <div class="w-full sm:w-auto sm:shrink-0">
-            <lfx-select
-              [form]="searchForm"
-              control="source"
-              size="small"
-              [options]="sourceOptions"
-              placeholder="All Sources"
-              [showClear]="true"
-              data-testid="committee-documents-source-filter"></lfx-select>
-          </div>
-        </div>
-      }
-
-      <!-- Table -->
-      @if (loading() || filteredDocuments().length > 0) {
-        <lfx-table
-          [value]="filteredDocuments()"
-          [loading]="loading()"
-          [skeletonColumns]="6"
-          [skeletonRows]="3"
-          [rowHover]="true"
-          dataKey="uid"
-          data-testid="committee-documents-table">
-          <ng-template #header>
-            <tr>
-              <th>Name</th>
-              <th>Source</th>
-              <th>Added By</th>
-              <th>Date</th>
-              <th>Size</th>
-              <th class="text-right w-28">Actions</th>
-            </tr>
-          </ng-template>
-          <ng-template #body let-item>
-            <tr>
-              <!-- Name -->
-              <td>
-                <div class="flex items-center gap-2" [class.pl-8]="item.isChild">
-                  @if (item.type === 'folder') {
-                    <button
-                      type="button"
-                      class="flex items-center justify-center w-5 h-5 text-gray-400 hover:text-gray-600 flex-shrink-0 -ml-1"
-                      (click)="toggleFolder(item.uid)"
-                      [attr.aria-expanded]="item.uid | folderExpanded: expandedFolders()"
-                      aria-label="Toggle folder">
-                      <i
-                        [class]="(item.uid | folderExpanded: expandedFolders()) ? 'fa-solid fa-chevron-down text-xs' : 'fa-solid fa-chevron-right text-xs'"
-                        aria-hidden="true"></i>
-                    </button>
-                  }
-                  <i [class]="(item | documentIcon) + ' flex-shrink-0'" aria-hidden="true"></i>
-                  <div class="min-w-0">
-                    @if (item.type === 'folder') {
-                      <span class="text-sm font-medium text-gray-900 truncate block max-w-xs cursor-pointer" (click)="toggleFolder(item.uid)">{{
-                        item.name
-                      }}</span>
-                      @if (item.childCount !== undefined) {
-                        <p class="text-[11px] text-gray-400">{{ item.childCount }} link{{ item.childCount !== 1 ? 's' : '' }}</p>
-                      }
-                    } @else {
-                      <a
-                        role="button"
-                        class="text-sm font-medium text-blue-600 hover:text-blue-800 truncate block max-w-xs cursor-pointer"
-                        (click)="openDocument(item)"
-                        (keydown.enter)="openDocument(item)"
-                        (keydown.space)="openDocument(item); $event.preventDefault()"
-                        tabindex="0">
-                        {{ item.name }}
-                      </a>
-                    }
-                    @if (item.meetingAttachment) {
-                      <p class="text-[11px] text-gray-400 truncate">
-                        From: {{ item.meetingAttachment.meetingTitle }} · {{ item.meetingAttachment.meetingDate | date: 'MMM d, y' }}
-                      </p>
-                    }
-                    @if (item.description && item.type !== 'folder') {
-                      <p class="text-[11px] text-gray-400 truncate">{{ item.description }}</p>
-                    }
-                  </div>
-                </div>
-              </td>
-              <!-- Source -->
-              <td>
-                <lfx-tag [value]="item | sourceLabel" [severity]="item | sourceSeverity" [icon]="item | documentTypeIcon"></lfx-tag>
-              </td>
-              <!-- Added By -->
-              <td class="text-gray-600">
-                {{ item.addedBy || '—' }}
-              </td>
-              <!-- Date -->
-              <td class="text-gray-500">
-                {{ item.date | date: 'MMM d, y' }}
-              </td>
-              <!-- Size -->
-              <td class="text-gray-500">
-                @if (item.fileSize !== null && item.fileSize !== undefined) {
-                  {{ item.fileSize | fileSize }}
-                } @else {
-                  —
-                }
-              </td>
-              <!-- Actions -->
-              <td class="text-right">
-                <div class="flex gap-1 justify-end">
-                  @if (item.type !== 'folder') {
-                    <lfx-button
-                      icon="fa-light fa-arrow-up-right-from-square"
-                      [text]="true"
-                      [rounded]="true"
-                      size="small"
-                      severity="secondary"
-                      tooltip="Open"
-                      (onClick)="openDocument(item)"></lfx-button>
-                  }
-                  @if (item.isStandalone && canEdit()) {
-                    <lfx-button
-                      icon="fa-light fa-trash"
-                      [text]="true"
-                      [rounded]="true"
-                      size="small"
-                      severity="danger"
-                      tooltip="Delete"
-                      [disabled]="cascadeDeleting()"
-                      (onClick)="confirmDeleteDocument(item)"
-                      data-testid="committee-documents-delete-button"></lfx-button>
-                  }
-                </div>
-              </td>
-            </tr>
-          </ng-template>
-        </lfx-table>
-      } @else {
-        <!-- No search results -->
-        <div class="flex flex-col items-center py-12">
-          <i class="fa-light fa-search text-3xl text-gray-300 mb-3" aria-hidden="true"></i>
-          <p class="text-sm font-medium text-gray-500">No matching documents</p>
-          <p class="text-xs text-gray-400 mt-1">Try adjusting your search query.</p>
-        </div>
-      }
-    </lfx-card>
-
-    <!-- Count -->
-    @if (!loading() && filteredDocuments().length > 0) {
-      <p class="text-xs text-gray-400 px-1">Showing {{ filteredDocuments().length }} document{{ filteredDocuments().length !== 1 ? 's' : '' }}</p>
-    }
-  } @else {
-    <!-- Empty state -->
-    <lfx-card>
-      <div class="flex flex-col items-center py-12">
-        <i class="fa-light fa-folder-open text-3xl text-gray-300 mb-3" aria-hidden="true"></i>
-        <p class="text-sm font-medium text-gray-500">No documents yet</p>
-        <p class="text-xs text-gray-400 mt-1">Links and meeting attachments shared with this group will appear here.</p>
-        @if (canEdit()) {
-          <div class="flex items-center gap-2 mt-4">
-            <lfx-button
-              label="New Folder"
-              icon="fa-light fa-folder-plus"
-              size="small"
-              severity="secondary"
-              [outlined]="true"
-              (onClick)="openNewFolderDialog()"
-              data-testid="committee-documents-new-folder-empty"></lfx-button>
-            <lfx-button
-              label="Add Link"
-              icon="fa-light fa-link"
-              size="small"
-              severity="secondary"
-              [outlined]="true"
-              (onClick)="openAddLinkDialog()"
-              data-testid="committee-documents-add-link-empty"></lfx-button>
-          </div>
-        }
-      </div>
-    </lfx-card>
-  }
-</div>
-
-<p-confirmDialog data-testid="committee-documents-confirm-dialog"></p-confirmDialog>
+  <!-- Table -->
+  <lfx-documents-table
+    [documents]="filteredDocuments()"
+    [loading]="loading()"
+    [showFoundation]="false"
+    testIdPrefix="committee-documents"
+    emptyMessage="No documents found for this group">
+  </lfx-documents-table>
+</lfx-card>

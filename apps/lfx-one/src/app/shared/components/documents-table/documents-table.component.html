@@ -1,0 +1,135 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-table
+  [value]="documents()"
+  [paginator]="true"
+  [rows]="10"
+  [rowsPerPageOptions]="[10, 25, 50]"
+  [loading]="loading()"
+  [showPageLinks]="false"
+  [showFirstLastIcon]="false"
+  [showCurrentPageReport]="true"
+  currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+  [attr.data-testid]="testIdPrefix() + '-table'">
+  <ng-template #header>
+    <tr>
+      <th [class]="showFoundation() ? 'w-[35%]' : 'w-[50%]'">Name</th>
+      @if (showFoundation()) {
+        <th class="w-[20%]">Foundation</th>
+      }
+      <th class="w-[20%]">Group / Meeting</th>
+      <th class="w-[10%]">Source</th>
+      <th class="w-[10%]">Date</th>
+      <th class="w-[5%]">Actions</th>
+    </tr>
+  </ng-template>
+
+  <ng-template #body let-doc let-rowIndex="rowIndex">
+    <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="testIdPrefix() + '-row-' + doc.id">
+      <!-- Name column -->
+      <td>
+        <div class="flex items-center gap-2">
+          <i [class]="(doc.source | myDocumentSourceTag: 'icon') + ' ' + (doc.source | myDocumentSourceTag: 'iconClass')" class="text-base shrink-0"></i>
+          @if (doc.url) {
+            <button
+              type="button"
+              class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0 truncate"
+              (click)="openDocument(doc)"
+              [attr.data-testid]="testIdPrefix() + '-name-' + doc.id">
+              {{ doc.name }}
+            </button>
+          } @else {
+            <span class="text-xs text-gray-900 truncate">{{ doc.name }}</span>
+          }
+        </div>
+      </td>
+
+      <!-- Foundation column (optional) -->
+      @if (showFoundation()) {
+        <td>
+          <span class="text-xs text-gray-700">{{ doc.foundationName || '—' }}</span>
+        </td>
+      }
+
+      <!-- Group / Meeting column -->
+      <td>
+        <span class="text-xs text-gray-700">{{ doc.groupOrMeetingName || '—' }}</span>
+      </td>
+
+      <!-- Source column -->
+      <td>
+        <lfx-tag
+          [value]="doc.source | myDocumentSourceTag: 'label'"
+          [severity]="doc.source | myDocumentSourceTag: 'severity'"
+          [attr.data-testid]="testIdPrefix() + '-source-tag-' + doc.id">
+        </lfx-tag>
+      </td>
+
+      <!-- Date column -->
+      <td>
+        <span class="text-xs text-gray-700">{{ doc.date | date: 'MMM d, y' }}</span>
+      </td>
+
+      <!-- Actions column -->
+      <td>
+        <div class="flex items-center justify-end gap-1">
+          @if (doc.source === 'file' && doc.attachmentUid) {
+            <lfx-button
+              icon="fa-solid fa-arrow-down-to-line"
+              severity="primary"
+              size="small"
+              [text]="true"
+              (onClick)="downloadDocument(doc)"
+              [attr.data-testid]="testIdPrefix() + '-download-' + doc.id"
+              tooltip="Download"
+              tooltipPosition="top">
+            </lfx-button>
+          } @else if (doc.source === 'recording' && doc.url) {
+            <lfx-button
+              icon="fa-solid fa-circle-play"
+              severity="primary"
+              size="small"
+              [text]="true"
+              (onClick)="openDocument(doc)"
+              [attr.data-testid]="testIdPrefix() + '-open-' + doc.id"
+              tooltip="Play recording"
+              tooltipPosition="top">
+            </lfx-button>
+          } @else if ((doc.source === 'transcript' || doc.source === 'summary') && doc.url) {
+            <lfx-button
+              icon="fa-solid fa-arrow-up-right-from-square"
+              severity="primary"
+              size="small"
+              [text]="true"
+              (onClick)="openDocument(doc)"
+              [attr.data-testid]="testIdPrefix() + '-open-' + doc.id"
+              tooltip="Open"
+              tooltipPosition="top">
+            </lfx-button>
+          } @else if (doc.url) {
+            <lfx-button
+              icon="fa-solid fa-arrow-down-to-line"
+              severity="primary"
+              size="small"
+              [text]="true"
+              (onClick)="downloadDocument(doc)"
+              [attr.data-testid]="testIdPrefix() + '-download-' + doc.id"
+              tooltip="Download"
+              tooltipPosition="top">
+            </lfx-button>
+          }
+        </div>
+      </td>
+    </tr>
+  </ng-template>
+
+  <ng-template #emptymessage>
+    <tr>
+      <td [attr.colspan]="colSpan()" class="text-center py-8">
+        <i class="fa-light fa-file-lines text-3xl text-gray-400 mb-2 block"></i>
+        <p class="text-sm text-gray-500">{{ emptyMessage() }}</p>
+      </td>
+    </tr>
+  </ng-template>
+</lfx-table>

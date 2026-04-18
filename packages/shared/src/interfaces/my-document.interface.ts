@@ -62,6 +62,17 @@ export interface PastMeetingSummaryQueryResult {
   created_at: string;
 }
 
+/** Raw shape returned by query service for `v1_meeting` resource type (minimal fields for ID extraction) */
+export interface V1MeetingQueryResult {
+  id: string;
+}
+
+/** Raw shape returned by query service for `v1_past_meeting` resource type */
+export interface V1PastMeetingQueryResult {
+  meeting_and_occurrence_id: string;
+  meeting_id: string;
+}
+
 /** Raw shape returned by query service for `v1_past_meeting_recording` resource type */
 export interface PastMeetingRecordingQueryResult {
   id: string;

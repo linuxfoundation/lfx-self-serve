@@ -13,6 +13,8 @@ import {
   PastMeetingSummaryQueryResult,
   PastMeetingTranscriptQueryResult,
   QueryServiceResponse,
+  V1MeetingQueryResult,
+  V1PastMeetingQueryResult,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -51,8 +53,9 @@ export class DocumentService {
    */
   public async getMyDocuments(req: Request, query: Record<string, any> = {}): Promise<MyDocumentItem[]> {
     const projectUid = query['project_uid'] as string | undefined;
+    const committeeUid = query['committee_uid'] as string | undefined;
 
-    logger.info(req, 'get_my_documents', 'Starting 4-stage document aggregation', { project_uid: projectUid });
+    logger.info(req, 'get_my_documents', 'Starting 4-stage document aggregation', { project_uid: projectUid, committee_uid: committeeUid });
 
     // Stage 1 — Fetch committee memberships and past occurrence IDs in parallel
     const [myCommittees, occurrenceIds] = await Promise.all([
@@ -70,15 +73,48 @@ export class DocumentService {
       }),
     ]);
 
+    // When scoped to a specific committee, filter memberships to that committee only.
+    const scopedCommittees = committeeUid ? myCommittees.filter((c) => c.uid === committeeUid) : myCommittees;
+
+    // If a committeeUid was requested but the user isn't a member, return early.
+    // No further fetches are needed — access control is enforced by membership.
+    if (committeeUid && scopedCommittees.length === 0) {
+      logger.info(req, 'get_my_documents', 'Committee UID provided but user is not a member — returning empty', { committee_uid: committeeUid });
+      return [];
+    }
+
+    // Stage 1.5 — When scoped to a committee, fetch ALL of the committee's meetings and
+    // past meetings via parent references — no user-attendance gate. This is the correct
+    // approach for the committee Documents tab which should show all committee content,
+    // not just what the current user has attended.
+    let committeeMeetingIds: Set<string> | undefined;
+    let effectivePastMeetingIds: string[];
+
+    if (committeeUid) {
+      const [meetingIds, pastMeetingIds] = await Promise.all([
+        this.fetchCommitteeMeetingIds(req, committeeUid),
+        this.fetchCommitteeOccurrenceIds(req, committeeUid),
+      ]);
+      committeeMeetingIds = meetingIds;
+      effectivePastMeetingIds = Array.from(pastMeetingIds);
+      logger.debug(req, 'get_my_documents', 'Fetched committee-scoped meeting IDs via parent refs', {
+        committee_uid: committeeUid,
+        meeting_count: committeeMeetingIds.size,
+        past_meeting_count: effectivePastMeetingIds.length,
+      });
+    } else {
+      effectivePastMeetingIds = occurrenceIds;
+    }
+
     // Stage 2 — Fetch all raw items in parallel (no meeting enrichment yet)
     const [committeeLinkItems, groupsioItems, rawMeetingAttachments, rawPastAttachments, rawPastRecordings, rawTranscripts, rawSummaries] = await Promise.all([
-      this.getCommitteeDocuments(req, myCommittees),
-      this.getGroupsIOArtifacts(req, myCommittees),
-      this.fetchRawMeetingAttachments(req),
-      this.fetchRawPastMeetingAttachments(req, occurrenceIds),
-      this.fetchRawPastMeetingRecordings(req, occurrenceIds),
-      this.fetchRawPastMeetingTranscripts(req, occurrenceIds),
-      this.fetchRawPastMeetingSummaries(req, occurrenceIds),
+      this.getCommitteeDocuments(req, scopedCommittees),
+      this.getGroupsIOArtifacts(req, projectUid ?? scopedCommittees.find((c) => c.project_uid)?.project_uid, committeeUid, scopedCommittees),
+      this.fetchRawMeetingAttachments(req, projectUid, committeeMeetingIds),
+      this.fetchRawPastMeetingAttachments(req, effectivePastMeetingIds, projectUid),
+      this.fetchRawPastMeetingRecordings(req, effectivePastMeetingIds, projectUid),
+      this.fetchRawPastMeetingTranscripts(req, effectivePastMeetingIds, projectUid),
+      this.fetchRawPastMeetingSummaries(req, effectivePastMeetingIds, projectUid),
     ]);
 
     // Stage 3 — Batch all unique meeting IDs across all meeting-linked sources into ONE fetch
@@ -107,15 +143,18 @@ export class DocumentService {
 
     const allDocuments = [...committeeLinkItems, ...groupsioItems, ...meetingAttachmentItems, ...pastMeetingItems];
 
-    // Stage 4 — Resolve foundation names for meeting-sourced docs via project service HTTP
-    // Committee and mailing list docs already have foundation names from committee service data.
-    const meetingSourced: MyDocumentSource[] = ['file', 'recording', 'transcript', 'summary', 'meeting'];
-    const foundationUids = [...new Set(allDocuments.filter((d) => meetingSourced.includes(d.source) && d.foundationUid).map((d) => d.foundationUid as string))];
+    // Stage 4 — Resolve foundation names for docs that have a foundationUid but no foundationName
+    const needsNameResolution: MyDocumentSource[] = ['file', 'recording', 'transcript', 'summary', 'meeting', 'mailing_list'];
+    const foundationUids = [
+      ...new Set(
+        allDocuments.filter((d) => needsNameResolution.includes(d.source) && d.foundationUid && !d.foundationName).map((d) => d.foundationUid as string)
+      ),
+    ];
 
     const foundationNames = await this.fetchProjectNames(req, foundationUids);
 
     const enrichedDocuments = allDocuments.map((doc) => {
-      if (meetingSourced.includes(doc.source) && doc.foundationUid) {
+      if (needsNameResolution.includes(doc.source) && doc.foundationUid && !doc.foundationName) {
         const name = foundationNames.get(doc.foundationUid);
         return name ? { ...doc, foundationName: name } : doc;
       }
@@ -184,50 +223,114 @@ export class DocumentService {
 
   // ─── GroupsIO / Mailing List Artifacts ──────────────────────────────────────
 
-  private async getGroupsIOArtifacts(req: Request, myCommittees: MyCommittee[]): Promise<MyDocumentItem[]> {
-    if (myCommittees.length === 0) {
+  private async getGroupsIOArtifacts(req: Request, projectUid?: string, committeeUid?: string, committees?: MyCommittee[]): Promise<MyDocumentItem[]> {
+    let tags: string;
+    if (committeeUid) {
+      tags = `committee_uid:${committeeUid}`;
+    } else if (projectUid) {
+      tags = `project_uid:${projectUid}`;
+    } else {
       return [];
     }
 
-    const filtersOr = myCommittees.map((c) => `committee_uid:${c.uid}`);
-
-    logger.debug(req, 'get_my_documents', 'Fetching groupsio artifacts via filters_or', {
-      committee_count: myCommittees.length,
-    });
+    logger.debug(req, 'get_my_documents', 'Fetching groupsio artifacts', { tags });
 
     const artifacts = await fetchAllQueryResources<GroupsIOArtifactQueryResult>(req, (pageToken) =>
       this.microserviceProxy.proxyRequest<QueryServiceResponse<GroupsIOArtifactQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        v: '1',
         type: 'groupsio_artifact',
-        filters_or: filtersOr,
+        tags,
         ...(pageToken && { page_token: pageToken }),
       })
     ).catch((err) => {
       logger.warning(req, 'get_my_documents', 'Failed to fetch groupsio artifacts', {
+        tags,
         error: err instanceof Error ? err.message : 'Unknown error',
       });
       return [];
     });
 
-    const committeeMap = new Map(myCommittees.map((c) => [c.uid, c]));
+    logger.info(req, 'get_my_documents', 'Fetched groupsio artifacts', { tags, artifact_count: artifacts.length });
+
+    const committeeMap = new Map(committees?.map((c) => [c.uid, c]) ?? []);
 
     return artifacts.map((a): MyDocumentItem => {
-      const committee = a.committee_uid ? committeeMap.get(a.committee_uid) : undefined;
       const url = a.type === 'link' ? a.link_url : (a.download_url ?? a.link_url);
+      const committee = a.committee_uid ? committeeMap.get(a.committee_uid) : undefined;
       return {
         id: `groupsio_artifact:${a.artifact_id}`,
         name: a.filename || a.link_url || a.artifact_id,
         source: 'mailing_list' as MyDocumentSource,
-        foundationName: committee?.foundation_name || committee?.project_name || '',
-        foundationUid: committee?.project_uid || a.project_uid || undefined,
+        foundationName: '',
+        foundationUid: a.project_uid || undefined,
         groupOrMeetingName: committee?.name || '',
-        groupOrMeetingUid: committee?.uid || a.committee_uid || '',
+        groupOrMeetingUid: a.committee_uid || '',
         date: a.created_at || '',
         url,
         mailingListId: a.group_id ? String(a.group_id) : undefined,
         fileType: a.media_type,
       };
     });
+  }
+
+  // ─── Committee Meeting Scoping (Parent Reference) ───────────────────────────
+
+  /**
+   * Queries v1_meeting resources via parent=committee:<uid> to get all meeting IDs
+   * for the committee. Used to fetch committee-scoped meeting attachments.
+   */
+  private async fetchCommitteeMeetingIds(req: Request, committeeUid: string): Promise<Set<string>> {
+    logger.debug(req, 'get_my_documents', 'Fetching committee meeting IDs via parent ref', {
+      committee_uid: committeeUid,
+    });
+
+    const meetings = await fetchAllQueryResources<V1MeetingQueryResult>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<V1MeetingQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'v1_meeting',
+          parent: `committee:${committeeUid}`,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    ).catch((err) => {
+      logger.warning(req, 'get_my_documents', 'Failed to fetch committee meeting IDs', {
+        committee_uid: committeeUid,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      });
+      return [] as V1MeetingQueryResult[];
+    });
+
+    return new Set(meetings.map((m) => m.id).filter(Boolean));
+  }
+
+  /**
+   * Queries v1_past_meeting resources via parent=committee:<uid> to get all
+   * occurrence IDs for the committee. Returns all committee past meetings
+   * without any user-attendance gate.
+   */
+  private async fetchCommitteeOccurrenceIds(req: Request, committeeUid: string): Promise<Set<string>> {
+    logger.debug(req, 'get_my_documents', 'Fetching committee past-meeting occurrence IDs via parent ref', {
+      committee_uid: committeeUid,
+    });
+
+    const pastMeetings = await fetchAllQueryResources<V1PastMeetingQueryResult>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<V1PastMeetingQueryResult>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'v1_past_meeting',
+          parent: `committee:${committeeUid}`,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    ).catch((err) => {
+      logger.warning(req, 'get_my_documents', 'Failed to fetch committee past-meeting IDs', {
+        committee_uid: committeeUid,
+        error: err instanceof Error ? err.message : 'Unknown error',
+      });
+      return [] as V1PastMeetingQueryResult[];
+    });
+
+    return new Set(pastMeetings.map((m) => m.meeting_and_occurrence_id).filter(Boolean));
   }
 
   // ─── Foundation Name Resolution ─────────────────────────────────────────────
@@ -302,15 +405,20 @@ export class DocumentService {
 
   // ─── Upcoming Meeting Attachments ───────────────────────────────────────────
 
-  private async fetchRawMeetingAttachments(req: Request): Promise<MeetingAttachment[]> {
-    logger.debug(req, 'get_my_documents', 'Fetching user meeting registrations for attachments');
+  private async fetchRawMeetingAttachments(req: Request, projectUid?: string, overrideMeetingIds?: Set<string>): Promise<MeetingAttachment[]> {
+    let meetingIds: Set<string>;
 
-    const email = getEffectiveEmail(req) ?? undefined;
-
-    // Delegate registrant lookup to UserService which handles email+username dual lookup
-    // with M2M tokens (required because registrant queries search across all participants
-    // in the index and require application-level credentials)
-    const meetingIds = await this.userService.getUserRegisteredMeetingIds(req, email).catch(() => new Set<string>());
+    if (overrideMeetingIds !== undefined) {
+      // Committee-scoped: use the committee's meetings directly, no user-registration gate
+      meetingIds = overrideMeetingIds;
+    } else {
+      logger.debug(req, 'get_my_documents', 'Fetching user meeting registrations for attachments');
+      const email = getEffectiveEmail(req) ?? undefined;
+      // Delegate registrant lookup to UserService which handles email+username dual lookup
+      // with M2M tokens (required because registrant queries search across all participants
+      // in the index and require application-level credentials)
+      meetingIds = await this.userService.getUserRegisteredMeetingIds(req, email).catch(() => new Set<string>());
+    }
 
     if (meetingIds.size === 0) {
       return [];
@@ -327,6 +435,7 @@ export class DocumentService {
         v: '1',
         type: 'v1_meeting_attachment',
         filters_or: filtersOr,
+        ...(projectUid && { tags: `project_uid:${projectUid}` }),
         ...(pageToken && { page_token: pageToken }),
       })
     ).catch((err) => {
@@ -359,7 +468,7 @@ export class DocumentService {
 
   // ─── Past Meeting Items (Attachments + Recordings) ──────────────────────────
 
-  private async fetchRawPastMeetingAttachments(req: Request, occurrenceIds: string[]): Promise<PastMeetingAttachment[]> {
+  private async fetchRawPastMeetingAttachments(req: Request, occurrenceIds: string[], projectUid?: string): Promise<PastMeetingAttachment[]> {
     if (occurrenceIds.length === 0) {
       return [];
     }
@@ -375,6 +484,7 @@ export class DocumentService {
         v: '1',
         type: 'v1_past_meeting_attachment',
         filters_or: filtersOr,
+        ...(projectUid && { tags: `project_uid:${projectUid}` }),
         ...(pageToken && { page_token: pageToken }),
       })
     ).catch((err) => {
@@ -405,7 +515,7 @@ export class DocumentService {
     });
   }
 
-  private async fetchRawPastMeetingRecordings(req: Request, occurrenceIds: string[]): Promise<PastMeetingRecordingQueryResult[]> {
+  private async fetchRawPastMeetingRecordings(req: Request, occurrenceIds: string[], projectUid?: string): Promise<PastMeetingRecordingQueryResult[]> {
     if (occurrenceIds.length === 0) {
       return [];
     }
@@ -421,6 +531,7 @@ export class DocumentService {
         v: '1',
         type: 'v1_past_meeting_recording',
         filters_or: filtersOr,
+        ...(projectUid && { tags: `project_uid:${projectUid}` }),
         ...(pageToken && { page_token: pageToken }),
       })
     ).catch((err) => {
@@ -453,7 +564,7 @@ export class DocumentService {
 
   // ─── Past Meeting Transcripts ────────────────────────────────────────────────
 
-  private async fetchRawPastMeetingTranscripts(req: Request, occurrenceIds: string[]): Promise<PastMeetingTranscriptQueryResult[]> {
+  private async fetchRawPastMeetingTranscripts(req: Request, occurrenceIds: string[], projectUid?: string): Promise<PastMeetingTranscriptQueryResult[]> {
     if (occurrenceIds.length === 0) {
       return [];
     }
@@ -469,6 +580,7 @@ export class DocumentService {
         v: '1',
         type: 'v1_past_meeting_transcript',
         filters_or: filtersOr,
+        ...(projectUid && { tags: `project_uid:${projectUid}` }),
         ...(pageToken && { page_token: pageToken }),
       })
     ).catch((err) => {
@@ -500,7 +612,7 @@ export class DocumentService {
 
   // ─── Past Meeting Summaries ──────────────────────────────────────────────────
 
-  private async fetchRawPastMeetingSummaries(req: Request, occurrenceIds: string[]): Promise<PastMeetingSummaryQueryResult[]> {
+  private async fetchRawPastMeetingSummaries(req: Request, occurrenceIds: string[], projectUid?: string): Promise<PastMeetingSummaryQueryResult[]> {
     if (occurrenceIds.length === 0) {
       return [];
     }
@@ -516,6 +628,7 @@ export class DocumentService {
         v: '1',
         type: 'v1_past_meeting_summary',
         filters_or: filtersOr,
+        ...(projectUid && { tags: `project_uid:${projectUid}` }),
         ...(pageToken && { page_token: pageToken }),
       })
     ).catch((err) => {
