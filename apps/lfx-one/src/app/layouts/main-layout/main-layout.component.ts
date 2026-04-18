@@ -135,7 +135,7 @@ export class MainLayoutComponent {
       expanded: true,
       items: [
         {
-          label: 'My Profile',
+          label: 'Profile',
           icon: 'fa-light fa-user',
           routerLink: '/profile',
         },
