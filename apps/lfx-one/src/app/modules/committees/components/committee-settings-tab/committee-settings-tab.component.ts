@@ -39,6 +39,7 @@ export class CommitteeSettingsTabComponent {
 
   // Inputs
   public committee = input.required<Committee>();
+  public canEdit = input<boolean>(false);
 
   // Outputs
   public readonly committeeUpdated = output<void>();
@@ -96,6 +97,17 @@ export class CommitteeSettingsTabComponent {
           chat_channel: c.chat_channel ?? null,
           website: c.website ?? null,
         });
+      });
+
+    // Disable form fields for read-only (Auditor) access
+    toObservable(this.canEdit)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe((editable) => {
+        if (editable) {
+          this.form.enable();
+        } else {
+          this.form.disable();
+        }
       });
   }
 

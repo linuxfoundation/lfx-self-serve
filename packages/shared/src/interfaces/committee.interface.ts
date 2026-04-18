@@ -199,6 +199,11 @@ export interface Committee {
   // NOTE: chair/co_chair are NOT returned by GET /committees/{uid}.
   // Leadership is derived from committee members with role.name === "Chair" / "Vice Chair".
   // Server-side enrichment will be added in a follow-up PR.
+
+  /** Users with write (manage) access to this committee */
+  writers?: CommitteeUser[];
+  /** Users with audit (review) access to this committee */
+  auditors?: CommitteeUser[];
 }
 
 /**
@@ -260,6 +265,10 @@ export interface CommitteeUpdateData extends Partial<CommitteeCreateData> {
   mailing_list?: string | null;
   /** Update or clear chat channel */
   chat_channel?: string | null;
+  /** Update the list of users with manage (write) access */
+  writers?: CommitteeUser[];
+  /** Update the list of users with review (audit) access */
+  auditors?: CommitteeUser[];
 }
 
 /**
@@ -275,6 +284,10 @@ export interface CommitteeSettingsData {
   member_visibility?: CommitteeMemberVisibility;
   /** Update show meeting attendees setting */
   show_meeting_attendees?: boolean;
+  /** Update the list of users with manage (write) access */
+  writers?: CommitteeUser[];
+  /** Update the list of users with review (audit) access */
+  auditors?: CommitteeUser[];
 }
 
 // ── Committee Dashboard Data Types ──────────────────────────────────────────
@@ -587,6 +600,17 @@ export type TimeFilter = 'upcoming' | 'past';
 /** Dialog step for the Add Member search-first flow. */
 export type DialogMode = 'search' | 'configure';
 
+/**
+ * A user with manage/audit access to a committee (writer or auditor).
+ * Mirrors the CommitteeUser type from the upstream committee service.
+ */
+export interface CommitteeUser {
+  username: string;
+  email: string;
+  name: string;
+  avatar?: string;
+}
+
 // ── Committee Dialog Data/Result Interfaces ────────────────────────────────
 
 export interface JoinApplicationDialogData {
@@ -620,3 +644,6 @@ export interface EditChairsDialogData {
 }
 
 export type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';
+
+/** Permission level for a committee member. */
+export type CommitteePermissionLevel = 'manage' | 'review' | 'member';

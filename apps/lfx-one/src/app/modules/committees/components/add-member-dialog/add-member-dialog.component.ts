@@ -11,9 +11,17 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectComponent } from '@components/select/select.component';
-import { MEMBER_ROLES, VOTING_STATUSES } from '@lfx-one/shared/constants';
+import { COMMITTEE_PERMISSION_OPTIONS, MEMBER_ROLES, VOTING_STATUSES } from '@lfx-one/shared/constants';
 import { CommitteeMemberRole, CommitteeMemberVotingStatus } from '@lfx-one/shared/enums';
-import { Committee, CommitteeMember, CreateCommitteeMemberRequest, DialogMode, UserSearchResult } from '@lfx-one/shared/interfaces';
+import {
+  Committee,
+  CommitteeMember,
+  CommitteePermissionLevel,
+  CommitteeUser,
+  CreateCommitteeMemberRequest,
+  DialogMode,
+  UserSearchResult,
+} from '@lfx-one/shared/interfaces';
 import { UserAvatarColorPipe } from '@pipes/user-avatar-color.pipe';
 import { UserInitialsPipe } from '@pipes/user-initials.pipe';
 import { CommitteeService } from '@services/committee.service';
@@ -22,7 +30,7 @@ import { SearchService } from '@services/search.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { SkeletonModule } from 'primeng/skeleton';
-import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, switchMap, tap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, map, of, startWith, switchMap, take, tap } from 'rxjs';
 
 @Component({
   selector: 'lfx-add-member-dialog',
@@ -61,6 +69,7 @@ export class AddMemberDialogComponent {
     org_name: new FormControl<string>('', this.committee?.business_email_required || this.committee?.enable_voting ? [Validators.required] : []),
     org_domain: new FormControl<string>(''),
     subscribe_mailing_list: new FormControl<boolean>(true),
+    permission: new FormControl<CommitteePermissionLevel>('member'),
   });
 
   public mode = signal<DialogMode>('search');
@@ -95,6 +104,7 @@ export class AddMemberDialogComponent {
 
   public readonly roleOptions = MEMBER_ROLES;
   public readonly votingStatusOptions = VOTING_STATUSES;
+  public readonly permissionOptions = [...COMMITTEE_PERMISSION_OPTIONS];
 
   public selectUser(user: UserSearchResult & { alreadyMember: boolean }): void {
     if (user.alreadyMember) return;
@@ -143,49 +153,98 @@ export class AddMemberDialogComponent {
       voting: formValue.voting_status ? { status: formValue.voting_status as CommitteeMemberVotingStatus, start_date: null, end_date: null } : null,
     };
 
-    this.committeeService.createCommitteeMember(committee.uid, memberData).subscribe({
-      next: () => {
-        // Best-effort mailing list subscription (non-blocking — failure is silently swallowed)
-        const mailingListUid = committee.mailing_list;
-        if (formValue.subscribe_mailing_list && mailingListUid) {
-          this.mailingListService
-            .createMember(mailingListUid, {
+    this.committeeService
+      .createCommitteeMember(committee.uid, memberData)
+      .pipe(
+        take(1),
+        switchMap(() => {
+          const permission = formValue.permission;
+          const username = user.username;
+
+          if (username && permission !== 'member') {
+            const memberAsUser: CommitteeUser = {
+              username,
               email: user.email,
-              username: user.username ?? null,
-              first_name: user.first_name ?? null,
-              last_name: user.last_name ?? null,
-              organization: (formValue.org_name || user.organization?.name) ?? null,
-              job_title: user.job_title ?? null,
-            })
-            .pipe(
+              name: `${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || user.email,
+            };
+            const existingWriters = committee.writers ?? [];
+            const existingAuditors = committee.auditors ?? [];
+            const memberEmail = user.email?.toLowerCase();
+            const matchesMember = (u: CommitteeUser) => u.username === username || u.email?.toLowerCase() === memberEmail;
+            const writers = existingWriters.filter((w) => !matchesMember(w));
+            const auditors = existingAuditors.filter((a) => !matchesMember(a));
+
+            if (permission === 'manage') writers.push(memberAsUser);
+            else if (permission === 'review') auditors.push(memberAsUser);
+
+            return this.committeeService.updateCommitteePermissions(committee.uid, writers, auditors).pipe(
               catchError(() => {
                 this.messageService.add({
                   severity: 'warn',
-                  summary: 'Mailing List',
-                  detail: 'Member added, but mailing list subscription failed. They can subscribe manually.',
-                  life: 5000,
+                  summary: 'Permission Update Failed',
+                  detail: 'Member added, but the permission could not be saved. Please try again from the member menu.',
+                  life: 6000,
                 });
                 return of(null);
               })
-            )
-            .subscribe();
-        }
+            );
+          }
 
-        this.submitting.set(false);
-        this.messageService.add({
-          severity: 'success',
-          summary: 'Member Added',
-          detail: `${`${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || user.email} has been added to the group.`,
-        });
-        this.dialogRef.close(true);
-      },
-      error: (err: HttpErrorResponse) => {
-        this.submitting.set(false);
-        const upstream = typeof err.error?.message === 'string' ? err.error.message : null;
-        const detail = err.status === 409 ? 'This person is already a member of this group.' : (upstream ?? 'Failed to add member. Please try again.');
-        this.messageService.add({ severity: 'error', summary: 'Unable to Add Member', detail });
-      },
-    });
+          if (permission !== 'member') {
+            this.messageService.add({
+              severity: 'warn',
+              summary: 'Permission Pending',
+              detail: 'Member added. Elevated permissions require a user account — grant this permission once the user signs in.',
+              life: 6000,
+            });
+          }
+
+          return of(null);
+        })
+      )
+      .subscribe({
+        next: () => {
+          // Best-effort mailing list subscription (non-blocking — failure is silently swallowed)
+          const mailingListUid = committee.mailing_list;
+          if (formValue.subscribe_mailing_list && mailingListUid) {
+            this.mailingListService
+              .createMember(mailingListUid, {
+                email: user.email,
+                username: user.username ?? null,
+                first_name: user.first_name ?? null,
+                last_name: user.last_name ?? null,
+                organization: (formValue.org_name || user.organization?.name) ?? null,
+                job_title: user.job_title ?? null,
+              })
+              .pipe(
+                catchError(() => {
+                  this.messageService.add({
+                    severity: 'warn',
+                    summary: 'Mailing List',
+                    detail: 'Member added, but mailing list subscription failed. They can subscribe manually.',
+                    life: 5000,
+                  });
+                  return of(null);
+                })
+              )
+              .subscribe();
+          }
+
+          this.submitting.set(false);
+          this.messageService.add({
+            severity: 'success',
+            summary: 'Member Added',
+            detail: `${`${user.first_name ?? ''} ${user.last_name ?? ''}`.trim() || user.email} has been added to the group.`,
+          });
+          this.dialogRef.close(true);
+        },
+        error: (err: HttpErrorResponse) => {
+          this.submitting.set(false);
+          const upstream = typeof err.error?.message === 'string' ? err.error.message : null;
+          const detail = err.status === 409 ? 'This person is already a member of this group.' : (upstream ?? 'Failed to add member. Please try again.');
+          this.messageService.add({ severity: 'error', summary: 'Unable to Add Member', detail });
+        },
+      });
   }
 
   private initSearchResults(): Signal<(UserSearchResult & { alreadyMember: boolean })[]> {

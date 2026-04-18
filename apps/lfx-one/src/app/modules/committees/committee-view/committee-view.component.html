@@ -407,7 +407,7 @@
         }
         @case ('members') {
           @if (isMembersTabVisible()) {
-            <lfx-committee-members [committee]="committee()" [members]="members()" [membersLoading]="membersLoading()" (refresh)="refreshMembers()" />
+            <lfx-committee-members [committee]="committee()" [members]="members()" [membersLoading]="membersLoading()" (refresh)="onMembersRefreshed()" />
           }
         }
         @case ('votes') {
@@ -425,9 +425,7 @@
           <lfx-committee-documents [committee]="committee()!" [canEdit]="canEdit()" />
         }
         @case ('settings') {
-          @if (canEdit()) {
-            <lfx-committee-settings-tab [committee]="committee()!" (committeeUpdated)="refreshCommittee()" />
-          }
+          <lfx-committee-settings-tab [committee]="committee()!" [canEdit]="canEdit()" (committeeUpdated)="refreshCommittee()" />
         }
       }
     </div>

@@ -201,6 +201,20 @@
           </lfx-organization-search>
         </div>
 
+        <!-- Permission -->
+        <div>
+          <label class="block text-sm font-medium text-gray-700 mb-1">Permission</label>
+          <lfx-select
+            [form]="configForm"
+            control="permission"
+            [options]="permissionOptions"
+            placeholder="Select permission"
+            size="small"
+            styleClass="w-full"
+            appendTo="body"
+            data-testid="add-member-permission"></lfx-select>
+        </div>
+
         <!-- Mailing list subscription -->
         @if (hasMailingList()) {
           <div class="flex items-start gap-2 p-3 rounded-lg bg-gray-50 border border-gray-200">

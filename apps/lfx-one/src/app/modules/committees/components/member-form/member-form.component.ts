@@ -9,12 +9,13 @@ import { CalendarComponent } from '@components/calendar/calendar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { OrganizationSearchComponent } from '@components/organization-search/organization-search.component';
 import { SelectComponent } from '@components/select/select.component';
-import { APPOINTED_BY_OPTIONS, LINKEDIN_PROFILE_PATTERN, MEMBER_ROLES, VOTING_STATUSES } from '@lfx-one/shared/constants';
-import { Committee, CommitteeMember, CreateCommitteeMemberRequest, MemberFormValue } from '@lfx-one/shared/interfaces';
+import { APPOINTED_BY_OPTIONS, COMMITTEE_PERMISSION_OPTIONS, LINKEDIN_PROFILE_PATTERN, MEMBER_ROLES, VOTING_STATUSES } from '@lfx-one/shared/constants';
+import { Committee, CommitteeMember, CommitteePermissionLevel, CommitteeUser, CreateCommitteeMemberRequest, MemberFormValue } from '@lfx-one/shared/interfaces';
 import { formatDateToISOString, parseISODateString } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
 import { MessageService } from 'primeng/api';
 import { DynamicDialogConfig, DynamicDialogRef } from 'primeng/dynamicdialog';
+import { catchError, of, switchMap, take } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 
 @Component({
@@ -48,6 +49,7 @@ export class MemberFormComponent {
   public roleOptions = MEMBER_ROLES;
   public votingStatusOptions = VOTING_STATUSES;
   public appointedByOptions = APPOINTED_BY_OPTIONS;
+  public permissionOptions = [...COMMITTEE_PERMISSION_OPTIONS];
 
   public constructor() {
     // Initialize config-based properties
@@ -134,33 +136,67 @@ export class MemberFormComponent {
         ? this.committeeService.updateCommitteeMember(committeeId, this.member!.uid as string, memberData)
         : this.committeeService.createCommitteeMember(committeeId, memberData);
 
-      operation.subscribe({
-        next: () => {
-          this.submitting.set(false);
-          this.messageService.add({
-            severity: 'success',
-            summary: 'Success',
-            detail: `Member ${this.isEditing ? 'updated' : 'created'} successfully`,
-          });
-          this.dialogRef.close(true);
-        },
-        error: (err: HttpErrorResponse) => {
-          this.submitting.set(false);
-          if (err.status === 409) {
+      operation
+        .pipe(
+          take(1),
+          switchMap((savedMember: CommitteeMember) => {
+            const permission = formValue.permission;
+            const username = savedMember.username || this.member?.username;
+
+            if (username) {
+              const { writers, auditors } = this.buildPermissionArrays(username, savedMember, permission);
+              return this.committeeService.updateCommitteePermissions(committeeId, writers, auditors).pipe(
+                catchError(() => {
+                  this.messageService.add({
+                    severity: 'warn',
+                    summary: 'Permission Update Failed',
+                    detail: `Member ${this.isEditing ? 'updated' : 'created'}, but the permission could not be saved. Please try again from the member menu.`,
+                    life: 6000,
+                  });
+                  return of(null);
+                })
+              );
+            }
+
+            if (permission !== 'member') {
+              this.messageService.add({
+                severity: 'warn',
+                summary: 'Permission Pending',
+                detail: 'Member saved. Elevated permissions require a user account — grant this permission once the user signs in.',
+                life: 6000,
+              });
+            }
+
+            return of(savedMember);
+          })
+        )
+        .subscribe({
+          next: () => {
+            this.submitting.set(false);
             this.messageService.add({
-              severity: 'error',
-              summary: 'Error',
-              detail: 'Member already exists',
+              severity: 'success',
+              summary: 'Success',
+              detail: `Member ${this.isEditing ? 'updated' : 'created'} successfully`,
             });
-          } else {
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Error',
-              detail: getHttpErrorDetail(err, `Failed to ${this.isEditing ? 'update' : 'create'} member. Please try again.`),
-            });
-          }
-        },
-      });
+            this.dialogRef.close(true);
+          },
+          error: (err: HttpErrorResponse) => {
+            this.submitting.set(false);
+            if (err.status === 409) {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: 'Member already exists',
+              });
+            } else {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: getHttpErrorDetail(err, `Failed to ${this.isEditing ? 'update' : 'create'} member. Please try again.`),
+              });
+            }
+          },
+        });
     } else {
       this.form().markAllAsTouched();
     }
@@ -184,8 +220,46 @@ export class MemberFormComponent {
         role_end: parseISODateString(member.role?.end_date),
         voting_status_start: parseISODateString(member.voting?.start_date),
         voting_status_end: parseISODateString(member.voting?.end_date),
+        permission: this.deriveInitialPermission(member),
       });
     }
+  }
+
+  private buildPermissionArrays(
+    username: string,
+    member: CommitteeMember,
+    permission: CommitteePermissionLevel
+  ): { writers: CommitteeUser[]; auditors: CommitteeUser[] } {
+    const committee = this.committee;
+    const existingWriters = committee?.writers ?? [];
+    const existingAuditors = committee?.auditors ?? [];
+
+    const memberAsUser: CommitteeUser = {
+      username,
+      email: member.email,
+      name: [member.first_name, member.last_name].filter(Boolean).join(' ') || member.email,
+    };
+
+    const memberEmail = member.email?.toLowerCase();
+    const matchesMember = (u: CommitteeUser) => u.username === username || u.email?.toLowerCase() === memberEmail;
+
+    const writers = existingWriters.filter((w) => !matchesMember(w));
+    const auditors = existingAuditors.filter((a) => !matchesMember(a));
+
+    if (permission === 'manage') writers.push(memberAsUser);
+    else if (permission === 'review') auditors.push(memberAsUser);
+
+    return { writers, auditors };
+  }
+
+  private deriveInitialPermission(member: CommitteeMember): CommitteePermissionLevel {
+    const committee = this.committee;
+    if (!committee) return 'member';
+    const memberEmail = member.email?.toLowerCase();
+    const matches = (u: CommitteeUser) => (member.username && u.username === member.username) || u.email?.toLowerCase() === memberEmail;
+    if (committee.writers?.some(matches)) return 'manage';
+    if (committee.auditors?.some(matches)) return 'review';
+    return 'member';
   }
 
   private buildOrganizationPayload(formValue: MemberFormValue): CreateCommitteeMemberRequest['organization'] {
@@ -215,6 +289,7 @@ export class MemberFormComponent {
         role_end: new FormControl(null),
         voting_status_start: new FormControl(null),
         voting_status_end: new FormControl(null),
+        permission: new FormControl<CommitteePermissionLevel>('member'),
       },
       {
         validators: [

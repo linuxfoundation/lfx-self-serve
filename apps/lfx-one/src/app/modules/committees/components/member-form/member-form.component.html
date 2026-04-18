@@ -223,6 +223,24 @@
     </div>
   }
 
+  <!-- Permission Section -->
+  @if (!wizardMode) {
+    <div class="flex flex-col gap-2">
+      <label for="permission" class="block text-sm font-medium text-gray-700">Permission</label>
+      <lfx-select
+        size="small"
+        [form]="form()"
+        control="permission"
+        [options]="permissionOptions"
+        placeholder="Select permission"
+        styleClass="w-full"
+        appendTo="body"
+        id="permission"
+        data-testid="member-form-permission"></lfx-select>
+      <p class="text-xs text-gray-400">Manage — can edit group settings. Review — read-only access to all content. Member — standard access.</p>
+    </div>
+  }
+
   <!-- Form Actions -->
   <div class="flex justify-end gap-3 pt-6 border-t">
     <lfx-button label="Cancel" severity="secondary" [outlined]="true" (onClick)="onCancel()" size="small" type="button"></lfx-button>

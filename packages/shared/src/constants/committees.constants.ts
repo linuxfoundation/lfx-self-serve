@@ -467,6 +467,16 @@ export const COMMITTEE_SETTINGS_FEATURES = [
 ];
 
 /**
+ * Permission level options for committee member ACL dropdowns.
+ * Shared across add-member-dialog and member-form components.
+ */
+export const COMMITTEE_PERMISSION_OPTIONS = [
+  { label: 'Member', value: 'member' },
+  { label: 'Reviewer', value: 'review' },
+  { label: 'Manage', value: 'manage' },
+] as const;
+
+/**
  * Member visibility options for committee settings
  * @description Controls the visibility level of member profiles within a committee
  */

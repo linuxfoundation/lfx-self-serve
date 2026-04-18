@@ -9,6 +9,7 @@ import {
   CommitteeDocumentType,
   CommitteeJoinApplication,
   CommitteeMember,
+  CommitteeUser,
   CreateCommitteeDocumentRequest,
   CreateCommitteeJoinApplicationRequest,
   CreateCommitteeMemberRequest,
@@ -62,6 +63,11 @@ export class CommitteeService {
 
   public updateCommittee(id: string, committee: Partial<Committee>): Observable<Committee> {
     return this.http.put<Committee>(`/api/committees/${id}`, committee).pipe(take(1));
+  }
+
+  /** Updates the writers and auditors permission lists for a committee. */
+  public updateCommitteePermissions(committeeId: string, writers: CommitteeUser[], auditors: CommitteeUser[]): Observable<Committee> {
+    return this.http.put<Committee>(`/api/committees/${committeeId}`, { writers, auditors }).pipe(take(1));
   }
 
   /** Fetches a committee by ID without updating shared service state. */

@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { CommitteeMemberAppointedBy, CommitteeMemberRole, CommitteeMemberStatus, CommitteeMemberVotingStatus } from '../enums';
+import { CommitteePermissionLevel } from './committee.interface';
 
 /**
  * Committee member entity with complete profile and role information
@@ -138,6 +139,7 @@ export interface MemberFormValue {
   role_end: Date | null;
   voting_status_start: Date | null;
   voting_status_end: Date | null;
+  permission: CommitteePermissionLevel;
 }
 
 /**
