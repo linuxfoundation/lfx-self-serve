@@ -3,16 +3,16 @@
 
 import { AUTH0_TO_CDP_PROVIDER_MAP, CDP_PLATFORM_ICONS, CDP_TO_AUTH0_PROVIDER_MAP, IDENTITY_DISPLAY_PLATFORMS } from '@lfx-one/shared/constants';
 import {
-  AddEmailRequest,
   Auth0Identity,
   CdpIdentity,
   CdpWorkExperienceRequest,
   CombinedProfile,
+  EmailManagementData,
   EnrichedIdentity,
   IdentityDisplayState,
   ProfileAuthStatus,
   ProfileUpdateRequest,
-  UpdateEmailPreferencesRequest,
+  UserEmail,
   UserMetadata,
   UserMetadataUpdateRequest,
   UserProfile,
@@ -27,7 +27,6 @@ import { EmailVerificationService } from '../services/email-verification.service
 import { logger } from '../services/logger.service';
 import { ProfileAuthService } from '../services/profile-auth.service';
 import { SocialVerificationService } from '../services/social-verification.service';
-import { SupabaseService } from '../services/supabase.service';
 import { UserService } from '../services/user.service';
 import { getUsernameFromAuth } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
@@ -36,12 +35,19 @@ import { generateM2MToken } from '../utils/m2m-token.util';
  * Controller for handling profile HTTP requests
  */
 export class ProfileController {
+  private static readonly allowedProfileReturnPaths: ReadonlySet<string> = new Set([
+    '/profile',
+    '/profile/emails',
+    '/profile/identities',
+    '/profile/password',
+    '/settings',
+  ]);
+
   private auth0Service: Auth0Service = new Auth0Service();
   private cdpService: CdpService = new CdpService();
   private emailVerificationService: EmailVerificationService = new EmailVerificationService();
   private profileAuthService: ProfileAuthService = new ProfileAuthService();
   private socialVerificationService: SocialVerificationService = new SocialVerificationService();
-  private supabaseService: SupabaseService = new SupabaseService();
   private userService: UserService = new UserService();
 
   /**
@@ -232,7 +238,7 @@ export class ProfileController {
         });
       } else {
         // Create appropriate error based on error type
-        let error: any;
+        let error: unknown;
 
         if (response.error === 'Service temporarily unavailable') {
           // Service unavailable error
@@ -289,42 +295,65 @@ export class ProfileController {
   }
 
   /**
-   * GET /api/profile/emails - Get current user's email management data
+   * GET /api/profile/emails - Get current user's email management data from auth-service via NATS
    */
   public async getUserEmails(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_user_emails');
 
     try {
-      const username = await getUsernameFromAuth(req);
+      const userSub = req.oidc?.user?.['sub'] as string | undefined;
+      const sessionEmail = req.oidc?.user?.['email'] as string | undefined;
 
-      if (!username) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'get_user_emails',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
+      if (!userSub) {
+        return next(
+          ServiceValidationError.forField('user_id', 'User authentication required', {
+            operation: 'get_user_emails',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
       }
 
-      const userId = await this.supabaseService.getUser(username);
+      const [freshEmails, identities] = await Promise.all([
+        this.emailVerificationService.getUserEmails(req, userSub),
+        this.emailVerificationService.listIdentities(req, userSub),
+      ]);
 
-      if (!userId) {
-        const validationError = ServiceValidationError.forField('user_id', 'User not found', {
-          operation: 'get_user_emails',
-          service: 'profile_controller',
-          path: req.path,
-        });
+      const primaryEmail = freshEmails?.primary_email || sessionEmail;
 
-        return next(validationError);
+      if (!primaryEmail) {
+        return next(
+          ServiceValidationError.forField('primary_email', 'Unable to resolve primary email for user', {
+            operation: 'get_user_emails',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
       }
 
-      const emailData = await this.supabaseService.getEmailManagementData(userId.id);
+      const alternateEmails: UserEmail[] = freshEmails?.alternate_emails
+        ? freshEmails.alternate_emails.map((ae) => ({
+            email: ae.email,
+            verified: ae.verified,
+            user_id:
+              ae.user_id ??
+              identities.find((id) => id.provider === 'email' && id.profileData?.email?.toLowerCase().trim() === ae.email.toLowerCase().trim())?.user_id,
+          }))
+        : identities
+            .filter((id) => id.provider === 'email' && !!id.profileData?.email && id.profileData.email !== primaryEmail)
+            .map((id) => ({
+              email: id.profileData!.email as string,
+              verified: id.profileData?.['email_verified'] === true,
+              user_id: id.user_id,
+            }));
+
+      const emailData: EmailManagementData = {
+        primary_email: primaryEmail,
+        alternate_emails: alternateEmails,
+      };
 
       logger.success(req, 'get_user_emails', startTime, {
-        user_id: userId.id,
-        email_count: emailData.emails.length,
-        has_preferences: !!emailData.preferences,
+        alternate_email_count: alternateEmails.length,
       });
 
       res.json(emailData);
@@ -334,311 +363,67 @@ export class ProfileController {
   }
 
   /**
-   * POST /api/profile/emails - Add new email for current user
-   */
-  public async addUserEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'add_user_email', {
-      request_body_keys: Object.keys(req.body),
-    });
-
-    try {
-      const username = await getUsernameFromAuth(req);
-
-      if (!username) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'add_user_email',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      const user = await this.supabaseService.getUser(username);
-
-      if (!user) {
-        const validationError = ServiceValidationError.forField('user_id', 'User not found', {
-          operation: 'add_user_email',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      const { email }: AddEmailRequest = req.body;
-
-      if (!email || typeof email !== 'string') {
-        const validationError = ServiceValidationError.forField('email', 'Valid email address is required', {
-          operation: 'add_user_email',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      // Basic email validation
-      const emailRegex = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
-      if (!emailRegex.test(email)) {
-        const validationError = ServiceValidationError.forField('email', 'Invalid email format', {
-          operation: 'add_user_email',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      const newEmail = await this.supabaseService.addUserEmail(user.id, email);
-
-      logger.success(req, 'add_user_email', startTime, {
-        user_id: user.id,
-        email_id: newEmail.id,
-        email: newEmail.email,
-      });
-
-      res.status(201).json(newEmail);
-    } catch (error) {
-      if (error instanceof Error && error.message.includes('already in use')) {
-        const validationError = ServiceValidationError.forField('email', error.message, {
-          operation: 'add_user_email',
-          service: 'profile_controller',
-          path: req.path,
-        });
-        return next(validationError);
-      }
-      next(error);
-    }
-  }
-
-  /**
-   * DELETE /api/profile/emails/:emailId - Delete user email
-   */
-  public async deleteUserEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'delete_user_email', {
-      email_id: req.params['emailId'],
-    });
-
-    try {
-      const username = await getUsernameFromAuth(req);
-      const emailId = req.params['emailId'];
-
-      if (!username) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'delete_user_email',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      if (!emailId) {
-        const validationError = ServiceValidationError.forField('email_id', 'Email ID is required', {
-          operation: 'delete_user_email',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      const user = await this.supabaseService.getUser(username);
-
-      if (!user) {
-        const validationError = ServiceValidationError.forField('user_id', 'User not found', {
-          operation: 'delete_user_email',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      await this.supabaseService.deleteUserEmail(emailId, user.id);
-
-      logger.success(req, 'delete_user_email', startTime, {
-        user_id: user.id,
-        email_id: emailId,
-      });
-
-      res.status(204).send();
-    } catch (error) {
-      if (error instanceof Error && (error.message.includes('Cannot delete') || error.message.includes('last email'))) {
-        const validationError = ServiceValidationError.forField('email_id', error.message, {
-          operation: 'delete_user_email',
-          service: 'profile_controller',
-          path: req.path,
-        });
-        return next(validationError);
-      }
-      next(error);
-    }
-  }
-
-  /**
-   * PUT /api/profile/emails/:emailId/primary - Set email as primary
+   * PUT /api/profile/emails/:email/primary - Set email as primary via auth-service NATS
+   * The :email param is the URL-encoded email address to make primary
    */
   public async setPrimaryEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'set_primary_email', {
-      email_id: req.params['emailId'],
-    });
+    const emailAddress = req.params['emailId'] ?? '';
+    const startTime = logger.startOperation(req, 'set_primary_email', { email: emailAddress });
 
     try {
-      const username = await getUsernameFromAuth(req);
-      const emailId = req.params['emailId'];
-
-      if (!username) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'set_primary_email',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
+      if (!emailAddress) {
+        return next(
+          ServiceValidationError.forField('email', 'Email address is required', {
+            operation: 'set_primary_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
       }
 
-      if (!emailId) {
-        const validationError = ServiceValidationError.forField('email_id', 'Email ID is required', {
-          operation: 'set_primary_email',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
+      const emailRegex = /^[^\s@]+@[^\s@.]+\.[^\s@]+$/;
+      if (!emailRegex.test(emailAddress)) {
+        return next(
+          ServiceValidationError.forField('email', 'Invalid email format', {
+            operation: 'set_primary_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
       }
 
-      const user = await this.supabaseService.getUser(username);
+      const authToken = this.profileAuthService.getManagementToken(req);
 
-      if (!user) {
-        const validationError = ServiceValidationError.forField('user_id', 'User not found', {
-          operation: 'set_primary_email',
-          service: 'profile_controller',
-          path: req.path,
+      if (!authToken) {
+        if (!this.profileAuthService.isProfileAuthConfigured()) {
+          res.status(501).json({
+            error: 'profile_auth_not_configured',
+            message: 'Changing the primary email is not available in this environment.',
+          });
+          return;
+        }
+        res.status(403).json({
+          error: 'management_token_required',
+          message: 'Profile authorization required to change the primary email',
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/emails')}`,
         });
-
-        return next(validationError);
+        return;
       }
 
-      await this.supabaseService.setPrimaryEmail(user.id, emailId);
+      const result = await this.emailVerificationService.setPrimaryEmail(req, authToken, emailAddress);
 
-      logger.success(req, 'set_primary_email', startTime, {
-        user_id: user.id,
-        email_id: emailId,
-      });
+      if (!result.success) {
+        return next(
+          new MicroserviceError(result.message || 'Failed to set primary email', 502, 'BAD_GATEWAY', {
+            operation: 'set_primary_email',
+            service: 'profile_controller',
+          })
+        );
+      }
+
+      logger.success(req, 'set_primary_email', startTime, { email: emailAddress });
 
       res.status(200).json({ message: 'Primary email updated successfully' });
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * GET /api/profile/email-preferences - Get user email preferences
-   */
-  public async getEmailPreferences(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'get_email_preferences');
-
-    try {
-      const username = await getUsernameFromAuth(req);
-
-      if (!username) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'get_email_preferences',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      const user = await this.supabaseService.getUser(username);
-
-      if (!user) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'get_email_preferences',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      const preferences = await this.supabaseService.getEmailPreferences(user.id);
-
-      logger.success(req, 'get_email_preferences', startTime, {
-        user_id: user.id,
-        has_preferences: !!preferences,
-      });
-
-      res.json(preferences);
-    } catch (error) {
-      next(error);
-    }
-  }
-
-  /**
-   * PUT /api/profile/email-preferences - Update user email preferences
-   */
-  public async updateEmailPreferences(req: Request, res: Response, next: NextFunction): Promise<void> {
-    const startTime = logger.startOperation(req, 'update_email_preferences', {
-      request_body_keys: Object.keys(req.body),
-    });
-
-    try {
-      const username = await getUsernameFromAuth(req);
-
-      if (!username) {
-        const validationError = ServiceValidationError.forField('user_id', 'User authentication required', {
-          operation: 'update_email_preferences',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      const user = await this.supabaseService.getUser(username);
-
-      if (!user) {
-        const validationError = ServiceValidationError.forField('user_id', 'User not found', {
-          operation: 'update_email_preferences',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      const preferences: UpdateEmailPreferencesRequest = req.body;
-      const allowedFields = ['meeting_email_id', 'notification_email_id', 'billing_email_id'];
-      const updateData: any = {};
-
-      for (const [key, value] of Object.entries(preferences)) {
-        if (allowedFields.includes(key)) {
-          updateData[key] = value;
-        }
-      }
-
-      if (Object.keys(updateData).length === 0) {
-        const validationError = ServiceValidationError.forField('request_body', 'No valid fields provided for update', {
-          operation: 'update_email_preferences',
-          service: 'profile_controller',
-          path: req.path,
-        });
-
-        return next(validationError);
-      }
-
-      const updatedPreferences = await this.supabaseService.updateEmailPreferences(user.id, updateData);
-
-      logger.success(req, 'update_email_preferences', startTime, {
-        user_id: user.id,
-        updated_fields: Object.keys(updateData),
-      });
-
-      res.json(updatedPreferences);
     } catch (error) {
       next(error);
     }
@@ -702,6 +487,109 @@ export class ProfileController {
   }
 
   /**
+   * POST /api/profile/reset-password - Send password reset link via auth-service NATS
+   * Uses the Flow C management token (update:current_user_metadata scope) to request
+   * Auth0 send the reset email to the user's primary email.
+   */
+  public async sendPasswordResetEmail(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'send_password_reset_email');
+
+    try {
+      const mgmtToken = this.profileAuthService.getManagementToken(req);
+      if (!mgmtToken) {
+        if (!this.profileAuthService.isProfileAuthConfigured()) {
+          res.status(501).json({
+            error: 'profile_auth_not_configured',
+            message: 'Password reset is not available in this environment.',
+          });
+          return;
+        }
+        res.status(403).json({
+          error: 'management_token_required',
+          message: 'Profile authorization required to send a password reset link',
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/password')}`,
+        });
+        return;
+      }
+
+      const result = await this.emailVerificationService.sendPasswordResetLink(req, mgmtToken);
+
+      if (!result.success) {
+        return next(
+          new MicroserviceError(result.message || 'Failed to send password reset link', 502, 'AUTH_SERVICE_ERROR', {
+            operation: 'send_password_reset_email',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      logger.success(req, 'send_password_reset_email', startTime);
+
+      res.json({ message: 'A password reset link has been sent to the primary email on file.' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
+   * POST /api/profile/change-password - Change user's password via auth-service NATS
+   * Uses the Flow C management token (update:current_user_metadata scope) since
+   * auth-service requires Management API audience for password updates.
+   */
+  public async changePassword(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'change_password');
+
+    try {
+      const { current_password, new_password } = req.body as { current_password: string; new_password: string };
+
+      if (!current_password || !new_password) {
+        return next(
+          ServiceValidationError.forField('body', 'current_password and new_password are required', {
+            operation: 'change_password',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      const mgmtToken = this.profileAuthService.getManagementToken(req);
+      if (!mgmtToken) {
+        if (!this.profileAuthService.isProfileAuthConfigured()) {
+          res.status(501).json({
+            error: 'profile_auth_not_configured',
+            message: 'Changing your password is not available in this environment.',
+          });
+          return;
+        }
+        res.status(403).json({
+          error: 'management_token_required',
+          message: 'Profile authorization required to change your password',
+          authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/password')}`,
+        });
+        return;
+      }
+
+      const result = await this.emailVerificationService.changePassword(req, mgmtToken, current_password, new_password);
+
+      if (!result.success) {
+        return next(
+          new MicroserviceError(result.message || 'Failed to change password', 502, 'AUTH_SERVICE_ERROR', {
+            operation: 'change_password',
+            service: 'profile_controller',
+            path: req.path,
+          })
+        );
+      }
+
+      logger.success(req, 'change_password', startTime, {});
+      res.json({ message: result.message || 'Password changed successfully' });
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/profile/identities - Get user's identities with Auth0 cross-reference
    * Fetches CDP identities and Auth0 linked identities in parallel,
    * then applies display logic to determine verified/unverified/hidden state
@@ -733,14 +621,14 @@ export class ProfileController {
         auth0Sub
           ? this.auth0Service.getUserIdentities(req, auth0Sub).catch((err: unknown) => {
               logger.warning(req, 'get_identities', 'Auth0 identity fetch failed, continuing without cross-reference', {
-                error: err instanceof Error ? err.message : 'Unknown error',
+                err,
               });
               return [] as Auth0Identity[];
             })
           : Promise.resolve([]),
       ]);
 
-      logger.info(req, 'get_identities', 'Raw identity data before reconciliation', {
+      logger.debug(req, 'get_identities', 'Raw identity data before reconciliation', {
         cdp_identities: cdpIdentities,
         auth_service_identities: auth0Identities,
       });
@@ -895,10 +783,17 @@ export class ProfileController {
             provider,
             auth0_user_id: auth0UserId,
           });
+          if (!this.profileAuthService.isProfileAuthConfigured()) {
+            res.status(501).json({
+              error: 'profile_auth_not_configured',
+              message: 'Removing this identity is not available in this environment.',
+            });
+            return;
+          }
           res.status(403).json({
             error: 'management_token_required',
             message: 'Profile authorization required to remove this identity',
-            authorize_url: '/api/profile/auth/start?returnTo=/profile/identities',
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/identities')}`,
           });
           return;
         }
@@ -1189,14 +1084,13 @@ export class ProfileController {
   public async startProfileAuth(req: Request, res: Response): Promise<void> {
     const startTime = logger.startOperation(req, 'profile_auth_start');
 
+    const returnTo = this.normalizeProfileReturnTo(req.query['returnTo']);
+
     if (!this.profileAuthService.isProfileAuthConfigured()) {
       logger.warning(req, 'profile_auth_start', 'Profile auth not configured', {});
-      res.status(501).json({ error: 'Profile authorization is not configured' });
+      res.redirect(`${returnTo}?error=profile_auth_not_configured`);
       return;
     }
-
-    const rawReturnTo = (req.query['returnTo'] as string) || '/profile';
-    const returnTo = rawReturnTo.startsWith('/') && !rawReturnTo.startsWith('//') ? rawReturnTo : '/profile';
     const authorizeUrl = this.profileAuthService.getAuthorizationUrl(req, returnTo);
 
     logger.success(req, 'profile_auth_start', startTime, {
@@ -1216,8 +1110,7 @@ export class ProfileController {
     const code = req.query['code'] as string;
     const state = req.query['state'] as string;
     const error = req.query['error'] as string;
-    const rawReturnTo = (req.appSession?.['profileAuthReturnTo'] as string) || '/profile';
-    const returnTo = rawReturnTo.startsWith('/') && !rawReturnTo.startsWith('//') ? rawReturnTo : '/profile';
+    const returnTo = this.normalizeProfileReturnTo(req.appSession?.['profileAuthReturnTo']);
 
     if (error) {
       logger.error(req, 'profile_auth_callback', startTime, new Error(`Auth0 returned error: ${error}`), {
@@ -1300,14 +1193,14 @@ export class ProfileController {
                     if (emailIdentity) {
                       this.cdpService.verifyIdentityForUser(req, lfid, emailIdentity.id).catch((err: unknown) => {
                         logger.warning(req, 'profile_auth_callback', 'CDP verify failed (non-blocking)', {
-                          error: err instanceof Error ? err.message : 'Unknown',
+                          err,
                         });
                       });
                     }
                   })
                   .catch((err: unknown) => {
                     logger.warning(req, 'profile_auth_callback', 'CDP identity lookup failed (non-blocking)', {
-                      error: err instanceof Error ? err.message : 'Unknown',
+                      err,
                     });
                   });
 
@@ -1328,7 +1221,7 @@ export class ProfileController {
         } catch (err) {
           logger.warning(req, 'profile_auth_callback', 'Pending verification error (non-blocking)', {
             email: pending.email,
-            error: err instanceof Error ? err.message : 'Unknown',
+            err,
           });
         }
       }
@@ -1506,14 +1399,14 @@ export class ProfileController {
               this.cdpService.verifyIdentityForUser(req, lfid, identity.id).catch((err: unknown) => {
                 logger.warning(req, 'social_auth_callback', 'CDP verify failed (non-blocking)', {
                   identity_id: identity.id,
-                  error: err instanceof Error ? err.message : 'Unknown',
+                  err,
                 });
               });
             }
           })
           .catch((err: unknown) => {
             logger.warning(req, 'social_auth_callback', 'CDP identity lookup failed (non-blocking)', {
-              error: err instanceof Error ? err.message : 'Unknown',
+              err,
             });
           });
       }
@@ -1580,17 +1473,17 @@ export class ProfileController {
         logger.success(req, 'send_email_verification', startTime, { email });
         res.json({ success: true, message: response.message || 'Verification code sent' });
       } else {
-        logger.debug(req, 'send_email_verification', 'Full verification response on failure', {
+        logger.debug(req, 'send_email_verification', 'Verification response on failure', {
           response_keys: Object.keys(response),
-          full_response: response,
+          error: response.error,
+          message: response.message,
         });
 
         if (response.error?.includes('already linked')) {
-          // Fallback chain: response field → EMAIL_TO_USERNAME → EMAIL_TO_SUB
+          // Upstream auth-service emits the "already linked" error without identifying the
+          // owning account, so resolve it here via EMAIL_TO_USERNAME → EMAIL_TO_SUB lookups.
           const linkedTo =
-            response.linkedTo ||
-            (await this.emailVerificationService.resolveEmailToUsername(req, email)) ||
-            (await this.emailVerificationService.resolveEmailToSub(req, email));
+            (await this.emailVerificationService.resolveEmailToUsername(req, email)) || (await this.emailVerificationService.resolveEmailToSub(req, email));
 
           const message = linkedTo
             ? `This email is already linked to account: ${linkedTo}`
@@ -1675,7 +1568,7 @@ export class ProfileController {
             success: false,
             error: 'management_token_required',
             message: 'Profile authorization required',
-            authorize_url: '/api/profile/auth/start?returnTo=/profile/identities',
+            authorize_url: `/api/profile/auth/start?returnTo=${encodeURIComponent((req.headers['referer'] as string) || '/profile/emails')}`,
           });
           return;
         }
@@ -1734,14 +1627,14 @@ export class ProfileController {
           if (emailIdentity) {
             this.cdpService.verifyIdentityForUser(req, lfid, emailIdentity.id).catch((err: unknown) => {
               logger.warning(req, 'verify_and_link_email', 'CDP verify failed (non-blocking)', {
-                error: err instanceof Error ? err.message : 'Unknown',
+                err,
               });
             });
           }
         })
         .catch((err: unknown) => {
           logger.warning(req, 'verify_and_link_email', 'CDP identity lookup failed (non-blocking)', {
-            error: err instanceof Error ? err.message : 'Unknown',
+            err,
           });
         });
 
@@ -1809,7 +1702,7 @@ export class ProfileController {
           this.cdpService.verifyIdentityForUser(req, lfid, cdp.id, lfid).catch((err: unknown) => {
             logger.warning(req, 'reconcile_identities', 'Auto-verify LFID failed (non-blocking)', {
               identity_id: cdp.id,
-              error: err instanceof Error ? err.message : 'Unknown',
+              err,
             });
           });
         }
@@ -1823,7 +1716,7 @@ export class ProfileController {
             logger.warning(req, 'reconcile_identities', 'Auto-verify failed (non-blocking)', {
               identity_id: cdp.id,
               platform: cdp.platform,
-              error: err instanceof Error ? err.message : 'Unknown',
+              err,
             });
           });
         }
@@ -1896,7 +1789,7 @@ export class ProfileController {
             logger.warning(req, 'reconcile_identities', 'CDP identity create failed (non-blocking)', {
               platform: cdpPlatform,
               value,
-              error: err instanceof Error ? err.message : 'Unknown',
+              err,
             });
           });
       }
@@ -1919,6 +1812,19 @@ export class ProfileController {
     }
 
     return { enriched, notInCdpCount };
+  }
+
+  private normalizeProfileReturnTo(raw: unknown): string {
+    const DEFAULT = '/profile';
+    if (typeof raw !== 'string' || raw.length === 0) return DEFAULT;
+    try {
+      // Accepts both relative paths and full URLs (e.g. req.headers['referer']).
+      // Only pathname is used — host, query, and fragment are discarded.
+      const { pathname } = new URL(raw, 'http://internal');
+      return ProfileController.allowedProfileReturnPaths.has(pathname) ? pathname : DEFAULT;
+    } catch {
+      return DEFAULT;
+    }
   }
 
   /**

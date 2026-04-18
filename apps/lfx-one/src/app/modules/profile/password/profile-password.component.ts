@@ -1,52 +1,38 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DatePipe, NgClass, TitleCasePipe } from '@angular/common';
-import { Component, computed, ElementRef, inject, OnInit, Signal, signal, viewChild } from '@angular/core';
-import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
+import { NgClass, TitleCasePipe } from '@angular/common';
+import { Component, computed, ElementRef, inject, signal, viewChild } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { AbstractControl, FormBuilder, FormGroup, ReactiveFormsModule, ValidationErrors, ValidatorFn, Validators } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { markFormControlsAsTouched } from '@lfx-one/shared';
-import { ChangePasswordRequest, PasswordStrength, TwoFactorSettings } from '@lfx-one/shared/interfaces';
+import { ChangePasswordRequest, PasswordStrength } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, finalize, of, switchMap } from 'rxjs';
+import { HttpErrorResponse } from '@angular/common/http';
+import { finalize } from 'rxjs';
 
 @Component({
   selector: 'lfx-profile-password',
-  imports: [
-    DatePipe,
-    NgClass,
-    TitleCasePipe,
-    ReactiveFormsModule,
-    CardComponent,
-    InputTextComponent,
-    MessageComponent,
-    ButtonComponent,
-    ToastModule,
-    TooltipModule,
-  ],
+  imports: [NgClass, TitleCasePipe, ReactiveFormsModule, CardComponent, InputTextComponent, MessageComponent, ButtonComponent, ToastModule, TooltipModule],
   providers: [MessageService],
   templateUrl: './profile-password.component.html',
 })
-export class ProfilePasswordComponent implements OnInit {
+export class ProfilePasswordComponent {
   private readonly accountRecovery = viewChild<ElementRef>('accountRecovery');
   private readonly fb = inject(FormBuilder);
   private readonly userService = inject(UserService);
   private readonly messageService = inject(MessageService);
 
-  // Refresh mechanism
-  private refresh = new BehaviorSubject<void>(undefined);
-
   // State signals
   private readonly changingPasswordSignal = signal<boolean>(false);
   private readonly sendingResetSignal = signal<boolean>(false);
-  private readonly loadingTwoFactorSignal = signal<boolean>(false);
   private readonly showCurrentPasswordSignal = signal<boolean>(false);
   private readonly showNewPasswordSignal = signal<boolean>(false);
   private readonly showConfirmPasswordSignal = signal<boolean>(false);
@@ -54,14 +40,9 @@ export class ProfilePasswordComponent implements OnInit {
 
   public readonly isChangingPassword = computed(() => this.changingPasswordSignal());
   public readonly isSendingReset = computed(() => this.sendingResetSignal());
-  public readonly isLoadingTwoFactor = computed(() => this.loadingTwoFactorSignal());
   public readonly showCurrentPassword = computed(() => this.showCurrentPasswordSignal());
   public readonly showNewPassword = computed(() => this.showNewPasswordSignal());
   public readonly showConfirmPassword = computed(() => this.showConfirmPasswordSignal());
-
-  // Data signals using toSignal with refresh for 2FA settings
-  public twoFactorData: Signal<TwoFactorSettings | null>;
-  public readonly twoFactorSettings = computed(() => this.twoFactorData());
 
   // Password change form
   public passwordForm: FormGroup = this.fb.group(
@@ -80,8 +61,6 @@ export class ProfilePasswordComponent implements OnInit {
   });
 
   public constructor() {
-    this.twoFactorData = this.initializeTwoFactorData();
-
     // Subscribe to new password field changes to update the signal
     this.passwordForm
       .get('newPassword')
@@ -89,10 +68,6 @@ export class ProfilePasswordComponent implements OnInit {
       .subscribe((value: string | null) => {
         this.newPasswordSignal.set(value || '');
       });
-  }
-
-  public ngOnInit(): void {
-    // 2FA data loads automatically via toSignal
   }
 
   // Password visibility toggle methods
@@ -135,7 +110,11 @@ export class ProfilePasswordComponent implements OnInit {
             detail: response.message || 'Password changed successfully!',
           });
         },
-        error: (error) => {
+        error: (error: HttpErrorResponse) => {
+          if (error.error?.error === 'management_token_required' && error.error?.authorize_url) {
+            window.location.href = error.error.authorize_url;
+            return;
+          }
           const message = error.error?.message || 'Failed to change password. Please try again.';
           this.messageService.add({
             severity: 'error',
@@ -160,7 +139,11 @@ export class ProfilePasswordComponent implements OnInit {
             detail: response.message || 'Password reset email has been sent to your registered email address!',
           });
         },
-        error: (error) => {
+        error: (error: HttpErrorResponse) => {
+          if (error.error?.error === 'management_token_required' && error.error?.authorize_url) {
+            window.location.href = error.error.authorize_url;
+            return;
+          }
           const message = error.error?.message || 'Failed to send password reset email. Please try again.';
           this.messageService.add({
             severity: 'error',
@@ -176,12 +159,6 @@ export class ProfilePasswordComponent implements OnInit {
     this.passwordForm.markAsUntouched();
   }
 
-  public openTwoFactorSetup(): void {
-    // For now, this will open an external link or show a message
-    // In the future, this could navigate to a 2FA setup page
-    window.open('https://docs.example.com/2fa-setup', '_blank');
-  }
-
   public scrollToAccountRecovery(): void {
     const accountRecoveryElement = this.accountRecovery()?.nativeElement;
     if (accountRecoveryElement) {
@@ -193,24 +170,6 @@ export class ProfilePasswordComponent implements OnInit {
   }
 
   // Private helper methods
-  private initializeTwoFactorData(): Signal<TwoFactorSettings | null> {
-    this.loadingTwoFactorSignal.set(true);
-    return toSignal(
-      this.refresh.pipe(
-        switchMap(() =>
-          this.userService.getTwoFactorSettings().pipe(
-            catchError((error) => {
-              console.error('Error loading 2FA settings:', error);
-              return of(null);
-            }),
-            finalize(() => this.loadingTwoFactorSignal.set(false))
-          )
-        )
-      ),
-      { initialValue: null }
-    );
-  }
-
   private calculatePasswordStrength(password: string): PasswordStrength {
     const requirements = {
       minLength: password.length >= 8,

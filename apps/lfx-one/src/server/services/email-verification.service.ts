@@ -5,8 +5,10 @@ import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
   Auth0Identity,
+  EmailManagementData,
   LinkIdentityNatsResponse,
   ListIdentitiesNatsResponse,
+  ResetPasswordLinkNatsResponse,
   SendEmailVerificationResponse,
   UnlinkIdentityNatsResponse,
   VerifyEmailOtpNatsResponse,
@@ -54,6 +56,11 @@ export class EmailVerificationService {
 
       return parsed;
     } catch (error) {
+      logger.warning(req, 'send_email_verification_code', 'NATS send verification code failed', {
+        email,
+        err: error,
+      });
+
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         return {
           success: false,
@@ -65,7 +72,7 @@ export class EmailVerificationService {
       return {
         success: false,
         error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'An unexpected error occurred',
+        message: 'Failed to send verification code. Please try again.',
       };
     }
   }
@@ -102,6 +109,11 @@ export class EmailVerificationService {
 
       return parsed;
     } catch (error) {
+      logger.warning(req, 'verify_email_otp', 'NATS verify OTP failed', {
+        email,
+        err: error,
+      });
+
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         return {
           success: false,
@@ -113,7 +125,7 @@ export class EmailVerificationService {
       return {
         success: false,
         error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'An unexpected error occurred',
+        message: 'Failed to verify code. Please try again.',
       };
     }
   }
@@ -165,7 +177,7 @@ export class EmailVerificationService {
     } catch (error) {
       logger.warning(req, 'resolve_email_to_username', 'Failed to resolve email to username', {
         email,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        err: error,
       });
       return null;
     }
@@ -219,7 +231,7 @@ export class EmailVerificationService {
     } catch (error) {
       logger.warning(req, 'resolve_email_to_sub', 'Failed to resolve email to sub', {
         email,
-        error: error instanceof Error ? error.message : 'Unknown error',
+        err: error,
       });
       return null;
     }
@@ -258,6 +270,10 @@ export class EmailVerificationService {
 
       return parsed;
     } catch (error) {
+      logger.warning(req, 'link_identity', 'NATS link identity failed', {
+        err: error,
+      });
+
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         return {
           success: false,
@@ -269,7 +285,97 @@ export class EmailVerificationService {
       return {
         success: false,
         error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'An unexpected error occurred',
+        message: 'Failed to link identity. Please try again.',
+      };
+    }
+  }
+
+  /**
+   * Get all emails for the authenticated user from auth-service
+   * @param req - Express request object for logging
+   * @param userIdentifier - User's subject ID (e.g. auth0|123456789), username, or email — sent as raw string to auth-service which resolves it without JWT audience validation
+   * @returns Primary email and list of alternate emails
+   */
+  public async getUserEmails(req: Request, userIdentifier: string): Promise<EmailManagementData | null> {
+    const codec = this.natsService.getCodec();
+
+    logger.debug(req, 'get_user_emails', 'Fetching user emails via NATS');
+
+    try {
+      const payload = JSON.stringify({ user: { auth_token: userIdentifier } });
+      const response = await this.natsService.request(NatsSubjects.USER_EMAILS_READ, codec.encode(payload), {
+        timeout: NATS_CONFIG.REQUEST_TIMEOUT,
+      });
+
+      const responseText = codec.decode(response.data);
+      const parsed = JSON.parse(responseText);
+
+      if (!parsed.success || !parsed.data) {
+        logger.warning(req, 'get_user_emails', 'NATS user_emails.read returned unsuccessful', {
+          error: parsed.error,
+          message: parsed.message,
+        });
+        return null;
+      }
+
+      logger.debug(req, 'get_user_emails', 'Fetched user emails', {
+        alternate_count: parsed.data.alternate_emails?.length ?? 0,
+      });
+
+      return parsed.data as EmailManagementData;
+    } catch (error) {
+      logger.warning(req, 'get_user_emails', 'Failed to fetch user emails via NATS', {
+        err: error,
+      });
+      return null;
+    }
+  }
+
+  /**
+   * Set an alternate email as the primary email for the user
+   * @param req - Express request object for logging
+   * @param authToken - Management token with sufficient scope (Flow C or M2M)
+   * @param email - The email address to make primary
+   * @returns Response indicating success or failure
+   */
+  public async setPrimaryEmail(req: Request, authToken: string, email: string): Promise<{ success: boolean; message?: string; error?: string }> {
+    const codec = this.natsService.getCodec();
+
+    logger.debug(req, 'set_primary_email', 'Setting primary email via NATS', { email });
+
+    try {
+      const payload = JSON.stringify({ user: { auth_token: authToken }, email });
+      const response = await this.natsService.request(NatsSubjects.USER_EMAILS_SET_PRIMARY, codec.encode(payload), {
+        timeout: NATS_CONFIG.REQUEST_TIMEOUT,
+      });
+
+      const responseText = codec.decode(response.data);
+      const parsed = JSON.parse(responseText);
+
+      logger.debug(req, 'set_primary_email', 'NATS set_primary_email response', {
+        success: parsed.success,
+        error: parsed.error,
+      });
+
+      return parsed;
+    } catch (error) {
+      logger.warning(req, 'set_primary_email', 'NATS set primary email failed', {
+        email,
+        err: error,
+      });
+
+      if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
+        return {
+          success: false,
+          error: 'Service temporarily unavailable',
+          message: 'Unable to reach the email service. Please try again later.',
+        };
+      }
+
+      return {
+        success: false,
+        error: 'Internal server error',
+        message: 'Failed to update primary email. Please try again.',
       };
     }
   }
@@ -308,6 +414,12 @@ export class EmailVerificationService {
 
       return parsed;
     } catch (error) {
+      logger.warning(req, 'unlink_identity', 'NATS unlink identity failed', {
+        provider,
+        identity_id: identityId,
+        err: error,
+      });
+
       if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
         return {
           success: false,
@@ -319,25 +431,103 @@ export class EmailVerificationService {
       return {
         success: false,
         error: 'Internal server error',
-        message: error instanceof Error ? error.message : 'An unexpected error occurred',
+        message: 'Failed to unlink identity. Please try again.',
       };
+    }
+  }
+
+  /**
+   * Send a password reset link via auth-service NATS
+   * @param req - Express request object for logging
+   * @param managementToken - Flow C management token (must carry update:current_user_metadata scope)
+   */
+  public async sendPasswordResetLink(req: Request, managementToken: string): Promise<ResetPasswordLinkNatsResponse> {
+    const codec = this.natsService.getCodec();
+
+    logger.debug(req, 'send_password_reset_link', 'Requesting password reset link via NATS');
+
+    try {
+      const payload = JSON.stringify({ token: managementToken });
+
+      const response = await this.natsService.request(NatsSubjects.PASSWORD_RESET_LINK, codec.encode(payload), {
+        timeout: NATS_CONFIG.REQUEST_TIMEOUT,
+      });
+
+      const parsed: ResetPasswordLinkNatsResponse = JSON.parse(codec.decode(response.data));
+      return parsed;
+    } catch (error) {
+      logger.warning(req, 'send_password_reset_link', 'NATS send password reset link failed', {
+        err: error,
+      });
+
+      if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
+        return {
+          success: false,
+          error: 'Service temporarily unavailable',
+          message: 'Unable to reach the password reset service. Please try again later.',
+        };
+      }
+
+      return {
+        success: false,
+        error: 'Internal server error',
+        message: 'Failed to send password reset email. Please try again.',
+      };
+    }
+  }
+
+  /**
+   * Change the user's password via auth-service NATS
+   * @param req - Express request object for logging
+   * @param managementToken - Flow C management token (must carry update:current_user_metadata scope)
+   * @param currentPassword - The user's current password
+   * @param newPassword - The desired new password
+   */
+  public async changePassword(
+    req: Request,
+    managementToken: string,
+    currentPassword: string,
+    newPassword: string
+  ): Promise<{ success: boolean; message?: string; error?: string }> {
+    const codec = this.natsService.getCodec();
+
+    logger.debug(req, 'change_password', 'Changing password via NATS');
+
+    try {
+      const payload = JSON.stringify({ token: managementToken, current_password: currentPassword, new_password: newPassword });
+      const response = await this.natsService.request(NatsSubjects.PASSWORD_UPDATE, codec.encode(payload), {
+        timeout: NATS_CONFIG.REQUEST_TIMEOUT,
+      });
+
+      const parsed = JSON.parse(codec.decode(response.data));
+      return parsed;
+    } catch (error) {
+      logger.warning(req, 'change_password', 'NATS change password failed', {
+        err: error,
+      });
+
+      if (error instanceof Error && (error.message.includes('timeout') || error.message.includes('503'))) {
+        return { success: false, error: 'Service temporarily unavailable', message: 'Unable to reach the password service. Please try again later.' };
+      }
+
+      return { success: false, error: 'Internal server error', message: 'Failed to change password. Please try again.' };
     }
   }
 
   /**
    * List linked identities for a user via NATS
    * @param req - Express request object for logging
-   * @param authToken - Management token or M2M token to identify the user
+   * @param userIdentifier - User's subject ID (e.g. auth0|123456789), username, or email — sent as raw string to auth-service which resolves it without JWT audience validation (same convention as getUserEmails)
    * @returns Array of Auth0 linked identities
    */
-  public async listIdentities(req: Request, authToken: string): Promise<Auth0Identity[]> {
+  public async listIdentities(req: Request, userIdentifier: string): Promise<Auth0Identity[]> {
     const codec = this.natsService.getCodec();
 
     logger.debug(req, 'list_identities', 'Listing user identities via NATS');
 
     try {
       const payload = JSON.stringify({
-        user: { auth_token: authToken },
+        user: { auth_token: userIdentifier },
       });
 
       const response = await this.natsService.request(NatsSubjects.USER_IDENTITY_LIST, codec.encode(payload), {
@@ -347,7 +537,7 @@ export class EmailVerificationService {
       const responseText = codec.decode(response.data);
       const parsed: ListIdentitiesNatsResponse = JSON.parse(responseText);
 
-      logger.info(req, 'list_identities', 'Raw NATS USER_IDENTITY_LIST response', {
+      logger.debug(req, 'list_identities', 'Raw NATS USER_IDENTITY_LIST response', {
         raw_response: responseText,
         parsed_success: parsed.success,
         parsed_data: parsed.data,
@@ -369,7 +559,7 @@ export class EmailVerificationService {
       return parsed.data;
     } catch (error) {
       logger.warning(req, 'list_identities', 'Failed to list identities via NATS, returning empty array', {
-        error: error instanceof Error ? error.message : 'Unknown error',
+        err: error,
       });
       return [];
     }

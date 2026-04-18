@@ -39,8 +39,9 @@ export class ProfileEditDialogComponent {
 
   // Email signals
   public readonly emails = signal<UserEmail[]>([]);
+  public readonly primaryEmail = signal('');
   public readonly loadingEmails = signal(true);
-  public readonly selectedPrimaryEmailId = signal('');
+  public readonly selectedPrimaryEmail = signal('');
   public readonly savingPrimaryEmail = signal(false);
   public readonly verifiedEmails: Signal<UserEmail[]> = this.initVerifiedEmails();
   public readonly hasManagedEmails: Signal<boolean> = computed(() => this.verifiedEmails().length > 0);
@@ -107,11 +108,11 @@ export class ProfileEditDialogComponent {
       )
       .subscribe({
         next: (data) => {
-          this.emails.set(data.emails);
-          const primary = data.emails.find((e) => e.is_primary);
-          if (primary) {
-            this.selectedPrimaryEmailId.set(primary.id);
-          }
+          const primary: UserEmail = { email: data.primary_email, verified: true };
+          const alternates = data.alternate_emails.filter((e) => e.email !== data.primary_email);
+          this.emails.set([primary, ...alternates]);
+          this.primaryEmail.set(data.primary_email);
+          this.selectedPrimaryEmail.set(data.primary_email);
         },
         error: () => {
           this.messageService.add({
@@ -186,17 +187,17 @@ export class ProfileEditDialogComponent {
     this.hasChanges.set(false);
   }
 
-  public onPrimaryEmailChange(emailId: string): void {
-    const previousId = this.selectedPrimaryEmailId();
-    this.selectedPrimaryEmailId.set(emailId);
+  public onPrimaryEmailChange(email: string): void {
+    const previous = this.selectedPrimaryEmail();
+    this.selectedPrimaryEmail.set(email);
     this.savingPrimaryEmail.set(true);
 
     this.userService
-      .setPrimaryEmail(emailId)
+      .setPrimaryEmail(email)
       .pipe(finalize(() => this.savingPrimaryEmail.set(false)))
       .subscribe({
         next: () => {
-          this.emails.update((emails) => emails.map((e) => ({ ...e, is_primary: e.id === emailId })));
+          this.primaryEmail.set(email);
           this.messageService.add({
             severity: 'success',
             summary: 'Success',
@@ -204,7 +205,7 @@ export class ProfileEditDialogComponent {
           });
         },
         error: () => {
-          this.selectedPrimaryEmailId.set(previousId);
+          this.selectedPrimaryEmail.set(previous);
           this.messageService.add({
             severity: 'error',
             summary: 'Error',
@@ -236,6 +237,6 @@ export class ProfileEditDialogComponent {
   }
 
   private initVerifiedEmails(): Signal<UserEmail[]> {
-    return computed(() => this.emails().filter((e) => e.is_verified));
+    return computed(() => this.emails().filter((e) => e.verified));
   }
 }

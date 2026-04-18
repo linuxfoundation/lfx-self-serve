@@ -30,28 +30,22 @@ router.get('/', (req, res, next) => profileController.getCurrentUserProfile(req,
 // PATCH /api/profile - Update user metadata via NATS (replaces separate user and details endpoints)
 router.patch('/', (req, res, next) => profileController.updateUserMetadata(req, res, next));
 
-// Email management routes
+// Email management routes (backed by auth-service via NATS)
 
 // GET /api/profile/emails - Get current user's email management data
 router.get('/emails', (req, res, next) => profileController.getUserEmails(req, res, next));
 
-// POST /api/profile/emails - Add new email for current user
-router.post('/emails', (req, res, next) => profileController.addUserEmail(req, res, next));
-
-// DELETE /api/profile/emails/:emailId - Delete user email
-router.delete('/emails/:emailId', (req, res, next) => profileController.deleteUserEmail(req, res, next));
-
-// PUT /api/profile/emails/:emailId/primary - Set email as primary
+// PUT /api/profile/emails/:emailId/primary - Set email as primary; :emailId is the email address
 router.put('/emails/:emailId/primary', (req, res, next) => profileController.setPrimaryEmail(req, res, next));
-
-// GET /api/profile/email-preferences - Get user email preferences
-router.get('/email-preferences', (req, res, next) => profileController.getEmailPreferences(req, res, next));
-
-// PUT /api/profile/email-preferences - Update user email preferences
-router.put('/email-preferences', (req, res, next) => profileController.updateEmailPreferences(req, res, next));
 
 // GET /api/profile/developer - Get current user's developer token information
 router.get('/developer', (req, res, next) => profileController.getDeveloperTokenInfo(req, res, next));
+
+// POST /api/profile/reset-password - Send password reset email via LF Login service
+router.post('/reset-password', (req, res, next) => profileController.sendPasswordResetEmail(req, res, next));
+
+// POST /api/profile/change-password - Change user's password
+router.post('/change-password', (req, res, next) => profileController.changePassword(req, res, next));
 
 // POST /api/profile/identities/email/send-code - Send email verification code
 router.post('/identities/email/send-code', (req, res, next) => profileController.sendEmailVerification(req, res, next));

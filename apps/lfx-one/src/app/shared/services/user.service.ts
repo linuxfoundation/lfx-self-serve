@@ -6,14 +6,12 @@ import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@a
 import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { MessageService } from 'primeng/api';
 import {
-  AddEmailRequest,
   CdpProjectAffiliation,
   ChangePasswordRequest,
   ProjectAffiliationPatchBody,
   CombinedProfile,
   CreateUserPermissionRequest,
   EmailManagementData,
-  EmailPreferences,
   EnrichedIdentity,
   Impersonator,
   Meeting,
@@ -22,10 +20,7 @@ import {
   ProfileUpdateRequest,
   SalesforceIdResponse,
   SendEmailVerificationResponse,
-  TwoFactorSettings,
-  UpdateEmailPreferencesRequest,
   User,
-  UserEmail,
   VerifyAndLinkEmailResponse,
   WorkExperience,
   WorkExperienceCreateUpdateBody,
@@ -46,14 +41,13 @@ export class UserService {
   public impersonator: WritableSignal<Impersonator | null> = signal<Impersonator | null>(null);
   public canImpersonate: WritableSignal<boolean> = signal<boolean>(false);
   public readonly userInitials: Signal<string> = this.initUserInitials();
+  /** Cached Salesforce user ID from the API Gateway — null until first fetch */
+  public readonly apiGatewayUserId = signal<string | null>(null);
 
   private readonly userMeetingsRefresh$ = new Subject<void>();
   private readonly userPastMeetingsRefresh$ = new Subject<void>();
   private userMeetings$: Observable<Meeting[]> | null = null;
   private userPastMeetings$: Observable<PastMeeting[]> | null = null;
-
-  /** Cached Salesforce user ID from the API Gateway — null until first fetch */
-  public readonly apiGatewayUserId = signal<string | null>(null);
 
   public constructor() {
     // Invalidate cached user-scoped observables when the authenticated user or
@@ -101,46 +95,18 @@ export class UserService {
   // Email management methods
 
   /**
-   * Get current user's email management data (emails + preferences)
+   * Get current user's email management data from auth-service via NATS
    */
   public getUserEmails(): Observable<EmailManagementData> {
     return this.http.get<EmailManagementData>('/api/profile/emails');
   }
 
   /**
-   * Add a new email address for the current user
-   */
-  public addEmail(email: string): Observable<UserEmail> {
-    const data: AddEmailRequest = { email };
-    return this.http.post<UserEmail>('/api/profile/emails', data).pipe(take(1));
-  }
-
-  /**
-   * Delete an email address
-   */
-  public deleteEmail(emailId: string): Observable<void> {
-    return this.http.delete<void>(`/api/profile/emails/${emailId}`).pipe(take(1));
-  }
-
-  /**
    * Set an email as the primary email
+   * @param email - The email address to make primary
    */
-  public setPrimaryEmail(emailId: string): Observable<{ message: string }> {
-    return this.http.put<{ message: string }>(`/api/profile/emails/${emailId}/primary`, {}).pipe(take(1));
-  }
-
-  /**
-   * Get email preferences
-   */
-  public getEmailPreferences(): Observable<EmailPreferences | null> {
-    return this.http.get<EmailPreferences | null>('/api/profile/email-preferences').pipe(take(1));
-  }
-
-  /**
-   * Update email preferences
-   */
-  public updateEmailPreferences(preferences: UpdateEmailPreferencesRequest): Observable<EmailPreferences> {
-    return this.http.put<EmailPreferences>('/api/profile/email-preferences', preferences).pipe(take(1));
+  public setPrimaryEmail(email: string): Observable<{ message: string }> {
+    return this.http.put<{ message: string }>(`/api/profile/emails/${encodeURIComponent(email)}/primary`, {}).pipe(take(1));
   }
 
   // Password management methods
@@ -157,13 +123,6 @@ export class UserService {
    */
   public sendPasswordResetEmail(): Observable<{ message: string }> {
     return this.http.post<{ message: string }>('/api/profile/reset-password', {}).pipe(take(1));
-  }
-
-  /**
-   * Get two-factor authentication settings
-   */
-  public getTwoFactorSettings(): Observable<TwoFactorSettings> {
-    return this.http.get<TwoFactorSettings>('/api/profile/2fa-settings').pipe(take(1));
   }
 
   /**
@@ -294,7 +253,9 @@ export class UserService {
     if (auth0UserId) {
       body['auth0UserId'] = auth0UserId;
     }
-    return this.http.patch<{ success: boolean }>(`/api/profile/identities/${identityId}`, body);
+    // Auth0 identity IDs contain URL-reserved characters (e.g. `|` in `auth0|abc123`);
+    // encode before interpolating so the PATCH route resolves reliably.
+    return this.http.patch<{ success: boolean }>(`/api/profile/identities/${encodeURIComponent(identityId)}`, body);
   }
 
   /**

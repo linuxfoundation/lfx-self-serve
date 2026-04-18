@@ -29,55 +29,27 @@ export interface CombinedProfile {
 }
 
 /**
- * User email data from public.user_emails table
+ * User email entry from auth-service
  */
 export interface UserEmail {
-  id: string;
-  user_id: string;
   email: string;
-  is_primary: boolean;
-  is_verified: boolean;
-  verification_token: string | null;
-  verified_at: string | null;
-  created_at: string;
-  updated_at: string;
+  verified: boolean;
+  user_id?: string;
 }
 
 /**
- * Email preferences data from public.email_preferences table
+ * Combined email management data from auth-service
  */
-export interface EmailPreferences {
-  id: string;
-  user_id: string;
-  meeting_email_id: string | null;
-  notification_email_id: string | null;
-  billing_email_id: string | null;
-  created_at: string;
-  updated_at: string;
+export interface EmailManagementData {
+  primary_email: string;
+  alternate_emails: UserEmail[];
 }
 
 /**
- * Request to add a new email address
+ * Request to send an OTP to a new email address (step 1 of add-email flow)
  */
 export interface AddEmailRequest {
   email: string;
-}
-
-/**
- * Request to update email preferences
- */
-export interface UpdateEmailPreferencesRequest {
-  meeting_email_id?: string | null;
-  notification_email_id?: string | null;
-  billing_email_id?: string | null;
-}
-
-/**
- * Combined email management data
- */
-export interface EmailManagementData {
-  emails: UserEmail[];
-  preferences: EmailPreferences | null;
 }
 
 /**
@@ -109,16 +81,6 @@ export interface PasswordStrength {
     hasSpecialChars: boolean;
     meetsCriteria: boolean; // true if 3 of 4 character types are present
   };
-}
-
-/**
- * Two-factor authentication settings
- */
-export interface TwoFactorSettings {
-  enabled: boolean;
-  method: 'app' | 'sms' | 'email' | null;
-  backup_codes_count: number;
-  last_used: string | null;
 }
 
 /**

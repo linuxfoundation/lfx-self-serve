@@ -6,25 +6,31 @@ import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { CardComponent } from '@components/card/card.component';
 import { MenuComponent } from '@components/menu/menu.component';
 import { ProjectPermissionUser } from '@lfx-one/shared';
+import { LensService } from '@services/lens.service';
 import { PermissionsService } from '@services/permissions.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MenuItem } from 'primeng/api';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { BehaviorSubject, catchError, merge, of, switchMap, take, tap } from 'rxjs';
 
+import { AccountSettingsComponent } from '../account-settings/account-settings.component';
 import { PermissionsMatrixComponent } from '../components/permissions-matrix/permissions-matrix.component';
 import { UserFormComponent } from '../components/user-form/user-form.component';
 import { UserPermissionsTableComponent } from '../components/user-permissions-table/user-permissions-table.component';
 
 @Component({
   selector: 'lfx-settings-dashboard',
-  imports: [CardComponent, PermissionsMatrixComponent, UserPermissionsTableComponent, MenuComponent],
+  host: { class: 'block' },
+  imports: [CardComponent, PermissionsMatrixComponent, UserPermissionsTableComponent, MenuComponent, AccountSettingsComponent],
   templateUrl: './settings-dashboard.component.html',
 })
 export class SettingsDashboardComponent {
+  private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly permissionsService = inject(PermissionsService);
   private readonly dialogService = inject(DialogService);
+
+  public readonly isMe = computed(() => this.lensService.activeLens() === 'me');
 
   public users: Signal<ProjectPermissionUser[]>;
   public loading: WritableSignal<boolean> = signal(true);

@@ -114,22 +114,22 @@
         </div>
       } @else {
         <div class="flex flex-col gap-3">
-          @for (email of verifiedEmails(); track email.id) {
+          @for (email of verifiedEmails(); track email.email) {
             <label
               class="flex items-center gap-3 p-3 border rounded-md cursor-pointer hover:bg-slate-50 transition-colors"
-              [class.border-blue-500]="selectedPrimaryEmailId() === email.id"
-              [class.bg-blue-50]="selectedPrimaryEmailId() === email.id"
-              [class.border-slate-300]="selectedPrimaryEmailId() !== email.id"
-              [attr.data-testid]="'profile-edit-dialog-email-row-' + email.id">
+              [class.border-blue-500]="selectedPrimaryEmail() === email.email"
+              [class.bg-blue-50]="selectedPrimaryEmail() === email.email"
+              [class.border-slate-300]="selectedPrimaryEmail() !== email.email"
+              [attr.data-testid]="'profile-edit-dialog-email-row-' + email.email">
               <input
                 type="radio"
                 name="primaryEmail"
-                [value]="email.id"
-                [checked]="selectedPrimaryEmailId() === email.id"
+                [value]="email.email"
+                [checked]="selectedPrimaryEmail() === email.email"
                 [disabled]="savingPrimaryEmail()"
-                (change)="onPrimaryEmailChange(email.id)"
+                (change)="onPrimaryEmailChange(email.email)"
                 class="accent-blue-600 w-4 h-4 cursor-pointer"
-                [attr.data-testid]="'profile-edit-dialog-email-radio-' + email.id" />
+                [attr.data-testid]="'profile-edit-dialog-email-radio-' + email.email" />
               <div class="flex flex-col gap-0.5 flex-1 min-w-0">
                 <div class="flex items-center gap-2">
                   <span class="text-sm text-slate-900 truncate">{{ email.email }}</span>
@@ -138,11 +138,11 @@
                     Verified
                   </span>
                 </div>
-                @if (selectedPrimaryEmailId() === email.id) {
+                @if (selectedPrimaryEmail() === email.email) {
                   <span class="text-xs text-slate-500">Used for notifications and account communications</span>
                 }
               </div>
-              @if (savingPrimaryEmail() && selectedPrimaryEmailId() === email.id) {
+              @if (savingPrimaryEmail() && selectedPrimaryEmail() === email.email) {
                 <i class="pi pi-spinner pi-spin text-blue-500 text-sm"></i>
               }
             </label>

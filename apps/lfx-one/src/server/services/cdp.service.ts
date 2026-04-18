@@ -45,18 +45,32 @@ interface CachedToken {
 export class CdpService {
   private cachedToken: CachedToken | null = null;
 
-  private readonly cdpApiUrl: string;
-  private readonly issuerBaseUrl: string;
-  private readonly audience: string;
-  private readonly clientId: string;
-  private readonly clientSecret: string;
+  // Resolved lazily on first access so dotenv has finished loading,
+  // then memoized — env is stable after startup.
+  private _cdpApiUrl: string | undefined;
+  private _issuerBaseUrl: string | undefined;
+  private _audience: string | undefined;
+  private _clientId: string | undefined;
+  private _clientSecret: string | undefined;
 
-  public constructor() {
-    this.cdpApiUrl = (process.env['CDP_API_URL'] || CDP_CONFIG.DEFAULT_STAGING_URL).replace(/\/+$/, '');
-    this.issuerBaseUrl = (process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '').replace(/\/+$/, '');
-    this.audience = process.env['CDP_AUDIENCE'] || '';
-    this.clientId = process.env['PCC_AUTH0_CLIENT_ID'] || '';
-    this.clientSecret = process.env['PCC_AUTH0_CLIENT_SECRET'] || '';
+  private get cdpApiUrl(): string {
+    return (this._cdpApiUrl ??= (process.env['CDP_API_URL'] || CDP_CONFIG.DEFAULT_STAGING_URL).replace(/\/+$/, ''));
+  }
+
+  private get issuerBaseUrl(): string {
+    return (this._issuerBaseUrl ??= (process.env['PCC_AUTH0_ISSUER_BASE_URL'] || '').replace(/\/+$/, ''));
+  }
+
+  private get audience(): string {
+    return (this._audience ??= process.env['CDP_AUDIENCE'] || '');
+  }
+
+  private get clientId(): string {
+    return (this._clientId ??= process.env['PCC_AUTH0_CLIENT_ID'] || '');
+  }
+
+  private get clientSecret(): string {
+    return (this._clientSecret ??= process.env['PCC_AUTH0_CLIENT_SECRET'] || '');
   }
 
   /**

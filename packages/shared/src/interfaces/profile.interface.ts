@@ -567,7 +567,6 @@ export interface SendEmailVerificationResponse {
   success: boolean;
   message?: string;
   error?: string;
-  linkedTo?: string;
 }
 
 /**
@@ -599,6 +598,15 @@ export interface LinkIdentityNatsResponse {
  * Response from NATS user identity unlink request
  */
 export interface UnlinkIdentityNatsResponse {
+  success: boolean;
+  message?: string;
+  error?: string;
+}
+
+/**
+ * Response from NATS password reset link request
+ */
+export interface ResetPasswordLinkNatsResponse {
   success: boolean;
   message?: string;
   error?: string;
