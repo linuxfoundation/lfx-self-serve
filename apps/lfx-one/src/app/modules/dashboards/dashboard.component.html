@@ -17,10 +17,26 @@
     }
   }
   @case ('project') {
-    <lfx-project-dashboard />
+    @if (!projectLensLoaded()) {
+      <div class="flex min-h-[60vh] items-center justify-center" data-testid="dashboard-loading">
+        <div class="flex flex-col items-center gap-4">
+          <div class="persona-spinner"></div>
+          <p class="persona-loading-text text-sm text-gray-500">{{ loadingText() }}</p>
+        </div>
+      </div>
+    } @else {
+      <lfx-project-dashboard />
+    }
   }
   @case ('foundation') {
-    @if (foundationDashboardType() === 'executive-director') {
+    @if (!foundationLensLoaded()) {
+      <div class="flex min-h-[60vh] items-center justify-center" data-testid="dashboard-loading">
+        <div class="flex flex-col items-center gap-4">
+          <div class="persona-spinner"></div>
+          <p class="persona-loading-text text-sm text-gray-500">{{ loadingText() }}</p>
+        </div>
+      </div>
+    } @else if (foundationDashboardType() === 'executive-director') {
       <lfx-executive-director-dashboard />
     } @else {
       <lfx-board-member-dashboard />

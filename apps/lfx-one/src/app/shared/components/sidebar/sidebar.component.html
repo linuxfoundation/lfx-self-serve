@@ -8,22 +8,27 @@
   }"
   data-testid="sidebar">
   <div class="flex flex-col py-4 h-full min-h-0 overflow-y-auto">
-    <!-- Top Navigation -->
     <div class="flex flex-col items-start w-full flex-1">
-      <!-- Project/Foundation Selector -->
-      @if (showProjectSelector()) {
+      @if (showProjectSelector() && navLens(); as lens) {
         <div class="px-4 mb-6 w-full">
-          <lfx-project-selector
-            [projects]="selectorProjects()"
-            [selectedProject]="selectedProject()"
-            [searchPlaceholder]="activeLens() === 'foundation' ? 'Search foundations...' : 'Search projects...'"
-            [emptyMessage]="activeLens() === 'foundation' ? 'No foundations found' : 'No projects found'"
-            [(isPanelOpen)]="selectorPanelOpen"
-            (projectChange)="onProjectChange($event)"></lfx-project-selector>
+          @if (!lensLoaded()) {
+            <div class="box-border flex gap-3 items-center p-3 w-full rounded-lg" data-testid="sidebar-selector-loading">
+              <p-skeleton shape="circle" size="2.5rem" styleClass="shrink-0"></p-skeleton>
+              <p-skeleton height="1rem" styleClass="flex-1"></p-skeleton>
+            </div>
+          } @else {
+            <lfx-project-selector
+              [lens]="lens"
+              [selectedProject]="selectedProject()"
+              [searchPlaceholder]="lens === 'foundation' ? 'Search foundations...' : 'Search projects...'"
+              [emptyMessage]="lens === 'foundation' ? 'No foundations found' : 'No projects found'"
+              [(isPanelOpen)]="selectorPanelOpen"
+              (itemSelected)="onItemSelected($event)"></lfx-project-selector>
+          }
         </div>
       }
 
-      <!-- Me Selector — uses [class.hidden] to avoid SSR hydration mismatch -->
+      <!-- [class.hidden] avoids SSR hydration mismatch -->
       <div class="px-4 mb-6 w-full" [class.hidden]="!showMeSelector()">
         <div data-testid="me-selector" class="box-border flex gap-3 items-center p-3 w-full rounded-lg">
           <lfx-avatar [image]="user()?.picture ?? ''" [label]="user()?.name ?? ''" shape="circle" size="large" styleClass="shrink-0 size-10"></lfx-avatar>
@@ -36,38 +41,43 @@
         </div>
       </div>
 
-      <!-- Main Navigation Items -->
-      <div class="flex flex-col gap-2 items-start px-4 w-full">
-        @for (item of itemsWithTestIds(); track item.label) {
-          @if (item.isSection) {
-            <!-- Section Header -->
-            <div class="w-full mt-2" [attr.data-testid]="item.testId">
-              <!-- Section Label with Divider -->
-              <div class="flex items-center gap-2 px-2 py-1.5">
-                <span class="text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">{{ item.label }}</span>
-                <div class="flex-1 h-px bg-gray-200"></div>
-              </div>
-
-              <!-- Section Items -->
-              @if (item.items?.length) {
-                <div class="flex flex-col gap-1 mt-2">
-                  @for (childItem of item.items; track childItem.label) {
-                    <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: childItem }"></ng-container>
-                  }
+      <!-- Hidden on foundation/project lens until nav API responds, since items are lens-scoped. -->
+      @if (lensLoaded()) {
+        <div class="flex flex-col gap-2 items-start px-4 w-full">
+          @for (item of itemsWithTestIds(); track item.label) {
+            @if (item.isSection) {
+              <div class="w-full mt-2" [attr.data-testid]="item.testId">
+                <div class="flex items-center gap-2 px-2 py-1.5">
+                  <span class="text-xs font-medium text-gray-400 uppercase tracking-wide whitespace-nowrap">{{ item.label }}</span>
+                  <div class="flex-1 h-px bg-gray-200"></div>
                 </div>
+
+                @if (item.items?.length) {
+                  <div class="flex flex-col gap-1 mt-2">
+                    @for (childItem of item.items; track childItem.label) {
+                      <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: childItem }"></ng-container>
+                    }
+                  </div>
+                }
+              </div>
+            } @else {
+              @if (item.dividerBefore) {
+                <div class="h-px bg-gray-200 my-2 w-full"></div>
               }
-            </div>
-          } @else {
-            @if (item.dividerBefore) {
-              <div class="h-px bg-gray-200 my-2 w-full"></div>
+              <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
             }
-            <ng-container *ngTemplateOutlet="menuItem; context: { $implicit: item }"></ng-container>
           }
-        }
-      </div>
+        </div>
+      } @else {
+        <div class="flex flex-col gap-2 items-start px-4 w-full" data-testid="sidebar-menu-loading">
+          <p-skeleton width="100%" height="2rem"></p-skeleton>
+          <p-skeleton width="100%" height="2rem"></p-skeleton>
+          <p-skeleton width="100%" height="2rem"></p-skeleton>
+          <p-skeleton width="100%" height="2rem"></p-skeleton>
+        </div>
+      }
     </div>
 
-    <!-- Bottom Navigation (stays at bottom when space allows, scrolls with content otherwise) -->
     <div class="flex flex-col gap-2 items-start px-4 w-full mt-auto pt-4">
       @if (footerItems().length > 0) {
         @for (item of footerItemsWithTestIds(); track item.label) {
@@ -78,7 +88,6 @@
   </div>
 </aside>
 
-<!-- Menu Item Template -->
 <ng-template #menuItem let-item>
   @if (item.routerLink) {
     <a

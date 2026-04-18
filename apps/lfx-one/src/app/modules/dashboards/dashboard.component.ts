@@ -4,6 +4,7 @@
 import { afterNextRender, Component, computed, DestroyRef, inject, signal } from '@angular/core';
 import { isBoardScopedPersona } from '@lfx-one/shared/interfaces';
 import { LensService } from '@services/lens.service';
+import { NavigationService } from '@services/navigation.service';
 import { PersonaService } from '@services/persona.service';
 
 import { BoardMemberDashboardComponent } from './board-member/board-member-dashboard.component';
@@ -35,10 +36,13 @@ const LOADING_MESSAGES = [
 export class DashboardComponent {
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
+  private readonly navigationService = inject(NavigationService);
   private readonly destroyRef = inject(DestroyRef);
 
   protected readonly activeLens = this.lensService.activeLens;
   protected readonly personaLoaded = this.personaService.personaLoaded;
+  protected readonly foundationLensLoaded = this.navigationService.loaded('foundation');
+  protected readonly projectLensLoaded = this.navigationService.loaded('project');
   protected readonly loadingText = signal(LOADING_MESSAGES[0]);
 
   protected readonly isMultiPersonaView = computed(() => {

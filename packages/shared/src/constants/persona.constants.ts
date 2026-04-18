@@ -1,14 +1,52 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DevPersonaPreset, PersonaOption } from '../interfaces';
+import { BOARD_SCOPED_PERSONAS, DevPersonaPreset, PersonaOption, PersonaType } from '../interfaces';
 
-/** Cookie key for persisting the active persona preset */
 export const PERSONA_COOKIE_KEY = 'lfx-active-persona-preset';
 
-/**
- * Persona options available for user selection
- */
+export const DETECTION_SOURCE_MAP: Readonly<Partial<Record<string, PersonaType>>> = {
+  board_member: 'board-member',
+  executive_director: 'executive-director',
+} as const;
+
+/** Sort order, highest first. */
+export const PERSONA_PRIORITY: readonly PersonaType[] = ['executive-director', 'board-member', 'maintainer', 'contributor'] as const;
+
+/** Board-scoped personas in priority order. Used to pick a default foundation on lens entry. */
+export const BOARD_SCOPED_PERSONA_PRIORITY: readonly PersonaType[] = PERSONA_PRIORITY.filter((p) => BOARD_SCOPED_PERSONAS.has(p));
+
+/** Role label priority for dashboard sorting, highest first. */
+export const ROLE_PRIORITY: readonly string[] = [
+  'Executive Director',
+  'Chair',
+  'Vice Chair',
+  'Treasurer',
+  'Secretary',
+  'Counsel',
+  'Director',
+  'Lead',
+  'TAC/TOC Representative',
+  'LF Staff',
+  'Developer Seat',
+  'Maintainer',
+  'Contributor',
+  'Group Member',
+  'None',
+] as const;
+
+/** Voting status priority for dashboard sorting, highest first. */
+export const VOTING_STATUS_PRIORITY: readonly string[] = ['Voting Rep', 'Alternate Voting Rep', 'Observer', 'Emeritus', 'None'] as const;
+
+export const AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS = 15_000;
+export const PERSONAS_CACHE_TTL_MS = 15_000;
+
+/** When persona-detected projects exceed this count, enrichment switches from per-project GETs to a single paginated query-service fetch. */
+export const PERSONA_ENRICHMENT_BULK_THRESHOLD = 20;
+
+export const ROOT_PROJECT_SLUG = 'ROOT';
+export const ROOT_PROJECT_UID_CACHE_TTL_MS = 60 * 60 * 1000;
+
 export const PERSONA_OPTIONS: PersonaOption[] = [
   // {
   //   value: 'contributor',
@@ -32,47 +70,36 @@ export const PERSONA_OPTIONS: PersonaOption[] = [
   },
 ];
 
-/**
- * Dev toolbar persona presets for testing different role/access scenarios
- */
 export const DEV_PERSONA_PRESETS: DevPersonaPreset[] = [
-  // Single-role presets
   { label: 'Contributor', value: 'contributor', personas: ['contributor'], primary: 'contributor' },
   {
     label: 'Contributor + Maint (multi proj)',
     value: 'contributor-maintainer-multi',
     personas: ['contributor', 'maintainer'],
     primary: 'maintainer',
-    multiProject: true,
   },
   { label: 'Maint (1 proj)', value: 'maintainer-single', personas: ['maintainer'], primary: 'maintainer' },
-  { label: 'Maint (multi proj)', value: 'maintainer-multi', personas: ['maintainer'], primary: 'maintainer', multiProject: true },
+  { label: 'Maint (multi proj)', value: 'maintainer-multi', personas: ['maintainer'], primary: 'maintainer' },
   { label: 'Board (1 fdn)', value: 'board-single', personas: ['board-member'], primary: 'board-member' },
-  { label: 'Board (multi fdn)', value: 'board-multi', personas: ['board-member'], primary: 'board-member', multiFoundation: true },
+  { label: 'Board (multi fdn)', value: 'board-multi', personas: ['board-member'], primary: 'board-member' },
   { label: 'ED (1 fdn)', value: 'ed-single', personas: ['executive-director'], primary: 'executive-director' },
-  { label: 'ED (multi fdn)', value: 'ed-multi', personas: ['executive-director'], primary: 'executive-director', multiFoundation: true },
+  { label: 'ED (multi fdn)', value: 'ed-multi', personas: ['executive-director'], primary: 'executive-director' },
 
-  // Multi-role: Maintainer + Board
   { label: 'Maint(1) + Board(1)', value: 'maint1-board1', personas: ['maintainer', 'board-member'], primary: 'board-member' },
-  { label: 'Maint(1) + Board(multi)', value: 'maint1-board-multi', personas: ['maintainer', 'board-member'], primary: 'board-member', multiFoundation: true },
-  { label: 'Maint(multi) + Board(1)', value: 'maint-multi-board1', personas: ['maintainer', 'board-member'], primary: 'board-member', multiProject: true },
+  { label: 'Maint(1) + Board(multi)', value: 'maint1-board-multi', personas: ['maintainer', 'board-member'], primary: 'board-member' },
+  { label: 'Maint(multi) + Board(1)', value: 'maint-multi-board1', personas: ['maintainer', 'board-member'], primary: 'board-member' },
   {
     label: 'Maint(multi) + Board(multi)',
     value: 'maint-multi-board-multi',
     personas: ['maintainer', 'board-member'],
     primary: 'board-member',
-    multiProject: true,
-    multiFoundation: true,
   },
 
-  // Multi-role: Maintainer + ED
   { label: 'Maint(1) + ED(1)', value: 'maint1-ed1', personas: ['maintainer', 'executive-director'], primary: 'executive-director' },
   {
     label: 'Maint(multi) + ED(multi)',
     value: 'maint-multi-ed-multi',
     personas: ['maintainer', 'executive-director'],
     primary: 'executive-director',
-    multiProject: true,
-    multiFoundation: true,
   },
 ];

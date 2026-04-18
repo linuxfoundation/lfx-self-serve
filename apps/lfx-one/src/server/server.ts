@@ -27,6 +27,7 @@ import eventsRouter from './routes/events.route';
 import impersonationRouter from './routes/impersonation.route';
 import mailingListsRouter from './routes/mailing-lists.route';
 import meetingsRouter from './routes/meetings.route';
+import navigationRouter from './routes/navigation.route';
 import organizationsRouter from './routes/organizations.route';
 import pastMeetingsRouter from './routes/past-meetings.route';
 import personaRouter from './routes/persona.route';
@@ -55,76 +56,52 @@ const browserDistFolder = resolve(serverDistFolder, '../browser');
 const angularApp = new AngularNodeAppEngine();
 const app = express();
 
-// Trust the first proxy (load balancer) so express-rate-limit and req.ip
-// correctly resolve client IPs from the X-Forwarded-For header
+// Trust first proxy so req.ip resolves from X-Forwarded-For.
 app.set('trust proxy', 1);
 
-/**
- * Enable gzip/deflate compression for all responses.
- *
- * Configuration optimized for SSR:
- * - Compresses HTML, CSS, JS, JSON, and other text-based responses
- * - Uses level 6 (balanced compression/speed ratio)
- * - 1KB threshold to avoid compressing small responses
- * - Uses default filter for text-based content types
- */
-// Use require to avoid TypeScript type conflicts with @types/compression
+// require() avoids TS type conflicts with @types/compression.
 // eslint-disable-next-line @typescript-eslint/no-require-imports
 const compression = require('compression');
 app.use(
   compression({
-    level: 6, // Balanced compression level (1=fastest, 9=best compression)
-    threshold: 1024, // Only compress responses larger than 1KB
+    level: 6,
+    threshold: 1024,
   })
 );
 
 app.use(express.json({ limit: '15mb' }));
 app.use(express.urlencoded({ extended: true, limit: '15mb' }));
 
-/**
- * Serve static files from /browser
- */
 app.get(
   '**',
   express.static(browserDistFolder, {
     maxAge: '1y',
-    index: false, // Let Angular SSR handle the index route
+    index: false,
   })
 );
 
-// Add health endpoint before logger middleware
+// Health endpoint before logger middleware so health checks aren't logged.
 app.get('/health', (_req: Request, res: Response) => {
   res.send('OK');
 });
 
-/**
- * HTTP request/response logging middleware using Pino.
- *
- * Provides:
- * - Automatic HTTP request/response logging
- * - Request-scoped logger accessible via req.log in route handlers
- * - Request correlation and timing
- * - Consistent configuration with serverLogger
- *
- * Usage in routes: req.log.info({...}, 'message')
- */
 const httpLogger = pinoHttp({
-  logger: serverLogger, // Use the same base logger for consistency
+  logger: serverLogger,
   serializers: {
     err: customErrorSerializer,
     error: customErrorSerializer,
     req: reqSerializer,
     res: resSerializer,
   },
-  // Disable automatic request/response logging - our LoggerService handles operation logging
+  // LoggerService handles operation logging.
   autoLogging: false,
 });
 
-// Add HTTP logger middleware after health endpoint to avoid logging health check
 app.use(httpLogger);
 
 const authConfig: ConfigParams = {
-  authRequired: false, // Disable global auth requirement to handle it in selective middleware
+  // Global auth disabled; selective middleware handles it.
+  authRequired: false,
   auth0Logout: true,
   baseURL: process.env['PCC_BASE_URL'] || 'http://localhost:4000',
   clientID: process.env['PCC_AUTH0_CLIENT_ID'] || '1234',
@@ -143,9 +120,7 @@ const authConfig: ConfigParams = {
 
 app.use(auth(authConfig));
 
-// Silent login attempt for meeting join pages only
-// If user has SSO session elsewhere, they'll be authenticated automatically
-// If not, they proceed as unauthenticated (route is optional auth)
+// Meeting join pages are optional-auth; silent login picks up any existing SSO session.
 app.use('/meetings/', attemptSilentLogin());
 
 app.use('/login', (req: Request, res: Response) => {
@@ -168,20 +143,15 @@ app.use('/login', (req: Request, res: Response) => {
   }
 });
 
-// Apply authentication middleware to all routes
 app.use(authMiddleware);
 
-// Apply rate limiting to API routes
 app.use('/public/api/', publicApiRateLimiter);
 app.use('/api/', apiRateLimiter);
 app.use('/login', authRateLimiter);
 
-// Mount API routes after authentication middleware
-// Public API routes
 app.use('/public/api/meetings', publicMeetingsRouter);
 app.use('/public/api/committees', publicCommitteesRouter);
 
-// Protected API routes
 app.use('/api/projects', projectsRouter);
 app.use('/api/committees', committeesRouter);
 app.use('/api/mailing-lists', mailingListsRouter);
@@ -193,6 +163,7 @@ app.use('/api/search', searchRouter);
 app.use('/api/analytics', analyticsRouter);
 app.use('/api/user', userRouter);
 app.use('/api/user', personaRouter);
+app.use('/api/nav', navigationRouter);
 app.use('/api/votes', votesRouter);
 app.use('/api/surveys', surveysRouter);
 app.use('/api/copilot', copilotRouter);
@@ -203,22 +174,17 @@ app.use('/api/impersonate', impersonationRouter);
 app.use('/api/training', trainingRouter);
 app.use('/api/transactions', transactionRouter);
 
-// Add API error handler middleware
 app.use('/api/*', apiErrorHandler);
 
-// Flow C: Profile auth callback at /passwordless/callback (registered in Auth0 Profile Client)
+// Profile auth callback registered in Auth0 Profile Client.
 const profileCallbackController = new ProfileController();
 app.get('/passwordless/callback', authRateLimiter, (req, res) => profileCallbackController.handleProfileAuthCallback(req, res));
 
-// Social identity verification callback (GitHub/LinkedIn OAuth redirect)
+// GitHub/LinkedIn OAuth redirect target.
 app.get('/social/callback', authRateLimiter, (req, res) => profileCallbackController.handleSocialCallback(req, res));
 
-/**
- * Handle all other requests by rendering the Angular application.
- * Require authentication for all non-API routes.
- */
 app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
-  const ssrStartTime = Date.now(); // Capture start time for duration tracking
+  const ssrStartTime = Date.now();
   const auth: AuthContext = {
     authenticated: false,
     user: null,
@@ -229,14 +195,12 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
   if (req.oidc?.isAuthenticated() && !req.oidc?.accessToken?.isExpired()) {
     auth.authenticated = true;
     try {
-      // Fetch user info from OIDC
       auth.user = req.oidc?.user as User;
 
       if (!auth.user?.name) {
         auth.user = await req.oidc.fetchUserInfo();
       }
     } catch (error) {
-      // If userinfo fetch fails, fall back to basic user info from token
       logger.warning(req, 'ssr_user_info', 'Failed to fetch user info, using basic user data', {
         err: error,
         path: req.path,
@@ -247,7 +211,6 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     }
   }
 
-  // Resolve persona: uses cookie if available, otherwise fetches via NATS (blocking)
   if (auth.authenticated) {
     const personaResult = await resolvePersonaForSsr(req, res);
     auth.persona = personaResult.persona;
@@ -257,7 +220,6 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     auth.personaProjects = personaResult.personaProjects;
   }
 
-  // Check if user can impersonate (from access token custom claim)
   if (req.oidc?.accessToken?.access_token) {
     try {
       const payload = decodeJwtPayload(req.oidc.accessToken.access_token);
@@ -265,11 +227,10 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
         auth.canImpersonate = payload['http://lfx.dev/claims/can_impersonate'] === true;
       }
     } catch {
-      // JWT decode failed — canImpersonate stays false
+      /* canImpersonate stays false */
     }
   }
 
-  // Override user identity when impersonating
   if (req.appSession?.['impersonationToken'] && req.appSession?.['impersonationUser']) {
     const impersonationExpiresAt = req.appSession['impersonationExpiresAt'];
     if (impersonationExpiresAt && Date.now() < impersonationExpiresAt) {
@@ -296,7 +257,6 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     }
   }
 
-  // Build runtime config from environment variables
   const runtimeConfig: RuntimeConfig = {
     launchDarklyClientId: process.env['LD_CLIENT_ID'] || '',
     dataDogRumClientId: process.env['DD_RUM_CLIENT_ID'] || '',
@@ -339,22 +299,16 @@ app.use('/**', async (req: Request, res: Response, next: NextFunction) => {
     });
 });
 
-// Global error handler for all routes (must be last)
+// Global error handler — must be last.
 app.use((error: Error, req: Request, res: Response, next: NextFunction) => {
-  // If response already sent, delegate to default Express error handler
   if (res.headersSent) {
     next(error);
     return;
   }
 
-  // Use the same error handler logic for all routes
   apiErrorHandler(error, req, res, next);
 });
 
-/**
- * Start the server if this module is the main entry point.
- * The server listens on the port defined by the `PORT` environment variable, or defaults to 4000.
- */
 export function startServer() {
   const port = process.env['PORT'] || 4000;
   app.listen(port, () => {
@@ -375,7 +329,4 @@ if (isMain || isPM2) {
   startServer();
 }
 
-/**
- * The request handler used by the Angular CLI (dev-server and during build).
- */
 export const reqHandler = createNodeRequestHandler(app);

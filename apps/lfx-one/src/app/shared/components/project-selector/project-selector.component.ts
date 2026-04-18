@@ -1,46 +1,56 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, input, model, output, signal } from '@angular/core';
-import { EnrichedPersonaProject } from '@lfx-one/shared/interfaces';
-import { isFoundationProject } from '@lfx-one/shared/utils';
+import { Component, computed, inject, input, model, output, Signal } from '@angular/core';
+import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { FormControl, ReactiveFormsModule } from '@angular/forms';
+import { LensItem, NavLens, ProjectContext } from '@lfx-one/shared/interfaces';
+import { NavigationService } from '@services/navigation.service';
 import { UserService } from '@services/user.service';
+import { OnRenderDirective } from '@shared/directives/on-render.directive';
 import { AutoFocus } from 'primeng/autofocus';
 import { InputTextModule } from 'primeng/inputtext';
 import { Popover, PopoverModule } from 'primeng/popover';
 
 @Component({
   selector: 'lfx-project-selector',
-  imports: [PopoverModule, InputTextModule, AutoFocus],
+  imports: [ReactiveFormsModule, PopoverModule, InputTextModule, AutoFocus, OnRenderDirective],
   templateUrl: './project-selector.component.html',
   styleUrl: './project-selector.component.scss',
 })
 export class ProjectSelectorComponent {
   private readonly userService = inject(UserService);
+  private readonly navigationService = inject(NavigationService);
 
-  public readonly projects = input.required<EnrichedPersonaProject[]>();
-  public readonly selectedProject = input<EnrichedPersonaProject | null>(null);
+  public readonly lens = input.required<NavLens>();
+  public readonly selectedProject = input<ProjectContext | null>(null);
   public readonly searchPlaceholder = input<string>('Search...');
   public readonly emptyMessage = input<string>('No results found');
 
-  public readonly projectChange = output<EnrichedPersonaProject>();
+  public readonly itemSelected = output<LensItem>();
   public readonly isPanelOpen = model<boolean>(false);
 
-  // Offset the fixed-positioned popover when the impersonation banner is visible so it doesn't slide under it.
+  protected readonly searchControl = new FormControl<string>('', { nonNullable: true });
+
+  // Offset the popover when the impersonation banner is visible.
   protected readonly panelStyleClass = computed(() =>
     this.userService.impersonating() ? 'project-selector-panel project-selector-panel--with-banner' : 'project-selector-panel'
   );
-  protected readonly searchQuery = signal<string>('');
 
-  protected readonly displayName = this.initializeDisplayName();
-  protected readonly displayLogo = this.initializeDisplayLogo();
-  protected readonly foundations = this.initializeFoundations();
-  protected readonly childProjectsMap = this.initializeChildProjectsMap();
-  protected readonly hasResults = this.initializeHasResults();
+  protected readonly displayName: Signal<string> = this.initializeDisplayName();
+  protected readonly displayLogo: Signal<string> = this.initializeDisplayLogo();
+  protected readonly items: Signal<LensItem[]> = this.initializeItems();
+  protected readonly loading: Signal<boolean> = this.initializeLoading();
+  protected readonly hasMore: Signal<boolean> = this.initializeHasMore();
+  protected readonly autoLoadTriggerIndex: Signal<number> = this.initializeAutoLoadTriggerIndex();
 
-  protected selectProject(project: EnrichedPersonaProject, popover: Popover): void {
-    this.projectChange.emit(project);
-    this.searchQuery.set('');
+  public constructor() {
+    // Service applies its own debounce — push raw emissions here.
+    this.searchControl.valueChanges.pipe(takeUntilDestroyed()).subscribe((term) => this.navigationService.setSearchTerm(this.lens(), term));
+  }
+
+  protected selectItem(item: LensItem, popover: Popover): void {
+    this.itemSelected.emit(item);
     popover.hide();
   }
 
@@ -48,88 +58,50 @@ export class ProjectSelectorComponent {
     popover.toggle(event);
   }
 
-  protected onPopoverHide(): void {
-    this.isPanelOpen.set(false);
-    this.searchQuery.set('');
+  protected onPopoverShow(): void {
+    this.isPanelOpen.set(true);
   }
 
-  private initializeDisplayName() {
+  protected onPopoverHide(): void {
+    this.isPanelOpen.set(false);
+    // Skip emit so UI + service reset in sync via the explicit setSearchTerm below.
+    this.searchControl.setValue('', { emitEvent: false });
+    this.navigationService.setSearchTerm(this.lens(), '');
+  }
+
+  protected loadMore(): void {
+    this.navigationService.loadNextPage(this.lens());
+  }
+
+  private initializeDisplayName(): Signal<string> {
     return computed(() => {
       const project = this.selectedProject();
-      return project?.projectName?.trim() || 'Select Project';
+      return project?.name?.trim() || 'Select Project';
     });
   }
 
-  private initializeDisplayLogo() {
+  private initializeDisplayLogo(): Signal<string> {
     return computed(() => {
       const project = this.selectedProject();
       return project?.logoUrl || '';
     });
   }
 
-  private initializeFoundations() {
-    return computed(() => {
-      const allProjects = this.projects();
-      const query = this.searchQuery().toLowerCase().trim();
-
-      const foundationList = allProjects.filter((p) => isFoundationProject(p));
-
-      if (!query) {
-        return foundationList;
-      }
-
-      const matchingFoundations = foundationList.filter((f) => f.projectName?.toLowerCase().includes(query) || f.description?.toLowerCase().includes(query));
-
-      const foundationsWithMatchingChildren = foundationList.filter((foundation) => {
-        const children = allProjects.filter(
-          (p) => p.parentProjectUid === foundation.projectUid && (p.projectName?.toLowerCase().includes(query) || p.description?.toLowerCase().includes(query))
-        );
-        return children.length > 0;
-      });
-
-      const uniqueFoundations = new Map<string, EnrichedPersonaProject>();
-      [...matchingFoundations, ...foundationsWithMatchingChildren].forEach((f) => {
-        uniqueFoundations.set(f.projectUid, f);
-      });
-
-      return Array.from(uniqueFoundations.values());
-    });
+  private initializeItems(): Signal<LensItem[]> {
+    return computed(() => this.navigationService.items(this.lens())());
   }
 
-  private initializeChildProjectsMap() {
-    return computed(() => {
-      const allProjects = this.projects();
-      const query = this.searchQuery().toLowerCase().trim();
-
-      const map = new Map<string, EnrichedPersonaProject[]>();
-
-      allProjects.forEach((project) => {
-        if (!isFoundationProject(project) && project.parentProjectUid) {
-          const children = map.get(project.parentProjectUid) || [];
-          children.push(project);
-          map.set(project.parentProjectUid, children);
-        }
-      });
-
-      if (!query) {
-        return map;
-      }
-
-      const filteredMap = new Map<string, EnrichedPersonaProject[]>();
-      map.forEach((children, parentId) => {
-        const filtered = children.filter((c) => c.projectName?.toLowerCase().includes(query) || c.description?.toLowerCase().includes(query));
-        if (filtered.length > 0) {
-          filteredMap.set(parentId, filtered);
-        }
-      });
-
-      return filteredMap;
-    });
+  private initializeLoading(): Signal<boolean> {
+    return computed(() => this.navigationService.loading(this.lens())());
   }
 
-  private initializeHasResults() {
-    return computed(() => {
-      return this.foundations().length > 0;
-    });
+  private initializeHasMore(): Signal<boolean> {
+    return computed(() => this.navigationService.hasMore(this.lens())());
+  }
+
+  // Sentinel at items.length - 8; signal-based index shifts on each page so Angular re-creates
+  // OnRenderDirective and re-fires the fetch.
+  private initializeAutoLoadTriggerIndex(): Signal<number> {
+    return computed(() => Math.max(0, this.items().length - 8));
   }
 }

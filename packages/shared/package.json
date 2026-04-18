@@ -51,9 +51,11 @@
     "typescript": "5.8.3"
   },
   "peerDependencies": {
+    "@angular/core": "^20.3.15",
     "@angular/forms": "^20.3.15",
     "@fullcalendar/core": "^6.1.19",
     "chart.js": "^4.5.0",
+    "rxjs": "^7.8.0",
     "snowflake-sdk": "^2.3.1"
   },
   "dependencies": {

@@ -19,6 +19,7 @@ import {
   Meeting,
   RoleGroup,
 } from '@lfx-one/shared/interfaces';
+import { ROLE_PRIORITY, VOTING_STATUS_PRIORITY } from '@lfx-one/shared/constants';
 import { SurveyStatus } from '@lfx-one/shared/enums';
 import { getActiveOccurrences } from '@lfx-one/shared/utils';
 
@@ -35,26 +36,6 @@ import { BehaviorSubject, catchError, combineLatest, filter, forkJoin, map, of, 
 
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
-
-const ROLE_PRIORITY: string[] = [
-  'Executive Director',
-  'Chair',
-  'Vice Chair',
-  'Treasurer',
-  'Secretary',
-  'Counsel',
-  'Director',
-  'Lead',
-  'TAC/TOC Representative',
-  'LF Staff',
-  'Developer Seat',
-  'Maintainer',
-  'Contributor',
-  'Group Member',
-  'None',
-];
-
-const VOTING_PRIORITY: string[] = ['Voting Rep', 'Alternate Voting Rep', 'Observer', 'Emeritus', 'None'];
 
 @Component({
   selector: 'lfx-multi-persona-dashboard',
@@ -116,6 +97,11 @@ export class MultiPersonaDashboardComponent {
   });
   protected readonly pendingActionsLoading = signal(true);
   protected readonly pendingActions: Signal<PendingActionItem[]> = this.initPendingActions();
+
+  public constructor() {
+    // Fetch enriched persona projects so role-group lists show project names instead of slugs.
+    this.personaService.refreshEnrichedPersonas().subscribe();
+  }
 
   public openRow(row: PersonaProjectRow): void {
     const context: ProjectContext = {
@@ -356,10 +342,10 @@ export class MultiPersonaDashboardComponent {
       }
     }
     if (statuses.length === 0) return null;
-    return this.pickByPriority(statuses, VOTING_PRIORITY) ?? statuses[0];
+    return this.pickByPriority(statuses, VOTING_STATUS_PRIORITY) ?? statuses[0];
   }
 
-  private pickByPriority(values: string[], priority: string[]): string | null {
+  private pickByPriority(values: string[], priority: readonly string[]): string | null {
     for (const p of priority) {
       if (values.some((v) => v.toLowerCase() === p.toLowerCase())) {
         return p;

@@ -1,15 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import type { Lens, LensOption } from '../interfaces/lens.interface';
+import type { Lens, LensOption, NavLens } from '../interfaces';
+import type { PersonaType } from '../interfaces/persona.interface';
 
-/** Cookie key for persisting the active lens selection */
 export const LENS_COOKIE_KEY = 'lfx-active-lens';
 
-/** Default lens when no selection is persisted */
 export const DEFAULT_LENS: Lens = 'me';
 
-/** Default route for each lens */
 export const LENS_DEFAULT_ROUTES: Readonly<Record<Lens, string>> = {
   me: '/',
   foundation: '/foundation/overview',
@@ -17,7 +15,6 @@ export const LENS_DEFAULT_ROUTES: Readonly<Record<Lens, string>> = {
   org: '/org',
 } as const;
 
-/** All lens definitions — visibility is controlled by persona at runtime */
 export const ALL_LENSES: Readonly<Record<Lens, LensOption>> = {
   me: {
     id: 'me',
@@ -57,11 +54,18 @@ export const ALL_LENSES: Readonly<Record<Lens, LensOption>> = {
   },
 } as const;
 
-/** Lenses visible to board-scoped personas (board-member, executive-director) */
 export const BOARD_SCOPED_LENSES: readonly Lens[] = ['me', 'foundation', 'org'] as const;
-
-/** Lenses visible to project-scoped personas (maintainer, contributor) */
 export const PROJECT_SCOPED_LENSES: readonly Lens[] = ['me', 'project', 'org'] as const;
-
-/** Lenses visible to dual-role personas (users with both board and project roles) */
 export const DUAL_SCOPED_LENSES: readonly Lens[] = ['me', 'foundation', 'project', 'org'] as const;
+
+/** Lenses backed by the nav API (me/org are not). */
+export const NAV_LENSES: readonly NavLens[] = ['foundation', 'project'] as const;
+
+export const LENS_PERSONA_MAP: Readonly<Record<NavLens, readonly PersonaType[]>> = {
+  foundation: ['board-member', 'executive-director'],
+  project: ['contributor', 'maintainer'],
+} as const;
+
+export const NAV_MIN_ITEMS_PER_RESPONSE = 15;
+export const NAV_MAX_UPSTREAM_ITERATIONS = 10;
+export const NAV_SEARCH_DEBOUNCE_MS = 300;

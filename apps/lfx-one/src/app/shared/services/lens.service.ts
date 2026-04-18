@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, signal, Signal, WritableSignal } from '@angular/core';
-import { ALL_LENSES, BOARD_SCOPED_LENSES, DEFAULT_LENS, DUAL_SCOPED_LENSES, LENS_COOKIE_KEY, PROJECT_SCOPED_LENSES } from '@lfx-one/shared/constants';
+import { ALL_LENSES, DEFAULT_LENS, LENS_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { Lens, LensOption } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 
@@ -19,17 +19,8 @@ export class LensService {
 
   private readonly selectedLens: WritableSignal<Lens>;
 
-  /**
-   * Active lens, clamped to the current persona's allowed set.
-   * If the stored/selected lens is not allowed, falls back to the default.
-   */
+  /** Active lens clamped to the current persona's allowed set; falls back to default if disallowed. */
   public readonly activeLens: Signal<Lens> = this.initActiveLens();
-
-  /**
-   * Available lenses based on current persona.
-   * Board-scoped personas see Me + Foundation + Org.
-   * Project-scoped personas see Me + Project + Org.
-   */
   public readonly availableLenses: Signal<LensOption[]> = this.initAvailableLenses();
 
   public constructor() {
@@ -37,10 +28,6 @@ export class LensService {
     this.selectedLens = signal<Lens>(stored ?? DEFAULT_LENS);
   }
 
-  /**
-   * Set the active lens and persist to cookie.
-   * Ignores the request if the lens is not in the current persona's allowed set.
-   */
   public setLens(lens: Lens): void {
     const allowed = this.getAllowedLensIds();
     if (!allowed.includes(lens)) {
@@ -71,11 +58,21 @@ export class LensService {
   private getAllowedLensIds(): readonly Lens[] {
     const hasBoardRole = this.personaService.hasBoardRole();
     const hasProjectRole = this.personaService.hasProjectRole();
+    const isRootWriter = this.personaService.isRootWriter();
 
-    if (hasBoardRole && hasProjectRole) {
-      return DUAL_SCOPED_LENSES;
+    // Root writers bypass persona filtering and see both foundation + project lenses.
+    const showFoundation = hasBoardRole || isRootWriter;
+    const showProject = hasProjectRole || isRootWriter;
+
+    const lenses: Lens[] = ['me'];
+    if (showFoundation) {
+      lenses.push('foundation');
     }
-    return hasBoardRole ? BOARD_SCOPED_LENSES : PROJECT_SCOPED_LENSES;
+    if (showProject) {
+      lenses.push('project');
+    }
+    lenses.push('org');
+    return lenses;
   }
 
   private persistToCookie(lens: Lens): void {
@@ -95,7 +92,7 @@ export class LensService {
         return stored as Lens;
       }
     } catch {
-      // Invalid cookie data, ignore
+      /* invalid cookie data */
     }
     return null;
   }
