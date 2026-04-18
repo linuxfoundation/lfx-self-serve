@@ -8,10 +8,11 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MyDocumentItem } from '@lfx-one/shared/interfaces';
 import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-tag.pipe';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-documents-table',
-  imports: [TableComponent, TagComponent, ButtonComponent, DatePipe, MyDocumentSourceTagPipe],
+  imports: [TableComponent, TagComponent, ButtonComponent, DatePipe, MyDocumentSourceTagPipe, TooltipModule],
   templateUrl: './documents-table.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

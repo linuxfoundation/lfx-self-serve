@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { CardComponent } from '@components/card/card.component';
@@ -11,8 +11,9 @@ import { DocumentsTableComponent } from '@components/documents-table/documents-t
 import { DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
 import { MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
 import { DocumentService } from '@services/document.service';
+import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap } from 'rxjs';
 
 @Component({
   selector: 'lfx-documents-dashboard',
@@ -23,6 +24,7 @@ import { catchError, debounceTime, distinctUntilChanged, finalize, map, of, star
 export class DocumentsDashboardComponent {
   // === Services ===
   private readonly documentService = inject(DocumentService);
+  private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
 
   // === Constants ===
@@ -48,6 +50,13 @@ export class DocumentsDashboardComponent {
   protected readonly loading = signal<boolean>(true);
 
   // === Computed Signals ===
+  protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
+  protected readonly pageTitle = computed(() => (this.isMeLens() ? `My ${this.documentLabel.plural}` : this.documentLabel.plural));
+  protected readonly pageDescription = computed(() =>
+    this.isMeLens()
+      ? 'Documents, links, and attachments from your groups and meetings across all foundations.'
+      : 'Documents, links, and attachments for this context.'
+  );
   protected readonly project = this.projectContextService.activeContext;
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
   protected readonly foundationFilter: Signal<string | null> = this.initFoundationFilter();
@@ -61,6 +70,16 @@ export class DocumentsDashboardComponent {
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
   protected readonly meetingOptions: Signal<{ label: string; value: string | null }[]> = this.initMeetingOptions();
   protected readonly mailingListOptions: Signal<{ label: string; value: string | null }[]> = this.initMailingListOptions();
+
+  // === Constructor ===
+  public constructor() {
+    // Reset Me-lens-only filters when switching away from Me lens
+    effect(() => {
+      if (!this.isMeLens()) {
+        this.filterForm.controls.foundation.reset(null);
+      }
+    });
+  }
 
   // === Private Initializers ===
   private initSearchQuery(): Signal<string> {
@@ -96,12 +115,23 @@ export class DocumentsDashboardComponent {
   }
 
   private initDocuments(): Signal<MyDocumentItem[]> {
+    const lens$ = toObservable(this.lensService.activeLens);
+
     return toSignal(
-      toObservable(this.project).pipe(
-        switchMap((project) => {
+      combineLatest([toObservable(this.project), lens$]).pipe(
+        switchMap(([project, lens]) => {
+          // On non-Me lenses, require a project/foundation selection
+          if (lens !== 'me' && !project?.uid) {
+            this.loading.set(false);
+            return of([] as MyDocumentItem[]);
+          }
+
           this.loading.set(true);
 
-          return this.documentService.getMyDocuments(project?.uid).pipe(
+          // Me lens: fetch all documents (no project filter)
+          // Foundation/Project lens: scope to selected project
+          const projectUid = lens === 'me' ? undefined : project?.uid;
+          return this.documentService.getMyDocuments(projectUid).pipe(
             catchError(() => of([] as MyDocumentItem[])),
             finalize(() => this.loading.set(false))
           );
@@ -130,7 +160,7 @@ export class DocumentsDashboardComponent {
         ) {
           return false;
         }
-        if (foundation && doc.foundationUid !== foundation) return false;
+        if (this.isMeLens() && foundation && doc.foundationUid !== foundation) return false;
         if (group && doc.groupOrMeetingUid !== group) return false;
         if (meeting && doc.meetingId !== meeting && doc.pastMeetingId !== meeting) return false;
         if (mailingList && doc.mailingListId !== mailingList) return false;

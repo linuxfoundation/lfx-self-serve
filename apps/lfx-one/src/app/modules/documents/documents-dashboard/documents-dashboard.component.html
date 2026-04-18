@@ -5,10 +5,8 @@
   <!-- Page Header -->
   <div class="flex items-start justify-between mb-8">
     <div>
-      <h1 class="font-display font-light text-2xl mb-1" data-testid="documents-dashboard-title">My {{ documentLabel.plural }}</h1>
-      <p class="mt-1 text-gray-500" data-testid="documents-dashboard-description">
-        Documents, links, and attachments from your groups and meetings across all foundations.
-      </p>
+      <h1 class="font-display font-light text-2xl mb-1" data-testid="documents-dashboard-title">{{ pageTitle() }}</h1>
+      <p class="mt-1 text-gray-500" data-testid="documents-dashboard-description">{{ pageDescription() }}</p>
     </div>
   </div>
 
@@ -30,21 +28,23 @@
           </lfx-input-text>
         </div>
 
-        <!-- Foundation filter -->
-        <div class="w-40 shrink-0 overflow-hidden">
-          <lfx-select
-            [form]="filterForm"
-            control="foundation"
-            size="small"
-            [options]="foundationOptions()"
-            placeholder="All Foundations"
-            [showClear]="true"
-            [filter]="true"
-            filterPlaceholder="Search foundations..."
-            styleClass="w-full"
-            data-testid="documents-foundation-filter">
-          </lfx-select>
-        </div>
+        <!-- Foundation filter (Me lens only — non-Me lenses are already scoped) -->
+        @if (isMeLens()) {
+          <div class="w-40 shrink-0 overflow-hidden">
+            <lfx-select
+              [form]="filterForm"
+              control="foundation"
+              size="small"
+              [options]="foundationOptions()"
+              placeholder="All Foundations"
+              [showClear]="true"
+              [filter]="true"
+              filterPlaceholder="Search foundations..."
+              styleClass="w-full"
+              data-testid="documents-foundation-filter">
+            </lfx-select>
+          </div>
+        }
 
         <!-- Group filter -->
         <div class="w-36 shrink-0 overflow-hidden">

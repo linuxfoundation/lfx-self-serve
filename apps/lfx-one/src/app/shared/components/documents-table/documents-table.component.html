@@ -11,6 +11,7 @@
   [showFirstLastIcon]="false"
   [showCurrentPageReport]="true"
   currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+  styleClass="[&_table]:table-fixed"
   [attr.data-testid]="testIdPrefix() + '-table'">
   <ng-template #header>
     <tr>
@@ -29,18 +30,20 @@
     <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="testIdPrefix() + '-row-' + doc.id">
       <!-- Name column -->
       <td>
-        <div class="flex items-center gap-2">
+        <div class="flex items-center gap-2 min-w-0">
           <i [class]="(doc.source | myDocumentSourceTag: 'icon') + ' ' + (doc.source | myDocumentSourceTag: 'iconClass')" class="text-base shrink-0"></i>
           @if (doc.url) {
             <button
               type="button"
-              class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0 truncate"
+              class="text-blue-600 hover:text-blue-700 hover:underline font-medium text-xs text-left bg-transparent border-none cursor-pointer p-0 truncate max-w-full"
               (click)="openDocument(doc)"
+              [pTooltip]="doc.name"
+              tooltipPosition="top"
               [attr.data-testid]="testIdPrefix() + '-name-' + doc.id">
               {{ doc.name }}
             </button>
           } @else {
-            <span class="text-xs text-gray-900 truncate">{{ doc.name }}</span>
+            <span class="text-xs text-gray-900 truncate block max-w-full" [pTooltip]="doc.name" tooltipPosition="top">{{ doc.name }}</span>
           }
         </div>
       </td>
