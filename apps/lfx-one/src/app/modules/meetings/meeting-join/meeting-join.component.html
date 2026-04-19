@@ -545,9 +545,18 @@
                     <!-- Header -->
                     <div class="flex items-center gap-2 mb-1">
                       <i class="fa-light fa-folder-open text-gray-500 text-sm"></i>
-                      <h3 class="text-gray-700 text-sm font-medium">Meeting Materials</h3>
+                      <h3 class="text-gray-700 text-sm font-medium flex-1">Meeting Materials</h3>
                       @if (hasRecentlyUpdatedMaterials()) {
                         <span class="text-xs font-medium text-emerald-700 bg-emerald-100 px-1.5 py-0.5 rounded-full">Updated</span>
+                      }
+                      @if (meeting().organizer && !isPastMeeting()) {
+                        <button
+                          type="button"
+                          (click)="openMaterialsDrawer()"
+                          class="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                          data-testid="manage-materials-btn">
+                          Manage
+                        </button>
                       }
                     </div>
                     <p class="text-xs text-gray-400 mb-3">Documents provided to support meeting preparation, discussion, and governance record.</p>
@@ -558,7 +567,7 @@
                         <span class="text-xs font-semibold uppercase tracking-wider text-gray-400">Primary Materials</span>
                         <p class="text-xs text-gray-400">Materials intended for review before the meeting.</p>
                         @if (materialFiles().length > 0) {
-                          @for (attachment of materialFiles(); track attachment.uid; let i = $index) {
+                          @for (attachment of visibleFiles(); track attachment.uid; let i = $index) {
                             @let fileType = attachment | fileTypeDisplay;
                             <button
                               type="button"
@@ -578,6 +587,15 @@
                                 </div>
                               </div>
                               <i class="fa-light fa-arrow-up-right-from-square text-gray-400 text-xs flex-shrink-0"></i>
+                            </button>
+                          }
+                          @if (hasMoreFiles()) {
+                            <button
+                              type="button"
+                              (click)="showAllFiles.set(!showAllFiles())"
+                              class="text-xs text-blue-600 hover:text-blue-800 font-medium py-1 transition-colors"
+                              data-testid="toggle-more-files">
+                              {{ showAllFiles() ? 'Show less' : 'Show ' + (materialFiles().length - 5) + ' more' }}
                             </button>
                           }
                         } @else {
@@ -729,7 +747,13 @@
       </div>
     </div>
 
-    <!-- Toast Notifications -->
-    <p-toast></p-toast>
+    <!-- Meeting Materials Drawer -->
+    @if (meeting().organizer && !isPastMeeting()) {
+      <lfx-meeting-materials-drawer
+        [(visible)]="materialsDrawerVisible"
+        [meetingId]="meeting().id"
+        (materialsChanged)="onMaterialsChanged()">
+      </lfx-meeting-materials-drawer>
+    }
   </div>
 }

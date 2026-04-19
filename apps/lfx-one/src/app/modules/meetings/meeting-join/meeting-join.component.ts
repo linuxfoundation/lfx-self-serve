@@ -4,7 +4,7 @@
 import { Clipboard, ClipboardModule } from '@angular/cdk/clipboard';
 import { DatePipe, NgClass } from '@angular/common';
 import { Component, computed, DestroyRef, inject, OnInit, signal, Signal, WritableSignal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule, Validators } from '@angular/forms';
 import { ActivatedRoute, Router } from '@angular/router';
 import { MeetingRegistrantsDisplayComponent } from '@app/modules/meetings/components/meeting-registrants-display/meeting-registrants-display.component';
@@ -50,7 +50,6 @@ import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
 import { DialogService, DynamicDialogModule, DynamicDialogRef } from 'primeng/dynamicdialog';
-import { ToastModule } from 'primeng/toast';
 import { TooltipModule } from 'primeng/tooltip';
 import {
   BehaviorSubject,
@@ -67,9 +66,11 @@ import {
   switchMap,
   take,
   tap,
+  timer,
 } from 'rxjs';
 
 import { GuestFormComponent } from '../components/guest-form/guest-form.component';
+import { MeetingMaterialsDrawerComponent } from '../components/meeting-materials-drawer/meeting-materials-drawer.component';
 import { MeetingRsvpDetailsComponent } from '../components/meeting-rsvp-details/meeting-rsvp-details.component';
 import { PublicRegistrationModalComponent } from '../components/public-registration-modal/public-registration-modal.component';
 
@@ -87,7 +88,6 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     MeetingRsvpDetailsComponent,
     MeetingRegistrantsDisplayComponent,
     GuestFormComponent,
-    ToastModule,
     TooltipModule,
     DrawerModule,
     MeetingTimePipe,
@@ -97,6 +97,7 @@ import { PublicRegistrationModalComponent } from '../components/public-registrat
     HeaderComponent,
     FileTypeDisplayPipe,
     DynamicDialogModule,
+    MeetingMaterialsDrawerComponent,
   ],
   providers: [DialogService],
   templateUrl: './meeting-join.component.html',
@@ -145,6 +146,10 @@ export class MeetingJoinComponent implements OnInit {
   private hasAutoJoined: WritableSignal<boolean> = signal<boolean>(false);
   public showRegistrants: WritableSignal<boolean> = signal<boolean>(false);
   public showGuestForm: WritableSignal<boolean> = signal<boolean>(false);
+  public materialsDrawerVisible = signal(false);
+  protected showAllFiles = signal(false);
+  protected visibleFiles = computed(() => (this.showAllFiles() ? this.materialFiles() : this.materialFiles().slice(0, 5)));
+  protected hasMoreFiles = computed(() => this.materialFiles().length > 5);
   // Tracks whether the meeting was loaded via the past-meetings API (occurrence ID in URL).
   // Distinct from isPastMeeting (time-based): isPastMeeting drives UI state (banner, RSVP guards),
   // while loadedViaPastMeetingId gates which API endpoints to call for data (summary, recording, attachments).
@@ -306,6 +311,18 @@ export class MeetingJoinComponent implements OnInit {
 
   public onRsvpViewToggle(): void {
     this.showMyRsvp.set(!this.showMyRsvp());
+  }
+
+  public openMaterialsDrawer(): void {
+    this.materialsDrawerVisible.set(true);
+  }
+
+  public onMaterialsChanged(): void {
+    // Immediate refresh + delayed retry: upload writes to meeting-service via ITX,
+    // reads come from query-service indexed asynchronously via NATS, so a single
+    // immediate fetch can return stale data before the NATS event propagates.
+    this.refreshTrigger$.next();
+    timer(1000).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.refreshTrigger$.next());
   }
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {
@@ -763,14 +780,18 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializeAttachments(): Signal<MeetingAttachment[]> {
     return toSignal(
-      toObservable(this.meeting).pipe(
-        filter((meeting) => {
-          if (!meeting?.id) return false;
-          if (meeting.visibility === 'public' && !meeting.restricted) return true;
-          return this.authenticated();
-        }),
-        distinctUntilChanged((a, b) => a.id === b.id),
-        switchMap((meeting) => this.meetingService.getMeetingAttachments(meeting.id)),
+      combineLatest([
+        toObservable(this.meeting).pipe(
+          filter((meeting) => {
+            if (!meeting?.id) return false;
+            if (meeting.visibility === 'public' && !meeting.restricted) return true;
+            return this.authenticated();
+          }),
+          distinctUntilChanged((a, b) => a.id === b.id)
+        ),
+        this.refreshTrigger$,
+      ]).pipe(
+        switchMap(([meeting]) => this.meetingService.getMeetingAttachments(meeting.id)),
         catchError(() => of([] as MeetingAttachment[]))
       ),
       { initialValue: [] }

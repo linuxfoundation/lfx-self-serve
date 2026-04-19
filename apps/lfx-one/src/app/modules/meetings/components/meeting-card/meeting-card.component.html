@@ -156,6 +156,15 @@
                   </span>
                 }
               </div>
+              @if (meeting().organizer && !pastMeeting()) {
+                <button
+                  type="button"
+                  (click)="openMaterialsDrawer(); $event.stopPropagation()"
+                  class="text-xs text-blue-600 hover:text-blue-800 font-medium transition-colors"
+                  data-testid="manage-materials-card-btn">
+                  Manage
+                </button>
+              }
             </div>
             @if (attachments().length > 0) {
               <div class="grid grid-cols-4 gap-2">
@@ -434,6 +443,12 @@
           (registrantsCountChange)="additionalRegistrantsCount.set($event)">
         </lfx-meeting-registrants-display>
       </p-drawer>
+    }
+
+    <!-- Meeting Materials Drawer -->
+    @if (meeting().organizer && !pastMeeting()) {
+      <lfx-meeting-materials-drawer [(visible)]="materialsDrawerVisible" [meetingId]="meeting().id" data-testid="meeting-materials-drawer-card">
+      </lfx-meeting-materials-drawer>
     }
 
     <!-- Confirmation Dialog -->

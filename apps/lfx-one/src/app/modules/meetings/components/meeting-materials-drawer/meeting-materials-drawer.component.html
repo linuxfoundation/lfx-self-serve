@@ -1,0 +1,199 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<p-drawer
+  [(visible)]="visible"
+  position="right"
+  [modal]="true"
+  [showCloseIcon]="false"
+  styleClass="xl:w-[40%] lg:w-[50%] md:w-[65%] sm:w-[85%] w-full"
+  data-testid="meeting-materials-drawer">
+  <ng-template #header>
+    <div class="flex items-start justify-between gap-4 w-full">
+      <div class="flex flex-col gap-1 flex-1">
+        <h2 class="text-lg font-semibold text-gray-900">Manage Materials</h2>
+        <p class="text-sm text-gray-500">Upload files and add links for meeting participants</p>
+      </div>
+      <button
+        type="button"
+        (click)="onClose()"
+        class="p-1 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-md transition-colors flex-shrink-0"
+        aria-label="Close panel"
+        data-testid="materials-drawer-close">
+        <i class="fa-light fa-xmark text-xl"></i>
+      </button>
+    </div>
+  </ng-template>
+
+  @if (loading()) {
+    <div class="flex items-center justify-center py-12">
+      <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+    </div>
+  } @else {
+    <div class="flex flex-col gap-6 pb-2">
+      <!-- Upload Files Section -->
+      <div class="flex flex-col gap-4">
+        <h4 class="text-neutral-950 font-medium">Upload Files</h4>
+
+        <lfx-file-upload
+          [multiple]="true"
+          [accept]="acceptString"
+          [maxFileSize]="MAX_FILE_SIZE_BYTES"
+          (onSelect)="onFileSelect($event)"
+          [customUpload]="true"
+          dataTest="materials-drawer-upload"
+          [showUploadButton]="false"
+          [showCancelButton]="false"
+          chooseLabel="Click to upload files or drag and drop">
+        </lfx-file-upload>
+
+        <!-- Pending Uploads -->
+        @if (pendingAttachments().length > 0) {
+          <div class="flex flex-col gap-2" data-testid="pending-attachments-list">
+            <p class="text-sm text-gray-500 font-medium uppercase tracking-wide">New Files</p>
+            @for (attachment of pendingAttachments(); track attachment.id) {
+              <div class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border border-blue-200 bg-blue-50" data-testid="pending-attachment-item">
+                <div class="flex items-center gap-2 min-w-0">
+                  <i class="fa-light fa-file-lines text-blue-500 flex-shrink-0"></i>
+                  <span class="text-sm text-gray-700 truncate">{{ attachment.fileName }}</span>
+                </div>
+                <button
+                  type="button"
+                  class="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+                  (click)="removePendingAttachment(attachment.id)"
+                  [attr.data-testid]="'remove-pending-' + attachment.id">
+                  <i class="fa-light fa-xmark"></i>
+                </button>
+              </div>
+            }
+          </div>
+        }
+
+        <!-- Existing File Attachments -->
+        @if (fileAttachments().length > 0) {
+          <div class="flex flex-col gap-2" data-testid="existing-files-list">
+            <p class="text-sm text-gray-500 font-medium uppercase tracking-wide">Existing Files</p>
+            @for (attachment of fileAttachments(); track attachment.uid) {
+              <div
+                class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border transition-colors"
+                [class]="pendingDeletions().has(attachment.uid) ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'"
+                [attr.data-testid]="'existing-file-' + attachment.uid">
+                <div class="flex items-center gap-2 min-w-0">
+                  <i class="fa-light fa-file-lines flex-shrink-0" [class]="pendingDeletions().has(attachment.uid) ? 'text-red-400' : 'text-gray-500'"></i>
+                  <span class="text-sm truncate" [class]="pendingDeletions().has(attachment.uid) ? 'text-red-600 line-through' : 'text-gray-700'">
+                    {{ attachment.name }}
+                  </span>
+                </div>
+                @if (pendingDeletions().has(attachment.uid)) {
+                  <button
+                    type="button"
+                    class="flex-shrink-0 text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                    (click)="undoDelete(attachment.uid)"
+                    [attr.data-testid]="'undo-delete-' + attachment.uid">
+                    Undo
+                  </button>
+                } @else {
+                  <button
+                    type="button"
+                    class="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+                    (click)="markForDeletion(attachment.uid)"
+                    [attr.data-testid]="'delete-file-' + attachment.uid">
+                    <i class="fa-light fa-trash"></i>
+                  </button>
+                }
+              </div>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- Add Links Section -->
+      <div class="flex flex-col gap-4">
+        <h4 class="text-neutral-950 font-medium">Add Links</h4>
+
+        <div class="flex flex-col gap-3">
+          <input
+            [value]="newLinkTitle()"
+            (input)="newLinkTitle.set($any($event.target).value)"
+            placeholder="Link title (e.g., Project Repository)"
+            class="w-full h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300"
+            data-testid="new-link-title-input" />
+          <div class="flex items-center gap-3">
+            <input
+              [value]="newLinkUrl()"
+              (input)="newLinkUrl.set($any($event.target).value)"
+              placeholder="https://example.com"
+              class="flex-1 h-10 px-3 py-2 text-sm border border-gray-200 rounded-lg focus:outline-none focus:ring-1 focus:ring-blue-300"
+              data-testid="new-link-url-input" />
+            <lfx-button
+              icon="fa-light fa-plus"
+              size="small"
+              [disabled]="!newLinkTitle() || !newLinkUrl() || saving()"
+              (onClick)="addLink()"
+              data-testid="add-link-btn">
+            </lfx-button>
+          </div>
+        </div>
+
+        <!-- Existing Links -->
+        @if (linkAttachments().length > 0) {
+          <div class="flex flex-col gap-2" data-testid="existing-links-list">
+            <p class="text-sm text-gray-500 font-medium uppercase tracking-wide">Existing Links</p>
+            @for (attachment of linkAttachments(); track attachment.uid) {
+              <div
+                class="flex items-center justify-between gap-3 px-3 py-2 rounded-lg border transition-colors"
+                [class]="pendingDeletions().has(attachment.uid) ? 'border-red-200 bg-red-50' : 'border-gray-200 bg-gray-50'"
+                [attr.data-testid]="'existing-link-' + attachment.uid">
+                <div class="flex items-center gap-2 min-w-0">
+                  <i class="fa-light fa-link flex-shrink-0" [class]="pendingDeletions().has(attachment.uid) ? 'text-red-400' : 'text-gray-500'"></i>
+                  <div class="flex flex-col gap-0 min-w-0">
+                    <span class="text-sm truncate" [class]="pendingDeletions().has(attachment.uid) ? 'text-red-600 line-through' : 'text-gray-700'">
+                      {{ attachment.name }}
+                    </span>
+                    @if (attachment.link) {
+                      <span class="text-xs text-gray-400 truncate">{{ attachment.link }}</span>
+                    }
+                  </div>
+                </div>
+                @if (pendingDeletions().has(attachment.uid)) {
+                  <button
+                    type="button"
+                    class="flex-shrink-0 text-xs text-blue-500 hover:text-blue-700 transition-colors"
+                    (click)="undoDelete(attachment.uid)"
+                    [attr.data-testid]="'undo-delete-link-' + attachment.uid">
+                    Undo
+                  </button>
+                } @else {
+                  <button
+                    type="button"
+                    class="flex-shrink-0 text-gray-400 hover:text-red-500 transition-colors"
+                    (click)="markForDeletion(attachment.uid)"
+                    [attr.data-testid]="'delete-link-' + attachment.uid">
+                    <i class="fa-light fa-trash"></i>
+                  </button>
+                }
+              </div>
+            }
+          </div>
+        }
+      </div>
+
+      <!-- Save / Cancel Footer -->
+      @if (pendingAttachments().length > 0 || pendingDeletions().size > 0) {
+        <div class="flex items-center justify-end gap-3 pt-4 border-t border-gray-200" data-testid="materials-drawer-footer">
+          <lfx-button label="Cancel" size="small" severity="secondary" [text]="true" (onClick)="onClose()" data-testid="materials-cancel-btn"> </lfx-button>
+          <lfx-button
+            label="Save Changes"
+            size="small"
+            severity="primary"
+            icon="fa-light fa-check"
+            [disabled]="saving()"
+            [loading]="saving()"
+            (onClick)="onSave()"
+            data-testid="materials-save-btn">
+          </lfx-button>
+        </div>
+      }
+    </div>
+  }
+</p-drawer>
