@@ -11,14 +11,23 @@ import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
 
+import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
+import { OrganizationInvolvementComponent } from '../components/organization-involvement/organization-involvement.component';
 import { PendingActionsComponent } from '../components/pending-actions/pending-actions.component';
 
 import { MarketingOverviewComponent } from './components/marketing-overview/marketing-overview.component';
 
 @Component({
   selector: 'lfx-executive-director-dashboard',
-  imports: [PendingActionsComponent, MyMeetingsComponent, MarketingOverviewComponent, SkeletonModule],
+  imports: [
+    PendingActionsComponent,
+    MyMeetingsComponent,
+    MarketingOverviewComponent,
+    FoundationHealthComponent,
+    OrganizationInvolvementComponent,
+    SkeletonModule,
+  ],
   templateUrl: './executive-director-dashboard.component.html',
 })
 export class ExecutiveDirectorDashboardComponent {
@@ -29,6 +38,7 @@ export class ExecutiveDirectorDashboardComponent {
   private readonly lensService = inject(LensService);
 
   protected readonly showMeetings = computed(() => this.lensService.activeLens() !== 'org');
+  protected readonly showOrgInvolvement = computed(() => this.lensService.activeLens() !== 'me');
 
   // === Configuration ===
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
