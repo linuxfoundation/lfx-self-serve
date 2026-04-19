@@ -10,6 +10,7 @@ import { PersonaService } from '@services/persona.service';
 import { BoardMemberDashboardComponent } from './board-member/board-member-dashboard.component';
 import { ExecutiveDirectorDashboardComponent } from './executive-director/executive-director-dashboard.component';
 import { MultiPersonaDashboardComponent } from './multi-persona/multi-persona-dashboard.component';
+import { OrgComingSoonComponent } from './org-coming-soon/org-coming-soon.component';
 import { ProjectDashboardComponent } from './project-dashboard/project-dashboard.component';
 import { UserDashboardComponent } from './user-dashboard/user-dashboard.component';
 
@@ -29,6 +30,7 @@ const LOADING_MESSAGES = [
     BoardMemberDashboardComponent,
     ExecutiveDirectorDashboardComponent,
     MultiPersonaDashboardComponent,
+    OrgComingSoonComponent,
   ],
   templateUrl: './dashboard.component.html',
   styleUrl: './dashboard.component.scss',

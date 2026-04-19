@@ -41,6 +41,7 @@ export class SidebarComponent {
   public readonly selectorPanelOpen = model<boolean>(false);
 
   protected readonly activeLens = this.lensService.activeLens;
+  protected readonly isOrgLens = computed(() => this.activeLens() === 'org');
   protected readonly selectedProject: Signal<ProjectContext | null> = computed(() => this.projectContextService.activeContext());
   protected readonly navLens: Signal<NavLens | null> = this.initNavLens();
   protected readonly lensLoaded: Signal<boolean> = this.initLensLoaded();
@@ -90,6 +91,7 @@ export class SidebarComponent {
 
   private initLensLoaded(): Signal<boolean> {
     return computed(() => {
+      if (this.isOrgLens()) return false;
       const lens = this.navLens();
       if (!lens) return true;
       return this.navigationService.loaded(lens)();
