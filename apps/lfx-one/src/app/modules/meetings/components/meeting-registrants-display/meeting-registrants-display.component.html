@@ -59,20 +59,39 @@
     @if (!registrantsLoading()) {
       <div class="flex flex-col gap-2">
         @if (!pastMeeting() && showAddRegistrant()) {
-          <!-- Add Registrant Option -->
-          <a
-            class="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors border-2 border-solid border-blue-200 hover:border-blue-400 no-underline"
-            [routerLink]="['/meetings', meeting().id, 'edit']"
-            [queryParams]="{ step: '5' }"
-            data-testid="add-registrant-button">
+          <!-- Add Guest Toggle Button -->
+          <button
+            type="button"
+            class="flex items-center gap-2 cursor-pointer hover:bg-blue-50 p-2 rounded-md transition-colors border-2 border-dashed border-blue-200 hover:border-blue-400 w-full"
+            (click)="toggleAddForm()"
+            data-testid="add-registrant-toggle">
             <div class="w-8 h-8 bg-blue-100 border border-blue-200 rounded-full flex items-center justify-center">
-              <i class="fa-light fa-plus text-blue-500"></i>
+              <i class="fa-light" [class]="showAddForm() ? 'fa-minus' : 'fa-plus'"></i>
             </div>
-            <div class="flex flex-col min-w-0 flex-1">
-              <span class="text-sm text-blue-600 font-medium">Add Guests</span>
-              <span class="text-xs text-blue-500">Click to add new guests</span>
+            <div class="flex flex-col min-w-0 flex-1 text-left">
+              <span class="text-sm text-blue-600 font-medium">{{ showAddForm() ? 'Cancel' : 'Add Guest' }}</span>
             </div>
-          </a>
+          </button>
+
+          <!-- Inline Add Form -->
+          @if (showAddForm()) {
+            <div class="border border-blue-200 rounded-lg p-4 bg-blue-50/30 flex flex-col gap-3" data-testid="inline-add-registrant-form">
+              <lfx-registrant-form [form]="addRegistrantForm" (onUserSelected)="onUserSelectedFromSearch()" data-testid="inline-registrant-form">
+              </lfx-registrant-form>
+              <div class="flex items-center justify-end gap-2 pt-2 border-t border-blue-100">
+                <lfx-button
+                  label="Add Guest"
+                  size="small"
+                  icon="fa-light fa-user-plus"
+                  [loading]="submitting()"
+                  [disabled]="addRegistrantForm.invalid || submitting()"
+                  type="button"
+                  (onClick)="onAddRegistrant()"
+                  data-testid="inline-add-registrant-submit">
+                </lfx-button>
+              </div>
+            </div>
+          }
         }
 
         @if (pastMeeting()) {

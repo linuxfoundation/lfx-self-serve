@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, inject, input, InputSignal, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, input, InputSignal, output, signal, Signal, WritableSignal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { calculateRsvpCounts, Meeting, MeetingOccurrence, MeetingRsvp, PastMeeting, Project, RsvpCounts } from '@lfx-one/shared';
@@ -26,6 +26,7 @@ export class MeetingRsvpDetailsComponent {
   public readonly backgroundColor: InputSignal<string | undefined> = input<string | undefined>(undefined);
   public readonly borderColor: InputSignal<string | undefined> = input<string | undefined>(undefined);
   public readonly additionalRegistrantsCount: InputSignal<number> = input<number>(0);
+  public readonly addClicked = output<void>();
   public readonly disabled: InputSignal<boolean> = input<boolean>(false);
   public readonly disabledMessage: InputSignal<string> = input<string>('RSVP not available for this meeting');
 
@@ -40,7 +41,6 @@ export class MeetingRsvpDetailsComponent {
   public readonly attendancePercentage: Signal<number> = this.initializeAttendancePercentage();
   public readonly showPoorAttendanceWarning: Signal<boolean> = computed(() => this.pastMeeting() && this.attendancePercentage() < 50);
   public readonly backgroundClasses: Signal<string> = this.initializeBackgroundClasses();
-  public readonly editLink: Signal<string> = this.initializeEditLink();
   public readonly borderClasses: Signal<string> = this.initializeBorderClasses();
   public readonly headerTextClasses: Signal<string> = computed(() => (this.showPoorAttendanceWarning() ? 'text-amber-600' : 'text-gray-600'));
   public readonly summaryTextClasses: Signal<string> = computed(() => (this.showPoorAttendanceWarning() ? 'text-amber-900' : 'text-gray-900'));
@@ -134,16 +134,6 @@ export class MeetingRsvpDetailsComponent {
         return `border ${this.borderColor()}`;
       }
       return '';
-    });
-  }
-
-  private initializeEditLink(): Signal<string> {
-    return computed(() => {
-      const slug = this.project()?.slug;
-      if (slug) {
-        return `/project/${slug}/meetings/${this.meeting().id}/edit`;
-      }
-      return `/meetings/${this.meeting().id}/edit`;
     });
   }
 }

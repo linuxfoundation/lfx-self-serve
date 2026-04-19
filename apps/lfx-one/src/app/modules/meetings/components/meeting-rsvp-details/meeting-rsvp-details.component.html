@@ -18,8 +18,7 @@
         size="small"
         severity="secondary"
         [attr.data-testid]="'add-participant-button'"
-        [routerLink]="['/meetings', meeting().id, 'edit']"
-        [queryParams]="{ step: '5' }">
+        (onClick)="addClicked.emit()">
       </lfx-button>
     }
   </div>

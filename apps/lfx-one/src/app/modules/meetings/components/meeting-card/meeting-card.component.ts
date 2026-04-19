@@ -19,7 +19,7 @@ import {
   WritableSignal,
 } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { Router } from '@angular/router';
+
 import {
   MeetingDeleteConfirmationComponent,
   MeetingDeleteResult,
@@ -103,7 +103,7 @@ export class MeetingCardComponent implements OnInit {
   private readonly injector = inject(Injector);
   private readonly clipboard = inject(Clipboard);
   private readonly userService = inject(UserService);
-  private readonly router = inject(Router);
+
   private readonly destroyRef = inject(DestroyRef);
   private readonly refreshAttachments$ = new BehaviorSubject<void>(undefined);
 
@@ -238,13 +238,6 @@ export class MeetingCardComponent implements OnInit {
   }
 
   public onRegistrantsToggle(): void {
-    if (this.meetingRegistrantCount() === 0 && !this.pastMeeting()) {
-      this.router.navigate(['/meetings', this.meeting().id, 'edit'], {
-        queryParams: { step: '5' },
-      });
-      return;
-    }
-
     this.showRegistrants.set(!this.showRegistrants());
   }
 

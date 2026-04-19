@@ -146,6 +146,7 @@ export class MeetingJoinComponent implements OnInit {
   private hasAutoJoined: WritableSignal<boolean> = signal<boolean>(false);
   public showRegistrants: WritableSignal<boolean> = signal<boolean>(false);
   public showGuestForm: WritableSignal<boolean> = signal<boolean>(false);
+  public additionalRegistrantsCount = signal(0);
   public materialsDrawerVisible = signal(false);
   protected showAllFiles = signal(false);
   protected visibleFiles = computed(() => (this.showAllFiles() ? this.materialFiles() : this.materialFiles().slice(0, 5)));
@@ -322,7 +323,9 @@ export class MeetingJoinComponent implements OnInit {
     // reads come from query-service indexed asynchronously via NATS, so a single
     // immediate fetch can return stale data before the NATS event propagates.
     this.refreshTrigger$.next();
-    timer(1000).pipe(takeUntilDestroyed(this.destroyRef)).subscribe(() => this.refreshTrigger$.next());
+    timer(1000)
+      .pipe(takeUntilDestroyed(this.destroyRef))
+      .subscribe(() => this.refreshTrigger$.next());
   }
 
   public downloadAttachment(attachment: MeetingAttachment | PastMeetingAttachment): void {

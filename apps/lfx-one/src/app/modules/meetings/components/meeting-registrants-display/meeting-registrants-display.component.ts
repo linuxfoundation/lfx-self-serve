@@ -2,24 +2,30 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, effect, inject, input, InputSignal, output, OutputEmitterRef, Signal, signal, WritableSignal } from '@angular/core';
+import { Component, computed, DestroyRef, effect, inject, input, InputSignal, output, OutputEmitterRef, Signal, signal, WritableSignal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
-import { RouterLink } from '@angular/router';
 import { AvatarComponent } from '@components/avatar/avatar.component';
+import { ButtonComponent } from '@components/button/button.component';
 import { SelectComponent } from '@components/select/select.component';
 import { Meeting, MeetingRegistrant, PastMeeting, PastMeetingParticipant } from '@lfx-one/shared';
+import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { MeetingService } from '@services/meeting.service';
+import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
-import { BehaviorSubject, catchError, debounceTime, filter, finalize, map, of, startWith, switchMap, tap } from 'rxjs';
+import { BehaviorSubject, catchError, debounceTime, filter, finalize, map, of, pairwise, startWith, switchMap, take, tap } from 'rxjs';
+
+import { RegistrantFormComponent } from '../registrant-form/registrant-form.component';
 
 @Component({
   selector: 'lfx-meeting-registrants-display',
-  imports: [AvatarComponent, TooltipModule, ReactiveFormsModule, SelectComponent, NgClass, RouterLink],
+  imports: [AvatarComponent, ButtonComponent, TooltipModule, ReactiveFormsModule, RegistrantFormComponent, SelectComponent, NgClass],
   templateUrl: './meeting-registrants-display.component.html',
 })
 export class MeetingRegistrantsDisplayComponent {
   private readonly meetingService = inject(MeetingService);
+  private readonly messageService = inject(MessageService);
+  private readonly destroyRef = inject(DestroyRef);
 
   public readonly meeting: InputSignal<Meeting | PastMeeting> = input.required<Meeting | PastMeeting>();
   public readonly pastMeeting: InputSignal<boolean> = input<boolean>(false);
@@ -34,6 +40,11 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly registrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<PastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
   public readonly additionalRegistrantsCount: WritableSignal<number> = signal(0);
+  public readonly showAddForm = signal(false);
+  public readonly submitting = signal(false);
+
+  // Add registrant form
+  public addRegistrantForm: FormGroup;
 
   // Search and filter controls
   public readonly searchControl: FormControl<string> = new FormControl<string>('', { nonNullable: true });
@@ -72,16 +83,82 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly filteredPastParticipants = this.initFilteredPastParticipants();
 
   public constructor() {
+    this.addRegistrantForm = this.meetingService.createRegistrantFormGroup(false);
+
     effect(() => {
       if (this.visible()) {
         this.registrantsLoading.set(true);
         this.refresh$.next(true);
       }
     });
+
+    // Reset inline add form when drawer closes (open → closed transition)
+    toObservable(this.visible)
+      .pipe(
+        pairwise(),
+        filter(([prev, curr]) => prev && !curr),
+        takeUntilDestroyed(this.destroyRef)
+      )
+      .subscribe(() => {
+        this.showAddForm.set(false);
+        this.addRegistrantForm.reset();
+      });
   }
 
+  // === Public Methods ===
   public refresh(): void {
     this.refresh$.next(true);
+  }
+
+  public toggleAddForm(): void {
+    const isShowing = this.showAddForm();
+    this.showAddForm.set(!isShowing);
+    if (isShowing) {
+      this.addRegistrantForm.reset();
+    }
+  }
+
+  public onAddRegistrant(): void {
+    if (this.submitting()) return;
+
+    if (this.addRegistrantForm.valid) {
+      this.submitting.set(true);
+      const formValue = this.addRegistrantForm.value;
+      const createData = this.meetingService.stripMetadata(this.meeting().id, formValue);
+
+      this.meetingService
+        .addMeetingRegistrants(this.meeting().id, [createData])
+        .pipe(take(1))
+        .subscribe({
+          next: (response) => {
+            this.submitting.set(false);
+            if (response.summary.successful > 0) {
+              this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Guest added successfully' });
+              // Immediately increment the count for UI feedback (query service indexing is async)
+              this.additionalRegistrantsCount.update((c) => c + response.summary.successful);
+              this.registrantsCountChange.emit(this.additionalRegistrantsCount());
+              this.refresh$.next(true);
+              this.addRegistrantForm.reset();
+            } else {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: response.failures[0]?.error?.message || 'Failed to add guest',
+              });
+            }
+          },
+          error: () => {
+            this.submitting.set(false);
+            this.messageService.add({ severity: 'error', summary: 'Error', detail: 'Failed to add guest. Please try again.' });
+          },
+        });
+    } else {
+      markFormControlsAsTouched(this.addRegistrantForm);
+    }
+  }
+
+  public onUserSelectedFromSearch(): void {
+    this.onAddRegistrant();
   }
 
   private initRegistrantsList(): Signal<MeetingRegistrant[]> {
@@ -103,7 +180,9 @@ export class MeetingRegistrantsDisplayComponent {
                 map((registrants) => registrants.sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[]),
                 tap((registrants) => {
                   const baseCount = (this.meeting().individual_registrants_count || 0) + (this.meeting().committee_members_count || 0);
-                  const additionalCount = Math.max(0, (registrants?.length || 0) - baseCount);
+                  const fetchedAdditional = Math.max(0, (registrants?.length || 0) - baseCount);
+                  // Never decrease below the current optimistic count (async indexing may lag)
+                  const additionalCount = Math.max(fetchedAdditional, this.additionalRegistrantsCount());
                   this.additionalRegistrantsCount.set(additionalCount);
                   this.registrantsCountChange.emit(additionalCount);
                 }),

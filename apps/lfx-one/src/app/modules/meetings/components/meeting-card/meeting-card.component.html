@@ -278,7 +278,8 @@
                 [currentOccurrence]="currentOccurrence()"
                 [pastMeeting]="pastMeeting()"
                 [showAddButton]="!pastMeeting()"
-                [additionalRegistrantsCount]="additionalRegistrantsCount()">
+                [additionalRegistrantsCount]="additionalRegistrantsCount()"
+                (addClicked)="showRegistrants.set(true)">
               </lfx-meeting-rsvp-details>
             }
           } @placeholder {
@@ -364,7 +365,7 @@
             <lfx-button
               class="w-full"
               icon="fa-light fa-users"
-              [label]="meetingRegistrantCount() > 0 || pastMeeting() ? 'View Guests' : 'Add Guest'"
+              label="Guests"
               size="small"
               severity="secondary"
               styleClass="w-full"
