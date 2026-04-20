@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { PersonaType, VALID_PERSONAS } from '@lfx-one/shared/interfaces';
 import { NextFunction, Request, Response } from 'express';
 
 import { AuthorizationError, MicroserviceError, ServiceValidationError } from '../errors';
@@ -38,6 +39,18 @@ export class ImpersonationController {
         return;
       }
 
+      const personaContextRaw = req.body?.personaContext;
+      if (personaContextRaw !== undefined && personaContextRaw !== null && !VALID_PERSONAS.has(personaContextRaw)) {
+        next(
+          ServiceValidationError.forField('personaContext', 'personaContext must be a valid persona type', {
+            operation: 'start_impersonation',
+            service: 'impersonation',
+          })
+        );
+        return;
+      }
+      const personaContext = (personaContextRaw ?? undefined) as PersonaType | undefined;
+
       const realToken = req.oidc?.accessToken?.access_token || '';
       const tokenPayload = decodeJwtPayload(realToken);
       if (!tokenPayload || tokenPayload['http://lfx.dev/claims/can_impersonate'] !== true) {
@@ -53,7 +66,7 @@ export class ImpersonationController {
       }
 
       const profile = await this.impersonationService.fetchTargetUserProfile(req, targetClaims['sub']);
-      this.impersonationService.startImpersonation(req, tokenResponse, targetClaims, profile);
+      this.impersonationService.startImpersonation(req, res, tokenResponse, targetClaims, profile, personaContext);
 
       logger.success(req, 'start_impersonation', startTime, {
         target_sub: targetClaims['sub'],
@@ -76,7 +89,7 @@ export class ImpersonationController {
     const startTime = logger.startOperation(req, 'stop_impersonation');
 
     try {
-      this.impersonationService.stopImpersonation(req);
+      this.impersonationService.stopImpersonation(req, res);
 
       logger.success(req, 'stop_impersonation', startTime);
 

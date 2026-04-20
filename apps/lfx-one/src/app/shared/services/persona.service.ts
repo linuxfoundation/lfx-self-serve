@@ -37,6 +37,7 @@ export class PersonaService {
   public readonly personaProjects: WritableSignal<Partial<Record<PersonaType, PersonaProject[]>>>;
   public readonly detectedProjects: WritableSignal<EnrichedPersonaProject[]>;
   private readonly lastKnownOrganizations: WritableSignal<Account[]> = signal<Account[]>([]);
+  private readonly userSelected: WritableSignal<boolean>;
 
   public readonly isBoardScoped: Signal<boolean>;
   public readonly hasBoardRole: Signal<boolean>;
@@ -51,6 +52,7 @@ export class PersonaService {
     const stored = this.loadFromCookie();
     this.currentPersona = signal<PersonaType>(stored?.primary ?? 'contributor');
     this.allPersonas = signal<PersonaType[]>(stored?.all ?? ['contributor']);
+    this.userSelected = signal<boolean>(stored?.userSelected === true);
     const authState = this.transferState.get(makeStateKey<AuthContext>('auth'), { authenticated: false, user: null });
     this.personaProjects = signal<Partial<Record<PersonaType, PersonaProject[]>>>(authState.personaProjects ?? {});
     this.detectedProjects = signal<EnrichedPersonaProject[]>(authState.projects ?? []);
@@ -66,7 +68,9 @@ export class PersonaService {
   }
 
   public setPersona(persona: PersonaType): void {
-    this.setPersonas(persona, this.allPersonas());
+    this.currentPersona.set(persona);
+    this.userSelected.set(true);
+    this.persistCurrentState();
   }
 
   public setPersonas(primary: PersonaType, all: PersonaType[], organizations?: Account[]): void {
@@ -75,7 +79,7 @@ export class PersonaService {
     if (organizations !== undefined) {
       this.lastKnownOrganizations.set(organizations);
     }
-    this.persistToCookie({ primary, all, organizations: this.lastKnownOrganizations() });
+    this.persistCurrentState();
   }
 
   /**
@@ -139,14 +143,26 @@ export class PersonaService {
     this.isRootWriter.set(response.isRootWriter ?? false);
 
     if (response.personas.length > 0) {
-      this.setPersonas(response.personas[0], response.personas, response.organizations);
+      const current = this.currentPersona();
+      const canPreserveCurrent = this.userSelected() && response.personas.includes(current);
+
+      if (canPreserveCurrent) {
+        // User's explicit choice wins — only refresh the allowed list and organizations.
+        this.allPersonas.set(response.personas);
+        if (response.organizations !== undefined) {
+          this.lastKnownOrganizations.set(response.organizations);
+        }
+        this.persistCurrentState();
+      } else {
+        // User's choice is stale (role revoked) — drop the pin so detection takes over.
+        if (this.userSelected()) {
+          this.userSelected.set(false);
+        }
+        this.setPersonas(response.personas[0], response.personas, response.organizations);
+      }
     } else if (response.organizations) {
       this.lastKnownOrganizations.set(response.organizations);
-      this.persistToCookie({
-        primary: this.currentPersona(),
-        all: this.allPersonas(),
-        organizations: response.organizations,
-      });
+      this.persistCurrentState();
     }
 
     if (response.organizations) {
@@ -157,6 +173,15 @@ export class PersonaService {
     }
 
     this.personaLoaded.set(true);
+  }
+
+  private persistCurrentState(): void {
+    this.persistToCookie({
+      primary: this.currentPersona(),
+      all: this.allPersonas(),
+      organizations: this.lastKnownOrganizations(),
+      userSelected: this.userSelected(),
+    });
   }
 
   private persistToCookie(state: PersistedPersonaState): void {

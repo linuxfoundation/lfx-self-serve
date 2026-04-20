@@ -23,6 +23,7 @@ export interface PersistedPersonaState {
   primary: PersonaType;
   all: PersonaType[];
   organizations?: Account[];
+  userSelected?: boolean;
 }
 
 export interface DevPersonaPreset {

@@ -21,6 +21,20 @@
       id="targetUser"
       dataTest="impersonation-target-input" />
   </div>
+  <div class="flex flex-col gap-1">
+    <label for="personaContext" class="text-sm font-medium text-gray-700">Context (optional)</label>
+    <lfx-select
+      size="small"
+      [form]="targetUserForm"
+      control="personaContext"
+      [options]="personaOptions"
+      optionLabel="label"
+      optionValue="value"
+      placeholder="Use their context"
+      id="personaContext"
+      styleClass="w-full"
+      dataTest="impersonation-persona-select" />
+  </div>
   @if (error()) {
     <p class="text-sm text-red-600" role="alert" data-testid="impersonation-error">{{ error() }}</p>
   }

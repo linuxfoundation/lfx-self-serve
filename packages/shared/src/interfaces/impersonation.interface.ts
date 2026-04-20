@@ -1,6 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import type { PersonaType } from './persona.interface';
+
 /**
  * Decoded claims from an LFX access token (JWT payload).
  */
@@ -40,6 +42,7 @@ export interface Impersonator {
  */
 export interface ImpersonationStartRequest {
   targetUser: string;
+  personaContext?: PersonaType;
 }
 
 /**

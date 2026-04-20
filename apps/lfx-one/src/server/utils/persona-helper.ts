@@ -67,6 +67,7 @@ async function resolveFromNats(req: Request, res: Response): Promise<SsrPersonaR
         primary: persona,
         all: personas,
         organizations,
+        userSelected: false,
       };
       res.cookie(PERSONA_COOKIE_KEY, JSON.stringify(cookieState), {
         maxAge: 30 * 24 * 60 * 60 * 1000,

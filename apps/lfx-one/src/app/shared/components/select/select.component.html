@@ -55,6 +55,7 @@
     [variant]="variant()"
     [checkmark]="checkmark()"
     [loading]="loading()"
+    [attr.data-test]="dataTest()"
     (onChange)="handleChange($event)">
     @if (itemTemplate()) {
       <ng-template let-option #item>

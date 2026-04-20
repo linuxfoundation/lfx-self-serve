@@ -3,7 +3,7 @@
 
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { ImpersonationStartResponse, ImpersonationStatusResponse } from '@lfx-one/shared/interfaces';
+import { ImpersonationStartRequest, ImpersonationStartResponse, ImpersonationStatusResponse, PersonaType } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of } from 'rxjs';
 
 @Injectable({
@@ -12,8 +12,9 @@ import { catchError, Observable, of } from 'rxjs';
 export class ImpersonationService {
   private readonly http = inject(HttpClient);
 
-  public startImpersonation(targetUser: string): Observable<ImpersonationStartResponse> {
-    return this.http.post<ImpersonationStartResponse>('/api/impersonate', { targetUser });
+  public startImpersonation(targetUser: string, personaContext?: PersonaType | null): Observable<ImpersonationStartResponse> {
+    const body: ImpersonationStartRequest = personaContext ? { targetUser, personaContext } : { targetUser };
+    return this.http.post<ImpersonationStartResponse>('/api/impersonate', body);
   }
 
   public stopImpersonation(): Observable<{ impersonating: false }> {

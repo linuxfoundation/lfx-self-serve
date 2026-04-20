@@ -1,10 +1,10 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NATS_CONFIG } from '@lfx-one/shared/constants';
+import { LENS_COOKIE_KEY, NATS_CONFIG, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
-import { ImpersonationStatusResponse, ImpersonationUser, Impersonator, LfxAccessTokenClaims, M2MTokenResponse } from '@lfx-one/shared/interfaces';
-import { Request } from 'express';
+import { ImpersonationStatusResponse, ImpersonationUser, Impersonator, LfxAccessTokenClaims, M2MTokenResponse, PersonaType } from '@lfx-one/shared/interfaces';
+import { Request, Response } from 'express';
 
 import { MicroserviceError } from '../errors';
 import { clearImpersonationSession, decodeJwtPayload } from '../utils/auth-helper';
@@ -119,9 +119,11 @@ export class ImpersonationService {
 
   public startImpersonation(
     req: Request,
+    res: Response,
     tokenResponse: M2MTokenResponse,
     targetClaims: LfxAccessTokenClaims,
-    profile?: { name?: string; picture?: string }
+    profile?: { name?: string; picture?: string },
+    personaContext?: PersonaType
   ): void {
     if (!req.appSession) {
       req.appSession = {};
@@ -148,15 +150,30 @@ export class ImpersonationService {
     req.appSession['impersonationUser'] = targetUser;
     req.appSession['impersonator'] = impersonator;
 
+    if (personaContext) {
+      req.appSession['impersonationPersonaContext'] = personaContext;
+    } else {
+      delete req.appSession['impersonationPersonaContext'];
+    }
+
+    // Clear impersonator's persona/lens cookies so the impersonated session re-detects cleanly on reload.
+    res.clearCookie(PERSONA_COOKIE_KEY, { path: '/' });
+    res.clearCookie(LENS_COOKIE_KEY, { path: '/' });
+
     logger.info(req, 'impersonation_granted', 'Impersonation session started', {
       impersonator_sub: impersonator.sub,
       impersonator_email: impersonator.email,
       target_sub: targetUser.sub,
       target_email: targetUser.email,
+      persona_context: personaContext ?? null,
     });
   }
 
-  public stopImpersonation(req: Request): void {
+  public stopImpersonation(req: Request, res: Response): void {
+    // Always clear persona/lens cookies even when session is missing — stale cookies on the client must be reset.
+    res.clearCookie(PERSONA_COOKIE_KEY, { path: '/' });
+    res.clearCookie(LENS_COOKIE_KEY, { path: '/' });
+
     if (!req.appSession) {
       return;
     }

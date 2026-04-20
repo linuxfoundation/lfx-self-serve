@@ -20,6 +20,7 @@ import {
   PersonaDetections,
   PersonaProject,
   PersonaType,
+  VALID_PERSONAS,
 } from '@lfx-one/shared/interfaces';
 import { Request } from 'express';
 
@@ -96,7 +97,21 @@ export class PersonaDetectionService {
 
     // isRootWriter is request-scoped (bearer-token dependent) — resolve per-request and merge.
     const [detections, isRootWriter] = await Promise.all([this.getPersonaDetections(req, username, email, cacheKey), this.checkRootWriter(req)]);
-    return { ...detections, isRootWriter };
+
+    // Compute the per-request persona list without mutating the cached detections object.
+    let personas = detections.personas;
+    if (isRootWriter) {
+      personas = this.applyForcedPersona(personas, 'executive-director');
+    }
+
+    // Only honor the impersonation override when the target user actually has the forced persona.
+    // Root-writer promotion above is the only path that may inject a persona the user doesn't natively hold.
+    const forcedPersona = req.appSession?.['impersonationPersonaContext'];
+    if (typeof forcedPersona === 'string' && VALID_PERSONAS.has(forcedPersona) && personas.includes(forcedPersona as PersonaType)) {
+      personas = this.applyForcedPersona(personas, forcedPersona as PersonaType);
+    }
+
+    return { ...detections, personas, isRootWriter };
   }
 
   public async checkRootWriter(req: Request): Promise<boolean> {
@@ -425,5 +440,10 @@ export class PersonaDetectionService {
     });
 
     return accounts;
+  }
+
+  private applyForcedPersona(personas: PersonaType[], forced: PersonaType): PersonaType[] {
+    const filtered = personas.filter((p) => p !== forced);
+    return [forced, ...filtered];
   }
 }

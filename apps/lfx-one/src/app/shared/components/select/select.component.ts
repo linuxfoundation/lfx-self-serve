@@ -83,6 +83,7 @@ export class SelectComponent {
   public readonly tooltipPositionStyle = input<string>('absolute');
   public readonly tooltipStyleClass = input<string | undefined>(undefined);
   public readonly autofocusFilter = input<boolean>(true);
+  public readonly dataTest = input<string>();
 
   // Templates
   public readonly itemTemplate = contentChild<TemplateRef<any>>('item');
