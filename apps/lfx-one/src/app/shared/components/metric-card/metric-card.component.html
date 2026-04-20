@@ -30,6 +30,11 @@
         <h5 class="text-sm font-medium flex-1">{{ title() }}</h5>
       </div>
 
+      <!-- Description -->
+      @if (description()) {
+        <p class="text-[11px] text-gray-400 leading-snug -mt-1 mb-0">{{ description() }}</p>
+      }
+
       <!-- Body: Chart or Custom Content -->
       @if (customContentTemplate) {
         <ng-container [ngTemplateOutlet]="customContentTemplate"></ng-container>

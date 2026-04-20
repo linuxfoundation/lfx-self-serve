@@ -97,6 +97,9 @@ export interface DashboardMetricCard {
   // Status & Metadata
   // ============================================
 
+  /** Always-visible one-liner explaining what this KPI measures */
+  description?: string;
+
   /** Optional tooltip text to display on hover */
   tooltipText?: string;
 
