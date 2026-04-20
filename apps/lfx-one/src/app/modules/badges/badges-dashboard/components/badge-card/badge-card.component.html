@@ -108,7 +108,12 @@
             {{ badge().isPending ? 'Accept Badge' : badge().isPublic ? 'View in Credly' : 'Manage Privacy' }}
           </a>
           @if (badge().shareUrl && badge().isPublic) {
-            <button type="button" class="badge-share-btn" (click)="shareBadge(badge().shareUrl!)" aria-label="Copy badge URL to clipboard" [attr.data-testid]="'badge-share-btn-' + badge().id">
+            <button
+              type="button"
+              class="badge-share-btn"
+              (click)="shareBadge(badge().shareUrl!)"
+              aria-label="Copy badge URL to clipboard"
+              [attr.data-testid]="'badge-share-btn-' + badge().id">
               <i class="fa-light fa-link text-xs"></i>
               Share Badge
             </button>

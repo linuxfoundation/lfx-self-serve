@@ -169,4 +169,37 @@
       }
     </div>
   </div>
+  <!-- Row 8: Accommodation Number of Nights -->
+  <div class="grid grid-cols-2 gap-4">
+    <div class="flex flex-col gap-1">
+      <label for="about-me-accommodation-nights" class="text-sm font-medium text-gray-700">
+        How many nights of accommodation do you need? <span class="text-red-500">*</span>
+      </label>
+      <div class="flex items-center gap-2">
+        <lfx-input-text
+          [form]="form"
+          control="accommodationNumberOfNights"
+          id="about-me-accommodation-nights"
+          placeholder="no. of nights"
+          type="number"
+          size="small"
+          styleClass="w-20"
+          dataTest="about-me-accommodation-nights" />
+        <span class="text-sm text-gray-500">nights (max 4)</span>
+      </div>
+      @if (form.get('accommodationNumberOfNights')?.invalid && form.get('accommodationNumberOfNights')?.touched) {
+        <span class="text-xs text-red-500" data-testid="about-me-accommodation-nights-error">
+          @if (form.get('accommodationNumberOfNights')?.hasError('max')) {
+            Maximum 4 nights allowed
+          } @else if (form.get('accommodationNumberOfNights')?.hasError('min')) {
+            Number of nights cannot be negative
+          } @else if (form.get('accommodationNumberOfNights')?.hasError('pattern')) {
+            Please enter a whole number
+          } @else {
+            Number of nights is required
+          }
+        </span>
+      }
+    </div>
+  </div>
 </form>

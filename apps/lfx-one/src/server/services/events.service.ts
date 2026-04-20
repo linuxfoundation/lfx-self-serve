@@ -9,6 +9,7 @@ import {
   DEFAULT_VISA_REQUEST_SORT_FIELD,
   VALID_EVENT_SORT_FIELDS,
   VALID_VISA_REQUEST_SORT_FIELDS,
+  WHOLE_NUMBER_PATTERN,
 } from '@lfx-one/shared/constants';
 import {
   EventRow,
@@ -558,7 +559,7 @@ export class EventsService {
     if (!applicantInfo.organizationID) missingFields.push('organizationID');
     if (!applicantInfo.embassyCity) missingFields.push('embassyCity');
     if (missingFields.length > 0) {
-      throw new MicroserviceError(`Missing required visa request fields: ${missingFields.join(', ')}`, 422, 'MISSING_REQUIRED_FIELDS', {
+      throw new MicroserviceError(`Missing required visa request fields: ${missingFields.join(', ')}`, 422, 'INVALID_REQUEST_FIELDS', {
         operation: 'submit_visa_request_application',
         errorBody: { missingFields },
       });
@@ -598,7 +599,8 @@ export class EventsService {
     };
 
     logger.info(req, 'submit_visa_request_application', 'Calling API Gateway visa endpoint', {
-      target_url: '/user-service/v1/users/{userId}/visaletterrequests',
+      target_url: targetUrl,
+      server_user_id: serverUserId,
       event_id: payload.eventId,
     });
 
@@ -628,14 +630,133 @@ export class EventsService {
   }
 
   /**
-   * Stub: Submit a travel fund application.
-   * TODO: Replace with upstream microservice call once the API is available.
+   * Submit a travel fund application.
    */
   public async submitTravelFundApplication(req: Request, payload: TravelFundApplication): Promise<TravelFundApplicationResponse> {
-    logger.debug(req, 'submit_travel_fund_application', 'Received travel fund application', {
+    logger.debug(req, 'submit_travel_fund_application', 'Submitting travel fund application', {
       event_id: payload.eventId,
       event_name: payload.eventName,
       estimated_total: payload.expenses.estimatedTotal,
+    });
+
+    const apiGwAudience = process.env['API_GW_AUDIENCE'];
+
+    if (!apiGwAudience) {
+      throw new MicroserviceError('API_GW_AUDIENCE environment variable is not configured', 503, 'API_GATEWAY_MISCONFIGURED', {
+        operation: 'submit_travel_fund_application',
+      });
+    }
+
+    if (!req.apiGatewayToken) {
+      throw new MicroserviceError('API Gateway token not available', 503, 'API_GATEWAY_UNAVAILABLE', {
+        operation: 'submit_travel_fund_application',
+      });
+    }
+
+    // Derive the user's Salesforce ID from the authenticated session — never trust client-provided userId
+    const profile = await this.userService.getApiGatewayProfile(req);
+    const serverUserId = profile.ID;
+
+    if (!serverUserId) {
+      throw new MicroserviceError('Salesforce ID not found in API Gateway profile — cannot submit travel fund application', 422, 'SALESFORCE_ID_NOT_FOUND', {
+        operation: 'submit_travel_fund_application',
+      });
+    }
+
+    const targetUrl = `${apiGwAudience.replace(/\/+$/, '')}/user-service/v1/users/${serverUserId}/travelfundrequests`;
+
+    const { aboutMe, expenses } = payload;
+
+    // Parse numeric fields up-front so validation and body construction share the same values
+    const rawNights = String(aboutMe.accommodationNumberOfNights).trim();
+    const accommodationNumberOfNights = WHOLE_NUMBER_PATTERN.test(rawNights) ? Number(rawNights) : Number.NaN;
+    const estimatedTotal = Number(expenses.estimatedTotal);
+
+    const validationErrors: string[] = [];
+    if (!aboutMe.citizenshipCountry) validationErrors.push('citizenshipCountry');
+    if (!aboutMe.organizationID) validationErrors.push('organizationID');
+    if (!aboutMe.travelFromCountry) validationErrors.push('travelFromCountry');
+    if (!Number.isInteger(accommodationNumberOfNights) || accommodationNumberOfNights < 0 || accommodationNumberOfNights > 4) {
+      validationErrors.push('accommodationNumberOfNights');
+    }
+    if (!Number.isFinite(estimatedTotal) || estimatedTotal <= 0) validationErrors.push('estimatedTotal');
+    if (validationErrors.length > 0) {
+      throw new MicroserviceError(`Invalid travel fund request fields: ${validationErrors.join(', ')}`, 422, 'INVALID_REQUEST_FIELDS', {
+        operation: 'submit_travel_fund_application',
+        errorBody: { validationErrors },
+      });
+    }
+
+    let eventID = payload.eventId;
+    if (process.env['NODE_ENV'] !== 'production' && process.env['API_GW_DEV_EVENT_ID_OVERRIDE']) {
+      logger.warning(req, 'submit_travel_fund_application', 'Using API_GW_DEV_EVENT_ID_OVERRIDE (dev-only)', {
+        override_event_id: process.env['API_GW_DEV_EVENT_ID_OVERRIDE'],
+        original_event_id: payload.eventId,
+      });
+      eventID = process.env['API_GW_DEV_EVENT_ID_OVERRIDE'];
+    }
+
+    const body = {
+      accommodationNumberOfNights,
+      citizenshipCountry: aboutMe.citizenshipCountry,
+      email: aboutMe.email,
+      eventID: eventID,
+      firstName: aboutMe.firstName,
+      lastName: aboutMe.lastName,
+      onBehalfRequest: false,
+      organizationID: aboutMe.organizationID,
+      requestingUserID: serverUserId,
+      travelCostEstimationUSD: estimatedTotal,
+      travelingFromCountry: aboutMe.travelFromCountry,
+      userID: serverUserId,
+      username: aboutMe.email,
+      attendingOnBehalfOfOrg: aboutMe.attendingForCompany === 'yes',
+      isDiversityLGBTQIAPlus: aboutMe.isLgbtqia,
+      isDiversityOther: aboutMe.isDiversityOther,
+      isDiversityPersonWithDisability: aboutMe.isPersonWithDisability,
+      isDiversityPreferNotToAnswer: aboutMe.preferNotToAnswer,
+      isDiversityWoman: aboutMe.isWoman,
+      projectInvolvementDescription: aboutMe.openSourceInvolvement,
+      publicProfileLink: aboutMe.profileLink,
+      receivedTravelFundingLast12Months: aboutMe.canReceiveFunds === 'yes',
+      willingToWriteBlogOnEvent: aboutMe.willingToBlog === 'yes',
+    };
+
+    logger.info(req, 'submit_travel_fund_application', 'Calling API Gateway travel fund endpoint', {
+      target_url: targetUrl,
+      server_user_id: serverUserId,
+      event_id: payload.eventId,
+    });
+
+    let upstream: Response;
+    try {
+      upstream = await fetch(targetUrl, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          Authorization: `Bearer ${req.apiGatewayToken}`,
+        },
+        body: JSON.stringify(body),
+        signal: AbortSignal.timeout(30000),
+      });
+    } catch (err) {
+      logger.debug(req, 'submit_travel_fund_application', 'Upstream fetch failed', { err });
+      throw new MicroserviceError('Travel fund API request failed', 503, 'API_GATEWAY_UNAVAILABLE', {
+        operation: 'submit_travel_fund_application',
+        errorBody: err instanceof Error ? err.message : String(err),
+      });
+    }
+
+    if (!upstream.ok) {
+      const errorText = await upstream.text().catch(() => '');
+      throw new MicroserviceError(`Travel fund API returned ${upstream.status}`, upstream.status, 'API_GATEWAY_ERROR', {
+        operation: 'submit_travel_fund_application',
+        errorBody: errorText,
+      });
+    }
+
+    logger.debug(req, 'submit_travel_fund_application', 'Travel fund application submitted successfully', {
+      event_id: payload.eventId,
     });
 
     return { success: true, message: 'Your travel fund application has been submitted successfully.' };

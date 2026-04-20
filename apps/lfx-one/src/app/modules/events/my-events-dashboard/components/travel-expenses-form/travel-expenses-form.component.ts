@@ -5,6 +5,7 @@ import { CurrencyPipe } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, output } from '@angular/core';
 import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
+import { startWith } from 'rxjs';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { TravelFundExpenses } from '@lfx-one/shared/interfaces';
@@ -30,23 +31,13 @@ export class TravelExpensesFormComponent {
     groundTransportNotes: [''],
   });
 
-  private readonly formValues = toSignal(this.form.valueChanges, { initialValue: this.form.value });
-
-  public readonly estimatedTotal = computed(() => {
-    const v = this.formValues();
-    return (parseFloat(v.airfareCost ?? '0') || 0) + (parseFloat(v.hotelCost ?? '0') || 0) + (parseFloat(v.groundTransportCost ?? '0') || 0);
-  });
+  private readonly formValues = this.initFormValues();
+  public readonly estimatedTotal = this.initEstimatedTotal();
 
   public constructor() {
-    // No required fields — form is always valid
-    this.formValidityChange.emit(true);
-
-    this.form.statusChanges.pipe(takeUntilDestroyed()).subscribe(() => {
-      this.formValidityChange.emit(this.form.valid);
-    });
-
-    this.form.valueChanges.pipe(takeUntilDestroyed()).subscribe(() => {
+    this.form.valueChanges.pipe(startWith(null), takeUntilDestroyed()).subscribe(() => {
       this.formChange.emit(this.buildExpensesValue());
+      this.formValidityChange.emit(this.estimatedTotal() > 0);
     });
   }
 
@@ -64,5 +55,16 @@ export class TravelExpensesFormComponent {
       groundTransportNotes: raw.groundTransportNotes,
       estimatedTotal: airfareCost + hotelCost + groundTransportCost,
     };
+  }
+
+  private initFormValues() {
+    return toSignal(this.form.valueChanges, { initialValue: this.form.value });
+  }
+
+  private initEstimatedTotal() {
+    return computed(() => {
+      const v = this.formValues();
+      return (parseFloat(v.airfareCost ?? '0') || 0) + (parseFloat(v.hotelCost ?? '0') || 0) + (parseFloat(v.groundTransportCost ?? '0') || 0);
+    });
   }
 }

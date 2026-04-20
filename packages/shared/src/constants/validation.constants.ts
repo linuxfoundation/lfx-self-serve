@@ -27,3 +27,6 @@
  * - linkedin.com (missing path)
  */
 export const LINKEDIN_PROFILE_PATTERN = /^(https?:\/\/)?([a-z]{2,3}\.)?linkedin\.com\/.*$/;
+
+/** Matches a non-negative whole number (no decimals, no sign). Used for fields like accommodationNumberOfNights. */
+export const WHOLE_NUMBER_PATTERN = /^\d+$/;

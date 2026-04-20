@@ -15,7 +15,12 @@
     <lfx-filter-pills [options]="filterOptions" [selectedFilter]="selectedFilter()" (filterChange)="onFilterChange($event)" data-testid="badges-filter-pills">
     </lfx-filter-pills>
     <div class="relative">
-      <button type="button" class="badge-filter-btn" (click)="toggleFiltersPanel($event)" [attr.aria-label]="filterButtonAriaLabel()" data-testid="badges-filter-btn">
+      <button
+        type="button"
+        class="badge-filter-btn"
+        (click)="toggleFiltersPanel($event)"
+        [attr.aria-label]="filterButtonAriaLabel()"
+        data-testid="badges-filter-btn">
         <i class="fa-light fa-sliders text-xs"></i>
         Filters
         @if (hasActiveFilters()) {

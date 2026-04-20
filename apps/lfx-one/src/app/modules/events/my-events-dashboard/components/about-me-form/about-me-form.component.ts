@@ -9,9 +9,8 @@ import { CheckboxComponent } from '@components/checkbox/checkbox.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
-import { COUNTRIES } from '@lfx-one/shared/constants';
+import { COUNTRIES, WHOLE_NUMBER_PATTERN, YES_NO_OPTIONS } from '@lfx-one/shared/constants';
 import { TravelFundAboutMe } from '@lfx-one/shared/interfaces';
-import { YES_NO_OPTIONS } from '@lfx-one/shared/constants/events.constants';
 import { startWith } from 'rxjs';
 import { OrgSearchFieldComponent } from '../org-search-field/org-search-field.component';
 
@@ -35,9 +34,10 @@ export class AboutMeFormComponent {
     citizenshipCountry: ['', Validators.required],
     profileLink: ['', Validators.required],
     company: ['', Validators.required],
-    organizationID: [''],
+    organizationID: ['', Validators.required],
     canReceiveFunds: ['', Validators.required],
     travelFromCountry: ['', Validators.required],
+    accommodationNumberOfNights: ['', [Validators.required, Validators.min(0), Validators.max(4), Validators.pattern(WHOLE_NUMBER_PATTERN)]],
     openSourceInvolvement: ['', Validators.required],
     isLgbtqia: [false],
     isWoman: [false],
@@ -73,6 +73,11 @@ export class AboutMeFormComponent {
   }
 
   private buildFormValue(): TravelFundAboutMe {
-    return this.form.getRawValue() as TravelFundAboutMe;
+    const raw = this.form.getRawValue();
+    const rawNights = String(raw.accommodationNumberOfNights).trim();
+    return {
+      ...raw,
+      accommodationNumberOfNights: WHOLE_NUMBER_PATTERN.test(rawNights) ? Number(rawNights) : Number.NaN,
+    };
   }
 }

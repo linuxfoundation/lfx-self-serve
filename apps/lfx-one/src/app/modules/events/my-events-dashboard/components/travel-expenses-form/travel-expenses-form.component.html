@@ -81,6 +81,9 @@
         {{ estimatedTotal() | currency: 'USD' : 'symbol' : '1.2-2' }}
       </span>
     </div>
+    @if (estimatedTotal() <= 0) {
+      <span class="text-xs text-red-500" data-testid="expenses-total-error">Total estimated expenses must be greater than $0</span>
+    }
   </div>
 
   <!-- Reminder banner -->

@@ -437,9 +437,10 @@ export interface TravelFundAboutMe {
   citizenshipCountry: string;
   profileLink: string;
   company: string;
-  organizationID?: string;
+  organizationID: string;
   canReceiveFunds: string;
   travelFromCountry: string;
+  accommodationNumberOfNights: number;
   openSourceInvolvement: string;
   isLgbtqia: boolean;
   isWoman: boolean;
