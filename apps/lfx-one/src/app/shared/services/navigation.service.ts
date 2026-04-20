@@ -103,6 +103,12 @@ export class NavigationService {
       return;
     }
 
+    // Preserve an explicit selection (e.g., Me lens → Open) — selected_uid ensures it's in the page.
+    const existing = lens === 'foundation' ? this.projectContextService.selectedFoundation() : this.projectContextService.selectedProject();
+    if (existing?.uid && page.items.some((item) => item.uid === existing.uid)) {
+      return;
+    }
+
     const defaultItem = lens === 'foundation' ? this.pickFoundationByPersonaPriority(page.items) : page.items[0];
     const context = lensItemToProjectContext(defaultItem);
     if (lens === 'foundation') {
@@ -196,18 +202,30 @@ export class NavigationService {
     reload$: Subject<void>
   ): Signal<LensItem[]> {
     // skip(1) drops toObservable's initial replay so fetches only fire on user search input.
-    const searchTriggered$ = toObservable(searchTerm).pipe(skip(1), debounceTime(NAV_SEARCH_DEBOUNCE_MS), distinctUntilChanged());
+    const searchTriggered$ = toObservable(searchTerm).pipe(
+      skip(1),
+      debounceTime(NAV_SEARCH_DEBOUNCE_MS),
+      distinctUntilChanged(),
+      map((term) => ({ term, selectedUid: null as string | null }))
+    );
 
-    const reloadTriggered$ = reload$.pipe(map(() => searchTerm()));
-
-    const firstPage$ = merge(searchTriggered$, reloadTriggered$).pipe(
-      switchMap((term) => {
-        generation.update((g) => g + 1);
-        return this.fetchSinglePage(lens, term, null, loading, true, generation());
+    // Only inject the selected uid when no search is active — during search the user's intent is
+    // "filter this list", not "keep my selection pinned", so injection would surface a non-matching row.
+    const reloadTriggered$ = reload$.pipe(
+      map(() => {
+        const term = searchTerm();
+        return { term, selectedUid: term.trim() ? null : this.getSelectedUidForLens(lens) };
       })
     );
 
-    const nextPage$ = loadMore$.pipe(switchMap((token) => this.fetchSinglePage(lens, searchTerm(), token, loading, false, generation())));
+    const firstPage$ = merge(searchTriggered$, reloadTriggered$).pipe(
+      switchMap(({ term, selectedUid }) => {
+        generation.update((g) => g + 1);
+        return this.fetchSinglePage(lens, term, null, loading, true, generation(), generation, selectedUid);
+      })
+    );
+
+    const nextPage$ = loadMore$.pipe(switchMap((token) => this.fetchSinglePage(lens, searchTerm(), token, loading, false, generation(), generation, null)));
 
     return toSignal(
       merge(firstPage$, nextPage$).pipe(
@@ -224,7 +242,12 @@ export class NavigationService {
             this.applyDefaultSelection(lens, page);
           }
         }),
-        scan((acc: LensItem[], page: LensPage) => (page.reset ? page.items : [...acc, ...page.items]), [])
+        // Dedupe by uid when appending next pages — an injected selected item can also appear in a later page.
+        scan((acc: LensItem[], page: LensPage) => {
+          if (page.reset) return page.items;
+          const seen = new Set(acc.map((item) => item.uid));
+          return [...acc, ...page.items.filter((item) => !seen.has(item.uid))];
+        }, [])
       ),
       { initialValue: [] as LensItem[] }
     );
@@ -236,15 +259,22 @@ export class NavigationService {
     pageToken: string | null,
     loading: WritableSignal<boolean>,
     reset: boolean,
-    generation: number
+    generation: number,
+    activeGeneration: Signal<number>,
+    selectedUid: string | null
   ): Observable<TaggedLensPage> {
     loading.set(true);
-    return this.fetchPage(lens, term, pageToken).pipe(
+    // Only this request's generation may clear the loading flag — otherwise a superseded fetch
+    // landing after a new search could drop the spinner while the newer request is still in-flight.
+    const clearLoadingIfActive = (): void => {
+      if (activeGeneration() === generation) loading.set(false);
+    };
+    return this.fetchPage(lens, term, pageToken, selectedUid).pipe(
       map((response) => ({ page: this.toLensPage(response, reset), generation })),
-      tap(() => loading.set(false)),
+      tap(clearLoadingIfActive),
       catchError(() => {
         // Reset failures emit an empty page so handleEmptyLensResponse can redirect; scroll-triggered failures stay silent.
-        loading.set(false);
+        clearLoadingIfActive();
         if (reset) {
           return of({
             page: { items: [], nextPageToken: null, bypassActive: false, personaFetchFailed: false, upstreamFailed: true, reset: true },
@@ -256,7 +286,7 @@ export class NavigationService {
     );
   }
 
-  private fetchPage(lens: NavLens, term: string, pageToken: string | null): Observable<LensItemsResponse> {
+  private fetchPage(lens: NavLens, term: string, pageToken: string | null, selectedUid: string | null): Observable<LensItemsResponse> {
     let params = new HttpParams().set('lens', lens);
     if (pageToken) {
       params = params.set('page_token', pageToken);
@@ -264,7 +294,15 @@ export class NavigationService {
     if (term.trim()) {
       params = params.set('name', term.trim());
     }
+    if (selectedUid && !pageToken) {
+      params = params.set('selected_uid', selectedUid);
+    }
     return this.http.get<LensItemsResponse>('/api/nav/lens-items', { params });
+  }
+
+  private getSelectedUidForLens(lens: NavLens): string | null {
+    const context = lens === 'foundation' ? this.projectContextService.selectedFoundation() : this.projectContextService.selectedProject();
+    return context?.uid ?? null;
   }
 
   private toLensPage(response: LensItemsResponse, reset: boolean): LensPage {

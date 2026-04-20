@@ -51,7 +51,7 @@ router.post('/:uid/registrants/:registrantId/resend', (req, res, next) => meetin
 // RSVP routes
 router.post('/:uid/rsvp', (req, res, next) => meetingController.createMeetingRsvp(req, res, next));
 router.get('/:uid/rsvp', (req, res, next) => meetingController.getMeetingRsvps(req, res, next));
-router.get('/:uid/rsvp/me', (req, res, next) => meetingController.getMeetingRsvpByUsername(req, res, next));
+router.get('/:uid/rsvp/me', (req, res, next) => meetingController.getMeetingRsvpForCurrentUser(req, res, next));
 
 // Meeting attachment routes
 router.get('/:uid/attachments', (req, res, next) => meetingController.getMeetingAttachments(req, res, next));

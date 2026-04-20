@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { LENS_PERSONA_MAP, NAV_MAX_UPSTREAM_ITERATIONS, NAV_MIN_ITEMS_PER_RESPONSE } from '@lfx-one/shared/constants';
+import { ProjectFunding } from '@lfx-one/shared/enums';
 import {
   EnrichedPersonaProject,
   GetLensItemsParams,
@@ -30,7 +31,7 @@ export class NavigationService {
   }
 
   public async getLensItems(req: Request, params: GetLensItemsParams): Promise<LensItemsResponse> {
-    const { lens, pageToken, name } = params;
+    const { lens, pageToken, name, selectedUid } = params;
 
     // Parallel: root-writer check + first upstream page. Deferring persona fetch saves the
     // NATS roundtrip for admins (the hot path).
@@ -96,6 +97,19 @@ export class NavigationService {
       }
     }
 
+    // Ensure the selected project is in the first-page response so navigation from
+    // other lenses (e.g., Me → Open) doesn't get overridden by the default picker.
+    if (selectedUid && !pageToken) {
+      const alreadyIncluded = accumulated.some((item) => item.uid === selectedUid);
+      const allowedByPersona = !eligibleUids || eligibleUids.has(selectedUid);
+      if (!alreadyIncluded && allowedByPersona) {
+        const selectedItem = await this.fetchSelectedItem(req, lens, selectedUid);
+        if (selectedItem) {
+          accumulated.unshift(selectedItem);
+        }
+      }
+    }
+
     logger.debug(req, 'build_lens_items', 'Built lens items', {
       lens,
       item_count: accumulated.length,
@@ -146,6 +160,24 @@ export class NavigationService {
     }
   }
 
+  private async fetchSelectedItem(req: Request, lens: NavLens, uid: string): Promise<LensItem | null> {
+    try {
+      const response = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'project',
+        filters: [`uid:${uid}`],
+      });
+      const project = response?.resources?.[0]?.data;
+      if (!project) return null;
+      // Mirror the main-pipeline contract so an archived selection doesn't get re-injected.
+      if (project.stage !== 'Active') return null;
+      if (lens === 'foundation' && !computeIsFoundation(project)) return null;
+      return this.toLensItem(project);
+    } catch (error) {
+      logger.warning(req, 'fetch_selected_item', 'Failed to fetch selected lens item', { err: error, uid, lens });
+      return null;
+    }
+  }
+
   private filterPageResources(resources: QueryServiceResponse<Project>['resources'], lens: NavLens, eligibleUids: Set<string> | null): Project[] {
     let projects = resources.map((r) => r.data);
     // legal_entity_type negation isn't supported by the filter grammar — re-check locally.
@@ -160,7 +192,7 @@ export class NavigationService {
 
   private buildQuery(lens: NavLens, pageToken: string | undefined, name: string | undefined): LensItemsQuery {
     // legal_entity_type negation is post-filtered (filter grammar has no exclusions).
-    const filters = lens === 'foundation' ? ['stage:Active', 'funding_model:Membership'] : ['stage:Active'];
+    const filters = lens === 'foundation' ? ['stage:Active', `funding:${ProjectFunding.Funded}`, 'funding_model:Membership'] : ['stage:Active'];
     const base: LensItemsQuery = { type: 'project', filters, sort: 'name_asc' };
 
     if (pageToken) base.page_token = pageToken;

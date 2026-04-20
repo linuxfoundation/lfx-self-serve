@@ -541,7 +541,7 @@ export class MeetingService {
     );
   }
 
-  public getMeetingRsvpByUsername(meetingUid: string, occurrenceId?: string): Observable<MeetingRsvp | null> {
+  public getMeetingRsvpForCurrentUser(meetingUid: string, occurrenceId?: string): Observable<MeetingRsvp | null> {
     const options = occurrenceId ? { params: { occurrenceId } } : {};
     return this.http.get<MeetingRsvp | null>(`/api/meetings/${meetingUid}/rsvp/me`, options).pipe(
       catchError((error) => {

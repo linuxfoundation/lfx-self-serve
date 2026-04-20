@@ -29,24 +29,15 @@ export async function isUserInvitedToMeeting(req: Request, meetingUid: string, e
     return false;
   }
 
+  const username = (await getUsernameFromAuth(req)) ?? undefined;
+
+  if (!email && !username) {
+    return false;
+  }
+
   const token = m2mToken || (await generateM2MToken(req));
-
-  // Try email first
-  if (email) {
-    const registrants = await meetingService.getMeetingRegistrantsByEmail(req, meetingUid, email, token);
-    if (registrants.length > 0) {
-      return true;
-    }
-  }
-
-  // Fall back to username
-  const username = await getUsernameFromAuth(req);
-  if (username) {
-    const registrants = await meetingService.getMeetingRegistrantsByUsername(req, meetingUid, username, token);
-    return registrants.length > 0;
-  }
-
-  return false;
+  const registrants = await meetingService.getMeetingRegistrantsForUser(req, meetingUid, email || undefined, username, token);
+  return registrants.length > 0;
 }
 
 /**

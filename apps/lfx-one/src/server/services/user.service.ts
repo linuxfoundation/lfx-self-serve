@@ -509,7 +509,10 @@ export class UserService {
 
     const enriched = await this.meetingService.getMeetingProjectName(req, upcomingMeetings);
 
-    return this.accessCheckService.addAccessToResources(req, enriched, 'v1_meeting', 'organizer');
+    // Every meeting here was found via the user's registrant records, so the user is invited by definition.
+    const invited = enriched.map((m) => ({ ...m, invited: true }));
+
+    return this.accessCheckService.addAccessToResources(req, invited, 'v1_meeting', 'organizer');
   }
 
   /**
@@ -533,46 +536,45 @@ export class UserService {
     const normalizedEmail = email.toLowerCase();
     const username = await getUsernameFromAuth(req);
 
-    // Email + username participant queries are independent — run concurrently.
+    const filtersOr: string[] = [];
+    if (normalizedEmail) filtersOr.push(`email:${normalizedEmail}`);
+    if (username) filtersOr.push(`username:${stripAuthPrefix(username)}`);
+
+    // Single participant query matching data.email OR data.username in one round trip.
     // User bearer token works: ACL grants `viewer` on v1_past_meeting to `host`/`invitee`/`attendee`.
-    const emailQuery = fetchAllQueryResources<PastMeetingParticipant>(req, (pageToken) =>
-      this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        type: 'v1_past_meeting_participant',
-        tags: `email:${normalizedEmail}`,
-        ...(pageToken && { page_token: pageToken }),
-      })
-    ).catch((error) => {
-      logger.warning(req, 'get_user_past_meetings', 'Email participant query failed, returning partial results', { err: error });
-      return [] as PastMeetingParticipant[];
-    });
-
-    const usernameQuery = username
-      ? fetchAllQueryResources<PastMeetingParticipant>(req, (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            type: 'v1_past_meeting_participant',
-            tags: `username:${stripAuthPrefix(username)}`,
-            ...(pageToken && { page_token: pageToken }),
+    // failOnPartial: true surfaces truncated membership sets as errors; the outer .catch is
+    // kept as a defensive guard so upstream failures don't 500 the Me lens, but we log at
+    // error level so the gap stays visible in monitoring.
+    const participantQuery =
+      filtersOr.length > 0
+        ? fetchAllQueryResources<PastMeetingParticipant>(
+            req,
+            (pageToken) =>
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+                type: 'v1_past_meeting_participant',
+                filters_or: filtersOr,
+                ...(pageToken && { page_token: pageToken }),
+              }),
+            { failOnPartial: true }
+          ).catch((error) => {
+            logger.error(req, 'get_user_past_meetings', Date.now(), error, { stage: 'participant_query' });
+            return [] as PastMeetingParticipant[];
           })
-        ).catch((error) => {
-          logger.warning(req, 'get_user_past_meetings', 'Username participant query failed, returning partial results', { err: error });
-          return [] as PastMeetingParticipant[];
-        })
-      : Promise.resolve([] as PastMeetingParticipant[]);
+        : Promise.resolve([] as PastMeetingParticipant[]);
 
-    // Participant queries and foundation project UIDs are independent; run concurrently.
+    // Participant and foundation project UID queries are independent; run concurrently.
     const foundationQuery = foundationUid
       ? this.projectService.getFoundationProjectUids(req, foundationUid).then((uids) => new Set(uids))
       : Promise.resolve(undefined);
 
-    const [emailParticipants, usernameParticipants, foundationProjectUids] = await Promise.all([emailQuery, usernameQuery, foundationQuery]);
+    const [participants, foundationProjectUids] = await Promise.all([participantQuery, foundationQuery]);
 
     const pastMeetingIds = new Set<string>();
-    for (const p of emailParticipants) if (p.meeting_and_occurrence_id) pastMeetingIds.add(p.meeting_and_occurrence_id);
-    for (const p of usernameParticipants) if (p.meeting_and_occurrence_id) pastMeetingIds.add(p.meeting_and_occurrence_id);
+    for (const p of participants) if (p.meeting_and_occurrence_id) pastMeetingIds.add(p.meeting_and_occurrence_id);
 
     logger.debug(req, 'get_user_past_meetings', 'Found past meeting participant IDs', {
       total_ids: pastMeetingIds.size,
-      email_matches: emailParticipants.length,
+      participant_matches: participants.length,
     });
 
     if (pastMeetingIds.size === 0) {
@@ -677,37 +679,38 @@ export class UserService {
    */
   public async getUserRegisteredMeetingIds(req: Request, email?: string): Promise<Set<string>> {
     const normalizedEmail = email?.toLowerCase() ?? '';
-
     const username = await getUsernameFromAuth(req);
 
-    const emailQuery = normalizedEmail
-      ? fetchAllQueryResources<MeetingRegistrant>(req, (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            type: 'v1_meeting_registrant',
-            parent: '',
-            tags: `email:${normalizedEmail}`,
-            ...(pageToken && { page_token: pageToken }),
-          })
-        )
-      : Promise.resolve([] as MeetingRegistrant[]);
+    const filtersOr: string[] = [];
+    if (normalizedEmail) filtersOr.push(`email:${normalizedEmail}`);
+    if (username) filtersOr.push(`username:${stripAuthPrefix(username)}`);
 
-    const usernameQuery = username
-      ? fetchAllQueryResources<MeetingRegistrant>(req, (pageToken) =>
-          this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-            type: 'v1_meeting_registrant',
-            parent: '',
-            tags: `username:${stripAuthPrefix(username)}`,
-            ...(pageToken && { page_token: pageToken }),
-          })
-        )
-      : Promise.resolve([] as MeetingRegistrant[]);
+    if (filtersOr.length === 0) {
+      return new Set();
+    }
 
-    // Run both queries concurrently; they're independent lookups that union into one Set.
-    const [emailRegistrants, usernameRegistrants] = await Promise.all([emailQuery, usernameQuery]);
+    // Match on data.email OR data.username in a single round trip. Using `filters_or` (field-level)
+    // rather than `tags` keeps this resilient to indexer tag-synthesis changes.
+    // failOnPartial: true surfaces truncated membership sets as errors; the outer .catch is kept
+    // as a defensive guard so upstream failures don't 500 the Me lens dashboard, but we log at
+    // error level so the gap stays visible in monitoring.
+    const registrants = await fetchAllQueryResources<MeetingRegistrant>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'v1_meeting_registrant',
+          parent: '',
+          filters_or: filtersOr,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    ).catch((error) => {
+      logger.error(req, 'get_user_registered_meeting_ids', Date.now(), error, { stage: 'registrant_query' });
+      return [] as MeetingRegistrant[];
+    });
 
     const meetingIds = new Set<string>();
-    for (const r of emailRegistrants) meetingIds.add(r.meeting_id);
-    for (const r of usernameRegistrants) meetingIds.add(r.meeting_id);
+    for (const r of registrants) meetingIds.add(r.meeting_id);
 
     logger.debug(req, 'get_user_registered_meeting_ids', 'Collected unique meeting IDs', {
       total_unique_meeting_ids: meetingIds.size,

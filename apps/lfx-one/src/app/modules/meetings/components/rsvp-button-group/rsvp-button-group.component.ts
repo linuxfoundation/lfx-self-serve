@@ -163,7 +163,7 @@ export class RsvpButtonGroupComponent {
           }
           const occurrenceId = this.meeting().recurrence ? this.occurrenceId() : undefined;
           if (authenticated && meeting?.id) {
-            return this.meetingService.getMeetingRsvpByUsername(meeting.id, occurrenceId).pipe(catchError(() => of(null)));
+            return this.meetingService.getMeetingRsvpForCurrentUser(meeting.id, occurrenceId).pipe(catchError(() => of(null)));
           }
           return of(null);
         })

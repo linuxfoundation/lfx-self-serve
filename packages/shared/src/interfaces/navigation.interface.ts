@@ -45,6 +45,8 @@ export interface GetLensItemsParams {
   lens: NavLens;
   pageToken?: string;
   name?: string;
+  /** Ensure this project UID is included in the first-page response even if it would otherwise fall outside it. */
+  selectedUid?: string;
 }
 
 /** Upstream query-service params for lens-item lookups. */

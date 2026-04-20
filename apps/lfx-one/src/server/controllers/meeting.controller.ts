@@ -978,11 +978,11 @@ export class MeetingController {
    * GET /meetings/:uid/rsvp/me
    * Gets current user's RSVP via the query service
    */
-  public async getMeetingRsvpByUsername(req: Request, res: Response, next: NextFunction): Promise<void> {
+  public async getMeetingRsvpForCurrentUser(req: Request, res: Response, next: NextFunction): Promise<void> {
     const { uid } = req.params;
     const { occurrenceId } = req.query;
 
-    const startTime = logger.startOperation(req, 'get_meeting_rsvp_by_username', {
+    const startTime = logger.startOperation(req, 'get_meeting_rsvp_for_current_user', {
       meeting_id: uid,
       occurrence_id: occurrenceId,
     });
@@ -991,17 +991,17 @@ export class MeetingController {
       // Validate meeting UID
       if (
         !validateUidParameter(uid, req, next, {
-          operation: 'get_meeting_rsvp_by_username',
+          operation: 'get_meeting_rsvp_for_current_user',
         })
       ) {
         return;
       }
 
       // Get the user's RSVP using direct meeting service call
-      const rsvp = await this.meetingService.getMeetingRsvpByUsername(req, uid, occurrenceId as string | undefined);
+      const rsvp = await this.meetingService.getMeetingRsvpForCurrentUser(req, uid, occurrenceId as string | undefined);
 
       // Log success
-      logger.success(req, 'get_meeting_rsvp_by_username', startTime, {
+      logger.success(req, 'get_meeting_rsvp_for_current_user', startTime, {
         found: !!rsvp,
         rsvp_id: rsvp?.id,
         occurrence_id: occurrenceId,

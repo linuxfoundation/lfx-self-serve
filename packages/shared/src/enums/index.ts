@@ -11,3 +11,4 @@ export * from './snowflake.enum';
 export * from './poll.enum';
 export * from './survey.enum';
 export * from './event.enum';
+export * from './project-funding.enum';

@@ -378,9 +378,11 @@ export class MeetingService {
    * @param includeRsvp - If true, includes RSVP status for each registrant
    */
   public async getMeetingRegistrants(req: Request, meetingUid: string, includeRsvp: boolean = false): Promise<MeetingRegistrant[]> {
+    // Registrant records carry `parent_refs: ['meeting:<uid>']` but no indexed tags — use `parent`
+    // to query parent_refs, matching the working pattern in getMeetingRsvps.
     const params: Record<string, any> = {
       type: 'v1_meeting_registrant',
-      tags: `meeting_id:${meetingUid}`,
+      parent: `meeting:${meetingUid}`,
     };
 
     logger.debug(req, 'get_meeting_registrants', 'Fetching meeting registrants', { meeting_id: meetingUid, params });
@@ -438,13 +440,64 @@ export class MeetingService {
    * Fetches all registrants for a meeting by email
    */
   public async getMeetingRegistrantsByEmail(req: Request, meetingUid: string, email: string, m2mToken?: string): Promise<MeetingRegistrant[]> {
+    // Registrant records carry email/meeting_id as data fields, not indexed tags — use `filters` (field-level AND).
+    const normalizedEmail = email.toLowerCase();
     const params: Record<string, any> = {
       type: 'v1_meeting_registrant',
       parent: '',
-      tags_all: [`email:${email}`, `meeting_id:${meetingUid}`],
+      filters: [`email:${normalizedEmail}`, `meeting_id:${meetingUid}`],
     };
 
-    logger.debug(req, 'get_meeting_registrants_by_email', 'Fetching meeting registrants by email params', { meeting_id: meetingUid, email, params });
+    logger.debug(req, 'get_meeting_registrants_by_email', 'Fetching meeting registrants by email params', {
+      meeting_id: meetingUid,
+      email: normalizedEmail,
+      params,
+    });
+
+    const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
+
+    return fetchAllQueryResources<MeetingRegistrant>(req, (pageToken) =>
+      this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        { ...params, ...(pageToken && { page_token: pageToken }) },
+        undefined,
+        headers
+      )
+    );
+  }
+
+  /**
+   * Fetches registrants for a meeting that match the caller's email or username in a single query.
+   * Uses `filters=meeting_id:X` (AND) combined with `filters_or=[email:Y, username:Z]` so the
+   * query service resolves the intersection in one call instead of two sequential lookups.
+   */
+  public async getMeetingRegistrantsForUser(
+    req: Request,
+    meetingUid: string,
+    email: string | undefined,
+    username: string | undefined,
+    m2mToken?: string
+  ): Promise<MeetingRegistrant[]> {
+    const orClauses: string[] = [];
+    if (email) orClauses.push(`email:${email.toLowerCase()}`);
+    if (username) orClauses.push(`username:${stripAuthPrefix(username)}`);
+    if (orClauses.length === 0) return [];
+
+    const params: Record<string, any> = {
+      type: 'v1_meeting_registrant',
+      parent: '',
+      filters: [`meeting_id:${meetingUid}`],
+      filters_or: orClauses,
+    };
+
+    logger.debug(req, 'get_meeting_registrants_for_user', 'Fetching registrants for current user', {
+      meeting_id: meetingUid,
+      has_email: !!email,
+      has_username: !!username,
+    });
 
     const headers = m2mToken ? { Authorization: `Bearer ${m2mToken}` } : undefined;
 
@@ -467,10 +520,11 @@ export class MeetingService {
    */
   public async getMeetingRegistrantsByUsername(req: Request, meetingUid: string, username: string, m2mToken?: string): Promise<MeetingRegistrant[]> {
     const plainUsername = stripAuthPrefix(username);
+    // Registrant records carry username/meeting_id as data fields, not indexed tags — use `filters` (field-level AND).
     const params: Record<string, any> = {
       type: 'v1_meeting_registrant',
       parent: '',
-      tags_all: [`username:${plainUsername}`, `meeting_id:${meetingUid}`],
+      filters: [`username:${plainUsername}`, `meeting_id:${meetingUid}`],
     };
 
     logger.debug(req, 'get_meeting_registrants_by_username', 'Fetching meeting registrants by username', { meeting_id: meetingUid, username: plainUsername });
@@ -603,7 +657,10 @@ export class MeetingService {
   }
 
   /**
-   * Checks if a user was a participant in a past meeting by email
+   * Checks if a user was a participant in a past meeting by email or username.
+   * Uses `filters` (AND on meeting id) + `filters_or` (OR across email/username) to resolve the
+   * match in a single query. `tags_all` can't be used here because `username` is not synthesized
+   * into the participant record's indexed tags — username-only matches silently failed before.
    */
   public async isUserPastMeetingParticipant(req: Request, pastMeetingUid: string, email: string, username?: string): Promise<boolean> {
     logger.debug(req, 'is_user_past_meeting_participant', 'Checking if user was a past meeting participant', {
@@ -612,43 +669,34 @@ export class MeetingService {
       username,
     });
 
-    // Try email first
-    if (email) {
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        {
-          type: 'v1_past_meeting_participant',
-          tags_all: [`meeting_and_occurrence_id:${pastMeetingUid}`, `email:${email}`],
-        }
-      );
+    const filtersOr: string[] = [];
+    if (email) filtersOr.push(`email:${email.toLowerCase()}`);
+    if (username) filtersOr.push(`username:${stripAuthPrefix(username)}`);
 
-      if (resources.length > 0) return true;
+    if (filtersOr.length === 0) {
+      return false;
     }
 
-    // Fall back to username
-    if (username) {
-      const plainUsername = stripAuthPrefix(username);
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(
-        req,
-        'LFX_V2_SERVICE',
-        '/query/resources',
-        'GET',
-        {
-          type: 'v1_past_meeting_participant',
-          tags_all: [`meeting_and_occurrence_id:${pastMeetingUid}`, `username:${plainUsername}`],
-        }
-      );
+    const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(
+      req,
+      'LFX_V2_SERVICE',
+      '/query/resources',
+      'GET',
+      {
+        type: 'v1_past_meeting_participant',
+        filters: [`meeting_and_occurrence_id:${pastMeetingUid}`],
+        filters_or: filtersOr,
+      }
+    );
 
-      if (resources.length > 0) return true;
-    }
+    const matched = resources.length > 0;
 
-    logger.debug(req, 'is_user_past_meeting_participant', 'Participant check complete — no match found', {
+    logger.debug(req, 'is_user_past_meeting_participant', 'Participant check complete', {
       past_meeting_id: pastMeetingUid,
+      matched,
     });
-    return false;
+
+    return matched;
   }
 
   /**
@@ -773,23 +821,13 @@ export class MeetingService {
       scope: rsvpData.scope,
     });
 
-    // Resolve registrant_id — try email first, fall back to username
+    // Resolve registrant_id — single query matches email OR username against this meeting.
     const email = getEffectiveEmail(req) ?? undefined;
-    let registrants: MeetingRegistrant[] = [];
-
-    if (email) {
-      registrants = await this.getMeetingRegistrantsByEmail(req, meetingUid, email);
-    }
+    const username = (await getUsernameFromAuth(req)) ?? undefined;
+    const registrants = await this.getMeetingRegistrantsForUser(req, meetingUid, email, username);
 
     if (registrants.length === 0) {
-      const username = await getUsernameFromAuth(req);
-      if (username) {
-        registrants = await this.getMeetingRegistrantsByUsername(req, meetingUid, username);
-      }
-    }
-
-    if (registrants.length === 0) {
-      throw new ResourceNotFoundError('Registrant', email || 'unknown', {
+      throw new ResourceNotFoundError('Registrant', email || username || 'unknown', {
         operation: 'create_meeting_rsvp',
       });
     }
@@ -839,18 +877,19 @@ export class MeetingService {
    * @param occurrenceId Optional occurrence ID to filter RSVP for specific occurrence
    * @returns Promise resolving to user's RSVP or null
    */
-  public async getMeetingRsvpByUsername(req: Request, meetingUid: string, occurrenceId?: string): Promise<MeetingRsvp | null> {
-    logger.debug(req, 'get_meeting_rsvp_by_username', 'Fetching user RSVP', {
+  public async getMeetingRsvpForCurrentUser(req: Request, meetingUid: string, occurrenceId?: string): Promise<MeetingRsvp | null> {
+    logger.debug(req, 'get_meeting_rsvp_for_current_user', 'Fetching user RSVP', {
       meeting_id: meetingUid,
       occurrence_id: occurrenceId,
     });
 
     try {
-      // Get username from authenticated user
+      // Match by email first (always populated on RSVP records); fall back to username for safety.
+      const normalizedEmail = getEffectiveEmail(req)?.toLowerCase() ?? null;
       const username = await getUsernameFromAuth(req);
 
-      if (!username) {
-        logger.warning(req, 'get_meeting_rsvp_by_username', 'No username found in auth context, returning null', {
+      if (!normalizedEmail && !username) {
+        logger.warning(req, 'get_meeting_rsvp_for_current_user', 'No email or username in auth context, returning null', {
           meeting_id: meetingUid,
         });
         return null;
@@ -859,8 +898,12 @@ export class MeetingService {
       // Fetch all RSVPs for this meeting via query service
       const allRsvps = await this.getMeetingRsvps(req, meetingUid);
 
-      // Filter RSVPs for current user (match with and without auth provider prefix)
-      const userRsvps = allRsvps.filter((rsvp) => usernameMatches(username, rsvp.username));
+      // Filter RSVPs for current user — RSVP records carry email reliably; username is often absent.
+      const userRsvps = allRsvps.filter((rsvp) => {
+        if (normalizedEmail && rsvp.email?.toLowerCase() === normalizedEmail) return true;
+        if (username && rsvp.username && usernameMatches(username, rsvp.username)) return true;
+        return false;
+      });
 
       if (occurrenceId) {
         // First try to find an occurrence-specific RSVP (takes precedence)
@@ -877,7 +920,7 @@ export class MeetingService {
       // No occurrence specified - return any RSVP for this user
       return userRsvps[0] || null;
     } catch (error) {
-      logger.warning(req, 'get_meeting_rsvp_by_username', 'Failed to fetch user RSVP, returning null', {
+      logger.warning(req, 'get_meeting_rsvp_for_current_user', 'Failed to fetch user RSVP, returning null', {
         meeting_id: meetingUid,
         occurrence_id: occurrenceId,
         error: error instanceof Error ? error.message : 'Unknown error',

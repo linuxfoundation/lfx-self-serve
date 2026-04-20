@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { ProjectFunding } from '../enums/project-funding.enum';
 import type { EnrichedPersonaProject, LensItem, Project, ProjectContext } from '../interfaces';
 
 export function toProjectContext(project: EnrichedPersonaProject): ProjectContext {
@@ -31,15 +32,23 @@ export function isFoundationProject(project: EnrichedPersonaProject): boolean {
   return project.isFoundation;
 }
 
-/** Active, membership-funded, not an Internal Allocation. */
+// PCC test-project override (lfx-pcc helper.ts) — kept in sync with hasHealthMetricDashboard.
+const FOUNDATION_NAME_OVERRIDES = new Set(['Test Project Group IT', 'Test Project IT']);
+
+/** Active, membership-funded foundation (Funding === 'Funded'), not an Internal Allocation. PCC test projects also qualify. */
 export function computeIsFoundation(project: Project | null): boolean {
   if (!project) {
     return false;
   }
 
+  if (FOUNDATION_NAME_OVERRIDES.has(project.name)) {
+    return true;
+  }
+
   return (
     project.stage === 'Active' &&
     project.legal_entity_type !== 'Internal Allocation' &&
+    project.funding === ProjectFunding.Funded &&
     Array.isArray(project.funding_model) &&
     project.funding_model.includes('Membership')
   );

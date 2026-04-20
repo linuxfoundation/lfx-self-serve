@@ -37,8 +37,9 @@ export class NavigationController {
 
       const pageToken = getStringQueryParam(req, 'page_token');
       const name = getStringQueryParam(req, 'name');
+      const selectedUid = getStringQueryParam(req, 'selected_uid');
 
-      const result = await this.navigationService.getLensItems(req, { lens, pageToken, name });
+      const result = await this.navigationService.getLensItems(req, { lens, pageToken, name, selectedUid });
 
       logger.success(req, 'get_lens_items', startTime, {
         lens: result.lens,
