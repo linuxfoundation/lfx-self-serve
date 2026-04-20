@@ -37,6 +37,8 @@ export class ProjectSelectorComponent {
     this.userService.impersonating() ? 'project-selector-panel project-selector-panel--with-banner' : 'project-selector-panel'
   );
 
+  protected readonly lensTypeLabel = computed(() => (this.lens() === 'foundation' ? 'Foundation' : 'Project'));
+
   protected readonly displayName: Signal<string> = this.initializeDisplayName();
   protected readonly displayLogo: Signal<string> = this.initializeDisplayLogo();
   protected readonly items: Signal<LensItem[]> = this.initializeItems();
@@ -76,7 +78,7 @@ export class ProjectSelectorComponent {
   private initializeDisplayName(): Signal<string> {
     return computed(() => {
       const project = this.selectedProject();
-      return project?.name?.trim() || 'Select Project';
+      return project?.name?.trim() || (this.lens() === 'foundation' ? 'Select Foundation' : 'Select Project');
     });
   }
 

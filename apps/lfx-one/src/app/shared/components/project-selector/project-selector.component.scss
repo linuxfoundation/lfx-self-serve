@@ -7,7 +7,7 @@
 }
 
 .sidebar-project-name {
-  @apply font-medium grow leading-5 relative text-base text-gray-900 tracking-tight line-clamp-2;
+  @apply font-medium leading-5 relative text-base text-gray-900 tracking-tight truncate w-full text-left;
 }
 
 // PrimeNG Popover override — hide arrow, force right-of-sidebar positioning

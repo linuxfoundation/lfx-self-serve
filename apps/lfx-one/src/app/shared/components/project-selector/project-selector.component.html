@@ -7,8 +7,8 @@
   (click)="togglePanel($event, popover)"
   [attr.aria-expanded]="popover.overlayVisible"
   data-testid="project-selector">
-  <div class="bg-gray-100 overflow-clip relative rounded-full shrink-0 size-10">
-    <div class="flex items-center justify-center size-full p-2.5">
+  <div class="bg-gray-100 overflow-clip relative rounded-lg shrink-0 size-11 border border-gray-200">
+    <div class="flex items-center justify-center size-full p-1.5">
       @if (displayLogo()) {
         <img [alt]="displayName()" class="w-full h-full object-contain" [src]="displayLogo()" />
       } @else {
@@ -17,8 +17,9 @@
     </div>
   </div>
 
-  <div class="flex flex-col gap-1 grow items-start relative min-w-0">
-    <p class="sidebar-project-name">{{ displayName() }}</p>
+  <div class="flex flex-col gap-0.5 grow items-start relative min-w-0 overflow-hidden">
+    <p class="sidebar-project-name" [attr.title]="displayName()">{{ displayName() }}</p>
+    <span class="text-xs font-normal text-gray-400 leading-none">{{ lensTypeLabel() }}</span>
   </div>
 
   <i class="fa-light fa-angles-up-down shrink-0 text-gray-400" aria-hidden="true"></i>
@@ -32,7 +33,7 @@
   (onShow)="onPopoverShow()"
   (onHide)="onPopoverHide()"
   data-testid="project-selector-panel">
-  <div class="p-2">
+  <div class="p-1">
     <div class="relative mb-2">
       <i class="fa-light fa-search absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400"></i>
       <input
@@ -61,8 +62,8 @@
           class="flex items-center gap-3 p-2 w-full text-left hover:bg-gray-100 rounded-lg transition-colors"
           (click)="selectItem(item, popover)"
           [attr.data-testid]="'lens-item-' + item.slug">
-          <div class="bg-gray-100 overflow-clip rounded-full shrink-0 size-8">
-            <div class="flex items-center justify-center size-full p-2">
+          <div class="bg-gray-100 overflow-clip rounded-lg shrink-0 size-9 border border-gray-200">
+            <div class="flex items-center justify-center size-full p-1.5">
               @if (item.logoUrl) {
                 <img [alt]="item.name" class="w-full h-full object-contain" [src]="item.logoUrl" />
               } @else {

@@ -52,3 +52,15 @@ export function parseToInt(value: string | number | undefined | null): number | 
   const parsed = parseInt(value, 10);
   return isNaN(parsed) ? undefined : parsed;
 }
+
+/**
+ * Convert a hyphen- or space-separated string to Title Case.
+ * Example: `toTitleCase('executive-director')` → `'Executive Director'`.
+ */
+export function toTitleCase(value: string): string {
+  return value
+    .split(/[-\s]+/)
+    .filter(Boolean)
+    .map((w) => w.charAt(0).toUpperCase() + w.slice(1).toLowerCase())
+    .join(' ');
+}
