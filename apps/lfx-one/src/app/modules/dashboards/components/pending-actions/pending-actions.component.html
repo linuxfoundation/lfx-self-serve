@@ -77,9 +77,10 @@
       </div>
     } @else {
       <!-- Empty state - shows when no pending actions -->
-      <div class="text-center py-8" data-testid="dashboard-pending-actions-empty">
-        <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-        <p class="text-sm text-gray-500">No pending actions</p>
+      <div class="flex flex-col items-center py-12" data-testid="dashboard-pending-actions-empty">
+        <i class="fa-light fa-eyes text-3xl text-gray-300 mb-3"></i>
+        <p class="text-sm font-medium text-gray-600">No pending actions</p>
+        <p class="text-xs text-gray-400 mt-1">You're all caught up!</p>
       </div>
     }
   </div>
