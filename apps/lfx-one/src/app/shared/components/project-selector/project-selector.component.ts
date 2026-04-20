@@ -78,7 +78,7 @@ export class ProjectSelectorComponent {
   private initializeDisplayName(): Signal<string> {
     return computed(() => {
       const project = this.selectedProject();
-      return project?.name?.trim() || (this.lens() === 'foundation' ? 'Select Foundation' : 'Select Project');
+      return project?.name?.trim() || `Select ${this.lensTypeLabel()}`;
     });
   }
 
