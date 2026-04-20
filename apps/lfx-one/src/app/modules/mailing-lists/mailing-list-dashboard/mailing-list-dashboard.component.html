@@ -11,7 +11,7 @@
     </div>
   } @else if (!isMeLens() && hasNoServices()) {
     <!-- No Services Empty State -->
-    <div class="mt-3 mb-6">
+    <div class="mb-6">
       <h1 class="font-display font-light text-2xl">{{ mailingListLabelPlural }}</h1>
       <p class="mt-1 text-sm text-gray-500" data-testid="mailing-list-dashboard-description">Manage communication channels for your project community.</p>
     </div>
@@ -38,7 +38,7 @@
       </div>
     </lfx-card>
   } @else {
-    <div class="mt-3 mb-6">
+    <div class="mb-6">
       <!-- Page Title with Add Mailing List Button -->
       <div class="flex justify-between items-center w-full gap-4">
         <h1 class="font-display font-light text-2xl">{{ isMeLens() ? 'My ' + mailingListLabelPlural : mailingListLabelPlural }}</h1>
