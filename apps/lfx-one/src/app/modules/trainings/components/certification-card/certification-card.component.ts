@@ -8,12 +8,13 @@ import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@an
 import { Certification } from '@lfx-one/shared/interfaces';
 
 import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 
 const NINETY_DAYS_MS = 90 * 24 * 60 * 60 * 1000;
 
 @Component({
   selector: 'lfx-certification-card',
-  imports: [ButtonComponent, DatePipe],
+  imports: [ButtonComponent, CardComponent, DatePipe],
   templateUrl: './certification-card.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

@@ -9,10 +9,11 @@ import { Certification, TrainingEnrollment } from '@lfx-one/shared/interfaces';
 import { CONTINUE_LEARNING_URL, COURSE_URL_PREFIX } from '@lfx-one/shared/constants';
 
 import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 
 @Component({
   selector: 'lfx-training-card',
-  imports: [ButtonComponent, DatePipe, NgClass],
+  imports: [ButtonComponent, CardComponent, DatePipe, NgClass],
   templateUrl: './training-card.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
