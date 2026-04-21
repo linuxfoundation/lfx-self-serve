@@ -30,6 +30,7 @@ export class BrandHealthDrawerComponent {
     totalMentions: 0,
     sentiment: { positive: 0, neutral: 0, negative: 0 },
     sentimentMomChangePp: 0,
+    mentionMomChangePct: 0,
     trend: 'up',
     monthlyMentions: [],
     topProjects: [],

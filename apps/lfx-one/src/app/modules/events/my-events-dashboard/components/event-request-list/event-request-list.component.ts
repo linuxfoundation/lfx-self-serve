@@ -41,9 +41,7 @@ export class EventRequestListComponent {
   protected readonly requestsResponse: Signal<VisaRequestsResponse> = this.initRequests();
   protected readonly isCreateEnabled: Signal<boolean> = this.initIsCreateEnabled();
 
-  protected readonly rppOptions = computed<number[] | undefined>(() =>
-    this.requestsResponse().total > 10 ? [10, 25, 50] : undefined
-  );
+  protected readonly rppOptions = computed<number[] | undefined>(() => (this.requestsResponse().total > 10 ? [10, 25, 50] : undefined));
 
   /** True while loading or when at least one result exists — parent uses this to decide whether to show the filter bar. */
   public readonly hasData = computed(() => this.loading() || this.requestsResponse().data.length > 0);

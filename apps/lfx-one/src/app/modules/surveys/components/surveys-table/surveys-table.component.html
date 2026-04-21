@@ -2,11 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="surveys-table-card">
-  <lfx-card-tabs-bar
-    [options]="statusTabOptions"
-    [selectedFilter]="statusTab()"
-    (filterChange)="onStatusTabChange($event)"
-    data-testid="surveys-status-tabs">
+  <lfx-card-tabs-bar [options]="statusTabOptions" [selectedFilter]="statusTab()" (filterChange)="onStatusTabChange($event)" data-testid="surveys-status-tabs">
   </lfx-card-tabs-bar>
 
   @if (loading() || surveys().length > 0) {
@@ -73,142 +69,142 @@
       </div>
     </div>
 
-  <div class="px-5 pb-5">
-  @if (!loading() && filteredSurveys().length === 0) {
-    <lfx-empty-state
-      [withCard]="false"
-      icon="fa-light fa-eyes"
-      title="No results found"
-      subtitle="Try adjusting your filter criteria"
-      ctaLabel="Reset filters"
-      ctaIcon="fa-light fa-arrow-rotate-left"
-      (ctaClick)="resetFilters()">
-    </lfx-empty-state>
-  } @else {
-  <lfx-table
-    [value]="filteredSurveys()"
-    [paginator]="filteredSurveys().length > 0"
-    [rows]="10"
-    [rowsPerPageOptions]="rppOptions()"
-    [showFirstLastIcon]="false"
-    [showCurrentPageReport]="true"
-    currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-    [customSort]="true"
-    [loading]="loading()"
-    selectionMode="single"
-    (onRowSelect)="onRowSelect($event)"
-    data-testid="surveys-table">
-    <ng-template #header>
-      <tr>
-        <th class="w-[23%]">{{ surveyLabel.singular }} Name</th>
-        <th class="w-[15%]">Survey Type</th>
-        <th class="w-[16%]">Group</th>
-        <th class="w-[11%]">Responses</th>
-        <th class="w-[12%]">Due</th>
-        <th class="w-[11%]">Status</th>
-        <th class="w-[12%]"></th>
-      </tr>
-    </ng-template>
+    <div class="px-5 pb-5">
+      @if (!loading() && filteredSurveys().length === 0) {
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-eyes"
+          title="No results found"
+          subtitle="Try adjusting your filter criteria"
+          ctaLabel="Reset filters"
+          ctaIcon="fa-light fa-arrow-rotate-left"
+          (ctaClick)="resetFilters()">
+        </lfx-empty-state>
+      } @else {
+        <lfx-table
+          [value]="filteredSurveys()"
+          [paginator]="filteredSurveys().length > 0"
+          [rows]="10"
+          [rowsPerPageOptions]="rppOptions()"
+          [showFirstLastIcon]="false"
+          [showCurrentPageReport]="true"
+          currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+          [customSort]="true"
+          [loading]="loading()"
+          selectionMode="single"
+          (onRowSelect)="onRowSelect($event)"
+          data-testid="surveys-table">
+          <ng-template #header>
+            <tr>
+              <th class="w-[23%]">{{ surveyLabel.singular }} Name</th>
+              <th class="w-[15%]">Survey Type</th>
+              <th class="w-[16%]">Group</th>
+              <th class="w-[11%]">Responses</th>
+              <th class="w-[12%]">Due</th>
+              <th class="w-[11%]">Status</th>
+              <th class="w-[12%]"></th>
+            </tr>
+          </ng-template>
 
-    <ng-template #body let-survey let-rowIndex="rowIndex">
-      <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'surveys-row-' + survey.uid">
-        <td>
-          <button
-            type="button"
-            class="lfx-table-name-link text-sm text-left bg-transparent border-none p-0"
-            (click)="onViewResults(survey.uid)"
-            [attr.data-testid]="'surveys-name-' + survey.uid">
-            {{ survey.survey_title }}
-          </button>
-        </td>
+          <ng-template #body let-survey let-rowIndex="rowIndex">
+            <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'surveys-row-' + survey.uid">
+              <td>
+                <button
+                  type="button"
+                  class="lfx-table-name-link text-sm text-left bg-transparent border-none p-0"
+                  (click)="onViewResults(survey.uid)"
+                  [attr.data-testid]="'surveys-name-' + survey.uid">
+                  {{ survey.survey_title }}
+                </button>
+              </td>
 
-        <td>
-          <span class="bg-white border border-gray-300 text-gray-700 text-xs px-2 py-0.5 rounded">
-            {{ getSurveyTypeLabel(survey) }}
-          </span>
-        </td>
+              <td>
+                <span class="bg-white border border-gray-300 text-gray-700 text-xs px-2 py-0.5 rounded">
+                  {{ getSurveyTypeLabel(survey) }}
+                </span>
+              </td>
 
-        <td>
-          <span class="bg-white border border-gray-300 text-gray-700 text-xs px-2 py-0.5 rounded">
-            {{ getGroupName(survey) }}
-          </span>
-        </td>
+              <td>
+                <span class="bg-white border border-gray-300 text-gray-700 text-xs px-2 py-0.5 rounded">
+                  {{ getGroupName(survey) }}
+                </span>
+              </td>
 
-        <td>
-          <span
-            class="text-sm text-gray-700"
-            [pTooltip]="getResponseTooltip(survey)"
-            tooltipPosition="top"
-            [attr.data-testid]="'surveys-responses-' + survey.uid">
-            {{ survey.total_responses }}
-          </span>
-        </td>
+              <td>
+                <span
+                  class="text-sm text-gray-700"
+                  [pTooltip]="getResponseTooltip(survey)"
+                  tooltipPosition="top"
+                  [attr.data-testid]="'surveys-responses-' + survey.uid">
+                  {{ survey.total_responses }}
+                </span>
+              </td>
 
-        <td>
-          @if (survey.survey_status === SurveyStatus.CLOSED) {
-            <span class="text-sm text-gray-700">{{ survey.survey_cutoff_date | date: 'MMM d, y' }}</span>
-          } @else if (survey.survey_status === SurveyStatus.DRAFT) {
-            <span class="text-sm text-gray-700">&mdash;</span>
-          } @else if (survey.survey_cutoff_date) {
-            @let dueDateLabelValue = survey.survey_cutoff_date | dueDateLabel;
-            <div class="flex flex-col gap-0.5">
-              <span class="text-sm text-gray-700">{{ survey.survey_cutoff_date | date: 'MMM d, y' }}</span>
-              @if (dueDateLabelValue) {
-                <span class="text-xs text-gray-500">{{ dueDateLabelValue }}</span>
-              }
-            </div>
-          } @else {
-            <span class="text-sm text-gray-700">&mdash;</span>
-          }
-        </td>
+              <td>
+                @if (survey.survey_status === SurveyStatus.CLOSED) {
+                  <span class="text-sm text-gray-700">{{ survey.survey_cutoff_date | date: 'MMM d, y' }}</span>
+                } @else if (survey.survey_status === SurveyStatus.DRAFT) {
+                  <span class="text-sm text-gray-700">&mdash;</span>
+                } @else if (survey.survey_cutoff_date) {
+                  @let dueDateLabelValue = survey.survey_cutoff_date | dueDateLabel;
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-sm text-gray-700">{{ survey.survey_cutoff_date | date: 'MMM d, y' }}</span>
+                    @if (dueDateLabelValue) {
+                      <span class="text-xs text-gray-500">{{ dueDateLabelValue }}</span>
+                    }
+                  </div>
+                } @else {
+                  <span class="text-sm text-gray-700">&mdash;</span>
+                }
+              </td>
 
-        <td>
-          <lfx-tag [value]="survey | surveyStatusLabel" [severity]="survey | surveyStatusSeverity"></lfx-tag>
-        </td>
+              <td>
+                <lfx-tag [value]="survey | surveyStatusLabel" [severity]="survey | surveyStatusSeverity"></lfx-tag>
+              </td>
 
-        <td>
-          <div class="flex items-center justify-end gap-1">
-            @if (hasPMOAccess() && survey.survey_status === SurveyStatus.DRAFT) {
-              <lfx-button label="Edit" severity="primary" size="small" [text]="true" styleClass="" [attr.data-testid]="'surveys-edit-' + survey.uid"> </lfx-button>
-              <lfx-button
-                label="Delete"
-                severity="danger"
-                size="small"
-                [text]="true"
-                styleClass=""
-                (onClick)="onDeleteSurvey(survey)"
-                [disabled]="isDeleting()"
-                [attr.data-testid]="'surveys-delete-' + survey.uid">
-              </lfx-button>
-            } @else if (survey.survey_status === SurveyStatus.SENT || survey.survey_status === SurveyStatus.OPEN) {
-              <lfx-button
-                label="Results"
-                severity="primary"
-                size="small"
-                [text]="true"
-                styleClass=""
-                (onClick)="onViewResults(survey.uid)"
-                [attr.data-testid]="'surveys-results-' + survey.uid">
-              </lfx-button>
-            } @else if (survey.survey_status === SurveyStatus.CLOSED) {
-              <lfx-button
-                label="Results"
-                severity="primary"
-                size="small"
-                [text]="true"
-                styleClass=""
-                (onClick)="onViewResults(survey.uid)"
-                [attr.data-testid]="'surveys-results-' + survey.uid">
-              </lfx-button>
-            }
-          </div>
-        </td>
-      </tr>
-    </ng-template>
-
-  </lfx-table>
-  }
-  </div>
+              <td>
+                <div class="flex items-center justify-end gap-1">
+                  @if (hasPMOAccess() && survey.survey_status === SurveyStatus.DRAFT) {
+                    <lfx-button label="Edit" severity="primary" size="small" [text]="true" styleClass="" [attr.data-testid]="'surveys-edit-' + survey.uid">
+                    </lfx-button>
+                    <lfx-button
+                      label="Delete"
+                      severity="danger"
+                      size="small"
+                      [text]="true"
+                      styleClass=""
+                      (onClick)="onDeleteSurvey(survey)"
+                      [disabled]="isDeleting()"
+                      [attr.data-testid]="'surveys-delete-' + survey.uid">
+                    </lfx-button>
+                  } @else if (survey.survey_status === SurveyStatus.SENT || survey.survey_status === SurveyStatus.OPEN) {
+                    <lfx-button
+                      label="Results"
+                      severity="primary"
+                      size="small"
+                      [text]="true"
+                      styleClass=""
+                      (onClick)="onViewResults(survey.uid)"
+                      [attr.data-testid]="'surveys-results-' + survey.uid">
+                    </lfx-button>
+                  } @else if (survey.survey_status === SurveyStatus.CLOSED) {
+                    <lfx-button
+                      label="Results"
+                      severity="primary"
+                      size="small"
+                      [text]="true"
+                      styleClass=""
+                      (onClick)="onViewResults(survey.uid)"
+                      [attr.data-testid]="'surveys-results-' + survey.uid">
+                    </lfx-button>
+                  }
+                </div>
+              </td>
+            </tr>
+          </ng-template>
+        </lfx-table>
+      }
+    </div>
   } @else {
     <div class="px-5 pb-5">
       <lfx-empty-state

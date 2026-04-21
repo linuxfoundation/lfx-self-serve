@@ -186,7 +186,9 @@
           </td>
 
           <!-- Subscribers Column -->
-          <td><span class="text-sm text-gray-700">{{ mailingList.subscriber_count }}</span></td>
+          <td>
+            <span class="text-sm text-gray-700">{{ mailingList.subscriber_count }}</span>
+          </td>
         } @else {
           <!-- PMO View Row -->
           <!-- Mailing List Column -->
@@ -275,11 +277,7 @@
               (ctaClick)="resetFilters()">
             </lfx-empty-state>
           } @else {
-            <lfx-empty-state
-              [withCard]="false"
-              icon="fa-light fa-envelope"
-              title="No mailing lists found"
-              subtitle="There are no mailing lists to display.">
+            <lfx-empty-state [withCard]="false" icon="fa-light fa-envelope" title="No mailing lists found" subtitle="There are no mailing lists to display.">
             </lfx-empty-state>
           }
         </td>

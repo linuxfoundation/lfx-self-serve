@@ -31,7 +31,10 @@
           scope="col"
           [attr.aria-sort]="sortField() === 'EVENT_NAME' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
           [attr.data-testid]="config().testIdPrefix + '-sort-event-name'">
-          <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('EVENT_NAME')">
+          <button
+            type="button"
+            class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+            (click)="onHeaderClick('EVENT_NAME')">
             Event Name <i [class]="sortIcons()['EVENT_NAME']"></i>
           </button>
         </th>
@@ -39,7 +42,10 @@
           scope="col"
           [attr.aria-sort]="sortField() === 'EVENT_CITY' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
           [attr.data-testid]="config().testIdPrefix + '-sort-location'">
-          <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('EVENT_CITY')">
+          <button
+            type="button"
+            class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+            (click)="onHeaderClick('EVENT_CITY')">
             Location <i [class]="sortIcons()['EVENT_CITY']"></i>
           </button>
         </th>
@@ -47,7 +53,10 @@
           scope="col"
           [attr.aria-sort]="sortField() === 'APPLICATION_DATE' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
           [attr.data-testid]="config().testIdPrefix + '-sort-application-date'">
-          <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('APPLICATION_DATE')">
+          <button
+            type="button"
+            class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+            (click)="onHeaderClick('APPLICATION_DATE')">
             Application Date <i [class]="sortIcons()['APPLICATION_DATE']"></i>
           </button>
         </th>
@@ -71,7 +80,9 @@
           <span class="text-sm text-gray-700" [attr.data-testid]="config().testIdPrefix + '-location-' + request.id">{{ request.location }}</span>
         </td>
         <td>
-          <span class="text-sm text-gray-700" [attr.data-testid]="config().testIdPrefix + '-application-date-' + request.id">{{ request.applicationDate }}</span>
+          <span class="text-sm text-gray-700" [attr.data-testid]="config().testIdPrefix + '-application-date-' + request.id">{{
+            request.applicationDate
+          }}</span>
         </td>
         <td>
           <div class="flex justify-end">

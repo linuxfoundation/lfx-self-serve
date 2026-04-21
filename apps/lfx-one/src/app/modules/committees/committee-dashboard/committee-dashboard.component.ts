@@ -22,13 +22,7 @@ import { CommitteeTableComponent } from '../components/committee-table/committee
 
 @Component({
   selector: 'lfx-committee-dashboard',
-  imports: [
-    ButtonComponent,
-    CardComponent,
-    CommitteeTableComponent,
-    SkeletonModule,
-    EmptyStateComponent,
-  ],
+  imports: [ButtonComponent, CardComponent, CommitteeTableComponent, SkeletonModule, EmptyStateComponent],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
 })

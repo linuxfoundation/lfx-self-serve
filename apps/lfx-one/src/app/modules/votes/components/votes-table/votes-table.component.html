@@ -2,11 +2,7 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="votes-table-card">
-  <lfx-card-tabs-bar
-    [options]="statusTabOptions"
-    [selectedFilter]="statusTab()"
-    (filterChange)="onStatusTabChange($event)"
-    data-testid="votes-status-tabs">
+  <lfx-card-tabs-bar [options]="statusTabOptions" [selectedFilter]="statusTab()" (filterChange)="onStatusTabChange($event)" data-testid="votes-status-tabs">
   </lfx-card-tabs-bar>
 
   @if (loading() || votes().length > 0) {
@@ -69,163 +65,162 @@
       </div>
     </div>
 
-  <div class="px-5 pb-5">
-  @if (!loading() && displayedVotes().length === 0) {
-    <lfx-empty-state
-      [withCard]="false"
-      icon="fa-light fa-eyes"
-      title="No results found"
-      subtitle="Try adjusting your filter criteria"
-      ctaLabel="Reset filters"
-      ctaIcon="fa-light fa-arrow-rotate-left"
-      (ctaClick)="resetFilters()">
-    </lfx-empty-state>
-  } @else {
-  <lfx-table
-    [value]="displayedVotes()"
-    [paginator]="displayedVotes().length > 0"
-    [rows]="rowsPerPage()"
-    [first]="first()"
-    [totalRecords]="totalRecords()"
-    [rowsPerPageOptions]="rppOptions()"
-    [lazy]="lazy()"
-    [lazyLoadOnInit]="false"
-    [customSort]="true"
-    [loading]="loading()"
-    [showFirstLastIcon]="false"
-    [showCurrentPageReport]="true"
-    currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-    selectionMode="single"
-    (onRowSelect)="onRowSelect($event)"
-    (onPage)="onPageChange($event)"
-    data-testid="votes-table">
-    <ng-template #header>
-      <tr>
-        <th class="w-[28%]">{{ voteLabel.singular }} Name</th>
-        <th class="w-[20%]">Group</th>
-        <th class="w-[12%]">Responses</th>
-        <th class="w-[14%]">Due</th>
-        <th class="w-[12%]">Status</th>
-        <th class="w-[14%]"></th>
-      </tr>
-    </ng-template>
+    <div class="px-5 pb-5">
+      @if (!loading() && displayedVotes().length === 0) {
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-eyes"
+          title="No results found"
+          subtitle="Try adjusting your filter criteria"
+          ctaLabel="Reset filters"
+          ctaIcon="fa-light fa-arrow-rotate-left"
+          (ctaClick)="resetFilters()">
+        </lfx-empty-state>
+      } @else {
+        <lfx-table
+          [value]="displayedVotes()"
+          [paginator]="displayedVotes().length > 0"
+          [rows]="rowsPerPage()"
+          [first]="first()"
+          [totalRecords]="totalRecords()"
+          [rowsPerPageOptions]="rppOptions()"
+          [lazy]="lazy()"
+          [lazyLoadOnInit]="false"
+          [customSort]="true"
+          [loading]="loading()"
+          [showFirstLastIcon]="false"
+          [showCurrentPageReport]="true"
+          currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+          selectionMode="single"
+          (onRowSelect)="onRowSelect($event)"
+          (onPage)="onPageChange($event)"
+          data-testid="votes-table">
+          <ng-template #header>
+            <tr>
+              <th class="w-[28%]">{{ voteLabel.singular }} Name</th>
+              <th class="w-[20%]">Group</th>
+              <th class="w-[12%]">Responses</th>
+              <th class="w-[14%]">Due</th>
+              <th class="w-[12%]">Status</th>
+              <th class="w-[14%]"></th>
+            </tr>
+          </ng-template>
 
-    <ng-template #body let-vote let-rowIndex="rowIndex">
-      <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'votes-row-' + vote.uid">
-        <td>
-          <button
-            type="button"
-            class="lfx-table-name-link text-sm text-left bg-transparent border-none p-0"
-            (click)="onViewVote(vote.uid)"
-            [attr.data-testid]="'votes-name-' + vote.uid">
-            {{ vote.name }}
-          </button>
-        </td>
+          <ng-template #body let-vote let-rowIndex="rowIndex">
+            <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'votes-row-' + vote.uid">
+              <td>
+                <button
+                  type="button"
+                  class="lfx-table-name-link text-sm text-left bg-transparent border-none p-0"
+                  (click)="onViewVote(vote.uid)"
+                  [attr.data-testid]="'votes-name-' + vote.uid">
+                  {{ vote.name }}
+                </button>
+              </td>
 
-        <td>
-          <span class="bg-white border border-gray-300 text-gray-700 text-xs px-2 py-0.5 rounded">
-            {{ vote.committee_name || 'Unknown' }}
-          </span>
-        </td>
+              <td>
+                <span class="bg-white border border-gray-300 text-gray-700 text-xs px-2 py-0.5 rounded">
+                  {{ vote.committee_name || 'Unknown' }}
+                </span>
+              </td>
 
-        <td>
-          <span class="text-sm text-gray-700" [attr.data-testid]="'votes-responses-' + vote.uid">
-            {{ vote.num_response_received }}
-          </span>
-        </td>
+              <td>
+                <span class="text-sm text-gray-700" [attr.data-testid]="'votes-responses-' + vote.uid">
+                  {{ vote.num_response_received }}
+                </span>
+              </td>
 
-        <td>
-          @if (vote.status === PollStatus.ENDED) {
-            <span class="text-sm text-gray-700">{{ vote.end_time | date: 'MMM d, y' }}</span>
-          } @else if (vote.status === PollStatus.DISABLED) {
-            <span class="text-sm text-gray-700">Draft</span>
-          } @else if (vote.end_time) {
-            @let dueDateLabelValue = vote.end_time | dueDateLabel;
-            <div class="flex flex-col gap-0.5">
-              <span class="text-sm text-gray-700">{{ vote.end_time | date: 'MMM d, y' }}</span>
-              @if (dueDateLabelValue) {
-                <span class="text-xs text-gray-500">{{ dueDateLabelValue }}</span>
-              }
-            </div>
-          } @else {
-            <span class="text-sm text-gray-700">-</span>
-          }
-        </td>
+              <td>
+                @if (vote.status === PollStatus.ENDED) {
+                  <span class="text-sm text-gray-700">{{ vote.end_time | date: 'MMM d, y' }}</span>
+                } @else if (vote.status === PollStatus.DISABLED) {
+                  <span class="text-sm text-gray-700">Draft</span>
+                } @else if (vote.end_time) {
+                  @let dueDateLabelValue = vote.end_time | dueDateLabel;
+                  <div class="flex flex-col gap-0.5">
+                    <span class="text-sm text-gray-700">{{ vote.end_time | date: 'MMM d, y' }}</span>
+                    @if (dueDateLabelValue) {
+                      <span class="text-xs text-gray-500">{{ dueDateLabelValue }}</span>
+                    }
+                  </div>
+                } @else {
+                  <span class="text-sm text-gray-700">-</span>
+                }
+              </td>
 
-        <td>
-          <lfx-tag [value]="vote.status | pollStatusLabel" [severity]="vote.status | pollStatusSeverity"></lfx-tag>
-        </td>
+              <td>
+                <lfx-tag [value]="vote.status | pollStatusLabel" [severity]="vote.status | pollStatusSeverity"></lfx-tag>
+              </td>
 
-        <td>
-          <div class="flex items-center justify-end gap-1">
-            @if (hasPMOAccess()) {
-              @if (vote.status === PollStatus.DISABLED) {
-                <a [routerLink]="['/votes', vote.uid, 'edit']">
-                  <lfx-button label="Edit" severity="primary" size="small" [text]="true" [attr.data-testid]="'votes-edit-' + vote.uid"> </lfx-button>
-                </a>
-                <lfx-button
-                  label="Delete"
-                  severity="danger"
-                  size="small"
-                  [text]="true"
-                  (onClick)="onDeleteVote(vote)"
-                  [disabled]="isDeleting()"
-                  [attr.data-testid]="'votes-delete-' + vote.uid">
-                </lfx-button>
-              } @else if (vote.status === PollStatus.ACTIVE) {
-                <lfx-button
-                  label="View"
-                  severity="primary"
-                  size="small"
-                  [text]="true"
-                  (onClick)="onViewVote(vote.uid)"
-                  [attr.data-testid]="'votes-view-' + vote.uid">
-                </lfx-button>
-              } @else {
-                <lfx-button
-                  label="Results"
-                  icon="fa-light fa-chart-bar"
-                  severity="secondary"
-                  [outlined]="true"
-                  size="small"
-                  styleClass="whitespace-nowrap"
-                  (onClick)="onViewResults(vote.uid)"
-                  [attr.data-testid]="'votes-results-' + vote.uid">
-                </lfx-button>
-              }
-            } @else {
-              @if (vote.status === PollStatus.ACTIVE) {
-                <lfx-button
-                  label="Review"
-                  icon="fa-light fa-clipboard"
-                  severity="primary"
-                  [outlined]="true"
-                  size="small"
-                  styleClass="whitespace-nowrap"
-                  (onClick)="onViewVote(vote.uid)"
-                  [attr.data-testid]="'votes-cast-' + vote.uid">
-                </lfx-button>
-              } @else if (vote.status === PollStatus.ENDED) {
-                <lfx-button
-                  label="Results"
-                  icon="fa-light fa-chart-bar"
-                  severity="secondary"
-                  [outlined]="true"
-                  size="small"
-                  styleClass="whitespace-nowrap"
-                  (onClick)="onViewResults(vote.uid)"
-                  [attr.data-testid]="'votes-results-' + vote.uid">
-                </lfx-button>
-              }
-            }
-          </div>
-        </td>
-      </tr>
-    </ng-template>
-
-  </lfx-table>
-  }
-  </div>
+              <td>
+                <div class="flex items-center justify-end gap-1">
+                  @if (hasPMOAccess()) {
+                    @if (vote.status === PollStatus.DISABLED) {
+                      <a [routerLink]="['/votes', vote.uid, 'edit']">
+                        <lfx-button label="Edit" severity="primary" size="small" [text]="true" [attr.data-testid]="'votes-edit-' + vote.uid"> </lfx-button>
+                      </a>
+                      <lfx-button
+                        label="Delete"
+                        severity="danger"
+                        size="small"
+                        [text]="true"
+                        (onClick)="onDeleteVote(vote)"
+                        [disabled]="isDeleting()"
+                        [attr.data-testid]="'votes-delete-' + vote.uid">
+                      </lfx-button>
+                    } @else if (vote.status === PollStatus.ACTIVE) {
+                      <lfx-button
+                        label="View"
+                        severity="primary"
+                        size="small"
+                        [text]="true"
+                        (onClick)="onViewVote(vote.uid)"
+                        [attr.data-testid]="'votes-view-' + vote.uid">
+                      </lfx-button>
+                    } @else {
+                      <lfx-button
+                        label="Results"
+                        icon="fa-light fa-chart-bar"
+                        severity="secondary"
+                        [outlined]="true"
+                        size="small"
+                        styleClass="whitespace-nowrap"
+                        (onClick)="onViewResults(vote.uid)"
+                        [attr.data-testid]="'votes-results-' + vote.uid">
+                      </lfx-button>
+                    }
+                  } @else {
+                    @if (vote.status === PollStatus.ACTIVE) {
+                      <lfx-button
+                        label="Review"
+                        icon="fa-light fa-clipboard"
+                        severity="primary"
+                        [outlined]="true"
+                        size="small"
+                        styleClass="whitespace-nowrap"
+                        (onClick)="onViewVote(vote.uid)"
+                        [attr.data-testid]="'votes-cast-' + vote.uid">
+                      </lfx-button>
+                    } @else if (vote.status === PollStatus.ENDED) {
+                      <lfx-button
+                        label="Results"
+                        icon="fa-light fa-chart-bar"
+                        severity="secondary"
+                        [outlined]="true"
+                        size="small"
+                        styleClass="whitespace-nowrap"
+                        (onClick)="onViewResults(vote.uid)"
+                        [attr.data-testid]="'votes-results-' + vote.uid">
+                      </lfx-button>
+                    }
+                  }
+                </div>
+              </td>
+            </tr>
+          </ng-template>
+        </lfx-table>
+      }
+    </div>
   } @else {
     <div class="px-5 pb-5">
       <lfx-empty-state

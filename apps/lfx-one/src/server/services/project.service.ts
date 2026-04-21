@@ -3885,11 +3885,15 @@ export class ProjectService {
       ]);
 
       let totalSocialFollowers = 0;
+      let followerGrowthPct = 0;
       let socialPlatforms: BrandReachResponse['socialPlatforms'] = [];
       try {
         const [socialResult, socialPlatformResult] = await Promise.all([
-          this.snowflakeService.execute<{ TOTAL_FOLLOWERS: number }>(
-            `SELECT SUM(TOTAL_FOLLOWERS) AS TOTAL_FOLLOWERS
+          this.snowflakeService.execute<{ TOTAL_FOLLOWERS: number; FOLLOWER_GROWTH_PCT: number }>(
+            `SELECT SUM(TOTAL_FOLLOWERS) AS TOTAL_FOLLOWERS,
+                    CASE WHEN SUM(PRIOR_TOTAL_FOLLOWERS) > 0
+                         THEN ((SUM(TOTAL_FOLLOWERS) - SUM(PRIOR_TOTAL_FOLLOWERS)) / SUM(PRIOR_TOTAL_FOLLOWERS)) * 100
+                         ELSE 0 END AS FOLLOWER_GROWTH_PCT
              FROM ANALYTICS.PLATINUM_LFX_ONE.SOCIAL_MEDIA_OVERVIEW ${foundationFilter}`,
             foundationParams
           ),
@@ -3903,6 +3907,7 @@ export class ProjectService {
         ]);
 
         totalSocialFollowers = socialResult.rows.length > 0 ? (socialResult.rows[0].TOTAL_FOLLOWERS ?? 0) : 0;
+        followerGrowthPct = socialResult.rows.length > 0 ? Number((socialResult.rows[0].FOLLOWER_GROWTH_PCT ?? 0).toFixed(2)) : 0;
 
         const platformMap: Record<string, BrandReachPlatformType> = {
           LinkedIn: 'linkedin',
@@ -3941,14 +3946,23 @@ export class ProjectService {
         };
       });
 
+      // Session MoM: compare recent 4 weeks vs prior 4 weeks from weekly trend data.
+      let sessionMomChangePct = 0;
+      if (weeklyTrend.length >= 8) {
+        const recent4 = weeklyTrend.slice(-4).reduce((s, d) => s + d.sessions, 0);
+        const prior4 = weeklyTrend.slice(-8, -4).reduce((s, d) => s + d.sessions, 0);
+        if (prior4 > 0) {
+          sessionMomChangePct = Number((((recent4 - prior4) / prior4) * 100).toFixed(2));
+        }
+      }
+
       return {
         totalSocialFollowers,
         totalMonthlySessions,
         activePlatforms: socialPlatforms.length,
-        // No historical follower time series yet — 0 signals "no data" and
-        // UI must suppress the trend indicator until this is wired up.
-        changePercentage: 0,
-        trend: 'up',
+        changePercentage: followerGrowthPct,
+        sessionMomChangePct,
+        trend: followerGrowthPct >= 0 ? 'up' : 'down',
         socialPlatforms,
         websiteDomains,
         weeklyTrend,
@@ -3973,6 +3987,7 @@ export class ProjectService {
       totalMentions: 0,
       sentiment: { positive: 0, neutral: 0, negative: 0 },
       sentimentMomChangePp: 0,
+      mentionMomChangePct: 0,
       trend: 'up',
       monthlyMentions: [],
       topProjects: [],
@@ -4102,10 +4117,20 @@ export class ProjectService {
       const negativePct = summary.NEGATIVE_PCT ?? 0;
       const neutralPct = Number(Math.max(0, 100 - positivePct - negativePct).toFixed(1));
 
-      // No sentiment time-series available yet — MOM_CHANGE_PCT on SHARE_OF_VOICE_MONTHLY_TREND is a
-      // mention-volume delta, not a sentiment delta. Surface 0 and let the UI suppress the trend indicator
-      // until a dedicated sentiment time-series (e.g., SENTIMENT_MOM_CHANGE_PCT) ships.
+      // No sentiment time-series available yet — surface 0 until a dedicated
+      // sentiment time-series (e.g., SENTIMENT_MOM_CHANGE_PCT) ships.
       const sentimentMomChangePp = 0;
+
+      // Mention volume MoM: compute from the two most recent months in trendResult.
+      // trendResult is ordered DESC, so [0] = latest, [1] = previous.
+      let mentionMomChangePct = 0;
+      if (trendResult.rows.length >= 2) {
+        const current = trendResult.rows[0].MENTION_COUNT ?? 0;
+        const previous = trendResult.rows[1].MENTION_COUNT ?? 0;
+        if (previous > 0) {
+          mentionMomChangePct = Number((((current - previous) / previous) * 100).toFixed(2));
+        }
+      }
 
       const monthlyMentions: NorthStarMonthlyDataPoint[] = [...trendResult.rows].reverse().map((row) => {
         const date = new Date(row.MONTH_START_DATE);
@@ -4136,7 +4161,8 @@ export class ProjectService {
         totalMentions,
         sentiment: { positive: positivePct, neutral: neutralPct, negative: negativePct },
         sentimentMomChangePp,
-        trend: sentimentMomChangePp >= 0 ? 'up' : 'down',
+        mentionMomChangePct,
+        trend: mentionMomChangePct >= 0 ? 'up' : 'down',
         monthlyMentions,
         topProjects,
         topPositiveMentions: positiveMentionsResult.rows.map(mapMention),

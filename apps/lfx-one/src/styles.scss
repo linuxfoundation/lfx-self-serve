@@ -112,11 +112,21 @@
   justify-content: flex-start !important;
   padding-top: 1.5rem !important;
 
-  .p-paginator-first { order: 1; }
-  .p-paginator-prev  { order: 2; }
-  .p-paginator-pages { order: 3; }
-  .p-paginator-next  { order: 4; }
-  .p-paginator-last  { order: 5; }
+  .p-paginator-first {
+    order: 1;
+  }
+  .p-paginator-prev {
+    order: 2;
+  }
+  .p-paginator-pages {
+    order: 3;
+  }
+  .p-paginator-next {
+    order: 4;
+  }
+  .p-paginator-last {
+    order: 5;
+  }
 
   .p-paginator-current {
     order: 6;

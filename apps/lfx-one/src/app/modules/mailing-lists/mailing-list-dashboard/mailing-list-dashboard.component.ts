@@ -73,8 +73,8 @@ export class MailingListDashboardComponent {
   public readonly committeeOptions: Signal<FilterOption[]> = this.initCommitteeOptions();
   public readonly statusOptions: Signal<FilterOption[]> = this.initStatusOptions();
   public readonly filteredMailingLists: Signal<GroupsIOMailingList[]> = this.initFilteredMailingLists();
-  protected readonly isFiltered = computed(() =>
-    !!this.searchTerm() || !!this.committeeFilter() || !!this.statusFilter() || !!this.foundationFilter() || !!this.projectFilter()
+  protected readonly isFiltered = computed(
+    () => !!this.searchTerm() || !!this.committeeFilter() || !!this.statusFilter() || !!this.foundationFilter() || !!this.projectFilter()
   );
   public readonly totalMailingLists: Signal<number> = this.initTotalMailingLists();
   public readonly publicMailingLists: Signal<number> = this.initPublicMailingLists();

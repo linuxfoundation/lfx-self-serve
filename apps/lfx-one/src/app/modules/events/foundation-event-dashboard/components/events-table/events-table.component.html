@@ -56,12 +56,7 @@
     <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'event-row-' + event.id">
       <!-- Event Name -->
       <td>
-        <a
-          [href]="event.url"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="lfx-table-name-link text-sm"
-          [attr.data-testid]="'event-name-' + event.id">
+        <a [href]="event.url" target="_blank" rel="noopener noreferrer" class="lfx-table-name-link text-sm" [attr.data-testid]="'event-name-' + event.id">
           {{ event.name }}
         </a>
       </td>

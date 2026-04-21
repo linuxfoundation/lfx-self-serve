@@ -29,6 +29,7 @@ export class BrandReachDrawerComponent {
     totalMonthlySessions: 0,
     activePlatforms: 0,
     changePercentage: 0,
+    sessionMomChangePct: 0,
     trend: 'up',
     socialPlatforms: [],
     websiteDomains: [],

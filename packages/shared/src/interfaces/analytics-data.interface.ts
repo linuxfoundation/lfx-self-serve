@@ -3010,6 +3010,8 @@ export interface BrandReachResponse {
   totalMonthlySessions: number;
   activePlatforms: number;
   changePercentage: number;
+  /** Session volume MoM change (%), computed from recent 4 weeks vs prior 4 weeks. */
+  sessionMomChangePct: number;
   trend: 'up' | 'down';
   socialPlatforms: BrandReachSocialPlatform[];
   websiteDomains: BrandReachWebsiteDomain[];
@@ -3057,6 +3059,8 @@ export interface BrandHealthResponse {
   totalMentions: number;
   sentiment: BrandHealthSentimentBreakdown;
   sentimentMomChangePp: number;
+  /** Mention volume MoM change (%), computed from monthly trend data. */
+  mentionMomChangePct: number;
   trend: 'up' | 'down';
   monthlyMentions: NorthStarMonthlyDataPoint[];
   topProjects: BrandHealthTopProject[];

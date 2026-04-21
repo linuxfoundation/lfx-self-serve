@@ -3,142 +3,144 @@
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="documents-dashboard">
   <div class="flex flex-col gap-6">
-  <!-- Page Header -->
-  <div class="flex items-start justify-between mt-3">
-    <div>
-      <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">{{ documentLabel.plural }}</h1>
-      <p class="mt-1 text-sm text-gray-500" data-testid="documents-dashboard-description">{{ documentLabel.plural }}, links, and attachments across groups, meetings, and foundations.</p>
-    </div>
-  </div>
-
-  <!-- Filter Bar + Table -->
-  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="documents-table-card">
-    <!-- Source Tabs -->
-    <lfx-card-tabs-bar
-      [options]="sourceTabOptions"
-      [selectedFilter]="sourceTab()"
-      (filterChange)="onSourceTabChange($event)"
-      data-testid="documents-source-tabs">
-    </lfx-card-tabs-bar>
-
-    <!-- Filters -->
-    @if (loading() || documents().length > 0) {
-    <div class="px-5 pt-4 pb-3">
-      <div class="flex flex-wrap items-center gap-2">
-        <!-- Search -->
-        <div class="flex-1 min-w-48">
-          <lfx-input-text
-            [form]="filterForm"
-            control="search"
-            placeholder="Search documents..."
-            icon="fa-light fa-search"
-            styleClass="w-full"
-            size="small"
-            data-testid="documents-search-input">
-          </lfx-input-text>
-        </div>
-
-        <!-- Foundation filter -->
-        <div class="w-40 shrink-0 overflow-hidden">
-          <lfx-select
-            [form]="filterForm"
-            control="foundation"
-            size="small"
-            [options]="foundationOptions()"
-            placeholder="All Foundations"
-            [showClear]="true"
-            [filter]="true"
-            filterPlaceholder="Search foundations..."
-            styleClass="w-full"
-            data-testid="documents-foundation-filter">
-          </lfx-select>
-        </div>
-
-        <!-- Group filter -->
-        <div class="w-36 shrink-0 overflow-hidden">
-          <lfx-select
-            [form]="filterForm"
-            control="group"
-            size="small"
-            [options]="groupOptions()"
-            placeholder="All Groups"
-            [showClear]="true"
-            [filter]="true"
-            filterPlaceholder="Search groups..."
-            styleClass="w-full"
-            data-testid="documents-group-filter">
-          </lfx-select>
-        </div>
-
-        <!-- Meeting filter -->
-        <div class="w-36 shrink-0 overflow-hidden">
-          <lfx-select
-            [form]="filterForm"
-            control="meeting"
-            size="small"
-            [options]="meetingOptions()"
-            placeholder="All Meetings"
-            [showClear]="true"
-            [filter]="true"
-            filterPlaceholder="Search meetings..."
-            styleClass="w-full"
-            data-testid="documents-meeting-filter">
-          </lfx-select>
-        </div>
-
-        <!-- Mailing list filter -->
-        <div class="w-40 shrink-0 overflow-hidden">
-          <lfx-select
-            [form]="filterForm"
-            control="mailingList"
-            size="small"
-            [options]="mailingListOptions()"
-            placeholder="All Mailing Lists"
-            [showClear]="true"
-            [filter]="true"
-            filterPlaceholder="Search mailing lists..."
-            styleClass="w-full"
-            data-testid="documents-mailing-list-filter">
-          </lfx-select>
-        </div>
+    <!-- Page Header -->
+    <div class="flex items-start justify-between mt-3">
+      <div>
+        <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">{{ documentLabel.plural }}</h1>
+        <p class="mt-1 text-sm text-gray-500" data-testid="documents-dashboard-description">
+          {{ documentLabel.plural }}, links, and attachments across groups, meetings, and foundations.
+        </p>
       </div>
     </div>
-    }
 
-    <div class="px-5 pb-5">
-      <!-- Primary empty state: no documents at all -->
-      @if (!loading() && documents().length === 0) {
-        <lfx-empty-state
-          [withCard]="false"
-          icon="fa-light fa-file-lines"
-          title="No documents yet"
-          subtitle="Documents, links, and attachments from your groups and meetings will appear here."
-          data-testid="documents-empty-state">
-        </lfx-empty-state>
-      <!-- Filtered empty state: documents exist but no results match -->
-      } @else if (!loading() && filteredDocuments().length === 0) {
-        <lfx-empty-state
-          [withCard]="false"
-          icon="fa-light fa-eyes"
-          title="No results found"
-          subtitle="Try adjusting your filter criteria"
-          ctaLabel="Reset filters"
-          ctaIcon="fa-light fa-arrow-rotate-left"
-          (ctaClick)="resetFilters()"
-          data-testid="documents-filtered-empty-state">
-        </lfx-empty-state>
-      } @else {
-        <!-- Table -->
-        <lfx-table
-          [value]="filteredDocuments()"
-          [paginator]="filteredDocuments().length > 0"
-          [rows]="10"
-          [rowsPerPageOptions]="rppOptions()"
-          [loading]="loading()"
-          [showFirstLastIcon]="false"
-          [showCurrentPageReport]="true"
-          currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-          data-testid="documents-table">
+    <!-- Filter Bar + Table -->
+    <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="documents-table-card">
+      <!-- Source Tabs -->
+      <lfx-card-tabs-bar
+        [options]="sourceTabOptions"
+        [selectedFilter]="sourceTab()"
+        (filterChange)="onSourceTabChange($event)"
+        data-testid="documents-source-tabs">
+      </lfx-card-tabs-bar>
+
+      <!-- Filters -->
+      @if (loading() || documents().length > 0) {
+        <div class="px-5 pt-4 pb-3">
+          <div class="flex flex-wrap items-center gap-2">
+            <!-- Search -->
+            <div class="flex-1 min-w-48">
+              <lfx-input-text
+                [form]="filterForm"
+                control="search"
+                placeholder="Search documents..."
+                icon="fa-light fa-search"
+                styleClass="w-full"
+                size="small"
+                data-testid="documents-search-input">
+              </lfx-input-text>
+            </div>
+
+            <!-- Foundation filter -->
+            <div class="w-40 shrink-0 overflow-hidden">
+              <lfx-select
+                [form]="filterForm"
+                control="foundation"
+                size="small"
+                [options]="foundationOptions()"
+                placeholder="All Foundations"
+                [showClear]="true"
+                [filter]="true"
+                filterPlaceholder="Search foundations..."
+                styleClass="w-full"
+                data-testid="documents-foundation-filter">
+              </lfx-select>
+            </div>
+
+            <!-- Group filter -->
+            <div class="w-36 shrink-0 overflow-hidden">
+              <lfx-select
+                [form]="filterForm"
+                control="group"
+                size="small"
+                [options]="groupOptions()"
+                placeholder="All Groups"
+                [showClear]="true"
+                [filter]="true"
+                filterPlaceholder="Search groups..."
+                styleClass="w-full"
+                data-testid="documents-group-filter">
+              </lfx-select>
+            </div>
+
+            <!-- Meeting filter -->
+            <div class="w-36 shrink-0 overflow-hidden">
+              <lfx-select
+                [form]="filterForm"
+                control="meeting"
+                size="small"
+                [options]="meetingOptions()"
+                placeholder="All Meetings"
+                [showClear]="true"
+                [filter]="true"
+                filterPlaceholder="Search meetings..."
+                styleClass="w-full"
+                data-testid="documents-meeting-filter">
+              </lfx-select>
+            </div>
+
+            <!-- Mailing list filter -->
+            <div class="w-40 shrink-0 overflow-hidden">
+              <lfx-select
+                [form]="filterForm"
+                control="mailingList"
+                size="small"
+                [options]="mailingListOptions()"
+                placeholder="All Mailing Lists"
+                [showClear]="true"
+                [filter]="true"
+                filterPlaceholder="Search mailing lists..."
+                styleClass="w-full"
+                data-testid="documents-mailing-list-filter">
+              </lfx-select>
+            </div>
+          </div>
+        </div>
+      }
+
+      <div class="px-5 pb-5">
+        <!-- Primary empty state: no documents at all -->
+        @if (!loading() && documents().length === 0) {
+          <lfx-empty-state
+            [withCard]="false"
+            icon="fa-light fa-file-lines"
+            title="No documents yet"
+            subtitle="Documents, links, and attachments from your groups and meetings will appear here."
+            data-testid="documents-empty-state">
+          </lfx-empty-state>
+          <!-- Filtered empty state: documents exist but no results match -->
+        } @else if (!loading() && filteredDocuments().length === 0) {
+          <lfx-empty-state
+            [withCard]="false"
+            icon="fa-light fa-eyes"
+            title="No results found"
+            subtitle="Try adjusting your filter criteria"
+            ctaLabel="Reset filters"
+            ctaIcon="fa-light fa-arrow-rotate-left"
+            (ctaClick)="resetFilters()"
+            data-testid="documents-filtered-empty-state">
+          </lfx-empty-state>
+        } @else {
+          <!-- Table -->
+          <lfx-table
+            [value]="filteredDocuments()"
+            [paginator]="filteredDocuments().length > 0"
+            [rows]="10"
+            [rowsPerPageOptions]="rppOptions()"
+            [loading]="loading()"
+            [showFirstLastIcon]="false"
+            [showCurrentPageReport]="true"
+            currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+            data-testid="documents-table">
             <ng-template #header>
               <tr>
                 <th class="w-[33%]">Name</th>
@@ -230,8 +232,8 @@
               </tr>
             </ng-template>
           </lfx-table>
-      }
-    </div>
-  </lfx-card>
+        }
+      </div>
+    </lfx-card>
   </div>
 </div>

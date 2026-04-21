@@ -4,7 +4,6 @@
 import { TagSeverity } from '../interfaces/components.interface';
 import { MyDocumentSource } from '../interfaces/my-document.interface';
 
-
 /** Label constant for the documents feature — follows the existing COMMITTEE_LABEL, MAILING_LIST_LABEL pattern. */
 export const DOCUMENT_LABEL = { singular: 'Document', plural: 'Documents' };
 

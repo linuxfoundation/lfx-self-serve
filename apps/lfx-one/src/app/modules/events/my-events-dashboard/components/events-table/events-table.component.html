@@ -24,7 +24,10 @@
         scope="col"
         [attr.aria-sort]="sortField() === 'EVENT_NAME' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
         data-testid="sort-event-name">
-        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('EVENT_NAME')">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+          (click)="onHeaderClick('EVENT_NAME')">
           Event Name <i [class]="sortIcons()['EVENT_NAME']"></i>
         </button>
       </th>
@@ -32,7 +35,10 @@
         scope="col"
         [attr.aria-sort]="sortField() === 'PROJECT_NAME' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
         data-testid="sort-foundation">
-        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('PROJECT_NAME')">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+          (click)="onHeaderClick('PROJECT_NAME')">
           Foundation <i [class]="sortIcons()['PROJECT_NAME']"></i>
         </button>
       </th>
@@ -40,7 +46,10 @@
         scope="col"
         [attr.aria-sort]="sortField() === 'EVENT_START_DATE' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
         data-testid="sort-date">
-        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('EVENT_START_DATE')">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+          (click)="onHeaderClick('EVENT_START_DATE')">
           Date <i [class]="sortIcons()['EVENT_START_DATE']"></i>
         </button>
       </th>
@@ -48,7 +57,10 @@
         scope="col"
         [attr.aria-sort]="sortField() === 'EVENT_CITY' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
         data-testid="sort-location">
-        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('EVENT_CITY')">
+        <button
+          type="button"
+          class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium"
+          (click)="onHeaderClick('EVENT_CITY')">
           Location <i [class]="sortIcons()['EVENT_CITY']"></i>
         </button>
       </th>

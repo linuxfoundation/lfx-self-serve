@@ -751,11 +751,13 @@ function trendFromChange(change: number): 'up' | 'down' | 'neutral' {
 
 /** Helper to build a dual-signal row with sparkline */
 function protoDualSignal(label: string, value: string, data: number[], color: string, change?: string, trend?: 'up' | 'down' | 'neutral'): DualSignalRow {
+  // Suppress the MoM pill when change rounds to 0 — showing "0.0%" is misleading.
+  const showChange = trend && trend !== 'neutral';
   return {
     label,
     value,
-    changePercentage: change,
-    trend,
+    changePercentage: showChange ? change : undefined,
+    trend: showChange ? trend : undefined,
     chartData: data.length > 0 ? protoSparkline(data, color) : EMPTY_CHART_DATA,
     color,
   };
@@ -779,42 +781,45 @@ function roundForDisplay(value: number): string {
   return (Object.is(rounded, -0) ? 0 : rounded).toFixed(1);
 }
 
-/** Format a MoM change as a display string */
-function formatMomChange(change: number): string {
+/** Format a MoM change as a display string. Returns undefined when change rounds to 0. */
+function formatMomChange(change: number): string | undefined {
+  if (Number(change.toFixed(1)) === 0) return undefined;
   const formatted = roundForDisplay(change);
   const sign = !formatted.startsWith('-') ? '+' : '';
   return `${sign}${formatted}% MoM`;
 }
 
-/** Format a YoY change as a display string */
-function formatYoyChange(change: number): string {
+/** Format a YoY change as a display string. Returns undefined when change rounds to 0. */
+function formatYoyChange(change: number): string | undefined {
+  if (Number(change.toFixed(1)) === 0) return undefined;
   const formatted = roundForDisplay(change);
   const sign = !formatted.startsWith('-') ? '+' : '';
   return `${sign}${formatted}% YoY`;
 }
 
-/** Format a percentage-point MoM change as a display string */
-function formatPpMomChange(change: number): string {
+/** Format a percentage-point MoM change as a display string. Returns undefined when change rounds to 0. */
+function formatPpMomChange(change: number): string | undefined {
+  if (Number(change.toFixed(1)) === 0) return undefined;
   const formatted = roundForDisplay(change);
   const sign = !formatted.startsWith('-') ? '+' : '';
   return `${sign}${formatted}pp MoM`;
 }
 
-/** Compute MoM change display from a paid media monthly trend series (last two months of spend) */
-function paidMediaMomChange(trend: { spend: number }[]): string | undefined {
+/** Compute MoM change display from a paid media monthly trend series (last two months of revenue) */
+function paidMediaMomChange(trend: { revenue: number }[]): string | undefined {
   if (trend.length < 2) return undefined;
-  const prev = trend[trend.length - 2].spend;
-  const curr = trend[trend.length - 1].spend;
+  const prev = trend[trend.length - 2].revenue;
+  const curr = trend[trend.length - 1].revenue;
   if (prev === 0) return undefined;
   return formatMomChange(((curr - prev) / prev) * 100);
 }
 
 /** Compute trend direction from a paid media monthly trend series.
  *  Uses the same MoM % formula as paidMediaMomChange so the color matches the displayed text. */
-function paidMediaTrend(trend: { spend: number }[]): 'up' | 'down' | 'neutral' | undefined {
+function paidMediaTrend(trend: { revenue: number }[]): 'up' | 'down' | 'neutral' | undefined {
   if (trend.length < 2) return undefined;
-  const prev = trend[trend.length - 2].spend;
-  const curr = trend[trend.length - 1].spend;
+  const prev = trend[trend.length - 2].revenue;
+  const curr = trend[trend.length - 1].revenue;
   if (prev === 0) return undefined;
   return trendFromChange(((curr - prev) / prev) * 100);
 }
@@ -822,6 +827,19 @@ function paidMediaTrend(trend: { spend: number }[]): 'up' | 'down' | 'neutral' |
 /** Extract values from NorthStarMonthlyDataPoint[] */
 function monthlyValues(data: { month: string; value: number }[]): number[] {
   return data.map((d) => d.value);
+}
+
+/** Element-wise sum of two monthly revenue series (e.g. event attribution + paid media).
+ *  If series differ in length, the shorter one is left-padded with zeros so both align to the most recent month. */
+function combineMonthlySeries(a: number[], b: number[]): number[] {
+  const len = Math.max(a.length, b.length);
+  const result: number[] = [];
+  for (let i = 0; i < len; i++) {
+    const aVal = a[i - (len - a.length)] ?? 0;
+    const bVal = b[i - (len - b.length)] ?? 0;
+    result.push(aVal + bVal);
+  }
+  return result;
 }
 
 /** Roll up per-channel-per-month event-registration rows into a single monthly lastTouchRevenue series (chronological). */
@@ -971,7 +989,9 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           'Monthly Sessions',
           formatNumber(brandReach.totalMonthlySessions),
           brandReach.weeklyTrend.length > 0 ? brandReach.weeklyTrend.map((d) => d.sessions) : [],
-          lfxColors.violet[500]
+          lfxColors.violet[500],
+          formatMomChange(brandReach.sessionMomChangePct),
+          normalizeTrend(brandReach.sessionMomChangePct, brandReach.sessionMomChangePct >= 0 ? 'up' : 'down')
         ),
       ],
       caption: `${brandReach.activePlatforms} platforms · Last 6 months`,
@@ -991,16 +1011,11 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           'Mentions',
           formatNumber(brandHealth.totalMentions),
           brandHealth.monthlyMentions.length > 0 ? monthlyValues(brandHealth.monthlyMentions) : [],
-          lfxColors.blue[500]
+          lfxColors.blue[500],
+          formatMomChange(brandHealth.mentionMomChangePct),
+          normalizeTrend(brandHealth.mentionMomChangePct, brandHealth.trend)
         ),
-        protoDualSignal(
-          'Positive Sentiment',
-          `${brandHealth.sentiment.positive.toFixed(1)}%`,
-          [],
-          lfxColors.violet[500],
-          formatPpMomChange(brandHealth.sentimentMomChangePp),
-          trendFromChange(brandHealth.sentimentMomChangePp)
-        ),
+        protoDualSignal('Positive Sentiment', `${brandHealth.sentiment.positive.toFixed(1)}%`, [], lfxColors.violet[500]),
       ],
       caption: `${formatNumber(brandHealth.totalMentions)} mentions · Last 6 months`,
       tooltipText: 'Total brand mentions across social and web with sentiment breakdown.',
@@ -1014,33 +1029,43 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       chartType: 'line',
       category: 'influence',
       testId: 'ed-evo-revenue-impact',
-      description: 'Revenue attributed to marketing touchpoints (last-touch model) alongside paid media spend.',
+      description: 'Total revenue attributed to marketing touchpoints, with paid media revenue shown separately.',
       customContentType: 'dual-signal',
       caption: 'Last 6 months',
       dualSignals: [
         (() => {
           const eventAttrSeries = eventAttrMonthlyRevenueSeries(revenueImpact.eventRegistrationAttribution.monthlyTrend);
           const eventAttrTotal = revenueImpact.eventRegistrationAttribution.channelBreakdown.reduce((sum, c) => sum + (c.lastTouchRevenue ?? 0), 0);
+          const paidMediaSeries = revenueImpact.paidMedia.monthlyTrend.map((r) => r.revenue);
+          // Sum paid media revenue from the same last-6-months window (not YTD) to match eventAttrTotal
+          const paidMediaRevenue6mo = paidMediaSeries.reduce((sum, v) => sum + v, 0);
+          // Marketing Attribution = total across all channels (event registration + paid media), same time window
+          const totalAttrRevenue = eventAttrTotal + paidMediaRevenue6mo;
+          const totalAttrSeries = combineMonthlySeries(eventAttrSeries, paidMediaSeries);
           return protoDualSignal(
             'Marketing Attribution',
-            formatCurrency(eventAttrTotal),
-            eventAttrSeries,
+            formatCurrency(totalAttrRevenue),
+            totalAttrSeries,
             lfxColors.blue[500],
-            eventAttrMomChange(eventAttrSeries),
-            eventAttrTrendDirection(eventAttrSeries)
+            eventAttrMomChange(totalAttrSeries),
+            eventAttrTrendDirection(totalAttrSeries)
           );
         })(),
-        protoDualSignal(
-          'Paid Media',
-          formatCurrency(revenueImpact.paidMedia.adSpend),
-          revenueImpact.paidMedia.monthlyTrend.map((r) => r.spend),
-          lfxColors.violet[500],
-          paidMediaMomChange(revenueImpact.paidMedia.monthlyTrend),
-          paidMediaTrend(revenueImpact.paidMedia.monthlyTrend)
-        ),
+        (() => {
+          const paidMediaSeries = revenueImpact.paidMedia.monthlyTrend.map((r) => r.revenue);
+          const paidMediaRevenue6mo = paidMediaSeries.reduce((sum, v) => sum + v, 0);
+          return protoDualSignal(
+            'Paid Media',
+            formatCurrency(paidMediaRevenue6mo),
+            paidMediaSeries,
+            lfxColors.violet[500],
+            paidMediaMomChange(revenueImpact.paidMedia.monthlyTrend),
+            paidMediaTrend(revenueImpact.paidMedia.monthlyTrend)
+          );
+        })(),
       ],
       tooltipText:
-        'Revenue attributed to marketing touchpoints (last-touch model) alongside paid media spend. Sales pipeline is shown on the Member Growth card.',
+        'Total revenue attributed to marketing touchpoints (event registration + paid media). Paid Media row shows the paid ads portion. Sales pipeline is shown on the Member Growth card.',
       drawerType: DashboardDrawerType.RevenueImpact,
     } as DashboardMetricCard,
   ];

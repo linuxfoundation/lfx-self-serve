@@ -2,9 +2,6 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="flex items-center justify-between px-5 py-4 border-b border-gray-200" data-testid="card-tabs-bar">
-  <lfx-filter-pills
-    [options]="options()"
-    [selectedFilter]="selectedFilter()"
-    (filterChange)="filterChange.emit($event)" />
+  <lfx-filter-pills [options]="options()" [selectedFilter]="selectedFilter()" (filterChange)="filterChange.emit($event)" />
   <ng-content />
 </div>

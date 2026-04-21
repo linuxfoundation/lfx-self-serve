@@ -19,7 +19,9 @@
   [rowsPerPageOptions]="rowsPerPageOptions()"
   [alwaysShowPaginator]="alwaysShowPaginator()"
   [paginatorPosition]="paginatorPosition()"
-  [paginatorStyleClass]="(paginatorStyleClass() ?? '') + (!rowsPerPageOptions() ? ' lfx-paginator-no-rpp' : '') + (isSinglePage() ? ' lfx-paginator-single-page' : '')"
+  [paginatorStyleClass]="
+    (paginatorStyleClass() ?? '') + (!rowsPerPageOptions() ? ' lfx-paginator-no-rpp' : '') + (isSinglePage() ? ' lfx-paginator-single-page' : '')
+  "
   [paginatorDropdownAppendTo]="paginatorDropdownAppendTo()"
   [paginatorDropdownScrollHeight]="paginatorDropdownScrollHeight()"
   [currentPageReportTemplate]="currentPageReportTemplate()"

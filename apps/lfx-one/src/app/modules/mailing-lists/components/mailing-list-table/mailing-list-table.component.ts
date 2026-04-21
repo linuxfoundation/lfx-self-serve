@@ -77,10 +77,9 @@ export class MailingListTableComponent {
   // State
   public isBoardMember: Signal<boolean> = computed(() => this.personaService.currentPersona() === 'board-member');
 
-  private readonly formValue = toSignal(
-    toObservable(this.searchForm).pipe(switchMap((form) => form.valueChanges.pipe(startWith(form.value)))),
-    { initialValue: {} as Record<string, unknown> }
-  );
+  private readonly formValue = toSignal(toObservable(this.searchForm).pipe(switchMap((form) => form.valueChanges.pipe(startWith(form.value)))), {
+    initialValue: {} as Record<string, unknown>,
+  });
 
   protected readonly isFiltered = computed(() => {
     const v = this.formValue();
