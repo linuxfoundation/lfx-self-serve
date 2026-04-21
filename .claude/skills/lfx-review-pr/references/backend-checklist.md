@@ -216,20 +216,42 @@ throw MicroserviceError.fromMicroserviceResponse(response);
 
 ---
 
-## 9. M2M token restrictions (CRITICAL)
+## 9. User bearer tokens vs M2M tokens (CRITICAL)
 
-M2M tokens only for:
+**Default is the user bearer token.** Most endpoints must use the authenticated user's bearer token (`req.bearerToken` from the OIDC session). M2M tokens represent the _application_, not a user — using them for normal authenticated flows loses user identity, bypasses per-user authorization, and breaks the audit trail.
 
-- Public endpoints where no user session exists (e.g., public meeting pages)
-- Explicit privileged upstream calls after user authorization is validated in-app
+**M2M tokens are allowed in exactly two cases:**
 
-**Violations:**
+1. **Public-facing endpoints** where no user session exists (e.g. public meeting pages or public meeting registration).
+2. **Explicit privileged upstream calls** from an authenticated route — only _after_ the route has validated the user's access in-app, and only for the specific upstream request that requires application-level credentials. The original user bearer token / auth context MUST be restored immediately after the privileged call.
 
-- Using M2M token in a protected route to skip user authorization
-- Replacing user bearer token with M2M token for normal API calls
-- Not restoring user auth context after a privileged upstream call
+**Do NOT use M2M tokens when:**
 
-**Fix:** Default to user bearer token (`req.bearerToken`). Only use M2M for the specific upstream call that requires it, and restore user context immediately after.
+- Replacing the user's identity or permissions for normal in-app operations
+- Building a new protected `/api/...` endpoint where user identity drives behavior
+- Skipping per-user authorization because "the service has M2M access"
+- Attributing user actions in a way that cannot be tied back to the initiating user
+
+**Violation:**
+
+```typescript
+// Protected route using M2M to skip user authorization
+export const updateMeeting = async (req, res, next) => {
+  const m2mToken = await getM2MToken();
+  await microserviceProxy.proxyRequest(req, '/meetings/' + id, 'PUT', body, m2mToken);
+  // User identity never checked
+};
+```
+
+**Fix:**
+
+```typescript
+// Default to user bearer token; validate user in-app first.
+export const updateMeeting = async (req, res, next) => {
+  await validateUserCanEditMeeting(req, meetingId);
+  return meetingService.update(req, meetingId, req.body); // uses req.bearerToken
+};
+```
 
 ---
 
@@ -259,24 +281,31 @@ gh api repos/linuxfoundation/<repo>/contents/gen/http/openapi3.yaml --jq '.conte
 
 ---
 
-## 11. Protected files (NIT -- flag for awareness)
+## 11. Protected files (NIT — flag for awareness)
 
-Changes to these files should be flagged for extra scrutiny. They are core infrastructure and affect the entire application:
+**Source of truth:** `.claude/hooks/guard-protected-files.sh`. At review time, parse that hook and flag any changed file it matches. Do NOT mirror the list by hand — the hook is the canonical list and mirroring it here would drift.
 
-**Server core:**
+Broad categories the hook protects (non-exhaustive, see the hook for the authoritative list):
 
-- `server.ts`, `server-logger.ts`
-- `middleware/*` (auth, error-handler)
+- **Server core:** `server.ts`, `server-logger.ts`, `middleware/*`
+- **Singleton services:** `logger.service.ts`, `microservice-proxy.service.ts`, `nats.service.ts`, `snowflake.service.ts`, `supabase.service.ts`, `ai.service.ts`, `project.service.ts`, `etag.service.ts`
+- **Helpers:** `helpers/error-serializer.ts`
+- **Frontend config:** `app.routes.ts`
+- **Git hooks / lint / format:** `.husky/*`, `eslint.config.*`, `.prettierrc*`, `check-headers.sh`
+- **Build config:** `turbo.json`, `angular.json`
+- **Package files:** `package.json`, `yarn.lock`
+- **AI guidance:** `CLAUDE.md`
 
-**Singleton services:**
+When a PR modifies any of these, flag as NIT with the hook's warning reason attached so the reviewer knows this file affects core infrastructure.
 
-- `logger.service.ts`
-- `microservice-proxy.service.ts`
-- `nats.service.ts`
-- `snowflake.service.ts`
+---
 
-**Configuration:**
+## 12. AI service environment variables (SHOULD FIX)
 
-- `app.routes.ts`
-- `package.json`, `yarn.lock`
-- `CLAUDE.md`
+The AI service requires specific env vars for the LiteLLM proxy and M2M auth:
+
+- `AI_PROXY_URL` — LiteLLM proxy base URL
+- `AI_API_KEY` — API key for the proxy
+- `M2M_AUTH_CLIENT_ID` / `M2M_AUTH_CLIENT_SECRET` — M2M credentials used for privileged upstream calls
+
+If a PR adds or modifies AI-related code, confirm these env vars are documented (e.g. in `.env.example`) and resolved through proper config rather than hardcoded.
