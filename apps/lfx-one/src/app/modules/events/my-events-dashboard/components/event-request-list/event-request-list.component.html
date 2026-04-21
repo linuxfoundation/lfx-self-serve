@@ -1,107 +1,87 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex justify-end my-4 pr-4">
-  <lfx-button
-    [label]="config().buttonLabel"
-    [icon]="isSalesforceIdLoading() ? 'fa-light fa-spinner-third fa-spin' : 'fa-light fa-plus'"
-    severity="primary"
-    size="small"
-    [disabled]="!isCreateEnabled()"
-    (onClick)="openApplicationDialog()"
-    [attr.data-testid]="config().testIdPrefix + '-discover-button'" />
-</div>
-<lfx-table
-  [value]="requestsResponse().data"
-  [loading]="loading()"
-  [lazy]="true"
-  [paginator]="requestsResponse().total > 0"
-  [alwaysShowPaginator]="true"
-  [rows]="requestsResponse().pageSize"
-  [first]="requestsResponse().offset"
-  [totalRecords]="requestsResponse().total"
-  [rowsPerPageOptions]="[10, 25, 50]"
-  [showCurrentPageReport]="true"
-  currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
-  paginatorPosition="bottom"
-  (onPage)="onPageChange($event)"
-  [attr.data-testid]="config().testIdPrefix + '-data-table'">
-  <ng-template #header>
-    <tr>
-      <th
-        scope="col"
-        [attr.aria-sort]="sortField() === 'EVENT_NAME' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
-        [attr.data-testid]="config().testIdPrefix + '-sort-event-name'">
-        <button type="button" class="flex cursor-pointer select-none items-center gap-1" (click)="onHeaderClick('EVENT_NAME')">
-          Event Name <i [class]="sortIcons()['EVENT_NAME']"></i>
-        </button>
-      </th>
-      <th
-        scope="col"
-        [attr.aria-sort]="sortField() === 'EVENT_CITY' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
-        [attr.data-testid]="config().testIdPrefix + '-sort-location'">
-        <button type="button" class="flex cursor-pointer select-none items-center gap-1" (click)="onHeaderClick('EVENT_CITY')">
-          Location <i [class]="sortIcons()['EVENT_CITY']"></i>
-        </button>
-      </th>
-      <th
-        scope="col"
-        [attr.aria-sort]="sortField() === 'APPLICATION_DATE' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
-        [attr.data-testid]="config().testIdPrefix + '-sort-application-date'">
-        <button type="button" class="flex cursor-pointer select-none items-center gap-1" (click)="onHeaderClick('APPLICATION_DATE')">
-          Application Date <i [class]="sortIcons()['APPLICATION_DATE']"></i>
-        </button>
-      </th>
-      <th scope="col">Status</th>
-    </tr>
-  </ng-template>
+@if (!loading() && requestsResponse().data.length === 0) {
+  <lfx-empty-state
+    [withCard]="false"
+    [icon]="config().emptyIcon"
+    [title]="config().emptyTitle"
+    [subtitle]="config().emptySubtitle"
+    [attr.data-testid]="config().testIdPrefix + '-empty-state'" />
+} @else {
+  <lfx-table
+    [value]="requestsResponse().data"
+    [loading]="loading()"
+    [lazy]="true"
+    [paginator]="requestsResponse().total > 0"
+    [alwaysShowPaginator]="true"
+    [rows]="requestsResponse().pageSize"
+    [first]="requestsResponse().offset"
+    [totalRecords]="requestsResponse().total"
+    [showFirstLastIcon]="false"
+    [rowsPerPageOptions]="rppOptions()"
+    [showCurrentPageReport]="true"
+    currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+    paginatorPosition="bottom"
+    (onPage)="onPageChange($event)"
+    [attr.data-testid]="config().testIdPrefix + '-data-table'">
+    <ng-template #header>
+      <tr>
+        <th
+          scope="col"
+          [attr.aria-sort]="sortField() === 'EVENT_NAME' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
+          [attr.data-testid]="config().testIdPrefix + '-sort-event-name'">
+          <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('EVENT_NAME')">
+            Event Name <i [class]="sortIcons()['EVENT_NAME']"></i>
+          </button>
+        </th>
+        <th
+          scope="col"
+          [attr.aria-sort]="sortField() === 'EVENT_CITY' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
+          [attr.data-testid]="config().testIdPrefix + '-sort-location'">
+          <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('EVENT_CITY')">
+            Location <i [class]="sortIcons()['EVENT_CITY']"></i>
+          </button>
+        </th>
+        <th
+          scope="col"
+          [attr.aria-sort]="sortField() === 'APPLICATION_DATE' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
+          [attr.data-testid]="config().testIdPrefix + '-sort-application-date'">
+          <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('APPLICATION_DATE')">
+            Application Date <i [class]="sortIcons()['APPLICATION_DATE']"></i>
+          </button>
+        </th>
+        <th scope="col" class="text-right">Status</th>
+      </tr>
+    </ng-template>
 
-  <ng-template #body let-request let-rowIndex="rowIndex">
-    <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="config().testIdPrefix + '-row-' + request.id">
-      <!-- Event Name -->
-      <td>
-        <a
-          [href]="request.url"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
-          [attr.data-testid]="config().testIdPrefix + '-event-name-' + request.id">
-          {{ request.name }}
-        </a>
-      </td>
-
-      <!-- Location -->
-      <td>
-        <span class="text-sm text-gray-700" [attr.data-testid]="config().testIdPrefix + '-location-' + request.id">{{ request.location }}</span>
-      </td>
-
-      <!-- Application Date -->
-      <td>
-        <span class="text-sm text-gray-700" [attr.data-testid]="config().testIdPrefix + '-application-date-' + request.id">{{ request.applicationDate }}</span>
-      </td>
-
-      <!-- Status -->
-      <td>
-        <lfx-tag
-          [value]="request.status"
-          [severity]="request.status | eventRequestStatusSeverity"
-          [attr.data-testid]="config().testIdPrefix + '-status-' + request.id" />
-      </td>
-    </tr>
-  </ng-template>
-
-  <ng-template #emptymessage>
-    <tr>
-      <td colspan="4" class="text-center py-10">
-        <div class="flex items-center justify-center p-16">
-          <div class="text-center max-w-md">
-            <div class="text-gray-400 mb-4">
-              <i class="fa-light fa-eyes text-3xl mb-4"></i>
-              <h3 class="text-gray-600 mt-2">{{ config().emptyMessage }}</h3>
-            </div>
+    <ng-template #body let-request let-rowIndex="rowIndex">
+      <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="config().testIdPrefix + '-row-' + request.id">
+        <td>
+          <a
+            [href]="request.url"
+            target="_blank"
+            rel="noopener noreferrer"
+            class="lfx-table-name-link text-sm"
+            [attr.data-testid]="config().testIdPrefix + '-event-name-' + request.id">
+            {{ request.name }}
+          </a>
+        </td>
+        <td>
+          <span class="text-sm text-gray-700" [attr.data-testid]="config().testIdPrefix + '-location-' + request.id">{{ request.location }}</span>
+        </td>
+        <td>
+          <span class="text-sm text-gray-700" [attr.data-testid]="config().testIdPrefix + '-application-date-' + request.id">{{ request.applicationDate }}</span>
+        </td>
+        <td>
+          <div class="flex justify-end">
+            <lfx-tag
+              [value]="request.status"
+              [severity]="request.status | eventRequestStatusSeverity"
+              [attr.data-testid]="config().testIdPrefix + '-status-' + request.id" />
           </div>
-        </div>
-      </td>
-    </tr>
-  </ng-template>
-</lfx-table>
+        </td>
+      </tr>
+    </ng-template>
+  </lfx-table>
+}

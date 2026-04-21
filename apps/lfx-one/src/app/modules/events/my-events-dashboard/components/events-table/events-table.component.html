@@ -6,15 +6,17 @@
   [loading]="loading()"
   [lazy]="true"
   [paginator]="eventsResponse().total > 0"
-  [alwaysShowPaginator]="true"
   [rows]="eventsResponse().pageSize"
   [first]="eventsResponse().offset"
   [totalRecords]="eventsResponse().total"
-  [rowsPerPageOptions]="[10, 25, 50]"
+  [rowsPerPageOptions]="rppOptions()"
   [showCurrentPageReport]="true"
+  [showFirstLastIcon]="false"
   currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
   paginatorPosition="bottom"
+  selectionMode="single"
   (onPage)="onPageChange($event)"
+  (onRowSelect)="onTableRowSelect($event)"
   data-testid="events-data-table">
   <ng-template #header>
     <tr>
@@ -22,7 +24,7 @@
         scope="col"
         [attr.aria-sort]="sortField() === 'EVENT_NAME' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
         data-testid="sort-event-name">
-        <button type="button" class="flex cursor-pointer select-none items-center gap-1" (click)="onHeaderClick('EVENT_NAME')">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('EVENT_NAME')">
           Event Name <i [class]="sortIcons()['EVENT_NAME']"></i>
         </button>
       </th>
@@ -30,7 +32,7 @@
         scope="col"
         [attr.aria-sort]="sortField() === 'PROJECT_NAME' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
         data-testid="sort-foundation">
-        <button type="button" class="flex cursor-pointer select-none items-center gap-1" (click)="onHeaderClick('PROJECT_NAME')">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('PROJECT_NAME')">
           Foundation <i [class]="sortIcons()['PROJECT_NAME']"></i>
         </button>
       </th>
@@ -38,7 +40,7 @@
         scope="col"
         [attr.aria-sort]="sortField() === 'EVENT_START_DATE' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
         data-testid="sort-date">
-        <button type="button" class="flex cursor-pointer select-none items-center gap-1" (click)="onHeaderClick('EVENT_START_DATE')">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('EVENT_START_DATE')">
           Date <i [class]="sortIcons()['EVENT_START_DATE']"></i>
         </button>
       </th>
@@ -46,17 +48,17 @@
         scope="col"
         [attr.aria-sort]="sortField() === 'EVENT_CITY' ? (sortOrder() === 'ASC' ? 'ascending' : 'descending') : 'none'"
         data-testid="sort-location">
-        <button type="button" class="flex cursor-pointer select-none items-center gap-1" (click)="onHeaderClick('EVENT_CITY')">
+        <button type="button" class="flex cursor-pointer select-none items-center gap-1 text-xs text-gray-500 font-medium" (click)="onHeaderClick('EVENT_CITY')">
           Location <i [class]="sortIcons()['EVENT_CITY']"></i>
         </button>
       </th>
       <th>Role</th>
       <th>Status</th>
       @if (isPastEvents()) {
-        <th>Certificate</th>
+        <th></th>
       }
       @if (!isPastEvents()) {
-        <th>Action</th>
+        <th></th>
       }
     </tr>
   </ng-template>
@@ -65,25 +67,14 @@
     <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'event-row-' + event.id">
       <!-- Event Name -->
       <td>
-        <a
-          [href]="event.url"
-          target="_blank"
-          rel="noopener noreferrer"
-          class="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
-          [attr.data-testid]="'event-name-' + event.id">
+        <span class="text-sm font-medium text-gray-900" [attr.data-testid]="'event-name-' + event.id">
           {{ event.name }}
-        </a>
+        </span>
       </td>
 
       <!-- Foundation -->
       <td>
-        <div class="max-w-[120px]" [pTooltip]="event.foundation" tooltipPosition="top">
-          <lfx-tag
-            [value]="event.foundation"
-            severity="secondary"
-            styleClass="!block !truncate !max-w-full"
-            [attr.data-testid]="'event-foundation-' + event.id" />
-        </div>
+        <lfx-tag [value]="event.foundation" styleClass="tag-neutral" [attr.data-testid]="'event-foundation-' + event.id" />
       </td>
 
       <!-- Date -->
@@ -99,9 +90,9 @@
       <!-- Role -->
       <td>
         @if (event.role) {
-          <lfx-tag [value]="event.role" [severity]="roleSeverityMap[event.role] ?? 'secondary'" [attr.data-testid]="'event-role-' + event.id" />
+          <lfx-tag [value]="event.role" styleClass="tag-neutral" [attr.data-testid]="'event-role-' + event.id" />
         } @else {
-          <span class="text-sm text-gray-400">—</span>
+          <span class="text-xs text-gray-400">—</span>
         }
       </td>
 
@@ -113,30 +104,35 @@
       <!-- Certificate -->
       @if (isPastEvents()) {
         <td>
-          <lfx-button
-            label="Download Certificate"
-            severity="primary"
-            [outlined]="true"
-            size="small"
-            styleClass="whitespace-nowrap"
-            (click)="downloadCertificate(event.id)"
-            [attr.data-testid]="'event-download-certificate-button-' + event.id" />
+          <div class="flex justify-end">
+            <lfx-button
+              label="Download Certificate"
+              severity="primary"
+              [outlined]="true"
+              size="small"
+              styleClass="whitespace-nowrap"
+              (onClick)="$event.stopPropagation(); downloadCertificate(event.id)"
+              [attr.data-testid]="'event-download-certificate-button-' + event.id" />
+          </div>
         </td>
       }
 
       <!-- Action -->
       @if (!isPastEvents()) {
         <td>
-          <lfx-button
-            [label]="event.isRegistered ? 'View Event' : 'Register'"
-            severity="primary"
-            [outlined]="true"
-            [href]="event.isRegistered ? event.url : event.registrationUrl"
-            target="_blank"
-            rel="noopener noreferrer"
-            size="small"
-            styleClass="whitespace-nowrap"
-            [attr.data-testid]="'event-view-button-' + event.id" />
+          <div class="flex justify-end">
+            @if (!event.isRegistered && event.registrationUrl) {
+              <lfx-button
+                label="Register"
+                icon="fa-light fa-ticket"
+                severity="primary"
+                [outlined]="true"
+                size="small"
+                styleClass="whitespace-nowrap w-[112px]"
+                (onClick)="$event.stopPropagation(); openUrl(event.registrationUrl!)"
+                [attr.data-testid]="'event-register-button-' + event.id" />
+            }
+          </div>
         </td>
       }
     </tr>

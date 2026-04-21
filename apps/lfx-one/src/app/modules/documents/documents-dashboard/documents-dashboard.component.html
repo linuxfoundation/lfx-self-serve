@@ -2,16 +2,28 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="documents-dashboard">
+  <div class="flex flex-col gap-6">
   <!-- Page Header -->
-  <div class="mb-6">
-    <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">{{ pageTitle() }}</h1>
-    <p class="mt-1 text-sm text-gray-500" data-testid="documents-dashboard-description">{{ pageDescription() }}</p>
+  <div class="flex items-start justify-between mt-3">
+    <div>
+      <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">{{ documentLabel.plural }}</h1>
+      <p class="mt-1 text-sm text-gray-500" data-testid="documents-dashboard-description">{{ documentLabel.plural }}, links, and attachments across groups, meetings, and foundations.</p>
+    </div>
   </div>
 
   <!-- Filter Bar + Table -->
-  <lfx-card data-testid="documents-table-card">
+  <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="documents-table-card">
+    <!-- Source Tabs -->
+    <lfx-card-tabs-bar
+      [options]="sourceTabOptions"
+      [selectedFilter]="sourceTab()"
+      (filterChange)="onSourceTabChange($event)"
+      data-testid="documents-source-tabs">
+    </lfx-card-tabs-bar>
+
     <!-- Filters -->
-    <div class="pb-3 mb-3 border-b border-gray-100">
+    @if (loading() || documents().length > 0) {
+    <div class="px-5 pt-4 pb-3">
       <div class="flex flex-wrap items-center gap-2">
         <!-- Search -->
         <div class="flex-1 min-w-48">
@@ -26,23 +38,21 @@
           </lfx-input-text>
         </div>
 
-        <!-- Foundation filter (Me lens only — non-Me lenses are already scoped) -->
-        @if (isMeLens()) {
-          <div class="w-40 shrink-0 overflow-hidden">
-            <lfx-select
-              [form]="filterForm"
-              control="foundation"
-              size="small"
-              [options]="foundationOptions()"
-              placeholder="All Foundations"
-              [showClear]="true"
-              [filter]="true"
-              filterPlaceholder="Search foundations..."
-              styleClass="w-full"
-              data-testid="documents-foundation-filter">
-            </lfx-select>
-          </div>
-        }
+        <!-- Foundation filter -->
+        <div class="w-40 shrink-0 overflow-hidden">
+          <lfx-select
+            [form]="filterForm"
+            control="foundation"
+            size="small"
+            [options]="foundationOptions()"
+            placeholder="All Foundations"
+            [showClear]="true"
+            [filter]="true"
+            filterPlaceholder="Search foundations..."
+            styleClass="w-full"
+            data-testid="documents-foundation-filter">
+          </lfx-select>
+        </div>
 
         <!-- Group filter -->
         <div class="w-36 shrink-0 overflow-hidden">
@@ -91,24 +101,137 @@
             data-testid="documents-mailing-list-filter">
           </lfx-select>
         </div>
-
-        <!-- Source filter -->
-        <div class="w-32 shrink-0 overflow-hidden">
-          <lfx-select
-            [form]="filterForm"
-            control="source"
-            size="small"
-            [options]="sourceOptions"
-            placeholder="All Sources"
-            [showClear]="true"
-            styleClass="w-full"
-            data-testid="documents-source-filter">
-          </lfx-select>
-        </div>
       </div>
     </div>
+    }
 
-    <!-- Table -->
-    <lfx-documents-table [documents]="filteredDocuments()" [loading]="loading()" [showFoundation]="true" testIdPrefix="documents"> </lfx-documents-table>
+    <div class="px-5 pb-5">
+      <!-- Primary empty state: no documents at all -->
+      @if (!loading() && documents().length === 0) {
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-file-lines"
+          title="No documents yet"
+          subtitle="Documents, links, and attachments from your groups and meetings will appear here."
+          data-testid="documents-empty-state">
+        </lfx-empty-state>
+      <!-- Filtered empty state: documents exist but no results match -->
+      } @else if (!loading() && filteredDocuments().length === 0) {
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-eyes"
+          title="No results found"
+          subtitle="Try adjusting your filter criteria"
+          ctaLabel="Reset filters"
+          ctaIcon="fa-light fa-arrow-rotate-left"
+          (ctaClick)="resetFilters()"
+          data-testid="documents-filtered-empty-state">
+        </lfx-empty-state>
+      } @else {
+        <!-- Table -->
+        <lfx-table
+          [value]="filteredDocuments()"
+          [paginator]="filteredDocuments().length > 0"
+          [rows]="10"
+          [rowsPerPageOptions]="rppOptions()"
+          [loading]="loading()"
+          [showFirstLastIcon]="false"
+          [showCurrentPageReport]="true"
+          currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+          data-testid="documents-table">
+            <ng-template #header>
+              <tr>
+                <th class="w-[33%]">Name</th>
+                <th class="w-[18%]">Foundation</th>
+                <th class="w-[18%]">Group / Meeting</th>
+                <th class="w-[10%]">Source</th>
+                <th class="w-[13%] whitespace-nowrap">Date</th>
+                <th class="w-auto"></th>
+              </tr>
+            </ng-template>
+
+            <ng-template #body let-doc let-rowIndex="rowIndex">
+              <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'documents-row-' + doc.id">
+                <!-- Name column -->
+                <td>
+                  <div class="flex items-center gap-2">
+                    <div class="flex items-center justify-center w-10 h-10 rounded-full border border-gray-200 bg-white shrink-0 shadow">
+                      <i [class]="(doc.source | myDocumentSourceTag: 'icon') + ' text-gray-900 text-base'"></i>
+                    </div>
+                    <span class="text-sm font-medium text-gray-900 truncate" [attr.data-testid]="'documents-name-' + doc.id">{{ doc.name }}</span>
+                  </div>
+                </td>
+
+                <!-- Foundation column -->
+                <td>
+                  <span class="text-sm text-gray-700">{{ doc.foundationName || '—' }}</span>
+                </td>
+
+                <!-- Group / Meeting column -->
+                <td>
+                  <span class="text-sm text-gray-700">{{ doc.groupOrMeetingName || '—' }}</span>
+                </td>
+
+                <!-- Source column -->
+                <td>
+                  <lfx-tag
+                    [value]="doc.source | myDocumentSourceTag: 'label'"
+                    [severity]="doc.source | myDocumentSourceTag: 'severity'"
+                    [attr.data-testid]="'documents-source-tag-' + doc.id">
+                  </lfx-tag>
+                </td>
+
+                <!-- Date column -->
+                <td class="whitespace-nowrap">
+                  <span class="text-sm text-gray-700">{{ doc.date | date: 'MMM d, y' }}</span>
+                </td>
+
+                <!-- Actions column -->
+                <td>
+                  <div class="flex items-center justify-end gap-1">
+                    @if (doc.source === 'file' && doc.attachmentUid) {
+                      <lfx-button
+                        label="Download"
+                        icon="fa-light fa-arrow-down-to-line"
+                        severity="secondary"
+                        size="small"
+                        [outlined]="true"
+                        styleClass="whitespace-nowrap"
+                        (onClick)="openDocument(doc)"
+                        [attr.data-testid]="'documents-download-' + doc.id">
+                      </lfx-button>
+                    } @else if (doc.url) {
+                      @if (doc.source === 'recording') {
+                        <lfx-button
+                          label="Recording"
+                          icon="fa-light fa-circle-play"
+                          severity="secondary"
+                          size="small"
+                          [outlined]="true"
+                          styleClass="whitespace-nowrap"
+                          (onClick)="openDocument(doc)"
+                          [attr.data-testid]="'documents-open-' + doc.id">
+                        </lfx-button>
+                      } @else {
+                        <lfx-button
+                          label="Open"
+                          icon="fa-light fa-arrow-up-right-from-square"
+                          severity="secondary"
+                          size="small"
+                          [outlined]="true"
+                          styleClass="whitespace-nowrap"
+                          (onClick)="openDocument(doc)"
+                          [attr.data-testid]="'documents-open-' + doc.id">
+                        </lfx-button>
+                      }
+                    }
+                  </div>
+                </td>
+              </tr>
+            </ng-template>
+          </lfx-table>
+      }
+    </div>
   </lfx-card>
+  </div>
 </div>

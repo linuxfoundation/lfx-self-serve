@@ -72,9 +72,21 @@
   border-radius: 9999px;
 }
 
-.p-datatable .p-datatable-thead > tr > th,
+.p-datatable .p-datatable-thead > tr > th {
+  background: transparent;
+}
+
 .p-datatable .p-datatable-tbody > tr > td {
   background: white;
+}
+
+/* Specificity (0,3,2) beats the td white rule (0,2,2) — no !important needed */
+.p-datatable-hoverable .p-datatable-tbody > tr:hover > td {
+  background: #f9fafb;
+}
+
+.p-datatable.lfx-table-selectable .p-datatable-tbody > tr {
+  cursor: pointer;
 }
 
 .p-datatable .p-datatable-thead > tr > th,
@@ -86,6 +98,53 @@
 .p-menu .p-menu-item.text-red-500 .p-menu-item-label,
 .p-menu .p-menu-item.text-red-500 .p-menu-item-icon {
   color: inherit;
+}
+
+/* Paginator overrides — layout, colors, sizing */
+/* Direct :root overrides beat @layer primeng regardless of injection order */
+:root {
+  --p-paginator-nav-button-selected-background: #dbeafe;
+  --p-paginator-nav-button-selected-color: #1e40af;
+}
+
+/* Layout: nav left, "Showing…" + dropdown right */
+.p-paginator {
+  justify-content: flex-start !important;
+  padding-top: 1.5rem !important;
+
+  .p-paginator-first { order: 1; }
+  .p-paginator-prev  { order: 2; }
+  .p-paginator-pages { order: 3; }
+  .p-paginator-next  { order: 4; }
+  .p-paginator-last  { order: 5; }
+
+  .p-paginator-current {
+    order: 6;
+    margin-left: auto;
+    font-size: 0.875rem !important;
+    color: #6b7280 !important;
+  }
+
+  .p-paginator-rpp-dropdown {
+    order: 7;
+    margin-left: 1.5rem;
+  }
+}
+
+/* Hide rpp dropdown when ≤10 rows */
+.lfx-paginator-no-rpp .p-paginator-rpp-dropdown {
+  display: none !important;
+}
+
+/* Hide nav arrows + page numbers when there's only 1 page */
+.lfx-paginator-single-page {
+  .p-paginator-first,
+  .p-paginator-prev,
+  .p-paginator-pages,
+  .p-paginator-next,
+  .p-paginator-last {
+    display: none !important;
+  }
 }
 
 /* Font family CSS custom properties (Tailwind v3 — @theme is v4-only, use :root instead) */
@@ -218,6 +277,13 @@
   &.tag-meeting-other {
     background: var(--meeting-other-bg);
     color: var(--meeting-other);
+  }
+
+  /* Neutral badge — white bg, gray border, dark gray text */
+  &.tag-neutral {
+    background: #ffffff;
+    color: #374151;
+    border: 1px solid #d1d5db;
   }
 
   /* Recurring badge */

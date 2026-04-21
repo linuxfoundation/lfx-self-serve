@@ -60,7 +60,7 @@
           [href]="event.url"
           target="_blank"
           rel="noopener noreferrer"
-          class="text-sm font-medium text-blue-600 hover:text-blue-700 hover:underline"
+          class="lfx-table-name-link text-sm"
           [attr.data-testid]="'event-name-' + event.id">
           {{ event.name }}
         </a>
@@ -71,24 +71,24 @@
         @if (event.category) {
           <lfx-tag [value]="event.category" severity="secondary" [attr.data-testid]="'event-type-' + event.id" />
         } @else {
-          <span class="text-sm text-gray-400">—</span>
+          <span class="text-xs text-gray-400">—</span>
         }
       </td>
 
       <!-- Date -->
       <td>
-        <span class="text-sm text-gray-700">{{ event.date }}</span>
+        <span class="text-xs text-gray-700">{{ event.date }}</span>
       </td>
 
       <!-- Location -->
       <td>
-        <span class="text-sm text-gray-700">{{ event.location }}</span>
+        <span class="text-xs text-gray-700">{{ event.location }}</span>
       </td>
 
       <!-- Attendees -->
       @if (isPastEvents()) {
         <td>
-          <span class="text-sm text-gray-700" [attr.data-testid]="'event-attendees-' + event.id">
+          <span class="text-xs text-gray-700" [attr.data-testid]="'event-attendees-' + event.id">
             {{ event.attendees !== null ? (event.attendees | number) : '—' }}
           </span>
         </td>

@@ -63,7 +63,7 @@
     <ng-template #body let-vote let-rowIndex="rowIndex">
       <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'my-activity-vote-row-' + vote.poll_id">
         <td>
-          <span class="text-blue-600 font-medium" [attr.data-testid]="'my-activity-vote-name-' + vote.poll_id">
+          <span class="lfx-table-name-link text-xs" [attr.data-testid]="'my-activity-vote-name-' + vote.poll_id">
             {{ vote.poll_name }}
           </span>
         </td>

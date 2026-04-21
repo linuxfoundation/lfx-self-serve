@@ -36,11 +36,12 @@ import {
   toArray,
 } from 'rxjs';
 
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MeetingsTopBarComponent } from './components/meetings-top-bar/meetings-top-bar.component';
 
 @Component({
   selector: 'lfx-meetings-dashboard',
-  imports: [MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent, CardComponent, OnRenderDirective],
+  imports: [MeetingCardComponent, MeetingsTopBarComponent, ButtonComponent, CardComponent, OnRenderDirective, EmptyStateComponent],
   templateUrl: './meetings-dashboard.component.html',
   styleUrl: './meetings-dashboard.component.scss',
 })
@@ -74,6 +75,7 @@ export class MeetingsDashboardComponent {
   public projectOptions: Signal<{ label: string; value: string | null }[]>;
   public project: Signal<ProjectContext | null>;
   protected readonly canWrite = this.projectContextService.canWrite;
+  protected readonly isFiltered = this.initIsFiltered();
   public loadingMore = signal(false);
   public hasMore: Signal<boolean>;
   public autoLoadTriggerIndex: Signal<number>;
@@ -213,6 +215,13 @@ export class MeetingsDashboardComponent {
       queryParamsHandling: 'merge',
       replaceUrl: true,
     });
+  }
+
+  public resetFilters(): void {
+    this.searchQuery.set('');
+    this.meetingTypeFilter.set(null);
+    this.foundationFilter.set(null);
+    this.projectFilter.set(null);
   }
 
   public loadMore(): void {
@@ -588,7 +597,8 @@ export class MeetingsDashboardComponent {
       const recurring = this.sortedUpcomingUserMeetings().filter((m) => m.recurrence !== null);
       const uniqueProjects = new Set(recurring.map((m) => m.project_name).filter(Boolean));
       const count = uniqueProjects.size;
-      return count > 0 ? `Across ${count} ${count === 1 ? 'project' : 'projects'}` : '';
+      const projectWord = count === 1 ? 'project' : 'projects';
+      return count > 0 ? `Across ${count} ${projectWord}` : '';
     });
   }
 
@@ -659,5 +669,9 @@ export class MeetingsDashboardComponent {
       return undefined;
     }
     return [`meeting_type:${meetingType}`];
+  }
+
+  private initIsFiltered(): Signal<boolean> {
+    return computed(() => !!this.debouncedSearchQuery() || !!this.meetingTypeFilter() || !!this.foundationFilter() || !!this.projectFilter());
   }
 }

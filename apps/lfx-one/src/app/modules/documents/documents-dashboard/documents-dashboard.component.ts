@@ -1,39 +1,55 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, effect, inject, signal, Signal } from '@angular/core';
+import { DatePipe } from '@angular/common';
+import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { DocumentsTableComponent } from '@components/documents-table/documents-table.component';
+import { TableComponent } from '@components/table/table.component';
+import { TagComponent } from '@components/tag/tag.component';
 import { DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
-import { MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
+import { FilterPillOption, MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
 import { DocumentService } from '@services/document.service';
-import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap } from 'rxjs';
+import { catchError, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap } from 'rxjs';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
+import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-tag.pipe';
 
 @Component({
   selector: 'lfx-documents-dashboard',
-  imports: [CardComponent, InputTextComponent, SelectComponent, DocumentsTableComponent, ReactiveFormsModule],
+  imports: [
+    CardComponent,
+    CardTabsBarComponent,
+    ButtonComponent,
+    InputTextComponent,
+    SelectComponent,
+    TableComponent,
+    TagComponent,
+    ReactiveFormsModule,
+    DatePipe,
+    MyDocumentSourceTagPipe,
+    EmptyStateComponent,
+  ],
   templateUrl: './documents-dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
 export class DocumentsDashboardComponent {
   // === Services ===
   private readonly documentService = inject(DocumentService);
-  private readonly lensService = inject(LensService);
   private readonly projectContextService = inject(ProjectContextService);
 
   // === Constants ===
   protected readonly documentLabel = DOCUMENT_LABEL;
-  protected readonly sourceOptions: { label: string; value: MyDocumentSource | null }[] = [
-    { label: 'All Sources', value: null },
-    { label: 'Link', value: 'link' },
-    { label: 'Meeting', value: 'meeting' },
-    { label: 'Mailing List', value: 'mailing_list' },
+  protected readonly sourceTabOptions: FilterPillOption[] = [
+    { id: 'all', label: 'All Sources' },
+    { id: 'link', label: 'Links' },
+    { id: 'meeting', label: 'Meetings' },
+    { id: 'mailing_list', label: 'Mailing Lists' },
   ];
 
   // === Forms ===
@@ -43,42 +59,47 @@ export class DocumentsDashboardComponent {
     group: new FormControl<string | null>(null),
     meeting: new FormControl<string | null>(null),
     mailingList: new FormControl<string | null>(null),
-    source: new FormControl<MyDocumentSource | null>(null),
   });
 
   // === Writable Signals ===
   protected readonly loading = signal<boolean>(true);
+  protected readonly sourceTab = signal<string>('all');
 
   // === Computed Signals ===
-  protected readonly isMeLens: Signal<boolean> = computed(() => this.lensService.activeLens() === 'me');
-  protected readonly pageTitle = computed(() => (this.isMeLens() ? `My ${this.documentLabel.plural}` : this.documentLabel.plural));
-  protected readonly pageDescription = computed(() =>
-    this.isMeLens()
-      ? 'Documents, links, and attachments from your groups and meetings across all foundations.'
-      : 'Documents, links, and attachments for this context.'
-  );
   protected readonly project = this.projectContextService.activeContext;
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
   protected readonly foundationFilter: Signal<string | null> = this.initFoundationFilter();
   protected readonly groupFilter: Signal<string | null> = this.initGroupFilter();
   protected readonly meetingFilter: Signal<string | null> = this.initMeetingFilter();
   protected readonly mailingListFilter: Signal<string | null> = this.initMailingListFilter();
-  protected readonly sourceFilter: Signal<MyDocumentSource | null> = this.initSourceFilter();
   protected readonly documents: Signal<MyDocumentItem[]> = this.initDocuments();
   protected readonly filteredDocuments: Signal<MyDocumentItem[]> = this.initFilteredDocuments();
+  protected readonly rppOptions = computed<number[] | undefined>(() => (this.filteredDocuments().length > 10 ? [10, 25, 50] : undefined));
   protected readonly foundationOptions: Signal<{ label: string; value: string | null }[]> = this.initFoundationOptions();
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
   protected readonly meetingOptions: Signal<{ label: string; value: string | null }[]> = this.initMeetingOptions();
   protected readonly mailingListOptions: Signal<{ label: string; value: string | null }[]> = this.initMailingListOptions();
 
-  // === Constructor ===
-  public constructor() {
-    // Reset Me-lens-only filters when switching away from Me lens
-    effect(() => {
-      if (!this.isMeLens()) {
-        this.filterForm.controls.foundation.reset(null);
+  // === Protected Methods ===
+  protected onSourceTabChange(tab: string): void {
+    this.sourceTab.set(tab);
+  }
+
+  protected resetFilters(): void {
+    this.filterForm.reset({ search: '', foundation: null, group: null, meeting: null, mailingList: null });
+    this.sourceTab.set('all');
+  }
+
+  protected openDocument(doc: MyDocumentItem): void {
+    if (!doc.url) return;
+    try {
+      const url = new URL(doc.url);
+      if (['http:', 'https:'].includes(url.protocol)) {
+        window.open(doc.url, '_blank', 'noopener,noreferrer');
       }
-    });
+    } catch {
+      // Invalid URL — silently ignore
+    }
   }
 
   // === Private Initializers ===
@@ -110,28 +131,13 @@ export class DocumentsDashboardComponent {
     return toSignal(this.filterForm.controls.mailingList.valueChanges.pipe(startWith<string | null>(null)), { initialValue: null });
   }
 
-  private initSourceFilter(): Signal<MyDocumentSource | null> {
-    return toSignal(this.filterForm.controls.source.valueChanges.pipe(startWith<MyDocumentSource | null>(null)), { initialValue: null });
-  }
-
   private initDocuments(): Signal<MyDocumentItem[]> {
-    const lens$ = toObservable(this.lensService.activeLens);
-
     return toSignal(
-      combineLatest([toObservable(this.project), lens$]).pipe(
-        switchMap(([project, lens]) => {
-          // On non-Me lenses, require a project/foundation selection
-          if (lens !== 'me' && !project?.uid) {
-            this.loading.set(false);
-            return of([] as MyDocumentItem[]);
-          }
-
+      toObservable(this.project).pipe(
+        switchMap((project) => {
           this.loading.set(true);
 
-          // Me lens: fetch all documents (no project filter)
-          // Foundation/Project lens: scope to selected project
-          const projectUid = lens === 'me' ? undefined : project?.uid;
-          return this.documentService.getMyDocuments(projectUid).pipe(
+          return this.documentService.getMyDocuments(project?.uid).pipe(
             catchError(() => of([] as MyDocumentItem[])),
             finalize(() => this.loading.set(false))
           );
@@ -149,22 +155,24 @@ export class DocumentsDashboardComponent {
       const group = this.groupFilter();
       const meeting = this.meetingFilter();
       const mailingList = this.mailingListFilter();
-      const source = this.sourceFilter();
+      const sourceTab = this.sourceTab();
 
       return docs.filter((doc) => {
         if (
           query &&
           !doc.name.toLowerCase().includes(query) &&
-          !(doc.foundationName ?? '').toLowerCase().includes(query) &&
-          !(doc.groupOrMeetingName ?? '').toLowerCase().includes(query)
+          !doc.foundationName.toLowerCase().includes(query) &&
+          !doc.groupOrMeetingName.toLowerCase().includes(query)
         ) {
           return false;
         }
-        if (this.isMeLens() && foundation && doc.foundationUid !== foundation) return false;
+        if (foundation && doc.foundationUid !== foundation) return false;
         if (group && doc.groupOrMeetingUid !== group) return false;
         if (meeting && doc.meetingId !== meeting && doc.pastMeetingId !== meeting) return false;
         if (mailingList && doc.mailingListId !== mailingList) return false;
-        if (source && doc.source !== source && !(source === 'meeting' && MEETING_GROUP_SOURCES.includes(doc.source))) return false;
+        if (sourceTab !== 'all') {
+          if (doc.source !== sourceTab && !(sourceTab === 'meeting' && MEETING_GROUP_SOURCES.includes(doc.source))) return false;
+        }
         return true;
       });
     });

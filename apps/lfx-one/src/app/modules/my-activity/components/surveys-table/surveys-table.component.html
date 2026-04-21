@@ -64,7 +64,7 @@
     <ng-template #body let-survey let-rowIndex="rowIndex">
       <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'my-activity-survey-row-' + survey.survey_id">
         <td>
-          <span class="text-blue-600 font-medium" [attr.data-testid]="'my-activity-survey-name-' + survey.survey_id">
+          <span class="lfx-table-name-link text-xs" [attr.data-testid]="'my-activity-survey-name-' + survey.survey_id">
             {{ survey.survey_title }}
           </span>
         </td>

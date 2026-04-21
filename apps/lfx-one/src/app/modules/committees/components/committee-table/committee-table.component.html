@@ -1,9 +1,20 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<lfx-card>
-  <!-- Filter Bar Inside Card -->
-  <div class="pb-2 mb-2">
+<lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+  <!-- Type Tabs (hidden when no categories are recognized) -->
+  @if (categoryTabOptions().length > 1) {
+    <lfx-card-tabs-bar
+      [options]="categoryTabOptions()"
+      [selectedFilter]="categoryTab()"
+      (filterChange)="onCategoryTabChange($event)"
+      data-testid="committee-type-tabs">
+    </lfx-card-tabs-bar>
+  }
+
+  <!-- Filter Bar -->
+  @if (hasItems()) {
+  <div class="px-5 pt-4 pb-3">
     <div class="flex flex-col md:flex-row md:items-center gap-3 md:gap-4">
       <!-- Search Input -->
       <div class="flex-1">
@@ -17,39 +28,71 @@
           data-testid="committee-search-input"></lfx-input-text>
       </div>
 
-      <!-- Category Filter Dropdown -->
-      <div class="w-full sm:w-64">
-        <lfx-select
-          [form]="searchForm()"
-          control="category"
-          size="small"
-          [options]="categoryOptions()"
-          placeholder="Select Type"
-          [showClear]="true"
-          styleClass="w-full"
-          data-testid="committee-type-filter"></lfx-select>
-      </div>
+      <!-- Foundation Filter (Me lens) -->
+      @if (showFoundationFilter()) {
+        <div class="w-full sm:w-48">
+          <lfx-select
+            [form]="searchForm()"
+            control="foundationFilter"
+            size="small"
+            [options]="foundationOptions()"
+            styleClass="w-full"
+            (onChange)="foundationFilterChange.emit($event.value)"
+            data-testid="committee-foundation-filter"></lfx-select>
+        </div>
+      }
+
+      <!-- Project Filter (Me lens) -->
+      @if (showProjectFilter()) {
+        <div class="w-full sm:w-48">
+          <lfx-select
+            [form]="searchForm()"
+            control="projectFilter"
+            size="small"
+            [options]="projectOptions()"
+            styleClass="w-full"
+            (onChange)="projectFilterChange.emit($event.value)"
+            data-testid="committee-project-filter"></lfx-select>
+        </div>
+      }
 
       <!-- Voting Status Filter Dropdown -->
-      <div class="w-full sm:w-64">
+      <div class="w-full sm:w-48">
         <lfx-select
           [form]="searchForm()"
           control="votingStatus"
           size="small"
           [options]="votingStatusOptions()"
-          placeholder="Select Voting Status"
+          placeholder="All Voting Status"
           [showClear]="true"
           styleClass="w-full"
           data-testid="committee-voting-status-filter"></lfx-select>
       </div>
     </div>
   </div>
+  }
 
+  @if (hasItems()) {
+  <div class="px-5 pb-5">
+  @if (committees().length === 0) {
+    <lfx-empty-state
+      [withCard]="false"
+      icon="fa-light fa-eyes"
+      title="No results found"
+      subtitle="Try adjusting your filter criteria"
+      ctaLabel="Reset filters"
+      ctaIcon="fa-light fa-arrow-rotate-left"
+      (ctaClick)="resetFilters()">
+    </lfx-empty-state>
+  } @else {
   <lfx-table
     [value]="committees()"
-    [paginator]="committees().length > 10"
+    [paginator]="committees().length > 0"
     [rows]="10"
-    [rowsPerPageOptions]="[10, 25, 50]"
+    [rowsPerPageOptions]="rppOptions()"
+    [showFirstLastIcon]="false"
+    [showCurrentPageReport]="true"
+    currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
     sortField="name"
     [sortOrder]="1"
     selectionMode="single"
@@ -64,9 +107,6 @@
         <th>Channels</th>
         <th>Voting</th>
         <th>Last Updated</th>
-        @if (!canManageCommittee()) {
-          <th class="min-w-[120px]">Status</th>
-        }
         @if (canManageCommittee()) {
           <th></th>
         }
@@ -79,7 +119,7 @@
             @if (isBoardMember()) {
               <span class="text-sm font-medium">{{ committee.name || '-' }}</span>
             } @else {
-              <a [routerLink]="['/groups', committee.uid]" class="text-sm font-medium">
+              <a [routerLink]="['/groups', committee.uid]" class="lfx-table-name-link text-sm">
                 {{ committee.name || '-' }}
               </a>
             }
@@ -90,10 +130,10 @@
         </td>
         <td>
           @let category = committee.category || 'Other';
-          <lfx-tag [value]="category" [severity]="category | committeeCategorySeverity"></lfx-tag>
+          <lfx-tag [value]="category" styleClass="tag-neutral"></lfx-tag>
         </td>
         <td class="min-w-[200px]">
-          <div class="max-w-[300px] line-clamp-2 text-xs">
+          <div class="max-w-[300px] line-clamp-2 text-sm text-gray-700">
             @if (committee.description) {
               {{ committee.description }}
             } @else {
@@ -102,10 +142,7 @@
           </div>
         </td>
         <td>
-          <a [routerLink]="['/groups', committee.uid]">
-            <!-- prettier-ignore -->
-            {{ (committee.total_members ?? 0) | number }}
-          </a>
+          <span class="text-sm text-gray-700">{{ (committee.total_members ?? 0) | number }}</span>
         </td>
         <td>
           <!-- Channels: mailing_list is the direct email string; has_mailing_list is an enriched boolean from query-service association -->
@@ -159,48 +196,13 @@
         <td>
           @if (committee.enable_voting) {
             <span class="inline-flex items-center" pTooltip="Voting enabled" tooltipPosition="top" tabindex="0" aria-label="Voting enabled">
-              <i class="fa-light fa-check w-4 h-4 text-emerald-600" aria-hidden="true"></i>
+              <i class="fa-solid fa-circle-check w-4 h-4 text-emerald-600" aria-hidden="true"></i>
             </span>
           } @else {
             <span class="text-gray-400 text-xs" aria-label="Voting disabled">—</span>
           }
         </td>
-        <td>{{ committee.updated_at | date: 'MMM d, y' }}</td>
-        @if (!canManageCommittee()) {
-          <td class="whitespace-nowrap">
-            @if (myCommitteeUids().has(committee.uid)) {
-              <div class="flex items-center gap-2">
-                <lfx-tag value="Joined" severity="success"></lfx-tag>
-                @if (committee.join_mode === 'open' || committee.join_mode === 'invite_only') {
-                  <lfx-button
-                    icon="fa-light fa-paper-plane"
-                    severity="secondary"
-                    size="small"
-                    [outlined]="true"
-                    [text]="true"
-                    pTooltip="Invite — coming soon"
-                    tooltipPosition="top"
-                    [disabled]="true"
-                    [attr.data-testid]="'committee-invite-' + committee.uid">
-                  </lfx-button>
-                }
-              </div>
-            } @else if (committee.public && (committee.join_mode === 'open' || committee.join_mode === 'application')) {
-              <lfx-button
-                [label]="committee.join_mode === 'application' ? 'Request' : 'Join'"
-                severity="info"
-                size="small"
-                [outlined]="true"
-                (onClick)="joinGroup(committee)"
-                [attr.data-testid]="'committee-join-' + committee.uid">
-              </lfx-button>
-            } @else if (committee.public && committee.join_mode === 'invite_only') {
-              <span class="text-sm text-gray-500 italic">Invite only</span>
-            } @else {
-              <span class="text-sm text-gray-400 italic">{{ committee.public ? 'Closed' : 'Private' }}</span>
-            }
-          </td>
-        }
+        <td><span class="text-sm text-gray-700">{{ committee.updated_at | date: 'MMM d, y' }}</span></td>
         @if (canManageCommittee()) {
           <td>
             <div class="flex items-center justify-end gap-1">
@@ -233,13 +235,17 @@
         }
       </tr>
     </ng-template>
-    <ng-template #emptymessage>
-      <tr>
-        <td colspan="8">
-          <i class="fa-light fa-folder-open text-3xl text-gray-400 mb-2"></i>
-          <p class="text-sm text-gray-500">No {{ committeeLabel.plural.toLowerCase() }} found</p>
-        </td>
-      </tr>
-    </ng-template>
   </lfx-table>
+  }
+  </div>
+  } @else {
+    <div class="px-5 pb-5">
+      <lfx-empty-state
+        [withCard]="false"
+        icon="fa-light fa-users-rectangle"
+        [title]="'No ' + committeeLabel.plural.toLowerCase() + ' yet'"
+        subtitle="Groups you're a member of will appear here.">
+      </lfx-empty-state>
+    </div>
+  }
 </lfx-card>

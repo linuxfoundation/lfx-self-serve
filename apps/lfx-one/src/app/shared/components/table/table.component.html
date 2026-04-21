@@ -6,9 +6,9 @@
   [columns]="columns()"
   [dataKey]="dataKey()"
   [style]="style()"
-  [rowHover]="rowHover()"
+  [rowHover]="rowHover() && !isEmpty()"
   (click)="onHostClick($event)"
-  [styleClass]="(styleClass() || '') + (selectionMode() ? ' lfx-table-selectable' : '')"
+  [styleClass]="(styleClass() || '') + (!isEmpty() && selectionMode() ? ' lfx-table-selectable' : '')"
   [tableStyle]="tableStyle()"
   [tableStyleClass]="tableStyleClass()"
   [paginator]="paginator()"
@@ -19,7 +19,7 @@
   [rowsPerPageOptions]="rowsPerPageOptions()"
   [alwaysShowPaginator]="alwaysShowPaginator()"
   [paginatorPosition]="paginatorPosition()"
-  [paginatorStyleClass]="paginatorStyleClass()"
+  [paginatorStyleClass]="(paginatorStyleClass() ?? '') + (!rowsPerPageOptions() ? ' lfx-paginator-no-rpp' : '') + (isSinglePage() ? ' lfx-paginator-single-page' : '')"
   [paginatorDropdownAppendTo]="paginatorDropdownAppendTo()"
   [paginatorDropdownScrollHeight]="paginatorDropdownScrollHeight()"
   [currentPageReportTemplate]="currentPageReportTemplate()"
@@ -94,8 +94,8 @@
     </ng-template>
   }
 
-  <!-- Header template -->
-  @if (headerTemplate) {
+  <!-- Header template — hidden when table is empty (emptymessage state) -->
+  @if (headerTemplate && !isEmpty()) {
     <ng-template #header>
       <ng-container *ngTemplateOutlet="headerTemplate || null"></ng-container>
     </ng-template>

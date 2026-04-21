@@ -1,47 +1,69 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="bg-white rounded-lg border border-gray-200" data-testid="events-list">
-  <!-- Tab Navigation -->
-  <div class="flex gap-1 border-b border-gray-200" data-testid="events-tabs">
-    @for (tab of tabs; track tab.id) {
-      <button
-        type="button"
-        (click)="setActiveTab(tab.id)"
-        class="px-4 py-2 text-sm font-medium transition-colors"
-        [ngClass]="{
-          'border-b-2 border-blue-600 text-blue-600': activeTab() === tab.id,
-          'text-gray-500 hover:text-gray-700': activeTab() !== tab.id,
-        }"
-        [attr.data-testid]="'events-tab-' + tab.id">
-        {{ tab.label }}
-        @if (tab.countKey && !upcomingEventsLoading() && !pastEventsLoading()) {
-          <span>({{ tabCounts()[tab.countKey] }})</span>
-        }
-      </button>
-    }
-  </div>
-
+<div data-testid="events-list">
   <!-- Tab Content -->
   @if (activeTab() === 'upcoming') {
-    <lfx-events-table
-      [eventsResponse]="upcomingEvents()"
-      [loading]="upcomingEventsLoading()"
-      [sortField]="upcomingSortField()"
-      [sortOrder]="upcomingSortOrder()"
-      (pageChange)="onUpcomingPageChange($event)"
-      (sortChange)="onUpcomingSortChange($event)"
-      data-testid="events-upcoming-table" />
+    @if (!upcomingEventsLoading() && upcomingEvents().data.length === 0) {
+      @if (isFiltered()) {
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-eyes"
+          title="No results found"
+          subtitle="Try adjusting your filter criteria"
+          ctaLabel="Reset filters"
+          ctaIcon="fa-light fa-arrow-rotate-left"
+          (ctaClick)="resetFilters.emit()"
+          data-testid="events-upcoming-empty-state" />
+      } @else {
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-calendar"
+          title="No upcoming events"
+          subtitle="Events you're registered for and available to attend will appear here."
+          data-testid="events-upcoming-empty-state" />
+      }
+    } @else {
+      <lfx-events-table
+        [eventsResponse]="upcomingEvents()"
+        [loading]="upcomingEventsLoading()"
+        [sortField]="upcomingSortField()"
+        [sortOrder]="upcomingSortOrder()"
+        (pageChange)="onUpcomingPageChange($event)"
+        (sortChange)="onUpcomingSortChange($event)"
+        data-testid="events-upcoming-table" />
+    }
   } @else if (activeTab() === 'past') {
-    <lfx-events-table
-      [eventsResponse]="pastEvents()"
-      [isPastEvents]="true"
-      [loading]="pastEventsLoading()"
-      [sortField]="pastSortField()"
-      [sortOrder]="pastSortOrder()"
-      (pageChange)="onPastPageChange($event)"
-      (sortChange)="onPastSortChange($event)"
-      data-testid="events-past-table" />
+    @if (!pastEventsLoading() && pastEvents().data.length === 0) {
+      @if (isFiltered()) {
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-eyes"
+          title="No results found"
+          subtitle="Try adjusting your filter criteria"
+          ctaLabel="Reset filters"
+          ctaIcon="fa-light fa-arrow-rotate-left"
+          (ctaClick)="resetFilters.emit()"
+          data-testid="events-past-empty-state" />
+      } @else {
+        <lfx-empty-state
+          [withCard]="false"
+          icon="fa-light fa-calendar"
+          title="No past events"
+          subtitle="Events you've attended will appear here."
+          data-testid="events-past-empty-state" />
+      }
+    } @else {
+      <lfx-events-table
+        [eventsResponse]="pastEvents()"
+        [isPastEvents]="true"
+        [loading]="pastEventsLoading()"
+        [sortField]="pastSortField()"
+        [sortOrder]="pastSortOrder()"
+        (pageChange)="onPastPageChange($event)"
+        (sortChange)="onPastSortChange($event)"
+        data-testid="events-past-table" />
+    }
   } @else if (activeTab() === 'visa-letters') {
     <lfx-event-request-list requestType="visa" [searchQuery]="searchQuery()" [status]="status()" data-testid="visa-requests-table" />
   } @else if (activeTab() === 'travel-funding') {

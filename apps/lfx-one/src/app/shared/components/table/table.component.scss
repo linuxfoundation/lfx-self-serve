@@ -30,15 +30,40 @@
           a {
             @apply text-blue-500 hover:text-blue-600 hover:underline cursor-pointer text-sm font-medium;
           }
+
+          // ─── Name-column link pattern ────────────────────────────────────
+          // Apply .lfx-table-name-link to the clickable name/title element in
+          // the first column of any table (works on <a>, <button>, or <span>).
+          // Renders as gray-900 + underline instead of the default blue link.
+          // Nested here so specificity beats the `a` rule above.
+          .lfx-table-name-link {
+            @apply text-gray-900 hover:text-gray-700 font-medium cursor-pointer;
+          }
+
+          a.lfx-table-name-link {
+            @apply underline;
+          }
         }
       }
     }
 
-    // Selectable table rows
+    // Selectable table rows — cursor to signal clickability (hover bg via global .p-datatable-hoverable rule)
     &.lfx-table-selectable {
       .p-datatable-tbody {
         tr {
-          @apply cursor-pointer;
+          @apply cursor-pointer transition-colors duration-150;
+        }
+      }
+    }
+
+    // Empty-message row — no hover, no cursor change
+    .p-datatable-tbody {
+      tr.p-datatable-emptymessage {
+        background: transparent !important;
+        cursor: default !important;
+
+        &:hover {
+          background: transparent !important;
         }
       }
     }
@@ -46,6 +71,47 @@
     // Hide PrimeNG's default gray loading overlay (we use skeleton rows instead)
     .p-datatable-mask {
       display: none;
+    }
+
+    // ─── Paginator layout ────────────────────────────────────────────────────
+    // nav arrows + pages flush left; "Showing…" + rpp-dropdown flush right
+    .p-paginator {
+      justify-content: flex-start !important;
+      padding-top: 1.5rem !important;
+
+      .p-paginator-first { order: 1; }
+      .p-paginator-prev  { order: 2; }
+      .p-paginator-pages { order: 3; }
+      .p-paginator-next  { order: 4; }
+      .p-paginator-last  { order: 5; }
+
+      .p-paginator-current {
+        order: 6;
+        margin-left: auto;
+        font-size: 0.875rem !important;
+        color: #6b7280;
+      }
+
+      .p-paginator-rpp-dropdown {
+        order: 7;
+        margin-left: 1.5rem;
+      }
+    }
+  }
+
+  // Hide rpp dropdown when ≤10 rows (no rowsPerPage options supplied)
+  .lfx-paginator-no-rpp .p-paginator-rpp-dropdown {
+    display: none !important;
+  }
+
+  // Hide nav arrows + page numbers when there's only 1 page
+  .lfx-paginator-single-page {
+    .p-paginator-first,
+    .p-paginator-prev,
+    .p-paginator-pages,
+    .p-paginator-next,
+    .p-paginator-last {
+      display: none !important;
     }
   }
 }

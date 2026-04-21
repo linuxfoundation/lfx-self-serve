@@ -2,10 +2,13 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, input, output, Signal } from '@angular/core';
+import { toSignal, toObservable } from '@angular/core/rxjs-interop';
 import { ReactiveFormsModule, FormGroup } from '@angular/forms';
+import { switchMap, startWith } from 'rxjs';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
@@ -39,6 +42,7 @@ import { TooltipModule } from 'primeng/tooltip';
     RemainingGroupsTooltipPipe,
     SliceLinkedGroupsPipe,
     StripHtmlPipe,
+    EmptyStateComponent,
   ],
   templateUrl: './mailing-list-table.component.html',
   styleUrl: './mailing-list-table.component.scss',
@@ -64,17 +68,35 @@ export class MailingListTableComponent {
   protected readonly maxVisibleGroups = MAILING_LIST_MAX_VISIBLE_GROUPS;
   protected readonly committeeLabel = COMMITTEE_LABEL;
 
-  // State
-  public isBoardMember: Signal<boolean> = computed(() => this.personaService.currentPersona() === 'board-member');
-
   // Outputs
   public readonly refresh = output<void>();
   public readonly rowClick = output<GroupsIOMailingList>();
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
 
+  // State
+  public isBoardMember: Signal<boolean> = computed(() => this.personaService.currentPersona() === 'board-member');
+
+  private readonly formValue = toSignal(
+    toObservable(this.searchForm).pipe(switchMap((form) => form.valueChanges.pipe(startWith(form.value)))),
+    { initialValue: {} as Record<string, unknown> }
+  );
+
+  protected readonly isFiltered = computed(() => {
+    const v = this.formValue();
+    return !!v['search'] || !!v['committee'] || !!v['status'] || !!v['foundationFilter'] || !!v['projectFilter'];
+  });
+
+  protected readonly rppOptions = computed<number[] | undefined>(() => (this.mailingLists().length > 10 ? [10, 25, 50] : undefined));
+
   // Event Handlers
   protected onRowSelect(event: { data: GroupsIOMailingList }): void {
     this.rowClick.emit(event.data);
+  }
+
+  protected resetFilters(): void {
+    this.searchForm().patchValue({ search: '', committee: null, status: null, foundationFilter: null, projectFilter: null });
+    this.foundationFilterChange.emit(null);
+    this.projectFilterChange.emit(null);
   }
 }

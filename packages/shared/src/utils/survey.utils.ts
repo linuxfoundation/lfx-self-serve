@@ -44,7 +44,8 @@ export function getCombinedSurveyStatus(survey: UserSurvey): CombinedSurveyStatu
  * @returns The computed display status as SurveyStatus
  */
 export function getSurveyDisplayStatus(survey: Pick<Survey, 'survey_status' | 'survey_cutoff_date' | 'response_status'>): SurveyStatus {
-  const status = survey.survey_status as SurveyStatus;
+  // Normalize to lowercase so API values like 'OPEN', 'CLOSED' match enum values
+  const status = (survey.survey_status as string).toLowerCase() as SurveyStatus;
 
   // Explicit response_status from the API takes precedence
   if (survey.response_status === 'closed') {

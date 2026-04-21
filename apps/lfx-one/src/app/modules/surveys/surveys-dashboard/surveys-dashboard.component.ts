@@ -6,7 +6,6 @@ import { Component, computed, inject, Signal, signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { CardComponent } from '@components/card/card.component';
 import { SURVEY_LABEL } from '@lfx-one/shared';
 import { ProjectContext, Survey } from '@lfx-one/shared/interfaces';
 import { LensService } from '@services/lens.service';
@@ -15,12 +14,13 @@ import { ProjectContextService } from '@services/project-context.service';
 import { SurveyService } from '@services/survey.service';
 import { BehaviorSubject, catchError, combineLatest, finalize, of, switchMap } from 'rxjs';
 
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { SurveyResultsDrawerComponent } from '../components/survey-results-drawer/survey-results-drawer.component';
 import { SurveysTableComponent } from '../components/surveys-table/surveys-table.component';
 
 @Component({
   selector: 'lfx-surveys-dashboard',
-  imports: [LowerCasePipe, CardComponent, ButtonComponent, SurveysTableComponent, RouterLink, SurveyResultsDrawerComponent],
+  imports: [LowerCasePipe, ButtonComponent, SurveysTableComponent, RouterLink, SurveyResultsDrawerComponent, EmptyStateComponent],
   templateUrl: './surveys-dashboard.component.html',
   styleUrl: './surveys-dashboard.component.scss',
 })

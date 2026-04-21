@@ -14,9 +14,27 @@
   <!-- Content Area - Conditional Tables -->
   <div class="min-h-[400px]">
     @if (isVotesTab()) {
-      <lfx-votes-table [votes]="votes()"></lfx-votes-table>
+      @if (votes().length === 0) {
+        <lfx-empty-state
+          icon="fa-light fa-check-to-slot"
+          title="No vote activity yet"
+          subtitle="Your pending and completed votes will appear here."
+          data-testid="my-activity-votes-empty-state">
+        </lfx-empty-state>
+      } @else {
+        <lfx-votes-table [votes]="votes()"></lfx-votes-table>
+      }
     } @else if (isSurveysTab()) {
-      <lfx-surveys-table [surveys]="surveys()"></lfx-surveys-table>
+      @if (surveys().length === 0) {
+        <lfx-empty-state
+          icon="fa-light fa-clipboard-list"
+          title="No survey activity yet"
+          subtitle="Your pending and completed surveys will appear here."
+          data-testid="my-activity-surveys-empty-state">
+        </lfx-empty-state>
+      } @else {
+        <lfx-surveys-table [surveys]="surveys()"></lfx-surveys-table>
+      }
     }
   </div>
 </div>

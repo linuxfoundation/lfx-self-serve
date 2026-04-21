@@ -9,6 +9,7 @@ import { POLL_STATUS_LABELS, PollStatus } from '@lfx-one/shared';
 })
 export class PollStatusLabelPipe implements PipeTransform {
   public transform(status: PollStatus): string {
-    return POLL_STATUS_LABELS[status] ?? status;
+    const normalized = (status as string).toLowerCase() as PollStatus;
+    return POLL_STATUS_LABELS[normalized] ?? status;
   }
 }

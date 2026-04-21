@@ -1,51 +1,46 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, input, OnInit, output } from '@angular/core';
+import { Component, effect, input, output } from '@angular/core';
 import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
+import { FilterPillOption } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-meetings-top-bar',
-
-  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent],
+  imports: [ReactiveFormsModule, InputTextComponent, SelectComponent, FilterPillsComponent],
   templateUrl: './meetings-top-bar.component.html',
 })
-export class MeetingsTopBarComponent implements OnInit {
+export class MeetingsTopBarComponent {
   public meetingTypeOptions = input.required<{ label: string; value: string | null }[]>();
   public foundationOptions = input<{ label: string; value: string | null }[]>([]);
   public projectOptions = input<{ label: string; value: string | null }[]>([]);
   public showFoundationFilter = input<boolean>(false);
   public showProjectFilter = input<boolean>(false);
-  public readonly initialTimeFilter = input<'upcoming' | 'past'>('upcoming');
+  public readonly timeFilter = input<'upcoming' | 'past'>('upcoming');
   public readonly meetingTypeChange = output<string | null>();
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
+  public readonly searchQuery = input<string>('');
   public readonly searchQueryChange = output<string>();
   public readonly timeFilterChange = output<'upcoming' | 'past'>();
 
-  public searchForm: FormGroup;
-  public timeFilterOptions: { label: string; value: 'upcoming' | 'past' }[];
+  public readonly timeTabOptions: FilterPillOption[] = [
+    { id: 'upcoming', label: 'Upcoming' },
+    { id: 'past', label: 'Past' },
+  ];
+
+  public searchForm: FormGroup = new FormGroup({
+    search: new FormControl(''),
+    meetingType: new FormControl<string | null>(null),
+    foundationFilter: new FormControl<string | null>(null),
+    projectFilter: new FormControl<string | null>(null),
+  });
 
   public constructor() {
-    // Initialize time filter options
-    this.timeFilterOptions = [
-      { label: 'Upcoming', value: 'upcoming' },
-      { label: 'Past', value: 'past' },
-    ];
-
-    // Initialize form
-    this.searchForm = new FormGroup({
-      search: new FormControl(''),
-      meetingType: new FormControl<string | null>(null),
-      foundationFilter: new FormControl<string | null>(null),
-      projectFilter: new FormControl<string | null>(null),
-      timeFilter: new FormControl<'upcoming' | 'past'>('upcoming'),
-    });
-
-    // Subscribe to form changes and emit events
     this.searchForm
       .get('search')
       ?.valueChanges.pipe(takeUntilDestroyed())
@@ -53,24 +48,12 @@ export class MeetingsTopBarComponent implements OnInit {
         this.searchQueryChange.emit(value || '');
       });
 
-    // Subscribe to time filter changes
-    this.searchForm
-      .get('timeFilter')
-      ?.valueChanges.pipe(takeUntilDestroyed())
-      .subscribe((value) => {
-        if (value) {
-          this.timeFilterChange.emit(value);
-          this.searchForm.get('foundationFilter')?.setValue(null, { emitEvent: false });
-          this.searchForm.get('projectFilter')?.setValue(null, { emitEvent: false });
-        }
-      });
-  }
-
-  public ngOnInit(): void {
-    const initial = this.initialTimeFilter();
-    if (initial !== 'upcoming') {
-      this.searchForm.get('timeFilter')?.setValue(initial, { emitEvent: false });
-    }
+    effect(() => {
+      const query = this.searchQuery();
+      if (this.searchForm.get('search')?.value !== query) {
+        this.searchForm.get('search')?.setValue(query, { emitEvent: false });
+      }
+    });
   }
 
   public onMeetingTypeChange(value: string | null): void {
@@ -79,7 +62,6 @@ export class MeetingsTopBarComponent implements OnInit {
 
   public onFoundationFilterChange(value: string | null): void {
     this.foundationFilterChange.emit(value);
-    // Reset project filter when foundation changes
     this.searchForm.get('projectFilter')?.setValue(null, { emitEvent: false });
     this.projectFilterChange.emit(null);
   }
@@ -88,7 +70,7 @@ export class MeetingsTopBarComponent implements OnInit {
     this.projectFilterChange.emit(value);
   }
 
-  public onTimeFilterChange(value: 'upcoming' | 'past'): void {
-    this.timeFilterChange.emit(value);
+  public onTimeTabChange(value: string): void {
+    this.timeFilterChange.emit(value as 'upcoming' | 'past');
   }
 }

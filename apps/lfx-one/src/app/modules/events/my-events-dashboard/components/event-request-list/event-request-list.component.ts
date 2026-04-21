@@ -5,7 +5,6 @@ import { ChangeDetectionStrategy, Component, Type, computed, inject, input, Sign
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { EventsService } from '@app/shared/services/events.service';
 import { UserService } from '@app/shared/services/user.service';
-import { ButtonComponent } from '@components/button/button.component';
 import { EventRequestStatusSeverityPipe } from '@app/shared/pipes/event-request-status-severity.pipe';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -14,11 +13,12 @@ import { PageChangeEvent, RequestType, VisaRequestsResponse } from '@lfx-one/sha
 import { MessageService } from 'primeng/api';
 import { DialogService, DynamicDialogModule } from 'primeng/dynamicdialog';
 import { catchError, combineLatest, defer, finalize, map, of, skip, switchMap, tap } from 'rxjs';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { TravelFundApplicationDialogComponent } from '../travel-fund-application-dialog/travel-fund-application-dialog.component';
 import { VisaRequestApplicationDialogComponent } from '../visa-request-application-dialog/visa-request-application-dialog.component';
 @Component({
   selector: 'lfx-event-request-list',
-  imports: [TableComponent, TagComponent, ButtonComponent, DynamicDialogModule, EventRequestStatusSeverityPipe],
+  imports: [TableComponent, TagComponent, DynamicDialogModule, EventRequestStatusSeverityPipe, EmptyStateComponent],
   providers: [DialogService],
   templateUrl: './event-request-list.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -41,13 +41,22 @@ export class EventRequestListComponent {
   protected readonly requestsResponse: Signal<VisaRequestsResponse> = this.initRequests();
   protected readonly isCreateEnabled: Signal<boolean> = this.initIsCreateEnabled();
 
+  protected readonly rppOptions = computed<number[] | undefined>(() =>
+    this.requestsResponse().total > 10 ? [10, 25, 50] : undefined
+  );
+
+  /** True while loading or when at least one result exists — parent uses this to decide whether to show the filter bar. */
+  public readonly hasData = computed(() => this.loading() || this.requestsResponse().data.length > 0);
+
   protected readonly config = computed(() => {
     const isVisa = this.requestType() === 'visa';
     return {
       dialogComponent: (isVisa ? VisaRequestApplicationDialogComponent : TravelFundApplicationDialogComponent) as Type<unknown>,
       dialogHeader: isVisa ? 'Visa Letter Application' : 'Travel Funding Application',
       buttonLabel: isVisa ? 'New Letter Application' : 'New Funding Application',
-      emptyMessage: isVisa ? 'No visa requests found' : 'No travel fund requests found',
+      emptyIcon: isVisa ? 'fa-light fa-passport' : 'fa-light fa-plane',
+      emptyTitle: isVisa ? 'No visa letter requests yet' : 'No travel funding requests yet',
+      emptySubtitle: isVisa ? 'Submit a request to get a visa support letter for an LF event.' : 'Submit an application to get travel funding for an LF event.',
       testIdPrefix: isVisa ? 'visa-request' : 'travel-funding',
     };
   });
@@ -75,6 +84,7 @@ export class EventRequestListComponent {
   }
 
   public openApplicationDialog(): void {
+    if (!this.isCreateEnabled()) return;
     this.dialogService.open(this.config().dialogComponent, {
       header: this.config().dialogHeader,
       width: '800px',

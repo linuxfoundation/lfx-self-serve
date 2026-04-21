@@ -8,12 +8,11 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MyEventsResponse, PageChangeEvent, SortChangeEvent, TagSeverity } from '@lfx-one/shared/interfaces';
 import { MessageService } from 'primeng/api';
-import { TooltipModule } from 'primeng/tooltip';
 import { take } from 'rxjs/operators';
 
 @Component({
   selector: 'lfx-events-table',
-  imports: [TableComponent, TagComponent, ButtonComponent, TooltipModule],
+  imports: [TableComponent, TagComponent, ButtonComponent],
   templateUrl: './events-table.component.html',
 })
 export class EventsTableComponent {
@@ -43,6 +42,8 @@ export class EventsTableComponent {
     Cancelled: 'danger',
   };
 
+  protected readonly rppOptions = computed<number[] | undefined>(() => (this.eventsResponse().total > 10 ? [10, 25, 50] : undefined));
+
   protected readonly sortIcons = computed(() => {
     const field = this.sortField();
     const order = this.sortOrder();
@@ -64,6 +65,22 @@ export class EventsTableComponent {
 
   protected onHeaderClick(field: string): void {
     this.sortChange.emit({ field });
+  }
+
+  protected onTableRowSelect(event: { data: { url?: string } }): void {
+    if (event.data?.url) {
+      this.openUrl(event.data.url);
+    }
+  }
+
+  protected openUrl(url: string): void {
+    try {
+      const parsed = new URL(url);
+      if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') return;
+      window.open(parsed.href, '_blank', 'noopener,noreferrer');
+    } catch {
+      // invalid URL — no-op
+    }
   }
 
   protected downloadCertificate(eventId: string): void {

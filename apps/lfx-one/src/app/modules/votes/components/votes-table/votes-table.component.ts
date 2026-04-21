@@ -2,31 +2,35 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, DestroyRef, inject, input, OnInit, output, signal, Signal } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, computed, DestroyRef, inject, input, output, signal, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { POLL_STATUS_LABELS, PollStatus, VOTE_LABEL } from '@lfx-one/shared';
-import { Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
+import { PollStatus, VOTE_LABEL } from '@lfx-one/shared';
+import { FilterPillOption, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
+import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { RelativeDueDatePipe } from '@pipes/relative-due-date.pipe';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
 import { TooltipModule } from 'primeng/tooltip';
-import { debounceTime, distinctUntilChanged, map } from 'rxjs';
+import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take } from 'rxjs';
 
 @Component({
   selector: 'lfx-votes-table',
   imports: [
     CardComponent,
+    CardTabsBarComponent,
     TableComponent,
     TagComponent,
     ButtonComponent,
@@ -38,13 +42,15 @@ import { debounceTime, distinctUntilChanged, map } from 'rxjs';
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
     RelativeDueDatePipe,
+    DueDateLabelPipe,
     TooltipModule,
     ConfirmDialogModule,
+    EmptyStateComponent,
   ],
   providers: [ConfirmationService],
   templateUrl: './votes-table.component.html',
 })
-export class VotesTableComponent implements OnInit {
+export class VotesTableComponent {
   // === Injections ===
   private readonly confirmationService = inject(ConfirmationService);
   private readonly messageService = inject(MessageService);
@@ -54,6 +60,11 @@ export class VotesTableComponent implements OnInit {
   // === Constants ===
   protected readonly voteLabel = VOTE_LABEL;
   protected readonly PollStatus = PollStatus;
+  protected readonly statusTabOptions: FilterPillOption[] = [
+    { id: 'all', label: 'All' },
+    { id: PollStatus.ACTIVE, label: 'Active' },
+    { id: PollStatus.ENDED, label: 'Ended' },
+  ];
 
   // === Inputs ===
   public readonly votes = input.required<Vote[]>();
@@ -78,23 +89,34 @@ export class VotesTableComponent implements OnInit {
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
 
-  // === Writable Signals ===
-  protected readonly isDeleting = signal(false);
-
   // === Forms ===
   public searchForm = new FormGroup({
     search: new FormControl<string>(''),
-    status: new FormControl<PollStatus | null>(null),
     group: new FormControl<string | null>(null),
     foundationFilter: new FormControl<string | null>(null),
     projectFilter: new FormControl<string | null>(null),
   });
 
-  // === Computed Signals ===
-  protected readonly statusOptions: Signal<{ label: string; value: PollStatus | null }[]> = this.initStatusOptions();
+  // === Writable Signals ===
+  protected readonly isDeleting = signal(false);
+  protected readonly statusTab = signal<string>('all');
+  private readonly filterState = signal<VoteFilterState>({ search: '', status: null, group: null });
 
-  // === Lifecycle ===
-  public ngOnInit(): void {
+  // === Computed Signals ===
+  protected readonly displayedVotes: Signal<Vote[]> = this.initDisplayedVotes();
+  protected readonly isFiltered = computed(() => {
+    if (this.lazy()) return false;
+    const f = this.filterState();
+    return this.statusTab() !== 'all' || !!f.search || !!f.group;
+  });
+
+  protected readonly rppOptions = computed<number[] | undefined>(() => {
+    const count = this.lazy() ? this.totalRecords() : this.displayedVotes().length;
+    return count > 10 ? [10, 25, 50] : undefined;
+  });
+
+  // === Constructor ===
+  public constructor() {
     this.initFormSubscriptions();
   }
 
@@ -105,6 +127,10 @@ export class VotesTableComponent implements OnInit {
 
   protected onViewResults(voteId: string): void {
     this.viewResults.emit(voteId);
+  }
+
+  protected onStatusTabChange(tab: string): void {
+    this.statusTab.set(tab);
   }
 
   protected onFoundationFilterChange(value: string | null): void {
@@ -126,6 +152,13 @@ export class VotesTableComponent implements OnInit {
     }
   }
 
+  protected resetFilters(): void {
+    this.searchForm.reset({ search: '', group: null, foundationFilter: null, projectFilter: null });
+    this.statusTab.set('all');
+    this.foundationFilterChange.emit(null);
+    this.projectFilterChange.emit(null);
+  }
+
   protected onDeleteVote(vote: Vote): void {
     this.confirmationService.confirm({
       message: `Are you sure you want to delete the ${this.voteLabel.singular.toLowerCase()} "${vote.name}"? This action cannot be undone.`,
@@ -136,7 +169,7 @@ export class VotesTableComponent implements OnInit {
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
       accept: () => {
         this.isDeleting.set(true);
-        this.voteService.deleteVote(vote.uid).subscribe({
+        this.voteService.deleteVote(vote.uid).pipe(take(1)).subscribe({
           next: () => {
             this.messageService.add({
               severity: 'success',
@@ -161,36 +194,50 @@ export class VotesTableComponent implements OnInit {
 
   // === Private Initializers ===
   private initFormSubscriptions(): void {
-    this.searchForm.valueChanges
+    combineLatest([
+      this.searchForm.valueChanges.pipe(startWith(this.searchForm.value), debounceTime(300), distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))),
+      toObservable(this.statusTab),
+    ])
       .pipe(
-        debounceTime(300),
-        distinctUntilChanged((prev, curr) => JSON.stringify(prev) === JSON.stringify(curr)),
-        map((value) => ({
-          search: value.search ?? '',
-          status: value.status ?? null,
-          group: value.group ?? null,
+        map(([formValue, statusTab]) => ({
+          search: formValue.search ?? '',
+          status: statusTab !== 'all' ? (statusTab as PollStatus) : null,
+          group: formValue.group ?? null,
         })),
         takeUntilDestroyed(this.destroyRef)
       )
-      .subscribe((filters) => this.filtersChange.emit(filters));
+      .subscribe((filters) => {
+        this.filterState.set(filters);
+        this.filtersChange.emit(filters);
+      });
   }
 
-  private initStatusOptions(): Signal<{ label: string; value: PollStatus | null }[]> {
+  private initDisplayedVotes(): Signal<Vote[]> {
     return computed(() => {
-      const options: { label: string; value: PollStatus | null }[] = [{ label: 'All Statuses', value: null }];
+      const allVotes = this.votes();
 
-      const statusOrder: PollStatus[] = [PollStatus.ACTIVE, PollStatus.DISABLED, PollStatus.ENDED];
-      for (const status of statusOrder) {
-        const shouldShowStatus = status !== PollStatus.DISABLED || this.hasPMOAccess();
-        if (shouldShowStatus) {
-          options.push({
-            label: POLL_STATUS_LABELS[status],
-            value: status,
-          });
-        }
+      // For lazy (server-side paginated) mode, the server handles all filtering via filtersChange
+      if (this.lazy()) return allVotes;
+
+      // For client-side mode (Me lens), apply all filters locally
+      const filters = this.filterState();
+      let filtered = allVotes;
+
+      const tab = this.statusTab();
+      if (tab !== 'all') {
+        filtered = filtered.filter((v) => (v.status as string).toLowerCase() === tab);
       }
 
-      return options;
+      if (filters.search) {
+        const term = filters.search.toLowerCase();
+        filtered = filtered.filter((v) => v.name.toLowerCase().includes(term));
+      }
+
+      if (filters.group) {
+        filtered = filtered.filter((v) => v.committee_name === filters.group);
+      }
+
+      return filtered;
     });
   }
 }

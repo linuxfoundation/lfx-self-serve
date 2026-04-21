@@ -1,0 +1,36 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (withCard()) {
+  <lfx-card>
+    <ng-container [ngTemplateOutlet]="content" />
+  </lfx-card>
+} @else {
+  <ng-container [ngTemplateOutlet]="content" />
+}
+
+<ng-template #content>
+  <div class="p-8 md:p-16">
+    <div class="mx-auto text-center flex flex-col gap-4 items-center">
+      <!-- Icon -->
+      <div class="w-20 h-20 rounded-full bg-gray-100 flex items-center justify-center">
+        <i [class]="icon() + ' text-3xl text-gray-500'"></i>
+      </div>
+
+      <!-- Title -->
+      <h3 class="text-lg font-semibold text-gray-900">{{ title() }}</h3>
+
+      <!-- Subtitle -->
+      @if (subtitle()) {
+        <p class="text-sm text-gray-500">{{ subtitle() }}</p>
+      }
+
+      <!-- CTA -->
+      @if (ctaLabel() && ctaRoute()) {
+        <lfx-button [label]="ctaLabel()!" [icon]="ctaIcon()" severity="primary" size="small" [routerLink]="ctaRoute()!"></lfx-button>
+      } @else if (ctaLabel()) {
+        <lfx-button [label]="ctaLabel()!" [icon]="ctaIcon()" severity="primary" size="small" [outlined]="true" (onClick)="ctaClick.emit()"></lfx-button>
+      }
+    </div>
+  </div>
+</ng-template>

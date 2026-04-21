@@ -65,17 +65,19 @@
     <!-- Content Area -->
     <div class="min-h-[400px]">
       @if (!isMeLens() && mailingLists().length === 0 && project()?.uid) {
-        <!-- Empty state: No mailing lists exist -->
-        <lfx-card>
-          <div class="flex items-center justify-center p-16">
-            <div class="text-center max-w-md">
-              <div class="text-gray-400 mb-4">
-                <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
-                <h3 class="text-gray-600 mt-2">Your project has no {{ mailingListLabelPlural.toLowerCase() }}, yet.</h3>
-              </div>
-            </div>
-          </div>
-        </lfx-card>
+        <lfx-empty-state
+          icon="fa-light fa-envelope"
+          [title]="'No ' + mailingListLabelPlural.toLowerCase() + ' yet'"
+          subtitle="This project has no mailing lists set up yet."
+          data-testid="mailing-list-project-empty-state">
+        </lfx-empty-state>
+      } @else if (isMeLens() && !myMailingListsLoading() && filteredMailingLists().length === 0 && !isFiltered()) {
+        <lfx-empty-state
+          icon="fa-light fa-envelope"
+          [title]="'No ' + mailingListLabelPlural.toLowerCase() + ' yet'"
+          subtitle="Mailing lists you're subscribed to will appear here."
+          data-testid="mailing-list-me-empty-state">
+        </lfx-empty-state>
       } @else {
         <lfx-mailing-list-table
           [mailingLists]="filteredMailingLists()"

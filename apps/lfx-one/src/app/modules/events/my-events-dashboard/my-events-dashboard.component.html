@@ -33,16 +33,14 @@
               <i class="fa-light fa-ticket text-xl"></i>
             </div>
             <div class="flex flex-col gap-0.5">
-              @if (eventsList.eventsStatsLoading()) {
+              @if (eventsStatsLoading()) {
                 <p class="text-xl font-medium text-gray-400">&mdash;</p>
               } @else {
-                <p class="text-xl font-medium text-gray-900">{{ eventsList.registeredCount() }}</p>
+                <p class="text-xl font-medium text-gray-900">{{ registeredCount() }}</p>
               }
               <p class="text-sm font-normal text-gray-900">Registered Events</p>
-              @if (!eventsList.eventsStatsLoading() && eventsList.nextEventName()) {
-                <p class="text-xs text-gray-400 truncate max-w-[200px]" [pTooltip]="eventsList.nextEventName()" tooltipPosition="top">
-                  Next: {{ eventsList.nextEventName() }}
-                </p>
+              @if (!eventsStatsLoading() && nextEventName()) {
+                <p class="text-xs text-gray-400 truncate max-w-[200px]" [pTooltip]="nextEventName()" tooltipPosition="top">Next: {{ nextEventName() }}</p>
               }
             </div>
           </div>
@@ -51,10 +49,10 @@
               <i class="fa-light fa-calendar-check text-xl"></i>
             </div>
             <div class="flex flex-col gap-0.5">
-              @if (eventsList.eventsStatsLoading()) {
+              @if (eventsStatsLoading()) {
                 <p class="text-xl font-medium text-gray-400">&mdash;</p>
               } @else {
-                <p class="text-xl font-medium text-gray-900">{{ eventsList.attendedCount() }}</p>
+                <p class="text-xl font-medium text-gray-900">{{ attendedCount() }}</p>
               }
               <p class="text-sm font-normal text-gray-900">Attended Events</p>
             </div>
@@ -64,10 +62,10 @@
               <i class="fa-light fa-calendar-plus text-xl"></i>
             </div>
             <div class="flex flex-col gap-0.5">
-              @if (eventsList.eventsStatsLoading()) {
+              @if (eventsStatsLoading()) {
                 <p class="text-xl font-medium text-gray-400">&mdash;</p>
               } @else {
-                <p class="text-xl font-medium text-gray-900">{{ eventsList.tabCounts().upcoming }}</p>
+                <p class="text-xl font-medium text-gray-900">{{ upcomingCount() }}</p>
               }
               <p class="text-sm font-normal text-gray-900">Upcoming Events</p>
             </div>
@@ -76,25 +74,48 @@
       </lfx-card>
     </div>
 
-    <!-- Search and Filters -->
-    <div class="bg-white rounded-lg border border-gray-200 p-4">
-      <lfx-events-top-bar
-        [isFoundationFilter]="!isRequestTab()"
-        [showRoleFilter]="!isRequestTab()"
-        [isPast]="isPast()"
-        [statusOptions]="currentStatusOptions()"
-        (searchQueryChange)="onSearchQueryChange($event)"
-        (foundationChange)="onFoundationChange($event)"
-        (roleChange)="onRoleChange($event)"
-        (statusChange)="onStatusChange($event)" />
-    </div>
-    <!-- Events List (Tabs + Table) -->
-    <lfx-events-list
-      #eventsList
-      [foundation]="selectedFoundation()"
-      [searchQuery]="selectedSearchQuery()"
-      [role]="selectedRole()"
-      [status]="selectedStatus()"
-      (activeTabChange)="onActiveTabChange($event)" />
+    <!-- Events Card: tabs + search + list all in one -->
+    <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="events-main-card">
+      <!-- Tab Pills Bar -->
+      <lfx-card-tabs-bar [options]="tabOptions" [selectedFilter]="activeTab()" (filterChange)="onActiveTabChange($event)" data-testid="events-tab-pills">
+        @if (isRequestTab()) {
+          <lfx-button
+            [label]="requestButtonLabel()"
+            icon="fa-light fa-plus"
+            severity="primary"
+            size="small"
+            (onClick)="openCurrentRequestDialog()"
+            data-testid="events-new-request-button" />
+        }
+      </lfx-card-tabs-bar>
+
+      <!-- Search and Filters (hidden on true empty state — no data and no active filters) -->
+      @if (showFiltersBar()) {
+        <div class="px-5 pt-4 pb-3">
+          <lfx-events-top-bar
+            [isFoundationFilter]="!isRequestTab()"
+            [showRoleFilter]="!isRequestTab()"
+            [isPast]="isPast()"
+            [searchPlaceholder]="searchPlaceholder()"
+            [statusOptions]="currentStatusOptions()"
+            [searchQuery]="selectedSearchQuery()"
+            (searchQueryChange)="onSearchQueryChange($event)"
+            (foundationChange)="onFoundationChange($event)"
+            (roleChange)="onRoleChange($event)"
+            (statusChange)="onStatusChange($event)" />
+        </div>
+      }
+
+      <!-- Events List -->
+      <div class="px-5 pb-5">
+        <lfx-events-list
+          [activeTab]="activeTab()"
+          [foundation]="selectedFoundation()"
+          [searchQuery]="selectedSearchQuery()"
+          [role]="selectedRole()"
+          [status]="selectedStatus()"
+          (resetFilters)="resetFilters()" />
+      </div>
+    </lfx-card>
   </div>
 </div>

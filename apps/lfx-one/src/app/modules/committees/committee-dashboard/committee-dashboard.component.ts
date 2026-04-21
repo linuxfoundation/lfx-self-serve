@@ -1,47 +1,33 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { FormControl, FormGroup } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
-import { InputTextComponent } from '@components/input-text/input-text.component';
-import { SelectComponent } from '@components/select/select.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
 import { Committee, MyCommittee, ProjectContext } from '@lfx-one/shared/interfaces';
-import { RoleBadgeClassPipe } from '@pipes/role-badge-class.pipe';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { MessageService } from 'primeng/api';
-
 import { SkeletonModule } from 'primeng/skeleton';
-import { TooltipModule } from 'primeng/tooltip';
 import { catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap } from 'rxjs';
 
-import { PlatformIconPipe } from '@app/shared/pipes/platform-icon.pipe';
-import { PlatformLabelPipe } from '@app/shared/pipes/platform-label.pipe';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { CommitteeTableComponent } from '../components/committee-table/committee-table.component';
 
 @Component({
   selector: 'lfx-committee-dashboard',
   imports: [
-    NgClass,
-    ReactiveFormsModule,
     ButtonComponent,
     CardComponent,
     CommitteeTableComponent,
-    InputTextComponent,
-    SelectComponent,
-    RoleBadgeClassPipe,
-    PlatformIconPipe,
-    PlatformLabelPipe,
     SkeletonModule,
-    TooltipModule,
+    EmptyStateComponent,
   ],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
@@ -246,14 +232,13 @@ export class CommitteeDashboardComponent {
 
   private initializeCategories(): Signal<{ label: string; value: string | null }[]> {
     return computed(() => {
-      const committeesData = this.committees();
+      const committeesData = this.isMeLens() ? this.myCommittees() : this.committees();
 
-      // Count committees by category
+      // Count committees by category, falling back to 'Other' when category is absent
       const categoryCounts = new Map<string, number>();
       committeesData.forEach((committee) => {
-        if (committee.category) {
-          categoryCounts.set(committee.category, (categoryCounts.get(committee.category) || 0) + 1);
-        }
+        const cat = committee.category || 'Other';
+        categoryCounts.set(cat, (categoryCounts.get(cat) || 0) + 1);
       });
 
       // Get unique categories and sort them
@@ -265,13 +250,13 @@ export class CommitteeDashboardComponent {
         value: cat,
       }));
 
-      return [{ label: `All Types`, value: null }, ...categoryOptions];
+      return [{ label: 'All', value: null }, ...categoryOptions];
     });
   }
 
   private initializeVotingStatusOptions(): Signal<{ label: string; value: string | null }[]> {
     return computed(() => {
-      const committeesData = this.committees();
+      const committeesData = this.isMeLens() ? this.myCommittees() : this.committees();
 
       // Count committees by voting status
       const votingEnabledCount = committeesData.filter((c) => c.enable_voting === true).length;
@@ -335,7 +320,7 @@ export class CommitteeDashboardComponent {
       // Apply category filter
       const category = this.categoryFilter();
       if (category) {
-        filtered = filtered.filter((committee) => committee.category === category);
+        filtered = filtered.filter((committee) => (committee.category || 'Other') === category);
       }
 
       // Apply voting status filter
@@ -375,6 +360,20 @@ export class CommitteeDashboardComponent {
             committee.description?.toLowerCase().includes(searchTerm) ||
             committee.category?.toLowerCase().includes(searchTerm)
         );
+      }
+
+      // Apply category filter
+      const category = this.categoryFilter();
+      if (category) {
+        filtered = filtered.filter((c) => (c.category || 'Other') === category);
+      }
+
+      // Apply voting status filter
+      const votingStatus = this.votingStatusFilter();
+      if (votingStatus === 'enabled') {
+        filtered = filtered.filter((c) => c.enable_voting === true);
+      } else if (votingStatus === 'disabled') {
+        filtered = filtered.filter((c) => c.enable_voting === false);
       }
 
       return filtered;

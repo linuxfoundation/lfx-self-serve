@@ -15,13 +15,14 @@ import {
 } from '@lfx-one/shared';
 import { MyActivityTab, UserSurvey, UserVote } from '@lfx-one/shared/interfaces';
 
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { ActivityTopBarComponent } from '../components/activity-top-bar/activity-top-bar.component';
 import { SurveysTableComponent } from '../components/surveys-table/surveys-table.component';
 import { VotesTableComponent } from '../components/votes-table/votes-table.component';
 
 @Component({
   selector: 'lfx-my-activity-dashboard',
-  imports: [ActivityTopBarComponent, VotesTableComponent, SurveysTableComponent],
+  imports: [ActivityTopBarComponent, VotesTableComponent, SurveysTableComponent, EmptyStateComponent],
   templateUrl: './my-activity-dashboard.component.html',
 })
 export class MyActivityDashboardComponent {

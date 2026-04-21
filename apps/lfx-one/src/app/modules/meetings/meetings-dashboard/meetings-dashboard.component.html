@@ -157,7 +157,7 @@
       </div>
     }
 
-    <!-- Top Bar with Search, Meeting Type Filter, and Time Filter -->
+    <!-- Top Bar with Tabs, Search, and Meeting Type Filter -->
     <div class="sticky top-0 md:top-6 z-10 bg-white rounded-lg border border-gray-200 p-4 -mx-0 mb-8">
       @if (upcomingMeetings() || pastMeetings()) {
         <lfx-meetings-top-bar
@@ -166,10 +166,11 @@
           [projectOptions]="projectOptions()"
           [showFoundationFilter]="showFoundationFilter()"
           [showProjectFilter]="showProjectFilter()"
-          [initialTimeFilter]="timeFilter()"
+          [timeFilter]="timeFilter()"
           (meetingTypeChange)="onMeetingTypeChange($event)"
           (foundationFilterChange)="onFoundationFilterChange($event)"
           (projectFilterChange)="onProjectFilterChange($event)"
+          [searchQuery]="searchQuery()"
           (searchQueryChange)="searchQuery.set($event)"
           (timeFilterChange)="onTimeFilterChange($event)" />
       }
@@ -191,29 +192,30 @@
           </div>
         }
       </div>
-    } @else if (upcomingMeetings().length === 0 && timeFilter() === 'upcoming') {
-      <lfx-card>
-        <div class="flex items-center justify-center p-16">
-          <div class="text-center max-w-md">
-            <div class="text-gray-400 mb-4">
-              <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
-              <h3 class="text-gray-600 mt-2">{{ activeLens() === 'me' ? 'You have no upcoming meetings.' : 'Your project has no meetings, yet.' }}</h3>
-            </div>
-          </div>
-        </div>
-      </lfx-card>
+    } @else if (upcomingMeetings().length === 0 && timeFilter() === 'upcoming' && !isFiltered()) {
+      <lfx-empty-state
+        icon="fa-light fa-calendar"
+        [title]="activeLens() === 'me' ? 'No upcoming meetings' : 'No meetings yet'"
+        [subtitle]="activeLens() === 'me' ? 'Meetings from your committees and projects will appear here.' : 'Schedule a meeting to get started.'"
+        data-testid="meetings-empty-state">
+      </lfx-empty-state>
+    } @else if (pastMeetings().length === 0 && timeFilter() === 'past' && !isFiltered()) {
+      <lfx-empty-state
+        icon="fa-light fa-clock-rotate-left"
+        title="No past meetings"
+        [subtitle]="activeLens() === 'me' ? 'Your past meetings will appear here.' : 'Past meetings will appear here once they have occurred.'"
+        data-testid="meetings-empty-state-past">
+      </lfx-empty-state>
     } @else if (filteredMeetings().length === 0 && (project()?.uid || activeLens() === 'me')) {
-      <lfx-card>
-        <div class="flex items-center justify-center p-16">
-          <div class="text-center max-w-md">
-            <div class="text-gray-400 mb-4">
-              <i class="fa-light fa-eyes text-[2rem] mb-4"></i>
-            </div>
-            <h3 class="text-xl font-semibold text-gray-900 mt-4">No Meetings Found</h3>
-            <p class="text-gray-600 mt-2">Try adjusting your search or filter criteria</p>
-          </div>
-        </div>
-      </lfx-card>
+      <lfx-empty-state
+        icon="fa-light fa-eyes"
+        title="No results found"
+        subtitle="Try adjusting your filter criteria"
+        ctaLabel="Reset filters"
+        ctaIcon="fa-light fa-arrow-rotate-left"
+        (ctaClick)="resetFilters()"
+        data-testid="meetings-empty-state-filtered">
+      </lfx-empty-state>
     } @else if (filteredMeetings().length > 0) {
       <div class="flex flex-col gap-4">
         @for (meeting of filteredMeetings(); track meeting.id; let i = $index) {

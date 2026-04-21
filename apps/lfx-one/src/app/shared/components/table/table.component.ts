@@ -61,7 +61,7 @@ export class TableComponent implements AfterContentInit {
   public readonly first = input<number>(0);
   public readonly totalRecords = input<number>(0);
   public readonly pageLinks = input<number>(5);
-  public readonly rowsPerPageOptions = input<number[]>([]);
+  public readonly rowsPerPageOptions = input<number[] | undefined>(undefined);
   public readonly alwaysShowPaginator = input<boolean>(true);
   public readonly paginatorPosition = input<'top' | 'bottom' | 'both'>('bottom');
   public readonly paginatorStyleClass = input<string | undefined>(undefined);
@@ -174,6 +174,12 @@ export class TableComponent implements AfterContentInit {
 
   protected readonly skeletonRowData: Signal<{ idx: number; delay: string; cols: { idx: number; width: string }[] }[]> = this.initSkeletonRowData();
 
+  protected readonly isSinglePage: Signal<boolean> = computed(() => {
+    if (!this.paginator()) return false;
+    const total = this.totalRecords() > 0 ? this.totalRecords() : this.value().length;
+    return total > 0 && total <= this.rows();
+  });
+
   // When loading, swap real data with skeleton placeholder data so PrimeNG renders skeleton rows
   protected readonly displayValue: Signal<any[]> = computed(() => {
     if (this.loading() && !this.loadingBodyTemplate) {
@@ -181,6 +187,8 @@ export class TableComponent implements AfterContentInit {
     }
     return this.value();
   });
+
+  protected readonly isEmpty: Signal<boolean> = computed(() => !this.loading() && this.value().length === 0);
 
   // === Lifecycle ===
   public ngAfterContentInit(): void {

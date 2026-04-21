@@ -7,12 +7,16 @@ import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
-import { SURVEY_LABEL, SURVEY_STATUS_LABELS, SURVEY_TYPE_LABELS, SurveyStatus } from '@lfx-one/shared';
+import { SURVEY_LABEL, SURVEY_TYPE_LABELS, SurveyStatus } from '@lfx-one/shared';
+import { FilterPillOption } from '@lfx-one/shared/interfaces';
 import { Survey } from '@lfx-one/shared/interfaces';
+import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { RelativeDueDatePipe } from '@pipes/relative-due-date.pipe';
 import { SurveyStatusLabelPipe } from '@pipes/survey-status-label.pipe';
 import { SurveyStatusSeverityPipe } from '@pipes/survey-status-severity.pipe';
@@ -25,6 +29,7 @@ import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
   selector: 'lfx-surveys-table',
   imports: [
     CardComponent,
+    CardTabsBarComponent,
     TableComponent,
     TagComponent,
     ButtonComponent,
@@ -35,8 +40,10 @@ import { debounceTime, distinctUntilChanged, map, startWith } from 'rxjs';
     SurveyStatusLabelPipe,
     SurveyStatusSeverityPipe,
     RelativeDueDatePipe,
+    DueDateLabelPipe,
     TooltipModule,
     ConfirmDialogModule,
+    EmptyStateComponent,
   ],
   providers: [ConfirmationService],
   templateUrl: './surveys-table.component.html',
@@ -48,6 +55,11 @@ export class SurveysTableComponent {
   // === Constants ===
   protected readonly surveyLabel = SURVEY_LABEL;
   protected readonly SurveyStatus = SurveyStatus;
+  protected readonly statusTabOptions: FilterPillOption[] = [
+    { id: 'all', label: 'All' },
+    { id: 'open', label: 'Open' },
+    { id: 'closed', label: 'Closed' },
+  ];
 
   // === Inputs ===
   public readonly surveys = input.required<Survey[]>();
@@ -65,13 +77,9 @@ export class SurveysTableComponent {
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
 
-  // === Writable Signals ===
-  protected readonly isDeleting = signal(false);
-
   // === Forms ===
   public searchForm = new FormGroup({
     search: new FormControl<string>(''),
-    status: new FormControl<string | null>(null),
     group: new FormControl<string | null>(null),
     surveyType: new FormControl<string | null>(null),
     foundationFilter: new FormControl<string | null>(null),
@@ -79,16 +87,21 @@ export class SurveysTableComponent {
   });
 
   // === Writable Signals ===
-  private readonly statusFilter = signal<string | null>(null);
+  protected readonly isDeleting = signal(false);
+  protected readonly statusTab = signal<string>('all');
   private readonly groupFilter = signal<string | null>(null);
   private readonly typeFilter = signal<string | null>(null);
 
   // === Computed Signals ===
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
-  protected readonly statusOptions: Signal<{ label: string; value: string | null }[]> = this.initStatusOptions();
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
   protected readonly typeOptions: Signal<{ label: string; value: string | null }[]> = this.initTypeOptions();
   protected readonly filteredSurveys: Signal<Survey[]> = this.initFilteredSurveys();
+  protected readonly isFiltered = computed(() =>
+    this.searchTerm() !== '' || this.statusTab() !== 'all' || this.groupFilter() !== null || this.typeFilter() !== null
+  );
+
+  protected readonly rppOptions = computed<number[] | undefined>(() => (this.filteredSurveys().length > 10 ? [10, 25, 50] : undefined));
 
   // === Protected Methods ===
   protected onFoundationFilterChange(value: string | null): void {
@@ -98,8 +111,8 @@ export class SurveysTableComponent {
     this.projectFilterChange.emit(null);
   }
 
-  protected onStatusChange(value: string | null): void {
-    this.statusFilter.set(value);
+  protected onStatusTabChange(tab: string): void {
+    this.statusTab.set(tab);
   }
 
   protected onGroupChange(value: string | null): void {
@@ -116,6 +129,15 @@ export class SurveysTableComponent {
 
   protected onViewResults(surveyId: string): void {
     this.viewResults.emit(surveyId);
+  }
+
+  protected resetFilters(): void {
+    this.searchForm.reset({ search: '', group: null, surveyType: null, foundationFilter: null, projectFilter: null });
+    this.statusTab.set('all');
+    this.groupFilter.set(null);
+    this.typeFilter.set(null);
+    this.foundationFilterChange.emit(null);
+    this.projectFilterChange.emit(null);
   }
 
   protected onDeleteSurvey(survey: Survey): void {
@@ -158,34 +180,6 @@ export class SurveysTableComponent {
       ),
       { initialValue: '' }
     );
-  }
-
-  private initStatusOptions(): Signal<{ label: string; value: string | null }[]> {
-    return computed(() => {
-      const surveysData = this.surveys();
-      const statusCounts = new Map<string, number>();
-
-      surveysData.forEach((survey) => {
-        statusCounts.set(survey.survey_status, (statusCounts.get(survey.survey_status) || 0) + 1);
-      });
-
-      const options: { label: string; value: string | null }[] = [{ label: 'All Statuses', value: null }];
-
-      const statusOrder: string[] = [SurveyStatus.SENT, SurveyStatus.OPEN, SurveyStatus.DRAFT, SurveyStatus.SCHEDULED, SurveyStatus.CLOSED];
-      statusOrder.forEach((status) => {
-        const count = statusCounts.get(status) || 0;
-        const shouldShowStatus = count > 0 || (status === SurveyStatus.DRAFT && this.hasPMOAccess());
-        if (shouldShowStatus) {
-          const label = SURVEY_STATUS_LABELS[status as SurveyStatus] ?? status;
-          options.push({
-            label: `${label} (${count})`,
-            value: status,
-          });
-        }
-      });
-
-      return options;
-    });
   }
 
   private initGroupOptions(): Signal<{ label: string; value: string | null }[]> {
@@ -250,9 +244,14 @@ export class SurveysTableComponent {
         filtered = filtered.filter((survey) => survey.survey_title.toLowerCase().includes(searchTerm));
       }
 
-      const status = this.statusFilter();
-      if (status) {
-        filtered = filtered.filter((survey) => survey.survey_status === status);
+      const statusTab = this.statusTab();
+      if (statusTab !== 'all') {
+        const openStatuses: SurveyStatus[] = [SurveyStatus.OPEN, SurveyStatus.SENT];
+        if (statusTab === 'open') {
+          filtered = filtered.filter((survey) => openStatuses.includes((survey.survey_status as string).toLowerCase() as SurveyStatus));
+        } else if (statusTab === 'closed') {
+          filtered = filtered.filter((survey) => (survey.survey_status as string).toLowerCase() === SurveyStatus.CLOSED);
+        }
       }
 
       const group = this.groupFilter();

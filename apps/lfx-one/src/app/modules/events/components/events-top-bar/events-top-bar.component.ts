@@ -24,6 +24,8 @@ export class EventsTopBarComponent {
   public readonly projectName = input<string | undefined>(undefined);
   /** When true, foundation options are scoped to the user's registered past events */
   public readonly isPast = input<boolean>(false);
+  public readonly searchPlaceholder = input<string>('Search events...');
+  public readonly searchQuery = input<string>('');
   public readonly searchQueryChange = output<string>();
 
   public readonly searchForm: FormGroup = new FormGroup({
@@ -79,6 +81,17 @@ export class EventsTopBarComponent {
       .subscribe((show) => {
         if (!show) {
           this.searchForm.get('role')?.setValue(null);
+        }
+      });
+
+    // Sync the searchQuery input into the form control without triggering valueChanges debounce.
+    toObservable(this.searchQuery)
+      .pipe(takeUntilDestroyed())
+      .subscribe((query) => {
+        const normalizedQuery = query ?? '';
+        if (searchControl?.value !== normalizedQuery) {
+          searchControl?.setValue(normalizedQuery, { emitEvent: false });
+          this.searchValue.set(normalizedQuery);
         }
       });
   }

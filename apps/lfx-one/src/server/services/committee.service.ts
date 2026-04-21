@@ -511,11 +511,12 @@ export class CommitteeService {
     });
 
     // Build a map of committee_uid → role for quick lookup
-    const membershipMap = new Map<string, { role: string; member_uid: string }>();
+    const membershipMap = new Map<string, { role: string; member_uid: string; committee_category?: string }>();
     for (const m of memberships) {
       membershipMap.set(m.committee_uid, {
         role: m.role?.name || 'Member',
         member_uid: m.uid,
+        committee_category: m.committee_category,
       });
     }
 
@@ -532,6 +533,7 @@ export class CommitteeService {
           const membership = membershipMap.get(uid)!;
           return {
             ...committee,
+            category: committee.category || membership.committee_category || '',
             total_members: memberCount,
             has_mailing_list: mlCount > 0,
             my_role: membership.role,

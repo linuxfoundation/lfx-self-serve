@@ -17,11 +17,12 @@ import { ProjectService } from '@services/project.service';
 import { MessageService } from 'primeng/api';
 import { BehaviorSubject, catchError, combineLatest, debounceTime, distinctUntilChanged, finalize, of, startWith, switchMap, tap } from 'rxjs';
 
+import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MailingListTableComponent } from '../components/mailing-list-table/mailing-list-table.component';
 
 @Component({
   selector: 'lfx-mailing-list-dashboard',
-  imports: [ButtonComponent, CardComponent, MailingListTableComponent, ReactiveFormsModule],
+  imports: [ButtonComponent, CardComponent, MailingListTableComponent, ReactiveFormsModule, EmptyStateComponent],
   templateUrl: './mailing-list-dashboard.component.html',
   styleUrl: './mailing-list-dashboard.component.scss',
 })
@@ -72,6 +73,9 @@ export class MailingListDashboardComponent {
   public readonly committeeOptions: Signal<FilterOption[]> = this.initCommitteeOptions();
   public readonly statusOptions: Signal<FilterOption[]> = this.initStatusOptions();
   public readonly filteredMailingLists: Signal<GroupsIOMailingList[]> = this.initFilteredMailingLists();
+  protected readonly isFiltered = computed(() =>
+    !!this.searchTerm() || !!this.committeeFilter() || !!this.statusFilter() || !!this.foundationFilter() || !!this.projectFilter()
+  );
   public readonly totalMailingLists: Signal<number> = this.initTotalMailingLists();
   public readonly publicMailingLists: Signal<number> = this.initPublicMailingLists();
   public readonly availableServices: Signal<GroupsIOService[]> = this.initServices();

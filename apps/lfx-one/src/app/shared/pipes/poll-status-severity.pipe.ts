@@ -16,6 +16,7 @@ import { PollStatus, POLL_STATUS_SEVERITY, TagSeverity } from '@lfx-one/shared';
 })
 export class PollStatusSeverityPipe implements PipeTransform {
   public transform(status: PollStatus): TagSeverity {
-    return POLL_STATUS_SEVERITY[status] ?? 'secondary';
+    const normalized = (status as string).toLowerCase() as PollStatus;
+    return POLL_STATUS_SEVERITY[normalized] ?? 'secondary';
   }
 }
