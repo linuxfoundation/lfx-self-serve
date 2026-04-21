@@ -93,6 +93,18 @@
                 (onClick)="handleLeaveRequest()"
                 data-testid="committee-view-leave-btn" />
             }
+            @if (canEdit() || canReview()) {
+              <lfx-button
+                icon="fa-light fa-gear"
+                [text]="true"
+                [rounded]="true"
+                size="small"
+                [severity]="showSettings() ? 'primary' : 'secondary'"
+                [tooltip]="showSettings() ? 'Hide settings tab' : 'Show settings tab'"
+                [ariaLabel]="showSettings() ? 'Hide settings tab' : 'Show settings tab'"
+                (onClick)="toggleSettings()"
+                data-testid="committee-view-settings-toggle" />
+            }
           </div>
         </div>
         <!-- Description + Channels card side by side -->

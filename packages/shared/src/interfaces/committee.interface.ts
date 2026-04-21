@@ -645,5 +645,14 @@ export interface EditChairsDialogData {
 
 export type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surveys' | 'documents' | 'settings';
 
+/** Configuration entry for a committee view tab. Visibility and badge are closures so each consumer can wire its own signals/state. */
+export interface TabConfigEntry {
+  key: CommitteeTab;
+  label: string;
+  icon: string;
+  visible: () => boolean;
+  badge?: () => number | null;
+}
+
 /** Permission level for a committee member. */
 export type CommitteePermissionLevel = 'manage' | 'review' | 'member';

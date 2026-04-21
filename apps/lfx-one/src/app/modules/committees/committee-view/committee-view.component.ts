@@ -1,8 +1,8 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, linkedSignal, signal, Signal } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { Component, computed, inject, linkedSignal, signal, Signal, WritableSignal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { ActivatedRoute, Router } from '@angular/router';
@@ -22,7 +22,7 @@ import {
   getCommitteeCategorySeverity,
   TagSeverity,
 } from '@lfx-one/shared';
-import { GroupsIOMailingList } from '@lfx-one/shared/interfaces';
+import { GroupsIOMailingList, TabConfigEntry } from '@lfx-one/shared/interfaces';
 import { COMMITTEE_VALID_TABS } from '@lfx-one/shared/constants';
 import { getChatPlatformIcon, getChatPlatformLabel, getRepoPlatformIcon, getRepoPlatformLabel } from '@lfx-one/shared/utils';
 import { CommitteeService } from '@services/committee.service';
@@ -34,7 +34,7 @@ import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { SafeUrlPipe } from '@pipes/safe-url.pipe';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
 import { MenuItem, MessageService } from 'primeng/api';
-import { catchError, combineLatest, filter, finalize, of, switchMap, take } from 'rxjs';
+import { catchError, combineLatest, EMPTY, filter, finalize, map, of, switchMap, take } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
 import { JoinApplicationDialogComponent } from '../components/join-application-dialog/join-application-dialog.component';
@@ -89,11 +89,9 @@ export class CommitteeViewComponent {
 
   public meetingsTimeFilter = signal<'upcoming' | 'past'>('upcoming');
 
-  // Initial tab from queryParams (e.g., ?tab=surveys after create flow redirect)
-  private readonly initialTab: CommitteeTab | null = (() => {
-    const tab = this.route.snapshot.queryParamMap.get('tab');
-    return tab && COMMITTEE_VALID_TABS.includes(tab as CommitteeTab) ? (tab as CommitteeTab) : null;
-  })();
+  private readonly committeeId: Signal<string | null> = this.initCommitteeId();
+  // Reactive so it updates when navigating to another committee with a different ?tab=.
+  private readonly initialTab: Signal<CommitteeTab | null> = this.initInitialTab();
 
   // -- Writable signals --
   public loading = signal<boolean>(true);
@@ -104,6 +102,7 @@ export class CommitteeViewComponent {
   public membersLoading = signal<boolean>(true);
   public myRoleLoading: Signal<boolean> = computed(() => this.membersLoading());
   public joiningOrLeaving = signal(false);
+  public showSettings = this.initShowSettings();
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
@@ -173,7 +172,7 @@ export class CommitteeViewComponent {
   // -- Visitor gating --
   public isMemberOrAdmin: Signal<boolean> = computed(() => !this.isVisitor() || this.canEdit());
 
-  public readonly tabConfig: { key: CommitteeTab; label: string; icon: string; visible: () => boolean; badge?: () => number | null }[] = [
+  public readonly tabConfig: TabConfigEntry[] = [
     { key: 'overview', label: 'Overview', icon: 'fa-gauge', visible: () => true },
     {
       key: 'members',
@@ -186,25 +185,25 @@ export class CommitteeViewComponent {
     { key: 'meetings', label: 'Meetings', icon: 'fa-calendar', visible: () => this.isMemberOrAdmin() },
     { key: 'surveys', label: 'Surveys', icon: 'fa-chart-simple', visible: () => this.isMemberOrAdmin() },
     { key: 'documents', label: 'Documents', icon: 'fa-folder-open', visible: () => this.isMemberOrAdmin() },
-    { key: 'settings', label: 'Settings', icon: 'fa-gear', visible: () => this.canEdit() || this.canReview() },
+    { key: 'settings', label: 'Settings', icon: 'fa-gear', visible: () => (this.canEdit() || this.canReview()) && this.showSettings() },
   ];
 
-  public visibleTabs: Signal<typeof this.tabConfig> = computed(() => this.tabConfig.filter((tab) => tab.visible()));
+  public visibleTabs: Signal<TabConfigEntry[]> = computed(() => this.tabConfig.filter((tab) => tab.visible()));
 
-  // -- Tab state: linkedSignal keeps user selection unless it becomes invalid --
-  public activeTab = linkedSignal<typeof this.tabConfig, CommitteeTab>({
-    source: this.visibleTabs,
-    computation: (visible, previous) => {
-      // On first computation, use queryParam tab if provided and visible
-      if (!previous && this.initialTab && visible.some((t) => t.key === this.initialTab)) {
-        return this.initialTab!;
-      }
-      if (previous && visible.some((t) => t.key === previous.value)) {
+  // -- Tab state --
+  public activeTab = linkedSignal<{ id: string | null; visible: TabConfigEntry[] }, CommitteeTab>({
+    source: () => ({ id: this.committeeId(), visible: this.visibleTabs() }),
+    computation: ({ id, visible }, previous) => {
+      if (previous && previous.source.id === id && visible.some((t) => t.key === previous.value)) {
         return previous.value;
       }
       return 'overview';
     },
   });
+
+  public constructor() {
+    this.initAutoSelectInitialTab();
+  }
 
   // -- Public methods --
   public goBack(): void {
@@ -213,6 +212,10 @@ export class CommitteeViewComponent {
 
   public refreshCommittee(): void {
     this.refresh.update((v) => v + 1);
+  }
+
+  public toggleSettings(): void {
+    this.showSettings.update((v) => !v);
   }
 
   public refreshMembers(): void {
@@ -400,6 +403,51 @@ export class CommitteeViewComponent {
   }
 
   // -- Private initializer functions --
+  private initCommitteeId(): Signal<string | null> {
+    return toSignal(this.route.paramMap.pipe(map((params) => params.get('id'))), { requireSync: true });
+  }
+
+  private initInitialTab(): Signal<CommitteeTab | null> {
+    return toSignal(
+      this.route.queryParamMap.pipe(
+        map((params) => {
+          const tab = params.get('tab');
+          return tab && COMMITTEE_VALID_TABS.includes(tab as CommitteeTab) ? (tab as CommitteeTab) : null;
+        })
+      ),
+      { requireSync: true }
+    );
+  }
+
+  private initShowSettings(): WritableSignal<boolean> {
+    return linkedSignal<{ id: string | null; tab: CommitteeTab | null }, boolean>({
+      source: () => ({ id: this.committeeId(), tab: this.initialTab() }),
+      computation: ({ tab }) => tab === 'settings',
+    });
+  }
+
+  private initAutoSelectInitialTab(): void {
+    const navigationKey = computed(() => ({ id: this.committeeId(), tab: this.initialTab() }));
+    toObservable(navigationKey)
+      .pipe(
+        switchMap(({ tab }) => {
+          if (!tab) return EMPTY;
+          return combineLatest([toObservable(this.visibleTabs), toObservable(this.membersLoading)]).pipe(
+            filter(([, loading]) => !loading),
+            take(1),
+            filter(([tabs]) => tabs.some((t) => t.key === tab)),
+            map(() => tab)
+          );
+        }),
+        takeUntilDestroyed()
+      )
+      .subscribe((tab) => {
+        if (this.activeTab() === 'overview') {
+          this.activeTab.set(tab);
+        }
+      });
+  }
+
   private initializeCommittee(): Signal<Committee | null> {
     return toSignal(
       combineLatest([this.route.paramMap, toObservable(this.refresh)]).pipe(
