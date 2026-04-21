@@ -23,6 +23,11 @@ export class PastMeetingController {
 
   /**
    * GET /past-meetings
+   *
+   * Returns project/foundation-scoped past meetings without per-meeting participant
+   * enrichment. Participant counts (`participant_count`, `attended_count`,
+   * `individual_registrants_count`, `committee_members_count`) are lazy-loaded per card
+   * on the client via `meeting-rsvp-details` when the card enters the viewport.
    */
   public async getPastMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_past_meetings', {
@@ -30,31 +35,16 @@ export class PastMeetingController {
     });
 
     try {
-      // All past meetings are now ITX-managed (v1_past_meeting type)
       const { data: meetings, page_token } = (await this.meetingService.getMeetings(req, req.query as Record<string, any>, 'v1_past_meeting')) as {
         data: PastMeeting[];
         page_token?: string;
       };
 
-      // TODO: Remove this once we have a way to get the registrants count
-      // Process each meeting individually to add registrant and participant counts
-      await Promise.all(
-        meetings.map(async (meeting) => {
-          const counts = await this.addParticipantsCount(req, meeting.id);
-          meeting.individual_registrants_count = counts.individual_registrants_count;
-          meeting.committee_members_count = counts.committee_members_count;
-          meeting.participant_count = counts.participant_count;
-          meeting.attended_count = counts.attended_count;
-        })
-      );
-
-      // Log the success
       logger.success(req, 'get_past_meetings', startTime, {
         meeting_count: meetings.length,
         has_more_pages: !!page_token,
       });
 
-      // Send the meetings data to the client
       res.json({ data: meetings, page_token });
     } catch (error) {
       next(error);

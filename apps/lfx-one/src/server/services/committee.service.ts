@@ -510,7 +510,7 @@ export class CommitteeService {
       membership_count: memberships.length,
     });
 
-    // Build a map of committee_uid → role for quick lookup
+    // Build a map of committee_uid → membership metadata for quick lookup
     const membershipMap = new Map<string, { role: string; member_uid: string; committee_category?: string }>();
     for (const m of memberships) {
       membershipMap.set(m.committee_uid, {
@@ -520,36 +520,49 @@ export class CommitteeService {
       });
     }
 
-    // Fetch committee details, member count, and mailing list association in parallel
+    // Batch-fetch committee resources from the query service in one or more batched requests
+    // (chunked at 100 UIDs per request by getCommitteesByIds). Avoids the N-way upstream
+    // fan-out to GET /committees/:uid, which has been observed to 404 on memberships
+    // indexed by the query service.
     const committeeUids = Array.from(membershipMap.keys());
-    const committees = await Promise.all(
+    const committees = await this.getCommitteesByIds(req, committeeUids);
+
+    // Enrich each committee with per-committee counts (query-service) and membership metadata
+    const enriched = await Promise.all(
       committeeUids.map(async (uid) => {
-        try {
-          const [committee, memberCount, mlCount] = await Promise.all([
-            this.microserviceProxy.proxyRequest<Committee>(req, 'LFX_V2_SERVICE', `/committees/${uid}`, 'GET'),
-            this.getCommitteeMembersCount(req, uid),
-            this.getMailingListCountByCommittee(req, uid),
-          ]);
-          const membership = membershipMap.get(uid)!;
-          return {
-            ...committee,
-            category: committee.category || membership.committee_category || '',
-            total_members: memberCount,
-            has_mailing_list: mlCount > 0,
-            my_role: membership.role,
-            my_member_uid: membership.member_uid,
-          } as MyCommittee;
-        } catch (error) {
-          logger.warning(req, 'get_my_committees', 'Failed to enrich committee membership, skipping committee', {
+        const committee = committees.get(uid);
+        if (!committee) {
+          logger.warning(req, 'get_my_committees', 'Committee not found in query service, skipping', {
             committee_uid: uid,
-            error: error instanceof Error ? error.message : 'Unknown error',
           });
           return null;
         }
+        const [memberCountRes, mlCountRes] = await Promise.allSettled([this.getCommitteeMembersCount(req, uid), this.getMailingListCountByCommittee(req, uid)]);
+        if (memberCountRes.status === 'rejected') {
+          logger.warning(req, 'get_my_committees', 'Failed to fetch committee members count, defaulting to 0', {
+            committee_uid: uid,
+            err: memberCountRes.reason,
+          });
+        }
+        if (mlCountRes.status === 'rejected') {
+          logger.warning(req, 'get_my_committees', 'Failed to fetch mailing list count, defaulting to false', {
+            committee_uid: uid,
+            err: mlCountRes.reason,
+          });
+        }
+        const membership = membershipMap.get(uid)!;
+        return {
+          ...committee,
+          category: committee.category || membership.committee_category || '',
+          total_members: memberCountRes.status === 'fulfilled' ? memberCountRes.value : 0,
+          has_mailing_list: mlCountRes.status === 'fulfilled' ? mlCountRes.value > 0 : false,
+          my_role: membership.role,
+          my_member_uid: membership.member_uid,
+        } as MyCommittee;
       })
     );
 
-    let result = committees.filter((c): c is MyCommittee => c !== null);
+    let result = enriched.filter((c): c is MyCommittee => c !== null);
 
     // Filter by project or foundation if specified (used by document service)
     if (projectUid) {
@@ -730,6 +743,57 @@ export class CommitteeService {
       document_uid: documentId,
       document_type: documentType,
     });
+  }
+
+  /**
+   * Batch-fetches committee resources by UID from the query service.
+   * Chunks UIDs at 100 per request (URL-length guard) using `filters_or=uid:X`
+   * for OR semantics on data.uid. Returns a map keyed by `uid` for O(1) lookup.
+   */
+  private async getCommitteesByIds(req: Request, uids: string[]): Promise<Map<string, Committee>> {
+    const unique = Array.from(new Set(uids)).filter(Boolean);
+    if (unique.length === 0) return new Map();
+
+    const BATCH_SIZE = 100;
+    const batches: string[][] = [];
+    for (let i = 0; i < unique.length; i += BATCH_SIZE) {
+      batches.push(unique.slice(i, i + BATCH_SIZE));
+    }
+
+    // Rethrow batch failures — returning [] would make callers treat real memberships as
+    // "committee not found" and silently drop them (defeats failOnPartial: true).
+    const batchResults = await Promise.all(
+      batches.map(async (batch) => {
+        try {
+          return await fetchAllQueryResources<Committee>(
+            req,
+            (pageToken) =>
+              this.microserviceProxy.proxyRequest<QueryServiceResponse<Committee>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+                v: '1',
+                type: 'committee',
+                filters_or: batch.map((uid) => `uid:${uid}`),
+                ...(pageToken && { page_token: pageToken }),
+              }),
+            { failOnPartial: true }
+          );
+        } catch (error) {
+          logger.warning(req, 'get_committees_by_ids', 'Batched committee fetch failed', {
+            batch_size: batch.length,
+            err: error,
+          });
+          throw error;
+        }
+      })
+    );
+
+    const byUid = new Map<string, Committee>();
+    for (const committee of batchResults.flat()) {
+      if (committee?.uid) {
+        byUid.set(committee.uid, committee);
+      }
+    }
+
+    return byUid;
   }
 
   /**

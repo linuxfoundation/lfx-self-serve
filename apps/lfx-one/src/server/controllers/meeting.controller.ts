@@ -23,14 +23,15 @@ import { NatsSubjects } from '@lfx-one/shared/enums';
 import { NextFunction, Request, Response } from 'express';
 
 import { ServiceValidationError } from '../errors';
-import { addInvitedStatusToMeeting, isUserInvitedToMeeting } from '../helpers/meeting.helper';
+import { addInvitedStatusToMeeting } from '../helpers/meeting.helper';
 import { validateUidParameter } from '../helpers/validation.helper';
 import { AiService } from '../services/ai.service';
 import { CommitteeService } from '../services/committee.service';
 import { logger } from '../services/logger.service';
 import { MeetingService } from '../services/meeting.service';
 import { NatsService } from '../services/nats.service';
-import { getEffectiveEmail, getUsernameFromAuth, usernameMatches } from '../utils/auth-helper';
+import { UserService } from '../services/user.service';
+import { getEffectiveEmail } from '../utils/auth-helper';
 import { generateM2MToken } from '../utils/m2m-token.util';
 
 /**
@@ -41,9 +42,17 @@ export class MeetingController {
   private aiService: AiService = new AiService();
   private committeeService: CommitteeService = new CommitteeService();
   private natsService: NatsService = new NatsService();
+  private userService: UserService = new UserService();
 
   /**
    * GET /meetings
+   *
+   * Returns project/foundation-scoped meetings without per-meeting registrant enrichment.
+   * Registrant counts (`individual_registrants_count`, `committee_members_count`) are lazy-
+   * loaded per card on the client via `meeting-rsvp-details` when the card enters the
+   * viewport. The `invited` flag is computed from a single batched registrant lookup
+   * against the current user's email/username — replaces the previous N-parallel
+   * per-meeting invite checks.
    */
   public async getMeetings(req: Request, res: Response, next: NextFunction): Promise<void> {
     const startTime = logger.startOperation(req, 'get_meetings', {
@@ -51,87 +60,21 @@ export class MeetingController {
     });
 
     try {
-      const skipRegistrants = req.query['skip_registrants'] === 'true';
-      // eslint-disable-next-line @typescript-eslint/no-unused-vars -- intentional destructuring to strip skip_registrants from query params
-      const { skip_registrants: _, ...queryParams } = req.query as Record<string, any>;
-      const { data: meetings, page_token } = await this.meetingService.getMeetings(req, queryParams, 'v1_meeting', true);
-
-      if (skipRegistrants) {
-        const normalizedMeetings = meetings.map((m: Meeting) => ({
-          ...m,
-          invited: m.invited ?? false,
-          individual_registrants_count: m.individual_registrants_count ?? 0,
-          committee_members_count: m.committee_members_count ?? 0,
-        }));
-        logger.success(req, 'get_meetings', startTime, {
-          meeting_count: normalizedMeetings.length,
-          has_more_pages: !!page_token,
-          skip_registrants: true,
-        });
-        res.json({ data: normalizedMeetings, page_token });
-        return;
-      }
-
       const userEmail = getEffectiveEmail(req) || '';
-      const username = await getUsernameFromAuth(req);
-      const registrantsByMeeting = await Promise.all(
-        meetings.map(async (m) => {
-          if (!m.organizer) {
-            logger.debug(req, 'get_meetings', 'Skipping registrant fetch — no organizer', { meeting_id: m.id, title: m.title });
-            return null;
-          }
-          return this.meetingService.getMeetingRegistrants(req, m.id).catch((error) => {
-            logger.warning(req, 'get_meetings', 'Failed to fetch registrants for meeting', {
-              meeting_id: m.id,
-              title: m.title,
-              err: error,
-            });
-            return null;
-          });
-        })
-      );
-      const meetingsNeedingInviteCheck: number[] = [];
-      const result = meetings.map((m, i) => {
-        const registrants = registrantsByMeeting[i];
-        let individualCount = 0;
-        let committeeCount = 0;
-        let invited = false;
-        if (registrants) {
-          committeeCount = registrants.filter((r) => r.type === 'committee').length;
-          individualCount = registrants.length - committeeCount;
-          invited = registrants.some(
-            (r) => (userEmail && r.email?.toLowerCase() === userEmail) || (username && r.username && usernameMatches(username, r.username))
-          );
-          logger.debug(req, 'get_meetings', 'Registrant counts computed', {
-            meeting_id: m.id,
-            title: m.title,
-            total_registrants: registrants.length,
-            individual_count: individualCount,
-            committee_count: committeeCount,
-            invited,
-          });
-        } else {
-          // Registrants not available (non-organizer or fetch failed) — defer to invite check
-          logger.debug(req, 'get_meetings', 'Registrants unavailable — deferring to invite check', {
-            meeting_id: m.id,
-            title: m.title,
-            organizer: m.organizer,
-          });
-          meetingsNeedingInviteCheck.push(i);
-        }
-        return { ...m, individual_registrants_count: individualCount, committee_members_count: committeeCount, invited };
-      });
-      if (meetingsNeedingInviteCheck.length > 0 && (userEmail || username)) {
-        const m2mToken = await generateM2MToken(req);
-        await Promise.all(
-          meetingsNeedingInviteCheck.map(async (idx) => {
-            result[idx].invited = await isUserInvitedToMeeting(req, result[idx].id, userEmail, m2mToken).catch(() => false);
-          })
-        );
-      }
+      // Strip `skip_registrants` — legacy flag the client still sets for some committee views;
+      // forwarding it to /query/resources would send an unsupported param upstream.
+      // eslint-disable-next-line @typescript-eslint/no-unused-vars
+      const { skip_registrants: _skipRegistrants, ...meetingQuery } = req.query as Record<string, any>;
+      const [{ data: meetings, page_token }, registeredMeetingIds] = await Promise.all([
+        this.meetingService.getMeetings(req, meetingQuery, 'v1_meeting', true),
+        this.userService.getUserRegisteredMeetingIds(req, userEmail),
+      ]);
+
+      const result = meetings.map((m) => ({ ...m, invited: registeredMeetingIds.has(m.id) }));
 
       logger.success(req, 'get_meetings', startTime, {
         meeting_count: result.length,
+        invited_count: result.filter((m) => m.invited).length,
         has_more_pages: !!page_token,
       });
 

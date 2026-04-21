@@ -30,7 +30,7 @@ export class MeetingDeleteConfirmationComponent {
   private readonly messageService = inject(MessageService);
 
   public readonly meeting: Meeting = this.dialogConfig.data?.meeting;
-  public readonly registrantCount: number = this.meeting.individual_registrants_count + this.meeting.committee_members_count;
+  public readonly registrantCount: number = (this.meeting.individual_registrants_count ?? 0) + (this.meeting.committee_members_count ?? 0);
   public readonly isRecurring: boolean = !!this.meeting.recurrence;
   public readonly isPastMeeting: boolean = this.meeting.start_time ? new Date(this.meeting.start_time) < new Date() : false;
   public readonly deleteForm: FormGroup = this.initializeDeleteForm();

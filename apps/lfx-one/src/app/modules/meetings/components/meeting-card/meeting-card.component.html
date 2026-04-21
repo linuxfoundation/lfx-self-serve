@@ -425,7 +425,7 @@
             @if (meeting().committees && meeting().committees!.length > 0) {
               <div class="flex flex-col">
                 <h1>Meeting Members</h1>
-                <span class="text-base text-gray-500">{{ meeting().committee_members_count }} members</span>
+                <span class="text-base text-gray-500">{{ meeting().committee_members_count || 0 }} members</span>
               </div>
             } @else {
               <div class="flex flex-col">

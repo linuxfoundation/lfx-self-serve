@@ -180,7 +180,8 @@ export class MeetingsDashboardComponent {
     this.rawFpPastMeetings = this.initializeRawFpPastMeetings();
 
     // Foundation/Project lens stat cards (computed from raw FP signals, not paginated)
-    this.fpStatsLoading = computed(() => this.fpUpcomingLoading() || this.fpPastLoading());
+    // Only look at the active tab's loading signal — inactive tab fetches are gated off.
+    this.fpStatsLoading = computed(() => (this.timeFilter() === 'past' ? this.fpPastLoading() : this.fpUpcomingLoading()));
     this.fpUpcomingCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpUpcomingMeetings().length : 0));
     this.fpPastCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpPastMeetings().length : 0));
     this.fpRecurringCount = computed(() => (this.activeLens() !== 'me' ? this.rawFpUpcomingMeetings().filter((m) => m.recurrence !== null).length : 0));
@@ -630,11 +631,12 @@ export class MeetingsDashboardComponent {
   private initializeRawFpUpcomingMeetings(): Signal<Meeting[]> {
     const project$ = toObservable(this.project);
     const lens$ = toObservable(this.activeLens);
+    const timeFilter$ = toObservable(this.timeFilter);
 
     return toSignal(
-      combineLatest([project$, lens$, this.refresh$]).pipe(
-        switchMap(([project, lens]) => {
-          if (lens === 'me' || !project?.uid) {
+      combineLatest([project$, lens$, timeFilter$, this.refresh$]).pipe(
+        switchMap(([project, lens, timeFilter]) => {
+          if (lens === 'me' || !project?.uid || timeFilter !== 'upcoming') {
             return of([] as Meeting[]);
           }
           // SSR: pin loading=true so the stat cards render their skeleton instead of "0".
@@ -663,11 +665,12 @@ export class MeetingsDashboardComponent {
   private initializeRawFpPastMeetings(): Signal<PastMeeting[]> {
     const project$ = toObservable(this.project);
     const lens$ = toObservable(this.activeLens);
+    const timeFilter$ = toObservable(this.timeFilter);
 
     return toSignal(
-      combineLatest([project$, lens$, this.refresh$]).pipe(
-        switchMap(([project, lens]) => {
-          if (lens === 'me' || !project?.uid) {
+      combineLatest([project$, lens$, timeFilter$, this.refresh$]).pipe(
+        switchMap(([project, lens, timeFilter]) => {
+          if (lens === 'me' || !project?.uid || timeFilter !== 'past') {
             return of([] as PastMeeting[]);
           }
           // SSR: pin loading=true so the stat cards render their skeleton instead of "0".

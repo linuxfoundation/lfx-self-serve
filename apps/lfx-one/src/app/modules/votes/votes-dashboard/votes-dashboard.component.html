@@ -22,15 +22,9 @@
     }
   </div>
 
-  <!-- Loading State (non-Me lens only) -->
-  @if (!isMeLens() && loading()) {
-    <div class="flex justify-center items-center min-h-96">
-      <div class="text-center">
-        <i class="fa-light fa-spinner-third fa-spin text-3xl text-blue-600 mb-4"></i>
-        <p class="text-gray-600">Loading {{ voteLabel | lowercase }} details...</p>
-      </div>
-    </div>
-  } @else if (!isMeLens() && !loading() && votes().length === 0) {
+  <!-- Dashboard-level empty state: only when there are genuinely no votes (no active filter). -->
+  <!-- Keep the table mounted in every other case so its form subscription doesn't re-fire on remount. -->
+  @if (!isMeLens() && !loading() && votes().length === 0 && !hasActiveFilters()) {
     <lfx-empty-state
       icon="fa-light fa-check-to-slot"
       [title]="'No ' + (voteLabelPlural | lowercase) + ' yet'"

@@ -214,16 +214,16 @@ export interface Meeting {
   public_link?: string;
   /** Total registrant count from API */
   registrant_count?: number;
-  /** Count fields (response only) */
-  individual_registrants_count: number;
-  /** Count fields (response only) */
-  committee_members_count: number;
-  /** Count fields (response only) */
-  registrants_accepted_count: number;
-  /** Count fields (response only) */
-  registrants_declined_count: number;
-  /** Count fields (response only) */
-  registrants_pending_count: number;
+  /** Count fields (response only) — omitted when list endpoints skip per-meeting enrichment; callers must handle undefined. */
+  individual_registrants_count?: number;
+  /** Count fields (response only) — omitted when list endpoints skip per-meeting enrichment; callers must handle undefined. */
+  committee_members_count?: number;
+  /** Count fields (response only) — omitted when list endpoints skip per-meeting enrichment; callers must handle undefined. */
+  registrants_accepted_count?: number;
+  /** Count fields (response only) — omitted when list endpoints skip per-meeting enrichment; callers must handle undefined. */
+  registrants_declined_count?: number;
+  /** Count fields (response only) — omitted when list endpoints skip per-meeting enrichment; callers must handle undefined. */
+  registrants_pending_count?: number;
   /** Participant count for past meetings (response only) */
   participant_count?: number;
   /** Attended count for past meetings (response only) */
