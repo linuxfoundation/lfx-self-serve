@@ -69,6 +69,8 @@ export class EventsService {
       startDateTo,
       country,
       affiliatedProjectSlugs,
+      isVisaRequestAccepted,
+      isTravelFundRequestAccepted,
     } = options;
     const sortField = rawSortField && VALID_EVENT_SORT_FIELDS.has(rawSortField) ? rawSortField : DEFAULT_EVENT_SORT_FIELD;
     const normalizedSortOrder: EventSortOrder = sortOrder === 'DESC' ? 'DESC' : 'ASC';
@@ -103,6 +105,8 @@ export class EventsService {
       const startDateToFilter = startDateTo ? 'AND e.EVENT_START_DATE <= ?' : '';
       const countryFilter = country ? 'AND e.EVENT_COUNTRY = ?' : '';
       const registeredOnlyFilter = registeredOnly ? "AND r.EVENT_ID IS NOT NULL AND r.REGISTRATION_STATUS = 'Accepted'" : '';
+      const visaRequestAcceptedFilter = isVisaRequestAccepted ? 'AND r.IS_VISA_REQUEST_ACCEPTED = TRUE' : '';
+      const travelFundRequestAcceptedFilter = isTravelFundRequestAccepted ? 'AND r.IS_TRAVEL_FUND_ACCEPTED = TRUE' : '';
 
       const slugs = affiliatedProjectSlugs ?? [];
       const hasAffiliatedSlugs = slugs.length > 0;
@@ -164,7 +168,9 @@ export class EventsService {
             GROSS_REVENUE,
             TAX_AMOUNT,
             NET_REVENUE,
-            USER_ATTENDED
+            USER_ATTENDED,
+            IS_VISA_REQUEST_ACCEPTED,
+            IS_TRAVEL_FUND_ACCEPTED
           FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
           WHERE USER_EMAIL = ?
             AND IS_PAST_EVENT = FALSE
@@ -213,6 +219,8 @@ export class EventsService {
           ${startDateToFilter}
           ${countryFilter}
           ${registeredOnlyFilter}
+          ${visaRequestAcceptedFilter}
+          ${travelFundRequestAcceptedFilter}
         ORDER BY ${sortField} ${normalizedSortOrder}
         LIMIT ${normalizedPageSize} OFFSET ${normalizedOffset}
       `;

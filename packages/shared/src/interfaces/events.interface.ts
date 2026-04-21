@@ -236,6 +236,8 @@ export interface GetMyEventsParams {
   startDateTo?: string;
   /** Filter events by country (e.g. "United States") */
   country?: string;
+  isVisaRequestAccepted?: boolean;
+  isTravelFundRequestAccepted?: boolean;
 }
 
 /**
@@ -390,6 +392,10 @@ export interface GetMyEventsOptions {
   country?: string;
   /** Project slugs from persona detection — scopes upcoming events to affiliated projects */
   affiliatedProjectSlugs?: string[];
+  /** When true, only events where the user's visa letter request was accepted are returned */
+  isVisaRequestAccepted?: boolean;
+  /** When true, only events where the user's travel fund request was accepted are returned */
+  isTravelFundRequestAccepted?: boolean;
 }
 
 /**

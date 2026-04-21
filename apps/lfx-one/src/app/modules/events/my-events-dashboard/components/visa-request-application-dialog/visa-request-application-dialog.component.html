@@ -17,7 +17,7 @@
     <!-- Step content -->
     @if (step() === 'select-event') {
       <div class="scroll-area overflow-y-auto pr-1">
-        <lfx-event-selection [(selectedEvent)]="selectedEvent" />
+        <lfx-event-selection [(selectedEvent)]="selectedEvent" requestType="visa" />
       </div>
     } @else if (step() === 'terms') {
       <lfx-visa-request-terms />

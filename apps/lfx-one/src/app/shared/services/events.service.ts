@@ -48,6 +48,8 @@ export class EventsService {
     if (params.startDateFrom) httpParams = httpParams.set('startDateFrom', params.startDateFrom);
     if (params.startDateTo) httpParams = httpParams.set('startDateTo', params.startDateTo);
     if (params.country) httpParams = httpParams.set('country', params.country);
+    if (params.isVisaRequestAccepted) httpParams = httpParams.set('isVisaRequestAccepted', 'true');
+    if (params.isTravelFundRequestAccepted) httpParams = httpParams.set('isTravelFundRequestAccepted', 'true');
 
     return this.http.get<MyEventsResponse>('/api/events', { params: httpParams });
   }

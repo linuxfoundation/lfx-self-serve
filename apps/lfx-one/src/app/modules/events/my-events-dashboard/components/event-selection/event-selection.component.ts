@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { ChangeDetectionStrategy, Component, computed, inject, model, signal } from '@angular/core';
+import { ChangeDetectionStrategy, Component, computed, inject, input, model, signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { EventsService } from '@app/shared/services/events.service';
@@ -9,7 +9,7 @@ import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
 import { EMPTY_MY_EVENTS_RESPONSE } from '@lfx-one/shared/constants';
-import { MyEvent, TimeFilterValue } from '@lfx-one/shared/interfaces';
+import { MyEvent, RequestType, TimeFilterValue } from '@lfx-one/shared/interfaces';
 import { catchError, combineLatest, debounceTime, EMPTY, finalize, of, scan, skip, switchMap, tap } from 'rxjs';
 import { EVENT_SELECTION_PAGE_SIZE } from '@lfx-one/shared/constants/events.constants';
 @Component({
@@ -24,6 +24,7 @@ export class EventSelectionComponent {
   private readonly fb = inject(NonNullableFormBuilder);
 
   public selectedEvent = model<MyEvent | null>(null);
+  public readonly requestType = input<RequestType | undefined>(undefined);
 
   // Search via its own form (required by lfx-input-text); debounced separately to avoid extra API calls on each keystroke
   public readonly searchForm = this.fb.group({ searchQuery: '' });
@@ -64,6 +65,8 @@ export class EventSelectionComponent {
     searchQuery: this.debouncedSearch() || undefined,
     ...this.computeTimeFilterParams(this.filtersValue().timeFilter as TimeFilterValue),
     country: this.filtersValue().locationFilter !== 'any' ? (this.filtersValue().locationFilter ?? undefined) : undefined,
+    isVisaRequestAccepted: this.requestType() === 'visa' ? true : undefined,
+    isTravelFundRequestAccepted: this.requestType() === 'travel-fund' ? true : undefined,
   }));
 
   // Initial events loaded reactively from activeFilters
