@@ -1,0 +1,120 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex h-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5" data-testid="health-metrics-flywheel-card">
+  <!-- Header -->
+  <div class="flex items-center justify-between" data-testid="health-metrics-flywheel-header">
+    <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase" data-testid="health-metrics-flywheel-title">Flywheel Conversion Rate</h3>
+    @if (!loading() && hasFlywheelData()) {
+      <button
+        class="ignore-download flex h-8 w-8 items-center justify-center rounded text-gray-400 hover:text-gray-600"
+        type="button"
+        (click)="downloadCard()"
+        aria-label="Download Flywheel Conversion Rate card as image"
+        title="Download Flywheel Conversion Rate card as image"
+        data-testid="health-metrics-flywheel-download">
+        <i class="fa-solid fa-arrow-down-to-bracket text-sm"></i>
+      </button>
+    }
+  </div>
+
+  <!-- Description -->
+  <div class="rounded-md bg-gray-50 px-4 py-3" data-testid="health-metrics-flywheel-description">
+    <p class="text-xs text-gray-500">
+      Percentage of event attendees who engage with newsletter, community, or working groups within 90 days after an event.
+      This metric reflects the latest monthly window and is not affected by the page year filter.
+    </p>
+  </div>
+
+  @if (loading()) {
+    <!-- Loading Skeleton -->
+    <div class="flex flex-col gap-4" data-testid="health-metrics-flywheel-skeleton">
+      <div class="flex gap-8">
+        <div class="flex flex-col gap-1">
+          <p-skeleton width="6rem" height="2.5rem" />
+          <p-skeleton width="8rem" height="0.75rem" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <p-skeleton width="5rem" height="1.75rem" />
+          <p-skeleton width="6rem" height="0.75rem" />
+        </div>
+      </div>
+      <p-skeleton width="8rem" height="1rem" />
+      <p-skeleton width="100%" height="12rem" borderRadius="4px" />
+      <p-skeleton width="100%" height="3rem" borderRadius="8px" />
+    </div>
+  } @else if (!hasFlywheelData()) {
+    <!-- No Data State -->
+    <div class="flex items-center justify-center py-10" data-testid="health-metrics-flywheel-no-data">
+      <p class="text-sm text-gray-500">No Flywheel Conversion Data Available</p>
+    </div>
+  } @else {
+    <!-- Summary Row -->
+    @if (summary(); as summaryView) {
+      <div class="flex flex-wrap items-start gap-8" data-testid="health-metrics-flywheel-summary">
+        <div class="flex flex-col gap-0.5" data-testid="health-metrics-flywheel-current-rate">
+          <span class="text-3xl font-bold text-gray-900">{{ formattedCurrentConversion() }}</span>
+          <div class="flex items-center gap-1">
+            <span class="text-xs text-gray-500">Conversion Rate</span>
+            <span
+              class="flex items-center gap-0.5 text-xs font-medium"
+              [class.text-emerald-600]="summaryView.trend === 'up'"
+              [class.text-red-600]="summaryView.trend === 'down'"
+              data-testid="health-metrics-flywheel-trend">
+              <i class="fa-light text-xs" [class.fa-arrow-up]="summaryView.trend === 'up'" [class.fa-arrow-down]="summaryView.trend === 'down'"></i>
+              {{ formattedChangePercentage() }}
+            </span>
+          </div>
+        </div>
+
+        <div class="flex flex-col gap-0.5" data-testid="health-metrics-flywheel-previous-rate">
+          <span class="text-xl font-semibold text-gray-500">{{ formattedPreviousConversion() }}</span>
+          <span class="text-xs text-gray-500">Previous Period</span>
+        </div>
+      </div>
+    }
+
+    <hr class="border-gray-200" />
+
+    <!-- Funnel Stages -->
+    <div class="flex flex-col gap-2" data-testid="health-metrics-flywheel-funnel-section">
+      <h4 class="text-sm font-bold text-gray-900">Funnel Stages</h4>
+      <div class="h-[220px]" data-testid="health-metrics-flywheel-funnel-chart">
+        <lfx-chart type="bar" [data]="funnelChartData()" [options]="funnelChartOptions" height="100%"></lfx-chart>
+      </div>
+      <!-- Screen-reader / test-friendly label list mirroring the chart stage order -->
+      <ul class="sr-only" data-testid="health-metrics-flywheel-funnel-stages" aria-label="Flywheel funnel stages">
+        @for (stage of funnelStages(); track stage.label) {
+          <li [attr.data-stage]="stage.label" [attr.data-count]="stage.count">{{ stage.label }}: {{ stage.count }}</li>
+        }
+      </ul>
+    </div>
+
+    <!-- Insight Banner -->
+    @if (banner(); as bannerView) {
+      <div
+        class="flex items-start gap-3 rounded-lg border p-4"
+        [class.bg-amber-50]="bannerView.priorityGroup === 'attention'"
+        [class.border-amber-200]="bannerView.priorityGroup === 'attention'"
+        [class.bg-emerald-50]="bannerView.priorityGroup === 'performing'"
+        [class.border-emerald-200]="bannerView.priorityGroup === 'performing'"
+        data-testid="health-metrics-flywheel-banner">
+        <i
+          class="mt-0.5 text-sm"
+          [class.fa-solid]="bannerView.priorityGroup === 'attention'"
+          [class.fa-circle]="bannerView.priorityGroup === 'attention'"
+          [class.text-amber-500]="bannerView.priorityGroup === 'attention'"
+          [class.fa-light]="bannerView.priorityGroup === 'performing'"
+          [class.fa-bullseye]="bannerView.priorityGroup === 'performing'"
+          [class.text-emerald-500]="bannerView.priorityGroup === 'performing'"></i>
+        <span
+          class="text-sm"
+          [class.text-amber-800]="bannerView.priorityGroup === 'attention'"
+          [class.text-emerald-800]="bannerView.priorityGroup === 'performing'"
+          data-testid="health-metrics-flywheel-banner-text">
+          {{ bannerView.text }}
+        </span>
+      </div>
+    }
+  }
+</div>

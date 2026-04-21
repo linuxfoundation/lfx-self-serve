@@ -7,19 +7,70 @@ import { EMPTY_CHART_DATA, NO_TOOLTIP_CHART_OPTIONS } from './chart-options.cons
 import { lfxColors } from './colors.constants';
 
 import type {
+  BoardMeetingParticipationSummaryResponse,
   CodeContributionSummaryResponse,
   DashboardMetricCard,
   DualSignalRow,
   EdEvolutionData,
   EventsSummaryResponse,
   FilterPillOption,
+  HealthMetricsRange,
   HealthMetricsSummaryCard,
+  HealthMetricsYearOption,
   MembershipChurnPerTierSummaryResponse,
   NpsSummaryResponse,
   OutstandingBalanceSummaryResponse,
   ParticipatingOrgsSummaryResponse,
   TrainingCertificationSummaryResponse,
 } from '../interfaces';
+
+// ============================================
+// Health Metrics — Range Constants
+// ============================================
+
+export const HEALTH_METRICS_RANGES: readonly HealthMetricsRange[] = ['YTD', 'COMPLETED_YEAR', 'COMPLETED_YEAR_2', 'COMPLETED_YEAR_3', 'COMPLETED_YEAR_4'];
+
+/**
+ * Runtime type guard that narrows an unknown value to `HealthMetricsRange`.
+ * Returns true when `value` is a string present in `HEALTH_METRICS_RANGES`.
+ */
+export function isHealthMetricsRange(value: unknown): value is HealthMetricsRange {
+  return typeof value === 'string' && (HEALTH_METRICS_RANGES as readonly string[]).includes(value);
+}
+
+/** Maps each HealthMetricsRange to its calendar year offset from the current year. */
+const RANGE_YEAR_OFFSET: Record<HealthMetricsRange, number> = {
+  YTD: 0,
+  COMPLETED_YEAR: 1,
+  COMPLETED_YEAR_2: 2,
+  COMPLETED_YEAR_3: 3,
+  COMPLETED_YEAR_4: 4,
+};
+
+/** Returns the calendar year for a given range. */
+export function getYearForRange(range: HealthMetricsRange): number {
+  return new Date().getFullYear() - (RANGE_YEAR_OFFSET[range] ?? 0);
+}
+
+/**
+ * Builds the year-filter options for the Health Metrics page.
+ * Derived from `HEALTH_METRICS_RANGES` + `RANGE_YEAR_OFFSET` so ordering
+ * and offsets stay in sync with the canonical range list.
+ */
+export function buildHealthMetricsYearOptions(): HealthMetricsYearOption[] {
+  const currentYear = new Date().getFullYear();
+  return [...HEALTH_METRICS_RANGES]
+    .reverse()
+    .map((range) => {
+      const year = currentYear - RANGE_YEAR_OFFSET[range];
+      return {
+        label: range === 'YTD' ? 'YTD' : `${year}`,
+        range,
+        year,
+      };
+    });
+}
+
 // ============================================
 // Health Metrics Page (Summary Cards)
 // ============================================
@@ -63,7 +114,28 @@ export const HEALTH_METRICS_SUMMARY_CARDS: readonly HealthMetricsSummaryCard[] =
   },
 ];
 
-export const HEALTH_METRICS_STATUS_COUNT = 8;
+export const HEALTH_METRICS_BODY_BLOCK_KEYS = [
+  'participating-orgs',
+  'nps',
+  'membership-churn',
+  'outstanding-balance',
+  'events',
+  'training-certification',
+  'code-contribution',
+  'flywheel-conversion',
+  'board-meeting',
+] as const;
+
+export const HEALTH_METRICS_STATUS_COUNT = HEALTH_METRICS_BODY_BLOCK_KEYS.length;
+
+// ============================================
+// Board Meeting Card — Thresholds & Limits
+// ============================================
+
+export const HEALTH_METRICS_BOARD_MEETING_LOW_ATTENDANCE_THRESHOLD = 0.5;
+export const HEALTH_METRICS_BOARD_MEETING_JOB_TITLE_MAX_LENGTH = 50;
+
+export const HEALTH_METRICS_FLYWHEEL_CONVERSION_DECIMAL_PLACES = 2;
 
 // ============================================
 // Marketing Action Icon Map
@@ -557,6 +629,18 @@ export const HEALTH_METRICS_CODE_CONTRIBUTION_DEFAULT_SUMMARY: CodeContributionS
   reviewers: 0,
 };
 
+export const HEALTH_METRICS_BOARD_MEETING_DEFAULT_SUMMARY: BoardMeetingParticipationSummaryResponse = {
+  dataAvailable: false,
+  projectId: '',
+  projectSlug: '',
+  range: 'YTD',
+  totalMeetings: 0,
+  totalMeetingsChange: null,
+  avgMeetingAttendance: 0,
+  avgMeetingAttendanceChange: null,
+  invitees: [],
+};
+
 export const HEALTH_METRICS_EVENTS_DEFAULT_SUMMARY: EventsSummaryResponse = {
   projectId: '',
   totalEvents: 0,
@@ -576,6 +660,7 @@ export const HEALTH_METRICS_MEMBERSHIP_CHURN_DEFAULT_SUMMARY: MembershipChurnPer
   currentPeriod: { churnRatePct: 0, valueLost: 0, membersLost: 0 },
   previousYear: null,
   trend: null,
+  tiers: [],
 };
 
 export const HEALTH_METRICS_NPS_DEFAULT_SUMMARY: NpsSummaryResponse = {

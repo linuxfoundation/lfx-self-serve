@@ -297,7 +297,7 @@ export class MarketingOverviewComponent {
       foundation$.pipe(
         switchMap((slug) =>
           forkJoin({
-            flywheel: safe('flywheel', this.analyticsService.getFlywheelConversion(slug)),
+            flywheel: safe('flywheel', this.analyticsService.getFlywheelConversion(slug).pipe(map((r) => r ?? EMPTY_ED_EVOLUTION_DATA.flywheel))),
             memberAcquisition: safe('memberAcquisition', this.analyticsService.getMemberAcquisition(slug)),
             memberRetention: safe('memberRetention', this.analyticsService.getMemberRetention(slug)),
             engagedCommunity: safe('engagedCommunity', this.analyticsService.getEngagedCommunity(slug)),

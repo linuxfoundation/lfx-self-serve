@@ -4,6 +4,7 @@
 import { Routes } from '@angular/router';
 
 import { authGuard } from './shared/guards/auth.guard';
+import { executiveDirectorGuard } from './shared/guards/executive-director.guard';
 
 export const routes: Routes = [
   {
@@ -28,6 +29,7 @@ export const routes: Routes = [
       {
         path: 'foundation/health-metrics',
         data: { lens: 'foundation' },
+        canActivate: [executiveDirectorGuard],
         loadComponent: () => import('./modules/dashboards/health-metrics/health-metrics.component').then((m) => m.HealthMetricsComponent),
       },
       // Project Lens dashboard (placeholder — reuses DashboardComponent for now)

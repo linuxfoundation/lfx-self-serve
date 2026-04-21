@@ -5,13 +5,14 @@ import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { SkeletonModule } from 'primeng/skeleton';
 import { HEALTH_METRICS_MEMBERSHIP_CHURN_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
+import { formatValueLost } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { environment } from '@environments/environment';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
 import { initializeRangeDataFetching } from '@shared/utils/health-metrics-data.util';
 
-import type { HealthMetricsRange, MembershipChurnPerTierSummaryResponse } from '@lfx-one/shared/interfaces';
+import type { HealthMetricsRange, MembershipChurnDisplayTierRow, MembershipChurnPerTierSummaryResponse } from '@lfx-one/shared/interfaces';
 
 @Component({
   selector: 'lfx-membership-churn-tier-card',
@@ -37,6 +38,13 @@ export class MembershipChurnTierCardComponent {
   protected readonly previousYear = computed(() => this.summaryData().previousYear);
   protected readonly comparisonAvailable = computed(() => this.summaryData().comparisonAvailable);
   protected readonly trend = computed(() => this.summaryData().trend);
+  protected readonly tiers = computed<MembershipChurnDisplayTierRow[]>(() =>
+    (this.summaryData().tiers ?? []).map((row) => ({
+      ...row,
+      valueLostLabel: formatValueLost(row.valueLost),
+      membersLabel: `${row.membersLost} ${row.membersLost === 1 ? 'member' : 'members'}`,
+    }))
+  );
 
   protected readonly formattedChurnRate = computed(() => {
     const pct = this.currentPeriod().churnRatePct;
@@ -44,14 +52,7 @@ export class MembershipChurnTierCardComponent {
   });
 
   protected readonly formattedValueLostHeadline = computed(() => {
-    const value = this.currentPeriod().valueLost;
-    if (value >= 1_000_000) {
-      return `$${(value / 1_000_000).toFixed(1)}M`;
-    }
-    if (value >= 1_000) {
-      return `$${Math.round(value / 1_000)}K`;
-    }
-    return `$${value.toLocaleString()}`;
+    return formatValueLost(this.currentPeriod().valueLost);
   });
 
   protected readonly formattedMembersLost = computed(() => {

@@ -1,0 +1,157 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<div class="flex h-full flex-col gap-4 rounded-lg border border-gray-200 bg-white p-5" data-testid="board-meeting-card">
+  <!-- Header -->
+  <div class="flex items-center justify-between gap-4" data-testid="board-meeting-card-header">
+    <h3 class="text-sm font-bold tracking-wide text-gray-900 uppercase" data-testid="board-meeting-title">Board Meeting Participation</h3>
+    @if (addPastMeetingUrl()) {
+      <div class="text-xs text-gray-500">
+        Missing a meeting?
+        <a
+          [href]="addPastMeetingUrl()"
+          target="_blank"
+          rel="noopener noreferrer"
+          class="font-medium text-blue-600 hover:text-blue-800 hover:underline"
+          aria-label="Add a past board meeting in PCC"
+          data-testid="board-meeting-add-meeting-link">
+          Add past meeting
+        </a>
+      </div>
+    }
+  </div>
+
+  @if (loading()) {
+    <!-- Loading Skeletons -->
+    <div class="flex flex-col gap-4" data-testid="board-meeting-card-skeleton">
+      <div class="flex gap-8">
+        <div class="flex flex-col gap-1">
+          <p-skeleton width="4rem" height="2.5rem" />
+          <p-skeleton width="6rem" height="0.75rem" />
+        </div>
+        <div class="flex flex-col gap-1">
+          <p-skeleton width="4rem" height="2.5rem" />
+          <p-skeleton width="8rem" height="0.75rem" />
+        </div>
+      </div>
+      <p-skeleton width="100%" height="12rem" />
+    </div>
+  } @else if (!hasData()) {
+    <!-- No Data State (slug not resolved) -->
+    <div class="flex items-center justify-center py-8" data-testid="board-meeting-card-no-data">
+      <p class="text-sm text-gray-500">No Board Meeting Participation Data Available</p>
+    </div>
+  } @else {
+    <!-- Metrics Row -->
+    <div class="flex gap-12" data-testid="board-meeting-card-metrics">
+      <!-- Total Meetings -->
+      <div class="flex flex-col gap-0.5" data-testid="board-meeting-total-meetings">
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl font-bold text-gray-900">{{ summaryData().totalMeetings }}</span>
+          @if (showTotalMeetingsChange()) {
+            <span
+              class="text-sm font-medium"
+              [class.text-red-600]="totalMeetingsChangeIsNegative()"
+              [class.text-emerald-600]="!totalMeetingsChangeIsNegative()"
+              data-testid="board-meeting-total-meetings-change">
+              {{ formattedTotalMeetingsChange() }}
+            </span>
+          }
+        </div>
+        <span class="text-xs text-gray-500">Total Meetings</span>
+      </div>
+
+      <!-- Avg. Meeting Attendance -->
+      <div class="flex flex-col gap-0.5" data-testid="board-meeting-avg-attendance">
+        <div class="flex items-baseline gap-2">
+          <span class="text-3xl font-bold text-gray-900">{{ formattedAvgAttendance() }}%</span>
+          @if (showAvgAttendanceChange()) {
+            <span
+              class="text-sm font-medium"
+              [class.text-red-600]="avgAttendanceChangeIsNegative()"
+              [class.text-emerald-600]="!avgAttendanceChangeIsNegative()"
+              data-testid="board-meeting-avg-attendance-change">
+              {{ formattedAvgAttendanceChange() }}
+            </span>
+          }
+        </div>
+        <span class="text-xs text-gray-500">Avg. Meeting Attendance</span>
+      </div>
+    </div>
+
+    <!-- Invitees Data Table -->
+    @if (hasInvitees()) {
+      <div class="max-h-[300px] overflow-auto rounded-md border border-gray-200" data-testid="board-meeting-table">
+        <table class="w-full border-collapse text-left">
+          <thead class="sticky top-0 z-10 bg-gray-50">
+            <tr class="border-b border-gray-200">
+              @for (col of columnHeaders(); track col.field) {
+                <th
+                  scope="col"
+                  class="px-3 py-2"
+                  [class.w-[30%]]="col.field === 'inviteeFullName'"
+                  [class.w-[25%]]="col.field === 'organizationName' || col.field === 'lastAttended'"
+                  [class.w-[20%]]="col.field === 'attendancePercent'"
+                  [attr.aria-sort]="col.ariaSort"
+                  [attr.data-testid]="'board-meeting-th-' + col.field">
+                  <button type="button" class="inline-flex w-full items-center gap-1 text-xs font-semibold tracking-wide text-gray-600 uppercase hover:text-gray-900" (click)="onSort(col.field)">
+                    {{ col.label }}
+                    <i [class]="col.iconClass"></i>
+                  </button>
+                </th>
+              }
+            </tr>
+          </thead>
+          <tbody>
+            @for (row of displayRows(); track $index; let rowIndex = $index) {
+              <tr class="border-b border-gray-100 last:border-b-0" [attr.data-testid]="'board-meeting-row-' + rowIndex">
+                <!-- Name -->
+                <td class="px-3 py-2">
+                  <div class="flex flex-col gap-0.5 min-w-0">
+                    <span class="truncate text-sm font-semibold text-gray-900">{{ row.displayName }}</span>
+                    @if (row.displayJobTitle) {
+                      <span class="truncate text-xs italic text-gray-500">{{ row.displayJobTitle }}</span>
+                    }
+                  </div>
+                </td>
+
+                <!-- Organization -->
+                <td class="px-3 py-2">
+                  @if (row.organizationUrl) {
+                    <a
+                      [href]="row.organizationUrl"
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      class="inline-block max-w-full truncate text-sm text-blue-600 hover:text-blue-800 hover:underline"
+                      data-testid="board-meeting-org-link">
+                      {{ row.organizationName }}
+                    </a>
+                  } @else {
+                    <span class="inline-block max-w-full truncate text-sm text-gray-700">{{ row.organizationName }}</span>
+                  }
+                </td>
+
+                <!-- Attended (%) -->
+                <td class="px-3 py-2">
+                  <span class="text-sm" [class.text-red-600]="row.isLowAttendance" [class.text-gray-900]="!row.isLowAttendance">
+                    {{ row.attendanceLabel }}
+                  </span>
+                </td>
+
+                <!-- Last Attended -->
+                <td class="px-3 py-2">
+                  <span class="text-sm text-gray-900">{{ row.lastAttendedLabel }}</span>
+                </td>
+              </tr>
+            }
+          </tbody>
+        </table>
+      </div>
+    } @else {
+      <!-- Empty table state: summary data exists but no invitees match for this range -->
+      <div class="flex items-center justify-center rounded-md border border-dashed border-gray-200 py-8" data-testid="board-meeting-table-empty">
+        <p class="text-sm text-gray-500">No Board Meeting Participation</p>
+      </div>
+    }
+  }
+</div>

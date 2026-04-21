@@ -6,7 +6,9 @@
   <div class="flex flex-col gap-4 md:flex-row md:items-start md:justify-between">
     <div class="flex flex-col gap-1">
       <h2 class="text-xl font-semibold text-gray-900" data-testid="health-metrics-title">Health Metrics</h2>
-      <p class="text-sm text-gray-500">Operational health metrics across your foundation.</p>
+      @if (hasFoundation()) {
+        <p class="text-sm text-gray-500">Operational health metrics across your foundation.</p>
+      }
     </div>
     <div class="flex items-center gap-4">
       <span class="text-sm text-gray-500 whitespace-nowrap">{{ dateRangeLabel() }}</span>
@@ -94,9 +96,15 @@
       <lfx-training-certification-card [range]="selectedRange()" />
     </div>
 
-    <!-- Code Contribution -->
+    <!-- Code Contribution & Flywheel Conversion Rate -->
     <div class="grid grid-cols-1 gap-4 lg:grid-cols-2">
       <lfx-code-contribution-card [range]="selectedRange()" />
+      <lfx-flywheel-conversion-card [range]="selectedRange()" />
+    </div>
+
+    <!-- Board Meeting Participation -->
+    <div class="grid grid-cols-1 gap-4">
+      <lfx-board-meeting-card [range]="selectedRange()" />
     </div>
   }
 </div>

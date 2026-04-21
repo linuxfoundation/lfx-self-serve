@@ -32,3 +32,20 @@ export function formatCurrency(num: number): string {
   if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
   return `${sign}$${abs.toLocaleString()}`;
 }
+
+/**
+ * Format a monetary value-lost figure using compact notation.
+ * Suitable for displaying churn, refund, or write-off amounts.
+ * - Handles negative numbers, NaN, and Infinity gracefully
+ * - Values >= 999,950 are displayed as "$X.XM"
+ * - Values >= 1,000 are displayed as "$X.XK"
+ * - Smaller values use locale-formatted strings with "$" prefix
+ */
+export function formatValueLost(value: number): string {
+  if (!Number.isFinite(value)) return '$0';
+  const abs = Math.abs(value);
+  const sign = value < 0 ? '-' : '';
+  if (abs >= 999_950) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
+  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
+  return `${sign}$${abs.toLocaleString()}`;
+}

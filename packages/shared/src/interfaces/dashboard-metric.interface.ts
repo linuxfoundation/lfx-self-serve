@@ -404,6 +404,32 @@ export interface MembershipChurnTrendSummary {
 }
 
 /**
+ * Per-tier churn row for the "Churn by Tier" breakdown
+ * @description One row per membership tier returned by Snowflake (no allowlist).
+ * Tier labels have the trailing " Membership" suffix stripped (PCC parity).
+ */
+export interface MembershipChurnTierRow {
+  /** Display-ready tier name (e.g. "Platinum", "Strategic") */
+  tier: string;
+  /** Tier-level churn rate as a display-friendly percentage (e.g. 8.0 means 8%) */
+  churnRatePct: number;
+  /** Monetary loss for this tier in whole dollars */
+  valueLost: number;
+  /** Count of churned accounts for this tier */
+  membersLost: number;
+}
+
+/**
+ * Pre-formatted display row for the membership churn tier breakdown.
+ * Extends the data row with a pre-computed value-lost label so the
+ * template does not call a formatting method on every render cycle.
+ */
+export interface MembershipChurnDisplayTierRow extends MembershipChurnTierRow {
+  valueLostLabel: string;
+  membersLabel: string;
+}
+
+/**
  * Consolidated Membership Churn Per Tier summary from BFF
  * @description Single-response contract for the Health Metrics churn card.
  * Query semantics aligned with lfx-pcc MembershipQueriesService (membershipTotalChurnRate + membershipChurnRate).
@@ -422,6 +448,8 @@ export interface MembershipChurnPerTierSummaryResponse {
   previousYear: MembershipChurnPeriodSummary | null;
   /** Trend direction and multiplier; null when comparison is unavailable or non-finite */
   trend: MembershipChurnTrendSummary | null;
+  /** Per-tier breakdown ordered Platinum > Gold > Silver > Associate > others (alpha); empty when no data */
+  tiers: MembershipChurnTierRow[];
 }
 
 /**
@@ -614,4 +642,161 @@ export interface CodeContributionSummaryResponse {
   maintainers: number;
   /** All-time reviewer count (fixed regardless of range) */
   reviewers: number;
+}
+
+/**
+ * Board Meeting Participation reporting range type alias for shared Health Metrics range.
+ * Maps to range-specific columns in ANALYTICS.PLATINUM.MEETING_ATTENDANCE / MEETING_ATTENDEES.
+ */
+export type BoardMeetingParticipationRange = HealthMetricsRange;
+
+/** Keys eligible for client-side sorting on the Board Meeting invitee table. */
+export type BoardMeetingSortField = 'inviteeFullName' | 'organizationName' | 'attendancePercent' | 'lastAttended';
+
+/** 1 = ascending, -1 = descending. */
+export type BoardMeetingSortOrder = 1 | -1;
+
+/**
+ * Per-invitee row for the Board Meeting Participation data table.
+ * Derived from ANALYTICS.PLATINUM.MEETING_ATTENDEES. Each element represents one person
+ * (keyed by full name + account), not one organization — multiple invitees may share the
+ * same organization.
+ */
+export interface BoardMeetingInviteeRow {
+  /** Invitee full name from Snowflake INVITEE_FULL_NAME; frontend title-cases for display */
+  inviteeFullName: string;
+  /**
+   * Job title from Snowflake INVITEE_JOB_TITLE. The dbt sentinel value "Unavailable"
+   * is passed through as-is; the frontend treats it as missing and hides the secondary line.
+   */
+  inviteeJobTitle: string | null;
+  /** Organization display name from Snowflake ACCOUNT_NAME (rendered as blue link) */
+  organizationName: string;
+  /** Organization / account UUID for PCC member-details deep link; null when missing from Snowflake */
+  organizationId: string | null;
+  /** Number of meetings attended in the selected range */
+  meetingsAttended: number;
+  /** Number of meetings invited to in the selected range */
+  meetingsInvited: number;
+  /**
+   * Fractional attendance ratio 0–1 (e.g., 0.0 = 0%, 1.0 = 100%).
+   * Frontend multiplies by 100 for percentage display.
+   * NOTE: field is named "Percent" for backward compatibility but the unit is a 0–1 ratio.
+   * TODO: consider renaming to `attendanceRatio` in a future cleanup pass.
+   */
+  attendancePercent: number;
+  /**
+   * ISO date string of the invitee's last attended meeting, or null when never attended.
+   * Frontend formats as full date (e.g., "December 9, 2025") or renders "–" for null.
+   */
+  lastAttended: string | null;
+}
+
+/**
+ * Pre-formatted display row for the board-meeting invitee table.
+ * Computed once per data update so the template binds to strings/booleans
+ * rather than calling formatting methods on every change-detection cycle.
+ */
+export interface BoardMeetingDisplayRow {
+  displayName: string;
+  displayJobTitle: string | null;
+  organizationName: string;
+  organizationUrl: string;
+  attendanceLabel: string;
+  isLowAttendance: boolean;
+  lastAttendedLabel: string;
+}
+
+/**
+ * Pre-computed sort/aria state for a single column header in the board-meeting table.
+ */
+export interface BoardMeetingColumnHeader {
+  field: BoardMeetingSortField;
+  label: string;
+  ariaSort: 'ascending' | 'descending' | 'none';
+  iconClass: string;
+}
+
+/**
+ * Board Meeting Participation summary response from BFF.
+ * Single normalized card-ready payload backed by two parallel Snowflake reads against
+ * ANALYTICS.PLATINUM.MEETING_ATTENDANCE (summary counters) and MEETING_ATTENDEES (invitee rows).
+ */
+export interface BoardMeetingParticipationSummaryResponse {
+  /** true when the slug-resolve CTE found a project; false triggers "No Board Meeting Participation Data Available" */
+  dataAvailable: boolean;
+  /** Snowflake PROJECT_ID UUID echoed for PCC deep link construction; empty string when dataAvailable is false */
+  projectId: string;
+  /** Foundation/project slug echoed for context */
+  projectSlug: string;
+  /** Effective reporting range used by the queries */
+  range: BoardMeetingParticipationRange;
+  /** Total board meetings for the selected range */
+  totalMeetings: number;
+  /**
+   * Period-over-period change ratio for total meetings (e.g., -0.15 = 15% decrease).
+   * Raw dbt value, not divided by 100. Null when no prior period data.
+   */
+  totalMeetingsChange: number | null;
+  /**
+   * Average organization attendance as fractional ratio 0–1 (e.g., 0.77 = 77%).
+   * Frontend multiplies by 100 for percentage display.
+   */
+  avgMeetingAttendance: number;
+  /**
+   * Period-over-period change ratio for average attendance.
+   * Raw dbt value, not divided by 100. Null when no prior period data.
+   */
+  avgMeetingAttendanceChange: number | null;
+  /** Per-invitee rows for the data table; empty array when no invitees match for the selected range */
+  invitees: BoardMeetingInviteeRow[];
+}
+
+// ============================================
+// Flywheel Conversion Rate (Health Metrics Card)
+// ============================================
+
+/**
+ * Derived summary view for the Flywheel Conversion Rate Health Metrics card.
+ * Produced client-side from the reused FlywheelConversionResponse — there is no
+ * new backend field for previousPeriodConversionRate in v1; it is computed as
+ * `conversionRate - changePercentage` per the clarified spec.
+ */
+export interface FlywheelCardSummaryView {
+  /** Current conversion rate (primary metric) from `FlywheelConversionResponse.conversionRate` */
+  currentConversionRate: number;
+  /** Derived previous-period conversion rate: `conversionRate - changePercentage` */
+  previousPeriodConversionRate: number;
+  /** Raw change percentage from `FlywheelConversionResponse.changePercentage` */
+  changePercentage: number;
+  /** Trend direction mirrored from `FlywheelConversionResponse.trend` */
+  trend: 'up' | 'down';
+}
+
+/**
+ * Single funnel stage for the Flywheel Conversion Rate Health Metrics card.
+ * The card renders the 7 stages in the fixed drawer order and each stage's
+ * bar length is proportional to the top-of-funnel attendee count.
+ */
+export interface FlywheelHealthMetricsFunnelStage {
+  /** Stage label displayed on the left side of the horizontal bar */
+  label: string;
+  /** Raw stage count from the reused flywheel response */
+  count: number;
+  /** Display width percentage relative to Event Attendees; 0 when attendees is 0 */
+  widthPct: number;
+}
+
+/**
+ * Single prioritized banner message rendered at the bottom of the Flywheel
+ * Conversion Rate Health Metrics card. The card shows at most one message and
+ * hides the banner when the reused flywheel logic yields nothing relevant.
+ */
+export interface FlywheelHealthMetricsBannerView {
+  /** Business-facing message text shown on the banner */
+  text: string;
+  /** Whether the selected message came from an action or an insight */
+  sourceType: 'action' | 'insight';
+  /** Which priority group the message came from — drives banner visual treatment */
+  priorityGroup: 'attention' | 'performing';
 }

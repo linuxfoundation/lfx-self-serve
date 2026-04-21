@@ -2,7 +2,10 @@
 // SPDX-License-Identifier: MIT
 
 import { Request, NextFunction } from 'express';
+import { HEALTH_METRICS_RANGES, isHealthMetricsRange } from '@lfx-one/shared/constants';
 import { ServiceValidationError } from '../errors';
+
+import type { HealthMetricsRange } from '@lfx-one/shared/interfaces';
 
 /**
  * Common validation utilities for controllers
@@ -119,6 +122,17 @@ export function validateRequiredParameter<T>(
 export function getStringQueryParam(req: Request, name: string): string | undefined {
   const value = req.query[name];
   return typeof value === 'string' ? value : undefined;
+}
+
+/**
+ * Validates and narrows a raw range string to a HealthMetricsRange.
+ * Throws ServiceValidationError when the value is not in the allowed set.
+ */
+export function assertHealthMetricsRange(range: string, operation: string): HealthMetricsRange {
+  if (!isHealthMetricsRange(range)) {
+    throw ServiceValidationError.forField('range', `Invalid range value. Allowed: ${HEALTH_METRICS_RANGES.join(', ')}`, { operation });
+  }
+  return range;
 }
 
 const VALID_ENTITY_TYPES = ['foundation', 'project'] as const;

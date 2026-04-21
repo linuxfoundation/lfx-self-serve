@@ -4,6 +4,8 @@
 import { NATS_CONFIG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
+  BoardMeetingInviteeRow,
+  BoardMeetingParticipationSummaryResponse,
   BrandHealthMention,
   BrandHealthResponse,
   BrandHealthTopProject,
@@ -53,10 +55,12 @@ import {
   HealthEventsMonthlyResponse,
   HealthMetricsAggregatedRow,
   HealthMetricsDailyResponse,
+  HealthMetricsRange,
   LifecycleStage,
   MemberAcquisitionResponse,
   MemberRetentionResponse,
   MembershipChurnPerTierSummaryResponse,
+  MembershipChurnTierRow,
   MonthlyMemberCountWithFoundation,
   MultiFoundationSummaryResponse,
   NorthStarMonthlyDataPoint,
@@ -139,6 +143,16 @@ export class ProjectService {
       COMPLETED_YEAR_2: 'PREV_COMPLETED_YEAR',
       COMPLETED_YEAR_3: '3RD_LAST_COMPLETED_YEAR',
       COMPLETED_YEAR_4: '4th_LAST_COMPLETED_YEAR',
+    },
+    // Prefix convention for ANALYTICS.PLATINUM.MEETING_ATTENDEES columns.
+    // Columns are named {prefix}meetings_invited / {prefix}meetings_attended.
+    // Note the leading underscore for year 3/4 per dbt platinum_meeting_attendees.sql.
+    boardMeetingInvitee: {
+      YTD: 'ytd_',
+      COMPLETED_YEAR: 'last_completed_year_',
+      COMPLETED_YEAR_2: 'prev_completed_year_',
+      COMPLETED_YEAR_3: '_3rd_last_completed_year_',
+      COMPLETED_YEAR_4: '_4th_last_completed_year_',
     },
   };
 
@@ -2923,7 +2937,6 @@ export class ProjectService {
             AND year_start IS NOT NULL
             AND ${previousYearPredicate}
             AND membership_tier IS NOT NULL
-            AND membership_tier != 'Associate Membership'
         ),
         previous_per_tier AS (
           SELECT
@@ -2952,6 +2965,8 @@ export class ProjectService {
         FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
         WHERE project_slug = ?
       ),
+      -- Associate Membership is included in churn-rate denominator to match the per-tier breakdown.
+      -- Both headline and tier-level numbers now reconcile: SUM(tiers.valueLost) === headline.valueLost.
       current_total AS (
         SELECT
           DIV0NULL(SUM(total_churned_accounts), SUM(membership_count)) AS TOTAL_CHURN_RATE
@@ -2960,7 +2975,6 @@ export class ProjectService {
           AND year_start IS NOT NULL
           AND ${currentYearPredicate}
           AND membership_tier IS NOT NULL
-          AND membership_tier != 'Associate Membership'
       ),
       current_per_tier AS (
         SELECT
@@ -2985,7 +2999,52 @@ export class ProjectService {
       SELECT * FROM final
     `;
 
-    const result = await this.snowflakeService.execute<ChurnSummaryRow>(query, [foundationSlug]);
+    interface TierRow {
+      TIER: string;
+      CHURN_RATE_PCT: number;
+      VALUE_LOST: number;
+      MEMBERS_LOST: number;
+    }
+
+    const tierQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        REPLACE(membership_tier, ' Membership', '') AS TIER,
+        ROUND(DIV0NULL(SUM(total_churned_accounts), SUM(membership_count)) * 100, 1) AS CHURN_RATE_PCT,
+        IFNULL(SUM(membership_value_lost), 0) AS VALUE_LOST,
+        IFNULL(SUM(total_churned_accounts), 0) AS MEMBERS_LOST
+      FROM ANALYTICS.PLATINUM.MEMBERSHIP_CHURN
+      WHERE project_id = (SELECT project_id FROM slug_resolve LIMIT 1)
+        AND year_start IS NOT NULL
+        AND ${currentYearPredicate}
+        AND membership_tier IS NOT NULL
+      GROUP BY membership_tier
+      ORDER BY
+        CASE REPLACE(membership_tier, ' Membership', '')
+          WHEN 'Platinum' THEN 1
+          WHEN 'Gold'     THEN 2
+          WHEN 'Silver'   THEN 3
+          WHEN 'Associate' THEN 4
+          ELSE 5
+        END,
+        TIER
+    `;
+
+    const [result, tierResult] = await Promise.all([
+      this.snowflakeService.execute<ChurnSummaryRow>(query, [foundationSlug]),
+      this.snowflakeService.execute<TierRow>(tierQuery, [foundationSlug]),
+    ]);
+
+    const tiers: MembershipChurnTierRow[] = (tierResult.rows ?? []).map((r) => ({
+      tier: r.TIER,
+      churnRatePct: r.CHURN_RATE_PCT ?? 0,
+      valueLost: r.VALUE_LOST ?? 0,
+      membersLost: r.MEMBERS_LOST ?? 0,
+    }));
 
     const zeroDefault: MembershipChurnPerTierSummaryResponse = {
       projectId: '',
@@ -2994,6 +3053,7 @@ export class ProjectService {
       currentPeriod: { churnRatePct: 0, valueLost: 0, membersLost: 0 },
       previousYear: comparisonAvailable ? { churnRatePct: 0, valueLost: 0, membersLost: 0 } : null,
       trend: null,
+      tiers,
     };
 
     if (!result.rows || result.rows.length === 0) {
@@ -3040,6 +3100,7 @@ export class ProjectService {
       currentPeriod,
       previousYear,
       trend,
+      tiers,
     };
   }
 
@@ -3430,6 +3491,154 @@ export class ProjectService {
       committers: row?.COMMITTERS_ALL_TIME ?? 0,
       maintainers: row?.MAINTAINERS_ALL_TIME ?? 0,
       reviewers: row?.REVIEWERS_ALL_TIME ?? 0,
+    };
+  }
+
+  /**
+   * Get Board Meeting Participation summary for a foundation from Snowflake.
+   * Two parallel reads:
+   *   - Summary: ANALYTICS.PLATINUM.MEETING_ATTENDANCE (project-level counters + dbt change ratios)
+   *   - Invitees: ANALYTICS.PLATINUM.MEETING_ATTENDEES (per-invitee rows filtered to invited > 0)
+   * Both scoped by project_id resolved from foundationSlug via the slug-resolve CTE.
+   * voting_status defaults to 'Voting Rep' and is applied as a bound parameter.
+   * @param foundationSlug - Foundation slug used to resolve project_id via slug-resolve CTE
+   * @param range - Reporting window (default 'YTD')
+   * Voting status is hard-coded to 'Voting Rep' per product requirement.
+   * @returns Normalized response with summary counters and invitee rows
+   */
+  public async getBoardMeetingParticipationSummary(
+    foundationSlug: string,
+    range: HealthMetricsRange = 'YTD'
+  ): Promise<BoardMeetingParticipationSummaryResponse> {
+    logger.debug(undefined, 'get_board_meeting_participation_summary', 'Fetching board meeting participation', {
+      foundation_slug: foundationSlug,
+      range,
+    });
+
+    const VOTING_STATUS = 'Voting Rep';
+    interface SummaryRow {
+      PROJECT_ID: string;
+      TOTAL_MEETINGS: number;
+      AVG_MEETING_ATTENDANCE: number;
+      TOTAL_MEETINGS_CHANGE: number | null;
+      AVG_MEETING_ATTENDANCE_CHANGE: number | null;
+    }
+
+    interface InviteeRow {
+      INVITEE_FULL_NAME: string | null;
+      INVITEE_JOB_TITLE: string | null;
+      ACCOUNT_NAME: string | null;
+      ACCOUNT_ID: string | null;
+      INVITEE_LAST_MEETING_ATTENDED: string | Date | null;
+      MEETINGS_ATTENDED: number | null;
+      MEETINGS_INVITED: number | null;
+    }
+
+    // Suffix for MEETING_ATTENDANCE columns (e.g., "_ytd", "_last_completed_year")
+    const summarySuffix = this.getRangeSuffix(range);
+    // Prefix for MEETING_ATTENDEES columns (e.g., "ytd_", "_3rd_last_completed_year_")
+    const inviteePrefix = this.getRangeSuffix(range, 'boardMeetingInvitee');
+
+    // Summary query: MIN() aggregation over per-org rows since project_meetings_* and
+    // avg_org_attendance_* values repeat across all org rows for the same project.
+    // Pin to one resolved project_id via LIMIT 1 to avoid cross-project merges.
+    const summaryQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        (SELECT project_id FROM slug_resolve LIMIT 1) AS PROJECT_ID,
+        IFNULL(MIN(ma.project_meetings${summarySuffix}), 0) AS TOTAL_MEETINGS,
+        IFNULL(MIN(ma.avg_org_attendance${summarySuffix}), 0) AS AVG_MEETING_ATTENDANCE,
+        MIN(ma.project_meetings${summarySuffix}_change) AS TOTAL_MEETINGS_CHANGE,
+        MIN(ma.avg_org_attendance${summarySuffix}_change) AS AVG_MEETING_ATTENDANCE_CHANGE
+      FROM ANALYTICS.PLATINUM.MEETING_ATTENDANCE ma
+      WHERE ma.project_id = (SELECT project_id FROM slug_resolve LIMIT 1)
+        AND ma.voting_status = ?
+    `;
+
+    // Invitees query: filters rows with zero invited meetings (matches lfx-pcc behavior).
+    // attendance_percent is not on MEETING_ATTENDEES, so we compute from attended/invited.
+    // Pin to one resolved project_id via LIMIT 1 to match the summary query.
+    const inviteesQuery = `
+      WITH slug_resolve AS (
+        SELECT DISTINCT project_id
+        FROM ANALYTICS.PLATINUM.ENGAGEMENT_SCORES_BY_CLASSIFICATION
+        WHERE project_slug = ?
+      )
+      SELECT
+        mat.invitee_full_name AS INVITEE_FULL_NAME,
+        mat.invitee_job_title AS INVITEE_JOB_TITLE,
+        mat.account_name AS ACCOUNT_NAME,
+        mat.account_id AS ACCOUNT_ID,
+        mat.invitee_last_meeting_attended AS INVITEE_LAST_MEETING_ATTENDED,
+        IFNULL(mat.${inviteePrefix}meetings_attended, 0) AS MEETINGS_ATTENDED,
+        IFNULL(mat.${inviteePrefix}meetings_invited, 0) AS MEETINGS_INVITED
+      FROM ANALYTICS.PLATINUM.MEETING_ATTENDEES mat
+      WHERE mat.project_id = (SELECT project_id FROM slug_resolve LIMIT 1)
+        AND mat.voting_status = ?
+        AND mat.${inviteePrefix}meetings_invited > 0
+    `;
+
+    const [summaryResult, inviteesResult] = await Promise.all([
+      this.snowflakeService.execute<SummaryRow>(summaryQuery, [foundationSlug, VOTING_STATUS]),
+      this.snowflakeService.execute<InviteeRow>(inviteesQuery, [foundationSlug, VOTING_STATUS]),
+    ]);
+
+    const summaryRow = summaryResult.rows?.[0];
+    const inviteeRows = inviteesResult.rows ?? [];
+    const resolvedProjectId = summaryRow?.PROJECT_ID ?? '';
+    const dataAvailable = !!resolvedProjectId;
+
+    if (!dataAvailable) {
+      logger.warning(undefined, 'get_board_meeting_participation_summary', 'No usable board meeting data for foundation', {
+        foundation_slug: foundationSlug,
+        range,
+        resolved_project_id: resolvedProjectId || null,
+        total_meetings: summaryRow?.TOTAL_MEETINGS ?? 0,
+      });
+    } else {
+      logger.debug(undefined, 'get_board_meeting_participation_summary', 'Snowflake results received', {
+        foundation_slug: foundationSlug,
+        range,
+        resolved_project_id: resolvedProjectId,
+        total_meetings: summaryRow?.TOTAL_MEETINGS ?? 0,
+        invitee_count: inviteeRows.length,
+      });
+    }
+
+    const invitees: BoardMeetingInviteeRow[] = dataAvailable
+      ? inviteeRows.map((row) => {
+          const attended = row.MEETINGS_ATTENDED ?? 0;
+          const invited = row.MEETINGS_INVITED ?? 0;
+          const attendancePercent = invited > 0 ? Math.round((attended / invited) * 100) / 100 : 0;
+          const lastAttended = ProjectService.toIsoDate(row.INVITEE_LAST_MEETING_ATTENDED);
+
+          return {
+            inviteeFullName: row.INVITEE_FULL_NAME ?? '',
+            inviteeJobTitle: row.INVITEE_JOB_TITLE ?? null,
+            organizationName: row.ACCOUNT_NAME ?? '',
+            organizationId: row.ACCOUNT_ID ?? null,
+            meetingsAttended: attended,
+            meetingsInvited: invited,
+            attendancePercent,
+            lastAttended,
+          };
+        })
+      : [];
+
+    return {
+      dataAvailable,
+      projectId: resolvedProjectId,
+      projectSlug: dataAvailable ? foundationSlug : '',
+      range,
+      totalMeetings: summaryRow?.TOTAL_MEETINGS ?? 0,
+      totalMeetingsChange: summaryRow?.TOTAL_MEETINGS_CHANGE ?? null,
+      avgMeetingAttendance: summaryRow?.AVG_MEETING_ATTENDANCE ?? 0,
+      avgMeetingAttendanceChange: summaryRow?.AVG_MEETING_ATTENDANCE_CHANGE ?? null,
+      invitees,
     };
   }
 
@@ -4367,5 +4576,21 @@ export class ProjectService {
     if (full === 'YTD') return { prefix: '', suffix: 'YTD' };
     const lastUnderscore = full.lastIndexOf('_');
     return { prefix: full.substring(0, lastUnderscore + 1), suffix: full.substring(lastUnderscore + 1) };
+  }
+
+  /**
+   * Normalize a Snowflake date/timestamp value into an ISO date string (YYYY-MM-DD),
+   * or null when the source value is missing or unparseable.
+   * Snowflake drivers may return Date objects or ISO-shaped strings depending on
+   * column type; non-date values silently return null rather than garbage.
+   */
+  private static toIsoDate(value: string | Date | null | undefined): string | null {
+    if (!value) return null;
+    if (typeof value === 'string') {
+      const match = value.match(/^\d{4}-\d{2}-\d{2}/);
+      if (match) return match[0];
+    }
+    const date = value instanceof Date ? value : new Date(String(value));
+    return Number.isNaN(date.getTime()) ? null : date.toISOString().slice(0, 10);
   }
 }
