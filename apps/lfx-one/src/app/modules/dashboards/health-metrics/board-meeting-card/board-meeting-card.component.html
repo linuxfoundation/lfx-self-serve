@@ -94,7 +94,10 @@
                   [class.w-[20%]]="col.field === 'attendancePercent'"
                   [attr.aria-sort]="col.ariaSort"
                   [attr.data-testid]="'board-meeting-th-' + col.field">
-                  <button type="button" class="inline-flex w-full items-center gap-1 text-xs font-semibold tracking-wide text-gray-600 uppercase hover:text-gray-900" (click)="onSort(col.field)">
+                  <button
+                    type="button"
+                    class="inline-flex w-full items-center gap-1 text-xs font-semibold tracking-wide text-gray-600 uppercase hover:text-gray-900"
+                    (click)="onSort(col.field)">
                     {{ col.label }}
                     <i [class]="col.iconClass"></i>
                   </button>

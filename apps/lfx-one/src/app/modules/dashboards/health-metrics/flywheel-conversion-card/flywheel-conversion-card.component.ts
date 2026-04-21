@@ -6,7 +6,12 @@ import { ChangeDetectionStrategy, Component, computed, ElementRef, inject, input
 import type { Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ChartComponent } from '@components/chart/chart.component';
-import { createHorizontalBarChartOptions, DASHBOARD_TOOLTIP_CONFIG, HEALTH_METRICS_FLYWHEEL_CONVERSION_DECIMAL_PLACES, lfxColors } from '@lfx-one/shared/constants';
+import {
+  createHorizontalBarChartOptions,
+  DASHBOARD_TOOLTIP_CONFIG,
+  HEALTH_METRICS_FLYWHEEL_CONVERSION_DECIMAL_PLACES,
+  lfxColors,
+} from '@lfx-one/shared/constants';
 import { buildFlywheelCardSummary, buildFlywheelFunnelStages, formatNumber, selectFlywheelBannerView } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';

@@ -970,9 +970,7 @@ export class AnalyticsService {
    * Returns null on HTTP failure so consumers can distinguish "error" from "real zeros".
    */
   public getFlywheelConversion(foundationSlug: string): Observable<FlywheelConversionResponse | null> {
-    return this.http.get<FlywheelConversionResponse>('/api/analytics/flywheel-conversion', { params: { foundationSlug } }).pipe(
-      catchError(() => of(null))
-    );
+    return this.http.get<FlywheelConversionResponse>('/api/analytics/flywheel-conversion', { params: { foundationSlug } }).pipe(catchError(() => of(null)));
   }
 
   /**

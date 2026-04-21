@@ -59,16 +59,14 @@ export function getYearForRange(range: HealthMetricsRange): number {
  */
 export function buildHealthMetricsYearOptions(): HealthMetricsYearOption[] {
   const currentYear = new Date().getFullYear();
-  return [...HEALTH_METRICS_RANGES]
-    .reverse()
-    .map((range) => {
-      const year = currentYear - RANGE_YEAR_OFFSET[range];
-      return {
-        label: range === 'YTD' ? 'YTD' : `${year}`,
-        range,
-        year,
-      };
-    });
+  return [...HEALTH_METRICS_RANGES].reverse().map((range) => {
+    const year = currentYear - RANGE_YEAR_OFFSET[range];
+    return {
+      label: range === 'YTD' ? 'YTD' : `${year}`,
+      range,
+      year,
+    };
+  });
 }
 
 // ============================================
@@ -733,6 +731,14 @@ function flatSparklineData(value: number): number[] {
   return [Math.max(value - nudge, 0), value, value, value, value, value + nudge];
 }
 
+/** Build a time-window label from the number of data points available.
+ *  Returns "Last N months" for any count, capped at 6. */
+function trendWindow(monthCount: number): string {
+  if (monthCount <= 0) return '';
+  if (monthCount >= 6) return 'Last 6 months';
+  return `Last ${monthCount} month${monthCount === 1 ? '' : 's'}`;
+}
+
 /** Normalize a server-provided trend: treat zero change as neutral instead of up.
  *  Uses Number(toFixed(1)) to match roundForDisplay() — both helpers agree on the
  *  same rounding path so the trend color never diverges from the displayed label. */
@@ -897,7 +903,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       value: `${flywheel.reengagement.reengagementRate.toFixed(1)}%`,
       changePercentage: formatPpMomChange(flywheel.reengagement.reengagementMomChange),
       trend: trendFromChange(flywheel.reengagement.reengagementMomChange),
-      subtitle: 'MoM · Last 6 months',
+      subtitle: flywheel.monthlyData.length > 0 ? `MoM · ${trendWindow(flywheel.monthlyData.length)}` : 'MoM',
       chartData: protoSparkline(
         flywheel.monthlyData.length > 0 ? monthlyValues(flywheel.monthlyData) : flatSparklineData(flywheel.reengagement.reengagementRate),
         lfxColors.blue[500]
@@ -917,7 +923,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       value: formatNumber(memberAcquisition.totalMembers),
       changePercentage: formatMomChange(memberAcquisition.changePercentage),
       trend: normalizeTrend(memberAcquisition.changePercentage, memberAcquisition.trend),
-      subtitle: `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}% · Last 6 months`,
+      subtitle:
+        memberAcquisition.totalMembersMonthlyData.length > 0
+          ? `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}% · ${trendWindow(memberAcquisition.totalMembersMonthlyData.length)}`
+          : `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}%`,
       chartData: protoSparkline(
         memberAcquisition.totalMembersMonthlyData.length > 0 ? memberAcquisition.totalMembersMonthlyData : flatSparklineData(memberAcquisition.totalMembers),
         lfxColors.blue[500]
@@ -936,7 +945,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       value: formatNumber(engagedCommunity.totalMembers),
       changePercentage: formatMomChange(engagedCommunity.changePercentage),
       trend: normalizeTrend(engagedCommunity.changePercentage, engagedCommunity.trend),
-      subtitle: 'Last 6 months',
+      subtitle: trendWindow(engagedCommunity.monthlyData.length),
       chartData: protoSparkline(
         engagedCommunity.monthlyData.length > 0 ? monthlyValues(engagedCommunity.monthlyData) : flatSparklineData(engagedCommunity.totalMembers),
         lfxColors.blue[500]
@@ -955,7 +964,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       value: formatNumber(eventGrowth.totalRegistrants),
       changePercentage: formatYoyChange(eventGrowth.registrantYoyChange),
       trend: trendFromChange(eventGrowth.registrantYoyChange),
-      subtitle: `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD`,
+      subtitle:
+        eventGrowth.monthlyData.length > 0
+          ? `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD · Trend: ${trendWindow(eventGrowth.monthlyData.length)}`
+          : `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD`,
       chartData: protoSparkline(
         eventGrowth.monthlyData.length > 0 ? monthlyValues(eventGrowth.monthlyData) : flatSparklineData(eventGrowth.totalRegistrants),
         lfxColors.blue[500]
@@ -994,7 +1006,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           normalizeTrend(brandReach.sessionMomChangePct, brandReach.sessionMomChangePct >= 0 ? 'up' : 'down')
         ),
       ],
-      caption: `${brandReach.activePlatforms} platforms · Last 6 months`,
+      caption:
+        brandReach.weeklyTrend.length > 0
+          ? `${brandReach.activePlatforms} platforms · ${trendWindow(Math.ceil(brandReach.weeklyTrend.length / 4))}`
+          : `${brandReach.activePlatforms} platforms`,
       tooltipText: 'Social followers across all platforms (stock) and monthly website sessions (flow). Shown separately — these are different metric types.',
       drawerType: DashboardDrawerType.BrandReach,
     } as DashboardMetricCard,
@@ -1017,7 +1032,10 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
         ),
         protoDualSignal('Positive Sentiment', `${brandHealth.sentiment.positive.toFixed(1)}%`, [], lfxColors.violet[500]),
       ],
-      caption: `${formatNumber(brandHealth.totalMentions)} mentions · Last 6 months`,
+      caption:
+        brandHealth.monthlyMentions.length > 0
+          ? `${formatNumber(brandHealth.totalMentions)} mentions · ${trendWindow(brandHealth.monthlyMentions.length)}`
+          : `${formatNumber(brandHealth.totalMentions)} mentions`,
       tooltipText: 'Total brand mentions across social and web with sentiment breakdown.',
       drawerType: DashboardDrawerType.BrandHealth,
     } as DashboardMetricCard,
@@ -1031,7 +1049,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       testId: 'ed-evo-revenue-impact',
       description: 'Total revenue attributed to marketing touchpoints, with paid media revenue shown separately.',
       customContentType: 'dual-signal',
-      caption: 'Last 6 months',
+      caption: trendWindow(revenueImpact.paidMedia.monthlyTrend.length),
       dualSignals: [
         (() => {
           const eventAttrSeries = eventAttrMonthlyRevenueSeries(revenueImpact.eventRegistrationAttribution.monthlyTrend);
