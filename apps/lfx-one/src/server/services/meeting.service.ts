@@ -834,19 +834,20 @@ export class MeetingService {
 
     const registrantId = registrants[0].uid;
 
-    // Build effective meeting ID for occurrence-specific RSVPs
-    const effectiveMeetingId = rsvpData.occurrence_id ? `${meetingUid}-${rsvpData.occurrence_id}` : meetingUid;
-
+    // occurrence_id goes in the request body — the upstream meeting-service concatenates it with
+    // meeting_id internally when calling the Zoom ITX API (see the OpenAPI description for
+    // SubmitItxMeetingResponseRequestBody.occurrence_id in lfx-v2-meeting-service).
     const requestData: ITXCreateMeetingResponseRequest = {
       response: rsvpData.response,
       scope: rsvpData.scope,
       registrant_id: registrantId,
+      ...(rsvpData.occurrence_id ? { occurrence_id: rsvpData.occurrence_id } : {}),
     };
 
     const result = await this.microserviceProxy.proxyRequest<ITXMeetingResponseResult>(
       req,
       'LFX_V2_SERVICE',
-      `/itx/meetings/${effectiveMeetingId}/responses`,
+      `/itx/meetings/${meetingUid}/responses`,
       'POST',
       {},
       requestData

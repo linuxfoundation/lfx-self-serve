@@ -947,6 +947,8 @@ export interface ITXCreateMeetingResponseRequest {
   scope: RsvpScope;
   /** User's registrant ID */
   registrant_id: string;
+  /** Occurrence ID for recurring meetings; the upstream meeting-service concatenates it with the meeting ID when calling ITX */
+  occurrence_id?: string;
 }
 
 /**
