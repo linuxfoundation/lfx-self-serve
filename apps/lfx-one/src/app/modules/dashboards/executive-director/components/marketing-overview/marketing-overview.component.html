@@ -4,7 +4,7 @@
 <section data-testid="ed-evolution-section">
   <div class="flex flex-wrap gap-3 items-end justify-between mb-4">
     <div class="flex flex-col gap-1">
-      <h2 class="mb-0">Executive Director Overview</h2>
+      <h2 class="mb-0"><i class="fa-light fa-chart-line-up mr-2" aria-hidden="true"></i>Marketing Metrics</h2>
       <p class="text-sm text-gray-500 mb-0">North Star KPIs · Brand · Influence</p>
       <!-- Filter Pills -->
       <lfx-filter-pills [options]="filterOptions" [selectedFilter]="selectedFilter()" (filterChange)="setFilter($event)" data-testid="ed-evolution-filters" />
@@ -20,6 +20,9 @@
         ariaLabel="Scroll left"
         (onClick)="scrollShadowDirective()?.scrollLeft()"
         data-testid="ed-evolution-carousel-prev" />
+      <span class="text-xs text-gray-500 tabular-nums" data-testid="ed-evolution-carousel-count"
+        >{{ totalCardCount() }} {{ totalCardCount() === 1 ? 'card' : 'cards' }}</span
+      >
       <lfx-button
         icon="fa-light fa-chevron-right"
         [outlined]="true"
@@ -52,9 +55,18 @@
                   @for (row of card.dualSignals; track row.label; let last = $last) {
                     <div class="flex flex-col gap-1 py-2">
                       <div class="flex items-center justify-between">
-                        <span class="text-xs text-gray-500">{{ row.label }}</span>
+                        <div class="flex items-center gap-1.5">
+                          @if (row.color) {
+                            <span class="w-2 h-2 rounded-full flex-shrink-0" [style.background-color]="row.color" aria-hidden="true" role="presentation"></span>
+                          }
+                          <span class="text-xs text-gray-500">{{ row.label }}</span>
+                        </div>
                         @if (row.changePercentage) {
-                          <span class="text-xs font-medium" [class.text-emerald-600]="row.trend === 'up'" [class.text-red-600]="row.trend === 'down'">
+                          <span
+                            class="text-xs font-medium"
+                            [class.text-emerald-600]="row.trend === 'up'"
+                            [class.text-red-600]="row.trend === 'down'"
+                            [class.text-gray-500]="row.trend === 'neutral'">
                             {{ row.changePercentage }}
                           </span>
                         }
@@ -74,7 +86,7 @@
                   }
                 }
                 @if (card.caption) {
-                  <div class="text-[10px] text-gray-400 mt-1">{{ card.caption }}</div>
+                  <div class="text-xs text-gray-500 mt-1">{{ card.caption }}</div>
                 }
               </div>
             </ng-template>
@@ -99,7 +111,11 @@
                 <div class="flex items-center gap-2">
                   <span class="text-xl font-semibold text-gray-900">{{ card.value }}</span>
                   @if (card.changePercentage) {
-                    <span class="text-xs font-medium" [class.text-emerald-600]="card.trend === 'up'" [class.text-red-600]="card.trend === 'down'">
+                    <span
+                      class="text-xs font-medium"
+                      [class.text-emerald-600]="card.trend === 'up'"
+                      [class.text-red-600]="card.trend === 'down'"
+                      [class.text-gray-500]="card.trend === 'neutral'">
                       {{ card.changePercentage }}
                     </span>
                   }
@@ -158,38 +174,6 @@
         <ng-container *ngTemplateOutlet="metricCardTpl; context: { $implicit: card }"></ng-container>
       }
 
-      <!-- Marketing Metrics Key Insights Card (between North Star and Brand/Influence) -->
-      @if (showInsightsCard()) {
-        <lfx-card styleClass="flex-shrink-0 w-[calc(100vw-3rem)] md:w-80 h-full" data-testid="marketing-overview-key-insights">
-          <div class="flex flex-col h-full">
-            <div class="flex items-center gap-2 mb-3">
-              <i class="fa-light fa-lightbulb w-4 h-4 text-gray-500 flex-shrink-0"></i>
-              <h5 class="text-sm font-medium">Marketing Metrics</h5>
-            </div>
-            <div class="flex-1 flex flex-col gap-1.5 p-3 bg-gray-50 rounded-lg">
-              <h6 class="flex items-center gap-1.5 text-xs font-semibold text-gray-900 mb-1">
-                <i class="fa-light fa-lightbulb text-gray-400"></i>
-                Key Insights
-              </h6>
-              @for (insight of marketingInsights(); track insight) {
-                <div class="flex items-start gap-1.5 text-xs text-gray-700 leading-snug">
-                  <span class="mt-1.5 w-1 h-1 rounded-full bg-gray-400 flex-shrink-0"></span>
-                  <span>{{ insight }}</span>
-                </div>
-              }
-            </div>
-            <div class="mt-2 text-right">
-              <lfx-button
-                label="View details"
-                [link]="true"
-                size="small"
-                (onClick)="handleCardClick(DashboardDrawerType.NorthStarEngagedCommunity)"
-                data-testid="marketing-overview-insights-view-details" />
-            </div>
-          </div>
-        </lfx-card>
-      }
-
       @for (card of nonNorthStarCards(); track card.testId) {
         <ng-container *ngTemplateOutlet="metricCardTpl; context: { $implicit: card }"></ng-container>
       }
@@ -213,7 +197,7 @@
   <!-- Data source hint -->
   <div class="flex items-center gap-1 mt-2 text-xs text-gray-400">
     <i class="fa-light fa-circle-info"></i>
-    <span>Hover over any card for data source details</span>
+    <span>Hover over any card for more details</span>
   </div>
 </section>
 

@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass, NgTemplateOutlet } from '@angular/common';
-import { Component, ContentChild, input, output, TemplateRef } from '@angular/core';
+import { Component, contentChild, input, output, TemplateRef } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
 import { SkeletonModule } from 'primeng/skeleton';
 import { TooltipModule } from 'primeng/tooltip';
@@ -15,7 +15,7 @@ import type { ChartData, ChartOptions, ChartType } from 'chart.js';
   templateUrl: './metric-card.component.html',
 })
 export class MetricCardComponent {
-  @ContentChild('customContent', { static: false }) public customContentTemplate?: TemplateRef<unknown>;
+  public readonly customContentTemplate = contentChild<TemplateRef<unknown>>('customContent');
 
   // Header inputs
   public readonly title = input.required<string>();
@@ -32,7 +32,7 @@ export class MetricCardComponent {
   public readonly value = input<string>();
   public readonly subtitle = input<string>();
   public readonly valueTooltip = input<string>();
-  public readonly trend = input<'up' | 'down'>();
+  public readonly trend = input<'up' | 'down' | 'neutral'>();
   public readonly changePercentage = input<string>();
 
   // Styling

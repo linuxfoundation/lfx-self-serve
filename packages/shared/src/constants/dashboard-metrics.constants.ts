@@ -639,14 +639,40 @@ function protoSparkline(data: number[], color: string) {
   };
 }
 
+/** Build a flat sparkline that Chart.js can actually render visibly.
+ *  A constant array makes min===max, collapsing the Y range to zero and hiding the line.
+ *  Adding ±2% variation (floor 0.1) gives Chart.js a real range while looking nearly flat.
+ *  Lower bound is clamped to 0 so non-negative metrics never dip below zero. */
+function flatSparklineData(value: number): number[] {
+  const nudge = Math.max(Math.abs(value) * 0.02, 0.1);
+  return [Math.max(value - nudge, 0), value, value, value, value, value + nudge];
+}
+
+/** Normalize a server-provided trend: treat zero change as neutral instead of up.
+ *  Uses Number(toFixed(1)) to match roundForDisplay() — both helpers agree on the
+ *  same rounding path so the trend color never diverges from the displayed label. */
+function normalizeTrend(change: number, serverTrend: 'up' | 'down'): 'up' | 'down' | 'neutral' {
+  if (Number(change.toFixed(1)) === 0) return 'neutral';
+  return serverTrend;
+}
+
+/** Derive trend direction from a numeric change value.
+ *  Uses Number(toFixed(1)) — same rounding path as normalizeTrend and
+ *  roundForDisplay() so the direction matches the formatted display string. */
+function trendFromChange(change: number): 'up' | 'down' | 'neutral' {
+  if (Number(change.toFixed(1)) === 0) return 'neutral';
+  return change > 0 ? 'up' : 'down';
+}
+
 /** Helper to build a dual-signal row with sparkline */
-function protoDualSignal(label: string, value: string, data: number[], color: string, change?: string, trend?: 'up' | 'down'): DualSignalRow {
+function protoDualSignal(label: string, value: string, data: number[], color: string, change?: string, trend?: 'up' | 'down' | 'neutral'): DualSignalRow {
   return {
     label,
     value,
     changePercentage: change,
     trend,
     chartData: data.length > 0 ? protoSparkline(data, color) : EMPTY_CHART_DATA,
+    color,
   };
 }
 
@@ -660,22 +686,33 @@ export const ED_EVOLUTION_FILTER_OPTIONS: FilterPillOption[] = [
   { id: 'influence', label: 'Influence' },
 ];
 
+/** Round to 1 decimal place, normalizing JS negative zero to positive zero.
+ *  e.g. -0.03 → "0.0" not "-0.0", so the displayed text matches neutral trend styling. */
+function roundForDisplay(value: number): string {
+  const rounded = Number(value.toFixed(1));
+  // Object.is distinguishes -0 from 0 — normalise to positive zero
+  return (Object.is(rounded, -0) ? 0 : rounded).toFixed(1);
+}
+
 /** Format a MoM change as a display string */
 function formatMomChange(change: number): string {
-  const sign = change >= 0 ? '+' : '';
-  return `${sign}${change.toFixed(1)}% MoM`;
+  const formatted = roundForDisplay(change);
+  const sign = !formatted.startsWith('-') ? '+' : '';
+  return `${sign}${formatted}% MoM`;
 }
 
 /** Format a YoY change as a display string */
 function formatYoyChange(change: number): string {
-  const sign = change >= 0 ? '+' : '';
-  return `${sign}${change.toFixed(1)}% YoY`;
+  const formatted = roundForDisplay(change);
+  const sign = !formatted.startsWith('-') ? '+' : '';
+  return `${sign}${formatted}% YoY`;
 }
 
 /** Format a percentage-point MoM change as a display string */
 function formatPpMomChange(change: number): string {
-  const sign = change >= 0 ? '+' : '';
-  return `${sign}${change.toFixed(1)}pp MoM`;
+  const formatted = roundForDisplay(change);
+  const sign = !formatted.startsWith('-') ? '+' : '';
+  return `${sign}${formatted}pp MoM`;
 }
 
 /** Compute MoM change display from a paid media monthly trend series (last two months of spend) */
@@ -687,12 +724,14 @@ function paidMediaMomChange(trend: { spend: number }[]): string | undefined {
   return formatMomChange(((curr - prev) / prev) * 100);
 }
 
-/** Compute trend direction from a paid media monthly trend series */
-function paidMediaTrend(trend: { spend: number }[]): 'up' | 'down' | undefined {
+/** Compute trend direction from a paid media monthly trend series.
+ *  Uses the same MoM % formula as paidMediaMomChange so the color matches the displayed text. */
+function paidMediaTrend(trend: { spend: number }[]): 'up' | 'down' | 'neutral' | undefined {
   if (trend.length < 2) return undefined;
   const prev = trend[trend.length - 2].spend;
   const curr = trend[trend.length - 1].spend;
-  return curr >= prev ? 'up' : 'down';
+  if (prev === 0) return undefined;
+  return trendFromChange(((curr - prev) / prev) * 100);
 }
 
 /** Extract values from NorthStarMonthlyDataPoint[] */
@@ -720,16 +759,25 @@ function eventAttrMomChange(series: number[]): string | undefined {
   return formatMomChange(((curr - prev) / prev) * 100);
 }
 
-/** Compute trend direction from event-attribution monthly revenue series */
-function eventAttrTrendDirection(series: number[]): 'up' | 'down' | undefined {
+/** Compute trend direction from event-attribution monthly revenue series.
+ *  Uses the same MoM % formula as eventAttrMomChange so the color matches the displayed text. */
+function eventAttrTrendDirection(series: number[]): 'up' | 'down' | 'neutral' | undefined {
   if (series.length < 2) return undefined;
-  return series[series.length - 1] >= series[series.length - 2] ? 'up' : 'down';
+  const prev = series[series.length - 2];
+  const curr = series[series.length - 1];
+  if (prev === 0) return undefined;
+  return trendFromChange(((curr - prev) / prev) * 100);
 }
 
 /**
  * Build ED Evolution dashboard cards from live API data.
  * 4 North Star + 2 Brand + 1 Influence.
  * Member Retention is merged into the Member Growth drawer.
+ *
+ * Sparkline color semantics:
+ *  - Blue  (lfxColors.blue[500])   — volume/reach metric (primary signal on every card)
+ *  - Violet (lfxColors.violet[500]) — secondary dimension on dual-signal cards (spend, sessions, sentiment)
+ * Emerald/red are reserved for delta indicators (up/down), never sparkline stroke.
  */
 export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricCard[] {
   const { flywheel, memberAcquisition, memberRetention, engagedCommunity, eventGrowth, brandReach, brandHealth, revenueImpact } = data;
@@ -745,9 +793,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       description: 'Event attendees who engage via newsletter, community, working groups, training, code, or web within 90 days.',
       value: `${flywheel.reengagement.reengagementRate.toFixed(1)}%`,
       changePercentage: formatPpMomChange(flywheel.reengagement.reengagementMomChange),
-      trend: flywheel.reengagement.reengagementMomChange >= 0 ? 'up' : 'down',
-      subtitle: 'Re-engagement within 90 days · Sparkline: monthly re-engaged count',
-      chartData: flywheel.monthlyData.length > 0 ? protoSparkline(monthlyValues(flywheel.monthlyData), lfxColors.blue[500]) : EMPTY_CHART_DATA,
+      trend: trendFromChange(flywheel.reengagement.reengagementMomChange),
+      subtitle: 'MoM · Last 6 months',
+      chartData: protoSparkline(
+        flywheel.monthlyData.length > 0 ? monthlyValues(flywheel.monthlyData) : flatSparklineData(flywheel.reengagement.reengagementRate),
+        lfxColors.blue[500]
+      ),
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText:
         'Percentage of event attendees who re-engage via newsletter, community, or working groups within 90 days post-event. Change shown in percentage points (pp) MoM.',
@@ -762,11 +813,14 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       description: 'Total paying corporate members with quarterly net new count and associated revenue.',
       value: formatNumber(memberAcquisition.totalMembers),
       changePercentage: formatMomChange(memberAcquisition.changePercentage),
-      trend: memberAcquisition.trend,
+      trend: normalizeTrend(memberAcquisition.changePercentage, memberAcquisition.trend),
       subtitle: `${memberRetention.renewalRate.toFixed(1)}% retention · NRR ${memberRetention.netRevenueRetention.toFixed(1)}% · Last 6 months`,
-      chartData: protoSparkline(memberAcquisition.totalMembersMonthlyData.length > 0 ? memberAcquisition.totalMembersMonthlyData : [0], lfxColors.blue[500]),
+      chartData: protoSparkline(
+        memberAcquisition.totalMembersMonthlyData.length > 0 ? memberAcquisition.totalMembersMonthlyData : flatSparklineData(memberAcquisition.totalMembers),
+        lfxColors.blue[500]
+      ),
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-      tooltipText: 'Total paying corporate members with monthly net new over the last 6 months. Source: Salesforce B2B memberships.',
+      tooltipText: 'Total paying corporate members with monthly net new over the last 6 months.',
       drawerType: DashboardDrawerType.NorthStarMemberAcquisition,
     } as DashboardMetricCard,
     {
@@ -778,9 +832,12 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       description: 'Unique individuals active across 7 channels — Slack, Discord, GitHub, mailing lists, training, web, and code — in the last 90 days.',
       value: formatNumber(engagedCommunity.totalMembers),
       changePercentage: formatMomChange(engagedCommunity.changePercentage),
-      trend: engagedCommunity.trend,
-      subtitle: `${Object.values(engagedCommunity.breakdown).filter((v) => v > 0).length} channels · Last 6 months`,
-      chartData: protoSparkline(engagedCommunity.monthlyData.length > 0 ? monthlyValues(engagedCommunity.monthlyData) : [0], lfxColors.blue[500]),
+      trend: normalizeTrend(engagedCommunity.changePercentage, engagedCommunity.trend),
+      subtitle: 'Last 6 months',
+      chartData: protoSparkline(
+        engagedCommunity.monthlyData.length > 0 ? monthlyValues(engagedCommunity.monthlyData) : flatSparklineData(engagedCommunity.totalMembers),
+        lfxColors.blue[500]
+      ),
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText: 'Unique individuals active across Slack, Discord, GitHub, and mailing lists in the last 90 days.',
       drawerType: DashboardDrawerType.NorthStarEngagedCommunity,
@@ -794,11 +851,14 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       description: 'Year-to-date event count, attendees, and net revenue with YoY comparison.',
       value: formatNumber(eventGrowth.totalRegistrants),
       changePercentage: formatYoyChange(eventGrowth.registrantYoyChange),
-      trend: eventGrowth.registrantYoyChange >= 0 ? 'up' : 'down',
-      subtitle: `${formatNumber(eventGrowth.totalEvents)} events · YTD registrants`,
-      chartData: eventGrowth.monthlyData.length > 0 ? protoSparkline(monthlyValues(eventGrowth.monthlyData), lfxColors.blue[500]) : EMPTY_CHART_DATA,
+      trend: trendFromChange(eventGrowth.registrantYoyChange),
+      subtitle: `${formatNumber(eventGrowth.totalEvents)} event${eventGrowth.totalEvents === 1 ? '' : 's'} · YTD`,
+      chartData: protoSparkline(
+        eventGrowth.monthlyData.length > 0 ? monthlyValues(eventGrowth.monthlyData) : flatSparklineData(eventGrowth.totalRegistrants),
+        lfxColors.blue[500]
+      ),
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-      tooltipText: 'Year-to-date event attendees and YoY change. Source: Event registrations.',
+      tooltipText: 'Year-to-date event attendees and YoY change.',
       drawerType: DashboardDrawerType.NorthStarEventGrowth,
     } as DashboardMetricCard,
 
@@ -809,7 +869,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       chartType: 'line',
       category: 'brand',
       testId: 'ed-evo-brand-reach',
-      description: 'Social followers across all platforms and monthly website sessions from GA4.',
+      description: 'Social followers across all platforms and monthly website sessions.',
       customContentType: 'dual-signal',
       dualSignals: [
         protoDualSignal(
@@ -820,7 +880,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           [],
           lfxColors.blue[500],
           formatMomChange(brandReach.changePercentage),
-          brandReach.trend
+          normalizeTrend(brandReach.changePercentage, brandReach.trend)
         ),
         protoDualSignal(
           'Monthly Sessions',
@@ -839,7 +899,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       chartType: 'line',
       category: 'brand',
       testId: 'ed-evo-brand-health',
-      description: 'Total brand mentions from Octolens social listening with sentiment breakdown.',
+      description: 'Total brand mentions with sentiment breakdown.',
       customContentType: 'dual-signal',
       dualSignals: [
         protoDualSignal(
@@ -852,13 +912,13 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           'Positive Sentiment',
           `${brandHealth.sentiment.positive.toFixed(1)}%`,
           [],
-          lfxColors.emerald[500],
+          lfxColors.violet[500],
           formatPpMomChange(brandHealth.sentimentMomChangePp),
-          brandHealth.sentimentMomChangePp >= 0 ? 'up' : 'down'
+          trendFromChange(brandHealth.sentimentMomChangePp)
         ),
       ],
       caption: `${formatNumber(brandHealth.totalMentions)} mentions · Last 6 months`,
-      tooltipText: 'Total brand mentions across social and web (Octolens) with sentiment breakdown.',
+      tooltipText: 'Total brand mentions across social and web with sentiment breakdown.',
       drawerType: DashboardDrawerType.BrandHealth,
     } as DashboardMetricCard,
 
@@ -871,7 +931,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       testId: 'ed-evo-revenue-impact',
       description: 'Revenue attributed to marketing touchpoints (last-touch model) alongside paid media spend.',
       customContentType: 'dual-signal',
-      caption: `Last-touch attribution · Last 6 months`,
+      caption: 'Last 6 months',
       dualSignals: [
         (() => {
           const eventAttrSeries = eventAttrMonthlyRevenueSeries(revenueImpact.eventRegistrationAttribution.monthlyTrend);
@@ -889,7 +949,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
           'Paid Media',
           formatCurrency(revenueImpact.paidMedia.adSpend),
           revenueImpact.paidMedia.monthlyTrend.map((r) => r.spend),
-          lfxColors.emerald[500],
+          lfxColors.violet[500],
           paidMediaMomChange(revenueImpact.paidMedia.monthlyTrend),
           paidMediaTrend(revenueImpact.paidMedia.monthlyTrend)
         ),

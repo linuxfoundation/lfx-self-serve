@@ -9,18 +9,28 @@
   (click)="handleClick()">
   <div class="flex flex-col gap-2 h-full justify-between">
     @if (loading()) {
-      <!-- Loading Skeleton State -->
+      <!-- Loading Skeleton — mirrors the five-region card anatomy -->
+      <!-- 1. Icon + Title -->
       <div class="flex items-center gap-2">
-        <p-skeleton width="1rem" height="1rem" borderRadius="4px" />
-        <p-skeleton width="6rem" height="0.875rem" />
+        <p-skeleton width="1rem" height="1rem" borderRadius="4px" animation="wave" />
+        <p-skeleton width="6rem" height="0.875rem" animation="wave" />
       </div>
-      <div class="mt-3 w-full h-16">
-        <p-skeleton width="100%" height="100%" borderRadius="8px" />
+      <!-- 2. Description (two lines) -->
+      <div class="flex flex-col gap-1 -mt-1">
+        <p-skeleton width="100%" height="0.625rem" animation="wave" />
+        <p-skeleton width="75%" height="0.625rem" animation="wave" />
       </div>
-      <div class="flex flex-col gap-1 mt-auto">
-        <p-skeleton width="3rem" height="1.75rem" />
-        <p-skeleton width="70%" height="0.75rem" />
+      <!-- 3. Sparkline area -->
+      <div class="mt-1 w-full h-16">
+        <p-skeleton width="100%" height="100%" borderRadius="8px" animation="wave" />
       </div>
+      <!-- 4. Big metric + delta pill -->
+      <div class="flex items-center gap-2 mt-auto">
+        <p-skeleton width="3rem" height="1.75rem" animation="wave" />
+        <p-skeleton width="4rem" height="1rem" borderRadius="9999px" animation="wave" />
+      </div>
+      <!-- 5. Footer / subtitle -->
+      <p-skeleton width="60%" height="0.75rem" animation="wave" />
     } @else {
       <!-- Header: Icon + Title -->
       <div class="flex items-center gap-2">
@@ -32,12 +42,12 @@
 
       <!-- Description -->
       @if (description()) {
-        <p class="text-[11px] text-gray-400 leading-snug -mt-1 mb-0">{{ description() }}</p>
+        <p class="text-[11px] text-gray-500 leading-snug -mt-1 mb-0">{{ description() }}</p>
       }
 
       <!-- Body: Chart or Custom Content -->
-      @if (customContentTemplate) {
-        <ng-container [ngTemplateOutlet]="customContentTemplate"></ng-container>
+      @if (customContentTemplate()) {
+        <ng-container [ngTemplateOutlet]="customContentTemplate()!"></ng-container>
       } @else {
         <div class="mt-3 w-full h-16">
           @if (chartData()) {
@@ -63,6 +73,7 @@
                   class="text-xs font-medium"
                   [class.text-emerald-600]="trend() === 'up'"
                   [class.text-red-600]="trend() === 'down'"
+                  [class.text-gray-500]="trend() === 'neutral'"
                   data-testid="metric-card-change-percentage">
                   {{ changePercentage() }}
                 </span>

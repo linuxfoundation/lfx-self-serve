@@ -5,7 +5,6 @@ import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal, viewChild } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
-import { CardComponent } from '@components/card/card.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { MetricCardComponent } from '@components/metric-card/metric-card.component';
@@ -25,7 +24,6 @@ import {
   MetricCategory,
   RevenueImpactResponse,
 } from '@lfx-one/shared/interfaces';
-import { formatNumber } from '@lfx-one/shared/utils';
 
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -149,7 +147,6 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
   imports: [
     NgTemplateOutlet,
     ButtonComponent,
-    CardComponent,
     ChartComponent,
     FilterPillsComponent,
     MetricCardComponent,
@@ -206,9 +203,7 @@ export class MarketingOverviewComponent {
 
   protected readonly northStarCards = computed<DashboardMetricCard[]>(() => this.filteredCards().filter((c) => c.category === 'memberships'));
   protected readonly nonNorthStarCards = computed<DashboardMetricCard[]>(() => this.filteredCards().filter((c) => c.category !== 'memberships'));
-  protected readonly showInsightsCard = computed<boolean>(() => this.northStarCards().length > 0);
-
-  protected readonly marketingInsights: Signal<string[]> = this.initMarketingInsights();
+  protected readonly totalCardCount = computed<number>(() => this.filteredCards().length);
 
   // === Public Methods ===
   public handleCardClick(drawerType: DashboardDrawerType): void {
@@ -260,46 +255,5 @@ export class MarketingOverviewComponent {
       ),
       { initialValue: EMPTY_ED_EVOLUTION_DATA }
     ) as Signal<EdEvolutionData>;
-  }
-
-  private initMarketingInsights(): Signal<string[]> {
-    return computed(() => {
-      const data = this.edEvolutionData();
-      // `unit: 'pp'` indicates the change value is a percentage-point delta (difference
-      // between two percentages). Rendering it as "%" would misrepresent the metric.
-      const signals: { label: string; change: number; detail: string; unit: '%' | 'pp' }[] = [
-        {
-          label: 'Engaged community',
-          change: data.engagedCommunity.changePercentage,
-          detail: formatNumber(data.engagedCommunity.totalMembers),
-          unit: '%',
-        },
-        {
-          label: 'Member base',
-          change: data.memberAcquisition.changePercentage,
-          detail: formatNumber(data.memberAcquisition.totalMembers),
-          unit: '%',
-        },
-        {
-          label: 'Flywheel re-engagement',
-          change: data.flywheel.reengagement?.reengagementMomChange ?? 0,
-          detail: `${(data.flywheel.reengagement?.reengagementRate ?? 0).toFixed(1)}%`,
-          unit: 'pp',
-        },
-        {
-          label: 'Member retention',
-          change: data.memberRetention.changePercentage,
-          detail: `${data.memberRetention.renewalRate.toFixed(1)}%`,
-          unit: '%',
-        },
-      ];
-
-      const sorted = signals.filter((s) => s.change !== 0).sort((a, b) => Math.abs(b.change) - Math.abs(a.change));
-
-      return sorted.slice(0, 3).map((s) => {
-        const direction = s.change > 0 ? 'up' : 'down';
-        return `${s.label} is ${direction} ${Math.abs(s.change).toFixed(1)}${s.unit} — now at ${s.detail}`;
-      });
-    });
   }
 }

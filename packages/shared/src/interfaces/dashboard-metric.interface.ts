@@ -56,7 +56,7 @@ export interface DashboardMetricCard {
   icon?: string;
 
   /** Trend direction indicator */
-  trend?: 'up' | 'down';
+  trend?: 'up' | 'down' | 'neutral';
 
   /** Percentage change value (e.g., '+12.4%') */
   changePercentage?: string;
@@ -318,9 +318,11 @@ export interface DualSignalRow {
   /** Change percentage display (e.g., "+8.2% MoM") */
   changePercentage?: string;
   /** Trend direction */
-  trend?: 'up' | 'down';
+  trend?: 'up' | 'down' | 'neutral';
   /** Sparkline chart data for this signal */
   chartData?: ChartData<ChartType>;
+  /** Sparkline color — rendered as a legend dot beside the label */
+  color?: string;
 }
 
 /**
