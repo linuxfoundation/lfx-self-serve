@@ -15,6 +15,7 @@ import { CardComponent } from '@components/card/card.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TrainingService } from '@shared/services/training.service';
 import { CertificationCardComponent } from '../components/certification-card/certification-card.component';
+import { RewardsComponent } from '../components/rewards/rewards.component';
 import { TrainingCardComponent } from '../components/training-card/training-card.component';
 
 const PAGE_SUBTITLE = 'Track your Linux Foundation learning journey — active certifications, enrolled courses, rewards, and resources all in one place.';
@@ -45,7 +46,7 @@ const USEFUL_LINKS = [
 
 @Component({
   selector: 'lfx-trainings-dashboard',
-  imports: [ButtonComponent, CardComponent, CertificationCardComponent, FilterPillsComponent, SkeletonModule, TrainingCardComponent],
+  imports: [ButtonComponent, CardComponent, CertificationCardComponent, FilterPillsComponent, RewardsComponent, SkeletonModule, TrainingCardComponent],
   templateUrl: './trainings-dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })

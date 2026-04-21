@@ -1,0 +1,80 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="flex flex-col gap-3" data-testid="available-incentives-section">
+  <h3 class="text-base font-semibold text-[#1f2328] flex items-center gap-2">
+    <i class="fa-light fa-trophy text-sm text-[#4c5563]" aria-hidden="true"></i>
+    Available Incentives
+  </h3>
+
+  @if (decoratedIncentives().length === 0) {
+    <div class="rounded-xl border bg-white p-6 text-center shadow-[0_1px_1px_rgba(9,30,66,.1)]">
+      <p class="text-sm text-[#6b7380]">No available incentives right now. Check back soon for new offers.</p>
+    </div>
+  } @else {
+    <div class="flex flex-col gap-3" data-testid="available-incentives-list">
+      @for (incentive of decoratedIncentives(); track incentive.uid) {
+        <article class="rounded-xl border border-dashed bg-white overflow-hidden shadow-[0_1px_1px_rgba(9,30,66,.1)]" data-testid="available-incentive-card">
+          <div class="flex">
+            <div class="w-10 bg-[#f3f5f8] border-r border-[#e1e6ee] flex items-center justify-center">
+              <i class="fa-light fa-star text-[#d8b15f]"></i>
+            </div>
+            <div class="flex-1 p-4 flex flex-col gap-2">
+              <div class="flex items-start justify-between gap-3">
+                <h4 class="text-base font-semibold text-[#1f2328] leading-tight">{{ incentive.title }}</h4>
+                <span class="text-xs px-2.5 py-1 rounded-full font-semibold whitespace-nowrap" [class]="incentive.statusColorClass">
+                  {{ incentive.statusLabel }}
+                </span>
+              </div>
+
+              <p class="text-xs text-[#5f6672] leading-snug">{{ incentive.eligibilityComment || incentive.discountLabel }}</p>
+
+              <p class="text-xs text-[#7a8392] leading-snug flex items-start gap-1.5" data-testid="available-incentive-application-hint">
+                <i class="fa-light fa-circle-info text-[#9aa3b2] mt-[2px]"></i>
+                <span>{{ incentive.applicationHint }}</span>
+              </p>
+
+              @if (incentive.hasCouponCode) {
+                <div
+                  class="rounded-md border px-3 py-2 flex items-center justify-between gap-2"
+                  [class]="incentive.isExpired ? 'bg-gray-50 border-gray-200' : 'bg-[#f4f6f8]'"
+                  data-testid="available-incentive-code">
+                  <span class="text-sm font-mono font-semibold tracking-wide" [class]="incentive.isExpired ? 'line-through text-gray-400' : 'text-[#2f3b4e]'">
+                    {{ incentive.coupon }}
+                  </span>
+                  @if (!incentive.isExpired) {
+                    <button
+                      type="button"
+                      class="text-xs font-semibold tracking-wide uppercase text-[#3577ba] hover:text-[#2b649d]"
+                      (click)="onCopy(incentive.coupon)"
+                      data-testid="available-incentive-copy-button">
+                      Copy Code
+                    </button>
+                  }
+                </div>
+              } @else if (incentive.canClaim && !incentive.isExpired) {
+                <div class="flex items-center gap-2">
+                  <lfx-button
+                    [label]="redeemingUids()[incentive.uid] ? 'Claiming...' : 'Claim'"
+                    size="small"
+                    severity="primary"
+                    [outlined]="true"
+                    [disabled]="!incentive.canClaim"
+                    [loading]="redeemingUids()[incentive.uid] || false"
+                    (onClick)="onClaim(incentive)"
+                    data-testid="available-incentive-claim-button" />
+                </div>
+              }
+
+              @if (incentive.resolvedExpiryDate) {
+                <p class="text-xs" [class]="incentive.isExpired ? 'text-red-600 font-semibold' : 'text-[#7a8392]'" data-testid="available-incentive-expiry">
+                  {{ incentive.isExpired ? 'Expired:' : 'Expires:' }} {{ incentive.resolvedExpiryDate | date: 'MMM d, y' }}
+                </p>
+              }
+            </div>
+          </div>
+        </article>
+      }
+    </div>
+  }
+</section>

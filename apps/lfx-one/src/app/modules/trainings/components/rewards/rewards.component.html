@@ -1,0 +1,174 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+@if (loading() && !loaded()) {
+  <div class="flex flex-col gap-5" data-testid="rewards-tab">
+    <section class="flex flex-col gap-1.5" data-testid="rewards-loading-header">
+      <p-skeleton width="14rem" height="1.75rem" />
+      <p-skeleton width="26rem" height="0.875rem" />
+    </section>
+
+    <section class="rounded-xl border bg-white px-5 py-5 flex flex-col gap-4 shadow-[0_1px_1px_rgba(9,30,66,.1)]" data-testid="rewards-loading-summary">
+      <div class="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-6">
+        <div class="flex flex-col gap-2">
+          <p-skeleton width="9rem" height="0.75rem" />
+          <p-skeleton width="10rem" height="3rem" />
+          <p-skeleton width="20rem" height="0.875rem" />
+        </div>
+        <div class="w-full flex flex-col gap-2 pt-1">
+          <div class="flex items-center justify-between">
+            <p-skeleton width="8rem" height="0.875rem" />
+            <p-skeleton width="2.5rem" height="0.875rem" />
+          </div>
+          <p-skeleton width="100%" height="0.5rem" borderRadius="9999px" />
+        </div>
+      </div>
+
+      <div class="rounded-md border border-[#e2eaf6] bg-[#f5f9ff] p-3 flex flex-col gap-2">
+        <p-skeleton width="7rem" height="0.75rem" />
+        <p-skeleton width="100%" height="0.875rem" />
+        <p-skeleton width="85%" height="0.875rem" />
+      </div>
+    </section>
+
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4" data-testid="rewards-loading-content">
+      <section class="flex flex-col gap-3">
+        <p-skeleton width="10rem" height="1.5rem" />
+        @for (placeholder of [0, 1]; track placeholder) {
+          <div class="rounded-xl border border-dashed bg-white overflow-hidden shadow-[0_1px_1px_rgba(9,30,66,.1)]">
+            <div class="flex">
+              <div class="w-10 bg-[#f3f5f8] border-r border-[#e1e6ee] flex items-center justify-center">
+                <p-skeleton shape="circle" size="1rem" />
+              </div>
+              <div class="flex-1 p-4 flex flex-col gap-2">
+                <div class="flex items-start justify-between gap-3">
+                  <p-skeleton width="70%" height="1rem" />
+                  <p-skeleton width="5rem" height="1.25rem" borderRadius="9999px" />
+                </div>
+                <p-skeleton width="40%" height="0.75rem" />
+                <p-skeleton width="7rem" height="1.75rem" borderRadius="6px" />
+                <div class="flex items-start gap-1.5 pt-1">
+                  <p-skeleton shape="circle" size="0.75rem" />
+                  <p-skeleton width="85%" height="0.75rem" />
+                </div>
+                <p-skeleton width="9rem" height="0.75rem" />
+              </div>
+            </div>
+          </div>
+        }
+      </section>
+
+      <section class="flex flex-col gap-3">
+        <p-skeleton width="8rem" height="1.5rem" />
+        @for (placeholder of [0, 1]; track placeholder) {
+          <div class="rounded-xl border border-dashed bg-white overflow-hidden shadow-[0_1px_1px_rgba(9,30,66,.1)]">
+            <div class="flex">
+              <div class="w-10 bg-[#f3f5f8] border-r border-[#e1e6ee] flex items-center justify-center">
+                <p-skeleton shape="circle" size="1rem" />
+              </div>
+              <div class="flex-1 p-4 flex flex-col gap-2">
+                <div class="flex items-start justify-between gap-3">
+                  <p-skeleton width="70%" height="1rem" />
+                  <p-skeleton width="6rem" height="1.25rem" borderRadius="9999px" />
+                </div>
+                <p-skeleton width="90%" height="0.75rem" />
+                <p-skeleton width="6rem" height="1.75rem" borderRadius="6px" />
+                <p-skeleton width="9rem" height="0.75rem" />
+              </div>
+            </div>
+          </div>
+        }
+      </section>
+    </div>
+  </div>
+} @else if (error()) {
+  <div class="flex flex-col gap-4" data-testid="rewards-tab">
+    <div class="rounded-xl border border-red-200 bg-red-50 p-6 flex flex-col gap-4" data-testid="rewards-error">
+      <div class="flex items-start gap-3">
+        <i class="fa-light fa-triangle-exclamation text-red-500 mt-1"></i>
+        <div class="flex flex-col gap-1">
+          <h2 class="text-base font-semibold text-red-700">Unable to load rewards</h2>
+          <p class="text-sm text-red-600">{{ error() }}</p>
+        </div>
+      </div>
+      <div>
+        <lfx-button label="Try again" severity="secondary" [outlined]="true" (onClick)="onRefresh()" data-testid="rewards-retry-button" />
+      </div>
+    </div>
+  </div>
+} @else {
+  <div class="flex flex-col gap-5" data-testid="rewards-tab">
+    <section class="flex flex-col gap-1" data-testid="rewards-header">
+      <h2 class="text-base leading-none font-semibold text-[#1f2328] flex items-center gap-2">
+        <i class="fa-light fa-star text-sm text-[#333]" aria-hidden="true"></i>
+        Education Rewards
+      </h2>
+      <p class="text-xs text-[#5f6672]">Incentives and rewards earned through training and certification programs.</p>
+    </section>
+
+    <section class="rounded-xl border bg-white px-5 py-5 flex flex-col gap-4 shadow-[0_1px_1px_rgba(9,30,66,.1)]" data-testid="rewards-summary">
+      <div class="grid grid-cols-1 lg:grid-cols-[1fr_1.2fr] gap-6">
+        <div class="flex flex-col gap-2">
+          <p class="text-[10px] uppercase tracking-wide text-[#8a93a2] font-semibold">Total Reward Points</p>
+          <div class="flex items-end gap-1">
+            <h3 class="text-[36px] font-semibold text-[#121821] leading-none">{{ formattedPoints() }}</h3>
+            <span class="text-base text-[#5f6672] leading-none pb-1">pts</span>
+          </div>
+          <p class="text-xs text-[#6b7380]">Earn points by completing training modules and passing certification exams.</p>
+        </div>
+
+        <div class="w-full flex flex-col gap-2 pt-1">
+          <div class="flex items-center justify-between text-xs text-[#586272]">
+            <span>Next reward at {{ formattedNextRewardPoints() }} pts</span>
+            <span class="font-semibold text-[#4f5968]">{{ progressPercentage() }}%</span>
+          </div>
+          <div class="h-2 rounded-full bg-[#e7ebf0] overflow-hidden">
+            <div class="h-full rounded-full bg-[#1a2743] transition-all duration-300" [style.width.%]="progressPercentage()"></div>
+          </div>
+        </div>
+      </div>
+
+      <div class="rounded-md border border-[#e2eaf6] bg-[#f5f9ff] p-3 flex items-start gap-2.5" data-testid="rewards-usage-message">
+        <i class="fa-light fa-circle-info text-xs text-[#6d9bd3] mt-[2px]"></i>
+        <div class="flex flex-col gap-1">
+          <p class="text-[10px] uppercase tracking-wide font-semibold text-[#4e74a9]">Scope &amp; Usage</p>
+          <p class="text-xs text-[#4e74a9] leading-snug">
+            Rewards and coupons shown here are exclusively for use within the Linux Foundation Education &amp; Training platform. Points are earned based on
+            training and certification purchases and cannot be exchanged for cash or non-training services. Learn more in the
+            <a
+              href="https://training.linuxfoundation.org/tux-rewards/"
+              target="_blank"
+              rel="noopener noreferrer"
+              class="font-semibold underline hover:text-[#3a5d8a]"
+              data-testid="rewards-faq-link"
+              >Rewards FAQ</a
+            >.
+          </p>
+        </div>
+      </div>
+
+      @if (programExpiryDate()) {
+        <p class="text-xs text-[#7e8694]" data-testid="rewards-program-expiry">Program year ends {{ programExpiryDate() | date: 'MMM d, y' }}</p>
+      }
+    </section>
+
+    <div class="grid grid-cols-1 xl:grid-cols-2 gap-4" data-testid="rewards-content">
+      <lfx-available-incentives
+        [incentives]="availableIncentives()"
+        [programStartDate]="programStartDate()"
+        [redeemingUids]="redeemingUids()"
+        (copy)="onCopyCoupon($event)"
+        (claim)="onClaimIncentive($event)" />
+
+      <lfx-my-coupons
+        [coupons]="coupons()"
+        [rewardPoints]="points()"
+        [programStartDate]="programStartDate()"
+        [redeemingUids]="redeemingUids()"
+        (copy)="onCopyCoupon($event)"
+        (redeem)="onRedeemCoupon($event)" />
+    </div>
+  </div>
+}
+
+<p-confirmDialog data-testid="rewards-confirm-dialog" />

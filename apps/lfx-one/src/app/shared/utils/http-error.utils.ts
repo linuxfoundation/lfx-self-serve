@@ -26,3 +26,24 @@ export function getHttpErrorDetail(err: HttpErrorResponse, fallback: string): st
       return upstream ?? fallback;
   }
 }
+
+/**
+ * Extracts a user-facing message from an unknown error thrown by an HTTP call,
+ * a thrown Error, or any other value. Used by components that catch errors
+ * from `firstValueFrom(...)` or RxJS `catchError` and need to surface a
+ * single string to the UI.
+ */
+export function extractErrorMessage(error: unknown, fallback: string): string {
+  if (error instanceof HttpErrorResponse) {
+    const body = error.error as { message?: string; error?: string } | string | null;
+    if (typeof body === 'string' && body.trim().length > 0) return body;
+    if (body && typeof body === 'object') {
+      const candidate = [body.message, body.error].find((value): value is string => typeof value === 'string' && value.trim().length > 0);
+      if (candidate) return candidate;
+    }
+    return error.message || fallback;
+  }
+
+  if (error instanceof Error && error.message) return error.message;
+  return fallback;
+}

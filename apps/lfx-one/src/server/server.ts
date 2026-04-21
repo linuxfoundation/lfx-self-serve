@@ -35,6 +35,7 @@ import profileRouter from './routes/profile.route';
 import projectsRouter from './routes/projects.route';
 import publicCommitteesRouter from './routes/public-committees.route';
 import publicMeetingsRouter from './routes/public-meetings.route';
+import rewardsRouter from './routes/rewards.route';
 import searchRouter from './routes/search.route';
 import surveysRouter from './routes/surveys.route';
 import trainingRouter from './routes/training.route';
@@ -172,6 +173,7 @@ app.use('/api/events', eventsRouter);
 app.use('/api/badges', badgesRouter);
 app.use('/api/impersonate', impersonationRouter);
 app.use('/api/training', trainingRouter);
+app.use('/api/rewards', rewardsRouter);
 app.use('/api/transactions', transactionRouter);
 
 app.use('/api/*', apiErrorHandler);

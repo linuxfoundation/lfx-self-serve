@@ -1,0 +1,84 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<section class="flex flex-col gap-3" data-testid="my-coupons-section">
+  <h3 class="text-base font-semibold text-[#1f2328] flex items-center gap-2">
+    <i class="fa-light fa-tag text-sm text-[#4c5563]" aria-hidden="true"></i>
+    My Coupons
+  </h3>
+
+  @if (decoratedCoupons().length === 0) {
+    <div class="rounded-xl border bg-white p-6 text-center flex flex-col gap-2 shadow-[0_1px_1px_rgba(9,30,66,.1)]">
+      <p class="text-sm text-[#6b7380]">You do not have redeemable coupons yet. Earn more points to unlock them.</p>
+      <a
+        href="https://training.linuxfoundation.org/full-catalog/"
+        target="_blank"
+        rel="noopener noreferrer"
+        class="text-sm font-semibold text-[#3577ba] hover:underline">
+        Browse training catalog
+      </a>
+    </div>
+  } @else {
+    <div class="flex flex-col gap-3" data-testid="my-coupons-list">
+      @for (coupon of decoratedCoupons(); track coupon.uid) {
+        <article class="rounded-xl border border-dashed bg-white overflow-hidden shadow-[0_1px_1px_rgba(9,30,66,.1)]" data-testid="my-coupon-card">
+          <div class="flex">
+            <div class="w-10 bg-[#f3f5f8] border-r border-[#e1e6ee] flex items-center justify-center">
+              <i class="fa-light fa-gift text-[#adb6c3]"></i>
+            </div>
+            <div class="flex-1 p-4 flex flex-col gap-2">
+              <div class="flex items-start justify-between gap-3">
+                <h4 class="text-base font-semibold text-[#1f2328] leading-tight">{{ coupon.title }}</h4>
+                <span class="text-xs px-2.5 py-1 rounded-full font-semibold whitespace-nowrap" [class]="coupon.statusColorClass">
+                  {{ coupon.statusLabel }}
+                </span>
+              </div>
+
+              <p class="text-xs text-[#5f6672] leading-snug">{{ coupon.description }}</p>
+
+              @if (coupon.hasCouponCode) {
+                <div
+                  class="rounded-md border px-3 py-2 flex items-center justify-between gap-2"
+                  [class]="coupon.isExpired ? 'bg-gray-50 border-gray-200' : 'bg-[#f4f6f8]'">
+                  <span class="text-sm font-mono font-semibold tracking-wide" [class]="coupon.isExpired ? 'line-through text-gray-400' : 'text-[#2f3b4e]'">
+                    {{ coupon.coupon }}
+                  </span>
+                  @if (!coupon.isExpired) {
+                    <button
+                      type="button"
+                      class="text-xs font-semibold tracking-wide uppercase text-[#3577ba] hover:text-[#2b649d]"
+                      (click)="onCopy(coupon.coupon)"
+                      data-testid="coupon-copy-button">
+                      Copy Code
+                    </button>
+                  }
+                </div>
+              } @else if (!coupon.isExpired) {
+                <div class="flex items-center gap-2" [class.justify-between]="coupon.pointsShortfall > 0">
+                  @if (coupon.pointsShortfall > 0) {
+                    <span class="text-sm text-[#6b7380]">Need {{ coupon.pointsShortfall }} more points</span>
+                  }
+                  <lfx-button
+                    [label]="redeemingUids()[coupon.uid] ? 'Redeeming...' : 'Redeem'"
+                    size="small"
+                    severity="primary"
+                    [outlined]="true"
+                    [disabled]="!coupon.eligible || coupon.pointsShortfall > 0 || coupon.redeemed"
+                    [loading]="redeemingUids()[coupon.uid] || false"
+                    (onClick)="onRedeem(coupon)"
+                    data-testid="coupon-redeem-button" />
+                </div>
+              }
+
+              @if (coupon.resolvedExpiryDate) {
+                <p class="text-xs" [class]="coupon.isExpired ? 'text-red-600 font-semibold' : 'text-[#7a8392]'">
+                  {{ coupon.isExpired ? 'Expired:' : 'Expires:' }} {{ coupon.resolvedExpiryDate | date: 'MMM d, y' }}
+                </p>
+              }
+            </div>
+          </div>
+        </article>
+      }
+    </div>
+  }
+</section>
