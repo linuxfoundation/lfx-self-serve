@@ -26,7 +26,7 @@ import {
   WorkExperienceCreateUpdateBody,
   WorkExperienceEntry,
 } from '@lfx-one/shared/interfaces';
-import { catchError, distinctUntilChanged, map, Observable, of, shareReplay, skip, startWith, Subject, switchMap, take } from 'rxjs';
+import { catchError, distinctUntilChanged, map, Observable, of, shareReplay, skip, startWith, Subject, switchMap, take, takeUntil } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
@@ -46,6 +46,11 @@ export class UserService {
 
   private readonly userMeetingsRefresh$ = new Subject<void>();
   private readonly userPastMeetingsRefresh$ = new Subject<void>();
+  // Per-chain destroy signals so that on user change we can tear down the old shareReplay
+  // chain (which stays alive under refCount:false) instead of leaking abandoned subscriptions
+  // to the refresh subjects. A fresh Subject is created for each new chain.
+  private userMeetingsDestroy$ = new Subject<void>();
+  private userPastMeetingsDestroy$ = new Subject<void>();
   private userMeetings$: Observable<Meeting[]> | null = null;
   private userPastMeetings$: Observable<PastMeeting[]> | null = null;
 
@@ -63,10 +68,14 @@ export class UserService {
         takeUntilDestroyed()
       )
       .subscribe(() => {
+        // Tear down the old chains first — their shareReplay keeps the source alive under
+        // refCount:false, so nulling the field alone would leave them subscribed to refresh$.
+        this.userMeetingsDestroy$.next();
+        this.userMeetingsDestroy$ = new Subject<void>();
+        this.userPastMeetingsDestroy$.next();
+        this.userPastMeetingsDestroy$ = new Subject<void>();
         this.userMeetings$ = null;
         this.userPastMeetings$ = null;
-        this.userMeetingsRefresh$.next();
-        this.userPastMeetingsRefresh$.next();
       });
   }
 
@@ -140,6 +149,9 @@ export class UserService {
    */
   public getUserMeetings(): Observable<Meeting[]> {
     if (!this.userMeetings$) {
+      // Capture the current destroy$ at build time — when the user changes, we swap the field
+      // to a new Subject after firing .next() on this one, so the old chain completes cleanly.
+      const destroy$ = this.userMeetingsDestroy$;
       this.userMeetings$ = this.userMeetingsRefresh$.pipe(
         startWith(undefined),
         switchMap(() =>
@@ -150,7 +162,8 @@ export class UserService {
             })
           )
         ),
-        shareReplay({ bufferSize: 1, refCount: true })
+        takeUntil(destroy$),
+        shareReplay({ bufferSize: 1, refCount: false })
       );
     }
     return this.userMeetings$;
@@ -162,6 +175,7 @@ export class UserService {
    */
   public getUserPastMeetings(): Observable<PastMeeting[]> {
     if (!this.userPastMeetings$) {
+      const destroy$ = this.userPastMeetingsDestroy$;
       this.userPastMeetings$ = this.userPastMeetingsRefresh$.pipe(
         startWith(undefined),
         switchMap(() =>
@@ -172,7 +186,8 @@ export class UserService {
             })
           )
         ),
-        shareReplay({ bufferSize: 1, refCount: true })
+        takeUntil(destroy$),
+        shareReplay({ bufferSize: 1, refCount: false })
       );
     }
     return this.userPastMeetings$;

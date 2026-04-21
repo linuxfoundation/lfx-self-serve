@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NATS_CONFIG } from '@lfx-one/shared/constants';
+import { NATS_CONFIG, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
@@ -439,8 +439,9 @@ export class UserService {
       }
     }
 
-    // Convert map to array
-    const projects = Array.from(projectsMap.values());
+    // Convert map to array; ROOT is an administrative pseudo-project used only for persona
+    // detection and must never surface in user-facing project lists.
+    const projects = Array.from(projectsMap.values()).filter((p) => p.slug !== ROOT_PROJECT_SLUG);
 
     return {
       data: projects,
@@ -466,9 +467,10 @@ export class UserService {
   }
 
   /**
-   * Fetches meetings for the current user, optionally filtered by project
+   * Fetches meetings for the current user, optionally filtered by project.
    * Uses a reverse-query approach: first gets all registrant records for the user,
-   * then fetches only those meetings by ID — avoids the N+1 query problem.
+   * then batch-fetches those meetings from the query service via `tags` OR-filter
+   * (100 IDs per request, page_size=500) — replaces the previous N-parallel ITX fetches.
    * @param req - Express request object
    * @param email - User's email address for registrant lookup
    * @param projectUid - Optional project UID to filter meetings by
@@ -487,7 +489,7 @@ export class UserService {
       return [];
     }
 
-    const meetings = await this.fetchByIdFilter<Meeting>(req, meetingIds, '/itx/meetings', 'get_user_meetings', projectUid, foundationProjectUids);
+    const meetings = await this.fetchMeetingsByIdsBatched<Meeting>(req, meetingIds, 'v1_meeting', 'get_user_meetings', projectUid, foundationProjectUids);
 
     // Drop past meetings before enrichment; recurring meetings survive if any occurrence is active.
     const upcomingMeetings = meetings.filter((meeting) => {
@@ -516,9 +518,11 @@ export class UserService {
   }
 
   /**
-   * Fetches past meetings for the current user, optionally filtered by project
+   * Fetches past meetings for the current user, optionally filtered by project.
    * Queries v1_past_meeting_participant by email to find composite meeting IDs,
-   * then fetches each past meeting via ITX endpoint.
+   * then batch-fetches those past meetings from the query service via
+   * `filters_or=meeting_and_occurrence_id:<id>` (100 IDs per request, page_size=500) —
+   * replaces the previous N-parallel ITX fetches.
    * @param req - Express request object
    * @param email - User's email address for participant lookup
    * @param projectUid - Optional project UID to filter meetings by
@@ -543,8 +547,8 @@ export class UserService {
     // Single participant query matching data.email OR data.username in one round trip.
     // User bearer token works: ACL grants `viewer` on v1_past_meeting to `host`/`invitee`/`attendee`.
     // failOnPartial: true surfaces truncated membership sets as errors; the outer .catch is
-    // kept as a defensive guard so upstream failures don't 500 the Me lens, but we log at
-    // error level so the gap stays visible in monitoring.
+    // kept as a defensive guard so upstream failures don't 500 the Me lens, and logs at
+    // warning level since returning an empty past-meeting list is graceful degradation.
     const participantQuery =
       filtersOr.length > 0
         ? fetchAllQueryResources<PastMeetingParticipant>(
@@ -553,11 +557,15 @@ export class UserService {
               this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeetingParticipant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
                 type: 'v1_past_meeting_participant',
                 filters_or: filtersOr,
+                page_size: 500,
                 ...(pageToken && { page_token: pageToken }),
               }),
             { failOnPartial: true }
           ).catch((error) => {
-            logger.error(req, 'get_user_past_meetings', Date.now(), error, { stage: 'participant_query' });
+            logger.warning(req, 'get_user_past_meetings', 'Participant query failed, returning empty past meeting list', {
+              stage: 'participant_query',
+              err: error,
+            });
             return [] as PastMeetingParticipant[];
           })
         : Promise.resolve([] as PastMeetingParticipant[]);
@@ -582,40 +590,31 @@ export class UserService {
     }
 
     // Step 2: Fetch each past meeting and filter (limit applied after sorting)
-    const pastMeetings = await this.fetchByIdFilter<PastMeeting>(
+    const pastMeetings = await this.fetchMeetingsByIdsBatched<PastMeeting>(
       req,
       pastMeetingIds,
-      '/itx/past_meetings',
+      'v1_past_meeting',
       'get_user_past_meetings',
       projectUid,
       foundationProjectUids
     );
 
+    // Attach the user's own attendance flag from the already-fetched participant records so
+    // the attendance-rate stat can be computed client-side without re-fetching per meeting.
+    // OR-combine across records — a user with multiple participant rows for the same occurrence
+    // (re-joins, duplicate legacy data) is attended if ANY record has is_attended=true.
+    const userAttendedByOccurrenceId = new Map<string, boolean>();
+    for (const p of participants) {
+      if (!p.meeting_and_occurrence_id) continue;
+      const prior = userAttendedByOccurrenceId.get(p.meeting_and_occurrence_id) ?? false;
+      userAttendedByOccurrenceId.set(p.meeting_and_occurrence_id, prior || !!p.is_attended);
+    }
+    for (const meeting of pastMeetings) {
+      meeting.user_attended = userAttendedByOccurrenceId.get(meeting.id) ?? false;
+    }
+
     // Sort by scheduled_start_time descending (most recent first)
     pastMeetings.sort((a, b) => new Date(b.scheduled_start_time ?? b.start_time).getTime() - new Date(a.scheduled_start_time ?? a.start_time).getTime());
-
-    // Populate participant and attended counts for each past meeting from the
-    // v1_past_meeting_participant records. Only fields derivable from participants
-    // are overwritten, and only on successful fetch; committee_members_count is
-    // preserved from upstream. On fetch failure, upstream counts are preserved
-    // to avoid flashing "0 of 0" during transient query-service errors.
-    await Promise.all(
-      pastMeetings.map(async (meeting) => {
-        const participants = await this.meetingService.getPastMeetingParticipants(req, meeting.id).catch((error) => {
-          logger.warning(req, 'get_user_past_meetings', 'Failed to fetch participants for past meeting, preserving upstream counts', {
-            past_meeting_id: meeting.id,
-            err: error,
-          });
-          return null;
-        });
-        if (participants === null) {
-          return;
-        }
-        meeting.participant_count = participants.length;
-        meeting.attended_count = participants.filter((p) => p.is_attended).length;
-        meeting.individual_registrants_count = participants.filter((p) => p.is_invited).length;
-      })
-    );
 
     const enriched = await this.meetingService.getMeetingProjectName(req, pastMeetings);
 
@@ -692,8 +691,8 @@ export class UserService {
     // Match on data.email OR data.username in a single round trip. Using `filters_or` (field-level)
     // rather than `tags` keeps this resilient to indexer tag-synthesis changes.
     // failOnPartial: true surfaces truncated membership sets as errors; the outer .catch is kept
-    // as a defensive guard so upstream failures don't 500 the Me lens dashboard, but we log at
-    // error level so the gap stays visible in monitoring.
+    // as a defensive guard so upstream failures don't 500 the Me lens dashboard, and logs at
+    // warning level since returning an empty meeting ID set is graceful degradation.
     const registrants = await fetchAllQueryResources<MeetingRegistrant>(
       req,
       (pageToken) =>
@@ -701,11 +700,15 @@ export class UserService {
           type: 'v1_meeting_registrant',
           parent: '',
           filters_or: filtersOr,
+          page_size: 500,
           ...(pageToken && { page_token: pageToken }),
         }),
       { failOnPartial: true }
     ).catch((error) => {
-      logger.error(req, 'get_user_registered_meeting_ids', Date.now(), error, { stage: 'registrant_query' });
+      logger.warning(req, 'get_user_registered_meeting_ids', 'Registrant query failed, returning empty meeting ID set', {
+        stage: 'registrant_query',
+        err: error,
+      });
       return [] as MeetingRegistrant[];
     });
 
@@ -777,48 +780,82 @@ export class UserService {
   }
 
   /**
-   * Fetches resources by ID in parallel, filters by project.
-   * Shared by getUserMeetings and getUserPastMeetings.
+   * Batch-fetches meetings or past meetings from the query service by ID.
+   * Uses one paginated query per batch of 100 IDs (URL-length safe) instead of
+   * one HTTP call per ID. Applies project/foundation filtering after fetch.
+   *
+   * For v1_meeting: uses `tags` (the meeting `uid` is indexed as a plain tag).
+   * For v1_past_meeting: uses `filters_or=meeting_and_occurrence_id:<id>` — past
+   * meetings don't index this composite ID as a tag.
    */
-  private async fetchByIdFilter<T extends { id: string; project_uid?: string }>(
+  private async fetchMeetingsByIdsBatched<T extends { id: string; uid?: string; project_uid?: string; meeting_and_occurrence_id?: string }>(
     req: Request,
-    ids: string[] | Set<string>,
-    endpoint: string,
+    ids: Set<string>,
+    resourceType: 'v1_meeting' | 'v1_past_meeting',
     operation: string,
     projectUid?: string,
     projectUids?: Set<string>
   ): Promise<T[]> {
-    const results: T[] = [];
+    const idArray = Array.from(ids);
+    if (idArray.length === 0) return [];
 
-    const fetches = Array.from(ids).map(async (id) => {
-      try {
-        const resource = await this.microserviceProxy.proxyRequest<T>(req, 'LFX_V2_SERVICE', `${endpoint}/${id}`, 'GET');
-        resource.id = resource.id || id;
-        return resource;
-      } catch (error) {
-        logger.warning(req, operation, 'Skipping resource — upstream fetch failed', {
-          resource_id: id,
-          error: error instanceof Error ? error.message : String(error),
-        });
-        return null;
-      }
-    });
-
-    for (const result of await Promise.all(fetches)) {
-      if (result !== null) {
-        results.push(result);
-      }
+    // URL-length guard: ~36-char UUIDs × 100 keeps query strings under ~5KB.
+    const BATCH_SIZE = 100;
+    const batches: string[][] = [];
+    for (let i = 0; i < idArray.length; i += BATCH_SIZE) {
+      batches.push(idArray.slice(i, i + BATCH_SIZE));
     }
 
-    let filtered = results;
+    const batchResults = await Promise.all(
+      batches.map((batch) =>
+        fetchAllQueryResources<T>(
+          req,
+          (pageToken) => {
+            const params: Record<string, any> = {
+              type: resourceType,
+              page_size: 500,
+              ...(pageToken && { page_token: pageToken }),
+            };
+            if (resourceType === 'v1_meeting') {
+              // Meeting uid is indexed as a plain tag; array + OR semantics do batch union.
+              params['tags'] = batch;
+            } else {
+              // v1_past_meeting: composite id lives on data.meeting_and_occurrence_id only.
+              params['filters_or'] = batch.map((id) => `meeting_and_occurrence_id:${id}`);
+            }
+            return this.microserviceProxy.proxyRequest<QueryServiceResponse<T>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
+          },
+          { failOnPartial: true }
+        ).catch((error) => {
+          logger.warning(req, operation, 'Batched query-service fetch failed for batch, skipping', {
+            resource_type: resourceType,
+            batch_size: batch.length,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return [] as T[];
+        })
+      )
+    );
+
+    // Normalize the `id` field so downstream code that keys off meeting.id continues to work.
+    // For past meetings, downstream `getPastMeetingParticipants(req, meeting.id)` expects the
+    // composite meeting_and_occurrence_id, so prefer that field when present.
+    const normalized: T[] = batchResults.flat().map((item) => ({
+      ...item,
+      id: item.meeting_and_occurrence_id || item.id || item.uid || '',
+    }));
+
+    let filtered = normalized;
     if (projectUid) {
       filtered = filtered.filter((r) => r.project_uid === projectUid);
     } else if (projectUids && projectUids.size > 0) {
       filtered = filtered.filter((r) => r.project_uid !== undefined && projectUids.has(r.project_uid));
     }
 
-    logger.debug(req, operation, 'Filtered results', {
-      total_fetched: results.length,
+    logger.debug(req, operation, 'Completed batched meeting fetch', {
+      total_ids: idArray.length,
+      batches: batches.length,
+      total_fetched: normalized.length,
       filtered: filtered.length,
       project_uid: projectUid ?? 'all',
       foundation_filter: projectUids ? projectUids.size : 0,

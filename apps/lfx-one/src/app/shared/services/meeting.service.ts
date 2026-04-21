@@ -360,12 +360,7 @@ export class MeetingService {
 
   public getMeetingRegistrants(meetingUid: string, includeRsvp: boolean = false): Observable<MeetingRegistrant[]> {
     const params = new HttpParams().set('include_rsvp', includeRsvp.toString());
-    return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, { params }).pipe(
-      catchError((error) => {
-        console.error(`Failed to load registrants for meeting ${meetingUid}:`, error);
-        return of([]);
-      })
-    );
+    return this.http.get<MeetingRegistrant[]>(`/api/meetings/${meetingUid}/registrants`, { params });
   }
 
   public getMyMeetingRegistrants(meetingUid: string, includeRsvp: boolean = false): Observable<MeetingRegistrant[]> {
@@ -392,12 +387,7 @@ export class MeetingService {
   }
 
   public getPastMeetingParticipants(pastMeetingUid: string): Observable<PastMeetingParticipant[]> {
-    return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${pastMeetingUid}/participants`).pipe(
-      catchError((error) => {
-        console.error(`Failed to load participants for past meeting ${pastMeetingUid}:`, error);
-        return of([]);
-      })
-    );
+    return this.http.get<PastMeetingParticipant[]>(`/api/past-meetings/${pastMeetingUid}/participants`);
   }
 
   public getPastMeetingRecording(pastMeetingUid: string): Observable<PastMeetingRecording> {
@@ -533,12 +523,7 @@ export class MeetingService {
   }
 
   public getMeetingRsvps(meetingUid: string): Observable<MeetingRsvp[]> {
-    return this.http.get<MeetingRsvp[]>(`/api/meetings/${meetingUid}/rsvp`).pipe(
-      catchError((error) => {
-        console.error(`Failed to get RSVPs for meeting ${meetingUid}:`, error);
-        return of([]);
-      })
-    );
+    return this.http.get<MeetingRsvp[]>(`/api/meetings/${meetingUid}/rsvp`);
   }
 
   public getMeetingRsvpForCurrentUser(meetingUid: string, occurrenceId?: string): Observable<MeetingRsvp | null> {

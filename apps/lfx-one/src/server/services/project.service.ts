@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NATS_CONFIG } from '@lfx-one/shared/constants';
+import { NATS_CONFIG, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import {
   BoardMeetingInviteeRow,
@@ -180,8 +180,11 @@ export class ProjectService {
       })
     );
 
+    // ROOT is an administrative pseudo-project used only for persona detection — never surface it in user lists.
+    const filtered = resources.filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+
     // Add writer access field to all projects
-    return await this.accessCheckService.addAccessToResources(req, resources, 'project');
+    return await this.accessCheckService.addAccessToResources(req, filtered, 'project');
   }
 
   /**
@@ -217,7 +220,59 @@ export class ProjectService {
 
     const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', params);
 
-    return resources.map((resource) => resource.data);
+    // ROOT is an administrative pseudo-project — exclude from search results.
+    return resources.map((resource) => resource.data).filter((p) => p.slug !== ROOT_PROJECT_SLUG);
+  }
+
+  /**
+   * Batch-fetches project metadata by UID via the query service.
+   * Chunks UIDs at 100 per request (URL-length guard), uses `filters_or=uid:X`
+   * (OR semantics on data.uid), and skips access checks — enrichment callers
+   * (e.g., persona enrichment) don't need writer/organizer flags.
+   *
+   * Returns a map keyed by `uid` for O(1) lookup by the caller.
+   */
+  public async getProjectsByIds(req: Request, uids: string[] | Set<string>): Promise<Map<string, Project>> {
+    const idArray = Array.from(new Set(uids)).filter(Boolean);
+    if (idArray.length === 0) return new Map();
+
+    // URL-length guard: ~36-char UUIDs × 100 keeps query strings under ~5KB.
+    const BATCH_SIZE = 100;
+    const batches: string[][] = [];
+    for (let i = 0; i < idArray.length; i += BATCH_SIZE) {
+      batches.push(idArray.slice(i, i + BATCH_SIZE));
+    }
+
+    const batchResults = await Promise.all(
+      batches.map((batch) =>
+        fetchAllQueryResources<Project>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<Project>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'project',
+              filters_or: batch.map((uid) => `uid:${uid}`),
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        ).catch((error) => {
+          logger.warning(req, 'get_projects_by_ids', 'Batched project fetch failed for batch, skipping', {
+            batch_size: batch.length,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return [] as Project[];
+        })
+      )
+    );
+
+    // ROOT is an administrative pseudo-project — never surface it even if a caller accidentally passes its UID.
+    const byUid = new Map<string, Project>();
+    for (const project of batchResults.flat()) {
+      if (project?.uid && project.slug !== ROOT_PROJECT_SLUG) {
+        byUid.set(project.uid, project);
+      }
+    }
+
+    return byUid;
   }
 
   /**
@@ -670,10 +725,11 @@ export class ProjectService {
       SELECT PROJECT_ID, NAME, SLUG
       FROM ANALYTICS.SILVER_DIM.PROJECTS P
       WHERE EXISTS (SELECT 1 FROM ANALYTICS.SILVER_DIM.MAINTAINERS M WHERE P.PROJECT_ID = M.PROJECT_ID)
+        AND SLUG != ?
       ORDER BY NAME
     `;
 
-    const result = await this.snowflakeService.execute<ProjectRow>(query, []);
+    const result = await this.snowflakeService.execute<ProjectRow>(query, [ROOT_PROJECT_SLUG]);
 
     // Transform Snowflake response to camelCase API response
     const projects = result.rows.map((row) => ({
@@ -4435,13 +4491,20 @@ export class ProjectService {
     logger.debug(req, 'get_foundation_project_uids', 'Resolving child projects for foundation', { foundation_uid: foundationUid });
     const uids = [foundationUid];
     try {
-      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
-        v: '1',
-        type: 'project',
-        parent: `project:${foundationUid}`,
-      });
+      const { resources } = await this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; slug?: string }>>(
+        req,
+        'LFX_V2_SERVICE',
+        '/query/resources',
+        'GET',
+        {
+          v: '1',
+          type: 'project',
+          parent: `project:${foundationUid}`,
+        }
+      );
       for (const r of resources) {
-        if (r.data?.uid) {
+        // Skip ROOT — administrative pseudo-project, never a real foundation child.
+        if (r.data?.uid && r.data.slug !== ROOT_PROJECT_SLUG) {
           uids.push(r.data.uid);
         }
       }
@@ -4517,43 +4580,37 @@ export class ProjectService {
     const perFoundation: Record<string, PerFoundationAnalytics> = {};
     const aggregated = { totalValue: 0, totalProjects: 0, totalMembers: 0 };
 
-    const results = await Promise.allSettled(
-      slugs.map(async (slug) => {
-        const [totalProjectsData, totalMembersData, valueConcentrationData, healthScoreData] = await Promise.all([
-          this.getFoundationTotalProjects(slug),
-          this.getFoundationTotalMembers(slug),
-          this.getFoundationValueConcentration(slug),
-          this.getFoundationHealthScoreDistribution(slug),
-        ]);
-
-        return {
-          slug,
-          totalProjects: totalProjectsData.totalProjects,
-          totalMembers: totalMembersData.totalMembers,
-          totalValue: valueConcentrationData.totalValue,
-          healthScores: healthScoreData,
-        };
-      })
-    );
-
-    logger.debug(req, 'get_multi_foundation_summary', 'All foundation queries resolved', {
-      fulfilled: results.filter((r) => r.status === 'fulfilled').length,
-      rejected: results.filter((r) => r.status === 'rejected').length,
+    const emptyHealthScores = (): FoundationHealthScoreDistributionResponse => ({
+      excellent: 0,
+      healthy: 0,
+      stable: 0,
+      unsteady: 0,
+      critical: 0,
     });
 
-    results.forEach((result, i) => {
-      if (result.status === 'fulfilled') {
-        const { slug, totalProjects, totalMembers, totalValue, healthScores } = result.value;
-        perFoundation[slug] = { totalProjects, totalMembers, totalValue, healthScores };
-        aggregated.totalProjects += totalProjects;
-        aggregated.totalMembers += totalMembers;
-        aggregated.totalValue += totalValue;
-      } else {
-        logger.warning(req, 'get_multi_foundation_summary', 'Failed to fetch analytics for a foundation', {
-          slug: slugs[i],
-          error: result.reason instanceof Error ? result.reason.message : String(result.reason),
-        });
-      }
+    const batch = await this.getMultiFoundationSummaryBatch(req, slugs).catch((error) => {
+      logger.warning(req, 'get_multi_foundation_summary', 'Batched Snowflake query failed, returning zeroed defaults', {
+        stage: 'batch_query',
+        err: error,
+      });
+      return {
+        totalProjectsBySlug: new Map<string, number>(),
+        totalMembersBySlug: new Map<string, number>(),
+        totalValueBySlug: new Map<string, number>(),
+        healthScoresBySlug: new Map<string, FoundationHealthScoreDistributionResponse>(),
+      };
+    });
+
+    slugs.forEach((slug) => {
+      const totalProjects = batch.totalProjectsBySlug.get(slug) ?? 0;
+      const totalMembers = batch.totalMembersBySlug.get(slug) ?? 0;
+      const totalValue = batch.totalValueBySlug.get(slug) ?? 0;
+      const healthScores = batch.healthScoresBySlug.get(slug) ?? emptyHealthScores();
+
+      perFoundation[slug] = { totalProjects, totalMembers, totalValue, healthScores };
+      aggregated.totalProjects += totalProjects;
+      aggregated.totalMembers += totalMembers;
+      aggregated.totalValue += totalValue;
     });
 
     logger.debug(req, 'get_multi_foundation_summary', 'Completed multi-foundation summary', {
@@ -4564,6 +4621,126 @@ export class ProjectService {
     });
 
     return { aggregated, perFoundation };
+  }
+
+  // Runs one IN-clause Snowflake query per source table instead of 4 queries per slug, so a 25-foundation summary fires 4 queries rather than 100.
+  private async getMultiFoundationSummaryBatch(
+    req: Request,
+    slugs: string[]
+  ): Promise<{
+    totalProjectsBySlug: Map<string, number>;
+    totalMembersBySlug: Map<string, number>;
+    totalValueBySlug: Map<string, number>;
+    healthScoresBySlug: Map<string, FoundationHealthScoreDistributionResponse>;
+  }> {
+    // Filter ROOT defensively — it's an administrative pseudo-project and should never surface
+    // in a multi-foundation analytics view even if a caller passes it through.
+    const filteredSlugs = slugs.filter((s) => s !== ROOT_PROJECT_SLUG);
+    if (filteredSlugs.length === 0) {
+      return {
+        totalProjectsBySlug: new Map(),
+        totalMembersBySlug: new Map(),
+        totalValueBySlug: new Map(),
+        healthScoresBySlug: new Map(),
+      };
+    }
+    const placeholders = filteredSlugs.map(() => '?').join(', ');
+
+    const totalProjectsQuery = `
+      SELECT FOUNDATION_SLUG, PROJECT_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_TOTAL_PROJECTS_MONTHLY
+      WHERE FOUNDATION_SLUG IN (${placeholders})
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY FOUNDATION_SLUG ORDER BY MONTH_START DESC) = 1
+    `;
+
+    const totalMembersQuery = `
+      WITH monthly_counts AS (
+        SELECT
+          PROJECT_SLUG AS FOUNDATION_SLUG,
+          DATE_TRUNC('MONTH', START_DATE) AS MONTH_START,
+          COUNT(DISTINCT ACCOUNT_ID) AS MONTHLY_COUNT
+        FROM ANALYTICS.PLATINUM_LFX_ONE.MEMBER_DASHBOARD_MEMBERSHIP_TIER
+        WHERE PROJECT_SLUG IN (${placeholders})
+        GROUP BY PROJECT_SLUG, DATE_TRUNC('MONTH', START_DATE)
+      )
+      SELECT FOUNDATION_SLUG, SUM(MONTHLY_COUNT) AS TOTAL_MEMBERS
+      FROM monthly_counts
+      GROUP BY FOUNDATION_SLUG
+    `;
+
+    const valueConcentrationQuery = `
+      SELECT FOUNDATION_SLUG, TOTAL_VALUE
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_VALUE_CONCENTRATION
+      WHERE FOUNDATION_SLUG IN (${placeholders})
+      QUALIFY ROW_NUMBER() OVER (PARTITION BY FOUNDATION_SLUG ORDER BY LAST_METRIC_DATE DESC) = 1
+    `;
+
+    const healthScoreQuery = `
+      SELECT FOUNDATION_SLUG, HEALTH_SCORE_CATEGORY, PROJECT_COUNT
+      FROM ANALYTICS.PLATINUM_LFX_ONE.FOUNDATION_HEALTH_SCORE_DISTRIBUTION
+      WHERE FOUNDATION_SLUG IN (${placeholders})
+    `;
+
+    interface TotalProjectsRow {
+      FOUNDATION_SLUG: string;
+      PROJECT_COUNT: number;
+    }
+    interface TotalMembersRow {
+      FOUNDATION_SLUG: string;
+      TOTAL_MEMBERS: number;
+    }
+    interface ValueConcentrationRow {
+      FOUNDATION_SLUG: string;
+      TOTAL_VALUE: number;
+    }
+    interface HealthScoreRow {
+      FOUNDATION_SLUG: string;
+      HEALTH_SCORE_CATEGORY: string;
+      PROJECT_COUNT: number;
+    }
+
+    const [totalProjectsResult, totalMembersResult, valueConcentrationResult, healthScoreResult] = await Promise.all([
+      this.snowflakeService.execute<TotalProjectsRow>(totalProjectsQuery, filteredSlugs),
+      this.snowflakeService.execute<TotalMembersRow>(totalMembersQuery, filteredSlugs),
+      this.snowflakeService.execute<ValueConcentrationRow>(valueConcentrationQuery, filteredSlugs),
+      this.snowflakeService.execute<HealthScoreRow>(healthScoreQuery, filteredSlugs),
+    ]);
+
+    logger.debug(req, 'get_multi_foundation_summary_batch', 'Batched Snowflake queries resolved', {
+      total_projects_rows: totalProjectsResult.rows.length,
+      total_members_rows: totalMembersResult.rows.length,
+      value_concentration_rows: valueConcentrationResult.rows.length,
+      health_score_rows: healthScoreResult.rows.length,
+    });
+
+    const totalProjectsBySlug = new Map<string, number>();
+    totalProjectsResult.rows.forEach((row) => totalProjectsBySlug.set(row.FOUNDATION_SLUG, row.PROJECT_COUNT));
+
+    const totalMembersBySlug = new Map<string, number>();
+    totalMembersResult.rows.forEach((row) => totalMembersBySlug.set(row.FOUNDATION_SLUG, row.TOTAL_MEMBERS));
+
+    const totalValueBySlug = new Map<string, number>();
+    valueConcentrationResult.rows.forEach((row) => totalValueBySlug.set(row.FOUNDATION_SLUG, row.TOTAL_VALUE / 1_000_000));
+
+    const healthScoresBySlug = new Map<string, FoundationHealthScoreDistributionResponse>();
+    healthScoreResult.rows.forEach((row) => {
+      const existing = healthScoresBySlug.get(row.FOUNDATION_SLUG) ?? {
+        excellent: 0,
+        healthy: 0,
+        stable: 0,
+        unsteady: 0,
+        critical: 0,
+      };
+      const category = row.HEALTH_SCORE_CATEGORY.toLowerCase();
+      if (category === 'excellent') existing.excellent = row.PROJECT_COUNT;
+      else if (category === 'healthy') existing.healthy = row.PROJECT_COUNT;
+      else if (category === 'stable') existing.stable = row.PROJECT_COUNT;
+      else if (category === 'unsteady') existing.unsteady = row.PROJECT_COUNT;
+      else if (category === 'critical') existing.critical = row.PROJECT_COUNT;
+      healthScoresBySlug.set(row.FOUNDATION_SLUG, existing);
+    });
+
+    return { totalProjectsBySlug, totalMembersBySlug, totalValueBySlug, healthScoresBySlug };
   }
 
   private getRangeSuffix(range: string, convention: string = 'standard'): string {

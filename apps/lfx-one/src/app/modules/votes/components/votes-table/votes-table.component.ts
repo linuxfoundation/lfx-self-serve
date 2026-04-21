@@ -7,8 +7,8 @@ import { takeUntilDestroyed, toObservable } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
-import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
+import { CardComponent } from '@components/card/card.component';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
@@ -16,10 +16,9 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { PollStatus, VOTE_LABEL } from '@lfx-one/shared';
 import { FilterPillOption, Vote, VoteFilterState } from '@lfx-one/shared/interfaces';
+import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { PollStatusLabelPipe } from '@pipes/poll-status-label.pipe';
 import { PollStatusSeverityPipe } from '@pipes/poll-status-severity.pipe';
-import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
-import { RelativeDueDatePipe } from '@pipes/relative-due-date.pipe';
 import { VoteService } from '@services/vote.service';
 import { ConfirmationService, MessageService } from 'primeng/api';
 import { ConfirmDialogModule } from 'primeng/confirmdialog';
@@ -41,7 +40,6 @@ import { combineLatest, debounceTime, distinctUntilChanged, map, startWith, take
     SelectComponent,
     PollStatusLabelPipe,
     PollStatusSeverityPipe,
-    RelativeDueDatePipe,
     DueDateLabelPipe,
     TooltipModule,
     ConfirmDialogModule,
@@ -169,25 +167,28 @@ export class VotesTableComponent {
       rejectButtonStyleClass: 'p-button-outlined p-button-sm',
       accept: () => {
         this.isDeleting.set(true);
-        this.voteService.deleteVote(vote.uid).pipe(take(1)).subscribe({
-          next: () => {
-            this.messageService.add({
-              severity: 'success',
-              summary: 'Success',
-              detail: `${this.voteLabel.singular} deleted successfully`,
-            });
-            this.isDeleting.set(false);
-            this.refresh.emit();
-          },
-          error: (error) => {
-            this.messageService.add({
-              severity: 'error',
-              summary: 'Error',
-              detail: `Failed to delete ${this.voteLabel.singular.toLowerCase()}: ${error.message || 'Unknown error'}`,
-            });
-            this.isDeleting.set(false);
-          },
-        });
+        this.voteService
+          .deleteVote(vote.uid)
+          .pipe(take(1))
+          .subscribe({
+            next: () => {
+              this.messageService.add({
+                severity: 'success',
+                summary: 'Success',
+                detail: `${this.voteLabel.singular} deleted successfully`,
+              });
+              this.isDeleting.set(false);
+              this.refresh.emit();
+            },
+            error: (error) => {
+              this.messageService.add({
+                severity: 'error',
+                summary: 'Error',
+                detail: `Failed to delete ${this.voteLabel.singular.toLowerCase()}: ${error.message || 'Unknown error'}`,
+              });
+              this.isDeleting.set(false);
+            },
+          });
       },
     });
   }
@@ -195,7 +196,11 @@ export class VotesTableComponent {
   // === Private Initializers ===
   private initFormSubscriptions(): void {
     combineLatest([
-      this.searchForm.valueChanges.pipe(startWith(this.searchForm.value), debounceTime(300), distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))),
+      this.searchForm.valueChanges.pipe(
+        startWith(this.searchForm.value),
+        debounceTime(300),
+        distinctUntilChanged((a, b) => JSON.stringify(a) === JSON.stringify(b))
+      ),
       toObservable(this.statusTab),
     ])
       .pipe(

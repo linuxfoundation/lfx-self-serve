@@ -34,9 +34,11 @@
           <lfx-avatar [image]="user()?.picture ?? ''" [label]="user()?.name ?? ''" shape="circle" size="large" styleClass="shrink-0 size-10"></lfx-avatar>
           <div class="flex flex-col gap-1 grow min-w-0">
             <p class="font-semibold text-base text-gray-900 leading-5 tracking-tight line-clamp-2">{{ user()?.name }}</p>
-            <div class="flex flex-wrap gap-1">
-              <span class="inline-block text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">{{ personaLabel() }}</span>
-            </div>
+            @if (showPersonaBadge()) {
+              <div class="flex flex-wrap gap-1">
+                <span class="inline-block text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4">{{ personaLabel() }}</span>
+              </div>
+            }
           </div>
         </div>
       </div>

@@ -301,13 +301,18 @@ export class PersonaDetectionService {
       });
 
       // Normalize malformed fields to prevent downstream crashes.
+      // ROOT is stripped here so every consumer (personaProjects map, personas, affiliated slugs,
+      // organizations) sees a ROOT-free view. checkRootWriter uses an independent NATS lookup and
+      // is unaffected.
       const normalized = {
         projects: Array.isArray(parsed?.projects)
-          ? parsed.projects.map((p: Record<string, unknown>) => ({
-              project_uid: p['project_uid'] || '',
-              project_slug: p['project_slug'] || '',
-              detections: Array.isArray(p['detections']) ? p['detections'] : [],
-            }))
+          ? parsed.projects
+              .map((p: Record<string, unknown>) => ({
+                project_uid: p['project_uid'] || '',
+                project_slug: p['project_slug'] || '',
+                detections: Array.isArray(p['detections']) ? p['detections'] : [],
+              }))
+              .filter((p: { project_slug: string }) => p.project_slug !== ROOT_PROJECT_SLUG)
           : [],
         error: parsed?.error ?? null,
       } as PersonaDetectionResponse;

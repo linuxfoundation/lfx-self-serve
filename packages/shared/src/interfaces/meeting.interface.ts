@@ -642,6 +642,8 @@ export interface PastMeeting extends Meeting {
   platform_meeting_id: string;
   /** Array of session objects with start/end times */
   sessions: MeetingSession[];
+  /** Whether the requesting user attended this meeting — populated by /api/user/past-meetings only */
+  user_attended?: boolean;
 }
 
 /**

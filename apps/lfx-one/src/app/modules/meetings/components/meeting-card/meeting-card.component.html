@@ -144,7 +144,7 @@
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3.5" data-testid="meeting-info-cards">
       <!-- Resources Card Column -->
       <div class="flex flex-col gap-2">
-        @defer (on idle) {
+        @defer (on viewport) {
           <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60" data-testid="resources-card">
             <div class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2 text-xs tracking-wide leading-tight text-gray-400">
@@ -266,7 +266,7 @@
       <!-- People/Attendees Card Column — defer RSVP fetches until browser is idle -->
       <div class="flex flex-col gap-2">
         @if (meeting().organizer) {
-          @defer (on idle) {
+          @defer (on viewport) {
             <!-- Organizer view with optional toggle for invited organizers -->
             @if (canToggleRsvpView() && showMyRsvp()) {
               <!-- Show RSVP Button Group when organizer toggles to set their own RSVP -->
@@ -279,7 +279,8 @@
                 [pastMeeting]="pastMeeting()"
                 [showAddButton]="!pastMeeting()"
                 [additionalRegistrantsCount]="additionalRegistrantsCount()"
-                (addClicked)="showRegistrants.set(true)">
+                (addClicked)="showRegistrants.set(true)"
+                (currentUserHasRsvpChanged)="userHasRsvp.set($event)">
               </lfx-meeting-rsvp-details>
             }
           } @placeholder {
@@ -308,7 +309,7 @@
         } @else if (!pastMeeting()) {
           <!-- Show RSVP Selection for authenticated invited non-organizers (upcoming meetings only) -->
           @if (isInvited()) {
-            @defer (on idle) {
+            @defer (on viewport) {
               <lfx-rsvp-button-group [meeting]="meeting()" [occurrenceId]="occurrence()?.occurrence_id"> </lfx-rsvp-button-group>
             } @placeholder {
               <div class="rounded-md p-3 flex flex-col gap-2 flex-1 bg-gray-100/60 animate-pulse min-h-[80px]"></div>
@@ -376,7 +377,7 @@
               <lfx-button
                 class="w-full"
                 [icon]="showMyRsvp() ? 'fa-light fa-users' : 'fa-light fa-hand'"
-                [label]="showMyRsvp() ? 'Show Guests' : 'Set My RSVP'"
+                [label]="rsvpToggleLabel()"
                 size="small"
                 severity="secondary"
                 styleClass="w-full"

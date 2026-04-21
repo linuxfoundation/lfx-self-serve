@@ -41,9 +41,6 @@ export const VOTING_STATUS_PRIORITY: readonly string[] = ['Voting Rep', 'Alterna
 export const AFFILIATED_PROJECT_UIDS_CACHE_TTL_MS = 15_000;
 export const PERSONAS_CACHE_TTL_MS = 15_000;
 
-/** When persona-detected projects exceed this count, enrichment switches from per-project GETs to a single paginated query-service fetch. */
-export const PERSONA_ENRICHMENT_BULK_THRESHOLD = 20;
-
 export const ROOT_PROJECT_SLUG = 'ROOT';
 export const ROOT_PROJECT_UID_CACHE_TTL_MS = 60 * 60 * 1000;
 

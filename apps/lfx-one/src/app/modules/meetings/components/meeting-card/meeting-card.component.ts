@@ -115,6 +115,9 @@ export class MeetingCardComponent implements OnInit {
 
   public showRegistrants: WritableSignal<boolean> = signal(false);
   public showMyRsvp: WritableSignal<boolean> = signal(false);
+  // Set by <lfx-meeting-rsvp-details> after it resolves its registrants/rsvps data.
+  // Drives the "Set My RSVP" / "Update My RSVP" label on the toggle button.
+  public userHasRsvp: WritableSignal<boolean> = signal(false);
   public meeting: WritableSignal<Meeting | PastMeeting> = signal({} as Meeting | PastMeeting);
   public occurrence: WritableSignal<MeetingOccurrence | null> = signal(null);
   public recording: WritableSignal<PastMeetingRecording | null> = signal(null);
@@ -124,14 +127,11 @@ export class MeetingCardComponent implements OnInit {
   public materialsDrawerVisible = signal(false);
 
   // Computed values for template
-  public readonly meetingRegistrantCount: Signal<number> = this.initMeetingRegistrantCount();
   public readonly summaryContent: Signal<string | null> = this.initSummaryContent();
   public readonly summaryApproved: Signal<boolean> = this.initSummaryApproved();
   public readonly hasSummary: Signal<boolean> = this.initHasSummary();
-  public readonly attendancePercentage: Signal<number> = this.initAttendancePercentage();
   public readonly recordingShareUrl: Signal<string | null> = this.initRecordingShareUrl();
   public readonly hasRecording: Signal<boolean> = this.initHasRecording();
-  public readonly attendanceBarColor: Signal<string> = this.initAttendanceBarColor();
   public readonly totalResourcesCount: Signal<number> = this.initTotalResourcesCount();
   public readonly enabledFeaturesCount: Signal<number> = this.initEnabledFeaturesCount();
   public readonly meetingTypeBadge: Signal<{
@@ -141,9 +141,7 @@ export class MeetingCardComponent implements OnInit {
     text: string;
   } | null> = this.initMeetingTypeBadge();
   public readonly containerClass: Signal<string> = this.initContainerClass();
-  public readonly attendedCount: Signal<number> = this.initAttendedCount();
-  public readonly notAttendedCount: Signal<number> = this.initNotAttendedCount();
-  public readonly participantCount: Signal<number> = this.initParticipantCount();
+  public readonly rsvpToggleLabel: Signal<string> = this.initRsvpToggleLabel();
   public readonly currentOccurrence: Signal<MeetingOccurrence | null> = this.initCurrentOccurrence();
   public readonly meetingStartTime: Signal<string | null> = this.initMeetingStartTime();
   public readonly canJoinMeeting: Signal<boolean> = this.initCanJoinMeeting();
@@ -421,18 +419,6 @@ export class MeetingCardComponent implements OnInit {
     return largestSession.share_url || null;
   }
 
-  private initMeetingRegistrantCount(): Signal<number> {
-    return computed(() => {
-      if (this.pastMeeting()) {
-        // For past meetings, show total participant count
-        return this.meeting()?.participant_count || 0;
-      }
-
-      // For upcoming meetings, show registrant count
-      return (this.meeting()?.individual_registrants_count || 0) + (this.meeting()?.committee_members_count || 0) + (this.additionalRegistrantsCount() || 0);
-    });
-  }
-
   private showCancelOccurrenceModal(meeting: Meeting): void {
     // Prefer the explicitly selected/current occurrence; fallback to next active
     const occurrenceToCancel = this.occurrence() ?? getCurrentOrNextOccurrence(meeting);
@@ -544,35 +530,6 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  private initAttendancePercentage(): Signal<number> {
-    return computed(() => {
-      if (this.pastMeeting()) {
-        // For past meetings, calculate attendance percentage from meeting object counts
-        const totalParticipants = this.meeting()?.participant_count || 0;
-        const attendedCount = this.meeting()?.attended_count || 0;
-        return totalParticipants > 0 ? Math.round((attendedCount / totalParticipants) * 100) : 0;
-      }
-
-      const totalRegistrants = this.meetingRegistrantCount();
-      const acceptedCount = this.meeting().registrants_accepted_count || 0;
-      return totalRegistrants > 0 ? Math.round((acceptedCount / totalRegistrants) * 100) : 0;
-    });
-  }
-
-  private initAttendanceBarColor(): Signal<string> {
-    return computed(() => {
-      const percentage = this.attendancePercentage();
-
-      if (percentage < 25) {
-        return 'bg-amber-500';
-      }
-      if (percentage < 70) {
-        return 'bg-blue-500';
-      }
-      return 'bg-emerald-500';
-    });
-  }
-
   private initTotalResourcesCount(): Signal<number> {
     return computed(() => {
       return this.attachments().length;
@@ -623,28 +580,11 @@ export class MeetingCardComponent implements OnInit {
     });
   }
 
-  private initAttendedCount(): Signal<number> {
+  private initRsvpToggleLabel(): Signal<string> {
     return computed(() => {
-      if (!this.pastMeeting()) return 0;
-      // Use the attended_count from the meeting object (calculated server-side)
-      return this.meeting()?.attended_count || 0;
-    });
-  }
-
-  private initNotAttendedCount(): Signal<number> {
-    return computed(() => {
-      if (!this.pastMeeting()) return 0;
-      // Calculate not attended as total participants minus attended
-      const totalParticipants = this.meeting()?.participant_count || 0;
-      const attendedCount = this.meeting()?.attended_count || 0;
-      return totalParticipants - attendedCount;
-    });
-  }
-
-  private initParticipantCount(): Signal<number> {
-    return computed(() => {
-      if (!this.pastMeeting()) return 0;
-      return this.meeting()?.participant_count || 0;
+      if (this.showMyRsvp()) return 'Show Guests';
+      if (this.userHasRsvp()) return 'Update My RSVP';
+      return 'Set My RSVP';
     });
   }
 
