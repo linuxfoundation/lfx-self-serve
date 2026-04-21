@@ -16,6 +16,7 @@ import {
 } from '@lfx-one/shared/constants';
 import { FilterPillOption, Transaction } from '@lfx-one/shared/interfaces';
 
+import { CardComponent } from '@components/card/card.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -45,7 +46,7 @@ const TAB_TYPE_MAP: Record<string, string> = {
 
 @Component({
   selector: 'lfx-transactions-dashboard',
-  imports: [FilterPillsComponent, TableComponent, TagComponent, CurrencyPipe, DatePipe, TransactionTypeStylePipe],
+  imports: [CardComponent, FilterPillsComponent, TableComponent, TagComponent, CurrencyPipe, DatePipe, TransactionTypeStylePipe],
   templateUrl: './transactions-dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -56,34 +57,19 @@ export class TransactionsDashboardComponent {
   // ─── Configuration ─────────────────────────────────────────────────────────
   protected readonly subtitle = PAGE_SUBTITLE;
   protected readonly tabOptions = TAB_OPTIONS;
-  protected readonly pageSize = 10;
 
   // ─── Writable Signals ──────────────────────────────────────────────────────
   protected readonly activeTab = signal<string>('all');
-  protected readonly currentPage = signal<number>(1);
+  protected readonly tableFirst = signal<number>(0);
 
   // ─── Computed Signals ──────────────────────────────────────────────────────
   protected readonly transactions: Signal<Transaction[] | undefined> = this.initTransactions();
   protected readonly filteredTransactions: Signal<Transaction[]> = this.initFilteredTransactions();
-  protected readonly totalPages: Signal<number> = computed(() => Math.max(1, Math.ceil(this.filteredTransactions().length / this.pageSize)));
-  protected readonly paginatedTransactions: Signal<Transaction[]> = computed(() => {
-    const start = (this.currentPage() - 1) * this.pageSize;
-    return this.filteredTransactions().slice(start, start + this.pageSize);
-  });
-  protected readonly pageNumbers: Signal<number[]> = computed(() => Array.from({ length: this.totalPages() }, (_, i) => i + 1));
-  protected readonly firstIndex: Signal<number> = computed(() => (this.filteredTransactions().length === 0 ? 0 : (this.currentPage() - 1) * this.pageSize + 1));
-  protected readonly lastIndex: Signal<number> = computed(() => Math.min(this.currentPage() * this.pageSize, this.filteredTransactions().length));
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected onTabChange(tabId: string): void {
     this.activeTab.set(tabId);
-    this.currentPage.set(1);
-  }
-
-  protected goToPage(page: number): void {
-    if (page >= 1 && page <= this.totalPages()) {
-      this.currentPage.set(page);
-    }
+    this.tableFirst.set(0);
   }
 
   // ─── Private Initializers ──────────────────────────────────────────────────
