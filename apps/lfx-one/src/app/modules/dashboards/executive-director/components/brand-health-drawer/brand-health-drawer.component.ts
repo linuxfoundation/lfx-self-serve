@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { DecimalPipe } from '@angular/common';
+import { DecimalPipe, NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, model, Signal } from '@angular/core';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -18,7 +18,7 @@ import type { BrandHealthResponse, MarketingKeyInsight, MarketingRecommendedActi
 @Component({
   selector: 'lfx-brand-health-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, ChartComponent, DecimalPipe, DrawerModule, MarketingActionIconPipe, TagComponent],
+  imports: [ButtonComponent, CardComponent, ChartComponent, DecimalPipe, DrawerModule, MarketingActionIconPipe, NgTemplateOutlet, TagComponent],
   templateUrl: './brand-health-drawer.component.html',
 })
 export class BrandHealthDrawerComponent {
@@ -33,6 +33,8 @@ export class BrandHealthDrawerComponent {
     trend: 'up',
     monthlyMentions: [],
     topProjects: [],
+    topPositiveMentions: [],
+    topNegativeMentions: [],
   });
 
   // === Static Config ===

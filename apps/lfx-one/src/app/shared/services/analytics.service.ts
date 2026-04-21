@@ -1214,19 +1214,23 @@ export class AnalyticsService {
    * @param foundationSlug Foundation slug used to filter Snowflake queries
    * @returns Observable emitting mention totals, sentiment percentages, and monthly history (or zeroed defaults on error)
    */
-  public getBrandHealth(foundationSlug: string): Observable<BrandHealthResponse> {
-    return this.http.get<BrandHealthResponse>('/api/analytics/brand-health', { params: { foundationSlug } }).pipe(
-      catchError(() =>
-        of({
-          totalMentions: 0,
-          sentiment: { positive: 0, neutral: 0, negative: 0 },
-          sentimentMomChangePp: 0,
-          trend: 'up' as const,
-          monthlyMentions: [],
-          topProjects: [],
-        })
-      )
-    );
+  public getBrandHealth(foundationSlug: string, includeMentions = false): Observable<BrandHealthResponse> {
+    return this.http
+      .get<BrandHealthResponse>('/api/analytics/brand-health', { params: { foundationSlug, ...(includeMentions && { includeMentions: 'true' }) } })
+      .pipe(
+        catchError(() =>
+          of({
+            totalMentions: 0,
+            sentiment: { positive: 0, neutral: 0, negative: 0 },
+            sentimentMomChangePp: 0,
+            trend: 'up' as const,
+            monthlyMentions: [],
+            topProjects: [],
+            topPositiveMentions: [],
+            topNegativeMentions: [],
+          })
+        )
+      );
   }
 
   /**

@@ -2488,7 +2488,8 @@ export class AnalyticsController {
         });
       }
 
-      const response = await this.projectService.getBrandHealth(foundationSlug);
+      const includeMentions = getStringQueryParam(req, 'includeMentions') === 'true';
+      const response = await this.projectService.getBrandHealth(foundationSlug, includeMentions);
 
       logger.success(req, 'get_brand_health', startTime, {
         foundation_slug: foundationSlug,

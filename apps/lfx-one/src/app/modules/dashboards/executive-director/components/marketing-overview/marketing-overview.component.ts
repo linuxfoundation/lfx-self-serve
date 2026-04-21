@@ -3,7 +3,7 @@
 
 import { NgTemplateOutlet } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, inject, Signal, signal, viewChild } from '@angular/core';
-import { toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { ChartComponent } from '@components/chart/chart.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
@@ -29,7 +29,7 @@ import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ScrollShadowDirective } from '@shared/directives/scroll-shadow.directive';
 import { TooltipModule } from 'primeng/tooltip';
-import { catchError, forkJoin, map, Observable, of, switchMap } from 'rxjs';
+import { catchError, forkJoin, map, Observable, of, skip, Subject, switchMap, tap } from 'rxjs';
 
 import { BrandHealthDrawerComponent } from '../brand-health-drawer/brand-health-drawer.component';
 import { BrandReachDrawerComponent } from '../brand-reach-drawer/brand-reach-drawer.component';
@@ -133,6 +133,8 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
     trend: 'up',
     monthlyMentions: [],
     topProjects: [],
+    topPositiveMentions: [],
+    topNegativeMentions: [],
   },
   revenueImpact: {
     pipelineInfluenced: 0,
@@ -196,6 +198,11 @@ export class MarketingOverviewComponent {
   public readonly activeDrawer = signal<DashboardDrawerType | null>(null);
 
   // === Computed Signals ===
+  // Lazy-fetch mentions via Subject trigger + switchMap (no manual subscribe).
+  // Foundation changes automatically cancel in-flight requests via switchMap.
+  private readonly mentionsTrigger$ = new Subject<string>();
+  private readonly brandHealthMentions: Signal<Pick<BrandHealthResponse, 'topPositiveMentions' | 'topNegativeMentions'> | null> =
+    this.initBrandHealthMentions();
   protected readonly edEvolutionData: Signal<EdEvolutionData> = this.initEdEvolutionData();
 
   protected readonly flywheelData = computed<FlywheelConversionResponse>(() => this.edEvolutionData().flywheel);
@@ -204,7 +211,11 @@ export class MarketingOverviewComponent {
   protected readonly engagedCommunityData = computed<EngagedCommunitySizeResponse>(() => this.edEvolutionData().engagedCommunity);
   protected readonly eventGrowthData = computed<EventGrowthResponse>(() => this.edEvolutionData().eventGrowth);
   protected readonly brandReachData = computed<BrandReachResponse>(() => this.edEvolutionData().brandReach);
-  protected readonly brandHealthData = computed<BrandHealthResponse>(() => this.edEvolutionData().brandHealth);
+  protected readonly brandHealthData = computed<BrandHealthResponse>(() => {
+    const base = this.edEvolutionData().brandHealth;
+    const mentions = this.brandHealthMentions();
+    return mentions ? { ...base, ...mentions } : base;
+  });
   protected readonly revenueImpactData = computed<RevenueImpactResponse>(() => this.edEvolutionData().revenueImpact);
 
   protected readonly filteredCards: Signal<DashboardMetricCard[]> = this.initFilteredCards();
@@ -215,7 +226,18 @@ export class MarketingOverviewComponent {
 
   // === Public Methods ===
   public handleCardClick(drawerType: DashboardDrawerType): void {
+    if (this.activeDrawer() === drawerType) {
+      return;
+    }
+
     this.activeDrawer.set(drawerType);
+
+    // Lazy-fetch mentions only when the Brand Health drawer is opened for the first time.
+    // Guarding repeated clicks on the already active drawer prevents duplicate trigger
+    // emissions while the initial mentions request is still in flight.
+    if (drawerType === DashboardDrawerType.BrandHealth && !this.brandHealthMentions()) {
+      this.mentionsTrigger$.next(this.projectContextService.selectedFoundation()?.slug || 'tlf');
+    }
   }
 
   public handleDrawerClose(): void {
@@ -234,6 +256,31 @@ export class MarketingOverviewComponent {
       if (filterKey === 'all') return cards;
       return cards.filter((card) => card.category === filterKey);
     });
+  }
+
+  private initBrandHealthMentions(): Signal<Pick<BrandHealthResponse, 'topPositiveMentions' | 'topNegativeMentions'> | null> {
+    // Reset mentions when foundation changes — toObservable + tap replaces
+    // the previous effect() to avoid writing signals inside effect().
+    toObservable(this.projectContextService.selectedFoundation)
+      .pipe(
+        skip(1),
+        tap(() => this.mentionsTrigger$.next('')),
+        takeUntilDestroyed()
+      )
+      .subscribe();
+
+    return toSignal(
+      this.mentionsTrigger$.pipe(
+        switchMap((slug) => {
+          if (!slug) return of(null);
+          return this.analyticsService.getBrandHealth(slug, true).pipe(
+            map((res) => ({ topPositiveMentions: res.topPositiveMentions, topNegativeMentions: res.topNegativeMentions })),
+            catchError(() => of(null))
+          );
+        })
+      ),
+      { initialValue: null }
+    );
   }
 
   private initEdEvolutionData(): Signal<EdEvolutionData> {
