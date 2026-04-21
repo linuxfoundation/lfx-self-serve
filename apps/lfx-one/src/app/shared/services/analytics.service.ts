@@ -954,6 +954,9 @@ export class AnalyticsService {
             communityMembers: 0,
             workingGroupMembers: 0,
             certifiedIndividuals: 0,
+            webVisitors: 0,
+            codeContributors: 0,
+            trainingEnrollees: 0,
           },
           monthlyData: [],
         });

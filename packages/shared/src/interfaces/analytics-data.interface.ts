@@ -2840,8 +2840,10 @@ export interface NorthStarMonthlyDataPoint {
 }
 
 /**
- * API response for Engaged Community Size metric
- * Newsletter + community + WG + certified individuals (deduplicated)
+ * API response for Engaged Community Size metric.
+ * Breakdown covers 7 channels: newsletter, community, WG, certified, web, code, training.
+ * `totalMembers` and `changePercentage` exclude newsletterSubscribers (unreliable data);
+ * newsletter is returned only in `breakdown` for display purposes.
  */
 export interface EngagedCommunitySizeResponse {
   totalMembers: number;
@@ -2852,6 +2854,9 @@ export interface EngagedCommunitySizeResponse {
     communityMembers: number;
     workingGroupMembers: number;
     certifiedIndividuals: number;
+    webVisitors: number;
+    codeContributors: number;
+    trainingEnrollees: number;
   };
   monthlyData: NorthStarMonthlyDataPoint[];
 }

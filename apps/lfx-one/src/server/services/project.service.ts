@@ -2398,6 +2398,9 @@ export class ProjectService {
           COMMUNITY_MEMBERS,
           WORKING_GROUP_MEMBERS,
           CERTIFIED_INDIVIDUALS,
+          WEB_VISITORS,
+          CODE_CONTRIBUTORS,
+          TRAINING_ENROLLEES,
           TOTAL_ENGAGED_MEMBERS,
           MOM_CHANGE_PERCENTAGE
         FROM ANALYTICS.PLATINUM_LFX_ONE.NORTH_STAR_ENGAGED_COMMUNITY
@@ -2412,6 +2415,9 @@ export class ProjectService {
         COMMUNITY_MEMBERS: number;
         WORKING_GROUP_MEMBERS: number;
         CERTIFIED_INDIVIDUALS: number;
+        WEB_VISITORS: number;
+        CODE_CONTRIBUTORS: number;
+        TRAINING_ENROLLEES: number;
         TOTAL_ENGAGED_MEMBERS: number;
         MOM_CHANGE_PERCENTAGE: number;
       }>(query, [foundationSlug]);
@@ -2426,6 +2432,9 @@ export class ProjectService {
             communityMembers: 0,
             workingGroupMembers: 0,
             certifiedIndividuals: 0,
+            webVisitors: 0,
+            codeContributors: 0,
+            trainingEnrollees: 0,
           },
           monthlyData: [],
         };
@@ -2433,9 +2442,16 @@ export class ProjectService {
 
       const latest = result.rows[0];
 
-      // Server-side recompute: exclude newsletter subscribers (unreliable data).
-      // Sum only community + working group + certified for totals and MoM change.
-      const sumSegments = (row: (typeof result.rows)[0]) => (row.COMMUNITY_MEMBERS ?? 0) + (row.WORKING_GROUP_MEMBERS ?? 0) + (row.CERTIFIED_INDIVIDUALS ?? 0);
+      // Server-side recompute: newsletter subscribers are excluded from totals and MoM
+      // because the data is unreliable, but we still return the raw value in the breakdown
+      // for optional display. Sum the 6 reliable channels for totals and MoM change.
+      const sumSegments = (row: (typeof result.rows)[0]) =>
+        (row.COMMUNITY_MEMBERS ?? 0) +
+        (row.WORKING_GROUP_MEMBERS ?? 0) +
+        (row.CERTIFIED_INDIVIDUALS ?? 0) +
+        (row.WEB_VISITORS ?? 0) +
+        (row.CODE_CONTRIBUTORS ?? 0) +
+        (row.TRAINING_ENROLLEES ?? 0);
 
       const currentTotal = sumSegments(latest);
       let changePercentage = 0;
@@ -2459,10 +2475,13 @@ export class ProjectService {
         changePercentage,
         trend: changePercentage >= 0 ? 'up' : 'down',
         breakdown: {
-          newsletterSubscribers: 0,
+          newsletterSubscribers: latest.NEWSLETTER_SUBSCRIBERS ?? 0,
           communityMembers: latest.COMMUNITY_MEMBERS ?? 0,
           workingGroupMembers: latest.WORKING_GROUP_MEMBERS ?? 0,
           certifiedIndividuals: latest.CERTIFIED_INDIVIDUALS ?? 0,
+          webVisitors: latest.WEB_VISITORS ?? 0,
+          codeContributors: latest.CODE_CONTRIBUTORS ?? 0,
+          trainingEnrollees: latest.TRAINING_ENROLLEES ?? 0,
         },
         monthlyData,
       };
@@ -2480,6 +2499,9 @@ export class ProjectService {
           communityMembers: 0,
           workingGroupMembers: 0,
           certifiedIndividuals: 0,
+          webVisitors: 0,
+          codeContributors: 0,
+          trainingEnrollees: 0,
         },
         monthlyData: [],
       };

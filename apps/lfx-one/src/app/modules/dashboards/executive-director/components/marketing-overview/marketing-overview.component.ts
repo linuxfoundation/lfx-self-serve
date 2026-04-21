@@ -92,7 +92,15 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
     totalMembers: 0,
     changePercentage: 0,
     trend: 'up',
-    breakdown: { newsletterSubscribers: 0, communityMembers: 0, workingGroupMembers: 0, certifiedIndividuals: 0 },
+    breakdown: {
+      newsletterSubscribers: 0,
+      communityMembers: 0,
+      workingGroupMembers: 0,
+      certifiedIndividuals: 0,
+      webVisitors: 0,
+      codeContributors: 0,
+      trainingEnrollees: 0,
+    },
     monthlyData: [],
   },
   eventGrowth: {

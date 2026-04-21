@@ -634,10 +634,16 @@ test.describe('API Response Validation', () => {
     expect(breakdown).toHaveProperty('communityMembers');
     expect(breakdown).toHaveProperty('workingGroupMembers');
     expect(breakdown).toHaveProperty('certifiedIndividuals');
+    expect(breakdown).toHaveProperty('webVisitors');
+    expect(breakdown).toHaveProperty('codeContributors');
+    expect(breakdown).toHaveProperty('trainingEnrollees');
     expect(typeof breakdown.newsletterSubscribers).toBe('number');
     expect(typeof breakdown.communityMembers).toBe('number');
     expect(typeof breakdown.workingGroupMembers).toBe('number');
     expect(typeof breakdown.certifiedIndividuals).toBe('number');
+    expect(typeof breakdown.webVisitors).toBe('number');
+    expect(typeof breakdown.codeContributors).toBe('number');
+    expect(typeof breakdown.trainingEnrollees).toBe('number');
 
     // Monthly data shape (if data exists)
     if (body.monthlyData.length > 0) {

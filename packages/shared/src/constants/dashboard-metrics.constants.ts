@@ -801,7 +801,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
       ),
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
       tooltipText:
-        'Percentage of event attendees who re-engage via newsletter, community, or working groups within 90 days post-event. Change shown in percentage points (pp) MoM.',
+        'Percentage of event attendees who re-engage via newsletter, community, working groups, training, code, or web within 90 days post-event. Change shown in percentage points (pp) MoM.',
       drawerType: DashboardDrawerType.NorthStarFlywheelConversion,
     } as DashboardMetricCard,
     {
@@ -839,7 +839,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
         lfxColors.blue[500]
       ),
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-      tooltipText: 'Unique individuals active across Slack, Discord, GitHub, and mailing lists in the last 90 days.',
+      tooltipText: 'Unique individuals active across Slack, Discord, GitHub, mailing lists, training, web, and code in the last 90 days.',
       drawerType: DashboardDrawerType.NorthStarEngagedCommunity,
     } as DashboardMetricCard,
     {
@@ -858,7 +858,7 @@ export function buildEdEvolutionMetrics(data: EdEvolutionData): DashboardMetricC
         lfxColors.blue[500]
       ),
       chartOptions: NO_TOOLTIP_CHART_OPTIONS,
-      tooltipText: 'Year-to-date event attendees and YoY change.',
+      tooltipText: 'Year-to-date event registrants and YoY change.',
       drawerType: DashboardDrawerType.NorthStarEventGrowth,
     } as DashboardMetricCard,
 

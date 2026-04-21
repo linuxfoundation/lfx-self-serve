@@ -31,7 +31,15 @@ export class EngagedCommunityDrawerComponent {
     totalMembers: 0,
     changePercentage: 0,
     trend: 'up',
-    breakdown: { newsletterSubscribers: 0, communityMembers: 0, workingGroupMembers: 0, certifiedIndividuals: 0 },
+    breakdown: {
+      newsletterSubscribers: 0,
+      communityMembers: 0,
+      workingGroupMembers: 0,
+      certifiedIndividuals: 0,
+      webVisitors: 0,
+      codeContributors: 0,
+      trainingEnrollees: 0,
+    },
     monthlyData: [],
   });
   public readonly brandReachData = input<BrandReachResponse>({
@@ -101,12 +109,17 @@ export class EngagedCommunityDrawerComponent {
       tooltip: {
         ...DASHBOARD_TOOLTIP_CONFIG,
         callbacks: {
-          label: (ctx) => ` ${formatNumber(ctx.parsed.x ?? 0)} members`,
+          label: (ctx) => {
+            const raw = ctx.raw as number;
+            // Sentinel 0.5 = original 0 (clamped for log scale); real 1s stay at 1
+            return ` ${formatNumber(raw < 1 ? 0 : raw)} members`;
+          },
         },
       },
     },
     scales: {
       x: {
+        type: 'logarithmic',
         display: true,
         grid: { color: lfxColors.gray[200], lineWidth: 1 },
         border: { display: true, color: lfxColors.gray[300] },
@@ -115,6 +128,11 @@ export class EngagedCommunityDrawerComponent {
           font: { size: 11 },
           callback: (value) => {
             const num = Number(value);
+            if (!Number.isFinite(num) || num <= 0) return '';
+            // Only label powers of 10 to avoid overlap on log scale
+            const log = Math.log10(num);
+            if (Math.abs(log - Math.round(log)) > 0.01) return '';
+            if (num >= 1_000_000) return `${(num / 1_000_000).toFixed(0)}M`;
             if (num >= 1_000) return `${(num / 1_000).toFixed(0)}K`;
             return String(num);
           },
@@ -235,12 +253,16 @@ export class EngagedCommunityDrawerComponent {
         }
       }
 
-      // Segment composition — keep in sync with initBreakdownChartData (Community / Working Groups / Certified)
+      // Segment composition — keep in sync with initBreakdownChartData (all 7 engagement channels)
       if (totalMembers > 0) {
         const segments = [
           { name: 'Community members', value: breakdown.communityMembers },
           { name: 'Working group members', value: breakdown.workingGroupMembers },
           { name: 'Certified individuals', value: breakdown.certifiedIndividuals },
+          { name: 'Web visitors', value: breakdown.webVisitors },
+          { name: 'Code contributors', value: breakdown.codeContributors },
+          { name: 'Training enrollees', value: breakdown.trainingEnrollees },
+          { name: 'Newsletter subscribers', value: breakdown.newsletterSubscribers },
         ].sort((a, b) => b.value - a.value);
         const top = segments[0];
         const topShare = (top.value / totalMembers) * 100;
@@ -318,11 +340,30 @@ export class EngagedCommunityDrawerComponent {
     return computed(() => {
       const { breakdown } = this.data();
       return {
-        labels: ['Community', 'Working Groups', 'Certified'],
+        labels: ['Community', 'Working Groups', 'Newsletter', 'Training', 'Code', 'Web', 'Certified'],
         datasets: [
           {
-            data: [breakdown.communityMembers, breakdown.workingGroupMembers, breakdown.certifiedIndividuals],
-            backgroundColor: [lfxColors.blue[500], lfxColors.blue[300], lfxColors.blue[200]],
+            // Clamp to 0.5 (not 1) for log scale rendering so original 0s
+            // are distinguishable from real 1s. Tooltip uses raw < 1 to
+            // map the sentinel back to 0.
+            data: [
+              breakdown.communityMembers,
+              breakdown.workingGroupMembers,
+              breakdown.newsletterSubscribers,
+              breakdown.trainingEnrollees,
+              breakdown.codeContributors,
+              breakdown.webVisitors,
+              breakdown.certifiedIndividuals,
+            ].map((v) => Math.max(v, 0.5)),
+            backgroundColor: [
+              lfxColors.blue[700],
+              lfxColors.blue[500],
+              lfxColors.blue[400],
+              lfxColors.blue[300],
+              lfxColors.emerald[600],
+              lfxColors.emerald[500],
+              lfxColors.emerald[400],
+            ],
             borderRadius: { topLeft: 0, bottomLeft: 0, topRight: 4, bottomRight: 4 },
             borderSkipped: 'start',
           },
