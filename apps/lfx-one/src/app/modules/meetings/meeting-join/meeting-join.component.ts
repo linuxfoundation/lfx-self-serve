@@ -19,7 +19,6 @@ import { environment } from '@environments/environment';
 import {
   buildJoinUrlWithParams,
   canJoinMeeting,
-  CommitteeMember,
   DEFAULT_MEETING_TYPE_CONFIG,
   getActiveOccurrences,
   getCurrentOrNextOccurrence,
@@ -43,7 +42,6 @@ import { FileTypeDisplayPipe } from '@pipes/file-type-display.pipe';
 import { LinkifyPipe } from '@pipes/linkify.pipe';
 import { MeetingTimePipe } from '@pipes/meeting-time.pipe';
 import { RecurrenceSummaryPipe } from '@pipes/recurrence-summary.pipe';
-import { CommitteeService } from '@services/committee.service';
 import { MeetingService } from '@services/meeting.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -60,6 +58,7 @@ import {
   distinctUntilChanged,
   EMPTY,
   filter,
+  finalize,
   map,
   merge,
   Observable,
@@ -114,7 +113,6 @@ export class MeetingJoinComponent implements OnInit {
   private readonly projectService = inject(ProjectService);
   private readonly userService = inject(UserService);
   private readonly clipboard = inject(Clipboard);
-  private readonly committeeService = inject(CommitteeService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly dialogService = inject(DialogService);
   private readonly destroyRef = inject(DestroyRef);
@@ -149,7 +147,10 @@ export class MeetingJoinComponent implements OnInit {
   private hasAutoJoined: WritableSignal<boolean> = signal<boolean>(false);
   public showRegistrants: WritableSignal<boolean> = signal<boolean>(false);
   public showGuestForm: WritableSignal<boolean> = signal<boolean>(false);
-  public additionalRegistrantsCount = signal(0);
+  // Bumped immediately when a guest is added so the count in the RSVP card doesn't lag the
+  // async query-service indexing. Floored back to 0 once the registrants refetch absorbs the
+  // newly-added rows (see additionalRegistrantsCount computed below).
+  private optimisticAdditional = signal(0);
   public materialsDrawerVisible = signal(false);
   protected showAllFiles = signal(false);
   protected visibleFiles = computed(() => (this.showAllFiles() ? this.materialFiles() : this.materialFiles().slice(0, 5)));
@@ -192,11 +193,22 @@ export class MeetingJoinComponent implements OnInit {
   protected drawerPosition = computed(() => (this.isMobileViewport() ? 'bottom' : 'right') as 'bottom' | 'right');
   // Parent project (foundation) for context display
   protected parentProject: Signal<Project | null>;
-  // Registrant + committee member list
+  // Registrant list, fetched only when the user is the meeting organizer or invited.
+  // Pre-loaded with the meeting so the Show Members drawer renders instantly from cache.
   protected registrants: Signal<MeetingRegistrant[]>;
-  protected committeeMembers: Signal<CommitteeMember[]>;
+  protected registrantsLoading: WritableSignal<boolean> = signal(false);
+  // Re-fires the registrants fetch (e.g. after a guest is added from the drawer).
+  private registrantsRefresh$ = new BehaviorSubject<void>(undefined);
   // Counts from actual data
-  protected totalInvitees = computed(() => this.registrants().length + this.committeeMembers().length);
+  protected totalInvitees = computed(() => this.registrants().length);
+  // Optimistic + actual: post-add we bump optimisticAdditional immediately and let the refetch
+  // catch up; the max keeps the count stable while query indexing settles.
+  public additionalRegistrantsCount = computed(() => {
+    const meeting = this.meeting();
+    const baseCount = (meeting?.individual_registrants_count || 0) + (meeting?.committee_members_count || 0);
+    const fetched = Math.max(0, this.registrants().length - baseCount);
+    return Math.max(fetched, this.optimisticAdditional());
+  });
   // Past meeting participants (fetched from API for attendance stats)
   protected pastMeetingParticipants: Signal<PastMeetingParticipant[]>;
   // Past meeting attendance stats (derived from participants)
@@ -275,7 +287,6 @@ export class MeetingJoinComponent implements OnInit {
     this.alertMessage = this.initializeAlertMessage();
     this.emailError = this.initializeEmailError();
     this.registrants = this.initializeRegistrants();
-    this.committeeMembers = this.initializeCommitteeMembers();
     this.parentProject = this.initializeParentProject();
     this.initializeAutoJoin();
   }
@@ -321,6 +332,13 @@ export class MeetingJoinComponent implements OnInit {
 
   public onDrawerHide(): void {
     this.showRegistrants.set(false);
+  }
+
+  public onRegistrantsRefreshRequested(addedCount: number): void {
+    if (addedCount > 0) {
+      this.optimisticAdditional.update((c) => c + addedCount);
+    }
+    this.registrantsRefresh$.next();
   }
 
   public onEmailErrorClick(): void {
@@ -1076,39 +1094,26 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializeRegistrants(): Signal<MeetingRegistrant[]> {
     return toSignal(
-      toObservable(this.meeting).pipe(
-        filter((meeting) => !!meeting?.id && this.authenticated()),
-        distinctUntilChanged((a, b) => a.id === b.id),
-        switchMap((meeting) => {
-          if (this.isPastMeeting()) return of([] as MeetingRegistrant[]);
-          return this.meetingService.getMeetingRegistrants(meeting.id, true).pipe(catchError(() => of([] as MeetingRegistrant[])));
-        })
-      ),
-      { initialValue: [] }
-    );
-  }
-
-  private initializeCommitteeMembers(): Signal<CommitteeMember[]> {
-    return toSignal(
-      toObservable(this.meeting).pipe(
-        filter((meeting) => !!meeting?.id && this.authenticated()),
-        distinctUntilChanged((a, b) => a.id === b.id),
-        switchMap((meeting) => {
-          const committeeUids = (meeting.committees || []).map((c) => c.uid).filter(Boolean);
-          if (committeeUids.length === 0) return of([] as CommitteeMember[]);
-          return combineLatest(
-            committeeUids.map((uid) => this.committeeService.getCommitteeMembers(uid).pipe(catchError(() => of([] as CommitteeMember[]))))
-          ).pipe(
-            map((arrays) => {
-              const all = arrays.flat();
-              const seen = new Set<string>();
-              return all.filter((m) => {
-                const key = m.email?.toLowerCase();
-                if (!key || seen.has(key)) return false;
-                seen.add(key);
-                return true;
-              });
-            })
+      combineLatest([
+        toObservable(this.meeting).pipe(distinctUntilChanged((a, b) => a?.id === b?.id)),
+        toObservable(this.authenticated),
+        this.registrantsRefresh$,
+      ]).pipe(
+        switchMap(([meeting, authenticated]) => {
+          if (!meeting?.id || !authenticated || !(meeting.organizer || meeting.invited) || this.isPastMeeting()) {
+            return of([] as MeetingRegistrant[]);
+          }
+          this.registrantsLoading.set(true);
+          const baseCount = (meeting.individual_registrants_count || 0) + (meeting.committee_members_count || 0);
+          return this.meetingService.getMyMeetingRegistrants(meeting.id, true).pipe(
+            tap((list) => {
+              // Once the refetch lands, drop the optimistic pad so it doesn't double-count.
+              const fetchedAdditional = Math.max(0, list.length - baseCount);
+              if (fetchedAdditional >= this.optimisticAdditional()) {
+                this.optimisticAdditional.set(0);
+              }
+            }),
+            finalize(() => this.registrantsLoading.set(false))
           );
         })
       ),

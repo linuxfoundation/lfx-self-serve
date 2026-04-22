@@ -32,13 +32,37 @@ export class MeetingRegistrantsDisplayComponent {
   public readonly visible: InputSignal<boolean> = input<boolean>(false);
   public readonly showAddRegistrant: InputSignal<boolean> = input<boolean>(false);
   public readonly myMeetingRegistrants: InputSignal<boolean> = input<boolean>(false);
+  // Externally-managed mode: when the parent already owns the registrants list (e.g. on the
+  // meeting join page) it can pass it in here to avoid a duplicate fetch on drawer open. The
+  // child uses the seed as its source and emits refreshRequested when the data needs to be
+  // re-pulled (e.g. after adding a guest). Pass `null` (default) to keep the legacy self-fetch
+  // behavior used by meeting-card.
+  public readonly initialRegistrants: InputSignal<MeetingRegistrant[] | null> = input<MeetingRegistrant[] | null>(null);
+  public readonly initialRegistrantsLoading: InputSignal<boolean> = input<boolean>(false);
 
   public readonly registrantsCountChange: OutputEmitterRef<number> = output<number>();
+  public readonly refreshRequested: OutputEmitterRef<number> = output<number>();
 
-  public readonly registrantsLoading: WritableSignal<boolean> = signal(true);
+  private readonly internalLoading: WritableSignal<boolean> = signal(true);
   private readonly refresh$: BehaviorSubject<boolean> = new BehaviorSubject<boolean>(false);
-  public readonly registrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
+  private readonly externallyManaged: Signal<boolean> = computed(() => this.initialRegistrants() !== null);
+  private readonly internalRegistrants: Signal<MeetingRegistrant[]> = this.initRegistrantsList();
   public readonly pastMeetingParticipants: Signal<PastMeetingParticipant[]> = this.initPastMeetingParticipantsList();
+  public readonly registrants: Signal<MeetingRegistrant[]> = computed(() => {
+    if (this.externallyManaged()) {
+      const seed = this.initialRegistrants() ?? [];
+      return [...seed].sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as MeetingRegistrant[];
+    }
+    return this.internalRegistrants();
+  });
+  public readonly registrantsLoading: Signal<boolean> = computed(() => {
+    // Past-meeting participants are always fetched internally (parent does not prefetch them),
+    // so fall back to the internal loader regardless of externally-managed mode.
+    if (this.externallyManaged() && !this.pastMeeting()) {
+      return this.initialRegistrantsLoading();
+    }
+    return this.internalLoading();
+  });
   public readonly additionalRegistrantsCount: WritableSignal<number> = signal(0);
   public readonly showAddForm = signal(false);
   public readonly submitting = signal(false);
@@ -86,10 +110,17 @@ export class MeetingRegistrantsDisplayComponent {
     this.addRegistrantForm = this.meetingService.createRegistrantFormGroup(false);
 
     effect(() => {
-      if (this.visible()) {
-        this.registrantsLoading.set(true);
+      if (!this.visible()) return;
+      // Past-meeting participants always self-fetch.
+      if (this.pastMeeting()) {
+        this.internalLoading.set(true);
         this.refresh$.next(true);
+        return;
       }
+      // Externally-managed: parent owns the registrants list, no internal fetch needed.
+      if (this.externallyManaged()) return;
+      this.internalLoading.set(true);
+      this.refresh$.next(true);
     });
 
     // Reset inline add form when drawer closes (open → closed transition)
@@ -134,10 +165,15 @@ export class MeetingRegistrantsDisplayComponent {
             this.submitting.set(false);
             if (response.summary.successful > 0) {
               this.messageService.add({ severity: 'success', summary: 'Success', detail: 'Guest added successfully' });
-              // Immediately increment the count for UI feedback (query service indexing is async)
-              this.additionalRegistrantsCount.update((c) => c + response.summary.successful);
-              this.registrantsCountChange.emit(this.additionalRegistrantsCount());
-              this.refresh$.next(true);
+              if (this.externallyManaged()) {
+                // Parent owns the data — request a refetch and let it bump its own optimistic count.
+                this.refreshRequested.emit(response.summary.successful);
+              } else {
+                // Self-managed mode: optimistically increment locally (query indexing is async).
+                this.additionalRegistrantsCount.update((c) => c + response.summary.successful);
+                this.registrantsCountChange.emit(this.additionalRegistrantsCount());
+                this.refresh$.next(true);
+              }
               this.addRegistrantForm.reset();
             } else {
               this.messageService.add({
@@ -167,9 +203,11 @@ export class MeetingRegistrantsDisplayComponent {
         takeUntilDestroyed(),
         switchMap((useMyEndpoint) =>
           this.refresh$.pipe(
-            filter((refresh) => refresh && !this.pastMeeting()),
+            // Skip when externally-managed (parent supplies the list) or when the meeting is past
+            // (handled by initPastMeetingParticipantsList).
+            filter((refresh) => refresh && !this.pastMeeting() && !this.externallyManaged()),
             switchMap(() => {
-              this.registrantsLoading.set(true);
+              this.internalLoading.set(true);
               // Use access-controlled endpoint for meeting join page, regular endpoint for organizer views
               const registrantsObservable = useMyEndpoint
                 ? this.meetingService.getMyMeetingRegistrants(this.meeting().id, true)
@@ -186,7 +224,7 @@ export class MeetingRegistrantsDisplayComponent {
                   this.additionalRegistrantsCount.set(additionalCount);
                   this.registrantsCountChange.emit(additionalCount);
                 }),
-                finalize(() => this.registrantsLoading.set(false))
+                finalize(() => this.internalLoading.set(false))
               );
             })
           )
@@ -202,13 +240,13 @@ export class MeetingRegistrantsDisplayComponent {
         takeUntilDestroyed(),
         filter((refresh) => refresh && this.pastMeeting()),
         switchMap(() => {
-          this.registrantsLoading.set(true);
+          this.internalLoading.set(true);
           return this.meetingService
             .getPastMeetingParticipants(this.meeting().id)
             .pipe(catchError(() => of([])))
             .pipe(
               map((participants) => participants.sort((a, b) => a.first_name?.localeCompare(b.first_name ?? '') ?? 0) as PastMeetingParticipant[]),
-              finalize(() => this.registrantsLoading.set(false))
+              finalize(() => this.internalLoading.set(false))
             );
         })
       ),
