@@ -4,7 +4,6 @@
 import { Component, computed, inject, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { PendingActionItem } from '@lfx-one/shared/interfaces';
-import { HiddenActionsService } from '@services/hidden-actions.service';
 import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -25,7 +24,6 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
 export class BoardMemberDashboardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
-  private readonly hiddenActionsService = inject(HiddenActionsService);
   private readonly lensService = inject(LensService);
 
   protected readonly showMeetings = computed(() => this.lensService.activeLens() !== 'org');
@@ -34,19 +32,12 @@ export class BoardMemberDashboardComponent {
   public readonly selectedFoundation = computed(() => this.projectContextService.selectedFoundation());
   public readonly selectedProject = computed(() => this.projectContextService.activeContext());
   public readonly refresh$: BehaviorSubject<void> = new BehaviorSubject<void>(undefined);
-  private readonly rawBoardMemberActions: Signal<PendingActionItem[]>;
+  // Windowing (dismiss filtering + display cap) is owned by PendingActionsComponent.
+  // Pass the raw list and let the child render the top N unhidden items.
   public readonly boardMemberActions: Signal<PendingActionItem[]>;
 
   public constructor() {
-    // Initialize board member actions with reactive pattern
-    this.rawBoardMemberActions = this.initializeBoardMemberActions();
-
-    // Create filtered signal that removes hidden actions and limits to 2
-    this.boardMemberActions = computed(() => {
-      return this.rawBoardMemberActions()
-        .filter((item) => !this.hiddenActionsService.isActionHidden(item))
-        .slice(0, 2);
-    });
+    this.boardMemberActions = this.initializeBoardMemberActions();
   }
 
   public handleActionClick(): void {

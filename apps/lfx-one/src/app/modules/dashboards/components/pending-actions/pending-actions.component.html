@@ -11,27 +11,21 @@
     <div class="flex-1 border-t border-gray-200 self-center"></div>
   </div>
 
-  @if (pendingActions().length > 0) {
+  @if (visibleActions().length > 0) {
     <!-- Unified card with divider rows -->
     <div
       class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-200 max-h-[30rem] overflow-y-auto"
       data-testid="dashboard-pending-actions-list">
-      @for (item of pendingActions(); track $index) {
+      @for (item of visibleActions(); track item.buttonLink ?? item.type + '-' + item.text) {
         <div
           class="flex items-center justify-between gap-4 px-4 py-3 bg-gradient-to-r from-white to-[rgba(255,251,235,0.8)]"
           [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
           <!-- Label + text -->
           <div class="flex items-center gap-3 min-w-0 flex-1">
             <div class="w-24 shrink-0">
-              <lfx-tag
-                [value]="item.type"
-                [severity]="item.severity"
-                [icon]="item.icon" />
+              <lfx-tag [value]="item.type" [severity]="item.severity" [icon]="item.icon" />
             </div>
-            <p
-              class="text-sm font-medium text-gray-900 truncate"
-              [attr.title]="item.text"
-              data-testid="dashboard-pending-actions-title">
+            <p class="text-sm font-medium text-gray-900 truncate" [attr.title]="item.text" data-testid="dashboard-pending-actions-title">
               {{ item.text }}
             </p>
           </div>
@@ -49,12 +43,7 @@
                 (onClick)="handleActionClick(item)"
                 [label]="item.buttonText" />
             } @else {
-              <lfx-button
-                size="small"
-                severity="secondary"
-                [outlined]="true"
-                (onClick)="handleActionClick(item)"
-                [label]="item.buttonText" />
+              <lfx-button size="small" severity="secondary" [outlined]="true" (onClick)="handleActionClick(item)" [label]="item.buttonText" />
             }
           </div>
         </div>
@@ -62,9 +51,7 @@
     </div>
   } @else {
     <!-- Empty state -->
-    <div
-      class="bg-gray-50 rounded-2xl border border-gray-200 flex items-center justify-center gap-4 px-5 py-10"
-      data-testid="dashboard-pending-actions-empty">
+    <div class="bg-gray-50 rounded-2xl border border-gray-200 flex items-center justify-center gap-4 px-5 py-10" data-testid="dashboard-pending-actions-empty">
       <i class="fa-light fa-box-check text-4xl text-gray-400 shrink-0"></i>
       <div>
         <p class="text-sm font-medium text-gray-700">Your desk is clear</p>

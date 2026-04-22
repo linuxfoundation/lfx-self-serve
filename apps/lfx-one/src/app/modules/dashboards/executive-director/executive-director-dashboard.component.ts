@@ -4,7 +4,6 @@
 import { Component, computed, inject, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { PendingActionItem } from '@lfx-one/shared/interfaces';
-import { HiddenActionsService } from '@services/hidden-actions.service';
 import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
@@ -34,7 +33,6 @@ export class ExecutiveDirectorDashboardComponent {
   // === Services ===
   private readonly projectContextService = inject(ProjectContextService);
   private readonly projectService = inject(ProjectService);
-  private readonly hiddenActionsService = inject(HiddenActionsService);
   private readonly lensService = inject(LensService);
 
   protected readonly showMeetings = computed(() => this.lensService.activeLens() !== 'org');
@@ -46,17 +44,12 @@ export class ExecutiveDirectorDashboardComponent {
   // === Computed Signals ===
   protected readonly selectedFoundation = this.projectContextService.selectedFoundation;
   protected readonly selectedProject = computed(() => this.projectContextService.activeContext());
-  private readonly rawPendingActions: Signal<PendingActionItem[]>;
+  // Windowing (dismiss filtering + display cap) is owned by PendingActionsComponent.
+  // Pass the raw list and let the child render the top N unhidden items.
   public readonly pendingActions: Signal<PendingActionItem[]>;
 
   public constructor() {
-    this.rawPendingActions = this.initializePendingActions();
-
-    this.pendingActions = computed(() => {
-      return this.rawPendingActions()
-        .filter((item) => !this.hiddenActionsService.isActionHidden(item))
-        .slice(0, 2);
-    });
+    this.pendingActions = this.initializePendingActions();
   }
 
   // === Public Methods ===

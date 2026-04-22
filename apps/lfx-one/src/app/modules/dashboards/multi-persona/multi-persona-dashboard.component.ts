@@ -24,7 +24,6 @@ import { SurveyStatus } from '@lfx-one/shared/enums';
 import { getActiveOccurrences, getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 
 import { AnalyticsService } from '@services/analytics.service';
-import { HiddenActionsService } from '@services/hidden-actions.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -54,7 +53,6 @@ export class MultiPersonaDashboardComponent {
   private readonly projectContextService = inject(ProjectContextService);
   private readonly lensService = inject(LensService);
   private readonly router = inject(Router);
-  private readonly hiddenActionsService = inject(HiddenActionsService);
 
   private readonly refresh$ = new BehaviorSubject<void>(undefined);
 
@@ -252,10 +250,9 @@ export class MultiPersonaDashboardComponent {
             )
           ).pipe(map((results) => results.flat()));
         }),
-        map((actions) => {
-          this.pendingActionsLoading.set(false);
-          return actions.filter((item) => !this.hiddenActionsService.isActionHidden(item)).slice(0, 5);
-        })
+        // Windowing (dismiss filtering + display cap) is owned by PendingActionsComponent.
+        // Pass the raw aggregated list and let the child render the top 5 unhidden items.
+        tap(() => this.pendingActionsLoading.set(false))
       ),
       { initialValue: [] }
     );
