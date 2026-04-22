@@ -141,9 +141,9 @@
               </td>
 
               <td>
-                @if (survey.survey_status === SurveyStatus.CLOSED) {
+                @if (survey.displayStatus === SurveyStatus.CLOSED) {
                   <span class="text-sm text-gray-700">{{ survey.survey_cutoff_date | date: 'MMM d, y' }}</span>
-                } @else if (survey.survey_status === SurveyStatus.DRAFT) {
+                } @else if (survey.displayStatus === SurveyStatus.DRAFT) {
                   <span class="text-sm text-gray-700">&mdash;</span>
                 } @else if (survey.survey_cutoff_date) {
                   @let dueDateLabelValue = survey.survey_cutoff_date | dueDateLabel;
@@ -164,7 +164,7 @@
 
               <td>
                 <div class="flex items-center justify-end gap-1">
-                  @if (hasPMOAccess() && survey.survey_status === SurveyStatus.DRAFT) {
+                  @if (hasPMOAccess() && survey.displayStatus === SurveyStatus.DRAFT) {
                     <lfx-button label="Edit" severity="primary" size="small" [text]="true" styleClass="" [attr.data-testid]="'surveys-edit-' + survey.uid">
                     </lfx-button>
                     <lfx-button
@@ -177,17 +177,7 @@
                       [disabled]="isDeleting()"
                       [attr.data-testid]="'surveys-delete-' + survey.uid">
                     </lfx-button>
-                  } @else if (survey.survey_status === SurveyStatus.SENT || survey.survey_status === SurveyStatus.OPEN) {
-                    <lfx-button
-                      label="Results"
-                      severity="primary"
-                      size="small"
-                      [text]="true"
-                      styleClass=""
-                      (onClick)="onViewResults(survey.uid)"
-                      [attr.data-testid]="'surveys-results-' + survey.uid">
-                    </lfx-button>
-                  } @else if (survey.survey_status === SurveyStatus.CLOSED) {
+                  } @else if (survey.displayStatus === SurveyStatus.OPEN || survey.displayStatus === SurveyStatus.CLOSED) {
                     <lfx-button
                       label="Results"
                       severity="primary"

@@ -15,6 +15,7 @@ import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { SURVEY_LABEL, SURVEY_TYPE_LABELS, SurveyStatus } from '@lfx-one/shared';
 import { FilterPillOption, Survey } from '@lfx-one/shared/interfaces';
+import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { DueDateLabelPipe } from '@pipes/due-date-label.pipe';
 import { SurveyStatusLabelPipe } from '@pipes/survey-status-label.pipe';
 import { SurveyStatusSeverityPipe } from '@pipes/survey-status-severity.pipe';
@@ -93,7 +94,7 @@ export class SurveysTableComponent {
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
   protected readonly typeOptions: Signal<{ label: string; value: string | null }[]> = this.initTypeOptions();
-  protected readonly filteredSurveys: Signal<Survey[]> = this.initFilteredSurveys();
+  protected readonly filteredSurveys: Signal<(Survey & { displayStatus: SurveyStatus })[]> = this.initFilteredSurveys();
   protected readonly isFiltered = computed(
     () => this.searchTerm() !== '' || this.statusTab() !== 'all' || this.groupFilter() !== null || this.typeFilter() !== null
   );
@@ -232,9 +233,14 @@ export class SurveysTableComponent {
     });
   }
 
-  private initFilteredSurveys(): Signal<Survey[]> {
+  private initFilteredSurveys(): Signal<(Survey & { displayStatus: SurveyStatus })[]> {
     return computed(() => {
-      let filtered = this.surveys();
+      // Precompute displayStatus once per row so the template, filter, and sort
+      // all agree on cutoff/case-normalized status (matches what the badge pipe shows).
+      let filtered = this.surveys().map((survey) => ({
+        ...survey,
+        displayStatus: getSurveyDisplayStatus(survey),
+      }));
 
       const searchTerm = this.searchTerm()?.toLowerCase() || '';
       if (searchTerm) {
@@ -243,11 +249,10 @@ export class SurveysTableComponent {
 
       const statusTab = this.statusTab();
       if (statusTab !== 'all') {
-        const openStatuses: SurveyStatus[] = [SurveyStatus.OPEN, SurveyStatus.SENT];
         if (statusTab === 'open') {
-          filtered = filtered.filter((survey) => openStatuses.includes((survey.survey_status as string).toLowerCase() as SurveyStatus));
+          filtered = filtered.filter((survey) => survey.displayStatus === SurveyStatus.OPEN);
         } else if (statusTab === 'closed') {
-          filtered = filtered.filter((survey) => (survey.survey_status as string).toLowerCase() === SurveyStatus.CLOSED);
+          filtered = filtered.filter((survey) => survey.displayStatus === SurveyStatus.CLOSED);
         }
       }
 
@@ -266,9 +271,8 @@ export class SurveysTableComponent {
   }
 
   // === Private Helpers ===
-  private sortSurveys(surveys: Survey[]): Survey[] {
+  private sortSurveys<T extends Survey & { displayStatus: SurveyStatus }>(surveys: T[]): T[] {
     const statusPriority: Record<string, number> = {
-      [SurveyStatus.SENT]: 1,
       [SurveyStatus.OPEN]: 1,
       [SurveyStatus.DRAFT]: 2,
       [SurveyStatus.SCHEDULED]: 3,
@@ -276,11 +280,8 @@ export class SurveysTableComponent {
     };
 
     return [...surveys].sort((a, b) => {
-      const statusA = a.survey_status;
-      const statusB = b.survey_status;
-
-      if (statusA !== statusB) {
-        return (statusPriority[statusA] ?? 5) - (statusPriority[statusB] ?? 5);
+      if (a.displayStatus !== b.displayStatus) {
+        return (statusPriority[a.displayStatus] ?? 5) - (statusPriority[b.displayStatus] ?? 5);
       }
 
       const dateA = a.survey_cutoff_date ? new Date(a.survey_cutoff_date).getTime() : Infinity;
