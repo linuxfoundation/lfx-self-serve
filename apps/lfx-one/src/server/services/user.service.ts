@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { NATS_CONFIG, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
-import { NatsSubjects } from '@lfx-one/shared/enums';
+import { NatsSubjects, PollStatus } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
   ActiveWeeksStreakRow,
@@ -10,6 +10,7 @@ import {
   Meeting,
   MeetingOccurrence,
   MeetingRegistrant,
+  MeetingRsvp,
   PastMeeting,
   PastMeetingParticipant,
   PendingActionItem,
@@ -24,6 +25,7 @@ import {
   UserProjectsResponse,
   UserPullRequestsResponse,
   UserPullRequestsRow,
+  Vote,
 } from '@lfx-one/shared/interfaces';
 import { getCurrentOrNextOccurrence, hasMeetingEnded, parseToInt } from '@lfx-one/shared/utils';
 import { Request } from 'express';
@@ -881,14 +883,21 @@ export class UserService {
   }
 
   /**
-   * Aggregate pending actions for the current user within a project scope.
-   * Sources (all parallel): non-responded surveys (Snowflake) and upcoming meetings
-   * the user is registered on within the next two weeks. No meeting-type filter — a
-   * working-group meeting next week is as much a pending action as a board meeting.
+   * Aggregate pending actions for the current user within a project scope. Sources run in parallel
+   * with per-source `.catch(() => [])` so one flaky source can't wipe the list:
+   *   - Non-responded surveys (Snowflake)
+   *   - Upcoming meetings within the next two weeks (Review Agenda action)
+   *   - Active votes the user hasn't cast (Cast Vote action)
+   *   - Missing or "maybe" RSVPs for meetings in the 2-week window (Set RSVP action)
+   * No meeting-type filter — a working-group meeting next week is as much a pending action as
+   * a board meeting.
    */
   private async getUserPendingActions(req: Request, email: string, projectSlug: string, projectUid: string): Promise<PendingActionItem[]> {
-    // Fetch surveys and user-specific meetings in parallel
-    const [surveys, meetings] = await Promise.all([
+    const rawUsername = await getUsernameFromAuth(req);
+    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
+
+    // Phase 1: surveys, meetings, and pending votes are independent — issue them in parallel.
+    const [surveys, meetings, pendingVotes] = await Promise.all([
       this.projectService.getPendingActionSurveys(email, projectSlug).catch((error) => {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch surveys for pending actions', { err: error });
         return [];
@@ -896,14 +905,295 @@ export class UserService {
 
       this.getUserMeetings(req, projectUid).catch((error) => {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch user meetings for pending actions', { err: error });
-        return [];
+        return [] as Meeting[];
+      }),
+
+      this.fetchPendingVotes(req, email, username, projectUid).catch((error) => {
+        logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending votes', { err: error });
+        return [] as Vote[];
       }),
     ]);
 
-    // Transform all upcoming meetings within the next 2 weeks (not just board meetings).
-    const meetingActions = this.transformMeetingsToActions(meetings);
+    const inWindowMeetings = this.filterMeetingsInWindow(meetings);
+    const meetingActions = this.transformMeetingsToActions(inWindowMeetings);
+    const voteActions = this.transformVotesToActions(pendingVotes);
 
-    return [...surveys, ...meetingActions];
+    // Phase 2: RSVP + registrant lookups are only meaningful when there are in-window meetings
+    // to evaluate. Skip them otherwise — avoids two full paginated per-user scans per request
+    // for users with no upcoming meetings in the window.
+    //
+    // Fail closed on the RSVP prerequisites: if either lookup errors, we can't distinguish
+    // "user hasn't RSVPed" from "we don't know", and a transient failure must not turn every
+    // in-window meeting into a bogus Set RSVP nag. Suppress the whole source on error.
+    let rsvpActions: PendingActionItem[] = [];
+    if (inWindowMeetings.length > 0) {
+      try {
+        const [userRsvps, activeRegistrantIds] = await Promise.all([
+          this.fetchAllUserRsvps(req, email, username),
+          this.fetchUserActiveRegistrantIds(req, email, username),
+        ]);
+        rsvpActions = this.transformMissingRsvpsToActions(inWindowMeetings, userRsvps, activeRegistrantIds);
+      } catch (error) {
+        logger.warning(req, 'get_user_pending_actions', 'RSVP prerequisite lookup failed, suppressing Set RSVP actions', { err: error });
+      }
+    }
+
+    // Order by actionability: someone is waiting on RSVPs and votes have closing windows, so
+    // those go first. Surveys are time-bounded by their cutoff. Review Agenda is informational
+    // (read-before-meeting) and goes last — with the 5-item display cap, plentiful meetings
+    // shouldn't crowd out the rows the user actually has to respond to.
+    return [...rsvpActions, ...voteActions, ...surveys, ...meetingActions];
+  }
+
+  /**
+   * Queries the `vote_response` index for this user's participation rows and returns the polls
+   * they've been invited to but haven't submitted yet. `vote_response` is the real upstream
+   * indexed type (`lfx.index.vote_response` from `lfx-v2-voting-service`) — the earlier
+   * `individual_vote` type was fabricated in the shared interface and the query returned zero
+   * rows in practice.
+   *
+   * ITX creates a `vote_response` record per invitee on poll initiation and stamps
+   * `vote_status='submitted'` once the user actually casts. "Pending" is therefore:
+   *   - `vote_status !== 'submitted'`  (not cast yet)
+   *   - `!voter_removed`               (active invitation)
+   *   - scoped to the current project
+   * Then fetch the Vote details and keep only those still `active` with an `end_time` in the
+   * future.
+   */
+  private async fetchPendingVotes(req: Request, email: string, username: string | null, projectUid: string): Promise<Vote[]> {
+    const normalizedEmail = email ? email.trim().toLowerCase() : '';
+    const orClauses: string[] = [];
+    if (normalizedEmail) orClauses.push(`user_email:${normalizedEmail}`);
+    if (username) orClauses.push(`username:${username}`);
+    if (orClauses.length === 0) return [];
+
+    interface VoteResponseRow {
+      vote_uid?: string;
+      vote_id?: string;
+      poll_id?: string;
+      project_uid?: string;
+      vote_status?: string;
+      voter_removed?: boolean;
+    }
+
+    // failOnPartial: completeness matters — a truncated response can silently miss a pending
+    // invitation. The caller already catches and degrades, so fail closed here.
+    const responses = await fetchAllQueryResources<VoteResponseRow>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<VoteResponseRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'vote_response',
+          filters_or: orClauses,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+
+    // `vote_uid` is the v2 parent poll UID (what `/votes/{uid}` expects); `poll_id` is the v1
+    // fallback per the upstream indexer contract. Neither is the individual-response id.
+    const pendingVoteUids = Array.from(
+      new Set(
+        responses
+          .filter((r) => r.vote_status !== 'submitted' && !r.voter_removed && r.project_uid === projectUid)
+          .map((r) => r.vote_uid ?? r.poll_id)
+          .filter((uid): uid is string => !!uid)
+      )
+    );
+    if (pendingVoteUids.length === 0) return [];
+
+    const now = Date.now();
+    const votes = await Promise.all(
+      pendingVoteUids.map((uid) =>
+        this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${uid}`, 'GET').catch((error) => {
+          logger.warning(req, 'fetch_pending_votes', 'Failed to fetch vote details, skipping', {
+            vote_uid: uid,
+            err: error,
+          });
+          return null;
+        })
+      )
+    );
+
+    return votes.filter((v): v is Vote => v !== null && v.status === PollStatus.ACTIVE && !!v.end_time && new Date(v.end_time).getTime() > now);
+  }
+
+  /**
+   * Fetch every `v1_meeting_rsvp` row for the current user. We don't try to narrow by
+   * meeting_id on the server because `tags_or` isn't used elsewhere in this repo and the
+   * query service may silently ignore it — filtering meeting-side in code is both reliable
+   * and cheap at the typical per-user RSVP cardinality (dozens to low hundreds, paginated).
+   */
+  private async fetchAllUserRsvps(req: Request, email: string, username: string | null): Promise<MeetingRsvp[]> {
+    const orClauses: string[] = [];
+    if (email) orClauses.push(`email:${email.toLowerCase()}`);
+    if (username) orClauses.push(`username:${username}`);
+    if (orClauses.length === 0) return [];
+
+    // failOnPartial: a truncated page set could silently miss an accepted RSVP and cause a
+    // bogus Set RSVP action. Caller fails closed on any throw and suppresses the whole source.
+    return fetchAllQueryResources<MeetingRsvp>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRsvp>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'v1_meeting_rsvp',
+          filters_or: orClauses,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+  }
+
+  /**
+   * Fetch the UIDs of every currently-active registrant record for the current user. RSVP rows
+   * persist from removed registrations, so we use the same guard as
+   * `MeetingService.getMeetingRsvps`: keep only those RSVPs whose `registrant_id` matches an
+   * active registrant. Otherwise an old accepted/declined RSVP from a removed registration
+   * would incorrectly suppress a Set RSVP action for the user's current registration.
+   */
+  private async fetchUserActiveRegistrantIds(req: Request, email: string, username: string | null): Promise<Set<string>> {
+    const orClauses: string[] = [];
+    if (email) orClauses.push(`email:${email.toLowerCase()}`);
+    if (username) orClauses.push(`username:${username}`);
+    if (orClauses.length === 0) return new Set();
+
+    // failOnPartial: a missing registrant UID here means an RSVP-guard lookup would wrongly
+    // reject a still-active registrant's RSVP, which then fires a duplicate Set RSVP nag.
+    const registrants = await fetchAllQueryResources<MeetingRegistrant>(
+      req,
+      (pageToken) =>
+        this.microserviceProxy.proxyRequest<QueryServiceResponse<MeetingRegistrant>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+          type: 'v1_meeting_registrant',
+          filters_or: orClauses,
+          ...(pageToken && { page_token: pageToken }),
+        }),
+      { failOnPartial: true }
+    );
+
+    return new Set(registrants.map((r) => r.uid).filter((uid): uid is string => !!uid));
+  }
+
+  /**
+   * Narrow the meeting list to those with at least one active occurrence (or a single-occurrence
+   * meeting) whose start falls inside the 2-week window and hasn't ended yet (with buffer).
+   * Mirrors the filter inside `transformMeetingsToActions` so both derived sources (Review Agenda
+   * actions and Set RSVP actions) operate on the exact same set of meetings.
+   */
+  private filterMeetingsInWindow(meetings: Meeting[]): Meeting[] {
+    const now = new Date();
+    const twoWeeksFromNow = new Date(now.getTime() + this.twoWeeksMs);
+    return meetings.filter((meeting) => {
+      if (meeting.occurrences && meeting.occurrences.length > 0) {
+        return meeting.occurrences.some((occ) => {
+          if (occ.status === 'cancel') return false;
+          const startTime = new Date(occ.start_time);
+          const durationMinutes = parseToInt(occ.duration) ?? parseToInt(meeting.duration) ?? 0;
+          const endWithBuffer = new Date(startTime.getTime() + (durationMinutes + this.bufferMinutes) * 60 * 1000);
+          return now < endWithBuffer && startTime <= twoWeeksFromNow;
+        });
+      }
+      const startTime = new Date(meeting.start_time);
+      const durationMinutes = parseToInt(meeting.duration) ?? 0;
+      const endWithBuffer = new Date(startTime.getTime() + (durationMinutes + this.bufferMinutes) * 60 * 1000);
+      return now < endWithBuffer && startTime <= twoWeeksFromNow;
+    });
+  }
+
+  /**
+   * For each in-window meeting, emit a "Set RSVP" action when the user has no RSVP recorded or
+   * the recorded RSVP is "maybe". Per-occurrence RSVPs count as a response for the series — a
+   * user who has RSVPed any occurrence won't be nagged for a fresh top-level response.
+   *
+   * Before trusting an RSVP, require its `registrant_id` to be in the user's active registrant
+   * set so historical RSVPs from removed registrations can't suppress a needed Set RSVP action
+   * for the user's current registration.
+   */
+  private transformMissingRsvpsToActions(meetings: Meeting[], rsvps: MeetingRsvp[], activeRegistrantIds: Set<string>): PendingActionItem[] {
+    if (meetings.length === 0) return [];
+
+    const inWindowMeetingIds = new Set(meetings.map((m) => m.id).filter((id): id is string => !!id));
+
+    // Keep the strongest signal per meeting: accepted/declined beats maybe beats nothing.
+    const responseByMeeting = new Map<string, MeetingRsvp>();
+    for (const rsvp of rsvps) {
+      if (!rsvp.meeting_id || !inWindowMeetingIds.has(rsvp.meeting_id)) continue;
+      if (!rsvp.registrant_id || !activeRegistrantIds.has(rsvp.registrant_id)) continue;
+      const existing = responseByMeeting.get(rsvp.meeting_id);
+      if (!existing || (existing.response_type === 'maybe' && rsvp.response_type !== 'maybe')) {
+        responseByMeeting.set(rsvp.meeting_id, rsvp);
+      }
+    }
+
+    const actions: PendingActionItem[] = [];
+    for (const meeting of meetings) {
+      if (!meeting.id) continue;
+      const rsvp = responseByMeeting.get(meeting.id);
+      if (rsvp && rsvp.response_type !== 'maybe') continue;
+      actions.push(this.createRsvpAction(meeting));
+    }
+    return actions;
+  }
+
+  /**
+   * Build a "Cast Vote" pending action per active vote. Links to the votes drawer on the
+   * My Activity page where casting actually happens — there's no standalone vote-detail route.
+   */
+  private transformVotesToActions(votes: Vote[]): PendingActionItem[] {
+    return votes.map((vote) => {
+      const endDate = new Date(vote.end_time);
+      const badge = endDate.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      const formattedEnd = endDate.toLocaleDateString('en-US', {
+        weekday: 'short',
+        month: 'short',
+        day: 'numeric',
+      });
+      return {
+        type: 'Cast Vote',
+        badge,
+        text: `Cast your vote on ${vote.name}`,
+        icon: 'fa-regular fa-check-to-slot',
+        severity: 'warn',
+        buttonText: 'Cast Vote',
+        buttonLink: '/my-activity',
+        date: `Closes ${formattedEnd}`,
+      };
+    });
+  }
+
+  /**
+   * Build a "Set RSVP" pending action for a single meeting. Links to the meeting detail page
+   * where the RSVP UI lives; reuses the meeting password query param like `createMeetingAction`.
+   *
+   * For recurring series, `meeting.start_time` is the series start (often long past), so use
+   * the current-or-next occurrence's start time for the badge and formatted date. Falls back
+   * to `meeting.start_time` for single-occurrence meetings.
+   */
+  private createRsvpAction(meeting: Meeting): PendingActionItem {
+    const nextOccurrence = getCurrentOrNextOccurrence(meeting);
+    const startTime = new Date(nextOccurrence?.start_time ?? meeting.start_time);
+    const badge = startTime.toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+    const formattedDate = startTime.toLocaleDateString('en-US', {
+      weekday: 'short',
+      month: 'short',
+      day: 'numeric',
+      hour: 'numeric',
+      minute: '2-digit',
+    });
+
+    const params = new URLSearchParams();
+    if (meeting.password) params.set('password', meeting.password);
+    const queryString = params.toString();
+    const buttonLink = queryString ? `/meetings/${meeting.id}?${queryString}` : `/meetings/${meeting.id}`;
+
+    return {
+      type: 'Set RSVP',
+      badge,
+      text: `RSVP to ${meeting.title}`,
+      icon: 'fa-regular fa-calendar-check',
+      severity: 'warn',
+      buttonText: 'Set RSVP',
+      buttonLink,
+      date: formattedDate,
+    };
   }
 
   /**
