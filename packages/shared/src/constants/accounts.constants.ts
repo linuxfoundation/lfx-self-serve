@@ -3,6 +3,8 @@
 
 import type { Account } from '../interfaces/account.interface';
 
+export const ACCOUNT_COOKIE_KEY = 'lfx-selected-account';
+
 /**
  * Available accounts for board member dashboard
  * @description Predefined list of organizations with their account IDs

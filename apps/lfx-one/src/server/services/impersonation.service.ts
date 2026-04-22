@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { LENS_COOKIE_KEY, NATS_CONFIG, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
+import { ACCOUNT_COOKIE_KEY, LENS_COOKIE_KEY, NATS_CONFIG, PERSONA_COOKIE_KEY } from '@lfx-one/shared/constants';
 import { NatsSubjects } from '@lfx-one/shared/enums';
 import { ImpersonationStatusResponse, ImpersonationUser, Impersonator, LfxAccessTokenClaims, M2MTokenResponse, PersonaType } from '@lfx-one/shared/interfaces';
 import { Request, Response } from 'express';
@@ -156,9 +156,10 @@ export class ImpersonationService {
       delete req.appSession['impersonationPersonaContext'];
     }
 
-    // Clear impersonator's persona/lens cookies so the impersonated session re-detects cleanly on reload.
+    // Clear impersonator's persona/lens/account cookies so the impersonated session re-detects cleanly on reload.
     res.clearCookie(PERSONA_COOKIE_KEY, { path: '/' });
     res.clearCookie(LENS_COOKIE_KEY, { path: '/' });
+    res.clearCookie(ACCOUNT_COOKIE_KEY, { path: '/' });
 
     logger.info(req, 'impersonation_granted', 'Impersonation session started', {
       impersonator_sub: impersonator.sub,
@@ -170,9 +171,10 @@ export class ImpersonationService {
   }
 
   public stopImpersonation(req: Request, res: Response): void {
-    // Always clear persona/lens cookies even when session is missing — stale cookies on the client must be reset.
+    // Always clear persona/lens/account cookies even when session is missing — stale cookies on the client must be reset.
     res.clearCookie(PERSONA_COOKIE_KEY, { path: '/' });
     res.clearCookie(LENS_COOKIE_KEY, { path: '/' });
+    res.clearCookie(ACCOUNT_COOKIE_KEY, { path: '/' });
 
     if (!req.appSession) {
       return;

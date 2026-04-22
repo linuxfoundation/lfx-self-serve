@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { computed, inject, Injectable, Signal, signal, WritableSignal } from '@angular/core';
-import { ACCOUNTS, DEFAULT_ACCOUNT } from '@lfx-one/shared/constants';
+import { ACCOUNT_COOKIE_KEY, ACCOUNTS, DEFAULT_ACCOUNT } from '@lfx-one/shared/constants';
 import { Account } from '@lfx-one/shared/interfaces';
 import { SsrCookieService } from 'ngx-cookie-service-ssr';
 
@@ -14,7 +14,7 @@ import { CookieRegistryService } from './cookie-registry.service';
 export class AccountContextService {
   private readonly cookieService = inject(SsrCookieService);
   private readonly cookieRegistry = inject(CookieRegistryService);
-  private readonly storageKey = 'lfx-selected-account';
+  private readonly storageKey = ACCOUNT_COOKIE_KEY;
 
   /**
    * User's organizations from committee memberships (filtered from ACCOUNTS)
@@ -63,15 +63,18 @@ export class AccountContextService {
     this.userOrganizations.set(organizations ?? []);
 
     if (organizations && organizations.length > 0) {
-      // Validate stored selection against the full available set (ACCOUNTS + detected)
+      // Validate stored selection against the user's detected organizations.
+      // A stored selection from a prior session (or a leaked impersonator cookie)
+      // must match one of the currently detected orgs; otherwise fall back to
+      // the first detected org so the selector reflects the active context.
+      // Resolve to the canonical Account from organizations so we never trust
+      // cookie-supplied fields (e.g. accountName) beyond the validated accountId.
       const stored = this.loadFromStorage();
-      const available = this.availableAccounts();
-      const isStoredValid = stored && available.some((acc) => acc.accountId === stored.accountId);
+      const matchedOrganization = stored ? (organizations.find((org) => org.accountId === stored.accountId) ?? null) : null;
 
-      if (isStoredValid && stored) {
-        this.selectedAccount.set(stored);
+      if (matchedOrganization) {
+        this.selectedAccount.set(matchedOrganization);
       } else {
-        // Select first detected organization and persist
         this.setAccount(organizations[0]);
       }
     }
