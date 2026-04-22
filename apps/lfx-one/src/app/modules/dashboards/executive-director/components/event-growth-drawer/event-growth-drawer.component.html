@@ -177,11 +177,11 @@
       </div>
     }
 
-    <!-- Quarterly Attendance Trend (top events only) -->
+    <!-- Quarterly Registration Trend -->
     <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="event-growth-drawer-monthly-trend">
       <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Top Events — Quarterly Attendance</h3>
-        <p class="text-sm text-gray-600">Attendance across the top events (up to 10) per quarter</p>
+        <h3 class="text-sm font-semibold text-gray-900">Quarterly Registrations</h3>
+        <p class="text-sm text-gray-600">Total event registrations per quarter</p>
       </div>
       @if (data().monthlyData.length > 0) {
         <div class="h-[240px]" data-testid="event-growth-drawer-monthly-chart">
@@ -194,45 +194,26 @@
       }
     </div>
 
-    <!-- Top Events -->
+    <!-- Events This Year -->
     <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="event-growth-drawer-top-events">
       <div class="flex flex-col gap-1">
-        <h3 class="text-sm font-semibold text-gray-900">Top Events</h3>
-        <p class="text-sm text-gray-600">
-          {{ topEventsSortBy() === 'revenue' ? 'Highest revenue events' : 'Highest attendance events' }}
-          · All Time
-        </p>
+        <h3 class="text-sm font-semibold text-gray-900">{{ currentYear }} Events</h3>
+        <p class="text-sm text-gray-600">All events this year (past and upcoming), by date</p>
       </div>
       @if (data().topEvents.length > 0) {
         <div class="flex flex-col gap-0">
           <div class="flex items-center justify-between py-2 px-1 text-xs font-semibold text-gray-500 uppercase border-b border-gray-200">
             <span class="flex-1">Event</span>
-            <button
-              type="button"
-              class="w-24 text-right cursor-pointer hover:text-gray-900 flex items-center justify-end gap-1"
-              [class.text-gray-900]="topEventsSortBy() === 'attendees'"
-              (click)="topEventsSortBy.set('attendees')"
-              data-testid="event-growth-drawer-sort-attendees">
-              Attendees
-              @if (topEventsSortBy() === 'attendees') {
-                <i class="fa-light fa-arrow-down text-xs"></i>
-              }
-            </button>
-            <button
-              type="button"
-              class="w-24 text-right cursor-pointer hover:text-gray-900 flex items-center justify-end gap-1"
-              [class.text-gray-900]="topEventsSortBy() === 'revenue'"
-              (click)="topEventsSortBy.set('revenue')"
-              data-testid="event-growth-drawer-sort-revenue">
-              Revenue
-              @if (topEventsSortBy() === 'revenue') {
-                <i class="fa-light fa-arrow-down text-xs"></i>
-              }
-            </button>
+            <span class="w-24 text-right">Date</span>
+            <span class="w-28 text-right">Registrants</span>
+            <span class="w-24 text-right">Attendees</span>
+            <span class="w-24 text-right">Revenue</span>
           </div>
-          @for (event of sortedTopEvents(); track event.name) {
+          @for (event of sortedTopEvents(); track event.id) {
             <div class="flex items-center justify-between py-3 px-1 border-b border-gray-100" data-testid="event-growth-drawer-event-row">
               <span class="flex-1 text-sm font-medium text-gray-900">{{ event.name }}</span>
+              <span class="w-24 text-right text-sm text-gray-500">{{ event.date | date: 'MMM d' : 'UTC' }}</span>
+              <span class="w-28 text-right text-sm font-semibold text-gray-900">{{ event.registrants | number }}</span>
               <span class="w-24 text-right text-sm font-semibold text-gray-900">{{ event.attendees | number }}</span>
               <span class="w-24 text-right text-sm font-semibold text-gray-900">{{ event.formattedRevenue }}</span>
             </div>
@@ -240,7 +221,7 @@
         </div>
       } @else {
         <div class="flex items-center justify-center h-[80px] text-sm text-gray-400" data-testid="event-growth-drawer-top-events-empty">
-          Top events data not yet available
+          No events this year
         </div>
       }
     </div>

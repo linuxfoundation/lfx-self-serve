@@ -3700,11 +3700,12 @@ export class ProjectService {
 
   /**
    * Get event growth metrics from Snowflake
-   * Queries ANALYTICS.PLATINUM_LFX_ONE.NORTH_STAR_EVENT_GROWTH (single row YTD) and EVENT_GROWTH_TOP_EVENTS
+   * Queries ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS (row-level, authoritative source)
+   * instead of the pre-aggregated NORTH_STAR_EVENT_GROWTH / EVENT_GROWTH_TOP_EVENTS views.
    */
   public async getEventGrowth(foundationSlug: string): Promise<EventGrowthResponse> {
     const startTime = Date.now();
-    logger.debug(undefined, 'get_event_growth', 'Fetching event growth from Snowflake', { foundation_slug: foundationSlug });
+    logger.debug(undefined, 'get_event_growth', 'Fetching event growth from Snowflake (event_registrations)', { foundation_slug: foundationSlug });
 
     const defaultResponse: EventGrowthResponse = {
       totalAttendees: 0,
@@ -3721,80 +3722,99 @@ export class ProjectService {
     };
 
     try {
-      // TLF is the umbrella — aggregate across all foundations. Otherwise scope to the single row.
       const isUmbrella = foundationSlug === 'tlf';
-      const summaryQuery = isUmbrella
-        ? `
-        SELECT SUM(EVENT_COUNT_YTD) AS EVENT_COUNT_YTD,
-               SUM(ATTENDEE_COUNT_YTD) AS ATTENDEE_COUNT_YTD,
-               SUM(REGISTRANT_COUNT_YTD) AS REGISTRANT_COUNT_YTD,
-               SUM(TOTAL_NET_REVENUE_YTD) AS TOTAL_NET_REVENUE_YTD,
-               SUM(EVENT_COUNT_LAST_YTD) AS EVENT_COUNT_LAST_YTD,
-               SUM(ATTENDEE_COUNT_LAST_YTD) AS ATTENDEE_COUNT_LAST_YTD,
-               SUM(REGISTRANT_COUNT_LAST_YTD) AS REGISTRANT_COUNT_LAST_YTD,
-               SUM(TOTAL_NET_REVENUE_LAST_YTD) AS TOTAL_NET_REVENUE_LAST_YTD
-        FROM ANALYTICS.PLATINUM_LFX_ONE.NORTH_STAR_EVENT_GROWTH
-      `
-        : `
-        SELECT EVENT_COUNT_YTD, ATTENDEE_COUNT_YTD, REGISTRANT_COUNT_YTD,
-               TOTAL_NET_REVENUE_YTD,
-               EVENT_COUNT_LAST_YTD, ATTENDEE_COUNT_LAST_YTD, REGISTRANT_COUNT_LAST_YTD,
-               TOTAL_NET_REVENUE_LAST_YTD
-        FROM ANALYTICS.PLATINUM_LFX_ONE.NORTH_STAR_EVENT_GROWTH
-        WHERE FOUNDATION_SLUG = ?
+      const slugFilter = isUmbrella ? '' : 'AND PROJECT_SLUG = ?';
+      const binds = isUmbrella ? [] : [foundationSlug];
+
+      // Query 1: YTD summary — apples-to-apples comparison.
+      // Current year: Jan 1 → today.  Last year: Jan 1 → same month/day last year.
+      // This prevents mid-year YoY from comparing partial 2026 against full 2025.
+      const summaryQuery = `
+        SELECT
+          YEAR(EVENT_START_DATE) AS EVENT_YEAR,
+          COUNT(DISTINCT EVENT_ID) AS EVENT_COUNT,
+          COUNT(CASE WHEN REGISTRATION_STATUS = 'Accepted' THEN 1 END) AS REGISTRANT_COUNT,
+          SUM(CASE WHEN USER_ATTENDED = 1 THEN 1 ELSE 0 END) AS ATTENDEE_COUNT,
+          SUM(COALESCE(NET_REVENUE, 0)) AS TOTAL_NET_REVENUE
+        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+        WHERE (
+          (YEAR(EVENT_START_DATE) = YEAR(CURRENT_DATE) AND EVENT_START_DATE <= CURRENT_DATE)
+          OR
+          (YEAR(EVENT_START_DATE) = YEAR(CURRENT_DATE) - 1 AND EVENT_START_DATE <= DATEADD(year, -1, CURRENT_DATE))
+        )
+          ${slugFilter}
+        GROUP BY YEAR(EVENT_START_DATE)
       `;
 
-      const topEventsQuery = isUmbrella
-        ? `
-        SELECT QUARTER_START_DATE, EVENT_NAME, EVENT_DATE,
-               ATTENDEE_COUNT, REGISTRANT_COUNT, EVENT_REVENUE, EVENT_RANK
-        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_GROWTH_TOP_EVENTS
-        ORDER BY ATTENDEE_COUNT DESC
-        LIMIT 10
-      `
-        : `
-        SELECT QUARTER_START_DATE, EVENT_NAME, EVENT_DATE,
-               ATTENDEE_COUNT, REGISTRANT_COUNT, EVENT_REVENUE, EVENT_RANK
-        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_GROWTH_TOP_EVENTS
-        WHERE FOUNDATION_SLUG = ?
-        ORDER BY QUARTER_START_DATE DESC, EVENT_RANK
-        LIMIT 10
+      // Query 2: All events for the current year (past + upcoming), sorted by date
+      const topEventsQuery = `
+        SELECT
+          EVENT_ID,
+          EVENT_NAME,
+          EVENT_START_DATE,
+          COUNT(CASE WHEN REGISTRATION_STATUS = 'Accepted' THEN 1 END) AS REGISTRANT_COUNT,
+          SUM(CASE WHEN USER_ATTENDED = 1 THEN 1 ELSE 0 END) AS ATTENDEE_COUNT,
+          SUM(COALESCE(NET_REVENUE, 0)) AS EVENT_REVENUE
+        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+        WHERE YEAR(EVENT_START_DATE) = YEAR(CURRENT_DATE)
+          ${slugFilter}
+        GROUP BY EVENT_ID, EVENT_NAME, EVENT_START_DATE
+        ORDER BY EVENT_START_DATE
       `;
 
-      const [summaryResult, topEventsResult] = await Promise.all([
+      // Query 3: Quarterly registration trend — bounded to the last 12 quarters (3 years)
+      const quarterlyTrendQuery = `
+        SELECT
+          DATE_TRUNC('quarter', EVENT_START_DATE) AS QUARTER_START_DATE,
+          COUNT(CASE WHEN REGISTRATION_STATUS = 'Accepted' THEN 1 END) AS REGISTRANT_COUNT
+        FROM ANALYTICS.PLATINUM_LFX_ONE.EVENT_REGISTRATIONS
+        WHERE EVENT_START_DATE >= DATEADD(quarter, -12, DATE_TRUNC('quarter', CURRENT_DATE))
+          ${slugFilter}
+        GROUP BY QUARTER_START_DATE
+        ORDER BY QUARTER_START_DATE
+      `;
+
+      const [summaryResult, topEventsResult, quarterlyResult] = await Promise.all([
         this.snowflakeService.execute<{
-          EVENT_COUNT_YTD: number;
-          ATTENDEE_COUNT_YTD: number;
-          REGISTRANT_COUNT_YTD: number;
-          TOTAL_NET_REVENUE_YTD: number;
-          EVENT_COUNT_LAST_YTD: number;
-          ATTENDEE_COUNT_LAST_YTD: number;
-          REGISTRANT_COUNT_LAST_YTD: number;
-          TOTAL_NET_REVENUE_LAST_YTD: number;
-        }>(summaryQuery, isUmbrella ? [] : [foundationSlug]),
+          EVENT_YEAR: number;
+          EVENT_COUNT: number;
+          REGISTRANT_COUNT: number;
+          ATTENDEE_COUNT: number;
+          TOTAL_NET_REVENUE: number;
+        }>(summaryQuery, binds),
+        this.snowflakeService.execute<{
+          EVENT_ID: string;
+          EVENT_NAME: string;
+          EVENT_START_DATE: string | Date;
+          REGISTRANT_COUNT: number;
+          ATTENDEE_COUNT: number;
+          EVENT_REVENUE: number;
+        }>(topEventsQuery, binds),
         this.snowflakeService.execute<{
           QUARTER_START_DATE: string | Date;
-          EVENT_NAME: string;
-          EVENT_DATE: string;
-          ATTENDEE_COUNT: number;
           REGISTRANT_COUNT: number;
-          EVENT_REVENUE: number;
-          EVENT_RANK: number;
-        }>(topEventsQuery, isUmbrella ? [] : [foundationSlug]),
+        }>(quarterlyTrendQuery, binds),
       ]);
 
-      if (summaryResult.rows.length === 0) {
+      // Derive year from Snowflake results to stay consistent with CURRENT_DATE in the query
+      const currentYear = summaryResult.rows.length > 0 ? Math.max(...summaryResult.rows.map((r) => r.EVENT_YEAR)) : new Date().getUTCFullYear();
+      const thisYearRow = summaryResult.rows.find((r) => r.EVENT_YEAR === currentYear);
+      const lastYearRow = summaryResult.rows.find((r) => r.EVENT_YEAR === currentYear - 1);
+
+      // thisYearRow may be absent if no past events exist yet (all events are future).
+      // Still return the topEvents list so the drawer can show upcoming events with registrations.
+      const totalAttendees = thisYearRow?.ATTENDEE_COUNT ?? 0;
+      const totalRegistrants = thisYearRow?.REGISTRANT_COUNT ?? 0;
+      const totalEvents = thisYearRow?.EVENT_COUNT ?? 0;
+      const totalRevenue = thisYearRow?.TOTAL_NET_REVENUE ?? 0;
+
+      if (!thisYearRow && topEventsResult.rows.length === 0) {
         return defaultResponse;
       }
 
-      const summary = summaryResult.rows[0];
-      const totalAttendees = summary.ATTENDEE_COUNT_YTD ?? 0;
-      const totalRegistrants = summary.REGISTRANT_COUNT_YTD ?? 0;
-      const totalEvents = summary.EVENT_COUNT_YTD ?? 0;
-      const totalRevenue = summary.TOTAL_NET_REVENUE_YTD ?? 0;
-      const attendeesLastYtd = summary.ATTENDEE_COUNT_LAST_YTD ?? 0;
-      const registrantsLastYtd = summary.REGISTRANT_COUNT_LAST_YTD ?? 0;
-      const revenueLastYtd = summary.TOTAL_NET_REVENUE_LAST_YTD ?? 0;
+      const attendeesLastYtd = lastYearRow?.ATTENDEE_COUNT ?? 0;
+      const registrantsLastYtd = lastYearRow?.REGISTRANT_COUNT ?? 0;
+      const revenueLastYtd = lastYearRow?.TOTAL_NET_REVENUE ?? 0;
 
       const pctChange = (curr: number, prev: number): number => (prev > 0 ? Number((((curr - prev) / prev) * 100).toFixed(2)) : 0);
 
@@ -3803,27 +3823,20 @@ export class ProjectService {
       const yoyRevenueChange = pctChange(totalRevenue, revenueLastYtd);
 
       const topEvents: EventGrowthTopEvent[] = topEventsResult.rows.map((row) => ({
+        id: String(row.EVENT_ID ?? ''),
         name: row.EVENT_NAME ?? '',
-        date: row.EVENT_DATE ?? '',
+        date: ProjectService.toIsoDate(row.EVENT_START_DATE) ?? '',
+        registrants: row.REGISTRANT_COUNT ?? 0,
         attendees: row.ATTENDEE_COUNT ?? 0,
         revenue: row.EVENT_REVENUE ?? 0,
       }));
 
-      // Aggregate attendees by quarter for sparkline.
-      // NOTE: this is sourced from the top-10 events only (LIMIT 10 above), so the trend reflects
-      // top-event movement, not total event attendance. This is intentional for the card sparkline —
-      // a separate full-portfolio trend query can be added if the drawer needs it.
-      const quarterMap = new Map<string, number>();
-      for (const row of topEventsResult.rows) {
+      // Quarterly registration trend — stored as monthlyData for API compatibility
+      const quarterlyData = quarterlyResult.rows.map((row) => {
         const raw = row.QUARTER_START_DATE;
-        const q = raw instanceof Date ? raw.toISOString().substring(0, 10) : String(raw ?? '');
-        if (q) {
-          quarterMap.set(q, (quarterMap.get(q) ?? 0) + (row.ATTENDEE_COUNT ?? 0));
-        }
-      }
-      const monthlyData = [...quarterMap.entries()]
-        .sort(([a], [b]) => a.localeCompare(b))
-        .map(([quarter, value]) => ({ month: quarter.substring(0, 7), value }));
+        const q = raw instanceof Date ? raw.toISOString().substring(0, 7) : String(raw ?? '').substring(0, 7);
+        return { month: q, value: row.REGISTRANT_COUNT ?? 0 };
+      });
 
       return {
         totalAttendees,
@@ -3835,7 +3848,7 @@ export class ProjectService {
         registrantYoyChange: yoyRegistrantChange,
         revenueYoyChange: yoyRevenueChange,
         trend: yoyAttendeeChange >= 0 ? 'up' : 'down',
-        monthlyData,
+        monthlyData: quarterlyData,
         topEvents,
       };
     } catch (error) {
