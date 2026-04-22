@@ -19,9 +19,12 @@ export class RemainingGroupsTooltipPipe implements PipeTransform {
     if (!groups || groups.length <= startIndex) {
       return '';
     }
+    // Fall back to uid when name is missing (e.g., enrichment failure or partial resolution)
+    // so tooltip/aria-label never degrade to empty strings or stray commas.
     return groups
       .slice(startIndex)
-      .map((g) => g.name)
+      .map((g) => g?.name || g?.uid)
+      .filter((label): label is string => !!label)
       .join(', ');
   }
 }

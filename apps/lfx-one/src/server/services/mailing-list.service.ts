@@ -461,6 +461,11 @@ export class MailingListService {
 
     const result = mailingLists.filter((ml): ml is MyMailingList => ml !== null);
 
+    // Enrich the committees array with committee names. The groupsio_mailing_list index
+    // emits committees as { uid } only, so the Linked Groups column on the Me-lens table
+    // was rendering empty tags. One batched committee-service query fills in the names.
+    await this.enrichCommitteeNames(req, result);
+
     // Enrich with service data for correct email display in UI
     const enrichedWithServices = (await this.enrichWithServices(req, result)) as MyMailingList[];
 
@@ -722,6 +727,76 @@ export class MailingListService {
         ...ml,
         service,
       };
+    });
+  }
+
+  /**
+   * Enriches mailing-list committee references with committee names. Collects all unique
+   * committee UIDs across the given lists and fetches them in one batched query-service call
+   * (chunked at 100 UIDs), then mutates each list's `committees` entries in place with the
+   * resolved name. On fetch failure, names are left unset — callers render a fallback.
+   */
+  private async enrichCommitteeNames(req: Request, lists: MyMailingList[]): Promise<void> {
+    const uniqueCommitteeUids = Array.from(
+      new Set(
+        lists
+          .flatMap((ml) => ml.committees ?? [])
+          .map((c) => c?.uid)
+          .filter((uid): uid is string => !!uid)
+      )
+    );
+    if (uniqueCommitteeUids.length === 0) return;
+
+    // URL-length guard — 100 UIDs per batch keeps query strings under ~5KB.
+    const BATCH_SIZE = 100;
+    const batches: string[][] = [];
+    for (let i = 0; i < uniqueCommitteeUids.length; i += BATCH_SIZE) {
+      batches.push(uniqueCommitteeUids.slice(i, i + BATCH_SIZE));
+    }
+
+    const batchResults = await Promise.all(
+      batches.map((batch) =>
+        fetchAllQueryResources<{ uid: string; name: string }>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<{ uid: string; name: string }>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              v: '1',
+              type: 'committee',
+              filters_or: batch.map((uid) => `uid:${uid}`),
+              page_size: 500,
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        ).catch((error) => {
+          logger.warning(req, 'enrich_committee_names', 'Batched committee fetch failed, names left unset', {
+            batch_size: batch.length,
+            error: error instanceof Error ? error.message : String(error),
+          });
+          return [] as { uid: string; name: string }[];
+        })
+      )
+    );
+
+    const nameByUid = new Map<string, string>();
+    for (const committee of batchResults.flat()) {
+      if (committee?.uid && committee?.name) {
+        nameByUid.set(committee.uid, committee.name);
+      }
+    }
+
+    if (nameByUid.size === 0) return;
+
+    for (const ml of lists) {
+      if (!ml.committees || ml.committees.length === 0) continue;
+      ml.committees = ml.committees.map((c) => {
+        const name = c?.uid ? nameByUid.get(c.uid) : undefined;
+        return name ? { ...c, name } : c;
+      });
+    }
+
+    logger.debug(req, 'enrich_committee_names', 'Committee names attached to mailing lists', {
+      unique_committees: uniqueCommitteeUids.length,
+      resolved: nameByUid.size,
     });
   }
 }

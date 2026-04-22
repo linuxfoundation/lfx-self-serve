@@ -101,12 +101,11 @@
           <th>Linked {{ committeeLabel.plural }}</th>
           <th>Subscribers</th>
         } @else {
-          <!-- PMO View Headers (5-6 columns depending on board member) -->
+          <!-- PMO View Headers (4-5 columns depending on board member) -->
           <th>Mailing List</th>
           <th class="min-w-[300px]">Description</th>
           <th>Linked {{ committeeLabel.plural }}</th>
           <th>Subscribers</th>
-          <th>Emails Sent</th>
           @if (!isBoardMember()) {
             <th></th>
           }
@@ -214,34 +213,36 @@
             </div>
           </td>
 
-          <!-- Linked Groups Column -->
+          <!-- Linked Groups Column — group icon; blue when linked, gray when not. -->
+          <!-- Clicking the icon navigates to the linked group page (first entry when many). -->
+          <!-- stopPropagation prevents the row-selection handler from firing in parallel. -->
+          <!-- aria-label gives screen readers an accessible name before tooltip triggers. -->
           <td>
-            <div class="flex flex-wrap gap-1">
-              @if (mailingList.committees?.length) {
-                @for (committee of mailingList.committees | sliceLinkedGroups: maxVisibleGroups; track committee.uid) {
-                  <lfx-tag [value]="committee.name" styleClass="tag-neutral"> </lfx-tag>
-                }
-                @if (mailingList.committees.length > maxVisibleGroups) {
-                  <span
-                    class="bg-slate-100 text-slate-600 text-xs px-2 py-0.5 rounded cursor-pointer hover:bg-slate-200"
-                    [pTooltip]="mailingList.committees | remainingGroupsTooltip: maxVisibleGroups"
-                    tooltipPosition="top">
-                    +{{ mailingList.committees.length - maxVisibleGroups }} more
-                  </span>
-                }
-              } @else {
-                <span class="text-gray-400 text-xs">-</span>
-              }
-            </div>
+            @if (mailingList.committees?.[0]?.uid; as firstUid) {
+              <a
+                [routerLink]="['/groups', firstUid]"
+                (click)="$event.stopPropagation()"
+                [pTooltip]="mailingList.committees | remainingGroupsTooltip: 0"
+                tooltipPosition="top"
+                [attr.aria-label]="'Linked groups: ' + (mailingList.committees | remainingGroupsTooltip: 0)"
+                [attr.data-testid]="'mailing-list-linked-groups-icon-' + mailingList.uid">
+                <i class="fa-light fa-users text-blue-600" aria-hidden="true"></i>
+              </a>
+            } @else {
+              <i
+                class="fa-light fa-users text-gray-400"
+                pTooltip="No linked groups"
+                tooltipPosition="top"
+                aria-label="No linked groups"
+                [attr.data-testid]="'mailing-list-linked-groups-icon-' + mailingList.uid">
+              </i>
+            }
           </td>
 
           <!-- Subscribers Column -->
           <td [attr.data-testid]="'mailing-list-subscribers-' + mailingList.uid">
             <span class="text-sm text-gray-700">{{ mailingList.subscriber_count }}</span>
           </td>
-
-          <!-- Emails Sent Column -->
-          <td><span class="text-sm text-gray-700">-</span></td>
 
           <!-- Actions Column - Hidden for board members -->
           @if (!isBoardMember()) {
@@ -265,7 +266,7 @@
     <!-- Empty Message Template -->
     <ng-template #emptymessage>
       <tr>
-        <td [attr.colspan]="isMaintainer() ? 7 : isBoardMember() ? 5 : 6">
+        <td [attr.colspan]="isMaintainer() ? 7 : isBoardMember() ? 4 : 5">
           @if (isFiltered()) {
             <lfx-empty-state
               [withCard]="false"
