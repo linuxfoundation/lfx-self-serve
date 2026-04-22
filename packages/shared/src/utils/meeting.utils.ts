@@ -115,7 +115,7 @@ export function buildRecurrenceSummary(pattern: CustomRecurrencePattern): Recurr
     }
   }
 
-  const fullSummary = endDescription ? `${description}, ${endDescription}` : description;
+  const fullSummary = [description, endDescription].filter(Boolean).join(', ');
 
   return {
     description,

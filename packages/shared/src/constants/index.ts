@@ -19,7 +19,6 @@ export * from './timezones.constants';
 export * from './tshirt-sizes.constants';
 export * from './typography.constants';
 export * from './validation.constants';
-export * from './action-items.constants';
 export * from './dashboard-metrics.constants';
 export * from './snowflake.constant';
 export * from './accounts.constants';

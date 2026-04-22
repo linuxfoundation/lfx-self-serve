@@ -1,198 +1,241 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<!-- Card wrapper with border and shadow -->
-<div class="bg-white rounded-xl border shadow-md hover:border-blue-500 transition-all" data-testid="dashboard-meeting-card">
-  <div class="p-4 flex flex-col gap-3">
-    <!-- Header with meeting type and project badges -->
-    <div class="flex items-center gap-2 flex-wrap">
-      <lfx-tag
-        [value]="meetingTypeInfo().label"
-        [severity]="meetingTypeInfo().severity"
-        [icon]="meetingTypeInfo().icon"
-        [styleClass]="meetingTypeInfo().styleClass"
-        data-testid="dashboard-meeting-card-type-badge"></lfx-tag>
-      @if (isRecurring()) {
-        <lfx-tag
-          [value]="meeting().recurrence | recurrenceSummary"
-          severity="secondary"
-          icon="fa-light fa-repeat"
-          styleClass="tag-recurring"
-          pTooltip="This is a recurring meeting"
-          data-testid="dashboard-meeting-card-recurring-badge"></lfx-tag>
+<div
+  class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col justify-between hover:border-blue-400 transition-colors h-full"
+  data-testid="dashboard-meeting-card">
+
+  <!-- Card header strip (shown when cardLabel is set) -->
+  @if (cardLabel()) {
+    <div
+      class="flex items-center justify-between px-4 py-2.5"
+      [style.background]="cardVariant() === 'neutral' ? 'linear-gradient(to bottom, #f3f4f6, #ffffff)' : 'linear-gradient(to bottom, #eff6ff, #ffffff)'">
+      <span
+        class="text-[10px] font-semibold uppercase tracking-wide"
+        [class.text-gray-700]="cardVariant() === 'neutral'"
+        [class.text-blue-800]="cardVariant() === 'accent'">
+        {{ cardLabel() }}
+      </span>
+      @if (viewAllRouterLink()) {
+        <a
+          [routerLink]="viewAllRouterLink()"
+          [queryParams]="viewAllQueryParams()"
+          class="text-xs text-[#009aff] hover:underline"
+          data-testid="dashboard-meeting-card-view-all">
+          View all
+        </a>
       }
     </div>
+  }
 
-    <!-- Meeting title with file icons -->
-    <div class="flex items-start justify-between gap-2">
-      <div class="flex flex-col gap-1 truncate max-w-full">
-        <h4
-          class="line-clamp-2 text-sm leading-tight font-medium text-gray-900 truncate"
-          data-testid="dashboard-meeting-card-title"
-          [pTooltip]="meetingTitle()">
-          {{ meetingTitle() }}
-        </h4>
-        <!-- Date/time with feature icons - directly under title -->
-        <div class="flex items-center gap-2 flex-wrap mt-0.5 h-4">
-          <span class="text-xs text-gray-600 whitespace-nowrap" data-testid="dashboard-meeting-card-time">
-            {{ formattedTime() }}
+  <!-- Card body -->
+  <div class="flex gap-4 items-start px-4 py-3 flex-1">
+    <!-- Date badge -->
+    <div class="relative shrink-0">
+      <div
+        class="w-16 rounded-xl overflow-hidden flex flex-col border"
+        [class.border-gray-200]="cardVariant() === 'neutral'"
+        [class.border-blue-200]="cardVariant() === 'accent'">
+        <!-- Month strip -->
+        <div
+          class="flex items-center justify-center py-0.5"
+          [class.bg-gray-200]="cardVariant() === 'neutral'"
+          [class.bg-blue-500]="cardVariant() === 'accent'">
+          <span
+            class="text-[10px] font-semibold uppercase tracking-wider"
+            [class.text-gray-500]="cardVariant() === 'neutral'"
+            [class.text-white]="cardVariant() === 'accent'">
+            {{ meetingMonth() }}
           </span>
-          <div class="flex items-center gap-1">
-            @if (hasYoutubeUploads()) {
-              <div
-                class="flex p-1 hover:bg-gray-100 rounded transition-colors"
-                pTooltip="YouTube Auto-Upload Enabled"
-                tooltipPosition="top"
-                data-testid="dashboard-meeting-card-youtube-icon">
-                <i class="fa-light fa-upload text-xs text-gray-700"></i>
-              </div>
-            }
-            @if (hasRecording()) {
-              <div
-                class="flex p-1 hover:bg-gray-100 rounded transition-colors"
-                pTooltip="Recording Enabled"
-                tooltipPosition="top"
-                data-testid="dashboard-meeting-card-recording-icon">
-                <i class="fa-light fa-video text-xs text-gray-700"></i>
-              </div>
-            }
-            @if (hasTranscripts()) {
-              <div
-                class="flex p-1 hover:bg-gray-100 rounded transition-colors"
-                pTooltip="Transcripts Enabled"
-                tooltipPosition="top"
-                data-testid="dashboard-meeting-card-transcript-icon">
-                <i class="fa-light fa-file-lines text-xs text-gray-700"></i>
-              </div>
-            }
-            @if (hasAiSummary()) {
-              <div
-                class="flex p-1 hover:bg-gray-100 rounded transition-colors"
-                pTooltip="AI Summary Enabled"
-                tooltipPosition="top"
-                data-testid="dashboard-meeting-card-ai-icon">
-                <i class="fa-light fa-sparkles text-xs text-gray-700"></i>
-              </div>
-            }
-            @if (hasShowAttendees()) {
-              <div
-                class="flex p-1 hover:bg-gray-100 rounded transition-colors"
-                pTooltip="Show Attendees Enabled"
-                tooltipPosition="top"
-                data-testid="dashboard-meeting-card-show-attendees-icon">
-                <i class="fa-light fa-users text-xs text-gray-700"></i>
-              </div>
-            }
-            @if (!isPrivate()) {
-              <div
-                class="flex p-1 hover:bg-gray-100 rounded transition-colors"
-                pTooltip="Public Meeting"
-                tooltipPosition="top"
-                data-testid="dashboard-meeting-card-public-icon">
-                <i class="fa-light fa-users text-xs text-gray-700"></i>
-              </div>
-            }
-          </div>
+        </div>
+        <!-- Day number -->
+        <div
+          class="h-11 flex items-center justify-center"
+          [class.bg-gray-50]="cardVariant() === 'neutral'"
+          [class.bg-blue-50]="cardVariant() === 'accent'">
+          <span
+            class="font-display font-light text-3xl leading-none"
+            [class.text-gray-900]="cardVariant() === 'neutral'"
+            [class.text-blue-900]="cardVariant() === 'accent'">
+            {{ meetingDay() }}
+          </span>
         </div>
       </div>
-      @defer (on idle) {
-        @if (attachments().length > 0) {
-          <div class="flex items-center gap-1 flex-shrink-0 mt-0.5">
-            @for (attachment of attachments(); track attachment.uid; let index = $index) {
-              @if (attachment.type === 'link') {
-                <a
-                  [href]="attachment.link"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  class="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors cursor-pointer"
-                  [attr.data-testid]="'dashboard-meeting-card-resource-icon-' + (index + 1)"
-                  [pTooltip]="attachment.name"
-                  tooltipPosition="top">
-                  <i class="fa-light fa-arrow-up-right-from-square text-xs text-black"></i>
-                </a>
-              } @else {
-                <button
-                  type="button"
-                  (click)="downloadAttachment(attachment)"
-                  class="w-6 h-6 rounded bg-gray-200 hover:bg-gray-300 flex items-center justify-center transition-colors cursor-pointer"
-                  [attr.data-testid]="'dashboard-meeting-card-resource-icon-' + (index + 1)"
-                  [pTooltip]="attachment.name"
-                  tooltipPosition="top">
-                  <i class="fa-light fa-file-arrow-down text-xs text-black"></i>
-                </button>
-              }
-            }
-          </div>
+      <!-- Visibility dot badge -->
+      <div
+        class="absolute -top-2 left-[47px] w-5 h-5 rounded-full flex items-center justify-center"
+        [style.background-color]="dateBadgeDotInfo().bgColor"
+        [pTooltip]="isPrivate() ? 'Private meeting' : 'Public meeting'"
+        [attr.aria-label]="isPrivate() ? 'Private meeting' : 'Public meeting'"
+        tooltipPosition="top"
+        data-testid="dashboard-meeting-card-type-dot">
+        <i [class]="'text-white text-[10px] leading-none block ' + dateBadgeDotInfo().icon" aria-hidden="true"></i>
+      </div>
+    </div>
+
+    <!-- Meeting details -->
+    <div class="flex-1 min-w-0 flex flex-col gap-1.5 py-1">
+      <div class="flex items-center gap-2 text-gray-400">
+        <p class="text-[10px] text-gray-500 shrink-0" data-testid="dashboard-meeting-card-time">
+          {{ formattedTimeWithDuration() }}
+        </p>
+        @if (hasRecording()) {
+          <span class="text-[10px]" aria-hidden="true">·</span>
+          <i
+            class="fa-light fa-video text-[11px] text-gray-500"
+            role="img"
+            aria-label="Recording enabled"
+            pTooltip="Recording enabled"
+            tooltipPosition="top"
+            data-testid="dashboard-meeting-card-recording-chip"></i>
         }
+        @if (hasTranscripts()) {
+          <span class="text-[10px]" aria-hidden="true">·</span>
+          <i
+            class="fa-light fa-file-lines text-[11px] text-gray-500"
+            role="img"
+            aria-label="Transcripts enabled"
+            pTooltip="Transcripts enabled"
+            tooltipPosition="top"
+            data-testid="dashboard-meeting-card-transcripts-chip"></i>
+        }
+        @if (hasAiSummary()) {
+          <span class="text-[10px]" aria-hidden="true">·</span>
+          <i
+            class="fa-light fa-sparkles text-[11px] text-gray-500"
+            role="img"
+            aria-label="AI summary enabled"
+            pTooltip="AI summary enabled"
+            tooltipPosition="top"
+            data-testid="dashboard-meeting-card-ai-chip"></i>
+        }
+      </div>
+      <h4
+        #titleEl
+        class="text-sm font-semibold text-gray-900 truncate"
+        [pTooltip]="meetingTitle()"
+        tooltipPosition="top"
+        [tooltipDisabled]="titleEl.scrollWidth <= titleEl.offsetWidth"
+        data-testid="dashboard-meeting-card-title">
+        {{ meetingTitle() }}
+      </h4>
+
+      <!-- Chips row -->
+      <div class="flex flex-wrap gap-1.5">
+        @if (projectChipLabel()) {
+          <span
+            class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4"
+            data-testid="dashboard-meeting-card-project-chip">
+            <i class="fa-light fa-landmark text-[10px]"></i>
+            {{ projectChipLabel() }}
+          </span>
+        }
+        <span
+          class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4"
+          data-testid="dashboard-meeting-card-type-chip">
+          <i class="fa-light fa-calendar text-[10px]"></i>
+          {{ meetingTypeInfo().label }}
+        </span>
+        @if (isRecurring()) {
+          <span
+            class="inline-flex items-center gap-1.5 text-xs text-gray-700 bg-white border border-gray-200 rounded-full px-2 py-0.5 leading-4"
+            [pTooltip]="meeting().recurrence | recurrenceSummary"
+            tooltipPosition="top"
+            data-testid="dashboard-meeting-card-recurring-chip">
+            <i class="fa-light fa-arrows-rotate text-[10px]"></i>
+            Recurring
+          </span>
+        }
+      </div>
+
+      <!-- Description snippet -->
+      @if (meetingDescription()) {
+        <p
+          class="text-[10px] text-gray-500 truncate"
+          data-testid="dashboard-meeting-card-description">
+          {{ meetingDescription() }}
+        </p>
       }
     </div>
 
-    <!-- Action buttons -->
-    <div class="flex gap-2">
-      <!-- See Meeting button - full width when alone, flex-1 when both buttons present -->
-      @if (showDetailsButton()) {
-        @if (openDetailsInNewTab()) {
-          <lfx-button
-            class="w-full"
-            severity="secondary"
-            size="small"
-            styleClass="w-full"
-            label="View details"
-            [href]="meetingDetailHref()"
-            target="_blank"
-            type="button"
-            [outlined]="true"
-            icon="fa-light fa-up-right-from-square text-xs"
-            data-testid="dashboard-meeting-card-see-button" />
-        } @else {
-          <lfx-button
-            class="w-full"
-            severity="secondary"
-            size="small"
-            styleClass="w-full"
-            label="View details"
-            [routerLink]="meetingDetailUrl()"
-            [queryParams]="meetingDetailQueryParams()"
-            type="button"
-            [outlined]="true"
-            icon="fa-light fa-eye text-xs"
-            data-testid="dashboard-meeting-card-see-button" />
-        }
-      }
+    <!-- Copy link button -->
+    @defer (on idle) {
+      <button
+        type="button"
+        [cdkCopyToClipboard]="meetingDetailHref()"
+        class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500 mt-1"
+        pTooltip="Copy meeting link"
+        tooltipPosition="top"
+        aria-label="Copy meeting link"
+        data-testid="dashboard-meeting-card-copy-button">
+        <i class="fa-light fa-clone text-xs"></i>
+      </button>
+    } @placeholder {
+      <div class="shrink-0 w-7 h-7 mt-1" aria-hidden="true"></div>
+    }
+  </div>
 
-      <!-- Watch Recording button -->
-      @if (recordingShareUrl()) {
+  <!-- Card footer buttons -->
+  <div class="flex gap-3 px-4 pb-4 pt-5">
+    @if (showDetailsButton()) {
+      @if (openDetailsInNewTab()) {
         <lfx-button
-          class="w-full"
-          severity="success"
+          class="flex-1"
+          severity="secondary"
           size="small"
           styleClass="w-full"
-          label="Watch Recording"
-          [href]="recordingShareUrl()!"
+          label="Meeting details"
+          [href]="meetingDetailHref()"
           target="_blank"
+          rel="noopener noreferrer"
           type="button"
-          icon="fa-light fa-play text-xs"
-          data-testid="dashboard-meeting-card-recording-button" />
+          [outlined]="true"
+          icon="fa-light fa-arrow-up-right-from-square text-xs"
+          data-testid="dashboard-meeting-card-see-button" />
+      } @else {
+        <lfx-button
+          class="flex-1"
+          severity="secondary"
+          size="small"
+          styleClass="w-full"
+          label="Meeting details"
+          [routerLink]="meetingDetailUrl()"
+          [queryParams]="meetingDetailQueryParams()"
+          type="button"
+          [outlined]="true"
+          icon="fa-light fa-arrow-up-right-from-square text-xs"
+          data-testid="dashboard-meeting-card-see-button" />
       }
+    }
 
-      <!-- Join Meeting button - right side when present -->
-      @if (canJoinMeeting()) {
-        @if (joinUrl()) {
-          <!-- Direct join URL available -->
-          <lfx-button
-            class="w-full"
-            size="small"
-            label="Join Meeting"
-            [href]="joinUrl()!"
-            target="_blank"
-            type="button"
-            rel="noopener noreferrer"
-            icon="fa-light fa-video"
-            severity="info"
-            styleClass="w-full h-8"
-            data-testid="dashboard-meeting-card-join-button" />
-        }
-      }
-    </div>
+    @if (recordingShareUrl()) {
+      <lfx-button
+        class="flex-1"
+        severity="success"
+        size="small"
+        styleClass="w-full"
+        label="Watch recording"
+        [href]="recordingShareUrl()!"
+        target="_blank"
+        rel="noopener noreferrer"
+        type="button"
+        icon="fa-light fa-play text-xs"
+        data-testid="dashboard-meeting-card-recording-button" />
+    }
+
+    @if (canJoinMeeting() && joinUrl()) {
+      <lfx-button
+        class="flex-1"
+        size="small"
+        label="Join Meeting"
+        [href]="joinUrl()!"
+        target="_blank"
+        type="button"
+        rel="noopener noreferrer"
+        icon="fa-light fa-video text-xs"
+        severity="info"
+        styleClass="w-full"
+        data-testid="dashboard-meeting-card-join-button" />
+    }
   </div>
 </div>

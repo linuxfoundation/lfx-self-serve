@@ -3,7 +3,6 @@
 
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
-import { CONTRIBUTOR_ACTION_ITEMS } from '@lfx-one/shared/constants';
 import { isBoardScopedPersona, PendingActionItem } from '@lfx-one/shared/interfaces';
 import { HiddenActionsService } from '@services/hidden-actions.service';
 import { PersonaService } from '@services/persona.service';
@@ -31,7 +30,7 @@ export class UserDashboardComponent {
 
   public readonly refresh$ = new BehaviorSubject<void>(undefined);
 
-  private readonly rawContributorActions = signal<PendingActionItem[]>(CONTRIBUTOR_ACTION_ITEMS);
+  private readonly rawContributorActions = signal<PendingActionItem[]>([]);
 
   protected readonly isBoardScoped = computed(() => isBoardScopedPersona(this.personaService.currentPersona()));
   protected readonly activityRoleLabel = computed(() => {

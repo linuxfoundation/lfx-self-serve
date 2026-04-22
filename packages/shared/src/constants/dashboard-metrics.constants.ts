@@ -452,25 +452,12 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: DashboardMetricCard[] = [
   },
   {
     title: 'Issues Resolved & Comments Added',
-    value: '34',
+    value: '0',
     trend: 'up',
     subtitle: 'Combined activity last 30 days',
     chartType: 'line',
     testId: 'core-dev-progress-card-issues-resolved',
-    chartData: {
-      labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
-      datasets: [
-        {
-          data: Array.from({ length: 30 }, () => Math.floor(Math.random() * 5)),
-          borderColor: lfxColors.blue[500],
-          backgroundColor: hexToRgba(lfxColors.blue[500], 0.1),
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2,
-          pointRadius: 0,
-        },
-      ],
-    },
+    chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },
   {
@@ -485,25 +472,12 @@ export const CORE_DEVELOPER_PROGRESS_METRICS: DashboardMetricCard[] = [
   },
   {
     title: 'Learning Hours',
-    value: '8.5',
+    value: '0',
     trend: 'up',
     subtitle: 'Last 30 days',
     chartType: 'line',
     testId: 'core-dev-progress-card-learning-hours',
-    chartData: {
-      labels: Array.from({ length: 30 }, (_, i) => `Day ${i + 1}`),
-      datasets: [
-        {
-          data: Array.from({ length: 30 }, () => Math.floor(Math.random() * 3)),
-          borderColor: lfxColors.blue[300],
-          backgroundColor: hexToRgba(lfxColors.blue[300], 0.1),
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2,
-          pointRadius: 0,
-        },
-      ],
-    },
+    chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },
 ];
@@ -516,29 +490,13 @@ export const MAINTAINER_PROGRESS_METRICS: DashboardMetricCard[] = [
   {
     title: 'Critical Security Issues',
     icon: 'fa-light fa-shield',
-    value: '19',
+    value: '0',
     trend: 'down',
     subtitle: 'Open critical security vulnerabilities',
     chartType: 'line',
     category: 'projectHealth',
     testId: 'maintainer-progress-card-critical-security-issues',
-    chartData: {
-      labels: Array.from({ length: 12 }, (_, i) => `Month ${i + 1}`),
-      datasets: [
-        {
-          data: Array.from({ length: 12 }, (_, i) => {
-            const base = 28 - i * 0.75;
-            return Math.max(15, Math.floor(base + (Math.random() * 4 - 2)));
-          }),
-          borderColor: lfxColors.red[500],
-          backgroundColor: hexToRgba(lfxColors.red[500], 0.1),
-          fill: true,
-          tension: 0.4,
-          borderWidth: 2,
-          pointRadius: 0,
-        },
-      ],
-    },
+    chartData: EMPTY_CHART_DATA,
     chartOptions: NO_TOOLTIP_CHART_OPTIONS,
   },
   {
