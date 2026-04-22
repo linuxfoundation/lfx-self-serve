@@ -638,6 +638,8 @@ export interface PastMeeting extends Meeting {
   meeting_id: string;
   /** The specific occurrence ID for recurring meetings */
   occurrence_id: string;
+  /** Composite meeting and occurrence ID (e.g., "99152950841-1630560600000"); used as the canonical id downstream */
+  meeting_and_occurrence_id?: string;
   /** Platform-specific meeting ID (e.g., Zoom meeting ID) */
   platform_meeting_id: string;
   /** Array of session objects with start/end times */

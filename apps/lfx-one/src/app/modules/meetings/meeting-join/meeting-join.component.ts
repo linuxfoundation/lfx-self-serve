@@ -155,9 +155,9 @@ export class MeetingJoinComponent implements OnInit {
   protected showAllFiles = signal(false);
   protected visibleFiles = computed(() => (this.showAllFiles() ? this.materialFiles() : this.materialFiles().slice(0, 5)));
   protected hasMoreFiles = computed(() => this.materialFiles().length > 5);
-  // Tracks whether the meeting was loaded via the past-meetings API (occurrence ID in URL).
-  // Distinct from isPastMeeting (time-based): isPastMeeting drives UI state (banner, RSVP guards),
-  // while loadedViaPastMeetingId gates which API endpoints to call for data (summary, recording, attachments).
+  // Authoritative "view as past" flag derived from the hyphenated occurrence ID URL pattern —
+  // when true, always show past-meeting UI regardless of clock. isPastMeeting remains as the
+  // time-based fallback for non-hyphenated URLs where past-ness is only knowable from the clock.
   protected loadedViaPastMeetingId = signal(false);
   protected pastMeetingFullAccess = signal(false);
   private refreshTrigger$ = new BehaviorSubject<void>(undefined);
@@ -725,6 +725,8 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializeCanJoinMeeting(): Signal<boolean> {
     return computed(() => {
+      // Hyphenated occurrence-ID URL expresses "view as past" intent — never show Join UI.
+      if (this.loadedViaPastMeetingId()) return false;
       return canJoinMeeting(this.meeting(), this.currentOccurrence());
     });
   }
@@ -1002,6 +1004,8 @@ export class MeetingJoinComponent implements OnInit {
 
   private initializeIsPastMeeting(): Signal<boolean> {
     return computed(() => {
+      // Hyphenated occurrence-ID URL expresses "view as past" intent — trust it over the clock.
+      if (this.loadedViaPastMeetingId()) return true;
       const meeting = this.meeting();
       const occurrence = this.currentOccurrence();
       if (!meeting?.start_time) return false;
