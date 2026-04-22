@@ -2,7 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { DatePipe } from '@angular/common';
-import { Component, computed, input, output, signal, Signal } from '@angular/core';
+import { Component, computed, input, output, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
@@ -56,25 +56,15 @@ export class SurveysTableComponent {
     committee: new FormControl<string | null>(null),
   });
 
-  // === Writable Signals ===
-  private readonly statusFilter = signal<CombinedSurveyStatus | null>(null);
-  private readonly committeeFilter = signal<string | null>(null);
-
   // === Computed Signals ===
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
+  private readonly statusFilter: Signal<CombinedSurveyStatus | null> = this.initStatusFilter();
+  private readonly committeeFilter: Signal<string | null> = this.initCommitteeFilter();
   protected readonly statusOptions: Signal<{ label: string; value: CombinedSurveyStatus | null }[]> = this.initStatusOptions();
   protected readonly committeeOptions: Signal<{ label: string; value: string | null }[]> = this.initCommitteeOptions();
   protected readonly filteredSurveys: Signal<UserSurvey[]> = this.initFilteredSurveys();
 
   // === Protected Methods ===
-  protected onStatusChange(value: CombinedSurveyStatus | null): void {
-    this.statusFilter.set(value);
-  }
-
-  protected onCommitteeChange(value: string | null): void {
-    this.committeeFilter.set(value);
-  }
-
   protected onRowSelect(event: { data: UserSurvey }): void {
     this.onSurveyClick(event.data);
   }
@@ -86,14 +76,24 @@ export class SurveysTableComponent {
   // === Private Initializers ===
   private initSearchTerm(): Signal<string> {
     return toSignal(
-      this.searchForm.get('search')!.valueChanges.pipe(
-        startWith(''),
+      this.searchForm.controls.search.valueChanges.pipe(
+        startWith(this.searchForm.controls.search.value),
         debounceTime(300),
         distinctUntilChanged(),
         map((value) => value ?? '')
       ),
       { initialValue: '' }
     );
+  }
+
+  private initStatusFilter(): Signal<CombinedSurveyStatus | null> {
+    const control = this.searchForm.controls.status;
+    return toSignal(control.valueChanges.pipe(distinctUntilChanged()), { initialValue: control.value });
+  }
+
+  private initCommitteeFilter(): Signal<string | null> {
+    const control = this.searchForm.controls.committee;
+    return toSignal(control.valueChanges.pipe(distinctUntilChanged()), { initialValue: control.value });
   }
 
   private initStatusOptions(): Signal<{ label: string; value: CombinedSurveyStatus | null }[]> {

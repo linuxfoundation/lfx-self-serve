@@ -66,13 +66,13 @@ export class VotesTableComponent {
   // === Writable Signals ===
   protected readonly drawerVisible = signal<boolean>(false);
   protected readonly selectedVote = signal<VoteDetails | null>(null);
-  private readonly statusFilter = signal<CombinedVoteStatus | null>(null);
-  private readonly committeeFilter = signal<string | null>(null);
   // Track local modifications by poll_id (optimistic updates until parent syncs)
   private readonly localModifications = signal<Map<string, Partial<UserVote>>>(new Map());
 
   // === Computed Signals ===
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
+  private readonly statusFilter: Signal<CombinedVoteStatus | null> = this.initStatusFilter();
+  private readonly committeeFilter: Signal<string | null> = this.initCommitteeFilter();
   protected readonly statusOptions: Signal<{ label: string; value: CombinedVoteStatus | null }[]> = this.initStatusOptions();
   protected readonly committeeOptions: Signal<{ label: string; value: string | null }[]> = this.initCommitteeOptions();
   protected readonly filteredVotes: Signal<UserVote[]> = this.initFilteredVotes();
@@ -80,14 +80,6 @@ export class VotesTableComponent {
   private readonly mergedVotes: Signal<UserVote[]> = this.initMergedVotes();
 
   // === Protected Methods ===
-  protected onStatusChange(value: CombinedVoteStatus | null): void {
-    this.statusFilter.set(value);
-  }
-
-  protected onCommitteeChange(value: string | null): void {
-    this.committeeFilter.set(value);
-  }
-
   protected onRowSelect(event: { data: UserVote }): void {
     this.onVoteClick(event.data);
   }
@@ -116,14 +108,24 @@ export class VotesTableComponent {
   // === Private Initializers ===
   private initSearchTerm(): Signal<string> {
     return toSignal(
-      this.searchForm.get('search')!.valueChanges.pipe(
-        startWith(''),
+      this.searchForm.controls.search.valueChanges.pipe(
+        startWith(this.searchForm.controls.search.value),
         debounceTime(300),
         distinctUntilChanged(),
         map((value) => value ?? '')
       ),
       { initialValue: '' }
     );
+  }
+
+  private initStatusFilter(): Signal<CombinedVoteStatus | null> {
+    const control = this.searchForm.controls.status;
+    return toSignal(control.valueChanges.pipe(distinctUntilChanged()), { initialValue: control.value });
+  }
+
+  private initCommitteeFilter(): Signal<string | null> {
+    const control = this.searchForm.controls.committee;
+    return toSignal(control.valueChanges.pipe(distinctUntilChanged()), { initialValue: control.value });
   }
 
   private initStatusOptions(): Signal<{ label: string; value: CombinedVoteStatus | null }[]> {
