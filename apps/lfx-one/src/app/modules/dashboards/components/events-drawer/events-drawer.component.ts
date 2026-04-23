@@ -5,10 +5,8 @@ import { Component, computed, inject, input, model, signal, Signal } from '@angu
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
-import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
 import { SelectComponent } from '@components/select/select.component';
 import { DEFAULT_FOUNDATION_EVENTS_ATTENDANCE_DISTRIBUTION, DEFAULT_FOUNDATION_EVENTS_QUARTERLY, lfxColors } from '@lfx-one/shared/constants';
-import { buildInsightsUrl } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -23,7 +21,7 @@ import type {
 
 @Component({
   selector: 'lfx-events-drawer',
-  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, InsightsHandoffSectionComponent],
+  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule],
   templateUrl: './events-drawer.component.html',
 })
 export class EventsDrawerComponent {
@@ -33,7 +31,6 @@ export class EventsDrawerComponent {
   private readonly fb = inject(FormBuilder);
 
   // === Static Options ===
-  protected readonly insightsUrl = buildInsightsUrl();
   protected readonly timeRangeOptions = [{ label: 'Last 12 months', value: 'last-12-months' }];
 
   protected readonly quarterlyChartOptions: ChartOptions<'bar'> = {

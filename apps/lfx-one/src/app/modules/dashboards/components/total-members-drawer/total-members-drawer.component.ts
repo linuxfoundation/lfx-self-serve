@@ -4,10 +4,8 @@
 import { Component, computed, inject, input, model, Signal } from '@angular/core';
 import { FormBuilder, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ChartComponent } from '@components/chart/chart.component';
-import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
 import { SelectComponent } from '@components/select/select.component';
 import { DEFAULT_FOUNDATION_TOTAL_MEMBERS, lfxColors } from '@lfx-one/shared/constants';
-import { buildInsightsUrl } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -15,7 +13,7 @@ import type { FoundationTotalMembersResponse } from '@lfx-one/shared/interfaces'
 
 @Component({
   selector: 'lfx-total-members-drawer',
-  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule, InsightsHandoffSectionComponent],
+  imports: [DrawerModule, ChartComponent, SelectComponent, ReactiveFormsModule],
   templateUrl: './total-members-drawer.component.html',
 })
 export class TotalMembersDrawerComponent {
@@ -23,7 +21,6 @@ export class TotalMembersDrawerComponent {
   private readonly fb = inject(FormBuilder);
 
   // === Static Options ===
-  protected readonly insightsUrl = buildInsightsUrl();
   protected readonly timeRangeOptions = [{ label: 'Last 12 months', value: 'last-12-months' }];
 
   // === Forms ===

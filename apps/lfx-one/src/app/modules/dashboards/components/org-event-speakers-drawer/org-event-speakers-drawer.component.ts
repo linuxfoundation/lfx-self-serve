@@ -4,9 +4,7 @@
 import { Component, computed, inject, model, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ChartComponent } from '@components/chart/chart.component';
-import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
 import { lfxColors } from '@lfx-one/shared/constants';
-import { buildInsightsUrl } from '@lfx-one/shared/utils';
 import { AccountContextService } from '@services/account-context.service';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
@@ -20,7 +18,7 @@ const DEFAULT_MONTHLY: OrgEventSpeakersMonthlyResponse = { monthlyData: [], mont
 
 @Component({
   selector: 'lfx-org-event-speakers-drawer',
-  imports: [DrawerModule, ChartComponent, InsightsHandoffSectionComponent],
+  imports: [DrawerModule, ChartComponent],
   templateUrl: './org-event-speakers-drawer.component.html',
 })
 export class OrgEventSpeakersDrawerComponent {
@@ -28,9 +26,6 @@ export class OrgEventSpeakersDrawerComponent {
   private readonly accountContextService = inject(AccountContextService);
   private readonly projectContextService = inject(ProjectContextService);
   private readonly analyticsService = inject(AnalyticsService);
-
-  // === Static Data ===
-  protected readonly insightsUrl = buildInsightsUrl();
 
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
