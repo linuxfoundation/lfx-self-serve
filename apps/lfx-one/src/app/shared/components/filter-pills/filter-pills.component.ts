@@ -2,6 +2,7 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, input, output } from '@angular/core';
+import { TooltipModule } from 'primeng/tooltip';
 import { FilterPillOption } from '@lfx-one/shared/interfaces';
 
 /** @deprecated Use FilterPillOption from @lfx-one/shared/interfaces instead */
@@ -9,7 +10,7 @@ export type FilterOption = FilterPillOption;
 
 @Component({
   selector: 'lfx-filter-pills',
-  imports: [],
+  imports: [TooltipModule],
   templateUrl: './filter-pills.component.html',
 })
 export class FilterPillsComponent {

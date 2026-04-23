@@ -1,7 +1,7 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<div class="flex items-center gap-2">
+<div class="flex flex-wrap items-center gap-2">
   @for (option of options(); track option.id) {
     <button
       type="button"
@@ -11,6 +11,10 @@
           ? 'px-3 py-1 rounded-full text-sm transition-colors bg-blue-500 text-white'
           : 'px-3 py-1 rounded-full text-sm transition-colors bg-gray-100 text-gray-700 hover:bg-gray-200'
       "
+      [pTooltip]="option.fullLabel || ''"
+      [tooltipDisabled]="!option.fullLabel || option.fullLabel === option.label"
+      tooltipPosition="top"
+      [attr.aria-label]="option.fullLabel || option.label"
       [attr.data-testid]="'filter-pill-' + option.id">
       {{ option.label }}
     </button>

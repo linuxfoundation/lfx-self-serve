@@ -302,8 +302,10 @@ export interface HealthMetricsSummaryCard {
 export interface FilterPillOption {
   /** Unique filter identifier used for category filtering */
   id: string;
-  /** Display label for the filter pill */
+  /** Display label for the filter pill (may be truncated) */
   label: string;
+  /** Full untruncated label shown as tooltip */
+  fullLabel?: string;
 }
 
 /**

@@ -4,7 +4,6 @@
 <div
   class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden flex flex-col justify-between hover:border-blue-400 transition-colors h-full"
   data-testid="dashboard-meeting-card">
-
   <!-- Card header strip (shown when cardLabel is set) -->
   @if (cardLabel()) {
     <div
@@ -37,10 +36,7 @@
         [class.border-gray-200]="cardVariant() === 'neutral'"
         [class.border-blue-200]="cardVariant() === 'accent'">
         <!-- Month strip -->
-        <div
-          class="flex items-center justify-center py-0.5"
-          [class.bg-gray-200]="cardVariant() === 'neutral'"
-          [class.bg-blue-500]="cardVariant() === 'accent'">
+        <div class="flex items-center justify-center py-0.5" [class.bg-gray-200]="cardVariant() === 'neutral'" [class.bg-blue-500]="cardVariant() === 'accent'">
           <span
             class="text-[10px] font-semibold uppercase tracking-wider"
             [class.text-gray-500]="cardVariant() === 'neutral'"
@@ -49,10 +45,7 @@
           </span>
         </div>
         <!-- Day number -->
-        <div
-          class="h-11 flex items-center justify-center"
-          [class.bg-gray-50]="cardVariant() === 'neutral'"
-          [class.bg-blue-50]="cardVariant() === 'accent'">
+        <div class="h-11 flex items-center justify-center" [class.bg-gray-50]="cardVariant() === 'neutral'" [class.bg-blue-50]="cardVariant() === 'accent'">
           <span
             class="font-display font-light text-3xl leading-none"
             [class.text-gray-900]="cardVariant() === 'neutral'"
@@ -150,9 +143,7 @@
 
       <!-- Description snippet -->
       @if (meetingDescription()) {
-        <p
-          class="text-[10px] text-gray-500 truncate"
-          data-testid="dashboard-meeting-card-description">
+        <p class="text-[10px] text-gray-500 truncate" data-testid="dashboard-meeting-card-description">
           {{ meetingDescription() }}
         </p>
       }
