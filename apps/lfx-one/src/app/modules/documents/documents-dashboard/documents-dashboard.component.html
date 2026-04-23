@@ -6,7 +6,7 @@
     <!-- Page Header -->
     <div class="flex items-start justify-between mt-3">
       <div>
-        <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">{{ documentLabel.plural }}</h1>
+        <h1 class="font-display font-light text-2xl" data-testid="documents-dashboard-title">{{ pageTitle() }}</h1>
         <p class="mt-1 text-sm text-gray-500" data-testid="documents-dashboard-description">
           {{ documentLabel.plural }}, links, and attachments across groups, meetings, and foundations.
         </p>
@@ -140,6 +140,7 @@
             [showFirstLastIcon]="false"
             [showCurrentPageReport]="true"
             currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+            styleClass="[&_table]:table-fixed"
             data-testid="documents-table">
             <ng-template #header>
               <tr>
@@ -156,11 +157,19 @@
               <tr [attr.data-row-index]="rowIndex" [attr.data-testid]="'documents-row-' + doc.id">
                 <!-- Name column -->
                 <td>
-                  <div class="flex items-center gap-2">
+                  <div class="flex items-center gap-2 min-w-0">
                     <div class="flex items-center justify-center w-10 h-10 rounded-full border border-gray-200 bg-white shrink-0 shadow">
                       <i [class]="(doc.source | myDocumentSourceTag: 'icon') + ' text-gray-900 text-base'"></i>
                     </div>
-                    <span class="text-sm font-medium text-gray-900 truncate" [attr.data-testid]="'documents-name-' + doc.id">{{ doc.name }}</span>
+                    <span
+                      #nameEl
+                      class="text-sm font-medium text-gray-900 truncate min-w-0"
+                      [pTooltip]="doc.name"
+                      tooltipPosition="top"
+                      [tooltipDisabled]="nameEl.scrollWidth <= nameEl.offsetWidth"
+                      [attr.data-testid]="'documents-name-' + doc.id"
+                      >{{ doc.name }}</span
+                    >
                   </div>
                 </td>
 

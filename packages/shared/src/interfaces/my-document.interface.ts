@@ -26,6 +26,7 @@ export interface GroupsIOArtifactQueryResult {
   link_url?: string;
   download_url?: string;
   media_type?: string;
+  last_posted_at?: string;
   created_at: string;
 }
 
@@ -64,17 +65,6 @@ export interface PastMeetingSummaryQueryResult {
   content?: string;
   /** Edited markdown content, takes precedence over content when present */
   edited_content?: string;
-}
-
-/** Raw shape returned by query service for `v1_meeting` resource type (minimal fields for ID extraction) */
-export interface V1MeetingQueryResult {
-  id: string;
-}
-
-/** Raw shape returned by query service for `v1_past_meeting` resource type */
-export interface V1PastMeetingQueryResult {
-  meeting_and_occurrence_id: string;
-  meeting_id: string;
 }
 
 /** Raw shape returned by query service for `v1_past_meeting_recording` resource type */

@@ -15,10 +15,12 @@ import { TagComponent } from '@components/tag/tag.component';
 import { DOCUMENT_LABEL, MEETING_GROUP_SOURCES } from '@lfx-one/shared/constants';
 import { FilterPillOption, MyDocumentItem, MyDocumentSource } from '@lfx-one/shared/interfaces';
 import { DocumentService } from '@services/document.service';
+import { LensService } from '@services/lens.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { catchError, debounceTime, distinctUntilChanged, finalize, map, of, startWith, switchMap } from 'rxjs';
 import { EmptyStateComponent } from '@components/empty-state/empty-state.component';
 import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-tag.pipe';
+import { TooltipModule } from 'primeng/tooltip';
 
 @Component({
   selector: 'lfx-documents-dashboard',
@@ -34,6 +36,7 @@ import { MyDocumentSourceTagPipe } from '@app/shared/pipes/my-document-source-ta
     DatePipe,
     MyDocumentSourceTagPipe,
     EmptyStateComponent,
+    TooltipModule,
   ],
   templateUrl: './documents-dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
@@ -42,6 +45,7 @@ export class DocumentsDashboardComponent {
   // === Services ===
   private readonly documentService = inject(DocumentService);
   private readonly projectContextService = inject(ProjectContextService);
+  private readonly lensService = inject(LensService);
 
   // === Constants ===
   protected readonly documentLabel = DOCUMENT_LABEL;
@@ -67,6 +71,7 @@ export class DocumentsDashboardComponent {
 
   // === Computed Signals ===
   protected readonly project = this.projectContextService.activeContext;
+  protected readonly pageTitle = computed(() => (this.lensService.activeLens() === 'me' ? 'My Documents' : 'Documents'));
   protected readonly searchQuery: Signal<string> = this.initSearchQuery();
   protected readonly foundationFilter: Signal<string | null> = this.initFoundationFilter();
   protected readonly groupFilter: Signal<string | null> = this.initGroupFilter();
