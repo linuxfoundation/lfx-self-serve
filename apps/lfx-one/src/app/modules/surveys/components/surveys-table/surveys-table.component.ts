@@ -4,7 +4,7 @@
 import { DatePipe } from '@angular/common';
 import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
+import { AbstractControl, FormControl, FormGroup, ReactiveFormsModule } from '@angular/forms';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { CardComponent } from '@components/card/card.component';
@@ -87,11 +87,11 @@ export class SurveysTableComponent {
   // === Writable Signals ===
   protected readonly isDeleting = signal(false);
   protected readonly statusTab = signal<string>('all');
-  private readonly groupFilter = signal<string | null>(null);
-  private readonly typeFilter = signal<string | null>(null);
 
   // === Computed Signals ===
   private readonly searchTerm: Signal<string> = this.initSearchTerm();
+  private readonly groupFilter: Signal<string | null> = this.initGroupFilter();
+  private readonly typeFilter: Signal<string | null> = this.initTypeFilter();
   protected readonly groupOptions: Signal<{ label: string; value: string | null }[]> = this.initGroupOptions();
   protected readonly typeOptions: Signal<{ label: string; value: string | null }[]> = this.initTypeOptions();
   protected readonly filteredSurveys: Signal<(Survey & { displayStatus: SurveyStatus })[]> = this.initFilteredSurveys();
@@ -113,14 +113,6 @@ export class SurveysTableComponent {
     this.statusTab.set(tab);
   }
 
-  protected onGroupChange(value: string | null): void {
-    this.groupFilter.set(value);
-  }
-
-  protected onTypeChange(value: string | null): void {
-    this.typeFilter.set(value);
-  }
-
   protected onRowSelect(event: { data: Survey }): void {
     this.rowClick.emit(event.data);
   }
@@ -132,8 +124,6 @@ export class SurveysTableComponent {
   protected resetFilters(): void {
     this.searchForm.reset({ search: '', group: null, surveyType: null, foundationFilter: null, projectFilter: null });
     this.statusTab.set('all');
-    this.groupFilter.set(null);
-    this.typeFilter.set(null);
     this.foundationFilterChange.emit(null);
     this.projectFilterChange.emit(null);
   }
@@ -169,15 +159,28 @@ export class SurveysTableComponent {
 
   // === Private Initializers ===
   private initSearchTerm(): Signal<string> {
+    const control = this.searchForm.controls.search;
     return toSignal(
-      this.searchForm.get('search')!.valueChanges.pipe(
-        startWith(''),
+      control.valueChanges.pipe(
+        startWith(control.value),
         debounceTime(300),
         distinctUntilChanged(),
         map((value) => value ?? '')
       ),
-      { initialValue: '' }
+      { initialValue: control.value ?? '' }
     );
+  }
+
+  private initGroupFilter(): Signal<string | null> {
+    return this.toFormControlSignal(this.searchForm.controls.group);
+  }
+
+  private initTypeFilter(): Signal<string | null> {
+    return this.toFormControlSignal(this.searchForm.controls.surveyType);
+  }
+
+  private toFormControlSignal<T>(control: AbstractControl<T>): Signal<T> {
+    return toSignal(control.valueChanges.pipe(distinctUntilChanged()), { initialValue: control.value });
   }
 
   private initGroupOptions(): Signal<{ label: string; value: string | null }[]> {

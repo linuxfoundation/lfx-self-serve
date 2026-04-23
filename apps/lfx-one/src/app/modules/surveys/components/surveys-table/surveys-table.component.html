@@ -46,23 +46,11 @@
         }
 
         <div class="w-full sm:w-auto sm:shrink-0">
-          <lfx-select
-            [form]="searchForm"
-            control="group"
-            size="small"
-            [options]="groupOptions()"
-            (valueChange)="onGroupChange($event)"
-            data-testid="surveys-group-filter"></lfx-select>
+          <lfx-select [form]="searchForm" control="group" size="small" [options]="groupOptions()" data-testid="surveys-group-filter"></lfx-select>
         </div>
 
         <div class="w-full sm:w-auto sm:shrink-0">
-          <lfx-select
-            [form]="searchForm"
-            control="surveyType"
-            size="small"
-            [options]="typeOptions()"
-            (valueChange)="onTypeChange($event)"
-            data-testid="surveys-type-filter"></lfx-select>
+          <lfx-select [form]="searchForm" control="surveyType" size="small" [options]="typeOptions()" data-testid="surveys-type-filter"></lfx-select>
         </div>
 
         <ng-content select="[tableActions]"></ng-content>
