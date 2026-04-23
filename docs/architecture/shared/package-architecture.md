@@ -39,7 +39,6 @@ packages/shared/
 │   │   ├── meeting-attachment.interface.ts # Meeting attachment types
 │   │   ├── meeting.interface.ts       # Meeting data models
 │   │   ├── member.interface.ts        # Member/membership types
-│   │   ├── my-activity.interface.ts   # User activity types
 │   │   ├── organization.interface.ts  # Organization data models
 │   │   ├── permissions.interface.ts   # Permission types
 │   │   ├── persona.interface.ts       # User persona types
@@ -71,7 +70,6 @@ packages/shared/
 │   │   ├── mailing-list.constants.ts  # Mailing list constants
 │   │   ├── meeting-templates/         # Meeting template data
 │   │   ├── meeting.constants.ts       # Meeting constants
-│   │   ├── my-activity.constants.ts   # Activity tracking constants
 │   │   ├── persona.constants.ts       # Persona configuration
 │   │   ├── poll.constants.ts          # Poll/vote constants
 │   │   ├── primeng-theme.constants.ts # PrimeNG theme configuration

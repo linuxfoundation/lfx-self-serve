@@ -200,7 +200,7 @@ lfx-one/
 
 ## Feature Modules
 
-The application is organized into 9 feature modules under `apps/lfx-one/src/app/modules/`:
+The application is organized into feature modules under `apps/lfx-one/src/app/modules/`:
 
 | Module            | Description                                                                      |
 | ----------------- | -------------------------------------------------------------------------------- |
@@ -208,7 +208,6 @@ The application is organized into 9 feature modules under `apps/lfx-one/src/app/
 | **dashboards**    | Role-based dashboards - personalized views for different user roles              |
 | **mailing-lists** | Mailing list management - subscribe, unsubscribe, and manage lists               |
 | **meetings**      | Meeting scheduling - create, manage, and join meetings with calendar integration |
-| **my-activity**   | User activity tracking - personal activity history and notifications             |
 | **profile**       | User profile - profile management and account settings                           |
 | **settings**      | Application settings - preferences and configuration                             |
 | **surveys**       | Survey management - create surveys, collect responses, view NPS analytics        |

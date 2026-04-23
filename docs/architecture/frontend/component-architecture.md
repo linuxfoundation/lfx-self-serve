@@ -39,9 +39,6 @@ apps/lfx-one/src/app/modules/
 │   ├── surveys-dashboard/      # Main surveys route component
 │   ├── survey-manage/          # Survey create/edit
 │   └── components/             # Survey-specific components
-├── my-activity/                # User activity tracking
-│   ├── my-activity-dashboard/  # Main activity route component
-│   └── components/             # Activity components
 ├── profile/                    # User profile management
 │   ├── profile-overview/       # Profile overview tab
 │   ├── manage-profile/         # Profile editing
@@ -395,7 +392,6 @@ AppComponent
         ├── /meetings            → MeetingsDashboardComponent (lazy loaded)
         ├── /groups              → CommitteeDashboardComponent (lazy loaded)
         ├── /mailing-lists       → MailingListDashboardComponent (lazy loaded)
-        ├── /my-activity         → MyActivityDashboardComponent (lazy loaded)
         ├── /votes               → VotesDashboardComponent (lazy loaded)
         ├── /surveys             → SurveysDashboardComponent (lazy loaded)
         ├── /settings            → SettingsDashboardComponent (lazy loaded)

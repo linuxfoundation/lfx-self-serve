@@ -31,7 +31,6 @@ export * from './primeng-theme.constants';
 export * from './poll.constants';
 export * from './profile.constants';
 export * from './survey.constants';
-export * from './my-activity.constants';
 export * from './total-projects-drawer.constants';
 export * from './total-members-drawer.constants';
 export * from './active-contributors-drawer.constants';

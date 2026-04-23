@@ -77,9 +77,6 @@ export * from './poll.interface';
 // Survey interfaces
 export * from './survey.interface';
 
-// My Activity interfaces
-export * from './my-activity.interface';
-
 // Filter interfaces
 export * from './filter.interface';
 

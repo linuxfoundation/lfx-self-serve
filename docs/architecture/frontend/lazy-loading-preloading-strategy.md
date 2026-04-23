@@ -41,7 +41,6 @@ All routes are flat children of `MainLayoutComponent` (no nested `project/:slug`
     { path: 'meetings', loadChildren: () => import('./modules/meetings/meetings.routes').then(m => m.MEETING_ROUTES) },
     { path: 'groups', loadChildren: () => import('./modules/committees/committees.routes').then(m => m.COMMITTEE_ROUTES) },
     { path: 'mailing-lists', loadChildren: () => import('./modules/mailing-lists/mailing-lists.routes').then(m => m.MAILING_LIST_ROUTES) },
-    { path: 'my-activity', loadChildren: () => import('./modules/my-activity/my-activity.routes').then(m => m.MY_ACTIVITY_ROUTES) },
     { path: 'votes', loadChildren: () => import('./modules/votes/votes.routes').then(m => m.VOTE_ROUTES) },
     { path: 'surveys', loadChildren: () => import('./modules/surveys/surveys.routes').then(m => m.SURVEY_ROUTES) },
     { path: 'settings', loadChildren: () => import('./modules/settings/settings.routes').then(m => m.SETTINGS_ROUTES) },
@@ -80,7 +79,6 @@ export const MEETING_ROUTES: Routes = [
 | **Surveys**       | Lazy + Medium Preload (1500ms) | Medium   |
 | **Settings**      | Lazy + On-demand               | Low      |
 | **Profile**       | Lazy + On-demand               | Low      |
-| **My Activity**   | Lazy + On-demand               | Low      |
 
 ---
 
@@ -130,7 +128,6 @@ Routes are configured with priority-based preloading metadata in each feature's 
 | Surveys       | `true`                  | 1500ms | Medium   |
 | Settings      | No preload data         | -      | Low      |
 | Profile       | No preload data         | -      | Low      |
-| My Activity   | No preload data         | -      | Low      |
 
 ```typescript
 // High-priority route (fast preload) - meetings.routes.ts
@@ -139,7 +136,7 @@ data: { preload: true, preloadDelay: 500 }
 // Medium-priority route - committees.routes.ts, mailing-lists.routes.ts, votes.routes.ts, surveys.routes.ts
 data: { preload: true, preloadDelay: 1500 }
 
-// On-demand only (no preload) - settings, profile, my-activity
+// On-demand only (no preload) - settings, profile
 // No data attribute or data: { preload: false }
 ```
 
