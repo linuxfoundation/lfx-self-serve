@@ -122,7 +122,7 @@ export class PastMeetingDetailsComponent {
     if (!summary) return;
 
     this.dialogService.open(MeetingSummaryModalComponent, {
-      header: 'AI Summary',
+      header: summary.summary_data?.title || 'AI Summary',
       width: '700px',
       modal: true,
       closable: true,

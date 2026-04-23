@@ -292,11 +292,22 @@ export function buildJoinUrlWithParams(joinUrl: string, user?: User | null, opti
  * @param v1Summary - V1 summary object
  * @returns V2 SummaryData object
  */
-function buildV2SummaryDataFromV1(v1Summary: V1PastMeetingSummary): SummaryData {
-  // Build markdown content from v1 fields
-  const parts: string[] = [];
+function buildV2SummaryDataFromV1(v1Summary: V1PastMeetingSummary & { content?: string; edited_content?: string }): SummaryData {
+  // Indexer contract shape: flat content/edited_content fields — use directly.
+  // Use property presence ('in') not truthiness to correctly handle empty strings.
+  if ('content' in v1Summary || 'edited_content' in v1Summary) {
+    return {
+      title: v1Summary.summary_title ?? '',
+      content: v1Summary.content ?? '',
+      edited_content: v1Summary.edited_content ?? '',
+      doc_url: '',
+      start_time: v1Summary.summary_start_time || '',
+      end_time: v1Summary.summary_end_time || '',
+    };
+  }
 
-  // Use edited content if available, otherwise use original
+  // Legacy V1 shape: build markdown content from structured fields
+  const parts: string[] = [];
   const overview = v1Summary.edited_summary_overview || v1Summary.summary_overview;
   const details = v1Summary.edited_summary_details || v1Summary.summary_details;
   const nextSteps = v1Summary.edited_next_steps || v1Summary.next_steps;
@@ -342,36 +353,34 @@ function buildV2SummaryDataFromV1(v1Summary: V1PastMeetingSummary): SummaryData 
  * - summary_end_time → summary_data.end_time
  */
 export function transformV1SummaryToV2(summary: PastMeetingSummary): PastMeetingSummary {
-  // If already has v2 format (uid and summary_data.content), return as-is
-  if (summary.uid && summary.summary_data?.content) {
+  // If already has v2 format (uid and summary_data present), return as-is.
+  // Check presence of summary_data, not value of content (which can be an empty string).
+  if (summary.uid && summary.summary_data) {
     return summary;
   }
 
-  // Cast to V1PastMeetingSummary for accessing v1-specific fields with type safety
-  const v1Summary = summary as unknown as V1PastMeetingSummary;
+  // Cast to raw shape to access both V1 fields and indexer-contract flat fields
+  // (content and edited_content are indexer-flat fields not present in PastMeetingSummary or V1PastMeetingSummary)
+  const raw = summary as unknown as V1PastMeetingSummary & { content?: string; edited_content?: string };
 
   return {
-    // V2 fields - use v2 field or fall back to v1 equivalent
-    uid: summary.uid || v1Summary.id || '',
-    meeting_id: summary.meeting_id || v1Summary.meeting_id || '',
+    uid: summary.uid || raw.id || '',
+    meeting_id: summary.meeting_id || raw.meeting_id || '',
     past_meeting_id: summary.past_meeting_id || '',
     platform: summary.platform || 'Zoom',
-    approved: summary.approved ?? v1Summary.approved ?? false,
-    requires_approval: summary.requires_approval ?? v1Summary.requires_approval ?? false,
-    email_sent: summary.email_sent ?? v1Summary.email_sent ?? false,
-    password: summary.password || v1Summary.password || '',
+    approved: summary.approved ?? raw.approved ?? false,
+    requires_approval: summary.requires_approval ?? raw.requires_approval ?? false,
+    email_sent: summary.email_sent ?? raw.email_sent ?? false,
+    password: summary.password || raw.password || '',
 
-    // Transform summary_data from v1 fields
-    summary_data: buildV2SummaryDataFromV1(v1Summary),
+    summary_data: summary.summary_data ?? buildV2SummaryDataFromV1(raw),
 
-    // Build zoom_config from v1 fields if not present
     zoom_config: summary.zoom_config || {
-      meeting_id: v1Summary.meeting_id || '',
-      meeting_uuid: v1Summary.zoom_meeting_uuid || '',
+      meeting_id: raw.meeting_id || '',
+      meeting_uuid: raw.zoom_meeting_uuid || '',
     },
 
-    // Timestamps
-    created_at: summary.created_at || v1Summary.summary_created_time || '',
-    updated_at: summary.updated_at || v1Summary.summary_last_modified_time || v1Summary.modified_at || '',
+    created_at: summary.created_at || raw.summary_created_time || '',
+    updated_at: summary.updated_at || raw.summary_last_modified_time || raw.modified_at || '',
   };
 }
