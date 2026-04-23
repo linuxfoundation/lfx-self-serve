@@ -143,3 +143,6 @@ export * from './transaction.interface';
 
 // Supabase interfaces
 export * from './supabase.interface';
+
+// Stat card interfaces
+export * from './stat-card.interface';

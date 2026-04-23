@@ -96,15 +96,16 @@
           <th>Name</th>
           <th>List Email</th>
           <th class="min-w-[300px]">Description</th>
-          <th>Visibility</th>
+          <th>Public</th>
           <th>Posting</th>
           <th>Linked {{ committeeLabel.plural }}</th>
           <th>Subscribers</th>
         } @else {
-          <!-- PMO View Headers (4-5 columns depending on board member) -->
+          <!-- PMO View Headers (5-6 columns depending on board member) -->
           <th>Mailing List</th>
           <th class="min-w-[300px]">Description</th>
           <th>Linked {{ committeeLabel.plural }}</th>
+          <th>Public</th>
           <th>Subscribers</th>
           @if (!isBoardMember()) {
             <th></th>
@@ -148,14 +149,20 @@
 
           <!-- Description Column -->
           <td>
-            <div class="line-clamp-2 text-sm text-gray-700">
+            <div class="max-w-[300px] line-clamp-2 text-sm text-gray-700">
               {{ (mailingList.description | stripHtml) || '-' }}
             </div>
           </td>
 
-          <!-- Visibility Column -->
+          <!-- Public Column -->
           <td>
-            <lfx-tag [value]="mailingList.public ? 'Public' : 'Private'" [severity]="mailingList.public | mailingListVisibilitySeverity"> </lfx-tag>
+            @if (mailingList.public) {
+              <span class="inline-flex items-center" pTooltip="Public mailing list" tooltipPosition="top" tabindex="0" aria-label="Public mailing list">
+                <i class="fa-solid fa-circle-check w-4 h-4 text-emerald-600" aria-hidden="true"></i>
+              </span>
+            } @else {
+              <span class="text-gray-400 text-xs" aria-label="Private mailing list">&mdash;</span>
+            }
           </td>
 
           <!-- Posting Column -->
@@ -208,7 +215,7 @@
 
           <!-- Description Column -->
           <td>
-            <div class="line-clamp-2 text-sm text-gray-700">
+            <div class="max-w-[300px] line-clamp-2 text-sm text-gray-700">
               {{ (mailingList.description | stripHtml) || '-' }}
             </div>
           </td>
@@ -239,6 +246,17 @@
             }
           </td>
 
+          <!-- Public Column -->
+          <td>
+            @if (mailingList.public) {
+              <span class="inline-flex items-center" pTooltip="Public mailing list" tooltipPosition="top" tabindex="0" aria-label="Public mailing list">
+                <i class="fa-solid fa-circle-check w-4 h-4 text-emerald-600" aria-hidden="true"></i>
+              </span>
+            } @else {
+              <span class="text-gray-400 text-xs" aria-label="Private mailing list">&mdash;</span>
+            }
+          </td>
+
           <!-- Subscribers Column -->
           <td [attr.data-testid]="'mailing-list-subscribers-' + mailingList.uid">
             <span class="text-sm text-gray-700">{{ mailingList.subscriber_count }}</span>
@@ -266,7 +284,7 @@
     <!-- Empty Message Template -->
     <ng-template #emptymessage>
       <tr>
-        <td [attr.colspan]="isMaintainer() ? 7 : isBoardMember() ? 4 : 5">
+        <td [attr.colspan]="isMaintainer() ? 7 : isBoardMember() ? 5 : 6">
           @if (isFiltered()) {
             <lfx-empty-state
               [withCard]="false"

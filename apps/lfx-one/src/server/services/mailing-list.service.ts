@@ -201,6 +201,11 @@ export class MailingListService {
       })
     );
 
+    // Enrich the committees array with committee names. The groupsio_mailing_list index
+    // emits committees as { uid } only, so without this pass the Linked Groups column on
+    // the foundation/project-lens table would render empty tags (same fix as Me lens).
+    await this.enrichCommitteeNames(req, mailingLists);
+
     // Enrich with service data
     mailingLists = await this.enrichWithServices(req, mailingLists);
 
@@ -736,7 +741,7 @@ export class MailingListService {
    * (chunked at 100 UIDs), then mutates each list's `committees` entries in place with the
    * resolved name. On fetch failure, names are left unset — callers render a fallback.
    */
-  private async enrichCommitteeNames(req: Request, lists: MyMailingList[]): Promise<void> {
+  private async enrichCommitteeNames(req: Request, lists: GroupsIOMailingList[]): Promise<void> {
     const uniqueCommitteeUids = Array.from(
       new Set(
         lists

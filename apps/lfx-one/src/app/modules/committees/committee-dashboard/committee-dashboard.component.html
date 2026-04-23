@@ -29,100 +29,12 @@
 
     <!-- Summary Stat Cards (Foundation/Project lens) -->
     @if (!isMeLens()) {
-      <div data-testid="committees-foundation-stats">
-        <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
-          <div class="grid w-full grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
-            <div class="flex items-center gap-3 p-4">
-              <div class="flex items-center justify-center w-11 h-11 rounded-full bg-gray-200 text-gray-500 flex-shrink-0">
-                <i class="fa-light fa-users-rectangle text-xl"></i>
-              </div>
-              <div class="flex flex-col gap-0.5">
-                @if (committeesLoading()) {
-                  <p class="text-xl font-medium text-gray-400">&mdash;</p>
-                } @else {
-                  <p class="text-xl font-medium text-gray-900">{{ totalCommittees() }}</p>
-                }
-                <p class="text-sm font-normal text-gray-900">Total Groups</p>
-              </div>
-            </div>
-            <div class="flex items-center gap-3 p-4">
-              <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
-                <i class="fa-light fa-globe text-xl"></i>
-              </div>
-              <div class="flex flex-col gap-0.5">
-                @if (committeesLoading()) {
-                  <p class="text-xl font-medium text-gray-400">&mdash;</p>
-                } @else {
-                  <p class="text-xl font-medium text-gray-900">{{ publicCommittees() }}</p>
-                }
-                <p class="text-sm font-normal text-gray-900">Public Groups</p>
-              </div>
-            </div>
-            <div class="flex items-center gap-3 p-4">
-              <div class="flex items-center justify-center w-11 h-11 rounded-full bg-emerald-100 text-emerald-600 flex-shrink-0">
-                <i class="fa-light fa-check-to-slot text-xl"></i>
-              </div>
-              <div class="flex flex-col gap-0.5">
-                @if (committeesLoading()) {
-                  <p class="text-xl font-medium text-gray-400">&mdash;</p>
-                } @else {
-                  <p class="text-xl font-medium text-gray-900">{{ activeVoting() }}</p>
-                }
-                <p class="text-sm font-normal text-gray-900">Voting Enabled Groups</p>
-              </div>
-            </div>
-          </div>
-        </lfx-card>
-      </div>
+      <lfx-stat-card-grid [cards]="foundationStatCards()" [loading]="committeesLoading()" data-testid="committees-foundation-stats" />
     }
 
     <!-- Summary Stat Cards (Me lens only) -->
     @if (isMeLens()) {
-      <div data-testid="committees-me-stats">
-        <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
-          <div class="grid w-full grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
-            <div class="flex items-center gap-3 p-4">
-              <div class="flex items-center justify-center w-11 h-11 rounded-full bg-gray-200 text-gray-500 flex-shrink-0">
-                <i class="fa-light fa-users-rectangle text-xl"></i>
-              </div>
-              <div class="flex flex-col gap-0.5">
-                @if (myCommitteesLoading()) {
-                  <p class="text-xl font-medium text-gray-400">&mdash;</p>
-                } @else {
-                  <p class="text-xl font-medium text-gray-900">{{ myTotalGroups() }}</p>
-                }
-                <p class="text-sm font-normal text-gray-900">Total Groups</p>
-              </div>
-            </div>
-            <div class="flex items-center gap-3 p-4">
-              <div class="flex items-center justify-center w-11 h-11 rounded-full bg-blue-100 text-blue-600 flex-shrink-0">
-                <i class="fa-light fa-globe text-xl"></i>
-              </div>
-              <div class="flex flex-col gap-0.5">
-                @if (myCommitteesLoading()) {
-                  <p class="text-xl font-medium text-gray-400">&mdash;</p>
-                } @else {
-                  <p class="text-xl font-medium text-gray-900">{{ myPublicGroups() }}</p>
-                }
-                <p class="text-sm font-normal text-gray-900">Public Groups</p>
-              </div>
-            </div>
-            <div class="flex items-center gap-3 p-4">
-              <div class="flex items-center justify-center w-11 h-11 rounded-full bg-emerald-100 text-emerald-600 flex-shrink-0">
-                <i class="fa-light fa-check-to-slot text-xl"></i>
-              </div>
-              <div class="flex flex-col gap-0.5">
-                @if (myCommitteesLoading()) {
-                  <p class="text-xl font-medium text-gray-400">&mdash;</p>
-                } @else {
-                  <p class="text-xl font-medium text-gray-900">{{ myActiveVoting() }}</p>
-                }
-                <p class="text-sm font-normal text-gray-900">Voting Enabled Groups</p>
-              </div>
-            </div>
-          </div>
-        </lfx-card>
-      </div>
+      <lfx-stat-card-grid [cards]="myStatCards()" [loading]="myCommitteesLoading()" data-testid="committees-me-stats" />
     }
 
     <!-- My Groups Table (Me lens) -->

@@ -62,6 +62,20 @@
       </p>
     </div>
 
+    <!-- Summary Stat Cards (Foundation/Project lens) -->
+    @if (!isMeLens()) {
+      <div class="mb-6">
+        <lfx-stat-card-grid [cards]="foundationStatCards()" [loading]="mailingListsLoading()" data-testid="mailing-lists-foundation-stats" />
+      </div>
+    }
+
+    <!-- Summary Stat Cards (Me lens only) -->
+    @if (isMeLens()) {
+      <div class="mb-6">
+        <lfx-stat-card-grid [cards]="myStatCards()" [loading]="myMailingListsLoading()" data-testid="mailing-lists-me-stats" />
+      </div>
+    }
+
     <!-- Content Area -->
     <div class="min-h-[400px]">
       @if (!isMeLens() && mailingLists().length === 0 && project()?.uid) {

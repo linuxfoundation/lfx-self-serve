@@ -17,7 +17,6 @@ import { COMMITTEE_LABEL, MAILING_LIST_LABEL, MAILING_LIST_MAX_VISIBLE_GROUPS } 
 import { FilterOption, GroupsIOMailingList } from '@lfx-one/shared/interfaces';
 import { GroupEmailPipe } from '@pipes/group-email.pipe';
 import { MailingListTypeLabelPipe } from '@pipes/mailing-list-type-label.pipe';
-import { MailingListVisibilitySeverityPipe } from '@pipes/mailing-list-visibility-severity.pipe';
 import { RemainingGroupsTooltipPipe } from '@pipes/remaining-groups-tooltip.pipe';
 import { SliceLinkedGroupsPipe } from '@pipes/slice-linked-groups.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
@@ -37,7 +36,6 @@ import { TooltipModule } from 'primeng/tooltip';
     TooltipModule,
     RouterLink,
     GroupEmailPipe,
-    MailingListVisibilitySeverityPipe,
     MailingListTypeLabelPipe,
     RemainingGroupsTooltipPipe,
     SliceLinkedGroupsPipe,

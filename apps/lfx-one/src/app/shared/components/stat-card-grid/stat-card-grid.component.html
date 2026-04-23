@@ -1,0 +1,22 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
+  <div class="grid w-full grid-cols-1 sm:grid-cols-3 divide-y sm:divide-y-0 sm:divide-x divide-gray-200">
+    @for (card of cards(); track card.label) {
+      <div class="flex items-center gap-3 p-4" [attr.data-testid]="'stat-card-' + card.label">
+        <div class="flex items-center justify-center w-11 h-11 rounded-full flex-shrink-0" [class]="card.iconContainerClass">
+          <i [class]="card.icon + ' text-xl'" aria-hidden="true"></i>
+        </div>
+        <div class="flex flex-col gap-0.5">
+          @if (loading()) {
+            <p class="text-xl font-medium text-gray-400">&mdash;</p>
+          } @else {
+            <p class="text-xl font-medium text-gray-900">{{ card.value }}</p>
+          }
+          <p class="text-sm font-normal text-gray-900">{{ card.label }}</p>
+        </div>
+      </div>
+    }
+  </div>
+</lfx-card>

@@ -7,8 +7,9 @@ import { FormControl, FormGroup } from '@angular/forms';
 import { Router } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
+import { StatCardGridComponent } from '@components/stat-card-grid/stat-card-grid.component';
 import { COMMITTEE_LABEL } from '@lfx-one/shared/constants';
-import { Committee, MyCommittee, ProjectContext } from '@lfx-one/shared/interfaces';
+import { Committee, MyCommittee, ProjectContext, StatCardItem } from '@lfx-one/shared/interfaces';
 import { CommitteeService } from '@services/committee.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
@@ -22,7 +23,7 @@ import { CommitteeTableComponent } from '../components/committee-table/committee
 
 @Component({
   selector: 'lfx-committee-dashboard',
-  imports: [ButtonComponent, CardComponent, CommitteeTableComponent, SkeletonModule, EmptyStateComponent],
+  imports: [ButtonComponent, CardComponent, CommitteeTableComponent, SkeletonModule, EmptyStateComponent, StatCardGridComponent],
   templateUrl: './committee-dashboard.component.html',
   styleUrl: './committee-dashboard.component.scss',
 })
@@ -80,6 +81,10 @@ export class CommitteeDashboardComponent {
   public myPublicGroups: Signal<number>;
   public myActiveVoting: Signal<number>;
 
+  // Stat card arrays for the shared <lfx-stat-card-grid> component
+  public foundationStatCards: Signal<StatCardItem[]>;
+  public myStatCards: Signal<StatCardItem[]>;
+
   private searchTerm: Signal<string>;
 
   public constructor() {
@@ -113,6 +118,23 @@ export class CommitteeDashboardComponent {
     this.myTotalGroups = computed(() => this.myCommittees().length);
     this.myPublicGroups = computed(() => this.myCommittees().filter((c) => c.public).length);
     this.myActiveVoting = computed(() => this.myCommittees().filter((c) => c.enable_voting).length);
+
+    // Stat card arrays consumed by <lfx-stat-card-grid>
+    this.foundationStatCards = computed<StatCardItem[]>(() => [
+      { value: this.totalCommittees(), label: 'Total Groups', icon: 'fa-light fa-users-rectangle', iconContainerClass: 'bg-gray-200 text-gray-500' },
+      { value: this.publicCommittees(), label: 'Public Groups', icon: 'fa-light fa-globe', iconContainerClass: 'bg-blue-100 text-blue-600' },
+      { value: this.activeVoting(), label: 'Voting Enabled Groups', icon: 'fa-light fa-check-to-slot', iconContainerClass: 'bg-emerald-100 text-emerald-600' },
+    ]);
+    this.myStatCards = computed<StatCardItem[]>(() => [
+      { value: this.myTotalGroups(), label: 'Total Groups', icon: 'fa-light fa-users-rectangle', iconContainerClass: 'bg-gray-200 text-gray-500' },
+      { value: this.myPublicGroups(), label: 'Public Groups', icon: 'fa-light fa-globe', iconContainerClass: 'bg-blue-100 text-blue-600' },
+      {
+        value: this.myActiveVoting(),
+        label: 'Voting Enabled Groups',
+        icon: 'fa-light fa-check-to-slot',
+        iconContainerClass: 'bg-emerald-100 text-emerald-600',
+      },
+    ]);
   }
 
   public openCreateDialog(): void {
