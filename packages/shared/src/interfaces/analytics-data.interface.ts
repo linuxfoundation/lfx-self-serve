@@ -2726,6 +2726,42 @@ export interface SocialReachChannelGroup {
 }
 
 /**
+ * Per-campaign paid performance data (nested under project)
+ */
+export interface PaidCampaignPerformance {
+  campaignName: string;
+  funnelStage: string;
+  spend: number;
+  revenue: number;
+  roas: number;
+  conversions: number;
+  convRate: number;
+  cpc: number;
+  sessions: number;
+  impressions: number;
+  clicks: number;
+}
+
+/**
+ * Project-level paid performance breakdown
+ */
+export interface PaidProjectBreakdown {
+  projectName: string;
+  funnelStage: string;
+  spend: number;
+  revenue: number;
+  roas: number;
+  conversions: number;
+  convRate: number;
+  cpc: number;
+  sessions: number;
+  impressions: number;
+  clicks: number;
+  performance: string;
+  campaigns: PaidCampaignPerformance[];
+}
+
+/**
  * API response for Paid Social query (ROAS + impressions)
  */
 export interface SocialReachResponse {
@@ -2739,6 +2775,7 @@ export interface SocialReachResponse {
   monthlyLabels: string[];
   monthlyRoas: number[];
   channelGroups: SocialReachChannelGroup[];
+  projectBreakdown?: PaidProjectBreakdown[];
 }
 
 // ============================================
@@ -2813,6 +2850,35 @@ export interface EmailCtrCampaignGroup {
 }
 
 /**
+ * Individual campaign performance from EMAIL_CAMPAIGN_PERFORMANCE Snowflake model
+ */
+export interface EmailCampaignPerformance {
+  campaignName: string;
+  emailType: string;
+  sends: number;
+  opens: number;
+  clicks: number;
+  openRate: number;
+  ctr: number;
+  ctrStatus: string;
+}
+
+/**
+ * Aggregated email type breakdown (grouped by EMAIL_TYPE)
+ */
+export interface EmailTypeBreakdown {
+  emailType: string;
+  campaignCount: number;
+  totalSends: number;
+  totalOpens: number;
+  totalClicks: number;
+  openRate: number;
+  ctr: number;
+  performance: string;
+  campaigns: EmailCampaignPerformance[];
+}
+
+/**
  * API response for Email CTR query
  */
 export interface EmailCtrResponse {
@@ -2824,6 +2890,8 @@ export interface EmailCtrResponse {
   campaignGroups: EmailCtrCampaignGroup[];
   monthlySends: number[];
   monthlyOpens: number[];
+  emailTypeBreakdown?: EmailTypeBreakdown[];
+  campaignInsightText?: string;
 }
 
 // ============================================
@@ -3211,6 +3279,54 @@ export interface RevenueImpactResponse {
   eventRegistrationAttribution: EventRegistrationAttribution;
 }
 
+// ============================================
+// Marketing Attribution (Campaign Performance Drawer)
+// ============================================
+
+/**
+ * Channel-level aggregation from ANALYTICS.PLATINUM_LFX_ONE.MARKETING_ATTRIBUTION.
+ * One row per channel with session, visitor, and multi-touch revenue totals.
+ */
+export interface MarketingAttributionChannel {
+  channel: string;
+  sessions: number;
+  pageViews: number;
+  uniqueVisitors: number;
+  newVisitors: number;
+  returningVisitors: number;
+  firstTouchRevenue: number;
+  lastTouchRevenue: number;
+  linearRevenue: number;
+  timeDecayRevenue: number;
+}
+
+/**
+ * Project × channel drill-down row.
+ * Shown when expanding a channel row in the attribution table.
+ */
+export interface MarketingAttributionProject {
+  projectName: string;
+  channel: string;
+  sessions: number;
+  pageViews: number;
+  uniqueVisitors: number;
+  newVisitors: number;
+  returningVisitors: number;
+  firstTouchRevenue: number;
+  lastTouchRevenue: number;
+  linearRevenue: number;
+  timeDecayRevenue: number;
+}
+
+/**
+ * Full response for the marketing attribution endpoint.
+ * Combines channel summary + project drill-down data.
+ */
+export interface MarketingAttributionResponse {
+  channels: MarketingAttributionChannel[];
+  projects: MarketingAttributionProject[];
+}
+
 /**
  * Aggregated response for all ED Evolution dashboard API calls.
  * Used by buildEdEvolutionMetrics() to convert API data into card UI models.
@@ -3224,4 +3340,5 @@ export interface EdEvolutionData {
   brandReach: BrandReachResponse;
   brandHealth: BrandHealthResponse;
   revenueImpact: RevenueImpactResponse;
+  attribution?: MarketingAttributionResponse;
 }

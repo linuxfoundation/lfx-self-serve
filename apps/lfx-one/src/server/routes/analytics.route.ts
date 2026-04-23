@@ -178,6 +178,7 @@ router.get('/event-growth', (req, res, next) => analyticsController.getEventGrow
 router.get('/brand-reach', (req, res, next) => analyticsController.getBrandReach(req, res, next));
 router.get('/brand-health', (req, res, next) => analyticsController.getBrandHealth(req, res, next));
 router.get('/revenue-impact', (req, res, next) => analyticsController.getRevenueImpact(req, res, next));
+router.get('/marketing-attribution', (req, res, next) => analyticsController.getMarketingAttribution(req, res, next));
 
 // Multi-foundation summary endpoint (multi-foundation dashboard)
 router.get('/multi-foundation-summary', (req, res, next) => analyticsController.getMultiFoundationSummary(req, res, next));

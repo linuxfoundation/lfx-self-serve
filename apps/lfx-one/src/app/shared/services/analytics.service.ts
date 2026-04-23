@@ -68,6 +68,7 @@ import {
   BrandReachResponse,
   BrandHealthResponse,
   RevenueImpactResponse,
+  MarketingAttributionResponse,
   MultiFoundationSummaryResponse,
 } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of } from 'rxjs';
@@ -1254,6 +1255,17 @@ export class AnalyticsService {
         })
       )
     );
+  }
+
+  /**
+   * Get marketing attribution data by channel with multi-touch revenue models.
+   * @param foundationSlug Foundation slug used to filter Snowflake queries
+   * @returns Observable emitting channel summary + project drill-down (or empty defaults on error)
+   */
+  public getMarketingAttribution(foundationSlug: string): Observable<MarketingAttributionResponse> {
+    return this.http
+      .get<MarketingAttributionResponse>('/api/analytics/marketing-attribution', { params: { foundationSlug } })
+      .pipe(catchError(() => of({ channels: [], projects: [] })));
   }
 
   /**

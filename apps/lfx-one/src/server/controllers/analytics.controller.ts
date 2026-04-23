@@ -2570,6 +2570,43 @@ export class AnalyticsController {
   }
 
   /**
+   * GET /api/analytics/marketing-attribution
+   * Get channel-level marketing attribution with multi-touch revenue models
+   * Query params: foundationSlug (required)
+   */
+  public async getMarketingAttribution(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_marketing_attribution');
+
+    try {
+      const foundationSlug = getStringQueryParam(req, 'foundationSlug');
+
+      if (!foundationSlug) {
+        throw ServiceValidationError.forField('foundationSlug', 'foundationSlug query parameter is required', {
+          operation: 'get_marketing_attribution',
+        });
+      }
+
+      if (!SLUG_PATTERN.test(foundationSlug)) {
+        throw ServiceValidationError.forField('foundationSlug', 'Invalid foundationSlug format', {
+          operation: 'get_marketing_attribution',
+        });
+      }
+
+      const response = await this.projectService.getMarketingAttribution(foundationSlug);
+
+      logger.success(req, 'get_marketing_attribution', startTime, {
+        foundation_slug: foundationSlug,
+        channel_count: response.channels.length,
+        project_count: response.projects.length,
+      });
+
+      res.json(response);
+    } catch (error) {
+      return next(error);
+    }
+  }
+
+  /**
    * GET /api/analytics/multi-foundation-summary
    * Aggregate analytics across multiple foundations in a single request
    * Query params: slugs (required, comma-separated foundation slugs, max 25)
