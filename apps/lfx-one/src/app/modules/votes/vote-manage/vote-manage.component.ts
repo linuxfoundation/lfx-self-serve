@@ -130,8 +130,8 @@ export class VoteManageComponent {
       return;
     }
 
-    const project = this.project();
-    if (!project?.uid) {
+    const projectUid = this.vote()?.project_uid || this.project()?.uid;
+    if (!projectUid) {
       this.messageService.add({
         severity: 'error',
         summary: 'Error',
@@ -145,7 +145,7 @@ export class VoteManageComponent {
     const formValue = this.form().getRawValue() as VoteFormValue;
 
     if (this.isEditMode() && this.voteId()) {
-      const updateRequest = buildUpdateVoteRequest(formValue, project.uid);
+      const updateRequest = buildUpdateVoteRequest(formValue, projectUid);
       this.voteService.updateVote(this.voteId()!, updateRequest).subscribe({
         next: () => {
           this.messageService.add({
@@ -166,7 +166,7 @@ export class VoteManageComponent {
         },
       });
     } else {
-      const createRequest = buildCreateVoteRequest(formValue, project.uid);
+      const createRequest = buildCreateVoteRequest(formValue, projectUid);
       this.voteService.createVote(createRequest).subscribe({
         next: () => {
           this.messageService.add({
@@ -247,8 +247,8 @@ export class VoteManageComponent {
   }
 
   private submitVote(): void {
-    const project = this.project();
-    if (!project?.uid) {
+    const projectUid = this.vote()?.project_uid || this.project()?.uid;
+    if (!projectUid) {
       this.messageService.add({
         severity: 'error',
         summary: 'Error',
@@ -262,7 +262,7 @@ export class VoteManageComponent {
     const formValue = this.form().getRawValue() as VoteFormValue;
 
     if (this.isEditMode() && this.voteId()) {
-      const updateRequest = buildUpdateVoteRequest(formValue, project.uid);
+      const updateRequest = buildUpdateVoteRequest(formValue, projectUid);
       // Update the vote first, then enable it to open immediately
       this.voteService.updateVote(this.voteId()!, updateRequest).subscribe({
         next: () => {
@@ -297,7 +297,7 @@ export class VoteManageComponent {
         },
       });
     } else {
-      const createRequest = buildCreateVoteRequest(formValue, project.uid);
+      const createRequest = buildCreateVoteRequest(formValue, projectUid);
       // Create the vote first, then enable it to open immediately
       this.voteService.createVote(createRequest).subscribe({
         next: (createdVote) => {

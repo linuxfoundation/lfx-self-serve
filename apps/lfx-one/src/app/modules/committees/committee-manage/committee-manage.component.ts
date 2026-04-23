@@ -192,7 +192,7 @@ export class CommitteeManageComponent {
       },
       display_name: this.form.value.display_name || this.form.value.name,
       website: this.form.value.website || null,
-      project_uid: this.project()?.uid || null,
+      project_uid: this.committee()?.project_uid || this.project()?.uid || null,
     };
 
     const committeeData = this.cleanFormData(formValue);
@@ -285,7 +285,7 @@ export class CommitteeManageComponent {
       },
       display_name: this.form.value.display_name || this.form.value.name,
       website: this.form.value.website || null,
-      project_uid: this.project()?.uid || null,
+      project_uid: this.committee()?.project_uid || this.project()?.uid || null,
     };
 
     const committeeData = this.cleanFormData(formValue);
