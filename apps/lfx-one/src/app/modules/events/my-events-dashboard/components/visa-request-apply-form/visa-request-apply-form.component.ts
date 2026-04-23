@@ -11,6 +11,7 @@ import { SelectComponent } from '@components/select/select.component';
 import { TextareaComponent } from '@components/textarea/textarea.component';
 import { ACCOMMODATION_PAID_BY_OPTIONS, ATTENDEE_TYPE_OPTIONS, COUNTRIES } from '@lfx-one/shared/constants';
 import { AttendeeAccommodationPaidBy, AttendeeType, VisaRequestApplicantInfo } from '@lfx-one/shared/interfaces';
+import { notFutureDateValidator, notPastDateValidator } from '@lfx-one/shared/validators';
 import { startWith } from 'rxjs';
 import { OrgSearchFieldComponent } from '../org-search-field/org-search-field.component';
 
@@ -27,14 +28,16 @@ export class VisaRequestApplyFormComponent {
   public readonly formValidityChange = output<boolean>();
   public readonly formChange = output<VisaRequestApplicantInfo>();
 
+  public readonly today = startOfDay(new Date());
+
   public readonly form = this.fb.group({
     firstName: ['', Validators.required],
     lastName: ['', Validators.required],
     email: [''],
     passportNumber: ['', Validators.required],
     citizenshipCountry: ['', Validators.required],
-    passportExpiryDate: [null as Date | null, Validators.required],
-    birthDate: [null as Date | null, Validators.required],
+    passportExpiryDate: [null as Date | null, [Validators.required, notPastDateValidator(this.today)]],
+    birthDate: [null as Date | null, [Validators.required, notFutureDateValidator(this.today)]],
     embassyCity: ['', Validators.required],
     company: ['', Validators.required],
     organizationID: ['', Validators.required],
@@ -71,4 +74,9 @@ export class VisaRequestApplyFormComponent {
   private buildFormValue(): VisaRequestApplicantInfo {
     return this.form.getRawValue() as VisaRequestApplicantInfo;
   }
+}
+
+function startOfDay(date: Date): Date {
+  date.setHours(0, 0, 0, 0);
+  return date;
 }

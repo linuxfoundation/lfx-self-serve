@@ -1,16 +1,20 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, signal, viewChild } from '@angular/core';
+import { Component, computed, inject, Signal, signal, viewChild } from '@angular/core';
+import { toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { CardTabsBarComponent } from '@components/card-tabs-bar/card-tabs-bar.component';
 import { MY_EVENT_STATUS_OPTIONS, VISA_REQUEST_STATUS_OPTIONS } from '@lfx-one/shared/constants';
 import { EventTabId, FilterOption, FilterPillOption } from '@lfx-one/shared/interfaces';
+import { MessageService } from 'primeng/api';
 import { Tooltip } from 'primeng/tooltip';
+import { catchError, defer, finalize, map, of } from 'rxjs';
 import { DiscoverEventsButtonComponent } from '../components/discover-events-button/discover-events-button.component';
 import { EventsTopBarComponent } from '../components/events-top-bar/events-top-bar.component';
 import { EventsListComponent } from './components/events-list/events-list.component';
+import { UserService } from '@app/shared/services/user.service';
 
 @Component({
   selector: 'lfx-my-events-dashboard',
@@ -18,6 +22,8 @@ import { EventsListComponent } from './components/events-list/events-list.compon
   templateUrl: './my-events-dashboard.component.html',
 })
 export class MyEventsDashboardComponent {
+  private readonly userService = inject(UserService);
+  private readonly messageService = inject(MessageService);
   private readonly eventsListRef = viewChild(EventsListComponent);
 
   protected readonly activeTab = signal<EventTabId>('upcoming');
@@ -56,6 +62,9 @@ export class MyEventsDashboardComponent {
   protected readonly nextEventName = computed(() => this.eventsListRef()?.nextEventName() ?? '');
   protected readonly upcomingCount = computed(() => this.eventsListRef()?.tabCounts().upcoming ?? 0);
 
+  protected readonly isSalesforceIdLoading = signal(false);
+  protected readonly isCreateEnabled: Signal<boolean> = this.initIsCreateEnabled();
+
   protected onFoundationChange(value: string | null): void {
     this.selectedFoundation.set(value);
   }
@@ -82,6 +91,7 @@ export class MyEventsDashboardComponent {
   }
 
   protected openCurrentRequestDialog(): void {
+    if (!this.isCreateEnabled()) return;
     this.eventsListRef()?.openCurrentRequestDialog();
   }
 
@@ -90,5 +100,42 @@ export class MyEventsDashboardComponent {
     this.selectedRole.set(null);
     this.selectedStatus.set(null);
     this.selectedSearchQuery.set('');
+  }
+
+  private initIsCreateEnabled(): Signal<boolean> {
+    if (this.userService.apiGatewayUserId()) {
+      return signal(true);
+    }
+
+    return toSignal(
+      defer(() => {
+        this.isSalesforceIdLoading.set(true);
+        return this.userService.getSalesforceId();
+      }).pipe(
+        map((profile) => {
+          if (profile?.id) {
+            this.userService.apiGatewayUserId.set(profile.id);
+            return true;
+          }
+
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Your account is missing the required Salesforce ID. Please contact support.',
+          });
+          return false;
+        }),
+        catchError(() => {
+          this.messageService.add({
+            severity: 'error',
+            summary: 'Error',
+            detail: 'Unable to verify your account. Please refresh the page.',
+          });
+          return of(false);
+        }),
+        finalize(() => this.isSalesforceIdLoading.set(false))
+      ),
+      { initialValue: false }
+    );
   }
 }
