@@ -5,6 +5,7 @@ import { Component, computed, input, model, Signal } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
 import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
 import { lfxColors } from '@lfx-one/shared/constants';
+import { buildInsightsUrl } from '@lfx-one/shared/utils';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -17,6 +18,8 @@ import type { FoundationHealthScoreDistributionResponse } from '@lfx-one/shared/
 })
 export class ProjectHealthScoresDrawerComponent {
   // === Static Options ===
+  protected readonly insightsUrl = buildInsightsUrl();
+
   protected readonly legendColors = {
     critical: lfxColors.red[500],
     unsteady: lfxColors.amber[400],

@@ -5,6 +5,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, DestroyRef, ElementRef, inject, input, PLATFORM_ID, signal } from '@angular/core';
 import { SkeletonModule } from 'primeng/skeleton';
 import { HEALTH_METRICS_CODE_CONTRIBUTION_DEFAULT_SUMMARY } from '@lfx-one/shared/constants';
+import { buildInsightsUrl } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { downloadCardAsImage } from '@shared/utils/download-card.util';
@@ -118,7 +119,7 @@ export class CodeContributionCardComponent {
   protected readonly exploreMoreUrl = computed(() => {
     const slug = this.summaryData().projectSlug;
     if (!slug) return '';
-    return `https://insights.linuxfoundation.org/project/${slug}/contributors`;
+    return buildInsightsUrl(`/project/${slug}/contributors`);
   });
 
   public constructor() {

@@ -10,6 +10,7 @@ import { ImpersonationDialogComponent } from '@components/impersonation-dialog/i
 import { environment } from '@environments/environment';
 import { LENS_DEFAULT_ROUTES } from '@lfx-one/shared/constants';
 import { Lens } from '@lfx-one/shared/interfaces';
+import { buildInsightsUrl } from '@lfx-one/shared/utils';
 import { LensService } from '@services/lens.service';
 import { UserService } from '@services/user.service';
 import { DialogService } from 'primeng/dynamicdialog';
@@ -35,6 +36,7 @@ export class LensSwitcherComponent {
   protected readonly lenses = this.lensService.availableLenses;
   protected readonly user = this.userService.user;
   protected readonly changelogUrl = environment.urls.changelog;
+  protected readonly insightsUrl = buildInsightsUrl();
   protected readonly userMenu = viewChild<Popover>('userMenu');
 
   protected readonly userInitials = this.userService.userInitials;
