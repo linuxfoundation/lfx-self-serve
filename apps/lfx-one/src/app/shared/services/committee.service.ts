@@ -138,8 +138,27 @@ export class CommitteeService {
 
   // ── My Committees ─────────────────────────────────────────────────────────
 
-  /** Get all committees for the current user */
-  public getMyCommittees(): Observable<MyCommittee[]> {
-    return this.http.get<MyCommittee[]>('/api/committees/my-committees').pipe(catchError(() => of([])));
+  /**
+   * Get committees for the current user, optionally scoped to a project or foundation.
+   *
+   * - `projectUid` scopes to memberships under a single project.
+   * - `foundationUid` scopes to memberships under a foundation (and its sub-projects).
+   *
+   * Pass neither to fetch the full cross-project set (used by cross-project pages).
+   * If both are provided, `projectUid` takes precedence and `foundationUid` is ignored.
+   */
+  public getMyCommittees(projectUid?: string, foundationUid?: string): Observable<MyCommittee[]> {
+    let params = new HttpParams();
+    if (projectUid) {
+      params = params.set('project_uid', projectUid);
+    } else if (foundationUid) {
+      params = params.set('foundation_uid', foundationUid);
+    }
+    return this.http.get<MyCommittee[]>('/api/committees/my-committees', { params }).pipe(
+      catchError((error) => {
+        console.error('Failed to load my committees:', error);
+        return of([]);
+      })
+    );
   }
 }

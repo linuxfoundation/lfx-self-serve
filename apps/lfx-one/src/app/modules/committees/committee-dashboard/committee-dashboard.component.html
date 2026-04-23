@@ -21,7 +21,9 @@
       <p class="mt-1 text-sm text-gray-500" data-testid="dashboard-hero-description">
         {{
           isMeLens()
-            ? committeeLabel.plural + ' you are a member of across all foundations and projects.'
+            ? project()?.uid
+              ? committeeLabel.plural + ' you are a member of in this ' + (isFoundationContext() ? 'foundation' : 'project') + '.'
+              : committeeLabel.plural + ' you are a member of across all foundations and projects.'
             : 'Manage ' + committeeLabel.plural.toLowerCase() + ' and governance for your project.'
         }}
       </p>
