@@ -4,13 +4,17 @@
 import { HttpClient } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
 import { AddUserToProjectRequest, ProjectPermissionUser, ProjectSettings, UpdateUserRoleRequest } from '@lfx-one/shared/interfaces';
-import { map, Observable } from 'rxjs';
+import { catchError, map, Observable, shareReplay, throwError } from 'rxjs';
 
 @Injectable({
   providedIn: 'root',
 })
 export class PermissionsService {
   private readonly http = inject(HttpClient);
+  // Per-UID cache so repeat mounts of the staff card don't re-hit the endpoint. Mirrors the
+  // getProject / getProjects pattern in ProjectService. On error the cache entry is evicted so
+  // the next subscription retries with a fresh request instead of replaying the stuck error.
+  private readonly projectSettingsCache = new Map<string, Observable<ProjectSettings>>();
 
   // Add user to project with specified role
   public addUserToProject(project: string, request: AddUserToProjectRequest): Observable<void> {
@@ -27,9 +31,27 @@ export class PermissionsService {
     return this.http.delete<void>(`/api/projects/${project}/permissions/${username}`);
   }
 
+  // Fetch the raw project settings document. Errors are NOT swallowed — callers track their own
+  // loading/error state so they can distinguish "fetch failed" from "settings loaded with no staff".
+  // The cache entry is evicted on error so a transient failure (network blip, 5xx) doesn't poison
+  // the cache and block retries for other consumers (e.g., getProjectPermissions below) on the same UID.
+  public getProjectSettings(uid: string): Observable<ProjectSettings> {
+    if (!this.projectSettingsCache.has(uid)) {
+      const settings$ = this.http.get<ProjectSettings>(`/api/projects/${uid}/permissions`).pipe(
+        catchError((error) => {
+          this.projectSettingsCache.delete(uid);
+          return throwError(() => error);
+        }),
+        shareReplay(1)
+      );
+      this.projectSettingsCache.set(uid, settings$);
+    }
+    return this.projectSettingsCache.get(uid)!;
+  }
+
   // Fetch all user permissions for a project and transform to display format
   public getProjectPermissions(project: string): Observable<ProjectPermissionUser[]> {
-    return this.http.get<ProjectSettings>(`/api/projects/${project}/permissions`).pipe(
+    return this.getProjectSettings(project).pipe(
       map((settings: ProjectSettings) => {
         const users: ProjectPermissionUser[] = [];
 

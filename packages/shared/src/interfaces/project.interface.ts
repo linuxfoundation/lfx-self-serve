@@ -45,6 +45,9 @@ export interface ProjectSettings {
   announcement_date: string;
   writers: UserInfo[];
   auditors: UserInfo[];
+  executive_director?: UserInfo | null;
+  program_manager?: UserInfo | null;
+  opportunity_owner?: UserInfo | null;
   created_at: string;
   updated_at: string;
 }
