@@ -1371,8 +1371,9 @@ export class UserService {
   }
 
   /**
-   * Build a "Cast Vote" pending action per active vote. Links to the votes drawer on the
-   * My Activity page where casting actually happens — there's no standalone vote-detail route.
+   * Build a "Cast Vote" pending action per active vote. Links to the My Votes page (me-lens of
+   * /votes) — there's no standalone vote-detail route, so the user lands on the list and picks
+   * the vote to cast.
    */
   private transformVotesToActions(votes: Vote[]): PendingActionItem[] {
     return votes.map((vote) => {
@@ -1390,7 +1391,7 @@ export class UserService {
         icon: 'fa-regular fa-check-to-slot',
         severity: 'warn',
         buttonText: 'Cast Vote',
-        buttonLink: '/my-activity',
+        buttonLink: '/votes',
         date: `Closes ${formattedEnd}`,
       };
     });
