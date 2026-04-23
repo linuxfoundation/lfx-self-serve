@@ -71,6 +71,7 @@ export class MeetingsDashboardComponent {
   public meetingTypeOptions: Signal<{ label: string; value: string | null }[]>;
   public foundationFilter: WritableSignal<string | null>;
   public projectFilter: WritableSignal<string | null>;
+  public pendingRsvpOnly: WritableSignal<boolean>;
   public showFoundationFilter: Signal<boolean>;
   public showProjectFilter: Signal<boolean>;
   public foundationOptions: Signal<{ label: string; value: string | null }[]>;
@@ -134,6 +135,7 @@ export class MeetingsDashboardComponent {
     this.meetingTypeFilter = signal<string | null>(null);
     this.foundationFilter = signal<string | null>(null);
     this.projectFilter = signal<string | null>(null);
+    this.pendingRsvpOnly = signal<boolean>(false);
     this.hasMore = computed(() => this.activeLens() !== 'me' && (this.timeFilter() === 'past' ? !!this.pastPageToken() : !!this.upcomingPageToken()));
 
     // Initialize meeting type options
@@ -214,6 +216,7 @@ export class MeetingsDashboardComponent {
     this.timeFilter.set(value);
     this.foundationFilter.set(null);
     this.projectFilter.set(null);
+    this.pendingRsvpOnly.set(false);
     this.router.navigate([], {
       relativeTo: this.route,
       queryParams: { time: value === 'past' ? 'past' : null },
@@ -227,6 +230,7 @@ export class MeetingsDashboardComponent {
     this.meetingTypeFilter.set(null);
     this.foundationFilter.set(null);
     this.projectFilter.set(null);
+    this.pendingRsvpOnly.set(false);
   }
 
   public loadMore(): void {
@@ -255,12 +259,13 @@ export class MeetingsDashboardComponent {
     const rawUserMeetings$ = toObservable(this.rawUserMeetings);
     const foundationFilter$ = toObservable(this.foundationFilter);
     const projectFilter$ = toObservable(this.projectFilter);
-    const meLens$ = combineLatest([lens$, timeFilter$, searchQuery$, meetingType$, rawUserMeetings$, foundationFilter$, projectFilter$]).pipe(
-      switchMap(([lens, timeFilter, searchQuery, meetingType, rawMeetings, foundation, project]) => {
+    const pendingRsvpOnly$ = toObservable(this.pendingRsvpOnly);
+    const meLens$ = combineLatest([lens$, timeFilter$, searchQuery$, meetingType$, rawUserMeetings$, foundationFilter$, projectFilter$, pendingRsvpOnly$]).pipe(
+      switchMap(([lens, timeFilter, searchQuery, meetingType, rawMeetings, foundation, project, pendingRsvpOnly]) => {
         if (lens !== 'me' || timeFilter !== 'upcoming') {
           return of<PageResult<Meeting>>({ data: [], page_token: undefined, reset: true });
         }
-        const filtered = this.filterMeLensMeetings(rawMeetings, searchQuery, meetingType, foundation, project);
+        const filtered = this.filterMeLensMeetings(rawMeetings, searchQuery, meetingType, foundation, project, pendingRsvpOnly);
         return of<PageResult<Meeting>>({ data: filtered, page_token: undefined, reset: true });
       })
     );
@@ -341,7 +346,8 @@ export class MeetingsDashboardComponent {
         if (lens !== 'me' || timeFilter !== 'past') {
           return of<PageResult<PastMeeting>>({ data: [], page_token: undefined, reset: true });
         }
-        const filtered = this.filterMeLensMeetings(rawPastMeetings, searchQuery, meetingType, foundation, project);
+        // Pending-RSVP chip is upcoming-only, so past-meeting filtering always passes `false`.
+        const filtered = this.filterMeLensMeetings(rawPastMeetings, searchQuery, meetingType, foundation, project, false);
         return of<PageResult<PastMeeting>>({ data: filtered, page_token: undefined, reset: true });
       })
     );
@@ -502,7 +508,8 @@ export class MeetingsDashboardComponent {
     searchQuery: string,
     meetingType: string | null,
     foundation: string | null,
-    project: string | null
+    project: string | null,
+    pendingRsvpOnly: boolean
   ): T[] {
     let filtered = items;
 
@@ -513,6 +520,12 @@ export class MeetingsDashboardComponent {
       // Sub-foundations (is_foundation: true with parent = this foundation) are their own
       // top-level filter entries, so exclude them and their children here.
       filtered = filtered.filter((m) => m.project_uid === foundation || (m.parent_project_uid === foundation && !m.is_foundation));
+    }
+
+    if (pendingRsvpOnly) {
+      // Pending = no RSVP yet OR a non-committal "maybe". Matches the "needs response" semantics
+      // used by the pending-actions transformer.
+      filtered = filtered.filter((m) => !m.my_rsvp || m.my_rsvp.response_type === 'maybe');
     }
 
     return this.filterBySearchAndType(filtered, searchQuery, meetingType);
@@ -703,6 +716,8 @@ export class MeetingsDashboardComponent {
   }
 
   private initIsFiltered(): Signal<boolean> {
-    return computed(() => !!this.debouncedSearchQuery() || !!this.meetingTypeFilter() || !!this.foundationFilter() || !!this.projectFilter());
+    return computed(
+      () => !!this.debouncedSearchQuery() || !!this.meetingTypeFilter() || !!this.foundationFilter() || !!this.projectFilter() || this.pendingRsvpOnly()
+    );
   }
 }

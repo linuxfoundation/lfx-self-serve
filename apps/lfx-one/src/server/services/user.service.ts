@@ -531,6 +531,48 @@ export class UserService {
 
     logger.debug(req, 'get_user_meetings', 'Fetched meetings from query service', { count: meetings.length });
 
+    // Enrich each meeting with the current user's RSVP (null when no response). Reuses the same
+    // query-service pattern that powers `getUserPendingActions` → `transformMissingRsvpsToActions`.
+    // Wrapped in try/catch so an RSVP-lookup failure degrades gracefully: meetings still return,
+    // `my_rsvp` stays undefined per row, the dashboard doesn't 500, and the Pending RSVP filter
+    // chip just shows the unfiltered list.
+    const rawUsername = await getUsernameFromAuth(req);
+    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
+    const email = getEffectiveEmail(req) ?? '';
+
+    if ((email || username) && meetings.length > 0) {
+      try {
+        const [userRsvps, activeRegistrantIds] = await Promise.all([
+          this.fetchAllUserRsvps(req, email, username),
+          this.fetchUserActiveRegistrantIds(req, email, username),
+        ]);
+
+        // Strongest-response-wins (accepted/declined beats maybe beats nothing) — same logic as
+        // `transformMissingRsvpsToActions`. Drop RSVPs whose `registrant_id` isn't in the active
+        // set; otherwise stale RSVPs from removed registrations would falsely mark meetings as
+        // "responded".
+        const rsvpByMeeting = new Map<string, MeetingRsvp>();
+        for (const rsvp of userRsvps) {
+          if (!rsvp.meeting_id) continue;
+          if (!rsvp.registrant_id || !activeRegistrantIds.has(rsvp.registrant_id)) continue;
+          const existing = rsvpByMeeting.get(rsvp.meeting_id);
+          if (!existing || (existing.response_type === 'maybe' && rsvp.response_type !== 'maybe')) {
+            rsvpByMeeting.set(rsvp.meeting_id, rsvp);
+          }
+        }
+
+        for (const meeting of meetings) {
+          if (meeting.id) {
+            meeting.my_rsvp = rsvpByMeeting.get(meeting.id) ?? null;
+          }
+        }
+      } catch (error) {
+        logger.warning(req, 'get_user_meetings', 'RSVP enrichment failed, continuing without my_rsvp', {
+          err: error,
+        });
+      }
+    }
+
     // Drop past meetings; recurring meetings survive if any occurrence is still active.
     const upcomingMeetings = meetings.filter((meeting) => {
       if (meeting.occurrences && meeting.occurrences.length > 0) {

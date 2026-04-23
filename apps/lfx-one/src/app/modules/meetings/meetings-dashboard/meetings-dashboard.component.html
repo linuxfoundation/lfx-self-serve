@@ -173,12 +173,15 @@
           [showFoundationFilter]="showFoundationFilter()"
           [showProjectFilter]="showProjectFilter()"
           [timeFilter]="timeFilter()"
+          [pendingRsvpOnly]="pendingRsvpOnly()"
+          [showPendingRsvpFilter]="activeLens() === 'me' && timeFilter() === 'upcoming'"
           (meetingTypeChange)="onMeetingTypeChange($event)"
           (foundationFilterChange)="onFoundationFilterChange($event)"
           (projectFilterChange)="onProjectFilterChange($event)"
           [searchQuery]="searchQuery()"
           (searchQueryChange)="searchQuery.set($event)"
-          (timeFilterChange)="onTimeFilterChange($event)" />
+          (timeFilterChange)="onTimeFilterChange($event)"
+          (pendingRsvpOnlyChange)="pendingRsvpOnly.set($event)" />
       }
     </div>
   </div>

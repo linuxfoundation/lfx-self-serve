@@ -5,6 +5,15 @@
   <!-- Time Filter Pills -->
   <lfx-filter-pills [options]="timeTabOptions" [selectedFilter]="timeFilter()" (filterChange)="onTimeTabChange($event)" data-testid="time-filter-tabs" />
 
+  <!-- Pending RSVP Filter Pills (Me lens, upcoming only) -->
+  @if (showPendingRsvpFilter()) {
+    <lfx-filter-pills
+      [options]="pendingRsvpPillOptions"
+      [selectedFilter]="pendingRsvpOnly() ? 'pending' : ''"
+      (filterChange)="onPendingRsvpPillChange()"
+      data-testid="pending-rsvp-filter-pills" />
+  }
+
   <!-- Search Input -->
   <div class="flex-1">
     <lfx-input-text

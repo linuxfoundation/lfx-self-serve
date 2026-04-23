@@ -21,17 +21,25 @@ export class MeetingsTopBarComponent {
   public showFoundationFilter = input<boolean>(false);
   public showProjectFilter = input<boolean>(false);
   public readonly timeFilter = input<'upcoming' | 'past'>('upcoming');
+  public readonly pendingRsvpOnly = input<boolean>(false);
+  public readonly showPendingRsvpFilter = input<boolean>(false);
   public readonly meetingTypeChange = output<string | null>();
   public readonly foundationFilterChange = output<string | null>();
   public readonly projectFilterChange = output<string | null>();
   public readonly searchQuery = input<string>('');
   public readonly searchQueryChange = output<string>();
   public readonly timeFilterChange = output<'upcoming' | 'past'>();
+  public readonly pendingRsvpOnlyChange = output<boolean>();
 
   public readonly timeTabOptions: FilterPillOption[] = [
     { id: 'upcoming', label: 'Upcoming' },
     { id: 'past', label: 'Past' },
   ];
+
+  // Single-pill toggle: when active (pendingRsvpOnly === true), selectedFilter === 'pending'
+  // and the pill highlights; when inactive, selectedFilter doesn't match any option so the pill
+  // renders gray. Clicking always fires 'pending', and the handler inverts the current state.
+  public readonly pendingRsvpPillOptions: FilterPillOption[] = [{ id: 'pending', label: 'Pending RSVP' }];
 
   public searchForm: FormGroup = new FormGroup({
     search: new FormControl(''),
@@ -72,5 +80,10 @@ export class MeetingsTopBarComponent {
 
   public onTimeTabChange(value: string): void {
     this.timeFilterChange.emit(value as 'upcoming' | 'past');
+  }
+
+  public onPendingRsvpPillChange(): void {
+    // Single pill — clicking always toggles the current state.
+    this.pendingRsvpOnlyChange.emit(!this.pendingRsvpOnly());
   }
 }

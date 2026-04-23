@@ -230,6 +230,9 @@ export interface Meeting {
   attended_count?: number;
   /** Meeting occurrences */
   occurrences: MeetingOccurrence[];
+  /** Current user's RSVP for this meeting (null when the user hasn't responded).
+   * Populated by /api/user/meetings only. Absent on other Meeting-returning endpoints. */
+  my_rsvp?: MeetingRsvp | null;
   /** Project name */
   project_name: string;
   /** Project slug */
