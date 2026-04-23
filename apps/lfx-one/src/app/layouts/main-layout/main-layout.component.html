@@ -71,16 +71,16 @@
   </p-drawer>
 
   <!-- Selector backdrop — covers main content area when project/foundation selector is open -->
-  <div
-    class="hidden lg:block fixed inset-0 bg-black/10 z-30 transition-opacity duration-300"
-    [ngClass]="{
-      'top-12': userService.impersonating(),
-      'top-0': !userService.impersonating(),
-      'opacity-100 pointer-events-auto': selectorPanelOpen(),
-      'opacity-0 pointer-events-none': !selectorPanelOpen(),
-    }"
-    (click)="selectorPanelOpen.set(false)"
-    data-testid="selector-backdrop"></div>
+  @if (selectorPanelOpen()) {
+    <div
+      class="hidden lg:block fixed inset-0 bg-black/10 z-30"
+      [ngClass]="{
+        'top-12': userService.impersonating(),
+        'top-0': !userService.impersonating(),
+      }"
+      (click)="selectorPanelOpen.set(false)"
+      data-testid="selector-backdrop"></div>
+  }
 
   <!-- Main Content Area -->
   <main class="flex-1 min-w-0 transition-all duration-300 lg:ml-[344px] flex flex-col" data-testid="main-content">
