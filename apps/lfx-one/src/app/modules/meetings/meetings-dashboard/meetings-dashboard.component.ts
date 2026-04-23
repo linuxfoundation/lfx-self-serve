@@ -523,9 +523,8 @@ export class MeetingsDashboardComponent {
     }
 
     if (pendingRsvpOnly) {
-      // Pending = no RSVP yet OR a non-committal "maybe". Matches the "needs response" semantics
-      // used by the pending-actions transformer.
-      filtered = filtered.filter((m) => !m.my_rsvp || m.my_rsvp.response_type === 'maybe');
+      // Pending = no RSVP recorded. accepted, declined, and maybe are all valid responses.
+      filtered = filtered.filter((m) => !m.my_rsvp);
     }
 
     return this.filterBySearchAndType(filtered, searchQuery, meetingType);
