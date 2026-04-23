@@ -192,7 +192,7 @@ export class WebsiteVisitsDrawerComponent {
             title: 'Investigate traffic decline',
             description: `Sessions dropped ~${decline}% over recent weeks — review traffic sources and content changes`,
             priority: 'high',
-            dueLabel: 'This month',
+
             actionType: 'decline',
           });
         }
@@ -207,7 +207,7 @@ export class WebsiteVisitsDrawerComponent {
             title: `Diversify traffic beyond ${sorted[0].domainGroup}`,
             description: `${topShare.toFixed(0)}% of sessions come from a single domain — expand content across other properties`,
             priority: 'medium',
-            dueLabel: 'This month',
+
             actionType: 'diversify',
           });
         }
@@ -221,7 +221,7 @@ export class WebsiteVisitsDrawerComponent {
             title: 'Improve internal linking',
             description: `Only ${pagesPerSession.toFixed(1)} pages per session — add cross-links to increase engagement`,
             priority: 'medium',
-            dueLabel: 'This month',
+
             actionType: 'optimize',
           });
         }
@@ -232,7 +232,7 @@ export class WebsiteVisitsDrawerComponent {
           title: 'Continue current strategy',
           description: `${formatNumber(totalSessions)} sessions with healthy traffic distribution`,
           priority: 'low',
-          dueLabel: 'Ongoing',
+
           actionType: 'growth',
         });
       }

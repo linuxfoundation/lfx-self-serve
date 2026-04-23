@@ -149,7 +149,7 @@ export class EventGrowthDrawerComponent {
           title: 'Reverse attendance decline',
           description: `Attendance dropped ${Math.abs(attendeeYoyChange).toFixed(1)}% YoY — review event mix, promotion windows, and channel performance`,
           priority: 'high',
-          dueLabel: 'This month',
+
           actionType: 'decline',
         });
       } else if (attendeeYoyChange <= -3) {
@@ -157,7 +157,7 @@ export class EventGrowthDrawerComponent {
           title: 'Attendance softening',
           description: `Attendance down ${Math.abs(attendeeYoyChange).toFixed(1)}% YoY — watch next event's registration pace`,
           priority: 'medium',
-          dueLabel: 'Next event',
+
           actionType: 'investigate',
         });
       }
@@ -168,7 +168,7 @@ export class EventGrowthDrawerComponent {
           title: 'Event revenue declining',
           description: `Total event revenue down ${Math.abs(revenueYoyChange).toFixed(1)}% YoY${revenuePerAttendeeText} — review sponsorship packages and ticket pricing`,
           priority: 'medium',
-          dueLabel: 'This quarter',
+
           actionType: 'revenue',
         });
       }
@@ -181,7 +181,7 @@ export class EventGrowthDrawerComponent {
             title: 'One event carries the portfolio',
             description: `${leadEvent.name} drives ${topShare.toFixed(0)}% of total attendance — a single weak year on this event would hit the whole portfolio`,
             priority: 'medium',
-            dueLabel: 'Next planning cycle',
+
             actionType: 'engagement',
           });
         }
@@ -195,7 +195,7 @@ export class EventGrowthDrawerComponent {
             title: 'Registrations falling 3 quarters straight',
             description: `Quarterly registrations fell from ${formatNumber(recent3[0].value)} to ${formatNumber(recent3[2].value)} — sustained decline, not a single bad event`,
             priority: 'high',
-            dueLabel: 'This quarter',
+
             actionType: 'decline',
           });
         }

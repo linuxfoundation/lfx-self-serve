@@ -200,7 +200,7 @@ export class PaidSocialReachDrawerComponent {
           title: 'Cut or pause losing campaigns',
           description: `ROAS is ${roas.toFixed(2)}x — ${formatCurrency(lost)} spent above revenue earned. Pause bottom-performing campaigns before next cycle`,
           priority: 'high',
-          dueLabel: 'This week',
+
           actionType: 'decline',
         });
       } else if (totalSpend > 0 && roas >= 0.8 && roas < 1) {
@@ -208,7 +208,7 @@ export class PaidSocialReachDrawerComponent {
           title: 'Campaigns at break-even',
           description: `ROAS is ${roas.toFixed(2)}x on ${formatCurrency(totalSpend)} spend — not yet profitable. Fix creative and targeting before scaling budget`,
           priority: 'medium',
-          dueLabel: 'This month',
+
           actionType: 'investigate',
         });
       }
@@ -223,7 +223,7 @@ export class PaidSocialReachDrawerComponent {
             title: 'ROAS trending down 3 months straight',
             description: `ROAS fell from ${recent3[0].toFixed(2)}x to ${recent3[2].toFixed(2)}x over 3 months — investigate audience saturation and creative fatigue`,
             priority: 'medium',
-            dueLabel: 'This month',
+
             actionType: 'investigate',
           });
         }
@@ -235,7 +235,7 @@ export class PaidSocialReachDrawerComponent {
           title: 'Investigate reach decline',
           description: `Impressions dropped ${Math.abs(changePercentage).toFixed(1)}% MoM — review targeting, bid strategy, and platform algorithm changes`,
           priority: 'high',
-          dueLabel: 'Next campaign',
+
           actionType: 'investigate',
         });
       }

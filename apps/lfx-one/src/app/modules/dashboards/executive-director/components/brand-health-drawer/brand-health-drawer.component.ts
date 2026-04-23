@@ -127,7 +127,7 @@ export class BrandHealthDrawerComponent {
           title: 'Address negative sentiment spike',
           description: `${sentiment.negative.toFixed(1)}% of mentions are negative — investigate top themes and coordinate response`,
           priority: 'high',
-          dueLabel: 'This month',
+
           actionType: 'decline',
         });
       }
@@ -137,7 +137,7 @@ export class BrandHealthDrawerComponent {
           title: 'Sentiment trending down',
           description: `Positive sentiment dropped ${Math.abs(sentimentMomChangePp).toFixed(1)}pp month-over-month — review recent coverage drivers`,
           priority: 'medium',
-          dueLabel: 'This month',
+
           actionType: 'engagement',
         });
       }
@@ -147,7 +147,7 @@ export class BrandHealthDrawerComponent {
           title: 'Maintain brand sentiment momentum',
           description: `${formatNumber(totalMentions)} mentions with ${sentiment.positive.toFixed(0)}% positive sentiment`,
           priority: 'low',
-          dueLabel: 'Ongoing',
+
           actionType: 'growth',
         });
       }

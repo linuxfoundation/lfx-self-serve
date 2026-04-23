@@ -120,7 +120,7 @@ export function buildFlywheelRecommendedActions(data: FlywheelConversionResponse
         title: 'Improve working group re-engagement path',
         description: `WG re-engagement at ${wgRate.toFixed(1)}% vs ${communityRate.toFixed(1)}% for community — attendees need clearer path to participate`,
         priority: 'high',
-        dueLabel: 'This quarter',
+
         actionType: 'conversion',
       });
     }
@@ -131,7 +131,7 @@ export function buildFlywheelRecommendedActions(data: FlywheelConversionResponse
       title: 'Address re-engagement rate decline',
       description: `Re-engagement dropped ${Math.abs(reengagement.reengagementMomChange).toFixed(1)}% MoM — review post-event follow-up effectiveness`,
       priority: 'high',
-      dueLabel: 'This month',
+
       actionType: 'decline',
     });
   }
@@ -141,7 +141,7 @@ export function buildFlywheelRecommendedActions(data: FlywheelConversionResponse
       title: 'Add post-event engagement CTAs',
       description: `Only ${reengagement.reengagementRate.toFixed(1)}% re-engagement — add community join and working group prompts to event follow-ups`,
       priority: 'medium',
-      dueLabel: 'Next event',
+
       actionType: 'content',
     });
   }
@@ -152,7 +152,7 @@ export function buildFlywheelRecommendedActions(data: FlywheelConversionResponse
       title: 'Continue flywheel optimization',
       description: `${reengagement.reengagementRate.toFixed(1)}% re-engagement rate${growthSuffix} across ${formatNumber(attendees)} attendees`,
       priority: 'low',
-      dueLabel: 'Ongoing',
+
       actionType: 'growth',
     });
   }

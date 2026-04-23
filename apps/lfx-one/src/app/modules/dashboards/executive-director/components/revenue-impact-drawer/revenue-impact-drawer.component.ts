@@ -252,7 +252,7 @@ export class RevenueImpactDrawerComponent {
           title: 'Cut or pause losing paid campaigns',
           description: `Paid ROAS is ${paidMedia.roas.toFixed(2)}x — ${RevenueImpactDrawerComponent.formatRevenue(lost)} spent above revenue earned. Review top-spending campaigns and pause underperformers`,
           priority: 'high',
-          dueLabel: 'This week',
+
           actionType: 'decline',
         });
       } else if (paidMedia.adSpend > 0 && paidMedia.roas >= 0.8 && paidMedia.roas < 1) {
@@ -260,7 +260,7 @@ export class RevenueImpactDrawerComponent {
           title: 'Paid media at break-even',
           description: `ROAS is ${paidMedia.roas.toFixed(2)}x on ${RevenueImpactDrawerComponent.formatRevenue(paidMedia.adSpend)} spend — optimize creative and targeting before scaling`,
           priority: 'medium',
-          dueLabel: 'This month',
+
           actionType: 'investigate',
         });
       }
@@ -272,7 +272,7 @@ export class RevenueImpactDrawerComponent {
             title: 'Reduce channel concentration risk',
             description: `${RevenueImpactDrawerComponent.formatChannelLabel(top.channel)} drives ${top.percentage.toFixed(0)}% of paid impressions — one algorithm change could cut reach in half. Grow at least one alternate channel`,
             priority: 'high',
-            dueLabel: 'This quarter',
+
             actionType: 'decline',
           });
         } else if (top.percentage > 55) {
@@ -280,7 +280,7 @@ export class RevenueImpactDrawerComponent {
             title: 'Watch channel concentration',
             description: `${RevenueImpactDrawerComponent.formatChannelLabel(top.channel)} is ${top.percentage.toFixed(0)}% of paid impressions — diversify before it crosses 70%`,
             priority: 'medium',
-            dueLabel: 'This quarter',
+
             actionType: 'engagement',
           });
         }
@@ -297,7 +297,7 @@ export class RevenueImpactDrawerComponent {
             title: 'Rebalance project-level channel mix',
             description: `${heavilyConcentrated.length} projects get 80%+ of their paid reach from a single channel — rebalance to reduce per-project platform dependency`,
             priority: 'medium',
-            dueLabel: 'Next quarter',
+
             actionType: 'engagement',
           });
         }
@@ -313,7 +313,7 @@ export class RevenueImpactDrawerComponent {
               title: 'Event registration revenue over-concentrated',
               description: `${topEvt.channel} drove ${topShare.toFixed(0)}% of event-registration last-touch revenue (${RevenueImpactDrawerComponent.formatRevenue(topEvt.lastTouchRevenue ?? 0)}) — grow alternate acquisition paths for event revenue`,
               priority: 'medium',
-              dueLabel: 'Next quarter',
+
               actionType: 'engagement',
             });
           }

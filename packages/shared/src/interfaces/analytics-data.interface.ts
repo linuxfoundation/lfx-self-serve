@@ -2677,7 +2677,6 @@ export interface MarketingRecommendedAction {
   title: string;
   description: string;
   priority: 'high' | 'medium' | 'low';
-  dueLabel: string;
   actionType: MarketingActionType;
 }
 

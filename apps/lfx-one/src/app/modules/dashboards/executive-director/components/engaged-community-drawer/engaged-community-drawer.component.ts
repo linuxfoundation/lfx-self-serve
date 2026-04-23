@@ -205,7 +205,7 @@ export class EngagedCommunityDrawerComponent {
           title: 'Address community decline',
           description: `Engaged community dropped ${Math.abs(changePercentage).toFixed(1)}% vs last month — review engagement programs and onboarding flow`,
           priority: 'high',
-          dueLabel: 'This month',
+
           actionType: 'decline',
         });
       }
@@ -218,7 +218,7 @@ export class EngagedCommunityDrawerComponent {
             title: 'Grow working group participation',
             description: `Working groups hold only ${wgShare.toFixed(0)}% of engaged members (${formatNumber(breakdown.workingGroupMembers)}) — convert passive community members into active contributors`,
             priority: 'medium',
-            dueLabel: 'This quarter',
+
             actionType: 'engagement',
           });
         }

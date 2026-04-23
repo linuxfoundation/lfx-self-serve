@@ -67,7 +67,7 @@ export class MemberRetentionDrawerComponent {
           title: 'Improve net revenue retention',
           description: `NRR at ${netRevenueRetention}% — significant revenue loss from existing members. Review downgrades and churn`,
           priority: 'high',
-          dueLabel: 'This quarter',
+
           actionType: 'revenue',
         });
       } else if (netRevenueRetention >= 90 && netRevenueRetention < 98) {
@@ -75,7 +75,7 @@ export class MemberRetentionDrawerComponent {
           title: 'Monitor net revenue retention',
           description: `NRR at ${netRevenueRetention}% — revenue contraction from existing members. Explore upsell opportunities`,
           priority: 'medium',
-          dueLabel: 'Next quarter',
+
           actionType: 'revenue',
         });
       }
@@ -86,7 +86,7 @@ export class MemberRetentionDrawerComponent {
           title: 'Address retention decline',
           description: `Renewal rate dropped ${Math.abs(changePercentage)}% — review member satisfaction and renewal outreach timing`,
           priority: 'high',
-          dueLabel: 'This month',
+
           actionType: 'decline',
         });
       }
@@ -96,7 +96,7 @@ export class MemberRetentionDrawerComponent {
           title: 'Maintain retention excellence',
           description: `${renewalRate}% renewal rate${netRevenueRetention > 100 ? ` with ${netRevenueRetention}% NRR` : ''}`,
           priority: 'low',
-          dueLabel: 'Ongoing',
+
           actionType: 'growth',
         });
       }

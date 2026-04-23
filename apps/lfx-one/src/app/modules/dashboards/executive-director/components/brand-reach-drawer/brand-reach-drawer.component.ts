@@ -82,7 +82,7 @@ export class BrandReachDrawerComponent {
             title: 'Reduce platform concentration risk',
             description: `${top.name} holds ${topShare.toFixed(0)}% of ${formatNumber(totalSocialFollowers)} followers — a platform policy change could halve reach. Grow the next 2 largest channels`,
             priority: 'high',
-            dueLabel: 'This quarter',
+
             actionType: 'decline',
           });
         } else if (topShare > 55) {
@@ -90,7 +90,7 @@ export class BrandReachDrawerComponent {
             title: 'Watch platform concentration',
             description: `${top.name} is ${topShare.toFixed(0)}% of total followers — diversify before it crosses 70%`,
             priority: 'medium',
-            dueLabel: 'Next quarter',
+
             actionType: 'engagement',
           });
         }
@@ -102,7 +102,7 @@ export class BrandReachDrawerComponent {
           title: 'Expand platform footprint',
           description: `Active on only ${activePlatforms} platform${activePlatforms === 1 ? '' : 's'} — evaluate adding complementary networks to reduce single-network risk`,
           priority: 'medium',
-          dueLabel: 'This quarter',
+
           actionType: 'engagement',
         });
       }
@@ -116,7 +116,7 @@ export class BrandReachDrawerComponent {
             title: 'Web traffic over-reliant on one domain',
             description: `${topDomain.domain} drives ${topDomainShare.toFixed(0)}% of sessions — invest in secondary properties and cross-linking`,
             priority: 'medium',
-            dueLabel: 'This quarter',
+
             actionType: 'engagement',
           });
         }

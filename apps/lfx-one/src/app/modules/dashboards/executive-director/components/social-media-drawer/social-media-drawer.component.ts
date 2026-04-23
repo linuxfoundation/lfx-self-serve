@@ -219,7 +219,7 @@ export class SocialMediaDrawerComponent {
           title: `Increase posting on ${highEngageLowPost.platform}`,
           description: `${highEngageLowPost.engagementRate.toFixed(1)}% engagement rate but only ${highEngageLowPost.postsLast30Days} posts in 30 days`,
           priority: 'high',
-          dueLabel: 'This week',
+
           actionType: 'content',
         });
       }
@@ -229,7 +229,7 @@ export class SocialMediaDrawerComponent {
           title: 'Address follower decline',
           description: `Followers dropped ${Math.abs(changePercentage)}% — review content strategy and posting cadence`,
           priority: 'high',
-          dueLabel: 'This week',
+
           actionType: 'decline',
         });
       }
@@ -243,7 +243,7 @@ export class SocialMediaDrawerComponent {
             title: `Boost engagement on ${lowest.platform}`,
             description: `${formatNumber(lowest.followers)} followers but only ${lowest.engagementRate.toFixed(1)}% engagement — try interactive content`,
             priority: 'medium',
-            dueLabel: 'This month',
+
             actionType: 'engagement',
           });
         }
@@ -254,7 +254,7 @@ export class SocialMediaDrawerComponent {
           title: 'Continue growth strategy',
           description: `${formatNumber(totalFollowers)} followers across ${platforms.length} platforms${changePercentage > 0 ? ` — growing ${changePercentage}%` : ''}`,
           priority: 'low',
-          dueLabel: 'Ongoing',
+
           actionType: 'growth',
         });
       }

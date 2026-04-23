@@ -251,7 +251,7 @@ export class EmailCtrDrawerComponent {
           title: 'Test new call-to-action formats',
           description: `CTR dropped ${Math.abs(changePercentage)}% — experiment with button placement and copy in the next send`,
           priority: 'high',
-          dueLabel: 'Next send',
+
           actionType: 'optimize',
         });
       }
@@ -266,7 +266,7 @@ export class EmailCtrDrawerComponent {
             title: 'Optimize email subject lines',
             description: `Open rate declined from ${prevOpenRate.toFixed(1)}% to ${latestOpenRate.toFixed(1)}% — A/B test subject lines`,
             priority: latestOpenRate < prevOpenRate * 0.9 ? 'high' : 'medium',
-            dueLabel: 'Next send',
+
             actionType: 'content',
           });
         }
@@ -281,7 +281,7 @@ export class EmailCtrDrawerComponent {
             title: `Replicate "${best.campaignName}" approach`,
             description: `Top campaign has ${best.avgCtr.toFixed(1)}% CTR vs ${worst.avgCtr.toFixed(1)}% for "${worst.campaignName}" — apply winning format`,
             priority: 'medium',
-            dueLabel: 'This month',
+
             actionType: 'optimize',
           });
         }
@@ -292,7 +292,7 @@ export class EmailCtrDrawerComponent {
           title: 'Maintain current momentum',
           description: `CTR is trending up (+${changePercentage}%) — continue current content strategy`,
           priority: 'low',
-          dueLabel: 'Ongoing',
+
           actionType: 'growth',
         });
       }
