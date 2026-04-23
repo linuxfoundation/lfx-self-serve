@@ -151,6 +151,28 @@ const EMPTY_ED_EVOLUTION_DATA: EdEvolutionData = {
     projectBreakdown: [],
     eventRegistrationAttribution: { channelBreakdown: [], monthlyTrend: [] },
   },
+  emailCtr: {
+    currentCtr: 0,
+    changePercentage: 0,
+    trend: 'up' as const,
+    monthlyData: [],
+    monthlyLabels: [],
+    campaignGroups: [],
+    monthlySends: [],
+    monthlyOpens: [],
+  },
+  paidCampaign: {
+    totalReach: 0,
+    roas: 0,
+    totalSpend: 0,
+    totalRevenue: 0,
+    changePercentage: 0,
+    trend: 'up' as const,
+    monthlyData: [],
+    monthlyLabels: [],
+    monthlyRoas: [],
+    channelGroups: [],
+  },
 };
 
 @Component({
@@ -307,6 +329,8 @@ export class MarketingOverviewComponent {
             brandReach: safe('brandReach', this.analyticsService.getBrandReach(slug)),
             brandHealth: safe('brandHealth', this.analyticsService.getBrandHealth(slug)),
             revenueImpact: safe('revenueImpact', this.analyticsService.getRevenueImpact(slug)),
+            emailCtr: safe('emailCtr', this.analyticsService.getEmailCtr(slug)),
+            paidCampaign: safe('paidCampaign', this.analyticsService.getSocialReach(slug)),
           })
         )
       ),

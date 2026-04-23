@@ -2895,6 +2895,47 @@ export interface EmailCtrResponse {
 }
 
 // ============================================
+// Marketing Metrics Card (Executive Director Dashboard)
+// ============================================
+
+/**
+ * Email campaign section data for the Marketing Metrics card
+ */
+export interface MarketingMetricsEmailSection {
+  ctr: string;
+  changeLabel: string;
+  trend: 'up' | 'down' | 'neutral';
+  totalSends: number;
+  totalOpens: number;
+  openRate: string;
+  monthlyData: number[];
+  monthlyLabels: string[];
+}
+
+/**
+ * Paid campaign section data for the Marketing Metrics card
+ */
+export interface MarketingMetricsPaidSection {
+  impressions: string;
+  changeLabel: string;
+  trend: 'up' | 'down' | 'neutral';
+  roas: string;
+  totalSpend: string;
+  totalRevenue: string;
+  monthlyData: number[];
+  monthlyLabels: string[];
+}
+
+/**
+ * Composite data for the Marketing Metrics card.
+ * Pre-formatted for template binding — no formatting in the template.
+ */
+export interface MarketingMetricsCardData {
+  email: MarketingMetricsEmailSection;
+  paid: MarketingMetricsPaidSection;
+}
+
+// ============================================
 // North Star Metrics (Executive Director Dashboard)
 // ============================================
 
@@ -3328,6 +3369,30 @@ export interface MarketingAttributionResponse {
 }
 
 /**
+ * Aggregated metrics for a single marketing funnel tier (ToFU / MoFU / BoFU).
+ * Used by the email-CTR drawer to roll up attribution data by funnel stage.
+ */
+export interface FunnelTierMetrics {
+  count: number;
+  spend: number;
+  revenue: number;
+  impressions: number;
+  clicks: number;
+  sessions: number;
+  conversions: number;
+}
+
+/**
+ * Funnel-stage breakdown of paid campaign metrics.
+ * Built from PaidCampaignRow[] in the email-CTR drawer.
+ */
+export interface FunnelAggregates {
+  tofu: FunnelTierMetrics;
+  mofu: FunnelTierMetrics;
+  bofu: FunnelTierMetrics;
+}
+
+/**
  * Aggregated response for all ED Evolution dashboard API calls.
  * Used by buildEdEvolutionMetrics() to convert API data into card UI models.
  */
@@ -3340,5 +3405,7 @@ export interface EdEvolutionData {
   brandReach: BrandReachResponse;
   brandHealth: BrandHealthResponse;
   revenueImpact: RevenueImpactResponse;
+  emailCtr: EmailCtrResponse;
+  paidCampaign: SocialReachResponse;
   attribution?: MarketingAttributionResponse;
 }

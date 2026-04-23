@@ -1921,13 +1921,57 @@ export class ProjectService {
         ORDER BY CTR_LAST_6_MONTHS DESC
       `;
 
-      const [summaryResult, monthlyResult, campaignResult] = await Promise.all([
+      // Query 4: Per-campaign performance from email_campaign_performance (last 6 months)
+      const campaignPerfQuery = `
+        SELECT
+          MARKETING_EMAIL_NAME,
+          EMAIL_TYPE,
+          SUM(SENDS) AS TOTAL_SENDS,
+          SUM(OPENS) AS TOTAL_OPENS,
+          SUM(CLICKS) AS TOTAL_CLICKS,
+          ROUND(SUM(OPENS) * 100.0 / NULLIF(SUM(SENDS), 0), 1) AS OPEN_RATE,
+          ROUND(SUM(CLICKS) * 100.0 / NULLIF(SUM(SENDS), 0), 1) AS CTR
+        FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CAMPAIGN_PERFORMANCE
+        WHERE FOUNDATION_SLUG = ?
+          AND PUBLISHED_MONTH_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+        GROUP BY MARKETING_EMAIL_NAME, EMAIL_TYPE
+        ORDER BY TOTAL_SENDS DESC
+      `;
+
+      const [summaryResult, monthlyResult, campaignResult, campaignPerfResult] = await Promise.all([
         this.snowflakeService.execute<{ PROJECT_NAME: string; CTR_LAST_COMPLETED_MONTH: number; CTR_MOM_CHANGE: number }>(summaryQuery, [foundationSlug]),
         this.snowflakeService.execute<{ PUBLISHED_MONTH: string; PUBLISHED_MONTH_DATE: string; MONTHLY_CTR: number; TOTAL_SENDS: number; TOTAL_OPENS: number }>(
           monthlyQuery,
           [foundationSlug]
         ),
         this.snowflakeService.execute<{ PROJECT_NAME: string; LF_SUB_DOMAIN_CLASSIFICATION: string; AVG_CTR: number }>(campaignQuery, [foundationSlug]),
+        this.snowflakeService
+          .execute<{
+            MARKETING_EMAIL_NAME: string;
+            EMAIL_TYPE: string;
+            TOTAL_SENDS: number;
+            TOTAL_OPENS: number;
+            TOTAL_CLICKS: number;
+            OPEN_RATE: number;
+            CTR: number;
+          }>(campaignPerfQuery, [foundationSlug])
+          .catch((error) => {
+            logger.warning(undefined, 'get_email_ctr', 'Optional campaign breakdown query failed, degrading gracefully', {
+              foundation_slug: foundationSlug,
+              err: error,
+            });
+            return {
+              rows: [] as {
+                MARKETING_EMAIL_NAME: string;
+                EMAIL_TYPE: string;
+                TOTAL_SENDS: number;
+                TOTAL_OPENS: number;
+                TOTAL_CLICKS: number;
+                OPEN_RATE: number;
+                CTR: number;
+              }[],
+            };
+          }),
       ]);
 
       if (summaryResult.rows.length === 0 && monthlyResult.rows.length === 0) {
@@ -1962,6 +2006,91 @@ export class ProjectService {
         avgCtr: Math.round((row.AVG_CTR ?? 0) * 10) / 10,
       }));
 
+      // Group campaigns by email type and compute per-type aggregates
+      const typeMap = new Map<
+        string,
+        {
+          sends: number;
+          opens: number;
+          clicks: number;
+          campaigns: { name: string; sends: number; opens: number; clicks: number; openRate: number; ctr: number }[];
+        }
+      >();
+      for (const row of campaignPerfResult.rows) {
+        const existing = typeMap.get(row.EMAIL_TYPE) ?? { sends: 0, opens: 0, clicks: 0, campaigns: [] };
+        const sends = row.TOTAL_SENDS ?? 0;
+        const opens = row.TOTAL_OPENS ?? 0;
+        const clicks = row.TOTAL_CLICKS ?? 0;
+        existing.sends += sends;
+        existing.opens += opens;
+        existing.clicks += clicks;
+        existing.campaigns.push({
+          name: row.MARKETING_EMAIL_NAME,
+          sends,
+          opens,
+          clicks,
+          openRate: row.OPEN_RATE ?? 0,
+          ctr: row.CTR ?? 0,
+        });
+        typeMap.set(row.EMAIL_TYPE, existing);
+      }
+
+      const getPerformanceLabel = (openRate: number, ctr: number): string => {
+        if (ctr >= 3) return 'EXCELLENT';
+        if (ctr >= 1.5 && openRate >= 15) return 'STRONG';
+        if (openRate < 10) return 'LOW OPENS';
+        if (ctr < 0.5) return 'LOW CLICKS';
+        return 'GOOD';
+      };
+
+      const getCtrStatus = (ctr: number): string => {
+        if (ctr >= 3) return 'EXCELLENT';
+        if (ctr >= 1.5) return 'GOOD';
+        return 'BELOW BENCHMARK';
+      };
+
+      const emailTypeBreakdown = Array.from(typeMap.entries())
+        .filter(([, data]) => data.sends > 0)
+        .map(([emailType, data]) => {
+          const openRate = Math.round(((data.opens * 100.0) / data.sends) * 10) / 10;
+          const ctr = Math.round(((data.clicks * 100.0) / data.sends) * 10) / 10;
+          return {
+            emailType,
+            campaignCount: data.campaigns.length,
+            totalSends: data.sends,
+            totalOpens: data.opens,
+            totalClicks: data.clicks,
+            openRate,
+            ctr,
+            performance: getPerformanceLabel(openRate, ctr),
+            campaigns: data.campaigns
+              .sort((a, b) => b.sends - a.sends)
+              .slice(0, 10)
+              .map((c) => ({
+                campaignName: c.name,
+                emailType,
+                sends: c.sends,
+                opens: c.opens,
+                clicks: c.clicks,
+                openRate: c.openRate,
+                ctr: c.ctr,
+                ctrStatus: getCtrStatus(c.ctr),
+              })),
+          };
+        })
+        .sort((a, b) => b.totalSends - a.totalSends);
+
+      // Build campaign insight text
+      let campaignInsightText: string | undefined;
+      if (emailTypeBreakdown.length >= 2) {
+        const bestCtr = [...emailTypeBreakdown].sort((a, b) => b.ctr - a.ctr)[0];
+        const worstCtr = [...emailTypeBreakdown].sort((a, b) => a.ctr - b.ctr)[0];
+        const diff = Math.round((bestCtr.ctr - worstCtr.ctr) * 10) / 10;
+        if (diff > 0) {
+          campaignInsightText = `${bestCtr.emailType} emails drive ${bestCtr.ctr.toFixed(1)}% CTR, outperforming ${worstCtr.emailType} by ${diff} pp`;
+        }
+      }
+
       return {
         currentCtr,
         changePercentage,
@@ -1971,6 +2100,8 @@ export class ProjectService {
         campaignGroups,
         monthlySends,
         monthlyOpens,
+        emailTypeBreakdown,
+        campaignInsightText,
       };
     } catch (error) {
       logger.warning(undefined, 'get_email_ctr', 'Failed to fetch email CTR from Snowflake', {
@@ -2064,20 +2195,43 @@ export class ProjectService {
         this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; ROAS: number }>(monthlyRoasQuery, [foundationSlug]),
         this.snowflakeService.execute<{ CAMPAIGN_MONTH: string; IMPRESSIONS: number }>(monthlyImpressionsQuery, [foundationSlug]),
         this.snowflakeService.execute<{ CHANNEL: string; IMPRESSIONS: number }>(channelQuery, [foundationSlug]),
-        this.snowflakeService.execute<{
-          PROJECT_NAME: string;
-          CAMPAIGN_NAME: string;
-          FUNNEL_STAGE: string;
-          SPEND: number;
-          REVENUE: number;
-          ROAS: number;
-          CONVERSIONS: number;
-          CONV_RATE: number;
-          CPC: number;
-          SESSIONS: number;
-          IMPRESSIONS: number;
-          CLICKS: number;
-        }>(projectPerfQuery, [foundationSlug]),
+        this.snowflakeService
+          .execute<{
+            PROJECT_NAME: string;
+            CAMPAIGN_NAME: string;
+            FUNNEL_STAGE: string;
+            SPEND: number;
+            REVENUE: number;
+            ROAS: number;
+            CONVERSIONS: number;
+            CONV_RATE: number;
+            CPC: number;
+            SESSIONS: number;
+            IMPRESSIONS: number;
+            CLICKS: number;
+          }>(projectPerfQuery, [foundationSlug])
+          .catch((error) => {
+            logger.warning(undefined, 'get_social_reach', 'Optional project breakdown query failed, degrading gracefully', {
+              foundation_slug: foundationSlug,
+              err: error,
+            });
+            return {
+              rows: [] as {
+                PROJECT_NAME: string;
+                CAMPAIGN_NAME: string;
+                FUNNEL_STAGE: string;
+                SPEND: number;
+                REVENUE: number;
+                ROAS: number;
+                CONVERSIONS: number;
+                CONV_RATE: number;
+                CPC: number;
+                SESSIONS: number;
+                IMPRESSIONS: number;
+                CLICKS: number;
+              }[],
+            };
+          }),
       ]);
 
       const totalReach = impressionsResult.rows[0]?.TOTAL_IMPRESSIONS ?? 0;
@@ -2262,7 +2416,7 @@ export class ProjectService {
                SUM(LINEAR_REVENUE) AS LINEAR_REVENUE,
                SUM(TIME_DECAY_REVENUE) AS TIME_DECAY_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_ATTRIBUTION
-        WHERE SESSION_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+        WHERE SESSION_MONTH >= DATE_TRUNC('MONTH', DATEADD('MONTH', -6, CURRENT_DATE()))
         GROUP BY CHANNEL
       `
         : `
@@ -2276,7 +2430,7 @@ export class ProjectService {
                SUM(TIME_DECAY_REVENUE) AS TIME_DECAY_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_ATTRIBUTION
         WHERE FOUNDATION_SLUG = ?
-          AND SESSION_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+          AND SESSION_MONTH >= DATE_TRUNC('MONTH', DATEADD('MONTH', -6, CURRENT_DATE()))
         GROUP BY CHANNEL
       `;
 
@@ -2291,7 +2445,7 @@ export class ProjectService {
                SUM(LINEAR_REVENUE) AS LINEAR_REVENUE,
                SUM(TIME_DECAY_REVENUE) AS TIME_DECAY_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_ATTRIBUTION
-        WHERE SESSION_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+        WHERE SESSION_MONTH >= DATE_TRUNC('MONTH', DATEADD('MONTH', -6, CURRENT_DATE()))
         GROUP BY PROJECT_NAME, CHANNEL
       `
         : `
@@ -2305,7 +2459,7 @@ export class ProjectService {
                SUM(TIME_DECAY_REVENUE) AS TIME_DECAY_REVENUE
         FROM ANALYTICS.PLATINUM_LFX_ONE.MARKETING_ATTRIBUTION
         WHERE FOUNDATION_SLUG = ?
-          AND SESSION_MONTH >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+          AND SESSION_MONTH >= DATE_TRUNC('MONTH', DATEADD('MONTH', -6, CURRENT_DATE()))
         GROUP BY PROJECT_NAME, CHANNEL
       `;
 
@@ -2401,18 +2555,16 @@ export class ProjectService {
           });
         }
       }
-      // Round revenue after consolidation — rounding pre-aggregation causes penny drift
-      // when mapChannel() merges multiple raw channels into one UI label.
-      const roundRevenue = (item: MarketingAttributionChannel | MarketingAttributionProject): void => {
-        item.firstTouchRevenue = Math.round(item.firstTouchRevenue * 100) / 100;
-        item.lastTouchRevenue = Math.round(item.lastTouchRevenue * 100) / 100;
-        item.linearRevenue = Math.round(item.linearRevenue * 100) / 100;
-        item.timeDecayRevenue = Math.round(item.timeDecayRevenue * 100) / 100;
-      };
-
-      const channels = [...channelMap.values()];
-      channels.forEach(roundRevenue);
-      channels.sort((a, b) => b.sessions - a.sessions);
+      // Round revenue after consolidation to avoid penny-level drift from summing pre-rounded subtotals
+      const channels = [...channelMap.values()]
+        .map((ch) => ({
+          ...ch,
+          firstTouchRevenue: Math.round(ch.firstTouchRevenue * 100) / 100,
+          lastTouchRevenue: Math.round(ch.lastTouchRevenue * 100) / 100,
+          linearRevenue: Math.round(ch.linearRevenue * 100) / 100,
+          timeDecayRevenue: Math.round(ch.timeDecayRevenue * 100) / 100,
+        }))
+        .sort((a, b) => b.sessions - a.sessions);
 
       // Map project rows with the same channel consolidation
       const attrProjectMap = new Map<string, MarketingAttributionProject>();
@@ -2447,9 +2599,16 @@ export class ProjectService {
           });
         }
       }
-      const projects = [...attrProjectMap.values()];
-      projects.forEach(roundRevenue);
-      projects.sort((a, b) => b.sessions - a.sessions);
+      // Round revenue after consolidation (same rationale as channels above)
+      const projects = [...attrProjectMap.values()]
+        .map((p) => ({
+          ...p,
+          firstTouchRevenue: Math.round(p.firstTouchRevenue * 100) / 100,
+          lastTouchRevenue: Math.round(p.lastTouchRevenue * 100) / 100,
+          linearRevenue: Math.round(p.linearRevenue * 100) / 100,
+          timeDecayRevenue: Math.round(p.timeDecayRevenue * 100) / 100,
+        }))
+        .sort((a, b) => b.sessions - a.sessions);
 
       logger.debug(undefined, 'get_marketing_attribution', 'Marketing attribution data fetched', {
         foundation_slug: foundationSlug,

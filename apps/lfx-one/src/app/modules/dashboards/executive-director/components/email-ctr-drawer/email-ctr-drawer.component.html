@@ -12,8 +12,8 @@
   <ng-template #header>
     <div class="flex items-start justify-between gap-4 w-full" data-testid="email-ctr-drawer-header">
       <div class="flex flex-col gap-1 flex-1">
-        <h2 class="text-lg font-semibold text-gray-900" data-testid="email-ctr-drawer-title">Email Click-Through Rate</h2>
-        <p class="text-sm text-gray-500">Executive Director · Marketing view</p>
+        <h2 class="text-lg font-semibold text-gray-900" data-testid="email-ctr-drawer-title">Campaign Performance</h2>
+        <p class="text-sm text-gray-500">Executive Director · Performance across channels</p>
       </div>
       <lfx-button
         icon="fa-light fa-xmark"
@@ -39,32 +39,7 @@
         <p-skeleton width="60%" height="1rem" />
       </div>
     } @else {
-      <!-- Summary Stats -->
-      <div class="flex gap-4" data-testid="email-ctr-drawer-stats">
-        <lfx-card styleClass="flex-1">
-          <div class="flex flex-col gap-1">
-            <span class="text-sm text-gray-500">Current CTR</span>
-            <span class="text-2xl font-semibold text-gray-900">{{ drawerData().currentCtr | number: '1.1-1' }}%</span>
-          </div>
-        </lfx-card>
-        <lfx-card styleClass="flex-1">
-          <div class="flex flex-col gap-1">
-            <span class="text-sm text-gray-500">vs 6-Month Avg</span>
-            @if (drawerData().changePercentage !== 0) {
-              <div class="flex items-center gap-2">
-                <span class="text-2xl font-semibold" [class]="drawerData().trend === 'up' ? 'text-green-600' : 'text-red-600'">
-                  {{ drawerData().changePercentage > 0 ? '+' : '' }}{{ drawerData().changePercentage | number: '1.1-1' }}%
-                </span>
-                <i class="text-sm" [class]="drawerData().trend === 'up' ? 'fa-light fa-arrow-up text-green-600' : 'fa-light fa-arrow-down text-red-600'"></i>
-              </div>
-            } @else {
-              <span class="text-2xl font-semibold text-gray-500">0%</span>
-            }
-          </div>
-        </lfx-card>
-      </div>
-
-      <!-- FIRST FOLD: Needs Your Attention -->
+      <!-- Cross-Channel Insights -->
       @if (attentionActions().length > 0 || attentionInsights().length > 0) {
         <div class="flex flex-col gap-4 p-4 bg-red-50 border border-red-200 rounded-lg" data-testid="email-ctr-drawer-attention">
           <div class="flex items-center gap-2">
@@ -102,7 +77,6 @@
         </div>
       }
 
-      <!-- SECOND FOLD: Performing Well -->
       @if (performingActions().length > 0 || performingInsights().length > 0) {
         <div class="flex flex-col gap-4 p-4 bg-green-50 border border-green-200 rounded-lg" data-testid="email-ctr-drawer-performing">
           <div class="flex items-center gap-2">
@@ -137,56 +111,343 @@
         </div>
       }
 
-      <!-- Monthly Trend Chart -->
-      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-chart-section">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">Monthly CTR Trend</h3>
-          <p class="text-sm text-gray-600">Email click-through rate over the last 6 months</p>
-        </div>
-        @if (drawerData().monthlyData.length > 0) {
-          <div class="h-[240px]" data-testid="email-ctr-drawer-chart">
-            <lfx-chart type="bar" [data]="chartData()" [options]="chartOptions" height="100%"></lfx-chart>
+      @if (attributionData().channels.length > 0) {
+        <div class="flex flex-col gap-5" data-testid="email-ctr-drawer-attribution-section">
+          <div class="flex items-center gap-2">
+            <i class="fa-light fa-chart-mixed text-indigo-500"></i>
+            <h3 class="text-base font-semibold text-gray-900">Marketing Attribution</h3>
           </div>
-        } @else {
-          <div class="text-center py-8 border border-slate-200 rounded-lg">
-            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-            <p class="text-sm text-gray-500">No CTR data available</p>
+
+          <!-- Attribution Summary Stats -->
+          <div class="flex flex-wrap gap-4" data-testid="email-ctr-drawer-attribution-stats">
+            <lfx-card styleClass="flex-1 min-w-[100px]">
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-gray-500">Total Sessions</span>
+                <span class="text-2xl font-semibold text-gray-900">{{ formatCompact(attributionTotals().sessions) }}</span>
+              </div>
+            </lfx-card>
+            <lfx-card styleClass="flex-1 min-w-[100px]">
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-gray-500">First Touch</span>
+                <span class="text-2xl font-semibold text-gray-900">{{ formatCurrency(attributionTotals().firstTouchRevenue) }}</span>
+              </div>
+            </lfx-card>
+            <lfx-card styleClass="flex-1 min-w-[100px]">
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-gray-500">Last Touch</span>
+                <span class="text-2xl font-semibold text-gray-900">{{ formatCurrency(attributionTotals().lastTouchRevenue) }}</span>
+              </div>
+            </lfx-card>
+            <lfx-card styleClass="flex-1 min-w-[100px]">
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-gray-500">Linear</span>
+                <span class="text-2xl font-semibold text-gray-900">{{ formatCurrency(attributionTotals().linearRevenue) }}</span>
+              </div>
+            </lfx-card>
+            <lfx-card styleClass="flex-1 min-w-[100px]">
+              <div class="flex flex-col gap-1">
+                <span class="text-sm text-gray-500">Time Decay</span>
+                <span class="text-2xl font-semibold text-gray-900">{{ formatCurrency(attributionTotals().timeDecayRevenue) }}</span>
+              </div>
+            </lfx-card>
+          </div>
+
+          <!-- Channel Attribution Table -->
+          <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-attribution-table">
+            <div class="flex flex-col gap-1">
+              <h3 class="text-sm font-semibold text-gray-900">Revenue by Channel</h3>
+              <p class="text-sm text-gray-600">Multi-touch attribution across marketing channels over the last 6 months</p>
+            </div>
+
+            <!-- Table Header -->
+            <div class="flex items-center py-2 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <span class="flex-[2] min-w-[120px]">Channel</span>
+              <span class="flex-1 text-right">Sessions</span>
+              <span class="flex-1 text-right">First Touch</span>
+              <span class="flex-1 text-right">Last Touch</span>
+              <span class="flex-1 text-right">Linear</span>
+              <span class="flex-1 text-right">Time Decay</span>
+              <span class="w-20 text-right">Rev/Session</span>
+            </div>
+
+            <!-- Channel Rows -->
+            @for (channel of attributionData().channels; track channel.channel) {
+              <div
+                class="flex items-center py-2.5 px-1 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
+                role="button"
+                tabindex="0"
+                [attr.aria-expanded]="expandedChannels().has(channel.channel)"
+                (click)="toggleChannel(channel.channel)"
+                (keydown.enter)="toggleChannel(channel.channel)"
+                (keydown.space)="$event.preventDefault(); toggleChannel(channel.channel)"
+                data-testid="email-ctr-drawer-attribution-channel-row">
+                <span class="flex-[2] min-w-[120px] text-sm font-semibold text-gray-900 truncate pr-2">{{ channel.channel }}</span>
+                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(channel.sessions) }}</span>
+                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCurrency(channel.firstTouchRevenue) }}</span>
+                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCurrency(channel.lastTouchRevenue) }}</span>
+                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCurrency(channel.linearRevenue) }}</span>
+                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCurrency(channel.timeDecayRevenue) }}</span>
+                <span class="w-20 text-right text-sm font-semibold text-gray-900">{{ revPerSession(channel) }}</span>
+              </div>
+
+              <!-- Expanded Project Rows -->
+              @if (expandedChannels().has(channel.channel)) {
+                @for (project of attributionProjectsByChannel().get(channel.channel) ?? []; track project.projectName) {
+                  <div class="flex items-center py-2 px-1 pl-6 border-b border-gray-50 bg-gray-50" data-testid="email-ctr-drawer-attribution-project-row">
+                    <span class="flex-[2] min-w-[120px] text-xs text-gray-500 truncate pr-2" [title]="project.projectName">{{ project.projectName }}</span>
+                    <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(project.sessions) }}</span>
+                    <span class="flex-1 text-right text-xs text-gray-600">{{ formatCurrency(project.firstTouchRevenue) }}</span>
+                    <span class="flex-1 text-right text-xs text-gray-600">{{ formatCurrency(project.lastTouchRevenue) }}</span>
+                    <span class="flex-1 text-right text-xs text-gray-600">{{ formatCurrency(project.linearRevenue) }}</span>
+                    <span class="flex-1 text-right text-xs text-gray-600">{{ formatCurrency(project.timeDecayRevenue) }}</span>
+                    <span class="w-20"></span>
+                  </div>
+                }
+              }
+            }
+
+            <!-- Total Row -->
+            <div class="flex items-center py-2.5 px-1 border-t-2 border-gray-300 font-bold">
+              <span class="flex-[2] min-w-[120px] text-sm text-gray-900">TOTAL</span>
+              <span class="flex-1 text-right text-sm text-gray-900">{{ formatCompact(attributionTotals().sessions) }}</span>
+              <span class="flex-1 text-right text-sm text-gray-900">{{ formatCurrency(attributionTotals().firstTouchRevenue) }}</span>
+              <span class="flex-1 text-right text-sm text-gray-900">{{ formatCurrency(attributionTotals().lastTouchRevenue) }}</span>
+              <span class="flex-1 text-right text-sm text-gray-900">{{ formatCurrency(attributionTotals().linearRevenue) }}</span>
+              <span class="flex-1 text-right text-sm text-gray-900">{{ formatCurrency(attributionTotals().timeDecayRevenue) }}</span>
+              <span class="w-20"></span>
+            </div>
+          </div>
+        </div>
+
+        <!-- Section Divider -->
+        <hr class="border-gray-200" />
+      }
+
+      <div class="flex flex-col gap-5" data-testid="email-ctr-drawer-paid-section">
+        <div class="flex items-center gap-2">
+          <i class="fa-light fa-bullhorn text-violet-500"></i>
+          <h3 class="text-base font-semibold text-gray-900">Paid Performance Marketing</h3>
+        </div>
+
+        <!-- Paid Summary Stats -->
+        <div class="flex flex-wrap gap-4" data-testid="email-ctr-drawer-paid-stats">
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Spend</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalSpend() }}</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Revenue (first-touch)</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ formattedTotalRevenue() }}</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">ROAS</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ paidData().roas | number: '1.1-1' }}x</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Conversions</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ paidTotalConversions() }}</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Sessions</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ paidTotalSessions() }}</span>
+            </div>
+          </lfx-card>
+        </div>
+
+        <!-- Project Performance Table -->
+        @if ((paidData().projectBreakdown?.length ?? 0) > 0) {
+          <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-paid-projects-section">
+            <div class="flex flex-col gap-1">
+              <h3 class="text-sm font-semibold text-gray-900">Performance by Project</h3>
+              <p class="text-sm text-gray-600">Paid campaign performance grouped by project over the last 6 months</p>
+            </div>
+
+            <!-- Table Header -->
+            <div class="flex items-center py-2 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <span class="flex-[2] min-w-[120px]">Project / Campaign</span>
+              <span class="w-16 text-center">Funnel</span>
+              <span class="flex-1 text-right">Spend</span>
+              <span class="flex-1 text-right">Rev (linear)</span>
+              <span class="w-14 text-right">ROAS</span>
+              <span class="flex-1 text-right">Conv.</span>
+              <span class="w-14 text-right">Conv %</span>
+              <span class="w-14 text-right">CPC</span>
+              <span class="w-20 text-right">Performance</span>
+            </div>
+
+            <!-- Project Rows -->
+            @for (project of paidData().projectBreakdown!; track project.projectName) {
+              <!-- Project Summary Row -->
+              <div
+                class="flex items-center py-2.5 px-1 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
+                role="button"
+                tabindex="0"
+                [attr.aria-expanded]="expandedProjects().has(project.projectName)"
+                (click)="toggleProject(project.projectName)"
+                (keydown.enter)="toggleProject(project.projectName)"
+                (keydown.space)="$event.preventDefault(); toggleProject(project.projectName)"
+                data-testid="email-ctr-drawer-project-row">
+                <span class="flex-[2] min-w-[120px] text-sm font-semibold text-gray-900 truncate pr-2">{{ project.projectName }}</span>
+                <span class="w-16 flex justify-center">
+                  @if (formatFunnelLabel(project.funnelStage)) {
+                    <lfx-tag [value]="formatFunnelLabel(project.funnelStage)" severity="secondary" [rounded]="true" />
+                  }
+                </span>
+                <span class="flex-1 text-right text-sm font-semibold text-gray-900">${{ formatCompact(project.spend) }}</span>
+                <span class="flex-1 text-right text-sm font-semibold text-gray-900">${{ formatCompact(project.revenue) }}</span>
+                <span class="w-14 text-right text-sm font-semibold text-gray-900">{{ project.roas | number: '1.1-1' }}x</span>
+                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(project.conversions) }}</span>
+                <span class="w-14 text-right text-sm font-semibold text-gray-900">{{ project.convRate | number: '1.1-1' }}%</span>
+                <span class="w-14 text-right text-sm font-semibold text-gray-900">${{ project.cpc | number: '1.2-2' }}</span>
+                <span class="w-20 flex justify-end">
+                  <lfx-tag [value]="project.performance" [severity]="getPerformanceSeverity(project.performance)" [rounded]="true" />
+                </span>
+              </div>
+
+              <!-- Expanded Campaign Rows -->
+              @if (expandedProjects().has(project.projectName)) {
+                @for (campaign of project.campaigns; track campaign.campaignName + '|' + campaign.funnelStage) {
+                  <div class="flex items-center py-2 px-1 pl-6 border-b border-gray-50 bg-gray-50" data-testid="email-ctr-drawer-paid-campaign-row">
+                    <span class="flex-[2] min-w-[120px] text-xs text-gray-500 truncate pr-2" [title]="campaign.campaignName">{{ campaign.campaignName }}</span>
+                    <span class="w-16 flex justify-center">
+                      @if (formatFunnelLabel(campaign.funnelStage)) {
+                        <lfx-tag [value]="formatFunnelLabel(campaign.funnelStage)" severity="secondary" [rounded]="true" />
+                      }
+                    </span>
+                    <span class="flex-1 text-right text-xs text-gray-600">${{ formatCompact(campaign.spend) }}</span>
+                    <span class="flex-1 text-right text-xs text-gray-600">${{ formatCompact(campaign.revenue) }}</span>
+                    <span class="w-14 text-right text-xs text-gray-600">{{ campaign.roas | number: '1.1-1' }}x</span>
+                    <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(campaign.conversions) }}</span>
+                    <span class="w-14 text-right text-xs text-gray-600">{{ campaign.convRate | number: '1.1-1' }}%</span>
+                    <span class="w-14 text-right text-xs text-gray-600">${{ campaign.cpc | number: '1.2-2' }}</span>
+                    <span class="w-20"></span>
+                  </div>
+                }
+              }
+            }
           </div>
         }
       </div>
 
-      <!-- Campaign Breakdown -->
-      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-campaigns-section">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">CTR by Campaign</h3>
-          <p class="text-sm text-gray-600">Average click-through rate per campaign over the last 6 months</p>
+      <!-- Section Divider -->
+      <hr class="border-gray-200" />
+
+      <div class="flex flex-col gap-5" data-testid="email-ctr-drawer-email-section">
+        <div class="flex items-center gap-2">
+          <i class="fa-light fa-envelope text-blue-500"></i>
+          <h3 class="text-base font-semibold text-gray-900">Email Performance</h3>
         </div>
-        @if (drawerData().campaignGroups.length > 1) {
-          <div class="h-[240px]" data-testid="email-ctr-drawer-campaigns-chart">
-            <lfx-chart type="bar" [data]="campaignChartData()" [options]="campaignChartOptions" height="100%"></lfx-chart>
-          </div>
-        } @else {
-          <div class="text-center py-8 border border-slate-200 rounded-lg">
-            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-            <p class="text-sm text-gray-500">No campaign breakdown available</p>
+
+        <!-- Email Summary Stats -->
+        <div class="flex flex-wrap gap-4" data-testid="email-ctr-drawer-stats">
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Sends</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ emailTotalSends() }}</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Opens</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ emailTotalOpens() }}</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Open Rate</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ emailOpenRate() | number: '1.1-1' }}%</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">Clicks</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ emailTotalClicks() }}</span>
+            </div>
+          </lfx-card>
+          <lfx-card styleClass="flex-1 min-w-[100px]">
+            <div class="flex flex-col gap-1">
+              <span class="text-sm text-gray-500">CTR</span>
+              <span class="text-2xl font-semibold text-gray-900">{{ emailAvgCtr() | number: '1.1-1' }}%</span>
+            </div>
+          </lfx-card>
+        </div>
+
+        <!-- Campaign Insight Callout -->
+        @if (drawerData().campaignInsightText) {
+          <div class="flex items-start gap-3 p-3 bg-blue-50 border border-blue-200 rounded-lg" data-testid="email-ctr-drawer-campaign-insight">
+            <i class="fa-light fa-lightbulb text-blue-500 mt-0.5"></i>
+            <p class="text-sm text-blue-800">{{ drawerData().campaignInsightText }}</p>
           </div>
         }
-      </div>
 
-      <!-- Reach vs Opens -->
-      <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-reach-section">
-        <div class="flex flex-col gap-1">
-          <h3 class="text-sm font-semibold text-gray-900">Campaign Reach vs Opens</h3>
-          <p class="text-sm text-gray-600">Monthly email sends compared to opens over the last 6 months</p>
-        </div>
-        @if (drawerData().monthlySends.length > 0) {
-          <div class="h-[240px]" data-testid="email-ctr-drawer-reach-chart">
-            <lfx-chart type="bar" [data]="reachVsOpensChartData()" [options]="reachVsOpensChartOptions" height="100%"></lfx-chart>
-          </div>
-        } @else {
-          <div class="text-center py-8 border border-slate-200 rounded-lg">
-            <i class="fa-light fa-eyes text-3xl text-gray-400 mb-2 block"></i>
-            <p class="text-sm text-gray-500">No reach data available</p>
+        <!-- Campaign Performance by Type -->
+        @if ((drawerData().emailTypeBreakdown?.length ?? 0) > 0) {
+          <div class="flex flex-col gap-4 p-4 border border-gray-200 rounded-lg" data-testid="email-ctr-drawer-campaigns-section">
+            <div class="flex flex-col gap-1">
+              <h3 class="text-sm font-semibold text-gray-900">Campaign Performance by Type</h3>
+              <p class="text-sm text-gray-600">Email performance grouped by campaign type over the last 6 months</p>
+            </div>
+
+            <!-- Table Header -->
+            <div class="flex items-center py-2 px-1 text-[10px] font-semibold text-gray-500 uppercase tracking-wider border-b border-gray-200">
+              <span class="flex-[2] min-w-[120px]">Type / Campaign</span>
+              <span class="flex-1 text-right">Sends</span>
+              <span class="flex-1 text-right">Opens</span>
+              <span class="flex-1 text-right">Open Rate</span>
+              <span class="flex-1 text-right">Clicks</span>
+              <span class="flex-1 text-right">CTR</span>
+              <span class="w-24 text-right">Performance</span>
+            </div>
+
+            <!-- Type Rows -->
+            @for (type of drawerData().emailTypeBreakdown!; track type.emailType) {
+              <!-- Type Summary Row -->
+              <div
+                class="flex items-center py-2.5 px-1 border-b border-gray-100 cursor-pointer hover:bg-gray-50 transition-colors"
+                role="button"
+                tabindex="0"
+                [attr.aria-expanded]="expandedTypes().has(type.emailType)"
+                (click)="toggleType(type.emailType)"
+                (keydown.enter)="toggleType(type.emailType)"
+                (keydown.space)="$event.preventDefault(); toggleType(type.emailType)"
+                data-testid="email-ctr-drawer-type-row">
+                <span class="flex-[2] min-w-[120px]">
+                  <lfx-tag [value]="type.emailType | titlecase" severity="warn" [rounded]="true" />
+                </span>
+                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(type.totalSends) }}</span>
+                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(type.totalOpens) }}</span>
+                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ type.openRate | number: '1.1-1' }}%</span>
+                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ formatCompact(type.totalClicks) }}</span>
+                <span class="flex-1 text-right text-sm font-semibold text-gray-900">{{ type.ctr | number: '1.1-1' }}%</span>
+                <span class="w-24 flex justify-end">
+                  <lfx-tag [value]="type.performance" [severity]="getPerformanceSeverity(type.performance)" [rounded]="true" />
+                </span>
+              </div>
+
+              <!-- Expanded Campaign Rows -->
+              @if (expandedTypes().has(type.emailType)) {
+                @for (campaign of type.campaigns; track campaign.campaignName + '|' + campaign.sends) {
+                  <div class="flex items-center py-2 px-1 pl-6 border-b border-gray-50 bg-gray-50" data-testid="email-ctr-drawer-campaign-row">
+                    <span class="flex-[2] min-w-[120px] text-xs text-gray-500 truncate pr-2" [title]="campaign.campaignName">{{ campaign.campaignName }}</span>
+                    <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(campaign.sends) }}</span>
+                    <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(campaign.opens) }}</span>
+                    <span class="flex-1 text-right text-xs text-gray-600">{{ campaign.openRate | number: '1.1-1' }}%</span>
+                    <span class="flex-1 text-right text-xs text-gray-600">{{ formatCompact(campaign.clicks) }}</span>
+                    <span class="flex-1 text-right text-xs text-gray-600">{{ campaign.ctr | number: '1.1-1' }}%</span>
+                    <span class="w-24"></span>
+                  </div>
+                }
+              }
+            }
           </div>
         }
       </div>
