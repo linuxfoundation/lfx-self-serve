@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, model, Signal } from '@angular/core';
+import { Component, computed, inject, input, model, Signal } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
 import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
 import { lfxColors } from '@lfx-one/shared/constants';
-import { buildInsightsUrl } from '@lfx-one/shared/utils';
+import { buildLensAwareInsightsUrl } from '@lfx-one/shared/utils';
+import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -17,9 +18,10 @@ import type { FoundationHealthScoreDistributionResponse } from '@lfx-one/shared/
   templateUrl: './project-health-scores-drawer.component.html',
 })
 export class ProjectHealthScoresDrawerComponent {
-  // === Static Options ===
-  protected readonly insightsUrl = buildInsightsUrl();
+  // === Services ===
+  private readonly projectContextService = inject(ProjectContextService);
 
+  // === Static Options ===
   protected readonly legendColors = {
     critical: lfxColors.red[500],
     unsteady: lfxColors.amber[400],
@@ -78,6 +80,10 @@ export class ProjectHealthScoresDrawerComponent {
   public readonly visible = model<boolean>(false);
 
   // === Computed Signals ===
+  protected readonly insightsUrl: Signal<string> = computed(() =>
+    buildLensAwareInsightsUrl(this.projectContextService.activeContext()?.slug, this.projectContextService.isFoundationContext())
+  );
+
   protected readonly totalProjects: Signal<number> = computed(() => {
     const d = this.data();
     return d.excellent + d.healthy + d.stable + d.unsteady + d.critical;

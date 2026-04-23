@@ -1,11 +1,12 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, input, model, Signal } from '@angular/core';
+import { Component, computed, inject, input, model, Signal } from '@angular/core';
 import { ChartComponent } from '@components/chart/chart.component';
 import { InsightsHandoffSectionComponent } from '@components/insights-handoff-section/insights-handoff-section.component';
 import { lfxColors } from '@lfx-one/shared/constants';
-import { buildInsightsUrl } from '@lfx-one/shared/utils';
+import { buildLensAwareInsightsUrl } from '@lfx-one/shared/utils';
+import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -17,8 +18,8 @@ import type { FoundationCompanyBusFactorResponse } from '@lfx-one/shared/interfa
   templateUrl: './org-dependency-drawer.component.html',
 })
 export class OrgDependencyDrawerComponent {
-  // === Static Data ===
-  protected readonly insightsUrl = buildInsightsUrl();
+  // === Services ===
+  private readonly projectContextService = inject(ProjectContextService);
 
   // === Model Signals (two-way binding) ===
   public readonly visible = model<boolean>(false);
@@ -32,6 +33,13 @@ export class OrgDependencyDrawerComponent {
   });
 
   // === Computed Signals ===
+  protected readonly insightsUrl: Signal<string> = computed(() =>
+    buildLensAwareInsightsUrl(this.projectContextService.activeContext()?.slug, this.projectContextService.isFoundationContext(), {
+      projectSubPath: 'contributors',
+      projectParams: { timeRange: 'alltime', widget: 'organization-dependency' },
+    })
+  );
+
   protected readonly chartData: Signal<ChartData<'bar'>> = this.initChartData();
 
   protected readonly chartOptions: ChartOptions<'bar'> = {
