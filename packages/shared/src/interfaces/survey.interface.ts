@@ -1,8 +1,26 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { SurveyResponseStatus, SurveyStatus } from '../enums/survey.enum';
 import { CommitteeReference } from './committee.interface';
+
+/**
+ * Minimal shape required to evaluate the effective survey status.
+ * @description Decoupled from `Survey`/`UserSurvey` so both interfaces (and any
+ * future survey-shaped value) can be passed without forcing a `Pick<>` at
+ * every call site or coupling status helpers to either interface's evolution.
+ */
+export interface SurveyStatusInput {
+  survey_status: string | null | undefined;
+  survey_cutoff_date: string | null | undefined;
+}
+
+/**
+ * Minimal shape required to evaluate the display status, which adds the
+ * `response_status` override on top of {@link SurveyStatusInput}.
+ */
+export interface SurveyDisplayStatusInput extends SurveyStatusInput {
+  response_status?: string | null;
+}
 
 /**
  * User's survey participation
@@ -13,14 +31,14 @@ export interface UserSurvey {
   survey_id: string;
   /** Display title of the survey */
   survey_title: string;
-  /** Current status of the survey */
-  survey_status: SurveyStatus;
+  /** Current status of the survey (raw API value, may be uppercase like 'OPEN'/'SENT' or null; use getEffectiveSurveyStatus to normalize) */
+  survey_status: string | null;
   /** Associated committees with allowed voting statuses */
   committees: CommitteeReference[];
   /** Survey deadline/cutoff date */
   survey_cutoff_date: string;
-  /** User's response status */
-  response_status: SurveyResponseStatus;
+  /** User's response status (raw API value, may be uppercase or null; lowercase and compare to `SurveyResponseStatus` when normalizing this field) */
+  response_status: string | null;
   /** Timestamp when user submitted their response (null if not responded) */
   response_datetime: string | null;
 }

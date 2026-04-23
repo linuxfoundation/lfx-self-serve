@@ -2,14 +2,15 @@
 // SPDX-License-Identifier: MIT
 
 import { Pipe, PipeTransform } from '@angular/core';
-import { SurveyResponseStatus, SurveyStatus } from '@lfx-one/shared';
+import { COMBINED_SURVEY_STATUS } from '@lfx-one/shared/constants';
 import { UserSurvey } from '@lfx-one/shared/interfaces';
+import { getCombinedSurveyStatus } from '@lfx-one/shared/utils';
 
 @Pipe({
   name: 'canTakeSurvey',
 })
 export class CanTakeSurveyPipe implements PipeTransform {
   public transform(survey: UserSurvey): boolean {
-    return survey.survey_status === SurveyStatus.OPEN && survey.response_status === SurveyResponseStatus.NOT_RESPONDED;
+    return getCombinedSurveyStatus(survey) === COMBINED_SURVEY_STATUS.OPEN;
   }
 }

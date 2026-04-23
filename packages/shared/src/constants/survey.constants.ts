@@ -62,6 +62,23 @@ export const SURVEY_RESPONSE_STATUS_SEVERITY: Record<SurveyResponseStatus, TagSe
 } as const;
 
 /**
+ * Combined survey status type
+ * @description Represents the combined state of survey status and response status
+ */
+export type CombinedSurveyStatus = 'open' | 'submitted' | 'closed';
+
+/**
+ * Combined survey status values
+ * @description Symbol-friendly map of {@link CombinedSurveyStatus} string values
+ * so call sites can avoid magic strings while staying type-narrow.
+ */
+export const COMBINED_SURVEY_STATUS = {
+  OPEN: 'open',
+  SUBMITTED: 'submitted',
+  CLOSED: 'closed',
+} as const satisfies Record<string, CombinedSurveyStatus>;
+
+/**
  * Combined survey status display labels
  * @description Human-readable labels for combined survey statuses (survey status + response status)
  */

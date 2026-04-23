@@ -1,7 +1,9 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { SurveyStatus } from '@lfx-one/shared/enums';
 import { CreateSurveyRequest, QueryServiceResponse, Survey } from '@lfx-one/shared/interfaces';
+import { getSurveyDisplayStatus } from '@lfx-one/shared/utils';
 import { Request } from 'express';
 
 import { ResourceNotFoundError } from '../errors';
@@ -232,18 +234,34 @@ export class SurveyService {
       })
     );
 
-    // Sort: open/sent surveys first, then by cutoff date descending
-    const openStatuses = new Set(['open', 'sent']);
-    const sorted = surveys
+    // Sort: effectively-open surveys first, then by cutoff date descending.
+    // Use the shared helper so SENT-past-cutoff and uppercase API values are
+    // classified the same way as the frontend pill counter. Precompute the
+    // per-row sort keys so the comparator doesn't recompute status/Date on
+    // every comparison.
+    const decorated = surveys
       .filter((s): s is Survey => s !== null)
-      .sort((a, b) => {
-        const aOpen = openStatuses.has(a.survey_status) ? 0 : 1;
-        const bOpen = openStatuses.has(b.survey_status) ? 0 : 1;
-        if (aOpen !== bOpen) {
-          return aOpen - bOpen;
-        }
-        return new Date(b.survey_cutoff_date).getTime() - new Date(a.survey_cutoff_date).getTime();
+      .map((survey) => {
+        const parsedCutoff = new Date(survey.survey_cutoff_date).getTime();
+
+        return {
+          survey,
+          openRank: getSurveyDisplayStatus(survey) === SurveyStatus.OPEN ? 0 : 1,
+          // Sort is descending (newest cutoff first), so push invalid/missing
+          // cutoffs to the end with a finite sentinel to keep ordering deterministic
+          // (Infinity sentinels would make `a - b` return NaN when both sides are invalid).
+          cutoff: Number.isNaN(parsedCutoff) ? Number.MIN_SAFE_INTEGER : parsedCutoff,
+        };
       });
+
+    const sorted = decorated
+      .sort((a, b) => {
+        if (a.openRank !== b.openRank) {
+          return a.openRank - b.openRank;
+        }
+        return b.cutoff - a.cutoff;
+      })
+      .map((entry) => entry.survey);
 
     // Flatten project_uid from committees to top level for enrichment
     const withProjectUid = sorted.map((s) => {

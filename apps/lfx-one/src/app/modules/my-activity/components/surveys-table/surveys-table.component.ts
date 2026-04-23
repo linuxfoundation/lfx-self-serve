@@ -12,8 +12,9 @@ import { SelectComponent } from '@components/select/select.component';
 import { TableComponent } from '@components/table/table.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { COMBINED_SURVEY_STATUS_LABELS, MY_ACTIVITY_FILTER_LABELS } from '@lfx-one/shared';
+import { CombinedSurveyStatus } from '@lfx-one/shared/constants';
 import { UserSurvey } from '@lfx-one/shared/interfaces';
-import { CombinedSurveyStatus, getCombinedSurveyStatus } from '@lfx-one/shared/utils';
+import { getCombinedSurveyStatus } from '@lfx-one/shared/utils';
 import { CanTakeSurveyPipe } from '@pipes/can-take-survey.pipe';
 import { CombinedSurveyStatusLabelPipe } from '@pipes/combined-survey-status-label.pipe';
 import { CombinedSurveyStatusSeverityPipe } from '@pipes/combined-survey-status-severity.pipe';
@@ -181,17 +182,28 @@ export class SurveysTableComponent {
   private sortSurveys(surveys: UserSurvey[]): UserSurvey[] {
     const statusPriority: Record<CombinedSurveyStatus, number> = { open: 1, submitted: 2, closed: 3 };
 
-    return [...surveys].sort((a, b) => {
-      const statusA = getCombinedSurveyStatus(a);
-      const statusB = getCombinedSurveyStatus(b);
+    // Precompute per-row sort keys so the comparator doesn't recompute the
+    // combined status (and `new Date()`) on every comparison.
+    const decorated = surveys.map((survey) => {
+      const parsedCutoff = new Date(survey.survey_cutoff_date).getTime();
 
-      if (statusA !== statusB) {
-        return statusPriority[statusA] - statusPriority[statusB];
-      }
-
-      const dateA = new Date(a.survey_cutoff_date).getTime();
-      const dateB = new Date(b.survey_cutoff_date).getTime();
-      return dateA - dateB;
+      return {
+        survey,
+        priority: statusPriority[getCombinedSurveyStatus(survey)],
+        // Sort is ascending (soonest cutoff first), so push invalid/missing
+        // cutoffs to the end with a large finite value to keep ordering deterministic
+        // (Infinity sentinels would make `a - b` return NaN when both sides are invalid).
+        cutoff: Number.isNaN(parsedCutoff) ? Number.MAX_SAFE_INTEGER : parsedCutoff,
+      };
     });
+
+    return decorated
+      .sort((a, b) => {
+        if (a.priority !== b.priority) {
+          return a.priority - b.priority;
+        }
+        return a.cutoff - b.cutoff;
+      })
+      .map((entry) => entry.survey);
   }
 }
