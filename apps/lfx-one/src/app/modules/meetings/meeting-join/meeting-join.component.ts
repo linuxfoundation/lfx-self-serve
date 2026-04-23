@@ -216,6 +216,7 @@ export class MeetingJoinComponent implements OnInit {
   protected participantCount = computed(() => this.pastMeetingParticipants().length);
   protected attendedCount = computed(() => this.pastMeetingParticipants().filter((p) => p.is_attended).length);
   protected absentCount = computed(() => this.participantCount() - this.attendedCount());
+  protected invitedCount = computed(() => this.pastMeetingParticipants().filter((p) => p.is_invited).length);
   protected attendancePercentage = computed(() => {
     const total = this.participantCount();
     const attended = this.attendedCount();

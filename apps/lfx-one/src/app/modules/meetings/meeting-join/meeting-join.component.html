@@ -486,54 +486,6 @@
             }
           </div>
 
-          <!-- Meeting Registrants Drawer (shown for organizers and invited users) -->
-
-          <p-drawer
-            [(visible)]="showRegistrants"
-            [position]="drawerPosition()"
-            styleClass="xl:w-1/4 lg:w-1/3 md:w-5/12 sm:w-1/2 w-full"
-            [modal]="true"
-            [showCloseIcon]="false"
-            data-testid="meeting-registrants-drawer">
-            <ng-template #header>
-              <div class="flex items-center justify-between w-full">
-                <div class="flex items-center gap-3">
-                  <div class="bg-blue-600 text-white rounded-full w-12 h-12 flex items-center justify-center">
-                    <i class="fa-light fa-user-group text-white text-2xl"></i>
-                  </div>
-                  @if (isPastMeeting()) {
-                    <div class="flex flex-col">
-                      <h1>Meeting Participants</h1>
-                      <span class="text-base text-gray-500">{{ participantCount() }} participants</span>
-                    </div>
-                  } @else if (meeting().committees && meeting().committees.length > 0) {
-                    <div class="flex flex-col">
-                      <h1>Meeting Members</h1>
-                      <span class="text-base text-gray-500">{{ totalInvitees() }} members</span>
-                    </div>
-                  } @else {
-                    <div class="flex flex-col">
-                      <h1>Meeting Guests</h1>
-                      <span class="text-base text-gray-500">{{ totalInvitees() }} guests</span>
-                    </div>
-                  }
-                </div>
-                <button type="button" class="text-gray-400 hover:text-gray-600 p-2 cursor-pointer" (click)="onDrawerHide()" aria-label="Close panel">
-                  <i class="fa-light fa-xmark text-xl"></i>
-                </button>
-              </div>
-            </ng-template>
-            <lfx-meeting-registrants-display
-              [meeting]="meeting()"
-              [pastMeeting]="isPastMeeting()"
-              [showAddRegistrant]="!!meeting().organizer && !isPastMeeting()"
-              [myMeetingRegistrants]="true"
-              [initialRegistrants]="registrants()"
-              [initialRegistrantsLoading]="registrantsLoading()"
-              [visible]="showRegistrants()"
-              (refreshRequested)="onRegistrantsRefreshRequested($event)">
-            </lfx-meeting-registrants-display>
-          </p-drawer>
           @if (!(isPastMeeting() && !pastMeetingFullAccess())) {
             <!-- Divider -->
             <hr class="border-gray-200 my-4" />
@@ -766,6 +718,56 @@
         </lfx-card>
       </div>
     </div>
+
+    <!-- Meeting Registrants Drawer (rendered outside the card so PrimeNG's overlay/mask isn't
+         re-parented under lfx-card's content tree, which causes the drawer to close itself
+         when the opening click bubbles back through that subtree). -->
+    <p-drawer
+      [(visible)]="showRegistrants"
+      [position]="drawerPosition()"
+      styleClass="xl:w-1/4 lg:w-1/3 md:w-5/12 sm:w-1/2 w-full"
+      [modal]="true"
+      [showCloseIcon]="false"
+      data-testid="meeting-registrants-drawer">
+      <ng-template #header>
+        <div class="flex items-center justify-between w-full">
+          <div class="flex items-center gap-3">
+            <div class="bg-blue-600 text-white rounded-full w-12 h-12 flex items-center justify-center">
+              <i class="fa-light fa-user-group text-white text-2xl"></i>
+            </div>
+            @if (isPastMeeting()) {
+              <div class="flex flex-col">
+                <h1>Meeting Participants</h1>
+                <span class="text-base text-gray-500">{{ attendedCount() }} attended / {{ invitedCount() }} invited</span>
+              </div>
+            } @else if (meeting().committees?.length) {
+              <div class="flex flex-col">
+                <h1>Meeting Members</h1>
+                <span class="text-base text-gray-500">{{ totalInvitees() }} members</span>
+              </div>
+            } @else {
+              <div class="flex flex-col">
+                <h1>Meeting Guests</h1>
+                <span class="text-base text-gray-500">{{ totalInvitees() }} guests</span>
+              </div>
+            }
+          </div>
+          <button type="button" class="text-gray-400 hover:text-gray-600 p-2 cursor-pointer" (click)="onDrawerHide()" aria-label="Close panel">
+            <i class="fa-light fa-xmark text-xl"></i>
+          </button>
+        </div>
+      </ng-template>
+      <lfx-meeting-registrants-display
+        [meeting]="meeting()"
+        [pastMeeting]="isPastMeeting()"
+        [showAddRegistrant]="!!meeting().organizer && !isPastMeeting()"
+        [myMeetingRegistrants]="true"
+        [initialRegistrants]="registrants()"
+        [initialRegistrantsLoading]="registrantsLoading()"
+        [visible]="showRegistrants()"
+        (refreshRequested)="onRegistrantsRefreshRequested($event)">
+      </lfx-meeting-registrants-display>
+    </p-drawer>
 
     <!-- Meeting Materials Drawer -->
     @if (meeting().organizer && !isPastMeeting()) {
