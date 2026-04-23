@@ -15,6 +15,14 @@ export const DEFAULT_QUERY_PARAMS: Record<string, string> = {
 };
 
 /**
+ * Maximum number of `filters_or` clauses per query-service request.
+ * @description URL-length guard for batched lookups on `/query/resources`. When the caller has
+ * more than this many IDs/values to OR together, split into chunks of this size to keep each
+ * request URL under OpenSearch/query-service limits.
+ */
+export const QUERY_SERVICE_FILTERS_OR_BATCH_SIZE = 100;
+
+/**
  * NATS configuration constants
  * @description Configuration for NATS messaging system used for inter-service communication
  * @readonly

@@ -2,7 +2,8 @@
 // SPDX-License-Identifier: MIT
 
 import { ClipboardModule } from '@angular/cdk/clipboard';
-import { Component, computed, inject, input, Signal } from '@angular/core';
+import { isPlatformBrowser } from '@angular/common';
+import { Component, computed, inject, input, PLATFORM_ID, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { Params, RouterLink } from '@angular/router';
 import { ButtonComponent } from '@components/button/button.component';
@@ -31,6 +32,7 @@ import { catchError, combineLatest, map, of, switchMap } from 'rxjs';
 export class DashboardMeetingCardComponent {
   private readonly meetingService = inject(MeetingService);
   private readonly userService = inject(UserService);
+  private readonly platformId = inject(PLATFORM_ID);
 
   public readonly meeting = input.required<Meeting>();
   public readonly occurrence = input<MeetingOccurrence | null>(null);
@@ -50,6 +52,8 @@ export class DashboardMeetingCardComponent {
   public readonly viewAllRouterLink = input<string | null>(null);
   /** Query params for the "View all" router link. */
   public readonly viewAllQueryParams = input<Params>({});
+  /** Count of other meetings whose time range overlaps this one. When > 0, the card header shows a "+N overlapping" hint before the "View all" link. */
+  public readonly overlappingCount = input<number>(0);
   /** Optional recording URL override — when set, skips the API call and renders the "Watch recording" button directly. */
   public readonly recordingUrl = input<string | null>(null);
 
@@ -69,6 +73,7 @@ export class DashboardMeetingCardComponent {
   public readonly meetingDetailUrl: Signal<string> = this.initMeetingDetailUrl();
   public readonly meetingDetailQueryParams: Signal<Record<string, string>> = this.initMeetingDetailQueryParams();
   public readonly meetingDetailHref: Signal<string> = this.initMeetingDetailHref();
+  public readonly meetingDetailClipboardUrl: Signal<string> = this.initMeetingDetailClipboardUrl();
   public readonly recordingShareUrl: Signal<string | null> = this.initRecordingShareUrl();
 
   // New signals for the Figma card design
@@ -215,6 +220,20 @@ export class DashboardMeetingCardComponent {
       const params = this.meetingDetailQueryParams();
       const queryString = new URLSearchParams(params).toString();
       return queryString ? `${url}?${queryString}` : url;
+    });
+  }
+
+  private initMeetingDetailClipboardUrl(): Signal<string> {
+    return computed(() => {
+      const href = this.meetingDetailHref();
+      // SSR fallback: `window` is undefined during server rendering, so we return the relative
+      // path. The copy-link button sits behind a `@defer` block, so in practice the clipboard
+      // write only runs in the browser where `window.location.origin` resolves — but if that
+      // `@defer` is ever removed, preserve this guard so SSR snapshots don't copy a relative URL.
+      if (!isPlatformBrowser(this.platformId)) return href;
+      const override = this.detailUrl();
+      if (override && /^https?:\/\//i.test(override)) return href;
+      return `${window.location.origin}${href}`;
     });
   }
 

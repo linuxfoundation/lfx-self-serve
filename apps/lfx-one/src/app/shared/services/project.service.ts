@@ -75,14 +75,20 @@ export class ProjectService {
   }
 
   /**
-   * Get all pending actions (surveys + meetings) for the current user
-   * @param projectSlug - Project slug for survey filtering
-   * @param projectUid - Project UID for meeting filtering
-   * @param persona - User persona type (default: 'board-member')
+   * Get all pending actions (surveys + meetings + votes + RSVPs) for the current user.
+   * Omit all arguments to run unscoped across all of the user's FGA grants (Me-lens — one
+   * request instead of N project-scoped fan-outs). Provide `projectSlug` and `projectUid` to
+   * scope to a single project (project/foundation-lens dashboards).
+   * @param projectSlug - Optional project slug for survey filtering
+   * @param projectUid - Optional project UID for meeting/vote filtering
+   * @param persona - Optional persona for telemetry (no longer drives behavior)
    * @returns Observable of pending action items
    */
-  public getPendingActions(projectSlug: string, projectUid: string, persona: string = 'board-member'): Observable<PendingActionItem[]> {
-    const params = new HttpParams().set('projectSlug', projectSlug).set('projectUid', projectUid).set('persona', persona);
+  public getPendingActions(projectSlug?: string, projectUid?: string, persona?: string): Observable<PendingActionItem[]> {
+    let params = new HttpParams();
+    if (projectSlug) params = params.set('projectSlug', projectSlug);
+    if (projectUid) params = params.set('projectUid', projectUid);
+    if (persona) params = params.set('persona', persona);
 
     return this.http.get<PendingActionItem[]>('/api/user/pending-actions', { params }).pipe(
       catchError((error) => {

@@ -507,3 +507,26 @@ export const MEETING_DURATION_OPTIONS = [
  * @description Re-exported from meeting-templates/index.ts for convenient access
  */
 export { MEETING_TEMPLATES } from './meeting-templates';
+
+// ============================================================================
+// Latest Past Meetings Fast-Path
+// ============================================================================
+
+/**
+ * Over-fetch size for the "latest past meetings" fast-path (Me-lens dashboard card).
+ * @description The `v1_past_meeting` index includes meetings as soon as they START (not when
+ * they END), so rows at the top of `sort=name_desc` may be in-progress. The aggregator
+ * over-fetches this many rows, drops ongoing meetings by filtering on each meeting's
+ * effective end time (`scheduled_end_time` when present, otherwise start time + duration),
+ * then slices down to `LATEST_PAST_MEETINGS_RETURN_LIMIT`. The buffer (FETCH - RETURN) bounds
+ * the number of concurrently-ongoing meetings we tolerate near the head of the sort — if
+ * more than that many are ongoing for a single user, we return fewer than the limit rather
+ * than paginating full history.
+ */
+export const LATEST_PAST_MEETINGS_FETCH_SIZE = 10;
+
+/**
+ * Maximum rows returned by the "latest past meetings" fast-path after the ongoing-meeting
+ * filter. Five is the row count surfaced by the dashboard Last Meeting / past-meetings card.
+ */
+export const LATEST_PAST_MEETINGS_RETURN_LIMIT = 5;

@@ -16,13 +16,18 @@
         {{ cardLabel() }}
       </span>
       @if (viewAllRouterLink()) {
-        <a
-          [routerLink]="viewAllRouterLink()"
-          [queryParams]="viewAllQueryParams()"
-          class="text-xs text-[#009aff] hover:underline"
-          data-testid="dashboard-meeting-card-view-all">
-          View all
-        </a>
+        <div class="flex items-center gap-2">
+          @if (overlappingCount() > 0) {
+            <span class="text-[11px] text-gray-600" data-testid="dashboard-meeting-card-overlap-hint"> +{{ overlappingCount() }} overlapping · </span>
+          }
+          <a
+            [routerLink]="viewAllRouterLink()"
+            [queryParams]="viewAllQueryParams()"
+            class="text-xs text-[#009aff] hover:underline"
+            data-testid="dashboard-meeting-card-view-all">
+            View all
+          </a>
+        </div>
       }
     </div>
   }
@@ -153,7 +158,7 @@
     @defer (on idle) {
       <button
         type="button"
-        [cdkCopyToClipboard]="meetingDetailHref()"
+        [cdkCopyToClipboard]="meetingDetailClipboardUrl()"
         class="shrink-0 w-7 h-7 flex items-center justify-center rounded-full hover:bg-gray-100 transition-colors text-gray-500 mt-1"
         pTooltip="Copy meeting link"
         tooltipPosition="top"

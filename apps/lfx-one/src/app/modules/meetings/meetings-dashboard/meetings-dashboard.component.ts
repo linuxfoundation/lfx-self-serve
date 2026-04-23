@@ -403,15 +403,7 @@ export class MeetingsDashboardComponent {
     return toSignal(
       merge(meLens$, firstPage$, nextPage$).pipe(
         tap((response) => this.pastPageToken.set(response.page_token)),
-        scan((acc: PastMeeting[], response: PageResult<PastMeeting>) => {
-          // TODO: Remove client-side sorting once API supports sorting by scheduled_start_time
-          const sorted = response.data.sort((a, b) => {
-            const timeA = new Date(a.scheduled_start_time ?? a.start_time).getTime();
-            const timeB = new Date(b.scheduled_start_time ?? b.start_time).getTime();
-            return timeB - timeA;
-          });
-          return response.reset ? sorted : [...acc, ...sorted];
-        }, [])
+        scan((acc: PastMeeting[], response: PageResult<PastMeeting>) => (response.reset ? response.data : [...acc, ...response.data]), [])
       ),
       { initialValue: [] }
     );

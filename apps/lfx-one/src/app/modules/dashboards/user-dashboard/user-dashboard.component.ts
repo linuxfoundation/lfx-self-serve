@@ -2,10 +2,9 @@
 // SPDX-License-Identifier: MIT
 
 import { Component, computed, inject, Signal } from '@angular/core';
-import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
+import { takeUntilDestroyed, toSignal } from '@angular/core/rxjs-interop';
 import { isBoardScopedPersona, PendingActionItem } from '@lfx-one/shared/interfaces';
 import { PersonaService } from '@services/persona.service';
-import { ProjectContextService } from '@services/project-context.service';
 import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
@@ -22,7 +21,6 @@ import { RecentProgressComponent } from '../components/recent-progress/recent-pr
   styleUrl: './user-dashboard.component.scss',
 })
 export class UserDashboardComponent {
-  private readonly projectContextService = inject(ProjectContextService);
   private readonly personaService = inject(PersonaService);
   private readonly projectService = inject(ProjectService);
 
@@ -71,24 +69,10 @@ export class UserDashboardComponent {
   }
 
   private initPendingActions(): Signal<PendingActionItem[]> {
-    const project$ = toObservable(this.projectContextService.activeContext);
-
     return toSignal(
       this.refresh$.pipe(
         takeUntilDestroyed(),
-        switchMap(() =>
-          project$.pipe(
-            switchMap((project) => {
-              if (!project?.slug || !project?.uid) {
-                return of([] as PendingActionItem[]);
-              }
-
-              return this.projectService
-                .getPendingActions(project.slug, project.uid, this.personaService.currentPersona())
-                .pipe(catchError(() => of([] as PendingActionItem[])));
-            })
-          )
-        )
+        switchMap(() => this.projectService.getPendingActions().pipe(catchError(() => of([] as PendingActionItem[]))))
       ),
       { initialValue: [] }
     );

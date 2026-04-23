@@ -1,7 +1,13 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NATS_CONFIG, ROOT_PROJECT_SLUG } from '@lfx-one/shared/constants';
+import {
+  LATEST_PAST_MEETINGS_FETCH_SIZE,
+  LATEST_PAST_MEETINGS_RETURN_LIMIT,
+  NATS_CONFIG,
+  QUERY_SERVICE_FILTERS_OR_BATCH_SIZE,
+  ROOT_PROJECT_SLUG,
+} from '@lfx-one/shared/constants';
 import { NatsSubjects, PollStatus } from '@lfx-one/shared/enums';
 import {
   ActiveWeeksStreakResponse,
@@ -454,15 +460,25 @@ export class UserService {
    * Get all pending actions for the authenticated user across every persona. A pending action
    * is a pending action regardless of which dashboard the user is viewing — the board-only
    * scoping in the earlier implementation was an MVP artifact, not a principled design choice.
+   *
+   * When `projectUid` and `projectSlug` are omitted, the aggregator runs unscoped across all of
+   * the user's FGA grants (Me-lens). When provided, results are scoped to that project
+   * (project-lens / foundation-lens dashboards).
    * @param req - Express request object
-   * @param projectUid - Project UID for filtering
+   * @param projectUid - Optional project UID; omit for unscoped (all-grants) aggregation
    * @param email - User email
-   * @param projectSlug - Project slug for survey filtering
+   * @param projectSlug - Optional project slug; omit for unscoped survey aggregation
    * @param limit - Optional cap on the response size (aggregator still runs in full;
    *   this just shrinks the payload for callers that only need a top-N view)
    * @returns Array of pending action items
    */
-  public async getPendingActions(req: Request, projectUid: string, email: string, projectSlug: string, limit?: number): Promise<PendingActionItem[]> {
+  public async getPendingActions(
+    req: Request,
+    projectUid: string | undefined,
+    email: string,
+    projectSlug: string | undefined,
+    limit?: number
+  ): Promise<PendingActionItem[]> {
     const actions = await this.getUserPendingActions(req, email, projectSlug, projectUid);
     return limit && limit > 0 && actions.length > limit ? actions.slice(0, limit) : actions;
   }
@@ -478,9 +494,15 @@ export class UserService {
    * @param req - Express request object
    * @param projectUid - Optional project UID to filter meetings by
    * @param foundationUid - Optional foundation UID to filter meetings by (OR across child projects)
+   * @param options - When `basic: true`, skips RSVP enrichment, project-name enrichment, and
+   *   `addAccessToResources` — intended for internal callers that do not surface those fields
+   *   (today: the pending-actions aggregator). Do not use from route handlers that return the
+   *   meeting payload to the frontend, since the `invited: true` decoration in this mode is
+   *   derived from the FGA tuple's existence (`filter_grants=direct`) and is NOT an
+   *   authorization check — it is a data shape marker, not an access decision.
    * @returns Array of Meeting objects the user has some direct FGA grant on
    */
-  public async getUserMeetings(req: Request, projectUid?: string, foundationUid?: string): Promise<Meeting[]> {
+  public async getUserMeetings(req: Request, projectUid?: string, foundationUid?: string, options?: { basic?: boolean }): Promise<Meeting[]> {
     // .catch — a foundation lookup failure degrades to an empty scope (caught by the empty-set
     // guard below), preventing a NATS/upstream blip from 500'ing the Me lens.
     const foundationProjectUids = foundationUid
@@ -536,50 +558,69 @@ export class UserService {
     // Wrapped in try/catch so an RSVP-lookup failure degrades gracefully: meetings still return,
     // `my_rsvp` stays undefined per row, the dashboard doesn't 500, and the Pending RSVP filter
     // chip just shows the unfiltered list.
-    const rawUsername = await getUsernameFromAuth(req);
-    const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
-    const email = getEffectiveEmail(req) ?? '';
+    if (!options?.basic) {
+      const rawUsername = await getUsernameFromAuth(req);
+      const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
+      const email = getEffectiveEmail(req) ?? '';
 
-    if ((email || username) && meetings.length > 0) {
-      try {
-        const [userRsvps, activeRegistrantIds] = await Promise.all([
-          this.fetchAllUserRsvps(req, email, username),
-          this.fetchUserActiveRegistrantIds(req, email, username),
-        ]);
+      if ((email || username) && meetings.length > 0) {
+        try {
+          const [userRsvps, activeRegistrantIds] = await Promise.all([
+            this.fetchAllUserRsvps(req, email, username),
+            this.fetchUserActiveRegistrantIds(req, email, username),
+          ]);
 
-        // Strongest-response-wins (accepted/declined beats maybe beats nothing) — same logic as
-        // `transformMissingRsvpsToActions`. Drop RSVPs whose `registrant_id` isn't in the active
-        // set; otherwise stale RSVPs from removed registrations would falsely mark meetings as
-        // "responded".
-        const rsvpByMeeting = new Map<string, MeetingRsvp>();
-        for (const rsvp of userRsvps) {
-          if (!rsvp.meeting_id) continue;
-          if (!rsvp.registrant_id || !activeRegistrantIds.has(rsvp.registrant_id)) continue;
-          const existing = rsvpByMeeting.get(rsvp.meeting_id);
-          if (!existing || (existing.response_type === 'maybe' && rsvp.response_type !== 'maybe')) {
-            rsvpByMeeting.set(rsvp.meeting_id, rsvp);
+          // Strongest-response-wins (accepted/declined beats maybe beats nothing) — same logic as
+          // `transformMissingRsvpsToActions`. Drop RSVPs whose `registrant_id` isn't in the active
+          // set; otherwise stale RSVPs from removed registrations would falsely mark meetings as
+          // "responded".
+          const rsvpByMeeting = new Map<string, MeetingRsvp>();
+          for (const rsvp of userRsvps) {
+            if (!rsvp.meeting_id) continue;
+            if (!rsvp.registrant_id || !activeRegistrantIds.has(rsvp.registrant_id)) continue;
+            const existing = rsvpByMeeting.get(rsvp.meeting_id);
+            if (!existing || (existing.response_type === 'maybe' && rsvp.response_type !== 'maybe')) {
+              rsvpByMeeting.set(rsvp.meeting_id, rsvp);
+            }
           }
-        }
 
-        for (const meeting of meetings) {
-          if (meeting.id) {
-            meeting.my_rsvp = rsvpByMeeting.get(meeting.id) ?? null;
+          for (const meeting of meetings) {
+            if (meeting.id) {
+              meeting.my_rsvp = rsvpByMeeting.get(meeting.id) ?? null;
+            }
           }
+        } catch (error) {
+          logger.warning(req, 'get_user_meetings', 'RSVP enrichment failed, continuing without my_rsvp', {
+            err: error,
+          });
         }
-      } catch (error) {
-        logger.warning(req, 'get_user_meetings', 'RSVP enrichment failed, continuing without my_rsvp', {
-          err: error,
-        });
       }
     }
 
     // Drop past meetings; recurring meetings survive if any occurrence is still active.
-    const upcomingMeetings = meetings.filter((meeting) => {
-      if (meeting.occurrences && meeting.occurrences.length > 0) {
-        return meeting.occurrences.some((occurrence) => occurrence.status !== 'cancel' && !hasMeetingEnded(meeting, occurrence));
-      }
-      return !hasMeetingEnded(meeting);
-    });
+    // Basic mode powers pending-actions aggregation, where a completed meeting can't yield an
+    // actionable RSVP/agenda nag — so the 40-minute grace `hasMeetingEnded` allows doesn't apply.
+    const upcomingMeetings = options?.basic
+      ? meetings.filter((meeting) => {
+          const now = Date.now();
+          if (meeting.occurrences && meeting.occurrences.length > 0) {
+            return meeting.occurrences.some((occ) => {
+              if (occ.status === 'cancel') return false;
+              const startMs = new Date(occ.start_time).getTime();
+              const durationMinutes = parseToInt(occ.duration) ?? parseToInt(meeting.duration) ?? 0;
+              return now < startMs + durationMinutes * 60 * 1000;
+            });
+          }
+          const startMs = new Date(meeting.start_time).getTime();
+          const durationMinutes = parseToInt(meeting.duration) ?? 0;
+          return now < startMs + durationMinutes * 60 * 1000;
+        })
+      : meetings.filter((meeting) => {
+          if (meeting.occurrences && meeting.occurrences.length > 0) {
+            return meeting.occurrences.some((occurrence) => occurrence.status !== 'cancel' && !hasMeetingEnded(meeting, occurrence));
+          }
+          return !hasMeetingEnded(meeting);
+        });
 
     // Sort by the next active occurrence so recurring meetings — whose meeting.start_time is the
     // series start (often in the past) — are ordered by when the user will actually attend next.
@@ -592,9 +633,18 @@ export class UserService {
       return timeA - timeB;
     });
 
+    if (options?.basic) {
+      // `invited: true` reflects that every row has a direct host/participant FGA tuple
+      // (pre-filtered by `filter_grants=direct`) — it is a data-shape marker, not an access
+      // decision. Callers must not treat it as authorization metadata.
+      return sortedMeetings.map((m) => ({ ...m, invited: true }));
+    }
+
     const enriched = await this.meetingService.getMeetingProjectName(req, sortedMeetings);
 
-    // Every result has a direct host or participant FGA tuple, so the user is invited by definition.
+    // `invited: true` — every row has a direct host/participant FGA tuple by virtue of
+    // `filter_grants=direct`, so the user is invited by definition. Data-shape marker, not an
+    // access decision (the subsequent `addAccessToResources` is the actual access layer).
     const invited = enriched.map((m) => ({ ...m, invited: true }));
 
     return this.accessCheckService.addAccessToResources(req, invited, 'v1_meeting', 'organizer');
@@ -682,6 +732,7 @@ export class UserService {
           this.microserviceProxy.proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
             type: 'v1_past_meeting',
             filter_grants: 'direct',
+            sort: 'name_desc',
             page_size: 500,
             ...projectFilterParams,
             ...(pageToken && { page_token: pageToken }),
@@ -717,12 +768,25 @@ export class UserService {
       id: m.meeting_and_occurrence_id,
     }));
 
+    const now = Date.now();
+    const pastOnly = normalizedMeetings.filter((meeting) => {
+      const effectiveEnd = this.computeEffectivePastMeetingEnd(meeting);
+      return effectiveEnd !== null && effectiveEnd < now;
+    });
+
+    if (normalizedMeetings.length - pastOnly.length > 0) {
+      logger.debug(req, 'get_user_past_meetings', 'Filtered out ongoing meetings', {
+        filtered_out: normalizedMeetings.length - pastOnly.length,
+        remaining: pastOnly.length,
+      });
+    }
+
     logger.debug(req, 'get_user_past_meetings', 'Fetched past meetings from query service', {
-      count: normalizedMeetings.length,
+      count: pastOnly.length,
       participant_matches: participants.length,
     });
 
-    if (normalizedMeetings.length === 0) {
+    if (pastOnly.length === 0) {
       return [];
     }
 
@@ -738,16 +802,110 @@ export class UserService {
         const prior = userAttendedByOccurrenceId.get(p.meeting_and_occurrence_id) ?? false;
         userAttendedByOccurrenceId.set(p.meeting_and_occurrence_id, prior || !!p.is_attended);
       }
-      for (const meeting of normalizedMeetings) {
+      for (const meeting of pastOnly) {
         meeting.user_attended = userAttendedByOccurrenceId.get(meeting.id) ?? false;
       }
     }
 
-    // Sort by scheduled_start_time descending (most recent first)
-    normalizedMeetings.sort((a, b) => new Date(b.scheduled_start_time ?? b.start_time).getTime() - new Date(a.scheduled_start_time ?? a.start_time).getTime());
+    const enriched = await this.meetingService.getMeetingProjectName(req, pastOnly);
 
-    const enriched = await this.meetingService.getMeetingProjectName(req, normalizedMeetings);
+    return this.accessCheckService.addAccessToResources(req, enriched, 'v1_past_meeting', 'organizer');
+  }
 
+  /**
+   * Returns up to 5 most-recent past meetings the user has an FGA grant on.
+   * Filters out meetings whose scheduled end has not yet passed. Issues a single query-service
+   * call with `sort=name_desc` + a small over-fetch — the meeting-service indexer populates
+   * `sort_name` with the RFC3339 UTC `start_time`, so the top rows are the most recent. We
+   * request more than 5 so that when the first rows are ongoing (scheduled end still in the
+   * future), we can drop them and still return up to 5 truly-past meetings in one request.
+   * Skips the participant/attendance scan since the card does not surface `user_attended`.
+   *
+   * Cross-service dependency: the `sort_name = start_time` contract is owned by the
+   * `lfx-v2-meeting-service` indexer. If that field is ever repurposed (e.g. to alphabetical
+   * meeting name), this endpoint would silently return lexicographically-ordered results
+   * instead of the most-recent-first. Pin the contract via the indexer doc in that repo:
+   * https://github.com/linuxfoundation/lfx-v2-meeting-service/blob/main/docs/indexer-contract.md
+   */
+  public async getUserLatestPastMeetings(req: Request, projectUid?: string, foundationUid?: string): Promise<PastMeeting[]> {
+    logger.debug(req, 'get_user_latest_past_meetings', 'Fetching user latest past meetings via filter_grants=direct + sort=name_desc', {
+      has_project_filter: !!projectUid,
+      has_foundation_filter: !!foundationUid,
+    });
+
+    // .catch — a foundation lookup failure degrades to an empty scope (caught by the empty-set
+    // guard below), preventing a NATS/upstream blip from 500'ing the Me lens.
+    const foundationProjectUids = foundationUid
+      ? await this.projectService
+          .getFoundationProjectUids(req, foundationUid)
+          .then((uids) => new Set(uids))
+          .catch((error) => {
+            logger.warning(req, 'get_user_latest_past_meetings', 'Foundation project lookup failed, treating as empty scope', { err: error });
+            return new Set<string>();
+          })
+      : undefined;
+
+    // Foundation filter requested but resolved to zero child projects: short-circuit before the
+    // helper collapses to unfiltered (global) scope.
+    if (foundationUid && foundationProjectUids !== undefined && foundationProjectUids.size === 0) {
+      logger.debug(req, 'get_user_latest_past_meetings', 'Foundation scope resolved to empty set, returning empty list', {
+        foundation_uid: foundationUid,
+      });
+      return [];
+    }
+
+    const projectFilterParams = this.buildProjectScopeFilters(projectUid, foundationProjectUids);
+
+    // See module-level LATEST_PAST_MEETINGS_FETCH_SIZE / RETURN_LIMIT JSDoc for why we
+    // over-fetch here.
+    const response = await this.microserviceProxy
+      .proxyRequest<QueryServiceResponse<PastMeeting>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+        type: 'v1_past_meeting',
+        filter_grants: 'direct',
+        sort: 'name_desc',
+        page_size: LATEST_PAST_MEETINGS_FETCH_SIZE,
+        ...projectFilterParams,
+      })
+      .catch((error) => {
+        logger.warning(req, 'get_user_latest_past_meetings', 'Past meeting query failed, returning empty list', {
+          err: error,
+        });
+        return null;
+      });
+
+    if (!response || !response.resources || response.resources.length === 0) {
+      return [];
+    }
+
+    const rows = response.resources.map((r) => r.data);
+
+    const indexable = rows.filter((m): m is PastMeeting & { meeting_and_occurrence_id: string } => !!m.meeting_and_occurrence_id);
+    const droppedCount = rows.length - indexable.length;
+    if (droppedCount > 0) {
+      logger.warning(req, 'get_user_latest_past_meetings', 'Dropped past meeting rows missing meeting_and_occurrence_id', {
+        dropped: droppedCount,
+        total: rows.length,
+      });
+    }
+
+    const normalized = indexable.map((m) => ({
+      ...m,
+      id: m.meeting_and_occurrence_id,
+    }));
+
+    const now = Date.now();
+    const filtered = normalized
+      .filter((meeting) => {
+        const effectiveEnd = this.computeEffectivePastMeetingEnd(meeting);
+        return effectiveEnd !== null && effectiveEnd < now;
+      })
+      .slice(0, LATEST_PAST_MEETINGS_RETURN_LIMIT);
+
+    if (filtered.length === 0) {
+      return [];
+    }
+
+    const enriched = await this.meetingService.getMeetingProjectName(req, filtered);
     return this.accessCheckService.addAccessToResources(req, enriched, 'v1_past_meeting', 'organizer');
   }
 
@@ -925,16 +1083,30 @@ export class UserService {
   }
 
   /**
-   * Aggregate pending actions for the current user within a project scope. Sources run in parallel
+   * Aggregate pending actions for the current user. Sources run in parallel
    * with per-source `.catch(() => [])` so one flaky source can't wipe the list:
    *   - Non-responded surveys (Snowflake)
    *   - Upcoming meetings within the next two weeks (Review Agenda action)
    *   - Active votes the user hasn't cast (Cast Vote action)
    *   - Missing RSVPs for meetings in the 2-week window (Set RSVP action)
-   * No meeting-type filter — a working-group meeting next week is as much a pending action as
-   * a board meeting.
+   *
+   * When `projectSlug` / `projectUid` are omitted, every source runs user-scoped across all of
+   * the user's FGA grants (Me-lens single unscoped request). When provided, every source is
+   * filtered to that project (project/foundation-lens). No meeting-type filter — a working-group
+   * meeting next week is as much a pending action as a board meeting.
    */
-  private async getUserPendingActions(req: Request, email: string, projectSlug: string, projectUid: string): Promise<PendingActionItem[]> {
+  private async getUserPendingActions(
+    req: Request,
+    email: string,
+    projectSlug: string | undefined,
+    projectUid: string | undefined
+  ): Promise<PendingActionItem[]> {
+    // INFO-level breadcrumb for the unscoped Me-lens path — reads log at DEBUG by default, so
+    // without this the unscoped aggregation path has no prod footprint for capacity planning.
+    if (!projectUid && !projectSlug) {
+      logger.info(req, 'get_user_pending_actions', 'Running unscoped (Me-lens) aggregation', { me_lens: true });
+    }
+
     const rawUsername = await getUsernameFromAuth(req);
     const username = rawUsername ? stripAuthPrefix(rawUsername) : null;
 
@@ -945,12 +1117,12 @@ export class UserService {
         return [];
       }),
 
-      this.getUserMeetings(req, projectUid).catch((error) => {
+      this.getUserMeetings(req, projectUid, undefined, { basic: true }).catch((error) => {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch user meetings for pending actions', { err: error });
         return [] as Meeting[];
       }),
 
-      this.fetchPendingVotes(req, email, username, projectUid).catch((error) => {
+      this.fetchPendingVotes(req, projectUid).catch((error) => {
         logger.warning(req, 'get_user_pending_actions', 'Failed to fetch pending votes', { err: error });
         return [] as Vote[];
       }),
@@ -994,21 +1166,22 @@ export class UserService {
    * `individual_vote` type was fabricated in the shared interface and the query returned zero
    * rows in practice.
    *
-   * ITX creates a `vote_response` record per invitee on poll initiation and stamps
-   * `vote_status='submitted'` once the user actually casts. "Pending" is therefore:
-   *   - `vote_status !== 'submitted'`  (not cast yet)
-   *   - `!voter_removed`               (active invitation)
-   *   - scoped to the current project
-   * Then fetch the Vote details and keep only those still `active` with an `end_time` in the
-   * future.
+   * Source rows come from `filter_grants=direct` on `vote_response` — the voting service writes
+   * a direct `owner = user:{username}` FGA tuple per invitee, so the query service pre-filters
+   * OpenSearch to exactly this user's rows. When `projectUid` is provided it is pushed
+   * server-side to drop out-of-scope rows before pagination; when omitted, the unscoped Me-lens
+   * call already gets exactly the user's vote_response rows across all their projects via
+   * `filter_grants=direct`. The remaining `vote_status !== 'submitted'` and `!voter_removed`
+   * checks stay client-side. Caveat: the FGA tuple is only emitted when the invitee has a
+   * non-empty `Username`, so users invited by email but without an Auth0 username won't appear
+   * here. We accept this trade-off — meetings already work the same way and FGA is the source
+   * of truth for invitations.
+   *
+   * Parent `vote` rows are fetched in a single batched query-service call (`type=vote` + `filters_or`
+   * on each pending `vote_uid`) instead of per-vote REST. The indexed `vote` doc carries `name`,
+   * `end_time`, and `status` — everything the `transformVotesToActions` consumer needs.
    */
-  private async fetchPendingVotes(req: Request, email: string, username: string | null, projectUid: string): Promise<Vote[]> {
-    const normalizedEmail = email ? email.trim().toLowerCase() : '';
-    const orClauses: string[] = [];
-    if (normalizedEmail) orClauses.push(`user_email:${normalizedEmail}`);
-    if (username) orClauses.push(`username:${username}`);
-    if (orClauses.length === 0) return [];
-
+  private async fetchPendingVotes(req: Request, projectUid?: string): Promise<Vote[]> {
     interface VoteResponseRow {
       vote_uid?: string;
       vote_id?: string;
@@ -1025,7 +1198,8 @@ export class UserService {
       (pageToken) =>
         this.microserviceProxy.proxyRequest<QueryServiceResponse<VoteResponseRow>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
           type: 'vote_response',
-          filters_or: orClauses,
+          filter_grants: 'direct',
+          ...(projectUid && { filters: [`project_uid:${projectUid}`] }),
           ...(pageToken && { page_token: pageToken }),
         }),
       { failOnPartial: true }
@@ -1036,27 +1210,52 @@ export class UserService {
     const pendingVoteUids = Array.from(
       new Set(
         responses
-          .filter((r) => r.vote_status !== 'submitted' && !r.voter_removed && r.project_uid === projectUid)
+          .filter((r) => r.vote_status !== 'submitted' && !r.voter_removed)
           .map((r) => r.vote_uid ?? r.poll_id)
           .filter((uid): uid is string => !!uid)
       )
     );
     if (pendingVoteUids.length === 0) return [];
 
-    const now = Date.now();
-    const votes = await Promise.all(
-      pendingVoteUids.map((uid) =>
-        this.microserviceProxy.proxyRequest<Vote>(req, 'LFX_V2_SERVICE', `/votes/${uid}`, 'GET').catch((error) => {
-          logger.warning(req, 'fetch_pending_votes', 'Failed to fetch vote details, skipping', {
-            vote_uid: uid,
-            err: error,
-          });
-          return null;
-        })
-      )
-    );
+    // No `filter_grants` on the `vote` query — users have no direct FGA grant on the parent vote
+    // doc; access is implied by their `vote_response` rows fetched above.
+    //
+    // Chunk `filters_or` at QUERY_SERVICE_FILTERS_OR_BATCH_SIZE to stay under query-service /
+    // OpenSearch URL-length limits when the user has a large number of pending invitations.
+    // Matches the repo pattern in `committee.service.ts getCommitteesByIds`.
+    const voteBatches: string[][] = [];
+    for (let i = 0; i < pendingVoteUids.length; i += QUERY_SERVICE_FILTERS_OR_BATCH_SIZE) {
+      voteBatches.push(pendingVoteUids.slice(i, i + QUERY_SERVICE_FILTERS_OR_BATCH_SIZE));
+    }
 
-    return votes.filter((v): v is Vote => v !== null && v.status === PollStatus.ACTIVE && !!v.end_time && new Date(v.end_time).getTime() > now);
+    // Batches are non-overlapping slices of `pendingVoteUids`, so any given vote row can match
+    // at most one batch — no dedupe step needed after the flatten.
+    const votes = await Promise.all(
+      voteBatches.map((batch) =>
+        fetchAllQueryResources<Vote>(
+          req,
+          (pageToken) =>
+            this.microserviceProxy.proxyRequest<QueryServiceResponse<Vote>>(req, 'LFX_V2_SERVICE', '/query/resources', 'GET', {
+              type: 'vote',
+              filters_or: batch.map((uid) => `vote_uid:${uid}`),
+              ...(pageToken && { page_token: pageToken }),
+            }),
+          { failOnPartial: true }
+        )
+      )
+    )
+      .then((batchResults) => batchResults.flat())
+      .catch((error) => {
+        logger.warning(req, 'fetch_pending_votes', 'Failed to fetch vote details, returning empty list', {
+          vote_uid_count: pendingVoteUids.length,
+          batch_count: voteBatches.length,
+          err: error,
+        });
+        return [] as Vote[];
+      });
+
+    const now = Date.now();
+    return votes.filter((v) => v.status === PollStatus.ACTIVE && !!v.end_time && new Date(v.end_time).getTime() > now);
   }
 
   /**
@@ -1185,7 +1384,7 @@ export class UserService {
         day: 'numeric',
       });
       return {
-        type: 'Cast Vote',
+        type: 'Vote',
         badge,
         text: `Cast your vote on ${vote.name}`,
         icon: 'fa-regular fa-check-to-slot',
@@ -1223,7 +1422,7 @@ export class UserService {
     const buttonLink = queryString ? `/meetings/${meeting.id}?${queryString}` : `/meetings/${meeting.id}`;
 
     return {
-      type: 'Set RSVP',
+      type: 'RSVP',
       badge,
       text: `RSVP to ${meeting.title}`,
       icon: 'fa-regular fa-calendar-check',
@@ -1245,20 +1444,21 @@ export class UserService {
 
     for (const meeting of meetings) {
       if (meeting.occurrences && meeting.occurrences.length > 0) {
-        // Filter active occurrences (not cancelled)
-        const activeOccurrences = meeting.occurrences.filter((occ) => occ.status !== 'cancel');
+        // Recurring meetings emit at most one Agenda action — the earliest in-window occurrence.
+        // Otherwise a weekly series fills the 5-row card with duplicates of the same agenda.
+        const nextInWindow = meeting.occurrences
+          .filter((occ) => occ.status !== 'cancel')
+          .map((occurrence) => {
+            const startTime = new Date(occurrence.start_time);
+            const durationMinutes = parseToInt(occurrence.duration) ?? parseToInt(meeting.duration) ?? 0;
+            const meetingEndWithBuffer = new Date(startTime.getTime() + (durationMinutes + this.bufferMinutes) * 60 * 1000);
+            return { occurrence, startTime, meetingEndWithBuffer };
+          })
+          .filter(({ startTime, meetingEndWithBuffer }) => now < meetingEndWithBuffer && startTime <= twoWeeksFromNow)
+          .sort((a, b) => a.startTime.getTime() - b.startTime.getTime())[0];
 
-        for (const occurrence of activeOccurrences) {
-          const startTime = new Date(occurrence.start_time);
-          // Parse duration handling both string and number types (v1 meetings return strings)
-          const durationMinutes = parseToInt(occurrence.duration) ?? parseToInt(meeting.duration) ?? 0;
-          // Calculate meeting end time + buffer
-          const meetingEndWithBuffer = new Date(startTime.getTime() + (durationMinutes + this.bufferMinutes) * 60 * 1000);
-
-          // Only include if meeting hasn't ended (with buffer) and is within 2 weeks
-          if (now < meetingEndWithBuffer && startTime <= twoWeeksFromNow) {
-            actions.push(this.createMeetingAction(meeting, occurrence));
-          }
+        if (nextInWindow) {
+          actions.push(this.createMeetingAction(meeting, nextInWindow.occurrence));
         }
       } else {
         const startTime = new Date(meeting.start_time);
@@ -1304,7 +1504,7 @@ export class UserService {
     const buttonLink = queryString ? `/meetings/${meeting.id}?${queryString}` : `/meetings/${meeting.id}`;
 
     return {
-      type: 'Review Agenda',
+      type: 'Agenda',
       badge: dateStr,
       text: `Review ${title} Agenda and Materials`,
       icon: 'fa-light fa-calendar-check',
@@ -1313,6 +1513,22 @@ export class UserService {
       buttonLink,
       date: formattedDate,
     };
+  }
+
+  private computeEffectivePastMeetingEnd(meeting: PastMeeting): number | null {
+    if (meeting.scheduled_end_time) {
+      const scheduledEnd = new Date(meeting.scheduled_end_time).getTime();
+      if (!Number.isNaN(scheduledEnd)) return scheduledEnd;
+    }
+    const start = meeting.scheduled_start_time || meeting.start_time;
+    const duration = parseToInt(meeting.duration);
+    // Explicit nullish / NaN check so a parsed duration of 0 is not treated as "unknown end"
+    // (a zero-minute meeting has effectiveEnd === start, which is still a usable cutoff).
+    if (start && duration !== undefined && duration !== null && !Number.isNaN(duration)) {
+      const startMs = new Date(start).getTime();
+      if (!Number.isNaN(startMs)) return startMs + duration * 60 * 1000;
+    }
+    return null;
   }
 
   /**

@@ -83,7 +83,8 @@
           [occurrence]="item.occurrence"
           cardLabel="NEXT MEETING"
           cardVariant="accent"
-          viewAllRouterLink="/meetings" />
+          viewAllRouterLink="/meetings"
+          [overlappingCount]="overlappingNextCount()" />
       } @else {
         <div
           class="rounded-2xl border border-blue-100 shadow-sm overflow-hidden flex-1 flex items-center justify-center gap-4 px-5 py-10"

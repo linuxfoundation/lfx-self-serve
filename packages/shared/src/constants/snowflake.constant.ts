@@ -60,3 +60,14 @@ export const SNOWFLAKE_CONFIG = {
    */
   MAX_RETRIES: 3,
 } as const;
+
+/**
+ * Row cap for the pending-surveys query in `getPendingActionSurveys`.
+ * @description When the Me-lens path calls this without a `PROJECT_SLUG` predicate, Snowflake
+ * would otherwise filter only by `EMAIL`, widening the micro-partition scan for users enrolled
+ * in many projects. Pairing the existing `ORDER BY SURVEY_CUTOFF_DATE ASC` with this cap keeps
+ * the 50 most-urgent pending surveys — far more than the dashboard surfaces today (≤10 rows)
+ * — while bounding compute on the unscoped path. The same cap applies to the scoped path; a
+ * single user is extremely unlikely to have >50 open surveys within a single project.
+ */
+export const PENDING_ACTION_SURVEYS_ROW_LIMIT = 50;

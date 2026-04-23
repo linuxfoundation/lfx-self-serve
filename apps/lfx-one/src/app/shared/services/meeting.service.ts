@@ -149,11 +149,7 @@ export class MeetingService {
   }
 
   public getPastMeetingsByProject(uid: string): Observable<PastMeeting[]> {
-    const params = new HttpParams().set('tags', `project_uid:${uid}`);
-
-    // TODO: Add sort parameter once API supports sorting by scheduled_start_time
-    // When implemented, add: params = params.set('sort', 'scheduled_start_time_desc');
-    // This will enable backend sorting instead of client-side sorting in the component
+    const params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', 'name_desc');
 
     return this.getPastMeetings(params).pipe(map((response) => response.data));
   }
@@ -189,7 +185,7 @@ export class MeetingService {
     searchName?: string,
     filters?: string[]
   ): Observable<PaginatedResponse<PastMeeting>> {
-    let params = new HttpParams().set('tags', `project_uid:${uid}`);
+    let params = new HttpParams().set('tags', `project_uid:${uid}`).set('sort', 'name_desc');
     if (pageToken) {
       params = params.set('page_token', pageToken);
     }

@@ -51,8 +51,10 @@ export class UserService {
   // to the refresh subjects. A fresh Subject is created for each new chain.
   private userMeetingsDestroy$ = new Subject<void>();
   private userPastMeetingsDestroy$ = new Subject<void>();
+  private userLatestPastMeetingsDestroy$ = new Subject<void>();
   private userMeetings$: Observable<Meeting[]> | null = null;
   private userPastMeetings$: Observable<PastMeeting[]> | null = null;
+  private userLatestPastMeetings$: Observable<PastMeeting[]> | null = null;
 
   public constructor() {
     // Invalidate cached user-scoped observables when the authenticated user or
@@ -74,8 +76,11 @@ export class UserService {
         this.userMeetingsDestroy$ = new Subject<void>();
         this.userPastMeetingsDestroy$.next();
         this.userPastMeetingsDestroy$ = new Subject<void>();
+        this.userLatestPastMeetingsDestroy$.next();
+        this.userLatestPastMeetingsDestroy$ = new Subject<void>();
         this.userMeetings$ = null;
         this.userPastMeetings$ = null;
+        this.userLatestPastMeetings$ = null;
       });
   }
 
@@ -154,14 +159,7 @@ export class UserService {
       const destroy$ = this.userMeetingsDestroy$;
       this.userMeetings$ = this.userMeetingsRefresh$.pipe(
         startWith(undefined),
-        switchMap(() =>
-          this.http.get<Meeting[]>('/api/user/meetings').pipe(
-            catchError((error) => {
-              console.error('Failed to load user meetings:', error);
-              return of([]);
-            })
-          )
-        ),
+        switchMap(() => this.http.get<Meeting[]>('/api/user/meetings')),
         takeUntil(destroy$),
         shareReplay({ bufferSize: 1, refCount: false })
       );
@@ -178,19 +176,35 @@ export class UserService {
       const destroy$ = this.userPastMeetingsDestroy$;
       this.userPastMeetings$ = this.userPastMeetingsRefresh$.pipe(
         startWith(undefined),
-        switchMap(() =>
-          this.http.get<PastMeeting[]>('/api/user/past-meetings').pipe(
-            catchError((error) => {
-              console.error('Failed to load user past meetings:', error);
-              return of([]);
-            })
-          )
-        ),
+        switchMap(() => this.http.get<PastMeeting[]>('/api/user/past-meetings')),
         takeUntil(destroy$),
         shareReplay({ bufferSize: 1, refCount: false })
       );
     }
     return this.userPastMeetings$;
+  }
+
+  /**
+   * Gets up to 5 of the user's most recent past meetings via the fast-path endpoint.
+   * The backend uses `sort=name_desc` and over-fetches (page_size=10) so it can drop ongoing
+   * meetings from the top of the sort and still return up to 5 truly-past rows in a single
+   * request. Returns an empty array when the user has no truly past meetings, or fewer than 5
+   * rows when many concurrently-ongoing meetings sit at the head of the sort.
+   */
+  public getUserLatestPastMeetings(): Observable<PastMeeting[]> {
+    if (!this.userLatestPastMeetings$) {
+      const destroy$ = this.userLatestPastMeetingsDestroy$;
+      // Shares `userPastMeetingsRefresh$` with `getUserPastMeetings()` on purpose — the two
+      // caches represent different slices of the same underlying data, so `refreshUserPastMeetings()`
+      // invalidates both together and they re-fetch in lockstep.
+      this.userLatestPastMeetings$ = this.userPastMeetingsRefresh$.pipe(
+        startWith(undefined),
+        switchMap(() => this.http.get<PastMeeting[]>('/api/user/latest-past-meetings')),
+        takeUntil(destroy$),
+        shareReplay({ bufferSize: 1, refCount: false })
+      );
+    }
+    return this.userLatestPastMeetings$;
   }
 
   /**
