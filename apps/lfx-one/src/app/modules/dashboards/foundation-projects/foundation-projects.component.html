@@ -21,6 +21,11 @@
     <lfx-stat-card-grid [cards]="summaryCards()" [loading]="loading()" />
 
     <div class="flex flex-col gap-3" data-testid="foundation-projects-filters">
+      <lfx-filter-pills
+        [options]="pillOptions()"
+        [selectedFilter]="activePill()"
+        (filterChange)="onPillChange($event)"
+        data-testid="foundation-projects-pills" />
       <lfx-input-text
         control="query"
         [form]="searchForm"
@@ -44,22 +49,26 @@
       <ng-template #header>
         <tr>
           <th scope="col">Project Name</th>
+          <th scope="col" class="text-center">Groups</th>
+          <th scope="col" class="text-center">Channels</th>
           <th scope="col" class="text-right">Maintainers</th>
           <th scope="col" class="text-right">Stars</th>
           <th scope="col" class="text-right">Contributors</th>
           <th scope="col" class="text-right">Commits (90d)</th>
-          <th scope="col"></th>
+          <th scope="col" class="text-right"><span class="sr-only">Actions</span></th>
         </tr>
       </ng-template>
 
       <ng-template #body let-project>
+        @let view = projectRowViews().get(project.projectSlug) ?? defaultRowView;
         <tr [attr.data-testid]="'foundation-projects-row-' + project.projectSlug">
           <td>
             <button
               type="button"
               class="flex flex-col items-start border-none bg-transparent p-0 text-left disabled:cursor-not-allowed disabled:opacity-60"
-              [disabled]="!project.projectId"
-              [attr.title]="!project.projectId ? 'Project lens unavailable for this row' : null"
+              [disabled]="!view.lensReady"
+              [pTooltip]="view.lensReady ? '' : 'Project lens unavailable for this row'"
+              tooltipPosition="top"
               (click)="openProjectLens(project)"
               [attr.data-testid]="'foundation-projects-name-' + project.projectSlug">
               <span class="lfx-table-name-link text-sm">{{ project.projectName }}</span>
@@ -67,6 +76,42 @@
                 <span class="text-xs text-slate-500">Updated {{ project.lastUpdated }}</span>
               }
             </button>
+          </td>
+          <td class="text-center">
+            <i
+              class="fa-light fa-users-rectangle"
+              [class.text-blue-600]="view.groupsPresence === 'present'"
+              [class.text-gray-300]="view.groupsPresence === 'absent'"
+              [class.text-gray-200]="view.groupsPresence === 'pending'"
+              aria-hidden="true"
+              [pTooltip]="view.groupsText"
+              tooltipPosition="top"
+              [attr.data-testid]="'foundation-projects-groups-' + project.projectSlug"></i>
+            <span class="sr-only">{{ view.groupsText }}</span>
+          </td>
+          <td class="text-center">
+            <span class="inline-flex items-center justify-center gap-2">
+              <i
+                class="fa-light fa-envelope"
+                [class.text-blue-600]="view.mailingListsPresence === 'present'"
+                [class.text-gray-300]="view.mailingListsPresence === 'absent'"
+                [class.text-gray-200]="view.mailingListsPresence === 'pending'"
+                aria-hidden="true"
+                [pTooltip]="view.mailingListsText"
+                tooltipPosition="top"
+                [attr.data-testid]="'foundation-projects-mailing-lists-' + project.projectSlug"></i>
+              <span class="sr-only">{{ view.mailingListsText }}</span>
+              <i
+                class="fa-light fa-message"
+                [class.text-blue-600]="view.chatPresence === 'present'"
+                [class.text-gray-300]="view.chatPresence === 'absent'"
+                [class.text-gray-200]="view.chatPresence === 'pending'"
+                aria-hidden="true"
+                [pTooltip]="view.chatText"
+                tooltipPosition="top"
+                [attr.data-testid]="'foundation-projects-chat-' + project.projectSlug"></i>
+              <span class="sr-only">{{ view.chatText }}</span>
+            </span>
           </td>
           <td class="text-right text-sm text-gray-700">{{ project.maintainers | number }}</td>
           <td class="text-right text-sm text-gray-700">{{ project.stars | number }}</td>
@@ -87,7 +132,7 @@
 
       <ng-template #emptymessage>
         <tr>
-          <td colspan="6" class="p-10 text-center">
+          <td colspan="8" class="p-10 text-center">
             @if (searchQuery().trim()) {
               <div class="flex flex-col items-center gap-2" data-testid="foundation-projects-search-empty">
                 <i class="fa-light fa-magnifying-glass text-3xl text-gray-400"></i>

@@ -23,3 +23,4 @@ export * from './flywheel.utils';
 export * from './rewards.utils';
 export * from './insights.utils';
 export * from './pagination.utils';
+export * from './project-counts.utils';

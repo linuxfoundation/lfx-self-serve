@@ -3,6 +3,8 @@
 
 import type { ChartData, ChartOptions, ChartType } from 'chart.js';
 
+import { PRESENCE_PILL_IDS } from '../constants/foundation-projects.constants';
+
 /**
  * Health score type for foundations
  * @description Indicates the overall health status of a foundation
@@ -273,6 +275,67 @@ export interface ProjectTableRow {
   maintainers: number;
   stars: number;
   lastUpdated: string | null;
+}
+
+/**
+ * Per-project group/channel indicator counts for the foundation projects page.
+ * Populated row-by-row from upstream committee + mailing-list queries; drives
+ * the Groups and Channels column icons and the presence filter pills.
+ *
+ * Fields are `undefined` while the corresponding upstream request is still in
+ * flight (pending state). Once the request resolves — or fails — they become a
+ * concrete number / boolean. This allows the UI to distinguish "not yet loaded"
+ * from "confirmed zero / false" and avoid showing unresolved rows as confirmed
+ * absent in the filter pills.
+ */
+export interface ProjectCounts {
+  /** Number of committees (groups) scoped to this project via `project_uid` tag. `undefined` while the request is in-flight. */
+  committees: number | undefined;
+  /** Number of mailing lists scoped to this project via `project_uid` tag. `undefined` while the request is in-flight. */
+  mailingLists: number | undefined;
+  /** True when any committee on this project has a `chat_channel` configured. `undefined` while the request is in-flight. */
+  hasChat: boolean | undefined;
+}
+
+/**
+ * Filter pill identifiers for the foundation projects page presence filter.
+ * `channels` = mailing lists OR chat, so a project with just a chat channel
+ * still lands in the "with-channels" bucket. Derived from the
+ * {@link PRESENCE_PILL_IDS} tuple so the runtime validator and the static
+ * union can never drift apart.
+ */
+export type PresencePill = (typeof PRESENCE_PILL_IDS)[number];
+
+/**
+ * Three-state presence marker for an individual indicator (groups, mailing
+ * lists, chat) on the foundation projects row. `'pending'` = upstream request
+ * still in flight; `'present'` = confirmed non-zero count / truthy flag;
+ * `'absent'` = confirmed zero / falsy resolution.
+ */
+export type PresenceState = 'present' | 'absent' | 'pending';
+
+/**
+ * Pre-computed per-row display data for the foundation projects table.
+ * Derived once per row by a computed signal so the template can consume bare
+ * property reads (no component-method calls during change detection). Tooltip
+ * strings and presence-state enums are computed once per counts-update and
+ * reused across every CD cycle.
+ */
+export interface FoundationProjectRowView {
+  /** True when lens navigation has a trustworthy project-service UID to hand to `ProjectContextService`. */
+  lensReady: boolean;
+  /** Three-state marker for the groups icon — drives icon class bindings. */
+  groupsPresence: PresenceState;
+  /** Three-state marker for the mailing-lists icon. */
+  mailingListsPresence: PresenceState;
+  /** Three-state marker for the chat icon. */
+  chatPresence: PresenceState;
+  /** Tooltip / sr-only label for the groups icon, e.g. `"3 groups"`, `"1 group"`, or `"Loading"`. */
+  groupsText: string;
+  /** Tooltip / sr-only label for the mailing-lists icon. */
+  mailingListsText: string;
+  /** Tooltip / sr-only label for the chat icon — `"Chat configured"`, `"No chat configured"`, or `"Loading"`. */
+  chatText: string;
 }
 
 // ============================================

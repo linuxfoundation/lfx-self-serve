@@ -169,7 +169,10 @@ export class MainLayoutComponent {
           return of(false);
         }
         return this.analyticsService.getFoundationProjectsDetail(slug).pipe(
-          map((response) => response.projects.length > 0),
+          // Use totalCount (response-level aggregate) rather than projects.length
+          // so the sidebar decision is decoupled from how many rows happen to be
+          // included in the `projects` array.
+          map((response) => response.totalCount > 0),
           startWith(false)
         );
       })
