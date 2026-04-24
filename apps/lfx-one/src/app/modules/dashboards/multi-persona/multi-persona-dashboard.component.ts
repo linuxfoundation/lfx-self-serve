@@ -77,6 +77,7 @@ export class MultiPersonaDashboardComponent {
   protected readonly subtitleText: Signal<string> = this.initSubtitleText();
   protected readonly analyticsSummary: Signal<MultiFoundationSummaryResponse | null> = this.initAnalyticsSummary();
   protected readonly projectRows: Signal<PersonaProjectRow[]> = this.initProjectRows();
+  protected readonly rppOptions = computed<number[] | undefined>(() => (this.projectRows().length > 10 ? [10, 25, 50] : undefined));
   // Independent loading signals so each pill renders as its source lands (no combineLatest gate).
   protected readonly openSurveysLoading = signal(true);
   protected readonly meetingsPillLoading = signal(true);
@@ -128,6 +129,11 @@ export class MultiPersonaDashboardComponent {
   private initSubtitleText(): Signal<string> {
     return computed(() => {
       const personas = this.personaService.allPersonas();
+
+      if (personas.length > 1) {
+        return 'This is a collection of your activities across all roles, foundations, and projects.';
+      }
+
       const roleLabels = personas.map((p) => {
         switch (p) {
           case 'executive-director':

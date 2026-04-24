@@ -9,7 +9,7 @@
   </div>
 
   <!-- Dashboard Sections -->
-  <div class="flex flex-col gap-6" data-testid="multi-persona-dashboard-sections">
+  <div class="flex flex-col gap-10" data-testid="multi-persona-dashboard-sections">
     <!-- My Meetings -->
     @defer (on idle) {
       <lfx-my-meetings />
@@ -60,18 +60,19 @@
     <!-- My Foundations and Projects Section -->
     <section data-testid="multi-persona-projects-section">
       <!-- Section Header -->
-      <div class="mb-4 flex items-center h-8">
-        <h2 class="flex items-center gap-2">
-          <i class="fa-light fa-layer-group text-lg"></i>
+      <div class="flex items-center gap-3 mb-4">
+        <h2 class="flex items-center gap-2 shrink-0 text-base font-medium text-gray-900">
+          <i class="fa-light fa-layer-group text-lg" aria-hidden="true"></i>
           <span>{{ sectionTitle() }}</span>
         </h2>
+        <div class="flex-1 border-t border-gray-200 self-center"></div>
       </div>
 
       <!-- Summary Stat Cards -->
       <div class="mb-4" data-testid="multi-persona-summary-stats">
         <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0">
           <div
-            class="grid w-full grid-cols-2 divide-y sm:divide-y-0 sm:divide-x divide-gray-200"
+            class="grid w-full grid-cols-1 divide-y sm:divide-y-0 sm:divide-x divide-gray-200"
             [class.sm:grid-cols-4]="hasFoundations() && hasProjects()"
             [class.sm:grid-cols-3]="hasFoundations() !== hasProjects()"
             [class.sm:grid-cols-2]="!hasFoundations() && !hasProjects()">
@@ -134,13 +135,18 @@
       </div>
 
       <!-- Projects Table -->
-      <lfx-card styleClass="[&_.p-card-body]:p-0 [&_.p-card-content]:p-0" data-testid="multi-persona-table">
+      <lfx-card styleClass="[&_.p-card-body]:!px-5" data-testid="multi-persona-table">
         <lfx-table
           [value]="projectRows()"
-          [paginator]="false"
+          [paginator]="projectRows().length > 10"
+          [rows]="10"
+          [rowsPerPageOptions]="rppOptions()"
+          [showFirstLastIcon]="false"
+          [showCurrentPageReport]="true"
+          currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
           selectionMode="single"
           (onRowSelect)="openRow($event.data)"
-          styleClass="[&_.p-datatable-tbody>tr]:cursor-pointer">
+          styleClass="[&_.p-datatable-tbody>tr]:cursor-pointer [&_.p-datatable-tbody_td]:!py-4">
           <ng-template #header>
             <tr>
               <th>Name</th>
@@ -148,9 +154,6 @@
                 <th>Type</th>
               }
               <th>Your Role</th>
-              @if (hasFoundations()) {
-                <th>Health</th>
-              }
               <th>Voting</th>
             </tr>
           </ng-template>
@@ -198,29 +201,6 @@
               <td>
                 <span class="role-badge" [attr.data-role]="row.role">{{ row.role }}</span>
               </td>
-              <!-- Health -->
-              @if (hasFoundations()) {
-                <td>
-                  @if (row.healthStatus) {
-                    <div class="flex items-center gap-2">
-                      <span
-                        class="health-dot"
-                        [class.health-dot--on-track]="row.healthStatus === 'on-track'"
-                        [class.health-dot--watch]="row.healthStatus === 'watch'"
-                        [class.health-dot--needs-attention]="row.healthStatus === 'needs-attention'"></span>
-                      <span
-                        class="text-sm"
-                        [class.text-emerald-700]="row.healthStatus === 'on-track'"
-                        [class.text-amber-700]="row.healthStatus === 'watch'"
-                        [class.text-red-700]="row.healthStatus === 'needs-attention'"
-                        >{{ row.healthDetail }}</span
-                      >
-                    </div>
-                  } @else {
-                    <span class="text-sm text-gray-400">&mdash;</span>
-                  }
-                </td>
-              }
               <!-- Voting -->
               <td>
                 @if (row.votingStatus) {
@@ -238,7 +218,7 @@
           </ng-template>
           <ng-template #emptymessage>
             <tr>
-              <td [attr.colspan]="3 + (showTypeColumn() ? 1 : 0) + (hasFoundations() ? 1 : 0)" class="py-8 text-center text-sm text-gray-400">
+              <td [attr.colspan]="3 + (showTypeColumn() ? 1 : 0)" class="py-8 text-center text-sm text-gray-400">
                 No foundations or projects found.
               </td>
             </tr>

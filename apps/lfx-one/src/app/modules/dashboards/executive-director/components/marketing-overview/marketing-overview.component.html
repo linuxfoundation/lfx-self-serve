@@ -2,36 +2,37 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <section data-testid="ed-evolution-section">
-  <div class="flex flex-wrap gap-3 items-end justify-between mb-4">
-    <div class="flex flex-col gap-1">
-      <h2 class="mb-0"><i class="fa-light fa-chart-line-up mr-2" aria-hidden="true"></i>Marketing Metrics</h2>
-      <p class="text-sm text-gray-500 mb-0">North Star KPIs · Brand · Influence</p>
-      <!-- Filter Pills -->
-      <lfx-filter-pills [options]="filterOptions" [selectedFilter]="selectedFilter()" (filterChange)="setFilter($event)" data-testid="ed-evolution-filters" />
-    </div>
-
+  <!-- Title row -->
+  <div class="flex items-center gap-3 mb-3">
+    <h2 class="flex items-center gap-2 shrink-0 text-base font-medium text-gray-900">
+      <i class="fa-light fa-chart-line-up text-lg" aria-hidden="true"></i>
+      Marketing Metrics
+    </h2>
+    <div class="flex-1 border-t border-gray-200 self-center"></div>
     <!-- Carousel Controls -->
     <div class="flex items-center gap-2">
-      <lfx-button
-        icon="fa-light fa-chevron-left"
-        [outlined]="true"
-        severity="secondary"
-        size="small"
-        ariaLabel="Scroll left"
-        (onClick)="scrollShadowDirective()?.scrollLeft()"
-        data-testid="ed-evolution-carousel-prev" />
-      <span class="text-xs text-gray-500 tabular-nums" data-testid="ed-evolution-carousel-count"
-        >{{ totalCardCount() }} {{ totalCardCount() === 1 ? 'card' : 'cards' }}</span
-      >
-      <lfx-button
-        icon="fa-light fa-chevron-right"
-        [outlined]="true"
-        severity="secondary"
-        size="small"
-        ariaLabel="Scroll right"
-        (onClick)="scrollShadowDirective()?.scrollRight()"
-        data-testid="ed-evolution-carousel-next" />
+      <button
+        type="button"
+        (click)="scrollShadowDirective()?.scrollLeft()"
+        class="h-8 w-8 p-0 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 hover:border-gray-400 transition-colors"
+        data-testid="ed-evolution-carousel-prev"
+        aria-label="Scroll left">
+        <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
+      </button>
+      <button
+        type="button"
+        (click)="scrollShadowDirective()?.scrollRight()"
+        class="h-8 w-8 p-0 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 hover:border-gray-400 transition-colors"
+        data-testid="ed-evolution-carousel-next"
+        aria-label="Scroll right">
+        <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
+      </button>
     </div>
+  </div>
+  <!-- Subtitle + Filter Pills row -->
+  <div class="flex flex-col gap-1 mb-4">
+    <p class="text-sm text-gray-500 mb-0">North Star KPIs · Brand · Influence</p>
+    <lfx-filter-pills [options]="filterOptions" [selectedFilter]="selectedFilter()" (filterChange)="setFilter($event)" data-testid="ed-evolution-filters" />
   </div>
 
   <!-- Reusable card template used by both North Star and non-North-Star loops -->
@@ -194,11 +195,6 @@
       aria-hidden="true"></div>
   </div>
 
-  <!-- Data source hint -->
-  <div class="flex items-center gap-1 mt-2 text-xs text-gray-400">
-    <i class="fa-light fa-circle-info"></i>
-    <span>Hover over any card for more details</span>
-  </div>
 </section>
 
 <!-- Drill-Down Drawers -->

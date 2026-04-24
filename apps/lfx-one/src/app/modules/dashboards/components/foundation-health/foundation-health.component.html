@@ -2,24 +2,12 @@
 <!-- SPDX-License-Identifier: MIT -->
 
 <section data-testid="foundation-health-section">
-  <div class="flex flex-wrap gap-3 items-end justify-between mb-4">
-    <div class="flex flex-col gap-3">
-      <div class="flex gap-3 flex-wrap">
-        <h2 class="mb-0">{{ title() }}</h2>
-        <!-- Data Copilot Button -->
-        <lfx-data-copilot [includeOrganizationId]="false" [includeOrganizationName]="false"></lfx-data-copilot>
-      </div>
-
-      <div class="flex flex-wrap items-center gap-2">
-        <!-- Filter Pills -->
-        <lfx-filter-pills
-          [options]="filterOptions"
-          [selectedFilter]="selectedFilter()"
-          (filterChange)="handleFilterChange($event)"
-          data-testid="foundation-health-filters"></lfx-filter-pills>
-      </div>
-    </div>
-
+  <!-- Title row -->
+  <div class="flex items-center gap-3 mb-3">
+    <h2 class="flex items-center gap-2 shrink-0 text-base font-medium text-gray-900">{{ title() }}</h2>
+    <div class="flex-1 border-t border-gray-200 self-center"></div>
+    <!-- Data Copilot Button -->
+    <lfx-data-copilot [includeOrganizationId]="false" [includeOrganizationName]="false"></lfx-data-copilot>
     <!-- Carousel Controls -->
     <div class="flex items-center gap-2">
       <button
@@ -28,7 +16,7 @@
         class="h-8 w-8 p-0 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 hover:border-gray-400 transition-colors"
         data-testid="foundation-health-carousel-prev"
         aria-label="Scroll left">
-        <i class="fa-light fa-chevron-left"></i>
+        <i class="fa-light fa-chevron-left" aria-hidden="true"></i>
       </button>
       <button
         type="button"
@@ -36,9 +24,17 @@
         class="h-8 w-8 p-0 flex items-center justify-center rounded border border-gray-300 bg-white text-gray-600 hover:bg-gray-100 hover:border-gray-400 transition-colors"
         data-testid="foundation-health-carousel-next"
         aria-label="Scroll right">
-        <i class="fa-light fa-chevron-right"></i>
+        <i class="fa-light fa-chevron-right" aria-hidden="true"></i>
       </button>
     </div>
+  </div>
+  <!-- Filter Pills row -->
+  <div class="flex flex-wrap items-center gap-2 mb-4">
+    <lfx-filter-pills
+      [options]="filterOptions"
+      [selectedFilter]="selectedFilter()"
+      (filterChange)="handleFilterChange($event)"
+      data-testid="foundation-health-filters"></lfx-filter-pills>
   </div>
 
   @if (!hasFoundationSelected()) {

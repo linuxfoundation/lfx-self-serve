@@ -18,19 +18,18 @@
       data-testid="dashboard-pending-actions-list">
       @for (item of visibleActions(); track item.buttonLink ?? item.type + '-' + item.text) {
         <div
-          class="flex items-center justify-between gap-4 px-4 py-3 bg-gradient-to-r from-white to-[rgba(255,251,235,0.8)]"
+          class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3 bg-gradient-to-r from-white to-[rgba(255,251,235,0.8)]"
           [attr.data-testid]="'dashboard-pending-actions-item-' + item.type">
-          <!-- Label + text -->
-          <div class="flex items-center gap-3 min-w-0 flex-1">
-            <div class="w-32 shrink-0">
-              <lfx-tag [value]="item.type" [severity]="item.severity" [icon]="item.icon" styleClass="whitespace-nowrap" />
-            </div>
-            <p class="text-sm font-medium text-gray-900 truncate" [attr.title]="item.text" data-testid="dashboard-pending-actions-title">
-              {{ item.text }}
-            </p>
+          <!-- Label — 20% on sm+ -->
+          <div class="shrink-0 sm:w-1/5">
+            <lfx-tag [value]="item.type" [severity]="item.severity" [icon]="item.icon" styleClass="whitespace-nowrap" />
           </div>
-          <!-- Action button -->
-          <div class="shrink-0">
+          <!-- Description — 60% on sm+ -->
+          <p class="text-sm font-medium text-gray-900 sm:w-3/5 sm:min-w-0 sm:truncate sm:px-4" [attr.title]="item.text" data-testid="dashboard-pending-actions-title">
+            {{ item.text }}
+          </p>
+          <!-- Action button — 20% on sm+, right-aligned -->
+          <div class="self-start sm:self-auto sm:w-1/5 sm:flex sm:justify-end">
             @if (item.buttonLink) {
               <lfx-button
                 size="small"
