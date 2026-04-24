@@ -1,542 +1,244 @@
-# Testing Best Practices Guide
+# Testing Best Practices
 
-## 🎯 Overview
+Deeper treatment of the patterns introduced in [E2E Testing](e2e-testing.md). Start there for the dual-architecture overview, the `data-testid` naming convention, and the auth-setup flow; this doc focuses on the finer-grained rules that make specs reliable and easy to maintain.
 
-This guide outlines testing best practices for the LFX One application, covering our dual testing architecture, data-testid conventions, and implementation guidelines.
+## Element Selection Priority
 
-## 🏗 Dual Testing Architecture Principles
+Always choose the most specific, least brittle selector. In priority order:
 
-### When to Use Content-Based Tests
+### 1. `getByTestId()` — preferred for UI elements
 
-**Purpose**: Validate user experience and acceptance criteria
-
-**Use Cases**:
-
-- User journey testing (login → search → navigate → interact)
-- Content validation (text, labels, messages)
-- Accessibility testing (screen reader compatibility)
-- Cross-browser functionality testing
-
-**Example**:
+Survives copy, layout, styling, and library changes. Every LFX One component exposes its own `data-testid` surface, so feature specs should never reach below it with CSS selectors.
 
 ```typescript
-test('should complete project search workflow', async ({ page }) => {
-  // User sees and interacts with visible elements
-  await expect(page.getByRole('textbox', { name: 'Search projects' })).toBeVisible();
-  await page.fill('input[placeholder*="Search"]', 'kubernetes');
-  await expect(page.getByText('Kubernetes')).toBeVisible();
-});
+// profile-identities-verify.spec.ts
+await expect(page.getByTestId('identity-row-idf-2')).toContainText('jdoe@company.org');
 ```
 
-### When to Use Structural Tests
+### 2. Semantic queries — acceptable for accessibility-sensitive flows
 
-**Purpose**: Validate technical implementation and component architecture
-
-**Use Cases**:
-
-- Component integration testing (Angular signals, computed values)
-- Framework-specific validation (custom components, directives)
-- UI library independence (ensuring wrapper components work)
-- Architecture compliance (consistent component usage)
-
-**Example**:
+`getByRole`, `getByLabel`, and `getByPlaceholder` read well and exercise accessibility metadata at the same time. Use them for form labels, buttons with meaningful ARIA names, and headings.
 
 ```typescript
-test('should use lfx-card components consistently', async ({ page }) => {
-  // Technical validation of component architecture
-  const cards = page.locator('[data-testid="project-card"]');
-  const firstCard = cards.first();
-
-  const tagName = await firstCard.evaluate((el) => el.tagName.toLowerCase());
-  expect(tagName).toBe('lfx-project-card');
-});
+await expect(page.getByRole('button', { name: 'Open filter options' })).toBeVisible();
+await expect(page.getByLabel('Project Name')).toBeFocused();
 ```
 
-## 🔧 Data-TestID Implementation Guide
+### 3. `getByText()` — narrow, assert-and-act only
 
-### Naming Conventions
-
-**Hierarchical Structure**:
-
-```text
-[section]-[component]-[element]
-hero-search-input
-metrics-cards-container
-project-health-card
-```
-
-**Category Guidelines**:
-
-1. **Sections**: `hero-section`, `projects-section`, `footer-section`
-2. **Containers**: `metrics-cards-container`, `projects-grid`, `navigation-menu`
-3. **Components**: `project-card`, `search-input`, `user-avatar`
-4. **Elements**: `project-title`, `metric-value`, `loading-spinner`
-5. **Actions**: `submit-button`, `cancel-link`, `edit-icon`
-
-### Implementation Examples
-
-**Basic Component**:
-
-```html
-<lfx-card data-testid="project-health-card">
-  <div data-testid="health-indicators-container">
-    <div data-testid="activity-score-indicator">
-      <span data-testid="activity-score-value">85%</span>
-      <span data-testid="activity-score-label">Activity Score</span>
-    </div>
-  </div>
-</lfx-card>
-```
-
-**Dynamic Attributes**:
-
-```html
-<lfx-project-card data-testid="project-card" [attr.data-project-slug]="project.slug" [attr.data-project-status]="project.status"> </lfx-project-card>
-```
-
-**Lists and Collections**:
-
-```html
-<div data-testid="project-metrics">
-  @for (metric of metrics; track metric.id) {
-  <div data-testid="project-metric" [attr.data-metric-type]="metric.type">
-    <span data-testid="metric-label">{{ metric.label }}</span>
-    <span data-testid="metric-value">{{ metric.value }}</span>
-  </div>
-  }
-</div>
-```
-
-## 📱 Responsive Testing Strategy
-
-### Viewport Breakpoints
-
-**Mobile**: `< 768px` (iPhone, Android)
-**Tablet**: `768px - 1024px` (iPad, tablets)
-**Desktop**: `> 1024px` (laptops, monitors)
-
-### Implementation Pattern
+Acceptable for copy that is itself part of the assertion (empty states, status tags). Don't use it as a primary locator for interactive elements — translations and copy changes break tests that don't need to.
 
 ```typescript
-test('should adapt to viewport size', async ({ page }) => {
-  const viewport = page.viewportSize();
-  const isMobile = viewport && viewport.width < 768;
-  const isTablet = viewport && viewport.width >= 768 && viewport.width < 1024;
-  const isDesktop = viewport && viewport.width >= 1024;
-
-  if (isMobile) {
-    // Mobile-specific expectations
-    await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
-    await expect(page.locator('[data-testid="mobile-menu-button"]')).toBeVisible();
-  } else if (isTablet) {
-    // Tablet-specific expectations
-    await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
-    await expect(page.locator('[data-testid="desktop-navigation"]')).toBeVisible();
-  } else {
-    // Desktop-specific expectations
-    await expect(page.locator('[data-testid="full-navigation"]')).toBeVisible();
-    await expect(page.locator('[data-testid="sidebar"]')).toBeVisible();
-  }
-});
+await expect(page.getByText('No badges yet')).toBeVisible(); // ✓ asserting empty-state copy
 ```
 
-### Responsive Test Organization
+### 4. CSS selectors — last resort, prefix-scoped
+
+Only reach for raw CSS when querying a _set_ of `data-testid`s sharing a prefix:
 
 ```typescript
-test.describe('Responsive Design', () => {
-  test('should display correctly on mobile', async ({ page }) => {
-    await page.setViewportSize({ width: 375, height: 667 });
-    // Mobile tests
-  });
-
-  test('should display correctly on tablet', async ({ page }) => {
-    await page.setViewportSize({ width: 768, height: 1024 });
-    // Tablet tests
-  });
-
-  test('should display correctly on desktop', async ({ page }) => {
-    await page.setViewportSize({ width: 1200, height: 800 });
-    // Desktop tests
-  });
-});
+// badges-dashboard.spec.ts
+const firstCard = page.locator('[data-testid^="badge-card-"]').first();
 ```
 
-## 🧪 Angular-Specific Testing Patterns
-
-### Signals Integration Testing
+Avoid these outright:
 
 ```typescript
-test('should properly integrate Angular signals', async ({ page }) => {
-  // Wait for Angular to initialize and signals to resolve
-  await page.waitForLoadState('networkidle');
-
-  // Test computed signal results
-  const metricsCards = page.locator('[data-testid="metrics-cards-container"]');
-  await expect(metricsCards.locator('[data-testid="total-members-card"]')).toBeVisible();
-
-  // Test signal reactivity (if search triggers signal updates)
-  await page.fill('[data-testid="search-input"]', 'test');
-  await page.waitForTimeout(300); // Debounce time
-
-  // Verify signal-driven UI updates
-  const filteredResults = page.locator('[data-testid="project-card"]');
-  expect(await filteredResults.count()).toBeGreaterThanOrEqual(0);
-});
-```
-
-### Component Architecture Validation
-
-```typescript
-test('should use custom LFX components consistently', async ({ page }) => {
-  const componentsToValidate = [
-    { selector: '[data-testid="hero-search-input"]', expected: 'lfx-input-text' },
-    { selector: '[data-testid="project-card"]', expected: 'lfx-project-card' },
-    { selector: '[data-testid="navigation-menu"]', expected: 'lfx-menu' },
-  ];
-
-  for (const { selector, expected } of componentsToValidate) {
-    const element = page.locator(selector);
-    await expect(element).toBeVisible();
-
-    const tagName = await element.evaluate((el) => el.tagName.toLowerCase());
-    expect(tagName).toBe(expected);
-  }
-});
-```
-
-### Form Integration Testing
-
-```typescript
-test('should integrate Angular reactive forms', async ({ page }) => {
-  const searchForm = page.locator('[data-testid="search-form"]');
-  const searchInput = page.locator('[data-testid="search-input"]');
-
-  // Test form validation
-  await searchInput.fill('ab'); // Too short
-  await expect(page.locator('[data-testid="search-error"]')).toBeVisible();
-
-  // Test valid input
-  await searchInput.fill('kubernetes');
-  await expect(page.locator('[data-testid="search-error"]')).not.toBeVisible();
-
-  // Test form submission
-  await page.keyboard.press('Enter');
-  await expect(page.locator('[data-testid="search-results"]')).toBeVisible();
-});
-```
-
-## 🔍 Element Selection Best Practices
-
-### Recommended Approaches (In Priority Order)
-
-#### 1. Data-TestID (Highest Priority)
-
-```typescript
-// ✅ Most reliable - survives UI changes
-await expect(page.locator('[data-testid="project-card"]')).toBeVisible();
-```
-
-#### 2. Semantic Role-Based
-
-```typescript
-// ✅ Good for accessibility and semantics
-await expect(page.getByRole('button', { name: 'Save Project' })).toBeVisible();
-await expect(page.getByRole('heading', { level: 1 })).toContainText('Dashboard');
-```
-
-#### 3. Label-Based
-
-```typescript
-// ✅ Good for form elements
-await expect(page.getByLabel('Project Name')).toBeVisible();
-await expect(page.getByPlaceholder('Enter project name')).toBeFocused();
-```
-
-#### 4. Text Content (Use Sparingly)
-
-```typescript
-// ⚠️ Use only for unique, stable text
-await expect(page.getByText('No projects found')).toBeVisible();
-```
-
-### Approaches to Avoid
-
-#### CSS Classes (Especially Tailwind)
-
-```typescript
-// ❌ Brittle - classes change frequently
+// ❌ Brittle: Tailwind classes change frequently
 await expect(page.locator('.bg-blue-500.text-white')).toBeVisible();
-```
 
-#### Complex CSS Selectors
-
-```typescript
-// ❌ Fragile - DOM structure can change
+// ❌ Fragile: DOM structure changes with refactors
 await expect(page.locator('div > div:nth-child(2) > span')).toBeVisible();
-```
 
-#### Generic Selectors
-
-```typescript
-// ❌ Non-specific - multiple matches possible
+// ❌ Non-specific: will match too much
 await expect(page.locator('button')).toBeVisible();
 ```
 
-## ⏱ Waiting Strategies
+## Waiting Strategies
 
-### Built-in Waiting (Preferred)
+### Prefer built-in auto-waiting
+
+`expect(locator).toBeVisible()` and `locator.click()` already wait for the element to be actionable. Don't wrap them in `waitForSelector` or manual timers.
 
 ```typescript
-// ✅ Auto-waits until element is visible
-await expect(page.locator('[data-testid="content"]')).toBeVisible();
+// ✓ auto-waits
+await expect(page.getByTestId('badges-grid')).toBeVisible({ timeout: 30_000 });
 
-// ✅ Auto-waits until element is clickable
-await page.click('[data-testid="submit-button"]');
-
-// ✅ Auto-waits until URL matches
-await expect(page).toHaveURL(/\/project\/\w+/);
+// ✗ redundant
+await page.waitForSelector('[data-testid="badges-grid"]');
+await expect(page.getByTestId('badges-grid')).toBeVisible();
 ```
 
-### Network-Based Waiting
+### Use `.or()` for either-or visibility
+
+When a page can legitimately render in one of two valid shapes, don't branch — assert the union:
 
 ```typescript
-// ✅ Wait for network requests to complete
+// badges-dashboard.spec.ts
+const grid = page.getByTestId('badges-grid');
+const emptyState = page.getByTestId('badges-empty-state-card');
+await expect(grid.or(emptyState)).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+```
+
+### Scope `networkidle` carefully
+
+`page.waitForLoadState('networkidle')` is useful for pages with heavy initial fetches, but it hangs on endpoints with persistent connections (SSE, WebSockets, long-poll). Prefer asserting on a specific "ready" `data-testid` instead:
+
+```typescript
+// ✓ deterministic
+await expect(page.getByTestId('profile-identities')).toBeAttached();
+
+// ⚠ hangs if the dashboard opens an SSE stream
 await page.waitForLoadState('networkidle');
-
-// ✅ Wait for specific API responses
-await page.waitForResponse((response) => response.url().includes('/api/projects') && response.status() === 200);
 ```
 
-### Conditional Waiting
+### Avoid fixed `waitForTimeout`
 
 ```typescript
-// ✅ Handle optional elements gracefully
-const loadingSpinner = page.locator('[data-testid="loading-spinner"]');
-const isLoading = await loadingSpinner.isVisible().catch(() => false);
+// ❌ brittle and slow
+await page.waitForTimeout(3000);
 
-if (isLoading) {
-  await expect(loadingSpinner).not.toBeVisible();
+// ✓ wait for a real signal
+await expect(page.getByTestId('badges-grid')).toBeVisible();
+```
+
+## Timeouts
+
+Declare per-spec constants for anything longer than Playwright's defaults and reuse them across the file. This matches `badges-dashboard.spec.ts`:
+
+```typescript
+const BADGES_URL = '/badges';
+const DATA_LOAD_TIMEOUT = 30_000;
+
+test.setTimeout(60_000);
+
+test('shows badge grid or empty state after loading', async ({ page }) => {
+  await expect(page.getByTestId('badges-grid').or(page.getByTestId('badges-empty-state-card'))).toBeVisible({ timeout: DATA_LOAD_TIMEOUT });
+});
+```
+
+Tuning a single constant at the top of the file is easier than chasing literals, and a short Playwright default (`5000ms`) is almost always wrong for data-fetching pages.
+
+## `data-testid` Patterns
+
+### Hierarchical naming
+
+Follow `[section]-[component]-[element]` from the root down:
+
+```text
+profile-identities                    # root section
+  unverified-identities-section       # subsection
+    identity-row-idf-2                # row (dynamic id)
+      verify-btn-idf-2                # action (dynamic id)
+```
+
+Don't bury an element's `data-testid` inside an ancestor-specific prefix if the element itself is reused elsewhere — prefer the element-level `data-testid` and chain locators if you need scoping:
+
+```typescript
+// ✓ chain locators
+const section = page.getByTestId('unverified-identities-section');
+await expect(section.getByTestId('identity-row-idf-2')).toBeVisible();
+
+// ✗ proliferates test IDs
+await expect(page.getByTestId('unverified-identities-section-identity-row-idf-2')).toBeVisible();
+```
+
+### Encode identity in dynamic `data-testid`s
+
+When a list needs per-item assertions, encode the stable identifier in the `data-testid` rather than relying on nth-child:
+
+```html
+<!-- template pattern -->
+<div [attr.data-testid]="'identity-row-' + identity.id">
+  <button [attr.data-testid]="'verify-btn-' + identity.id">Verify</button>
+</div>
+```
+
+This is what makes `profile-identities-verify-robust.spec.ts` able to assert presence across five rows without hardcoding position:
+
+```typescript
+const ids = ['idf-1', 'idf-2', 'idf-3', 'idf-5', 'idf-6'];
+for (const id of ids) {
+  await expect(page.getByTestId(`identity-row-${id}`)).toBeAttached();
 }
-
-await expect(page.locator('[data-testid="content"]')).toBeVisible();
 ```
 
-### Avoid Fixed Timeouts
+### Prefer `data-testid` attributes over class-based identity
 
-```typescript
-// ❌ Brittle and unreliable
-await page.waitForTimeout(5000);
+If you need a "group name" for a set of elements (e.g. all status tags in a table), encode it in an additional `data-*` attribute, not a CSS class. Tests can match on the attribute without coupling to the stylesheet.
 
-// ✅ Better - wait for specific condition
-await expect(page.locator('[data-testid="data-loaded"]')).toBeVisible();
+```html
+<span [attr.data-testid]="'status-tag-' + row.id" [attr.data-status]="row.status">{{ row.statusLabel }}</span>
 ```
 
-## 🔄 Test Organization Patterns
+## Error-State Coverage
 
-### Descriptive Test Structure
-
-```typescript
-test.describe('Feature Name - Test Type', () => {
-  test.describe('Functional Area', () => {
-    test('should perform specific action with expected outcome', async ({ page }) => {
-      // Test implementation
-    });
-  });
-});
-```
-
-**Example**:
+Use `page.route()` to stub API responses so you can assert error paths without needing the backend to fail. This is the canonical pattern from `badges-dashboard.spec.ts`:
 
 ```typescript
-test.describe('Project Dashboard - Robust Tests', () => {
-  test.describe('Metrics Cards', () => {
-    test('should display all four metrics cards with proper structure', async ({ page }) => {
-      // Structural validation
-    });
-
-    test('should display metrics with proper labels and values', async ({ page }) => {
-      // Content validation
-    });
-  });
-
-  test.describe('Component Integration', () => {
-    test('should properly integrate Angular signals and computed values', async ({ page }) => {
-      // Framework validation
-    });
-  });
-});
-```
-
-### BeforeEach Patterns
-
-```typescript
-test.describe('Feature Tests', () => {
+test.describe('Badges Dashboard error state', () => {
   test.beforeEach(async ({ page }) => {
-    // Navigate to page
-    await page.goto('/feature');
-
-    // Wait for initial load
-    await expect(page.locator('[data-testid="main-content"]')).toBeVisible();
-
-    // Setup test data if needed
-    await page.route('/api/test-data', (route) => {
-      route.fulfill({ json: mockData });
-    });
+    await page.route('**/api/badges', (route) => route.fulfill({ status: 500, body: 'Internal Server Error' }));
+    await page.goto('/badges', { waitUntil: 'domcontentloaded' });
   });
 
-  // Tests...
+  test('error state renders when API fails', async ({ page }) => {
+    await expect(page.getByTestId('badges-error-state-card')).toBeVisible();
+  });
 });
 ```
 
-## 🐛 Error Handling and Debugging
+Scope the stub to the specific endpoint (glob) that the page calls. Stubbing broader patterns (`**/api/**`) can mask bugs in unrelated fetches.
 
-### Conditional Assertions
+## `beforeEach` Patterns
+
+Put everything that a spec needs to know the page is ready in a single `beforeEach`:
 
 ```typescript
-test('should handle optional content gracefully', async ({ page }) => {
-  // Check for either content or empty state
-  const hasContent = await page
-    .locator('[data-testid="content"]')
-    .isVisible()
-    .catch(() => false);
-  const hasEmptyState = await page
-    .locator('[data-testid="empty-state"]')
-    .isVisible()
-    .catch(() => false);
-
-  expect(hasContent || hasEmptyState).toBe(true);
-
-  if (hasContent) {
-    // Test content-specific functionality
-    await expect(page.locator('[data-testid="content-item"]')).toHaveCount(expect.any(Number));
-  } else {
-    // Test empty state functionality
-    await expect(page.locator('[data-testid="empty-message"]')).toBeVisible();
-  }
+// profile-identities-verify-robust.spec.ts
+test.beforeEach(async ({ page }) => {
+  await page.goto('/profile/identities', { waitUntil: 'domcontentloaded' });
+  await expect(page).not.toHaveURL(/auth0\.com/);
+  await expect(page.getByTestId('unverified-identities-section').or(page.getByTestId('verified-identities-section'))).toBeVisible({ timeout: 10000 });
 });
 ```
 
-### Error Context and Messages
+Three things happen in order: navigation, auth sanity check, ready-state wait. Don't repeat these in every test.
+
+## Describe-Block Structure
+
+Group by screen first, then by concern. The profile-identities-verify-robust file models this well:
 
 ```typescript
-test('should validate with clear error messages', async ({ page }) => {
-  const projectCards = page.locator('[data-testid="project-card"]');
-  const cardCount = await projectCards.count();
-
-  // Provide context in assertions
-  expect(cardCount).toBeGreaterThan(0, 'Should have at least one project card after loading');
-
-  // Test each card structure
-  for (let i = 0; i < cardCount; i++) {
-    const card = projectCards.nth(i);
-    await expect(card.locator('[data-testid="project-title"]')).toBeVisible({
-      message: `Project card ${i} should have a visible title`,
-    });
-  }
-});
-```
-
-### Debug Information Collection
-
-```typescript
-test('should collect debug info on failure', async ({ page }) => {
-  try {
-    await expect(page.locator('[data-testid="critical-element"]')).toBeVisible();
-  } catch (error) {
-    // Collect debug information
-    const url = page.url();
-    const title = await page.title();
-    const screenshot = await page.screenshot();
-
-    console.log(`Test failed on page: ${url}, title: ${title}`);
-    throw error;
-  }
-});
-```
-
-## 🚀 Performance Testing Integration
-
-### Core Web Vitals
-
-```typescript
-test('should meet performance thresholds', async ({ page }) => {
-  const startTime = Date.now();
-
-  await page.goto('/');
-
-  // Wait for main content
-  await expect(page.locator('[data-testid="main-content"]')).toBeVisible();
-
-  const loadTime = Date.now() - startTime;
-  expect(loadTime).toBeLessThan(3000, 'Page should load within 3 seconds');
-
-  // Test Largest Contentful Paint
-  const lcp = await page.evaluate(() => {
-    return new Promise((resolve) => {
-      new PerformanceObserver((list) => {
-        const entries = list.getEntries();
-        const lastEntry = entries[entries.length - 1];
-        resolve(lastEntry.startTime);
-      }).observe({ entryTypes: ['largest-contentful-paint'] });
-
-      setTimeout(() => resolve(0), 5000);
-    });
+test.describe('Identities Verify Flow - Robust Tests', () => {
+  test.describe('Data-testid presence', () => {
+    test('should have root container with grid class', ...);
+    test('should have unverified-identities-section', ...);
   });
 
-  expect(lcp).toBeLessThan(2500, 'LCP should be under 2.5 seconds');
+  test.describe('Section structure', () => {
+    test('should have 2 rows in unverified section', ...);
+    test('should have 3 rows in verified section', ...);
+  });
+
+  test.describe('Row actions', () => {
+    test('should have verify-btn `data-testid`s only on unverified rows', ...);
+  });
 });
 ```
 
-## 📊 Test Maintenance Guidelines
+Each inner describe maps to one user-facing concern, which keeps failures easy to attribute.
 
-### Per-Feature Checklist
+## Anti-Patterns
 
-**Per Feature:**
+- **Asserting before navigation settles.** `page.goto()` returns when the HTTP response lands, not when Angular has rendered. Always chain an `expect(...).toBeVisible()` on a "ready" `data-testid` before other assertions.
+- **Relying on test order.** Tests run in parallel by default. Don't write "test 2 depends on test 1 having created a record." Each test should set up its own state.
+- **Hardcoding response bodies in assertions.** `expect(row).toContainText('jdoe@company.org')` is fine for fixture-backed specs; for real-API specs, assert on a shape or pattern instead.
+- **Over-mocking.** The purpose of E2E is to exercise integration. Mock only the endpoint you're trying to failover — leave everything else live against the dev server.
+- **Forgetting the Auth0 check.** If a spec renders with "Sign in" visible, global-setup didn't pin auth state and the entire test is validating the login page. Every `beforeEach` should have `await expect(page).not.toHaveURL(/auth0\.com/);` as its second line.
 
-- [ ] Add both content-based and structural tests
-- [ ] Include responsive design validation
-- [ ] Test Angular integration points
-- [ ] Update test documentation
+## Related
 
-### Code Review Checklist
-
-**For New Tests**:
-
-- [ ] Uses data-testid attributes appropriately
-- [ ] Includes both test types where relevant
-- [ ] Has proper waiting strategies
-- [ ] Follows naming conventions
-- [ ] Includes error handling
-
-**For Test Updates**:
-
-- [ ] Maintains backward compatibility
-- [ ] Updates related documentation
-- [ ] Preserves test coverage
-- [ ] Improves reliability
-
-## 🎯 Implementation Guidelines
-
-### Adding Tests for New Features
-
-1. **Plan Test Architecture**
-   - Identify user journeys (content-based tests)
-   - Identify technical validations (structural tests)
-   - Consider responsive requirements
-
-2. **Add Data-TestID Attributes**
-   - Follow naming conventions
-   - Add hierarchical structure
-   - Include dynamic attributes where needed
-
-3. **Implement Tests**
-   - Start with structural tests (faster to run)
-   - Add content-based tests for user journeys
-   - Include responsive validation
-
-4. **Validate and Document**
-   - Run tests across all browsers
-   - Update relevant documentation
-   - Update relevant documentation
-
-This comprehensive testing approach ensures reliable, maintainable tests that provide confidence in both user experience and technical implementation while supporting long-term project sustainability.
+- [E2E Testing](e2e-testing.md) — the starting point: dual architecture, `data-testid` conventions, auth setup, current specs in the tree.
+- [Playwright Locators](https://playwright.dev/docs/locators) — the built-in selector API.
+- [Playwright Assertions](https://playwright.dev/docs/test-assertions) — the auto-waiting `expect` matchers.

@@ -8,7 +8,7 @@ globs: '*'
 ## Commit Conventions
 
 - Follow Angular commit conventions: `type(scope): description`
-- Valid types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+- Valid types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `revert` — `chore` is **not** accepted (commitlint uses `@commitlint/config-angular`; use the closest specific type instead: `build` for deps/tooling, `ci` for pipelines, `refactor` for cleanup, `docs` for doc-only changes)
 - Scope should be lowercase and describe the affected area (e.g., `auth`, `ui`, `api`, `docs`) following Angular scope conventions
 - Use present tense, imperative mood: "add feature" not "added feature"
 - Examples:

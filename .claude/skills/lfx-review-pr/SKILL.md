@@ -222,7 +222,7 @@ Validates PR metadata against `commit-workflow.md` and the project's global conv
 ### Checks
 
 1. **PR title format** — must match `type(scope): description` (conventional commit), all lowercase, and must NOT include a JIRA ticket number.
-   - Valid types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `chore`, `revert`
+   - Valid types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `revert` — `chore` is **not** accepted by commitlint (`@commitlint/config-angular`); flag it as MUST FIX
    - Example valid: `feat(auth): add oauth2 integration`
    - Example invalid: `Fix: LFXV2-123 fix login bug` (uppercase, JIRA in title)
 

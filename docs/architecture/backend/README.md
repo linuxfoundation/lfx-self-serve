@@ -134,96 +134,43 @@ Request → Controller → Service → Microservice/Data Layer
 
 ```text
 apps/lfx-one/src/server/
-├── controllers/              # HTTP request handling layer (15 controllers)
-│   ├── analytics.controller.ts
-│   ├── committee.controller.ts
-│   ├── mailing-list.controller.ts
-│   ├── meeting.controller.ts
-│   ├── organization.controller.ts
-│   ├── past-meeting.controller.ts
-│   ├── profile.controller.ts
-│   ├── project.controller.ts
-│   ├── public-meeting.controller.ts
-│   ├── search.controller.ts
-│   ├── survey.controller.ts
-│   ├── user.controller.ts
-│   └── vote.controller.ts
+├── constants/                # Server-only constants (rewards, etc.)
+├── controllers/              # HTTP request handling layer
 ├── errors/                   # Custom error class hierarchy
-│   ├── base.error.ts         # BaseApiError with status code and error code
-│   ├── authentication.error.ts # AuthenticationError (401) and AuthorizationError (403)
-│   ├── microservice.error.ts # MicroserviceError for upstream failures
-│   ├── service-validation.error.ts # ServiceValidationError for input validation
-│   └── index.ts              # Barrel export
-├── helpers/                  # Pure utility functions (7 helpers)
-│   ├── error-serializer.ts   # Pino error serializer for structured logging
-│   ├── http-status.helper.ts # HTTP status code constants
-│   ├── meeting.helper.ts     # Meeting-specific helpers
-│   ├── url-validation.ts     # URL input validation
-│   └── validation.helper.ts  # General validation helpers
-├── middleware/               # Express middleware
-│   ├── auth.middleware.ts    # Unified auth with selective route config
-│   └── error-handler.middleware.ts # Centralized error handler
-├── routes/                   # Express route definitions (15 route files)
-│   ├── analytics.route.ts
-│   ├── committees.route.ts
-│   ├── mailing-lists.route.ts
-│   ├── meetings.route.ts
-│   ├── organizations.route.ts
-│   ├── past-meetings.route.ts
-│   ├── profile.route.ts
-│   ├── projects.route.ts
-│   ├── public-meetings.route.ts
-│   ├── search.route.ts
-│   ├── surveys.route.ts
-│   ├── user.route.ts
-│   └── votes.route.ts
-├── services/                 # Business logic layer (20 services)
-│   ├── access-check.service.ts    # Permission/access validation
-│   ├── ai.service.ts              # Claude Sonnet AI integration
-│   ├── api-client.service.ts      # HTTP client for external APIs
-│   ├── committee.service.ts       # Committee business logic
-│   ├── etag.service.ts            # ETag concurrency control
-│   ├── logger.service.ts          # Singleton logging service
-│   ├── mailing-list.service.ts    # Mailing list business logic
-│   ├── meeting.service.ts         # Meeting business logic
-│   ├── microservice-proxy.service.ts # Microservice proxy/gateway
-│   ├── nats.service.ts            # NATS messaging (infrastructure)
-│   ├── organization.service.ts    # Organization data
-│   ├── project.service.ts         # Project lookup (uses NATS + Snowflake)
-│   ├── search.service.ts          # Search aggregation
-│   ├── snowflake.service.ts       # Snowflake analytics (singleton)
-│   ├── supabase.service.ts        # Supabase integration
-│   ├── survey.service.ts          # Survey business logic
-│   ├── user.service.ts            # User management
-│   └── vote.service.ts            # Vote/poll business logic
-├── utils/                    # Shared server utilities
-│   ├── auth-helper.ts        # Auth utility functions
-│   ├── lock-manager.ts       # Distributed lock management
-│   ├── m2m-token.util.ts     # Machine-to-machine token management
-│   ├── persona-helper.ts     # User persona helpers
-│   └── security.util.ts      # Security utilities
+├── helpers/                  # Pure utility functions (error serialization, HTTP status, ICS, meeting, poll-endpoint, query-service, URL + input validation)
+├── middleware/               # Express middleware (auth, error-handler, rate-limit)
+├── pdf-templates/            # PDF generation templates (e.g., visa letters)
+├── routes/                   # Express route definitions
+├── services/                 # Business logic layer
+├── utils/                    # Shared server utilities (auth, lock manager, M2M token, persona, security)
 ├── server.ts                 # Server bootstrap and route registration
 ├── server-logger.ts          # Base Pino logger instance
 └── server-tracer.ts          # OpenTelemetry tracer and SERVICE_NAME
 ```
 
-### API Routes
+Per-file inventories rot quickly — run `ls apps/lfx-one/src/server/<dir>/` for the canonical listing. The category descriptions above stay stable even as specific files come and go.
 
-| Route                  | Controller              | Description                            |
-| ---------------------- | ----------------------- | -------------------------------------- |
-| `/api/analytics`       | AnalyticsController     | Snowflake-powered analytics queries    |
-| `/api/committees`      | CommitteeController     | Committee CRUD with ETag concurrency   |
-| `/api/mailing-lists`   | MailingListController   | Mailing list management                |
-| `/api/meetings`        | MeetingController       | Meeting scheduling and management      |
-| `/api/organizations`   | OrganizationController  | Organization data and membership       |
-| `/api/past-meetings`   | PastMeetingController   | Past meeting recordings and attendance |
-| `/api/profile`         | ProfileController       | User profile management                |
-| `/api/projects`        | ProjectController       | Project data and lookup                |
-| `/api/public/meetings` | PublicMeetingController | Public meeting join (unauthenticated)  |
-| `/api/search`          | SearchController        | Cross-entity search                    |
-| `/api/surveys`         | SurveyController        | Survey management and responses        |
-| `/api/user`            | UserController          | User management and preferences        |
-| `/api/votes`           | VoteController          | Poll creation and vote casting         |
+### Controllers & Services
+
+Each HTTP boundary typically has a `{domain}.controller.ts` + `{domain}.route.ts` pair (e.g. `meeting.controller.ts` ↔ `meetings.route.ts`) and a backing `{domain}.service.ts`. This three-file pattern is the standard backend convention used throughout the codebase. Domains currently include analytics, badges, committees, copilot, documents, events, impersonation, mailing-lists, meetings (+ past-meetings, public-meetings), navigation, organizations, persona, profile, projects, rewards, search, surveys, training, transactions, user, and votes.
+
+Infrastructure services that don't map to a single HTTP boundary:
+
+- **`logger.service.ts`** — singleton logging service (always prefer over the raw `serverLogger`).
+- **`microservice-proxy.service.ts`** — HTTP gateway for every upstream microservice call.
+- **`nats.service.ts`** — generic NATS request/reply client (consumed by `project.service.ts` and others for slug resolution, user lookup, etc.).
+- **`snowflake.service.ts`** — singleton Snowflake connection pool with query deduplication.
+- **`etag.service.ts`** — ETag-based optimistic concurrency control for CRUD resources.
+- **`persona-detection.service.ts` / `persona-enrichment.service.ts`** — persona classification used by the lens system.
+- **`auth0.service.ts`, `supabase.service.ts`, `cdp.service.ts`, `credly.service.ts`, `ti.service.ts`** — third-party integrations (authentication, profile email, analytics, badging).
+
+### Errors
+
+Custom error hierarchy under `errors/`: `BaseApiError` is the root; `AuthenticationError` (401) and `AuthorizationError` (403) live in `authentication.error.ts`; `MicroserviceError` wraps upstream failures; `ServiceValidationError` represents input-validation problems. All errors are exported via `index.ts` and handled centrally by the error-handler middleware.
+
+### Routes
+
+All feature routes are mounted under `/api/<domain>` from `server.ts` — e.g. `/api/meetings`, `/api/committees`, `/api/votes`. Public, unauthenticated surfaces are under `/public/api/*` (currently public meetings and public committees). Health and telemetry endpoints are wired directly in `server.ts`.
 
 ## Key Patterns
 

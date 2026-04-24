@@ -211,13 +211,18 @@ footer
 
 ### Types
 
+Commitlint uses `@commitlint/config-angular`. Valid types: `feat`, `fix`, `docs`, `style`, `refactor`, `perf`, `test`, `build`, `ci`, `revert`. `chore` is **not** accepted — use the closest specific type (`build`, `ci`, `docs`, `refactor`, etc.) instead.
+
 - `feat`: New feature
 - `fix`: Bug fix
 - `docs`: Documentation changes
 - `style`: Code style changes (formatting, etc.)
 - `refactor`: Code refactoring
+- `perf`: Performance improvement
 - `test`: Adding or updating tests
-- `chore`: Maintenance tasks
+- `build`: Build system or dependency changes
+- `ci`: CI configuration changes
+- `revert`: Reverts a previous commit
 
 ### Examples
 
@@ -278,14 +283,13 @@ feat(component): add new table component
 ### Running Tests
 
 ```bash
-# Run all tests
+# Run unit tests (Karma)
 yarn test
 
-# Run tests in watch mode
-yarn test:watch
-
-# Run e2e tests
-yarn e2e
+# Playwright E2E suite
+yarn e2e             # headless, all browsers
+yarn e2e:ui          # Playwright UI mode
+yarn e2e:headed      # visible browser
 ```
 
 ### Test Requirements

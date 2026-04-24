@@ -35,7 +35,7 @@ The authentication configuration uses selective authentication (`authRequired: f
 ### User Data Structure
 
 ```typescript
-// packages/shared/src/interfaces/auth.ts
+// packages/shared/src/interfaces/auth.interface.ts
 export interface User {
   sid: string;
   'https://sso.linuxfoundation.org/claims/username': string;
@@ -53,6 +53,17 @@ export interface User {
 export interface AuthContext {
   authenticated: boolean;
   user: User | null;
+  // Persona + project enrichment (populated server-side via persona-detection, hydrated to the
+  // browser through Angular TransferState — see apps/lfx-one/src/server/services/persona-detection.service.ts)
+  persona?: PersonaType | null;
+  personas?: PersonaType[];
+  organizations?: Account[];
+  projects?: EnrichedPersonaProject[];
+  personaProjects?: Partial<Record<PersonaType, PersonaProject[]>>;
+  // Impersonation capability + active state — see docs/architecture/backend/impersonation.md
+  canImpersonate?: boolean;
+  impersonating?: boolean;
+  impersonator?: Impersonator;
 }
 
 /**

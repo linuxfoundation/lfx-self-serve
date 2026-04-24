@@ -131,8 +131,9 @@ yarn format         # Format code with Prettier
 yarn format:check   # Check formatting without fixing
 
 # Testing
-yarn test           # Run unit tests
-yarn test:watch     # Run tests in watch mode
+yarn test           # Run unit tests (Karma)
+yarn e2e            # Playwright E2E suite (headless)
+yarn e2e:ui         # Playwright UI mode
 ```
 
 ### Common Commands
@@ -144,7 +145,7 @@ yarn build          # Build the application
 yarn watch          # Build in watch mode
 
 # Production
-yarn serve:ssr      # Serve SSR application locally
+yarn start:server   # Start SSR server via PM2 runtime
 yarn start:prod     # Start with PM2 in production
 yarn reload:prod    # Zero-downtime reload
 yarn logs:prod      # View PM2 logs
@@ -174,29 +175,21 @@ yarn lint --filter=lfx-one
 lfx-one/
 ├── apps/
 │   └── lfx-one/              # Angular 20 SSR application
-│       ├── src/app/
-│       │   ├── layouts/      # Layout components
-│       │   ├── modules/      # Feature modules (see below)
-│       │   └── shared/       # Shared code
-│       │       ├── components/   # 46 UI components
-│       │       ├── pipes/        # 34 custom pipes
-│       │       └── services/     # 20 services
-│       ├── eslint.config.mjs # Angular-specific ESLint rules
-│       ├── .prettierrc       # Prettier with Tailwind integration
+│       ├── src/app/          # Feature modules, layouts, shared code
+│       ├── src/server/       # Express SSR server (controllers, services, routes, middleware)
+│       ├── e2e/              # Playwright E2E tests
+│       ├── eslint.config.js  # Angular-specific ESLint rules
+│       ├── .prettierrc.js    # Prettier with Tailwind integration
+│       ├── ecosystem.config.js # PM2 production configuration
 │       └── tailwind.config.js # Tailwind with PrimeUI plugin
 ├── packages/
-│   └── shared/               # Shared types, interfaces, utilities
-│       ├── src/
-│       │   ├── interfaces/   # TypeScript interfaces
-│       │   ├── constants/    # Design tokens
-│       │   ├── enums/        # Shared enumerations
-│       │   ├── utils/        # 12 utility modules
-│       │   └── validators/   # 3 form validators
-│       └── package.json
+│   └── shared/               # @lfx-one/shared — types, constants, enums, utils, validators
 ├── docs/                     # Architecture and deployment documentation
-├── turbo.json               # Turborepo pipeline configuration
-└── package.json             # Root workspace configuration
+├── turbo.json                # Turborepo pipeline configuration
+└── package.json              # Root workspace configuration
 ```
+
+For the full directory breakdown (including `src/app/shared/` subdirs and `src/server/` layout) see [CLAUDE.md](CLAUDE.md) and [Architecture Overview](docs/architecture.md).
 
 ## Feature Modules
 
@@ -204,14 +197,19 @@ The application is organized into feature modules under `apps/lfx-one/src/app/mo
 
 | Module            | Description                                                                      |
 | ----------------- | -------------------------------------------------------------------------------- |
-| **committees**    | Committee management - view, create, and manage project committees               |
-| **dashboards**    | Role-based dashboards - personalized views for different user roles              |
-| **mailing-lists** | Mailing list management - subscribe, unsubscribe, and manage lists               |
-| **meetings**      | Meeting scheduling - create, manage, and join meetings with calendar integration |
-| **profile**       | User profile - profile management and account settings                           |
-| **settings**      | Application settings - preferences and configuration                             |
-| **surveys**       | Survey management - create surveys, collect responses, view NPS analytics        |
-| **votes**         | Voting system - create polls, cast votes, and view results                       |
+| **badges**        | LFX badges — view and manage credentialing badges earned across projects         |
+| **committees**    | Committee management — view, create, and manage project committees               |
+| **dashboards**    | Lens-based dashboards (Me, Foundation, Project, Org) and supporting drawers      |
+| **documents**     | Document management — browse and manage project documents                        |
+| **events**        | Events — browse LFX events and manage attendance                                 |
+| **mailing-lists** | Mailing list management — subscribe, unsubscribe, and manage lists               |
+| **meetings**      | Meeting scheduling — create, manage, and join meetings with calendar integration |
+| **profile**       | User profile — profile management and account settings                           |
+| **settings**      | Application settings — preferences and configuration                             |
+| **surveys**       | Survey management — create surveys, collect responses, view NPS analytics        |
+| **trainings**     | Training enrollments — view and manage training programs                         |
+| **transactions**  | Transactions — view billing / purchase history                                   |
+| **votes**         | Voting system — create polls, cast votes, and view results                       |
 
 ## Key Features
 
@@ -256,95 +254,105 @@ See the [deployment documentation](docs/deployment.md) for detailed instructions
 
 ### Architecture Documentation
 
-Comprehensive documentation organized by domain:
+The [Architecture Overview](docs/architecture.md) is the jumping-off point. Each canonical subtopic owns one file:
 
 #### 🎨 [Frontend Architecture](docs/architecture/frontend/)
 
-- **[Angular Patterns](docs/architecture/frontend/angular-patterns.md)** - Zoneless change detection, SSR, and Angular 20 features
-- **[Component Architecture](docs/architecture/frontend/component-architecture.md)** - PrimeNG wrappers, layout patterns, and component hierarchy
-- **[Styling System](docs/architecture/frontend/styling-system.md)** - CSS layers, Tailwind configuration, and LFX UI Core
-- **[State Management](docs/architecture/frontend/state-management.md)** - Angular Signals patterns and service architecture
-- **[Performance](docs/architecture/frontend/performance.md)** - SSR optimization, build strategies, and monitoring
+- **[Angular Patterns](docs/architecture/frontend/angular-patterns.md)** — Zoneless change detection, signals, control-flow syntax
+- **[Component Architecture](docs/architecture/frontend/component-architecture.md)** — PrimeNG wrapper strategy, layouts, module organization
+- **[Lens & Persona System](docs/architecture/frontend/lens-system.md)** — `LensService`, persona detection, `ProjectContextService`
+- **[State Management](docs/architecture/frontend/state-management.md)** — Signal-first patterns, signal↔RxJS bridging
+- **[Styling System](docs/architecture/frontend/styling-system.md)** — Tailwind + PrimeUI, CSS layers, font/color tokens
+- **[Drawer Pattern](docs/architecture/frontend/drawer-pattern.md)** — Drawer components, lazy data, chart integration
+- **[Lazy Loading & Preloading](docs/architecture/frontend/lazy-loading-preloading-strategy.md)** — Route splitting + custom preloading strategy
+- **[Feature Flags](docs/architecture/frontend/feature-flags.md)** — OpenFeature + LaunchDarkly wiring, signal-reactive reads
+- **[Performance](docs/architecture/frontend/performance.md)** — Bundle management, SSR, runtime patterns
 
 #### 🖥 [Backend Architecture](docs/architecture/backend/)
 
-- **[SSR Server](docs/architecture/backend/ssr-server.md)** - Express.js configuration and Angular 20 SSR integration
-- **[Authentication](docs/architecture/backend/authentication.md)** - Auth0 integration with express-openid-connect
-- **[Logging & Monitoring](docs/architecture/backend/logging-monitoring.md)** - Pino logging, structured logs, and health monitoring
-- **[Deployment](docs/deployment.md)** - PM2 configuration and production deployment
+- **[Backend Architecture](docs/architecture/backend/README.md)** — Controller-Service pattern, directory layout, core services
+- **[SSR Server](docs/architecture/backend/ssr-server.md)** — Express + Angular SSR pipeline, middleware order
+- **[Authentication](docs/architecture/backend/authentication.md)** — Auth0 setup, selective auth middleware, AuthContext, M2M tokens
+- **[Impersonation](docs/architecture/backend/impersonation.md)** — Auth0 CTE flow, effective-identity helpers
+- **[Rate Limiting](docs/architecture/backend/rate-limiting.md)** — `express-rate-limit` budgets for `/api`, `/public/api`, `/login`
+- **[Observability](docs/architecture/backend/observability.md)** — OpenTelemetry auto-instrumentation and custom spans
+- **[Logging & Monitoring](docs/architecture/backend/logging-monitoring.md)** — Logger service, operation lifecycle, log levels
+- **[Error Handling](docs/architecture/backend/error-handling-architecture.md)** — Error class hierarchy, error-handler middleware
+- **[Server Helpers](docs/architecture/backend/server-helpers.md)** — Validation type guards, pagination, URL validation
+- **[Pagination](docs/architecture/backend/pagination.md)** — `page_token` cursor pattern, `fetchAllQueryResources` helper
+- **[AI Service](docs/architecture/backend/ai-service.md)** — LiteLLM proxy, meeting agenda generation
+- **[NATS Integration](docs/architecture/backend/nats-integration.md)** — Request/reply pattern, lazy connections
+- **[Snowflake Integration](docs/architecture/backend/snowflake-integration.md)** — Singleton pool, query deduplication
+- **[Public Meetings](docs/architecture/backend/public-meetings.md)** — Unauthenticated meeting access, M2M tokens
+- **[Deployment](docs/deployment.md)** — PM2 configuration and production deployment
 
 #### 📦 [Shared Architecture](docs/architecture/shared/)
 
-- **[Package Architecture](docs/architecture/shared/package-architecture.md)** - Shared interfaces, constants, and TypeScript types
-- **[Development Workflow](docs/architecture/shared/development-workflow.md)** - Turborepo configuration and monorepo patterns
+- **[Package Architecture](docs/architecture/shared/package-architecture.md)** — `@lfx-one/shared` structure, import patterns, conventions
+- **[Development Workflow](docs/architecture/shared/development-workflow.md)** — Turborepo, Yarn workspaces, build caching
 
 #### 🧪 [Testing Architecture](docs/architecture/testing/)
 
-- **[E2E Testing](docs/architecture/testing/e2e-testing.md)** - Playwright configuration and user workflow testing
-- **[Testing Best Practices](docs/architecture/testing/testing-best-practices.md)** - Testing patterns and implementation guide
+- **[E2E Testing](docs/architecture/testing/e2e-testing.md)** — Dual-architecture spec files, `data-testid` naming, Playwright setup
+- **[Testing Best Practices](docs/architecture/testing/testing-best-practices.md)** — Content vs. structural tests, robust locator patterns
 
 ### Quick Start Guides
 
-- **[📋 Architecture Navigation Hub](docs/architecture/README.md)** - Complete architecture documentation guide
-- **[⚡ Development Setup](CLAUDE.md)** - Claude Code assistant instructions and patterns
-- **[🧪 Testing Guide](docs/architecture/testing/e2e-testing.md)** - Comprehensive E2E testing with Playwright
+- **[📋 Architecture Overview](docs/architecture.md)** — High-level map that links to every canonical doc above
+- **[📋 Architecture Navigation Hub](docs/architecture/README.md)** — Same navigation from inside the `architecture/` directory
+- **[🧪 Testing Guide](docs/architecture/testing/e2e-testing.md)** — Comprehensive E2E testing with Playwright
+- **[🤖 CLAUDE.md](CLAUDE.md)** — Gotchas, conventions, and contextual rules for Claude Code sessions
 
 ## Development Workflow
 
 ### Before Committing
 
-Always run these commands before committing code:
+Pre-commit hooks (via husky + lint-staged) auto-format and lint staged files, then run `yarn format:check`, `yarn lint:check`, and `yarn check-types` across the whole repo — you don't need to run `yarn format` manually. Before opening a PR, sanity-check the full build and any broader linting:
 
 ```bash
-yarn lint           # Fix code linting issues
-yarn format         # Format code consistently
-yarn test           # Ensure all tests pass
-yarn build          # Verify build succeeds
-
-# Use the GitHub CI job to check license headers
-act -W .github/workflows/license-header-check.yml  # Verify license headers, requires container runtime
-
-# Use the GitHub CI job to check markdown formatting
-act -W .github/workflows/markdown-lint.yml # Check markdown formatting
+yarn lint           # Auto-fix linting across the monorepo
+yarn build          # Verify the production build
+yarn e2e            # Run the Playwright E2E suite (when applicable)
 ```
 
-**Note**: All source files must include the proper license header. See the [Contributing Guide](CONTRIBUTING.md#license-headers) for details.
+Commit messages must follow Angular conventional-commit format and are validated by **commitlint** (`@commitlint/config-angular`). Commits must be signed off (`git commit -s`) to satisfy DCO — see the [Contributing Guide](CONTRIBUTING.md) for accepted types and sign-off details.
+
+**Note**: All source files must include the MIT license header. `./check-headers.sh` validates locally and the pre-commit hook enforces it.
 
 ### Component Development
 
+Angular 20 makes components, directives, and pipes standalone by default — do **not** pass `--standalone`, it's redundant and produces a deprecation warning:
+
 ```bash
-# Generate new component (will use lfx- prefix automatically)
-ng generate component my-feature --standalone
-
-# Generate service
+ng generate component my-feature        # standalone is the default
 ng generate service my-service
-
-# Generate guard
 ng generate guard my-guard
 ```
 
 ### Using PrimeNG Components
 
+Feature code can import `primeng/*` directly, but the preferred path for new code is the thin `lfx-*` wrapper components under `apps/lfx-one/src/app/shared/components/`. The wrappers give LFX One UI-library independence and a consistent signal-based API; several feature modules still import PrimeNG modules directly today, and migrating them to wrappers is an ongoing effort. When building a new feature, prefer the wrapper:
+
 ```typescript
-// Import PrimeNG modules directly in your components
-import { ButtonModule } from 'primeng/button';
-import { CardModule } from 'primeng/card';
+import { ButtonComponent } from '@app/shared/components/button/button.component';
+import { CardComponent } from '@app/shared/components/card/card.component';
 
 @Component({
   selector: 'lfx-example',
-  imports: [ButtonModule, CardModule],
+  imports: [ButtonComponent, CardComponent],
   templateUrl: './example.component.html',
-  styleUrl: './example.component.scss',
 })
 export class ExampleComponent {}
 ```
 
 ```html
 <!-- example.component.html -->
-<p-card header="Example Card">
-  <p-button label="Click me" severity="primary"></p-button>
-</p-card>
+<lfx-card header="Example Card">
+  <lfx-button label="Click me" severity="primary" (onClick)="handleClick()" />
+</lfx-card>
 ```
+
+See the [Component Architecture](docs/architecture/frontend/component-architecture.md) doc for the wrapper pattern in full and for guidance on when to add a new wrapper vs. import PrimeNG directly.
 
 ## Technology Stack
 
@@ -381,9 +389,9 @@ Learn more about the technologies used:
 
 Copyright The Linux Foundation and each contributor to LFX.
 
-This project’s source code is licensed under the MIT License. A copy of the
+This project's source code is licensed under the MIT License. A copy of the
 license is available in LICENSE.
 
-This project’s documentation is licensed under the Creative Commons Attribution
+This project's documentation is licensed under the Creative Commons Attribution
 4.0 International License \(CC-BY-4.0\). A copy of the license is available in
 LICENSE-docs.

@@ -11,8 +11,11 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 - **[Frontend Overview](./frontend/README.md)** - Angular 20 architecture with zoneless change detection
 - **[Angular Patterns](./frontend/angular-patterns.md)** - Modern Angular 20 development patterns with signals
 - **[Component Architecture](./frontend/component-architecture.md)** - PrimeNG wrapper components and design patterns
+- **[Lens & Persona System](./frontend/lens-system.md)** - LensService, persona detection, ProjectContextService
 - **[Styling System](./frontend/styling-system.md)** - CSS layers, Tailwind, and LFX UI Core integration
 - **[State Management](./frontend/state-management.md)** - Angular Signals and reactive programming
+- **[Drawer Pattern](./frontend/drawer-pattern.md)** - Drawer components, lazy data, chart integration
+- **[Feature Flags](./frontend/feature-flags.md)** - OpenFeature + LaunchDarkly wiring
 - **[Performance](./frontend/performance.md)** - SSR, build optimizations, and performance strategies
 - **[Lazy Loading Strategy](./frontend/lazy-loading-preloading-strategy.md)** - Route optimization and code splitting
 
@@ -21,9 +24,16 @@ LFX One is a modern Angular 20 SSR application built with stable zoneless change
 - **[Backend Overview](./backend/README.md)** - Express.js with Controller-Service pattern
 - **[SSR Server](./backend/ssr-server.md)** - Angular Universal and Express.js configuration
 - **[Authentication](./backend/authentication.md)** - Auth0 integration and JWT handling
+- **[Impersonation](./backend/impersonation.md)** - Auth0 CTE flow and effective-identity helpers
+- **[Rate Limiting](./backend/rate-limiting.md)** - `express-rate-limit` budgets for `/api`, `/public/api`, `/login`
+- **[Observability](./backend/observability.md)** - OpenTelemetry auto-instrumentation and custom spans
 - **[Logging & Monitoring](./backend/logging-monitoring.md)** - Pino structured logging and monitoring
+- **[Server Helpers](./backend/server-helpers.md)** - Validation, pagination, URL validation, polling
+- **[Pagination](./backend/pagination.md)** - Cursor-based pagination and `fetchAllQueryResources`
 - **[AI Service](./backend/ai-service.md)** - Claude Sonnet integration for meeting agenda generation
 - **[NATS Integration](./backend/nats-integration.md)** - Inter-service messaging and project resolution
+- **[Snowflake Integration](./backend/snowflake-integration.md)** - Singleton pool, query deduplication
+- **[Public Meetings](./backend/public-meetings.md)** - Unauthenticated meeting access, M2M tokens
 - **[Error Handling](./backend/error-handling-architecture.md)** - Comprehensive error handling patterns
 
 ### 📦 Shared Package Architecture

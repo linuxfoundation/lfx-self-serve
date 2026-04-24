@@ -100,8 +100,9 @@ yarn format         # Format code with Prettier
 yarn format:check   # Check formatting without fixing
 
 # Testing
-yarn test           # Run unit tests
-yarn test:watch     # Run tests in watch mode
+yarn test           # Run unit tests (Karma)
+yarn e2e            # Playwright E2E suite (headless)
+yarn e2e:ui         # Playwright UI mode
 ```
 
 ### Common Commands
@@ -113,7 +114,7 @@ yarn build          # Build the application
 yarn watch          # Build in watch mode
 
 # Production
-yarn serve:ssr      # Serve SSR application locally
+yarn start:server   # Start SSR server via PM2 runtime
 yarn start:prod     # Start with PM2 in production
 yarn reload:prod    # Zero-downtime reload
 yarn logs:prod      # View PM2 logs
@@ -145,8 +146,8 @@ lfx-one/
 │   └── lfx-one/              # Angular 20 SSR application with stable zoneless change detection
 │       ├── src/app/config/   # Tailwind custom configurations
 │       │   └── styles/       # Colors and font-size configurations
-│       ├── eslint.config.mjs # Angular-specific ESLint rules
-│       ├── .prettierrc       # Prettier with Tailwind integration
+│       ├── eslint.config.js  # Angular-specific ESLint rules
+│       ├── .prettierrc.js    # Prettier with Tailwind integration
 │       └── tailwind.config.js # Tailwind with PrimeUI plugin
 ├── docs/                     # Architecture and deployment documentation
 ├── turbo.json               # Turborepo pipeline configuration

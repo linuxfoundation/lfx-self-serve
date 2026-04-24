@@ -259,11 +259,58 @@ Drawer components follow the standard component organization:
 7. Protected methods (`onClose()`)
 8. Private initializer functions (`initDrawerData()`, `initChartData()`)
 
+## Insights Handoff & Deep-Linking
+
+Several analytics drawers expose an "Open in LFX Insights" CTA that links out to the Insights app with the current foundation or project pre-selected. The URL is **lens-aware** — it resolves to a collection page in Foundation lens and a project page in Project lens. This branching lives in one helper so every drawer handoff stays consistent.
+
+### `buildLensAwareInsightsUrl` (`packages/shared/src/utils/insights.utils.ts`)
+
+```typescript
+buildLensAwareInsightsUrl(
+  slug: string | null | undefined,
+  isFoundationContext: boolean,
+  opts?: { projectSubPath?: string; projectParams?: Record<string, string | undefined> }
+): string
+```
+
+- Foundation context → `/collection/details/{slug}`
+- Project context → `/project/{slug}[/{projectSubPath}][?projectParams]`
+- Missing slug → falls back to the Insights root so the CTA never renders as broken.
+
+Widget-specific params (`contributors-leaderboard`, `organization-dependency`, etc.) are passed via `projectParams` — the underlying `buildInsightsUrl(path, params?)` helper URL-encodes path segments and filters undefined/empty params.
+
+### Pattern in a drawer component
+
+```typescript
+// apps/lfx-one/src/app/modules/dashboards/components/active-contributors-drawer/active-contributors-drawer.component.ts (sketch)
+private readonly projectContextService = inject(ProjectContextService);
+
+protected readonly insightsUrl: Signal<string> = computed(() =>
+  buildLensAwareInsightsUrl(
+    this.projectContextService.activeContext()?.slug,
+    this.projectContextService.isFoundationContext(),
+    {
+      projectSubPath: 'contributors',
+      projectParams: { timeRange: 'alltime', widget: 'contributors-leaderboard' },
+    }
+  )
+);
+```
+
+The template wires the signal into the handoff component:
+
+```html
+<lfx-insights-handoff-section [link]="insightsUrl()" />
+```
+
+Because `insightsUrl` is a computed signal, the URL re-evaluates automatically when the user switches lens or selects a different foundation/project. Centralizing the foundation-vs-project branching means drawers don't re-implement URL logic and stay in sync if the Insights URL map ever changes.
+
 ## Common Utilities
 
 - `hexToRgba(color, alpha)` — Converts hex colors to RGBA for chart transparency
 - `wrapLabel(text, maxLength)` — Wraps long labels for chart axes
 - `lfxColors` — Color palette from `@lfx-one/shared/constants`
+- `buildInsightsUrl(path, params?)` / `buildLensAwareInsightsUrl(slug, isFoundationContext, opts?)` — Insights handoff URL builders
 
 ## RxJS Operators Used
 

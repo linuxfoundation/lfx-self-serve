@@ -143,24 +143,27 @@ Detailed patterns are in `.claude/rules/` and loaded contextually based on file 
 
 ## Architecture Documentation
 
-| Document                                                                       | Topics                                             |
-| ------------------------------------------------------------------------------ | -------------------------------------------------- |
-| [Angular Patterns](docs/architecture/frontend/angular-patterns.md)             | Zoneless change detection, signals, components     |
-| [Component Architecture](docs/architecture/frontend/component-architecture.md) | PrimeNG wrapper patterns                           |
-| [Styling System](docs/architecture/frontend/styling-system.md)                 | Tailwind, fonts, theming                           |
-| [Drawer Pattern](docs/architecture/frontend/drawer-pattern.md)                 | Drawer components, lazy loading, chart integration |
-| [Backend Architecture](docs/architecture/backend/README.md)                    | Controller-Service pattern, Express.js server      |
-| [Authentication](docs/architecture/backend/authentication.md)                  | Auth0 setup, selective auth middleware             |
-| [Impersonation](docs/architecture/backend/impersonation.md)                    | User impersonation via Auth0 CTE                   |
-| [SSR Server](docs/architecture/backend/ssr-server.md)                          | Server-side rendering                              |
-| [Logging & Monitoring](docs/architecture/backend/logging-monitoring.md)        | Structured logging with Pino                       |
-| [Error Handling](docs/architecture/backend/error-handling-architecture.md)     | Error classification, middleware                   |
-| [Server Helpers](docs/architecture/backend/server-helpers.md)                  | Validation, pagination, URL utilities              |
-| [Pagination](docs/architecture/backend/pagination.md)                          | Cursor-based pagination, infinite scroll           |
-| [AI Service](docs/architecture/backend/ai-service.md)                          | LiteLLM proxy, agenda generation                   |
-| [NATS Integration](docs/architecture/backend/nats-integration.md)              | Inter-service messaging                            |
-| [Snowflake Integration](docs/architecture/backend/snowflake-integration.md)    | Analytics queries, connection pooling              |
-| [Public Meetings](docs/architecture/backend/public-meetings.md)                | Unauthenticated access, M2M tokens                 |
-| [Shared Package](docs/architecture/shared/package-architecture.md)             | Types, interfaces, utilities, validators           |
-| [E2E Testing](docs/architecture/testing/e2e-testing.md)                        | Dual architecture testing                          |
-| [Testing Best Practices](docs/architecture/testing/testing-best-practices.md)  | Testing patterns and guide                         |
+| Document                                                                       | Topics                                                           |
+| ------------------------------------------------------------------------------ | ---------------------------------------------------------------- |
+| [Angular Patterns](docs/architecture/frontend/angular-patterns.md)             | Zoneless change detection, signals, components                   |
+| [Component Architecture](docs/architecture/frontend/component-architecture.md) | PrimeNG wrapper patterns                                         |
+| [Lens & Persona System](docs/architecture/frontend/lens-system.md)             | `LensService`, persona detection, `ProjectContextService`        |
+| [Styling System](docs/architecture/frontend/styling-system.md)                 | Tailwind, fonts, theming                                         |
+| [Drawer Pattern](docs/architecture/frontend/drawer-pattern.md)                 | Drawer components, lazy loading, chart integration               |
+| [Backend Architecture](docs/architecture/backend/README.md)                    | Controller-Service pattern, Express.js server                    |
+| [Authentication](docs/architecture/backend/authentication.md)                  | Auth0 setup, selective auth middleware                           |
+| [Impersonation](docs/architecture/backend/impersonation.md)                    | User impersonation via Auth0 CTE                                 |
+| [Rate Limiting](docs/architecture/backend/rate-limiting.md)                    | `express-rate-limit` budgets for `/api`, `/public/api`, `/login` |
+| [Observability](docs/architecture/backend/observability.md)                    | OpenTelemetry auto-instrumentation, custom spans                 |
+| [SSR Server](docs/architecture/backend/ssr-server.md)                          | Server-side rendering                                            |
+| [Logging & Monitoring](docs/architecture/backend/logging-monitoring.md)        | Structured logging with Pino                                     |
+| [Error Handling](docs/architecture/backend/error-handling-architecture.md)     | Error classification, middleware                                 |
+| [Server Helpers](docs/architecture/backend/server-helpers.md)                  | Validation, pagination, URL utilities                            |
+| [Pagination](docs/architecture/backend/pagination.md)                          | Cursor-based pagination, infinite scroll                         |
+| [AI Service](docs/architecture/backend/ai-service.md)                          | LiteLLM proxy, agenda generation                                 |
+| [NATS Integration](docs/architecture/backend/nats-integration.md)              | Inter-service messaging                                          |
+| [Snowflake Integration](docs/architecture/backend/snowflake-integration.md)    | Analytics queries, connection pooling                            |
+| [Public Meetings](docs/architecture/backend/public-meetings.md)                | Unauthenticated access, M2M tokens                               |
+| [Shared Package](docs/architecture/shared/package-architecture.md)             | Types, interfaces, utilities, validators                         |
+| [E2E Testing](docs/architecture/testing/e2e-testing.md)                        | Dual architecture testing                                        |
+| [Testing Best Practices](docs/architecture/testing/testing-best-practices.md)  | Testing patterns and guide                                       |

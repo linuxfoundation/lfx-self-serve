@@ -138,21 +138,23 @@ export class PerformantService {
 
 ## 📦 Bundle Management
 
-### Current Bundle Sizes (Production)
+### Inspecting the Production Bundle
 
-```text
-main.[hash].js          ~180KB (gzipped)
-vendor.[hash].js        ~120KB (gzipped)
-styles.[hash].css       ~45KB (gzipped)
-runtime.[hash].js       ~12KB (gzipped)
+Bundle sizes depend on the set of features shipped in a given build — always measure the current footprint locally rather than trusting a hardcoded number:
+
+```bash
+yarn build                                   # emits the production bundle + stats
+ls -lh apps/lfx-one/dist/lfx-one/browser/    # per-chunk sizes
 ```
+
+Angular prints the per-chunk summary at the end of `yarn build`; use it to spot regressions on a feature branch vs. main.
 
 ### Optimization Strategies
 
-1. **Dynamic Imports**: Route-based code splitting
-2. **Tree Shaking**: Removing unused PrimeNG components
-3. **Font Optimization**: Google Fonts with display=swap
-4. **Image Optimization**: WebP format with fallbacks
+1. **Dynamic Imports**: Route-based code splitting via `loadChildren` in `app.routes.ts`.
+2. **Tree Shaking**: Direct imports of PrimeNG modules (never barrel exports) so unused components drop out.
+3. **Font Optimization**: Google Fonts with `display=swap` and preconnect hints in `index.html`.
+4. **Image Optimization**: WebP with fallbacks, plus Angular's built-in `NgOptimizedImage` where images are in the critical path.
 
 ## 🚀 Runtime Performance
 

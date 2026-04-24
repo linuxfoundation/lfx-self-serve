@@ -13,15 +13,17 @@ All helpers follow consistent patterns: stateless functions, request parameter f
 
 The helpers directory contains files organized by responsibility:
 
-| File                      | Purpose                                                 |
-| ------------------------- | ------------------------------------------------------- |
-| `error-serializer.ts`     | Pino error serializer configuration                     |
-| `http-status.helper.ts`   | HTTP status code to message/code mappings               |
-| `meeting.helper.ts`       | Meeting invitation checks with M2M tokens               |
-| `poll-endpoint.helper.ts` | Generic retry/polling with callback injection           |
-| `query-service.helper.ts` | Cursor-based pagination with automatic page following   |
-| `url-validation.ts`       | URL and cookie domain validation with allowlists        |
-| `validation.helper.ts`    | TypeScript type guard validators for request parameters |
+| File                      | Purpose                                                                           |
+| ------------------------- | --------------------------------------------------------------------------------- |
+| `api-gateway.helper.ts`   | API Gateway base URL resolution (`getApiGatewayBaseUrl`, `getUserServiceBaseUrl`) |
+| `error-serializer.ts`     | Pino error serializer configuration                                               |
+| `http-status.helper.ts`   | HTTP status code to message/code mappings                                         |
+| `ics.helper.ts`           | iCalendar (`.ics`) generation for meeting invites                                 |
+| `meeting.helper.ts`       | Meeting invitation checks with M2M tokens                                         |
+| `poll-endpoint.helper.ts` | Generic retry/polling with callback injection                                     |
+| `query-service.helper.ts` | Cursor-based pagination with automatic page following                             |
+| `url-validation.ts`       | URL and cookie domain validation with allowlists                                  |
+| `validation.helper.ts`    | TypeScript type guard validators for request parameters                           |
 
 ## Common Patterns
 

@@ -116,10 +116,10 @@ yarn build
 
 ```bash
 # Check server logs
-yarn serve:ssr
+yarn start:server
 
-# Test health endpoint
-curl http://localhost:4200/health
+# Test health endpoint (SSR server defaults to PORT 4000; override via $PORT)
+curl http://localhost:4000/health
 
 # Check environment variables
 echo $NODE_ENV
@@ -309,9 +309,9 @@ yarn build
 # Verify dependencies
 yarn install --check-files
 
-# Test SSR rendering
-yarn serve:ssr
-curl http://localhost:4200/
+# Test SSR rendering (SSR server defaults to PORT 4000; override via $PORT)
+yarn start:server
+curl http://localhost:4000/
 ```
 
 ### Performance Analysis
@@ -355,7 +355,7 @@ export class Component {
 
 ```bash
 # Enable debug mode
-DEBUG=* yarn serve:ssr
+DEBUG=* yarn start:server
 
 # Node.js inspector
 node --inspect-brk apps/lfx-one/dist/lfx-one/server/server.mjs

@@ -1,278 +1,198 @@
 # End-to-End Testing Architecture
 
-> **Status: Planned -- Not Yet Implemented**
->
-> The E2E testing architecture described below represents the planned testing strategy. The test framework (Playwright) is configured but test files have not been implemented yet. The patterns and architecture below serve as the blueprint for when E2E tests are written.
+E2E tests live in `apps/lfx-one/e2e/` and are driven by Playwright. This doc covers the dual-architecture approach, the `data-testid` conventions, and the Auth0 global-setup strategy. Specs in the tree today cover badges, marketing dashboard, and the profile-identities verify flow; new specs should follow the same patterns.
 
-## Overview
-
-This document defines the E2E testing architecture and patterns for LFX One. The testing infrastructure (Playwright config, auth helpers, mock data) is in place. Test spec files should follow the dual architecture approach described below.
-
-### Current State
-
-The E2E testing infrastructure is set up with:
+## Current State
 
 ```text
-apps/lfx-one/e2e/
-├── fixtures/
-│   └── mock-data/           # Mock data for tests
-│       ├── index.ts
-│       └── projects.mock.ts
-└── helpers/
-    ├── auth.helper.ts       # Authentication setup for tests
-    ├── api-mock.helper.ts   # API mocking utilities
-    └── global-setup.ts      # Global Playwright setup
+apps/lfx-one/
+├── e2e/
+│   ├── badges-dashboard.spec.ts                     # content-based
+│   ├── marketing-dashboard.spec.ts                  # content-based
+│   ├── profile-identities-verify.spec.ts            # content-based
+│   ├── profile-identities-verify-robust.spec.ts     # structural
+│   ├── fixtures/
+│   │   └── mock-data/
+│   │       ├── index.ts
+│   │       └── projects.mock.ts
+│   └── helpers/
+│       ├── auth.helper.ts           # Auth0 login helper
+│       ├── api-mock.helper.ts       # page.route() utilities
+│       └── global-setup.ts          # runs once before the suite, saves auth state
+├── playwright/
+│   └── .auth/user.json              # auth state produced by global-setup (gitignored)
+└── playwright.config.ts             # dev server + 3 browser projects
 ```
 
-Test spec files (`.spec.ts`) should be added to the `e2e/` directory following the patterns documented below.
+Run the suite:
+
+```bash
+yarn e2e           # headless, all browsers
+yarn e2e:ui        # Playwright UI mode
+yarn e2e:headed    # visible browser
+```
+
+Playwright boots `yarn start` automatically (`webServer` block in `playwright.config.ts`) and reuses the existing dev server if one is running — you don't need to start it separately.
 
 ## Dual Testing Architecture
 
-### Content-Based Tests
+Every feature that warrants E2E coverage gets two specs:
 
-- **Purpose**: Validate user experience and visible content
-- **Target**: Text content, user interactions, workflows
-- **Best For**: Acceptance testing, user journey validation
-- **Naming**: `[feature].spec.ts`
+| Spec type     | Filename suffix            | Purpose                                                     | Target                                                           |
+| ------------- | -------------------------- | ----------------------------------------------------------- | ---------------------------------------------------------------- |
+| Content-based | `[feature].spec.ts`        | Validate user-visible behavior and workflows                | Text, form interactions, route transitions, dialog open/close    |
+| Structural    | `[feature]-robust.spec.ts` | Validate component architecture and `data-testid` contracts | `data-testid` presence/nesting, signal-driven state, DOM tagName |
 
-### Structural Tests (Robust)
+The pair lets each side fail independently: if a translation changes, only the content-based spec breaks; if a component is replaced but keeps the same `data-testid` surface, the structural spec still passes. The current profile-identities pair demonstrates this — see `profile-identities-verify.spec.ts` (content) and `profile-identities-verify-robust.spec.ts` (structural) for a real side-by-side example.
 
-- **Purpose**: Validate component architecture and framework integration
-- **Target**: Component structure, Angular signals, data attributes
-- **Best For**: Technical validation, UI library independence
-- **Naming**: `[feature]-robust.spec.ts`
-- **Examples**: `homepage-robust.spec.ts`, `project-dashboard-robust.spec.ts`
+## `data-testid` Architecture
 
-## Planned Test Coverage
+### Naming convention
 
-```text
-Target E2E Tests: 85+
-├── Homepage Tests: 33 tests
-│   ├── homepage.spec.ts: 11 content-based tests
-│   └── homepage-robust.spec.ts: 22 structural tests
-└── Project Dashboard Tests: 52 tests
-    ├── project-dashboard.spec.ts: 29 content-based tests
-    └── project-dashboard-robust.spec.ts: 23 structural tests
+`[section]-[component]-[element]`, lowercase with dashes. Examples from the current tree:
+
+- Section-level: `unverified-identities-section`, `verified-identities-section`
+- Component-level: `badges-filter-pills`, `badges-empty-state-card`, `profile-identities`
+- Element-level: `add-identity-btn`, `badges-filter-btn`, `badges-error-state-card`
+- Dynamic identity: `identity-row-${id}`, `verify-btn-${id}`, `badge-card-${slug}`
+
+### Dynamic attributes for state
+
+When a list element's identity matters, encode it in the testid rather than relying on position:
+
+```html
+<!-- apps/lfx-one/src/app/modules/profile/identities/identities.component.html (pattern) -->
+<div [attr.data-testid]="'identity-row-' + identity.id">
+  <button [attr.data-testid]="'verify-btn-' + identity.id">Verify</button>
+</div>
 ```
 
-## 🛠 Technical Stack
-
-### Primary Framework: Playwright
-
-- **Cross-browser support**: Chromium, Firefox, Mobile Chrome
-- **Modern async/await API** with built-in waiting strategies
-- **Parallel execution** with worker configuration
-- **Authentication state management** with global setup
-
-### Browser Configuration
+This is what allows the profile-identities specs to assert per-row behavior without depending on DOM order:
 
 ```typescript
-// playwright.config.ts - Mobile Chrome Configuration
-{
-  name: 'mobile-chrome',
-  use: {
-    ...devices['Pixel 5'],
-    storageState: 'playwright/.auth/user.json',
-  },
-  // Single worker to prevent resource contention
-  workers: 1,
+// apps/lfx-one/e2e/profile-identities-verify-robust.spec.ts (excerpt)
+const ids = ['idf-1', 'idf-2', 'idf-3', 'idf-5', 'idf-6'];
+for (const id of ids) {
+  await expect(page.getByTestId(`identity-row-${id}`)).toBeAttached();
 }
 ```
 
-## 🔧 Data-TestID Architecture
+### Selector-prefix queries for collections
 
-### Implementation Strategy
-
-#### 1. Component-Level Attributes
-
-```html
-<!-- Homepage Hero Section -->
-<div data-testid="hero-section">
-  <h1 data-testid="hero-title">...</h1>
-  <p data-testid="hero-subtitle">...</p>
-  <div data-testid="hero-search-container">
-    <lfx-input-text data-testid="hero-search-input">
-  </div>
-</div>
-```
-
-#### 2. Dynamic Attributes for State
-
-```html
-<!-- Project Cards with Dynamic Identification -->
-<lfx-project-card data-testid="project-card" [attr.data-project-slug]="project.slug"> </lfx-project-card>
-```
-
-#### 3. Nested Component Structure
-
-```html
-<!-- Project Metrics with Hierarchical Testing -->
-<div data-testid="project-metrics">
-  <div data-testid="project-metric" [attr.data-metric-label]="metric.label">
-    <div data-testid="metric-label-container">
-      <i data-testid="metric-icon"></i>
-      <span data-testid="metric-label">{{ metric.label }}</span>
-    </div>
-    <div data-testid="metric-value-container">
-      <span data-testid="metric-value">{{ metric.value }}</span>
-    </div>
-  </div>
-</div>
-```
-
-### Naming Conventions
-
-1. **Section-level**: `data-testid="hero-section"`
-2. **Component-level**: `data-testid="project-card"`
-3. **Element-level**: `data-testid="project-title"`
-4. **Container-level**: `data-testid="metrics-cards-container"`
-5. **Dynamic identification**: `[attr.data-project-slug]="project.slug"`
-
-## 🧪 Test Patterns and Examples
-
-### 1. Structural Component Validation
+Use `[data-testid^="prefix-"]` when you want to count or iterate over all items in a list without hardcoding identifiers:
 
 ```typescript
-test('should use lfx-card components consistently', async ({ page }) => {
-  const testCards = [
-    page.locator('[data-testid="total-members-card"]'),
-    page.locator('[data-testid="project-health-card"]'),
-    page.locator('[data-testid="quick-actions-card"]'),
-  ];
+// apps/lfx-one/e2e/badges-dashboard.spec.ts (excerpt)
+const firstCard = page.locator('[data-testid^="badge-card-"]').first();
+await expect(firstCard).toBeVisible();
+```
 
-  for (const card of testCards) {
-    await expect(card).toBeVisible();
-    // Validate component architecture
-    const tagName = await card.evaluate((el) => el.tagName.toLowerCase());
-    expect(tagName).toBe('lfx-card');
-  }
+## Test Patterns
+
+### Structural component validation
+
+Assert the `data-testid` contract that pages promise to maintain:
+
+```typescript
+// profile-identities-verify-robust.spec.ts
+test('should have root container with grid class', async ({ page }) => {
+  const root = page.getByTestId('profile-identities');
+  await expect(root).toBeAttached();
+  await expect(root).toHaveClass(/grid/);
+});
+
+test('should have 2 rows in unverified section (idf-2, idf-6)', async ({ page }) => {
+  const section = page.getByTestId('unverified-identities-section');
+  const rows = section.locator('[data-testid^="identity-row-"]');
+  await expect(rows).toHaveCount(2);
 });
 ```
 
-### 2. Angular Signals Integration Testing
+### Content-based user journey
+
+Drive the UI through a real workflow:
 
 ```typescript
-test('should properly integrate Angular signals and computed values', async ({ page }) => {
-  // Wait for Angular to initialize and signals to resolve
-  await page.waitForLoadState('networkidle');
+// profile-identities-verify.spec.ts (shape)
+test('should show Verify buttons only on unverified identities', async ({ page }) => {
+  await expect(page.getByTestId('verify-btn-idf-2')).toBeVisible();
+  await expect(page.getByTestId('verify-btn-idf-6')).toBeVisible();
 
-  // Check that percentage values are rendered (indicates successful signal integration)
-  const activityScore = page.locator('[data-testid="activity-score-indicator"] span').filter({ hasText: /%$/ });
-  await expect(activityScore).toBeVisible();
-
-  const meetingCompletion = page.locator('[data-testid="meeting-completion-indicator"] span').filter({ hasText: /%$/ });
-  await expect(meetingCompletion).toBeVisible();
+  await expect(page.getByTestId('verify-btn-idf-1')).not.toBeAttached();
+  await expect(page.getByTestId('verify-btn-idf-3')).not.toBeAttached();
 });
 ```
 
-### 3. Responsive Design Testing
+### Error-state coverage via route mocking
+
+`page.route()` stubs specific API responses so error paths can be verified deterministically without backend help:
 
 ```typescript
-test('should display header elements correctly for current viewport', async ({ page }) => {
-  await expect(page.getByRole('button', { name: 'Go to home page' })).toBeVisible();
-  await expect(page.getByAltText('LFX Logo')).toBeVisible();
+// badges-dashboard.spec.ts
+test.describe('Badges Dashboard error state', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.route('**/api/badges', (route) => route.fulfill({ status: 500, body: 'Internal Server Error' }));
+    await page.goto('/badges', { waitUntil: 'domcontentloaded' });
+  });
 
-  // Viewport-aware assertions
-  const viewport = page.viewportSize();
-  const isMobile = viewport && viewport.width < 768;
-
-  if (isMobile) {
-    // Mobile: search and brand text should be hidden
-    await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
-    await expect(page.getByText('Projects Self-Service')).toBeHidden();
-  } else {
-    // Desktop: search and brand text should be visible
-    await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
-    await expect(page.getByText('Projects Self-Service')).toBeVisible();
-  }
+  test('error state renders when API fails', async ({ page }) => {
+    await expect(page.getByTestId('badges-error-state-card')).toBeVisible();
+  });
 });
 ```
 
-### 4. Content-Based User Journey Testing
+### "Either-or" visibility
+
+When a page can render in one of two valid shapes (loaded-with-data vs. empty state), use `.or()` instead of conditionals:
 
 ```typescript
-test('should navigate to project detail when clicking a project card', async ({ page }) => {
-  // Wait for project cards to load
-  await page.waitForLoadState('networkidle');
+// badges-dashboard.spec.ts
+const grid = page.getByTestId('badges-grid');
+const emptyState = page.getByTestId('badges-empty-state-card');
+await expect(grid.or(emptyState)).toBeVisible({ timeout: 30_000 });
+```
 
-  const firstCard = page.locator('lfx-project-card').first();
-  await expect(firstCard).toBeVisible();
+### Dialog / popover interactions
 
-  // Get project name for verification
-  const projectName = await firstCard.getByRole('heading', { level: 3 }).innerText();
+Assert on the trigger's aria-label before/after state, not just visibility:
 
-  // Click the card
-  await firstCard.click();
+```typescript
+// badges-dashboard.spec.ts
+test('filter button aria-label updates when a filter is active', async ({ page }) => {
+  const filterBtn = page.getByTestId('badges-filter-btn');
+  await expect(filterBtn).toHaveAttribute('aria-label', 'Open filter options');
 
-  // Verify navigation
-  await expect(page).toHaveURL(/\/project\/[\w-]+$/);
-  await expect(page.getByRole('heading', { level: 1 }).filter({ hasText: projectName })).toBeVisible();
+  await filterBtn.click();
+  // ... interact with the popover
+  await expect(filterBtn).toHaveAttribute('aria-label', 'Open filter options (filters active)');
 });
 ```
 
-## 📱 Multi-Browser Testing Strategy
+## Browser Projects
 
-### Browser-Specific Configurations
+`playwright.config.ts` defines three projects, all sharing the saved auth state under `playwright/.auth/user.json`:
 
-#### Chromium (Desktop)
+| Project         | Device          | Workers            | Notes                                            |
+| --------------- | --------------- | ------------------ | ------------------------------------------------ |
+| `chromium`      | Desktop Chrome  | default (parallel) | Primary dev target.                              |
+| `firefox`       | Desktop Firefox | default (parallel) | Increased `actionTimeout` / `navigationTimeout`. |
+| `mobile-chrome` | Pixel 5 (touch) | 1                  | Single worker to avoid resource contention.      |
 
-- Full feature testing
-- Parallel execution (5 workers)
-- Complete test suite
+Parallelism is on by default (`fullyParallel: true`). CI caps workers to 1 and enables 2 retries.
 
-#### Mobile Chrome
+## Authentication
 
-- Single worker configuration (prevents resource contention)
-- Mobile-specific responsive validation
-- Touch interaction testing
-
-#### Firefox
-
-- Cross-browser compatibility validation
-- Engine-specific behavior testing
-
-### Viewport Testing Strategy
+Auth0 login runs once in `e2e/helpers/global-setup.ts` before any specs execute, and the resulting cookies/storage are persisted to `playwright/.auth/user.json`. Every project in `playwright.config.ts` loads that `storageState`, so individual specs land on routes already authenticated:
 
 ```typescript
-// Mobile Viewport (< 768px)
-test('should display correctly on mobile viewport', async ({ page }) => {
-  await page.setViewportSize({ width: 375, height: 667 });
-
-  // Mobile-specific expectations
-  await expect(page.getByPlaceholder('Search projects...')).toBeHidden();
-  await expect(page.getByText('Projects Self-Service')).toBeHidden();
-  await expect(page.getByAltText('LFX Logo')).toBeVisible();
-});
-
-// Tablet Viewport (≥ 768px)
-test('should display correctly on tablet viewport', async ({ page }) => {
-  await page.setViewportSize({ width: 768, height: 1024 });
-
-  // Tablet-specific expectations
-  await expect(page.getByPlaceholder('Search projects...')).toBeVisible();
-  await expect(page.getByText('Projects Self-Service')).toBeVisible();
-});
-```
-
-## 🔐 Authentication Architecture
-
-### Global Setup Strategy
-
-```typescript
-// e2e/helpers/global-setup.ts
+// e2e/helpers/global-setup.ts (shape)
 async function globalSetup(config: FullConfig) {
   const browser = await chromium.launch();
   const context = await browser.newContext();
   const page = await context.newPage();
-
   try {
-    // Navigate to logout to trigger authentication flow
-    await page.goto(`${url}/logout`);
-
-    // Perform authentication
+    await page.goto(`${baseURL}/logout`);
     await AuthHelper.loginWithAuth0(page, TEST_CREDENTIALS);
-
-    // Save authentication state
     await context.storageState({ path: 'playwright/.auth/user.json' });
   } finally {
     await browser.close();
@@ -280,176 +200,77 @@ async function globalSetup(config: FullConfig) {
 }
 ```
 
-### Auth Helper Pattern
+Specs rely on this by checking they didn't get bounced back to Auth0:
 
 ```typescript
-// e2e/helpers/auth.helper.ts
-export class AuthHelper {
-  static async loginWithAuth0(page: Page, credentials: TestCredentials) {
-    // Wait for Auth0 login page
-    await page.waitForSelector('[data-testid="auth0-login-form"]');
-
-    // Fill credentials
-    await page.fill('input[name="username"]', credentials.username);
-    await page.fill('input[name="password"]', credentials.password);
-
-    // Submit and wait for redirect
-    await page.click('button[type="submit"]');
-    await page.waitForURL(/localhost:4200/);
-  }
-}
+await page.goto('/badges', { waitUntil: 'domcontentloaded' });
+await expect(page).not.toHaveURL(/auth0\.com/);
 ```
 
-## 🚀 Best Practices
+Required env vars (loaded from `.env` by both `playwright.config.ts` via `dotenv` and `e2e/helpers/global-setup.ts` via `process.env`): `TEST_USERNAME`, `TEST_PASSWORD`.
 
-### 1. Element Selection Strategy
+## Best Practices
 
-#### ✅ Recommended: Data-TestID
+### Element selection priority
+
+1. **`getByTestId()`** — preferred. Survives copy, layout, and styling changes.
+2. **Semantic queries** (`getByRole`, `getByLabel`) — acceptable for accessibility-sensitive flows (buttons with clear ARIA, form labels).
+3. **`getByText`** — acceptable only for static UI labels that you also assert on; avoid for generic "Submit"-style text.
+4. **CSS class selectors** — avoid. Tailwind classes churn and will break tests that don't need to.
+
+### Waiting strategies
+
+- `await expect(locator).toBeVisible()` — built-in auto-wait, preferred over `waitForSelector`.
+- `await page.waitForLoadState('domcontentloaded')` — use on `page.goto()` for fast handoff to the app shell.
+- `await page.waitForLoadState('networkidle')` — avoid unless you have dynamic content without testable markers; it can hang on SSE or long-polling endpoints.
+
+### Timeouts
+
+Declare long-running data timeouts as constants per spec file rather than sprinkling literals:
 
 ```typescript
-await expect(page.locator('[data-testid="project-card"]')).toBeVisible();
+const DATA_LOAD_TIMEOUT = 30_000;
+test.setTimeout(60_000);
 ```
 
-#### ✅ Acceptable: Semantic Selectors
+This matches what `badges-dashboard.spec.ts` does and makes tuning easier in CI.
+
+### Describe-block grouping
+
+Group by screen and then by concern. The profile-identities-verify-robust file models this well:
 
 ```typescript
-await expect(page.getByRole('button', { name: 'Save' })).toBeVisible();
-```
-
-#### ❌ Avoid: CSS Classes (Tailwind)
-
-```typescript
-// Brittle - classes can change
-await expect(page.locator('.bg-blue-500.text-white')).toBeVisible();
-```
-
-#### ❌ Avoid: Generic Text Selectors
-
-```typescript
-// Unreliable - text can change
-await expect(page.getByText('Submit')).toBeVisible();
-```
-
-### 2. Waiting Strategies
-
-#### Built-in Waiting (Preferred)
-
-```typescript
-await expect(page.locator('[data-testid="loading-spinner"]')).toBeVisible();
-await expect(page.locator('[data-testid="content"]')).toBeVisible();
-```
-
-#### Network Idle for Dynamic Content
-
-```typescript
-await page.waitForLoadState('networkidle');
-const projectCards = page.locator('[data-testid="project-card"]');
-```
-
-### 3. Test Organization
-
-#### Descriptive Test Groups
-
-```typescript
-test.describe('Homepage - Robust Tests', () => {
-  test.describe('Page Structure and Components', () => {
-    test('should have correct page structure with main sections', async ({ page }) => {
-      // Component architecture validation
-    });
+test.describe('Identities Verify Flow - Robust Tests', () => {
+  test.describe('Data-testid presence', () => {
+    /* ... */
   });
-
-  test.describe('Component Integration', () => {
-    test('should properly integrate Angular signals and computed values', async ({ page }) => {
-      // Framework-specific validation
-    });
+  test.describe('Section structure', () => {
+    /* ... */
+  });
+  test.describe('Row actions', () => {
+    /* ... */
   });
 });
 ```
 
-### 4. Error Handling and Debugging
+## Debugging
 
-#### Conditional Assertions
+- `yarn e2e:headed` to see the browser drive the app.
+- `yarn e2e:ui` for Playwright's UI runner with per-step time travel.
+- Traces (`trace: 'on-first-retry'` in `playwright.config.ts`) are written under `test-results/` when a retry happens — open with `npx playwright show-trace <path>`.
+- Failure screenshots are captured automatically (`screenshot: 'only-on-failure'`).
 
-```typescript
-const hasProjects = await page
-  .locator('[data-testid="projects-grid"]')
-  .isVisible()
-  .catch(() => false);
-const hasSkeleton = await page
-  .locator('[data-testid="projects-skeleton"]')
-  .isVisible()
-  .catch(() => false);
+## Adding a New Spec
 
-expect(hasProjects || hasSkeleton).toBe(true);
-```
+For a new feature, write both specs together:
 
-#### Clear Error Messages
+1. Add `data-testid` attributes while building the component (section, container, element, action levels).
+2. Create `feature-name.spec.ts` — drive the page through its golden-path workflow.
+3. Create `feature-name-robust.spec.ts` — assert the `data-testid` contract (presence, nesting, counts, dynamic suffixes).
+4. If the feature has an error path, mock the relevant API with `page.route()` and cover the error-state component.
+5. Verify locally with `yarn e2e` before opening a PR.
 
-```typescript
-const cardCount = await projectCards.count();
-expect(cardCount).toBeGreaterThan(0, 'Should have at least one project card');
-```
+## Related
 
-## 📊 Maintenance and Monitoring
-
-### Test Health Metrics
-
-#### Target Metrics
-
-1. **Reliability**: Zero flaky tests
-2. **Performance**: Target test suite run time ~60 seconds (Chromium)
-3. **Coverage**: All major user journeys
-4. **Maintainability**: Data-testid architecture to prevent UI change breakage
-
-### Debugging Guidelines
-
-1. **Screenshot Analysis**: Use Playwright's built-in screenshot capture
-2. **Trace Files**: Leverage trace viewer for step-by-step debugging
-3. **Network Analysis**: Monitor API calls and responses
-4. **Console Logs**: Check for JavaScript errors
-5. **Element Inspection**: Validate data-testid attributes in dev tools
-
-## 🎯 Testing Guidelines for New Features
-
-When adding new features, follow this testing approach:
-
-### 1. Add Data-TestID Attributes
-
-```html
-<!-- New feature component -->
-<div data-testid="feature-container">
-  <lfx-new-component data-testid="feature-component">
-    <div data-testid="feature-content">
-      <!-- Feature content -->
-    </div>
-  </lfx-new-component>
-</div>
-```
-
-### 2. Create Both Test Types
-
-#### Content-Based Test (User Experience)
-
-```typescript
-test('should allow user to complete new feature workflow', async ({ page }) => {
-  // Test user-visible behavior and interactions
-});
-```
-
-#### Structural Test (Technical Implementation)
-
-```typescript
-test('should use correct component architecture for new feature', async ({ page }) => {
-  // Test component structure and framework integration
-});
-```
-
-### 3. Include Responsive Testing
-
-```typescript
-test('should display new feature correctly across viewports', async ({ page }) => {
-  // Test mobile, tablet, and desktop layouts
-});
-```
-
-This comprehensive E2E testing architecture ensures reliable, maintainable tests that provide confidence in both user experience and technical implementation while surviving UI changes and framework updates.
+- [Testing Best Practices](testing-best-practices.md) — deeper treatment of dual architecture and `data-testid` conventions.
+- [Playwright docs](https://playwright.dev/) — for Playwright-specific APIs not covered here.
