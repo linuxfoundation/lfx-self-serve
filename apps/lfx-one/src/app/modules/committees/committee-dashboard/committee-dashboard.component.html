@@ -122,16 +122,11 @@
               subtitle="This project has no groups set up yet."
               data-testid="committees-project-empty-state">
             </lfx-empty-state>
-          } @else if (filteredCommittees().length === 0) {
-            <lfx-empty-state
-              icon="fa-light fa-users-rectangle"
-              [title]="'No ' + committeeLabel.plural.toLowerCase() + ' found'"
-              subtitle="Try adjusting your search or filter criteria."
-              data-testid="committees-filtered-empty-state">
-            </lfx-empty-state>
-          } @else {
+          } @else if (project()?.uid) {
             <lfx-committee-table
+              data-testid="committees-project-table"
               [committees]="filteredCommittees()"
+              [hasItems]="committees().length > 0"
               [canManageCommittee]="canWrite()"
               [myCommitteeUids]="myCommitteeUids()"
               [searchForm]="searchForm"
@@ -140,6 +135,13 @@
               (refresh)="refreshCommittees()"
               (rowClick)="onCommitteeClick($event)">
             </lfx-committee-table>
+          } @else {
+            <lfx-empty-state
+              icon="fa-light fa-folder-open"
+              title="Select a project"
+              [subtitle]="'Choose a project to view its ' + committeeLabel.plural.toLowerCase() + '.'"
+              data-testid="committees-no-project-empty-state">
+            </lfx-empty-state>
           }
         </div>
       }
