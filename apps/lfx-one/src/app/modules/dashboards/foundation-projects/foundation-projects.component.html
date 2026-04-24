@@ -1,0 +1,112 @@
+<!-- Copyright The Linux Foundation and each contributor to LFX. -->
+<!-- SPDX-License-Identifier: MIT -->
+
+<main class="flex flex-col gap-6 p-6" data-testid="foundation-projects-page">
+  <header class="flex flex-col gap-1">
+    <h1 class="text-xl font-semibold text-gray-900">Projects</h1>
+    @if (foundationSlug()) {
+      <p class="text-sm text-gray-500">All projects under {{ foundationName() }}. Monitor health, activity, and contributor metrics.</p>
+    } @else {
+      <p class="text-sm text-gray-500">Select a foundation to monitor project health, activity, and contributor metrics.</p>
+    }
+  </header>
+
+  @if (!foundationSlug()) {
+    <div class="flex flex-col items-center gap-2 rounded-lg border border-slate-200 py-12 text-center" data-testid="foundation-projects-no-foundation">
+      <i class="fa-light fa-building-columns text-3xl text-gray-400"></i>
+      <p class="text-sm font-medium text-gray-700">Select a foundation to view its projects</p>
+      <p class="max-w-md text-sm text-gray-500">Use the foundation selector at the top of the sidebar to pick a foundation.</p>
+    </div>
+  } @else {
+    <lfx-stat-card-grid [cards]="summaryCards()" [loading]="loading()" />
+
+    <div class="flex flex-col gap-3" data-testid="foundation-projects-filters">
+      <lfx-input-text
+        control="query"
+        [form]="searchForm"
+        placeholder="Search projects..."
+        icon="fa-light fa-magnifying-glass"
+        size="small"
+        styleClass="w-full"
+        data-testid="foundation-projects-search" />
+    </div>
+
+    <lfx-table
+      [value]="filteredProjects()"
+      [loading]="loading()"
+      [paginator]="filteredProjects().length > 10"
+      [rows]="10"
+      [rowsPerPageOptions]="[10, 25, 50]"
+      [showCurrentPageReport]="true"
+      currentPageReportTemplate="Showing {first} to {last} of {totalRecords}"
+      dataKey="projectSlug"
+      data-testid="foundation-projects-table">
+      <ng-template #header>
+        <tr>
+          <th scope="col">Project Name</th>
+          <th scope="col" class="text-right">Maintainers</th>
+          <th scope="col" class="text-right">Stars</th>
+          <th scope="col" class="text-right">Contributors</th>
+          <th scope="col" class="text-right">Commits (90d)</th>
+          <th scope="col"></th>
+        </tr>
+      </ng-template>
+
+      <ng-template #body let-project>
+        <tr [attr.data-testid]="'foundation-projects-row-' + project.projectSlug">
+          <td>
+            <button
+              type="button"
+              class="flex flex-col items-start border-none bg-transparent p-0 text-left disabled:cursor-not-allowed disabled:opacity-60"
+              [disabled]="!project.projectId"
+              [attr.title]="!project.projectId ? 'Project lens unavailable for this row' : null"
+              (click)="openProjectLens(project)"
+              [attr.data-testid]="'foundation-projects-name-' + project.projectSlug">
+              <span class="lfx-table-name-link text-sm">{{ project.projectName }}</span>
+              @if (project.lastUpdated) {
+                <span class="text-xs text-slate-500">Updated {{ project.lastUpdated }}</span>
+              }
+            </button>
+          </td>
+          <td class="text-right text-sm text-gray-700">{{ project.maintainers | number }}</td>
+          <td class="text-right text-sm text-gray-700">{{ project.stars | number }}</td>
+          <td class="text-right text-sm text-gray-700">{{ project.activeContributors | number }}</td>
+          <td class="text-right text-sm text-gray-700">{{ project.commitsLast90Days | number }}</td>
+          <td class="whitespace-nowrap text-right">
+            <a
+              [href]="getInsightsUrl(project.projectSlug)"
+              target="_blank"
+              rel="noopener"
+              class="text-sm text-blue-600 hover:underline"
+              [attr.data-testid]="'foundation-projects-view-link-' + project.projectSlug">
+              View on Insights <i class="fa-light fa-arrow-up-right-from-square ml-1"></i>
+            </a>
+          </td>
+        </tr>
+      </ng-template>
+
+      <ng-template #emptymessage>
+        <tr>
+          <td colspan="6" class="p-10 text-center">
+            @if (searchQuery().trim()) {
+              <div class="flex flex-col items-center gap-2" data-testid="foundation-projects-search-empty">
+                <i class="fa-light fa-magnifying-glass text-3xl text-gray-400"></i>
+                <p class="text-sm font-medium text-gray-700">No projects match your search</p>
+                <p class="max-w-md text-sm text-gray-500">Try a different term or clear the search to see all projects.</p>
+              </div>
+            } @else {
+              <div class="flex flex-col items-center gap-2" data-testid="foundation-projects-empty">
+                <i class="fa-light fa-eyes text-3xl text-gray-400"></i>
+                <p class="text-sm font-medium text-gray-700">No project data available</p>
+                <p class="max-w-md text-sm text-gray-500">
+                  Project-level data is only available for sub-foundations. Select a specific sub-foundation from the foundation selector to see project
+                  details.
+                </p>
+              </div>
+            }
+          </td>
+        </tr>
+      </ng-template>
+    </lfx-table>
+  }
+</main>

@@ -109,6 +109,9 @@ import { MicroserviceProxyService } from './microservice-proxy.service';
 import { NatsService } from './nats.service';
 import { SnowflakeService } from './snowflake.service';
 
+/** Valid LifecycleStage values used to guard the Snowflake LIFECYCLE_STAGE string. Hoisted to module scope so the Set isn't re-created on every row mapping. */
+const VALID_LIFECYCLE_STAGES: ReadonlySet<LifecycleStage> = new Set(Object.values(LifecycleStage));
+
 /**
  * Service for handling project business logic
  */
@@ -1516,6 +1519,7 @@ export class ProjectService {
 
     const query = `
       SELECT
+        PROJECT_ID,
         PROJECT_NAME,
         PROJECT_SLUG,
         LIFECYCLE_STAGE,
@@ -1532,19 +1536,26 @@ export class ProjectService {
     try {
       const result = await this.snowflakeService.execute<FoundationProjectsDetailRow>(query, [foundationSlug]);
 
-      const projects = result.rows
-        .filter((row): row is typeof row & { LIFECYCLE_STAGE: string } => row.LIFECYCLE_STAGE != null)
-        .map((row) => ({
-          id: row.PROJECT_SLUG,
-          projectName: row.PROJECT_NAME,
-          projectSlug: row.PROJECT_SLUG,
-          lifecycleStage: row.LIFECYCLE_STAGE as LifecycleStage,
-          activeContributors: row.CONTRIBUTORS_90D_COUNT ?? 0,
-          commitsLast90Days: row.COMMITS_90D_COUNT ?? 0,
-          maintainers: row.MAINTAINERS_YTD_COUNT ?? 0,
-          stars: row.STARS_YTD_COUNT ?? 0,
-          lastUpdated: row.LAST_UPDATED_TS ? new Date(row.LAST_UPDATED_TS).toISOString().split('T')[0] : null,
-        }));
+      const projects = result.rows.map((row) => ({
+        id: row.PROJECT_SLUG,
+        // Snowflake's raw PROJECT_ID column — exact upstream semantics vary by
+        // foundation (may be Salesforce ID or project-service UID depending on
+        // the ingest source). Consumers should resolve to a canonical
+        // project-service UID via slug→uid lookup rather than assume this is
+        // that UID. See ProjectTableRow.projectId JSDoc.
+        projectId: row.PROJECT_ID,
+        projectName: row.PROJECT_NAME,
+        projectSlug: row.PROJECT_SLUG,
+        // Guard against unknown stage strings slipping through the Snowflake
+        // response; the interface promises LifecycleStage | null, not arbitrary strings.
+        lifecycleStage:
+          row.LIFECYCLE_STAGE && VALID_LIFECYCLE_STAGES.has(row.LIFECYCLE_STAGE as LifecycleStage) ? (row.LIFECYCLE_STAGE as LifecycleStage) : null,
+        activeContributors: row.CONTRIBUTORS_90D_COUNT ?? 0,
+        commitsLast90Days: row.COMMITS_90D_COUNT ?? 0,
+        maintainers: row.MAINTAINERS_YTD_COUNT ?? 0,
+        stars: row.STARS_YTD_COUNT ?? 0,
+        lastUpdated: row.LAST_UPDATED_TS ? new Date(row.LAST_UPDATED_TS).toISOString().split('T')[0] : null,
+      }));
 
       logger.debug(undefined, 'get_foundation_projects_detail', 'Fetched project detail rows', { count: projects.length });
 

@@ -32,6 +32,12 @@ export const routes: Routes = [
         canActivate: [executiveDirectorGuard],
         loadComponent: () => import('./modules/dashboards/health-metrics/health-metrics.component').then((m) => m.HealthMetricsComponent),
       },
+      // Foundation Lens — Projects page
+      {
+        path: 'foundation/projects',
+        data: { lens: 'foundation' },
+        loadComponent: () => import('./modules/dashboards/foundation-projects/foundation-projects.component').then((m) => m.FoundationProjectsComponent),
+      },
       // Project Lens dashboard (placeholder — reuses DashboardComponent for now)
       {
         path: 'project/overview',

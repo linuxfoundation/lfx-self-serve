@@ -250,13 +250,24 @@ export enum LifecycleStage {
 
 /**
  * Project row for the total projects drill-down table
- * @description Represents a single project with key health and activity metrics
+ * @description Represents a single project with key health and activity metrics.
+ * `lifecycleStage` is nullable because newer foundations may have projects indexed
+ * before their lifecycle classification is assigned.
  */
 export interface ProjectTableRow {
   id: string;
+  /**
+   * Raw `PROJECT_ID` column from Snowflake's platinum table. The exact upstream
+   * semantics vary — for some foundations this is a Salesforce ID, for others
+   * the project-service UUID. Consumers that need the canonical project UID for
+   * lens switching or cross-service lookups should resolve it by calling
+   * `/api/projects?parent=project:<foundation_uid>` and keying the results by
+   * `projectSlug`.
+   */
+  projectId: string;
   projectName: string;
   projectSlug: string;
-  lifecycleStage: LifecycleStage;
+  lifecycleStage: LifecycleStage | null;
   activeContributors: number;
   commitsLast90Days: number;
   maintainers: number;

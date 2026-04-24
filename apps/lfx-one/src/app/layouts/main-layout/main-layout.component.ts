@@ -2,20 +2,22 @@
 // SPDX-License-Identifier: MIT
 
 import { NgClass } from '@angular/common';
-import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, inject, model } from '@angular/core';
-import { takeUntilDestroyed } from '@angular/core/rxjs-interop';
+import { Component, computed, CUSTOM_ELEMENTS_SCHEMA, inject, model, Signal } from '@angular/core';
+import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, NavigationEnd, Router, RouterModule } from '@angular/router';
 import { LensSwitcherComponent } from '@components/lens-switcher/lens-switcher.component';
 import { SidebarComponent } from '@components/sidebar/sidebar.component';
 import { ALL_LENSES, COMMITTEE_LABEL, DOCUMENT_LABEL, MAILING_LIST_LABEL, SURVEY_LABEL, VOTE_LABEL } from '@lfx-one/shared/constants';
 import { Lens, SidebarMenuItem } from '@lfx-one/shared/interfaces';
+import { AnalyticsService } from '@services/analytics.service';
 import { AppService } from '@services/app.service';
 import { ImpersonationService } from '@services/impersonation.service';
 import { LensService } from '@services/lens.service';
 import { PersonaService } from '@services/persona.service';
+import { ProjectContextService } from '@services/project-context.service';
 import { UserService } from '@services/user.service';
 import { DrawerModule } from 'primeng/drawer';
-import { filter, take } from 'rxjs';
+import { filter, map, of, startWith, switchMap, take } from 'rxjs';
 
 import { ButtonComponent } from '@components/button/button.component';
 
@@ -33,6 +35,8 @@ export class MainLayoutComponent {
   private readonly personaService = inject(PersonaService);
   private readonly lensService = inject(LensService);
   private readonly impersonationService = inject(ImpersonationService);
+  private readonly projectContextService = inject(ProjectContextService);
+  private readonly analyticsService = inject(AnalyticsService);
   protected readonly userService = inject(UserService);
 
   // Expose mobile sidebar state from service (writable for two-way binding with p-drawer)
@@ -153,6 +157,26 @@ export class MainLayoutComponent {
     },
   ];
 
+  // Whether the currently selected foundation has project-level data in Snowflake.
+  // Drives the conditional "Projects" sidebar entry — hidden when the foundation has no rows.
+  // `startWith(false)` inside the inner pipe clears the previous value while the next
+  // foundation's request is in flight, so the nav doesn't momentarily show "Projects"
+  // for a foundation that hasn't been verified yet.
+  private readonly foundationHasProjects: Signal<boolean> = toSignal(
+    toObservable(computed(() => this.projectContextService.selectedFoundation()?.slug ?? '')).pipe(
+      switchMap((slug) => {
+        if (!slug) {
+          return of(false);
+        }
+        return this.analyticsService.getFoundationProjectsDetail(slug).pipe(
+          map((response) => response.projects.length > 0),
+          startWith(false)
+        );
+      })
+    ),
+    { initialValue: false }
+  );
+
   // --- Foundation Lens Items ---
   private readonly foundationLensItems = computed((): SidebarMenuItem[] => {
     const items: SidebarMenuItem[] = [
@@ -161,6 +185,18 @@ export class MainLayoutComponent {
         icon: 'fa-light fa-grid-2',
         routerLink: '/foundation/overview',
       },
+    ];
+
+    if (this.foundationHasProjects()) {
+      items.push({
+        label: 'Projects',
+        icon: 'fa-light fa-diagram-project',
+        routerLink: '/foundation/projects',
+        testId: 'sidebar-foundation-projects',
+      });
+    }
+
+    items.push(
       {
         label: 'Meetings',
         icon: 'fa-light fa-calendar',
@@ -207,8 +243,8 @@ export class MainLayoutComponent {
             routerLink: '/settings',
           },
         ],
-      },
-    ];
+      }
+    );
 
     if (this.personaService.currentPersona() === 'executive-director') {
       items.push({

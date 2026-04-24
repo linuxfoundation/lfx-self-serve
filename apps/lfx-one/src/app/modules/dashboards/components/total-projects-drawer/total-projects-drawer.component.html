@@ -131,15 +131,19 @@
                     <tr class="border-b border-slate-100 hover:bg-slate-50" [attr.data-testid]="'total-projects-drawer-table-row-' + project.id">
                       <td class="py-3 px-4 font-medium text-slate-900 whitespace-nowrap">{{ project.projectName }}</td>
                       <td class="py-3 px-4">
-                        <span
-                          class="inline-flex px-2 py-1 rounded-full text-xs"
-                          [ngClass]="{
-                            'bg-green-100 text-green-800': project.lifecycleStage === LifecycleStage.Graduated,
-                            'bg-blue-100 text-blue-800': project.lifecycleStage === LifecycleStage.Incubating,
-                            'bg-purple-100 text-purple-800': project.lifecycleStage === LifecycleStage.Sandbox,
-                          }">
-                          {{ project.lifecycleStage }}
-                        </span>
+                        @if (project.lifecycleStage) {
+                          <span
+                            class="inline-flex px-2 py-1 rounded-full text-xs"
+                            [ngClass]="{
+                              'bg-green-100 text-green-800': project.lifecycleStage === LifecycleStage.Graduated,
+                              'bg-blue-100 text-blue-800': project.lifecycleStage === LifecycleStage.Incubating,
+                              'bg-purple-100 text-purple-800': project.lifecycleStage === LifecycleStage.Sandbox,
+                            }">
+                            {{ project.lifecycleStage }}
+                          </span>
+                        } @else {
+                          <span class="text-sm text-gray-400">&mdash;</span>
+                        }
                       </td>
                       <td class="text-right py-3 px-4 text-slate-700">{{ project.activeContributors | number }}</td>
                       <td class="text-right py-3 px-4 text-slate-700">{{ project.commitsLast90Days | number }}</td>

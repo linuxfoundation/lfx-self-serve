@@ -18,7 +18,7 @@ import {
   lfxColors,
   TOTAL_PROJECTS_DRAWER_ITEMS_PER_PAGE,
 } from '@lfx-one/shared/constants';
-import { buildLensAwareInsightsUrl, hexToRgba } from '@lfx-one/shared/utils';
+import { buildLensAwareInsightsUrl, buildVisiblePages, hexToRgba } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
 import { DrawerModule } from 'primeng/drawer';
@@ -239,7 +239,7 @@ export class TotalProjectsDrawerComponent {
       const query = this.primarySearch().toLowerCase().trim();
       const projects = this.projectsDetailData().projects;
       if (!query) return projects;
-      return projects.filter((p) => p.projectName.toLowerCase().includes(query) || p.lifecycleStage.toLowerCase().includes(query));
+      return projects.filter((p) => p.projectName.toLowerCase().includes(query) || (p.lifecycleStage ?? '').toLowerCase().includes(query));
     });
   }
 
@@ -261,24 +261,7 @@ export class TotalProjectsDrawerComponent {
   }
 
   private initPrimaryVisiblePages(): Signal<number[]> {
-    return computed(() => {
-      const total = this.primaryTotalPages();
-      const current = this.primaryPage();
-      const count = Math.min(5, total);
-      let start: number;
-
-      if (total <= 5) {
-        start = 1;
-      } else if (current <= 3) {
-        start = 1;
-      } else if (current >= total - 2) {
-        start = total - 4;
-      } else {
-        start = current - 2;
-      }
-
-      return Array.from({ length: count }, (_, i) => start + i);
-    });
+    return computed(() => buildVisiblePages(this.primaryPage(), this.primaryTotalPages()));
   }
 
   private initPrimaryChartData(): Signal<ChartData<ChartType>> {
