@@ -27,13 +27,7 @@
       <div class="flex items-center justify-center py-16">
         <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
       </div>
-    } @else if (allEvents().length === 0) {
-      <div class="flex flex-col items-center justify-center gap-2 py-16 text-center">
-        <i class="fa-light fa-calendar-xmark text-3xl text-gray-300"></i>
-        <p class="text-sm text-gray-500">No registered events found</p>
-        <p class="text-xs text-gray-400">Register for an event to continue</p>
-      </div>
-    } @else {
+    } @else if (allEvents().length > 0) {
       <div class="grid grid-cols-3 gap-3">
         @for (event of allEvents(); track event.id) {
           <div
@@ -84,6 +78,17 @@
             (onClick)="onLoadMore()" />
         </div>
       }
+    } @else if (registeredEventsLoading() && !eventsLoadError()) {
+      <!-- Wait for the registration probe before rendering the empty state to avoid a premature message. -->
+      <div class="flex items-center justify-center py-16">
+        <i class="fa-light fa-spinner-third fa-spin text-2xl text-gray-400"></i>
+      </div>
+    } @else {
+      <div class="flex flex-col items-center justify-center gap-2 py-16 text-center" data-testid="event-selection-empty-state">
+        <i [class]="emptyState().icon" data-testid="event-selection-empty-icon"></i>
+        <p class="text-sm text-gray-500" data-testid="event-selection-empty-title">{{ emptyState().title }}</p>
+        <p class="text-xs text-gray-400" data-testid="event-selection-empty-description">{{ emptyState().description }}</p>
+      </div>
     }
   </div>
 </div>

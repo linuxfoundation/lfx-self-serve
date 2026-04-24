@@ -10,7 +10,7 @@ import { InputTextComponent } from '@components/input-text/input-text.component'
 import { SelectComponent } from '@components/select/select.component';
 import { EMPTY_MY_EVENTS_RESPONSE } from '@lfx-one/shared/constants';
 import { MyEvent, RequestType, TimeFilterValue } from '@lfx-one/shared/interfaces';
-import { catchError, combineLatest, debounceTime, EMPTY, finalize, of, scan, skip, switchMap, tap } from 'rxjs';
+import { catchError, combineLatest, debounceTime, EMPTY, filter, finalize, map, of, scan, skip, switchMap, take, tap } from 'rxjs';
 import { EVENT_SELECTION_PAGE_SIZE } from '@lfx-one/shared/constants/events.constants';
 @Component({
   selector: 'lfx-event-selection',
@@ -42,6 +42,8 @@ export class EventSelectionComponent {
   // Events & pagination
   protected readonly loading = signal(true);
   protected readonly loadingMore = signal(false);
+  protected readonly registeredEventsLoading = signal(true);
+  protected readonly eventsLoadError = signal(false);
   private currentOffset = signal(0);
 
   // Location filter options loaded once
@@ -76,12 +78,67 @@ export class EventSelectionComponent {
   protected readonly allEvents = computed(() => this.initialEventsResponse().data);
   protected readonly hasMore = computed(() => this.allEvents().length < this.initialEventsResponse().total);
 
+  // null = probe skipped (results were present) or probe failed; both treated as unknown, not zero.
+  private readonly registeredEventsTotal = this.initializeRegisteredEventsTotal();
+
+  // Only true when the probe resolved successfully with a confirmed zero total.
+  private readonly hasNoRegisteredUpcomingEvents = computed(() => !this.registeredEventsLoading() && this.registeredEventsTotal() === 0);
+
+  // True when the user has applied search, location, or time filters that may be hiding results.
+  private readonly hasActiveFilters = computed(() => {
+    const f = this.activeFilters();
+    return !!(f.searchQuery || f.country || f.startDateFrom);
+  });
+
+  protected readonly emptyState = computed(() => {
+    const isVisa = this.requestType() === 'visa';
+
+    // 1. Initial load failed — show a neutral error rather than a misleading "not available" message.
+    if (this.eventsLoadError()) {
+      return {
+        icon: 'fa-light fa-triangle-exclamation text-3xl text-amber-400',
+        title: 'Unable to load events',
+        description: 'Something went wrong while loading your events. Please try again.',
+      };
+    }
+
+    // 2. No registered upcoming events at all — must register first.
+    if (this.hasNoRegisteredUpcomingEvents()) {
+      return {
+        icon: 'fa-light fa-calendar-xmark text-3xl text-gray-300',
+        title: 'No registered events',
+        description: isVisa
+          ? 'You must be registered for an upcoming event to apply for a visa letter.'
+          : 'You must be registered for an upcoming event to apply for travel funding.',
+      };
+    }
+
+    // 3. Active filters are hiding results — suggest clearing them.
+    if (this.hasActiveFilters()) {
+      return {
+        icon: 'fa-light fa-filter-slash text-3xl text-gray-300',
+        title: 'No events match your filters',
+        description: 'Try adjusting or clearing your search and filters.',
+      };
+    }
+
+    // 4. User has registered events but none support this request type.
+    return {
+      icon: 'fa-light fa-calendar-xmark text-3xl text-gray-300',
+      title: isVisa ? 'Visa letters not available' : 'Travel funding not available',
+      description: isVisa
+        ? 'None of your registered events currently offer visa letter requests. Check back later or contact the event organizer for more information.'
+        : 'None of your registered events currently offer travel funding. Check back later or contact the event organizer for more information.',
+    };
+  });
+
   public constructor() {
     // Reset additional events when filters change (skip initial emission)
     toObservable(this.activeFilters)
       .pipe(skip(1), takeUntilDestroyed())
       .subscribe(() => {
         this.currentOffset.set(0);
+        this.eventsLoadError.set(false);
       });
   }
 
@@ -125,7 +182,7 @@ export class EventSelectionComponent {
           this.eventsService.getMyEvents({ isPast: false, pageSize: EVENT_SELECTION_PAGE_SIZE, offset, registeredOnly: true, ...filters }).pipe(
             catchError(() => {
               if (offset === 0) {
-                // Initial load failed - show empty state
+                this.eventsLoadError.set(true);
                 return of(EMPTY_MY_EVENTS_RESPONSE);
               }
               // Load more failed - revert offset so retry fetches the same page
@@ -154,5 +211,27 @@ export class EventSelectionComponent {
     return toSignal(this.eventsService.getUpcomingCountries().pipe(catchError(() => of({ data: [] }))), {
       initialValue: { data: [] as string[] },
     });
+  }
+
+  private initializeRegisteredEventsTotal() {
+    // Probe fires only when the main query settles with zero results; skipped otherwise.
+    return toSignal(
+      toObservable(this.loading).pipe(
+        filter((loading) => !loading),
+        take(1),
+        switchMap(() => {
+          if (this.allEvents().length > 0 || this.eventsLoadError()) {
+            this.registeredEventsLoading.set(false);
+            return of(null as number | null);
+          }
+          return this.eventsService.getMyEvents({ isPast: false, registeredOnly: true, pageSize: 1 }).pipe(
+            map((res) => res.total ?? 0),
+            catchError(() => of(null as number | null)),
+            finalize(() => this.registeredEventsLoading.set(false))
+          );
+        })
+      ),
+      { initialValue: null as number | null }
+    );
   }
 }
