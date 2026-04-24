@@ -54,13 +54,15 @@
             },
             "allowedCommonJsDependencies": [
               "@linuxfoundation/lfx-ui-core",
+              "@openfeature/web-sdk",
               "combined-stream",
               "mime-types",
               "asynckit",
               "hasown",
               "es-set-tostringtag",
               "safe-buffer",
-              "lodash.isempty"
+              "lodash.isempty",
+              "quill-delta"
             ],
             "externalDependencies": ["snowflake-sdk", "@opentelemetry/api", "@opentelemetry/semantic-conventions", "pdfkit"]
           },
