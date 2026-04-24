@@ -10,7 +10,6 @@ import { TagComponent } from '@components/tag/tag.component';
 import { formatCurrency, formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { MarketingActionIconPipe } from '@pipes/marketing-action-icon.pipe';
 import { MessageService } from 'primeng/api';
 import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
@@ -32,7 +31,7 @@ import type {
 @Component({
   selector: 'lfx-email-ctr-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, SkeletonModule, TagComponent, TitleCasePipe, MarketingActionIconPipe],
+  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, SkeletonModule, TagComponent, TitleCasePipe],
   templateUrl: './email-ctr-drawer.component.html',
 })
 export class EmailCtrDrawerComponent {

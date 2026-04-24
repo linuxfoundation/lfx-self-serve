@@ -7,7 +7,6 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
-import { MarketingActionIconPipe } from '@pipes/marketing-action-icon.pipe';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { MarketingKeyInsight, MarketingRecommendedAction, MemberRetentionResponse } from '@lfx-one/shared/interfaces';
@@ -15,7 +14,7 @@ import type { MarketingKeyInsight, MarketingRecommendedAction, MemberRetentionRe
 @Component({
   selector: 'lfx-member-retention-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, TagComponent, MarketingActionIconPipe],
+  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, TagComponent],
   templateUrl: './member-retention-drawer.component.html',
   styleUrl: './member-retention-drawer.component.scss',
 })

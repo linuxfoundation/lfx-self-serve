@@ -13,7 +13,6 @@ import { createHorizontalBarChartOptions, createLineChartOptions, DASHBOARD_TOOL
 import { formatNumber, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { MarketingActionIconPipe } from '@pipes/marketing-action-icon.pipe';
 import { MessageService } from 'primeng/api';
 import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 import { DrawerModule } from 'primeng/drawer';
@@ -25,7 +24,7 @@ import type { SocialMediaResponse, MarketingRecommendedAction, MarketingKeyInsig
 @Component({
   selector: 'lfx-social-media-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, ChartComponent, SkeletonModule, TableComponent, TagComponent, MarketingActionIconPipe],
+  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, ChartComponent, SkeletonModule, TableComponent, TagComponent],
   templateUrl: './social-media-drawer.component.html',
   styleUrl: './social-media-drawer.component.scss',
 })

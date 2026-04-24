@@ -17,7 +17,6 @@ import {
   splitByPriority,
   type MarketingSplitByPriority,
 } from '@lfx-one/shared/utils';
-import { MarketingActionIconPipe } from '@pipes/marketing-action-icon.pipe';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -26,7 +25,7 @@ import type { FlywheelConversionResponse, MarketingKeyInsight, MarketingRecommen
 @Component({
   selector: 'lfx-flywheel-conversion-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, ChartComponent, TagComponent, MarketingActionIconPipe],
+  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, ChartComponent, TagComponent],
   templateUrl: './flywheel-conversion-drawer.component.html',
   styleUrl: './flywheel-conversion-drawer.component.scss',
 })

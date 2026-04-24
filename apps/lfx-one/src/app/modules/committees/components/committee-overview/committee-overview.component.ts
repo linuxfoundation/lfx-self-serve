@@ -1,13 +1,11 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
 import { Component, computed, inject, input, output, signal, Signal } from '@angular/core';
 import { toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
-import { MessageComponent } from '@components/message/message.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { CommitteeMemberRole, PollStatus, SurveyStatus } from '@lfx-one/shared/enums';
 import { Committee, CommitteeMember, Meeting, PastMeeting, PendingActionItem, Survey, Vote } from '@lfx-one/shared/interfaces';
@@ -28,7 +26,7 @@ import { EditChairsDialogComponent } from '../edit-chairs-dialog/edit-chairs-dia
 
 @Component({
   selector: 'lfx-committee-overview',
-  imports: [CardComponent, ButtonComponent, DashboardMeetingCardComponent, MessageComponent, NgClass, SkeletonModule, TagComponent, VoteResultsDrawerComponent],
+  imports: [CardComponent, ButtonComponent, DashboardMeetingCardComponent, SkeletonModule, TagComponent, VoteResultsDrawerComponent],
   providers: [DialogService],
   templateUrl: './committee-overview.component.html',
   styleUrl: './committee-overview.component.scss',

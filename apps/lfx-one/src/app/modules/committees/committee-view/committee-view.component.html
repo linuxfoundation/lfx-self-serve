@@ -42,7 +42,7 @@
             (click)="goBack()"
             data-testid="committee-view-back-link">
             <i class="fa-light fa-angle-left text-xs"></i>
-            {{ backLabel() ?? 'Groups' }}
+            {{ backLabel() }}
           </button>
           <div class="flex items-center gap-3">
             <h1 class="font-display font-light text-[20px]" data-testid="committee-view-name">{{ committee()?.name }}</h1>
@@ -224,143 +224,142 @@
                 class="relative bg-gray-50 border border-gray-200 rounded-lg text-[12.5px] text-gray-600 w-full lg:max-w-[380px] flex-shrink-0 self-start"
                 data-testid="committee-view-channels-card">
                 <div [attr.inert]="isVisitor() || null">
-                <!-- Associated Mailing Lists -->
-                @if (associatedMailingLists().length > 0) {
-                  @let firstMl = associatedMailingLists()[0];
-                  @let extraCount = extraMailingListCount();
-                  <!-- First mailing list row -->
-                  <div class="relative flex items-center gap-2.5 px-3.5 py-2.5 border-b border-gray-200" data-testid="committee-view-mailing-list-row">
-                    <div class="w-[30px] h-[30px] rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
-                      <i class="fa-light fa-envelope text-blue-600 text-xs" aria-hidden="true"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <div class="flex items-center gap-1.5 flex-wrap">
-                        <a
-                          [href]="'mailto:' + (firstMl | mailingListEmail)"
-                          class="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 transition-colors no-underline"
-                          [title]="firstMl.group_name"
-                          >{{ firstMl.group_name }}</a
-                        >
-                        @if (firstMl.public) {
-                          <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
-                        } @else {
-                          <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
-                        }
+                  <!-- Associated Mailing Lists -->
+                  @if (associatedMailingLists().length > 0) {
+                    @let firstMl = associatedMailingLists()[0];
+                    @let extraCount = extraMailingListCount();
+                    <!-- First mailing list row -->
+                    <div class="relative flex items-center gap-2.5 px-3.5 py-2.5 border-b border-gray-200" data-testid="committee-view-mailing-list-row">
+                      <div class="w-[30px] h-[30px] rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
+                        <i class="fa-light fa-envelope text-blue-600 text-xs" aria-hidden="true"></i>
                       </div>
-                      <div class="text-[11px] text-gray-400 mt-0.5 flex items-center min-w-0">
-                        <a
-                          [href]="'mailto:' + (firstMl | mailingListEmail)"
-                          class="text-gray-400 hover:text-blue-600 transition-colors no-underline truncate min-w-0"
-                          [title]="firstMl | mailingListEmail"
-                          >{{ firstMl | mailingListEmail }}</a
-                        >
-                        <span class="shrink-0 ml-1">&middot; {{ firstMl.subscriber_count }} subscribers</span>
+                      <div class="flex-1 min-w-0">
+                        <div class="flex items-center gap-1.5 flex-wrap">
+                          <a
+                            [href]="'mailto:' + (firstMl | mailingListEmail)"
+                            class="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 transition-colors no-underline"
+                            [title]="firstMl.group_name"
+                            >{{ firstMl.group_name }}</a
+                          >
+                          @if (firstMl.public) {
+                            <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
+                          } @else {
+                            <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
+                          }
+                        </div>
+                        <div class="text-[11px] text-gray-400 mt-0.5 flex items-center min-w-0">
+                          <a
+                            [href]="'mailto:' + (firstMl | mailingListEmail)"
+                            class="text-gray-400 hover:text-blue-600 transition-colors no-underline truncate min-w-0"
+                            [title]="firstMl | mailingListEmail"
+                            >{{ firstMl | mailingListEmail }}</a
+                          >
+                          <span class="shrink-0 ml-1">&middot; {{ firstMl.subscriber_count }} subscribers</span>
+                        </div>
                       </div>
+                      @if (extraCount > 0) {
+                        <lfx-button
+                          [label]="(mlExpanded() ? '−' : '+') + extraCount"
+                          [text]="true"
+                          size="small"
+                          severity="success"
+                          styleClass="!text-[11px] !font-medium !rounded-full !px-2 !py-0.5 !bg-green-50 hover:!bg-green-100 !text-green-700"
+                          (onClick)="$event.stopPropagation(); mlExpanded.set(!mlExpanded())"
+                          [attr.aria-expanded]="mlExpanded()"
+                          [ariaLabel]="mlExpanded() ? 'Collapse additional mailing lists' : 'Show ' + extraCount + ' more mailing lists'"
+                          data-testid="committee-view-ml-expand-btn"></lfx-button>
+                      }
+                      <!-- Expanded mailing list dropdown (overlay) -->
+                      @if (mlExpanded() && extraCount > 0) {
+                        <div
+                          class="absolute top-full right-0 left-0 z-20 bg-white border border-gray-200 rounded-b-lg shadow-lg"
+                          (click)="$event.stopPropagation()">
+                          @for (ml of extraMailingLists(); track ml.uid) {
+                            <div class="flex items-center gap-2.5 px-3.5 py-2.5" [class.border-b]="!$last" [class.border-gray-200]="!$last">
+                              <div class="w-[30px] h-[30px] rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
+                                <i class="fa-light fa-envelope text-blue-600 text-xs" aria-hidden="true"></i>
+                              </div>
+                              <div class="flex-1 min-w-0">
+                                <div class="flex items-center gap-1.5 flex-wrap">
+                                  <a
+                                    [href]="'mailto:' + (ml | mailingListEmail)"
+                                    class="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 transition-colors no-underline"
+                                    [title]="ml.group_name"
+                                    >{{ ml.group_name }}</a
+                                  >
+                                  @if (ml.public) {
+                                    <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
+                                  } @else {
+                                    <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
+                                  }
+                                </div>
+                                <div class="text-[11px] text-gray-400 mt-0.5 flex items-center min-w-0">
+                                  <a
+                                    [href]="'mailto:' + (ml | mailingListEmail)"
+                                    class="text-gray-400 hover:text-blue-600 transition-colors no-underline truncate min-w-0"
+                                    [title]="ml | mailingListEmail"
+                                    >{{ ml | mailingListEmail }}</a
+                                  >
+                                  <span class="shrink-0 ml-1">&middot; {{ ml.subscriber_count }} subscribers</span>
+                                </div>
+                              </div>
+                            </div>
+                          }
+                        </div>
+                      }
                     </div>
-                    @if (extraCount > 0) {
-                      <lfx-button
-                        [label]="(mlExpanded() ? '−' : '+') + extraCount"
-                        [text]="true"
-                        size="small"
-                        severity="success"
-                        styleClass="!text-[11px] !font-medium !rounded-full !px-2 !py-0.5 !bg-green-50 hover:!bg-green-100 !text-green-700"
-                        (onClick)="$event.stopPropagation(); mlExpanded.set(!mlExpanded())"
-                        [attr.aria-expanded]="mlExpanded()"
-                        [ariaLabel]="mlExpanded() ? 'Collapse additional mailing lists' : 'Show ' + extraCount + ' more mailing lists'"
-                        data-testid="committee-view-ml-expand-btn"></lfx-button>
+                  }
+
+                  <!-- Chat Channel + Website rows -->
+                  <div class="flex flex-col divide-y divide-gray-200">
+                    @if (committee()?.chat_channel; as chatChannel) {
+                      <div class="flex items-center gap-2.5 px-3.5 py-2.5" data-testid="committee-view-chat-channel-row">
+                        <div class="w-[30px] h-[30px] rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
+                          <i [class]="chatPlatformIcon()" class="text-gray-600 text-xs" aria-hidden="true"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                          <div class="text-[11px] font-medium text-gray-500">{{ chatPlatformLabel() }}</div>
+                          @if (chatChannel.startsWith('http://') || chatChannel.startsWith('https://')) {
+                            <a
+                              [href]="chatChannel"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="text-[11px] text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block"
+                              [title]="chatChannel"
+                              >{{ chatChannel }}</a
+                            >
+                          } @else {
+                            <span class="text-[11px] text-gray-600 truncate block" [title]="chatChannel">{{ chatChannel }}</span>
+                          }
+                        </div>
+                      </div>
                     }
-                    <!-- Expanded mailing list dropdown (overlay) -->
-                    @if (mlExpanded() && extraCount > 0) {
-                      <div
-                        class="absolute top-full right-0 left-0 z-20 bg-white border border-gray-200 rounded-b-lg shadow-lg"
-                        (click)="$event.stopPropagation()">
-                        @for (ml of extraMailingLists(); track ml.uid) {
-                          <div class="flex items-center gap-2.5 px-3.5 py-2.5" [class.border-b]="!$last" [class.border-gray-200]="!$last">
-                            <div class="w-[30px] h-[30px] rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
-                              <i class="fa-light fa-envelope text-blue-600 text-xs" aria-hidden="true"></i>
-                            </div>
-                            <div class="flex-1 min-w-0">
-                              <div class="flex items-center gap-1.5 flex-wrap">
-                                <a
-                                  [href]="'mailto:' + (ml | mailingListEmail)"
-                                  class="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 transition-colors no-underline"
-                                  [title]="ml.group_name"
-                                  >{{ ml.group_name }}</a
-                                >
-                                @if (ml.public) {
-                                  <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
-                                } @else {
-                                  <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
-                                }
-                              </div>
-                              <div class="text-[11px] text-gray-400 mt-0.5 flex items-center min-w-0">
-                                <a
-                                  [href]="'mailto:' + (ml | mailingListEmail)"
-                                  class="text-gray-400 hover:text-blue-600 transition-colors no-underline truncate min-w-0"
-                                  [title]="ml | mailingListEmail"
-                                  >{{ ml | mailingListEmail }}</a
-                                >
-                                <span class="shrink-0 ml-1">&middot; {{ ml.subscriber_count }} subscribers</span>
-                              </div>
-                            </div>
-                          </div>
-                        }
+                    @if (committee()?.website; as website) {
+                      <div class="flex items-center gap-2.5 px-3.5 py-2.5" data-testid="committee-view-website-row">
+                        <div class="w-[30px] h-[30px] rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
+                          <i [class]="repoPlatformIcon()" class="text-gray-600 text-xs" aria-hidden="true"></i>
+                        </div>
+                        <div class="flex-1 min-w-0">
+                          <div class="text-[11px] font-medium text-gray-500">{{ repoPlatformLabel() }}</div>
+                          @if (website | safeUrl; as safeUrl) {
+                            <a
+                              [href]="safeUrl"
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              class="text-[11px] text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block"
+                              [title]="website"
+                              >{{ website }}</a
+                            >
+                          } @else {
+                            <span class="text-[11px] text-gray-600 truncate block" [title]="website">{{ website }}</span>
+                          }
+                        </div>
                       </div>
+                    }
+                    @if (associatedMailingLists().length === 0 && !committee()?.chat_channel && !committee()?.website) {
+                      <div class="px-3.5 py-2.5 text-gray-400">No channels configured</div>
                     }
                   </div>
-                }
-
-                <!-- Chat Channel + Website rows -->
-                <div class="flex flex-col divide-y divide-gray-200">
-                  @if (committee()?.chat_channel; as chatChannel) {
-                    <div class="flex items-center gap-2.5 px-3.5 py-2.5" data-testid="committee-view-chat-channel-row">
-                      <div class="w-[30px] h-[30px] rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
-                        <i [class]="chatPlatformIcon()" class="text-gray-600 text-xs" aria-hidden="true"></i>
-                      </div>
-                      <div class="flex-1 min-w-0">
-                        <div class="text-[11px] font-medium text-gray-500">{{ chatPlatformLabel() }}</div>
-                        @if (chatChannel.startsWith('http://') || chatChannel.startsWith('https://')) {
-                          <a
-                            [href]="chatChannel"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            class="text-[11px] text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block"
-                            [title]="chatChannel"
-                            >{{ chatChannel }}</a
-                          >
-                        } @else {
-                          <span class="text-[11px] text-gray-600 truncate block" [title]="chatChannel">{{ chatChannel }}</span>
-                        }
-                      </div>
-                    </div>
-                  }
-                  @if (committee()?.website; as website) {
-                    <div class="flex items-center gap-2.5 px-3.5 py-2.5" data-testid="committee-view-website-row">
-                      <div class="w-[30px] h-[30px] rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
-                        <i [class]="repoPlatformIcon()" class="text-gray-600 text-xs" aria-hidden="true"></i>
-                      </div>
-                      <div class="flex-1 min-w-0">
-                        <div class="text-[11px] font-medium text-gray-500">{{ repoPlatformLabel() }}</div>
-                        @if (website | safeUrl; as safeUrl) {
-                          <a
-                            [href]="safeUrl"
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            class="text-[11px] text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block"
-                            [title]="website"
-                            >{{ website }}</a
-                          >
-                        } @else {
-                          <span class="text-[11px] text-gray-600 truncate block" [title]="website">{{ website }}</span>
-                        }
-                      </div>
-                    </div>
-                  }
-                  @if (associatedMailingLists().length === 0 && !committee()?.chat_channel && !committee()?.website) {
-                    <div class="px-3.5 py-2.5 text-gray-400">No channels configured</div>
-                  }
-                </div>
-
                 </div>
                 <!-- Visitor blur mask (sibling of inert subtree so it's reachable by assistive tech) -->
                 @if (isVisitor()) {

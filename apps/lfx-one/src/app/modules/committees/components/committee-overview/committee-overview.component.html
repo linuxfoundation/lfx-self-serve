@@ -4,253 +4,251 @@
 <div class="flex flex-col gap-6 pt-2">
   <!-- Two-column layout: Stats+Chairs | Meetings+Actions -->
   <div class="grid grid-cols-1 lg:grid-cols-[300px_1fr] gap-6 items-start" data-testid="committee-overview-stats">
-      <!-- LEFT: Stats list + Chairs -->
-      <lfx-card styleClass="[&_.p-card-body]:!p-0">
-        <!-- Stats rows -->
-        <div class="flex flex-col divide-y divide-gray-100">
-          <!-- Members -->
-          <div class="flex items-center gap-3 px-4 py-3">
-            <i class="fa-light fa-users text-gray-400 w-4 text-center flex-shrink-0"></i>
-            <span class="text-sm text-gray-700 flex-1">Members</span>
-            @if (membersLoading()) {
-              <p-skeleton width="24px" height="1rem" />
-            } @else {
-              <span class="text-sm font-semibold text-gray-900">{{ members().length }}</span>
+    <!-- LEFT: Stats list + Chairs -->
+    <lfx-card styleClass="[&_.p-card-body]:!p-0">
+      <!-- Stats rows -->
+      <div class="flex flex-col divide-y divide-gray-100">
+        <!-- Members -->
+        <div class="flex items-center gap-3 px-4 py-3">
+          <i class="fa-light fa-users text-gray-400 w-4 text-center flex-shrink-0"></i>
+          <span class="text-sm text-gray-700 flex-1">Members</span>
+          @if (membersLoading()) {
+            <p-skeleton width="24px" height="1rem" />
+          } @else {
+            <span class="text-sm font-semibold text-gray-900">{{ members().length }}</span>
+          }
+        </div>
+        <!-- Organizations -->
+        <div class="flex items-center gap-3 px-4 py-3">
+          <i class="fa-light fa-building text-gray-400 w-4 text-center flex-shrink-0"></i>
+          <span class="text-sm text-gray-700 flex-1">Organizations</span>
+          @if (membersLoading()) {
+            <p-skeleton width="24px" height="1rem" />
+          } @else {
+            <span class="text-sm font-semibold text-gray-900">{{ orgCount() }}</span>
+          }
+        </div>
+        <!-- Meetings YTD -->
+        <div class="flex items-center gap-3 px-4 py-3">
+          <i class="fa-light fa-calendar text-gray-400 w-4 text-center flex-shrink-0"></i>
+          <span class="text-sm text-gray-700 flex-1">Meetings</span>
+          @if (meetingsLoading()) {
+            <p-skeleton width="24px" height="1rem" />
+          } @else {
+            <span class="text-sm font-semibold text-gray-900">{{ meetingsCount() }}</span>
+          }
+        </div>
+        <!-- Active Votes -->
+        <div class="flex items-center gap-3 px-4 py-3">
+          <i class="fa-light fa-check-to-slot text-gray-400 w-4 text-center flex-shrink-0"></i>
+          <span class="text-sm text-gray-700 flex-1">Active Votes</span>
+          @if (votesLoading()) {
+            <p-skeleton width="24px" height="1rem" />
+          } @else {
+            <span class="text-sm font-semibold text-gray-900">{{ activeVotesCount() }}</span>
+          }
+        </div>
+        <!-- Open Surveys -->
+        <div class="flex items-center gap-3 px-4 py-3">
+          <i class="fa-light fa-clipboard-list text-gray-400 w-4 text-center flex-shrink-0"></i>
+          <span class="text-sm text-gray-700 flex-1">Open Surveys</span>
+          @if (surveysLoading()) {
+            <p-skeleton width="24px" height="1rem" />
+          } @else {
+            <span class="text-sm font-semibold text-gray-900">{{ openSurveysCount() }}</span>
+          }
+        </div>
+      </div>
+
+      <!-- Chairs -->
+      <div class="border-t border-gray-100 px-4 py-3" data-testid="committee-overview-chairs">
+        <div class="flex items-center justify-between mb-2">
+          <p class="text-[11px] text-gray-500 uppercase tracking-wide font-semibold">Chairs</p>
+          @if (canEdit() && !membersLoading()) {
+            <lfx-button
+              icon="fa-light fa-pen-to-square"
+              [text]="true"
+              [rounded]="true"
+              size="small"
+              severity="secondary"
+              tooltip="Edit chairs"
+              data-testid="committee-overview-edit-chairs-btn"
+              (onClick)="startEditChairs()"></lfx-button>
+          }
+        </div>
+        @if (membersLoading()) {
+          <div class="flex flex-col gap-1.5">
+            <p-skeleton width="100%" height="1.75rem" />
+            <p-skeleton width="100%" height="1.75rem" />
+          </div>
+        } @else if (chairs().length) {
+          <div class="flex flex-col gap-1.5">
+            @for (chair of chairs(); track chair.uid) {
+              <div class="flex items-center gap-2">
+                <div
+                  class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
+                  [style.background-color]="chair.role?.name === 'Chair' ? '#6366f1' : '#f59e0b'">
+                  {{ (chair.first_name[0] || '') + (chair.last_name[0] || '') }}
+                </div>
+                <div class="min-w-0">
+                  <p class="text-[13px] font-medium text-gray-900 truncate">{{ chair.first_name }} {{ chair.last_name }}</p>
+                  <p class="text-[10.5px] text-gray-500">{{ chair.role?.name ?? 'Member' }}</p>
+                </div>
+              </div>
             }
           </div>
-          <!-- Organizations -->
-          <div class="flex items-center gap-3 px-4 py-3">
-            <i class="fa-light fa-building text-gray-400 w-4 text-center flex-shrink-0"></i>
-            <span class="text-sm text-gray-700 flex-1">Organizations</span>
-            @if (membersLoading()) {
-              <p-skeleton width="24px" height="1rem" />
-            } @else {
-              <span class="text-sm font-semibold text-gray-900">{{ orgCount() }}</span>
-            }
+        } @else {
+          <div class="flex items-center gap-2 py-1">
+            <i class="fa-light fa-user-crown text-gray-300"></i>
+            <p class="text-xs text-gray-400">No chairs assigned</p>
           </div>
-          <!-- Meetings YTD -->
-          <div class="flex items-center gap-3 px-4 py-3">
-            <i class="fa-light fa-calendar text-gray-400 w-4 text-center flex-shrink-0"></i>
-            <span class="text-sm text-gray-700 flex-1">Meetings</span>
-            @if (meetingsLoading()) {
-              <p-skeleton width="24px" height="1rem" />
-            } @else {
-              <span class="text-sm font-semibold text-gray-900">{{ meetingsCount() }}</span>
-            }
+        }
+      </div>
+    </lfx-card>
+
+    <!-- RIGHT: Meetings + Pending Actions stacked -->
+    <div class="flex flex-col gap-5">
+      @if (!isVisitor()) {
+        <!-- Next Meeting -->
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <i class="fa-light fa-calendar text-gray-400"></i>
+              Next Meeting
+            </h2>
+            <lfx-button
+              label="View All"
+              [text]="true"
+              size="small"
+              severity="info"
+              styleClass="!text-xs"
+              (onClick)="navigateToTab('meetings:upcoming')"></lfx-button>
           </div>
-          <!-- Active Votes -->
-          <div class="flex items-center gap-3 px-4 py-3">
-            <i class="fa-light fa-check-to-slot text-gray-400 w-4 text-center flex-shrink-0"></i>
-            <span class="text-sm text-gray-700 flex-1">Active Votes</span>
-            @if (votesLoading()) {
-              <p-skeleton width="24px" height="1rem" />
-            } @else {
-              <span class="text-sm font-semibold text-gray-900">{{ activeVotesCount() }}</span>
-            }
-          </div>
-          <!-- Open Surveys -->
-          <div class="flex items-center gap-3 px-4 py-3">
-            <i class="fa-light fa-clipboard-list text-gray-400 w-4 text-center flex-shrink-0"></i>
-            <span class="text-sm text-gray-700 flex-1">Open Surveys</span>
-            @if (surveysLoading()) {
-              <p-skeleton width="24px" height="1rem" />
-            } @else {
-              <span class="text-sm font-semibold text-gray-900">{{ openSurveysCount() }}</span>
-            }
-          </div>
+          @if (upcomingMeetingsLoading()) {
+            <lfx-card>
+              <div class="flex flex-col gap-3">
+                <p-skeleton width="60%" height="1rem" />
+                <p-skeleton width="40%" height="0.75rem" />
+              </div>
+            </lfx-card>
+          } @else if (nextMeeting(); as meeting) {
+            <lfx-dashboard-meeting-card [meeting]="meeting" />
+          } @else {
+            <lfx-card>
+              <div class="flex flex-col items-center py-6">
+                <i class="fa-light fa-calendar-check text-2xl text-gray-300 mb-2"></i>
+                <p class="text-sm font-medium text-gray-500">No upcoming meetings</p>
+                <p class="text-xs text-gray-400 mt-1">Scheduled meetings for this group will appear here.</p>
+              </div>
+            </lfx-card>
+          }
         </div>
 
-        <!-- Chairs -->
-        <div class="border-t border-gray-100 px-4 py-3" data-testid="committee-overview-chairs">
-          <div class="flex items-center justify-between mb-2">
-            <p class="text-[11px] text-gray-500 uppercase tracking-wide font-semibold">Chairs</p>
-            @if (canEdit() && !membersLoading()) {
+        <!-- Last Meeting -->
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <i class="fa-light fa-clock-rotate-left text-gray-400"></i>
+              Past Meeting
+            </h2>
+            <lfx-button
+              label="View All"
+              [text]="true"
+              size="small"
+              severity="info"
+              styleClass="!text-xs"
+              (onClick)="navigateToTab('meetings:past')"></lfx-button>
+          </div>
+          @if (pastMeetingsLoading()) {
+            <lfx-card>
+              <div class="flex flex-col gap-3">
+                <p-skeleton width="60%" height="1rem" />
+                <p-skeleton width="40%" height="0.75rem" />
+              </div>
+            </lfx-card>
+          } @else if (lastMeeting(); as meeting) {
+            <lfx-dashboard-meeting-card [meeting]="meeting" [detailUrl]="'/meetings/' + meeting.id" />
+          } @else {
+            <lfx-card>
+              <div class="flex flex-col items-center py-6">
+                <i class="fa-light fa-clock-rotate-left text-2xl text-gray-300 mb-2"></i>
+                <p class="text-sm font-medium text-gray-500">No past meetings</p>
+                <p class="text-xs text-gray-400 mt-1">Past meetings for this group will appear here.</p>
+              </div>
+            </lfx-card>
+          }
+        </div>
+
+        <!-- My Pending Actions -->
+        <div class="flex flex-col gap-2">
+          <div class="flex items-center justify-between">
+            <h2 class="text-sm font-medium text-gray-700 flex items-center gap-2">
+              <i class="fa-light fa-list-check text-gray-400"></i>
+              My Pending Actions
+            </h2>
+            @if (pendingActionItems().length) {
               <lfx-button
-                icon="fa-light fa-pen-to-square"
+                label="View All"
                 [text]="true"
-                [rounded]="true"
                 size="small"
-                severity="secondary"
-                tooltip="Edit chairs"
-                data-testid="committee-overview-edit-chairs-btn"
-                (onClick)="startEditChairs()"></lfx-button>
+                severity="info"
+                styleClass="!text-xs"
+                (onClick)="navigateToTab(pendingActionsViewAllTab())"></lfx-button>
             }
           </div>
-          @if (membersLoading()) {
-            <div class="flex flex-col gap-1.5">
-              <p-skeleton width="100%" height="1.75rem" />
-              <p-skeleton width="100%" height="1.75rem" />
+          @if (votesLoading() || surveysLoading()) {
+            <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-200">
+              @for (i of [1, 2]; track i) {
+                <div class="flex items-center gap-4 px-4 py-3">
+                  <p-skeleton width="15%" height="1.5rem" borderRadius="1rem" />
+                  <p-skeleton width="55%" height="1rem" />
+                  <p-skeleton width="20%" height="1.75rem" borderRadius="0.375rem" styleClass="ml-auto" />
+                </div>
+              }
             </div>
-          } @else if (chairs().length) {
-            <div class="flex flex-col gap-1.5">
-              @for (chair of chairs(); track chair.uid) {
-                <div class="flex items-center gap-2">
-                  <div
-                    class="w-7 h-7 rounded-full flex items-center justify-center text-white text-[10px] font-semibold flex-shrink-0"
-                    [style.background-color]="chair.role?.name === 'Chair' ? '#6366f1' : '#f59e0b'">
-                    {{ (chair.first_name?.[0] || '') + (chair.last_name?.[0] || '') }}
+          } @else if (pendingActionItems().length) {
+            <div
+              class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-200"
+              data-testid="committee-overview-pending-actions-list">
+              @for (item of pendingActionItems(); track item.type + item.text; let idx = $index) {
+                <div
+                  class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3 bg-gradient-to-r from-white to-[rgba(255,251,235,0.8)]"
+                  [attr.data-testid]="'committee-overview-pending-action-' + item.type + '-' + idx">
+                  <div class="shrink-0 sm:w-1/5">
+                    <lfx-tag [value]="item.type" [severity]="item.severity" [icon]="item.icon" styleClass="whitespace-nowrap" />
                   </div>
-                  <div class="min-w-0">
-                    <p class="text-[13px] font-medium text-gray-900 truncate">{{ chair.first_name }} {{ chair.last_name }}</p>
-                    <p class="text-[10.5px] text-gray-500">{{ chair.role?.name ?? 'Member' }}</p>
+                  <p class="text-sm font-medium text-gray-900 sm:w-3/5 sm:min-w-0 sm:truncate sm:px-4" [attr.title]="item.text">
+                    {{ item.text }}
+                  </p>
+                  <div class="self-start sm:self-auto sm:w-1/5 sm:flex sm:justify-end">
+                    <lfx-button size="small" severity="secondary" [outlined]="true" (onClick)="handlePendingActionClick(item)" [label]="item.buttonText" />
                   </div>
                 </div>
               }
             </div>
           } @else {
-            <div class="flex items-center gap-2 py-1">
-              <i class="fa-light fa-user-crown text-gray-300"></i>
-              <p class="text-xs text-gray-400">No chairs assigned</p>
+            <div class="bg-gray-50 rounded-2xl border border-gray-200 flex items-center justify-center gap-4 px-5 py-8">
+              <i class="fa-light fa-box-check text-3xl text-gray-400 shrink-0"></i>
+              <div>
+                <p class="text-sm font-medium text-gray-700">Your desk is clear</p>
+                <p class="text-xs text-gray-400 mt-0.5">No pending actions assigned to you</p>
+              </div>
             </div>
           }
         </div>
-      </lfx-card>
-
-      <!-- RIGHT: Meetings + Pending Actions stacked -->
-      <div class="flex flex-col gap-5">
-        @if (!isVisitor()) {
-          <!-- Next Meeting -->
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center justify-between">
-              <h2 class="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <i class="fa-light fa-calendar text-gray-400"></i>
-                Next Meeting
-              </h2>
-              <lfx-button
-                label="View All"
-                [text]="true"
-                size="small"
-                severity="info"
-                styleClass="!text-xs"
-                (onClick)="navigateToTab('meetings:upcoming')"></lfx-button>
-            </div>
-            @if (upcomingMeetingsLoading()) {
-              <lfx-card>
-                <div class="flex flex-col gap-3">
-                  <p-skeleton width="60%" height="1rem" />
-                  <p-skeleton width="40%" height="0.75rem" />
-                </div>
-              </lfx-card>
-            } @else if (nextMeeting(); as meeting) {
-              <lfx-dashboard-meeting-card [meeting]="meeting" />
-            } @else {
-              <lfx-card>
-                <div class="flex flex-col items-center py-6">
-                  <i class="fa-light fa-calendar-check text-2xl text-gray-300 mb-2"></i>
-                  <p class="text-sm font-medium text-gray-500">No upcoming meetings</p>
-                  <p class="text-xs text-gray-400 mt-1">Scheduled meetings for this group will appear here.</p>
-                </div>
-              </lfx-card>
-            }
+      } @else if (canJoin()) {
+        <!-- Visitor CTA -->
+        <div class="rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-6 text-center" data-testid="committee-overview-visitor-cta">
+          <div class="flex flex-col gap-3 items-center">
+            <i [class]="joinCtaIcon() + ' text-2xl text-blue-500'"></i>
+            <h3 class="text-base font-semibold text-gray-900">{{ joinCtaTitle() }}</h3>
+            <p class="text-sm text-gray-600 max-w-md">{{ joinCtaDescription() }}</p>
+            <lfx-button [label]="joinButtonLabel()" severity="info" size="small" [icon]="joinButtonIcon()" (onClick)="onJoinClick()"></lfx-button>
           </div>
-
-          <!-- Last Meeting -->
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center justify-between">
-              <h2 class="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <i class="fa-light fa-clock-rotate-left text-gray-400"></i>
-                Past Meeting
-              </h2>
-              <lfx-button
-                label="View All"
-                [text]="true"
-                size="small"
-                severity="info"
-                styleClass="!text-xs"
-                (onClick)="navigateToTab('meetings:past')"></lfx-button>
-            </div>
-            @if (pastMeetingsLoading()) {
-              <lfx-card>
-                <div class="flex flex-col gap-3">
-                  <p-skeleton width="60%" height="1rem" />
-                  <p-skeleton width="40%" height="0.75rem" />
-                </div>
-              </lfx-card>
-            } @else if (lastMeeting(); as meeting) {
-              <lfx-dashboard-meeting-card [meeting]="meeting" [detailUrl]="'/meetings/' + meeting.id" />
-            } @else {
-              <lfx-card>
-                <div class="flex flex-col items-center py-6">
-                  <i class="fa-light fa-clock-rotate-left text-2xl text-gray-300 mb-2"></i>
-                  <p class="text-sm font-medium text-gray-500">No past meetings</p>
-                  <p class="text-xs text-gray-400 mt-1">Past meetings for this group will appear here.</p>
-                </div>
-              </lfx-card>
-            }
-          </div>
-
-          <!-- My Pending Actions -->
-          <div class="flex flex-col gap-2">
-            <div class="flex items-center justify-between">
-              <h2 class="text-sm font-medium text-gray-700 flex items-center gap-2">
-                <i class="fa-light fa-list-check text-gray-400"></i>
-                My Pending Actions
-              </h2>
-              @if (pendingActionItems().length) {
-                <lfx-button
-                  label="View All"
-                  [text]="true"
-                  size="small"
-                  severity="info"
-                  styleClass="!text-xs"
-                  (onClick)="navigateToTab(pendingActionsViewAllTab())"></lfx-button>
-              }
-            </div>
-            @if (votesLoading() || surveysLoading()) {
-              <div class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-200">
-                @for (i of [1, 2]; track i) {
-                  <div class="flex items-center gap-4 px-4 py-3">
-                    <p-skeleton width="15%" height="1.5rem" borderRadius="1rem" />
-                    <p-skeleton width="55%" height="1rem" />
-                    <p-skeleton width="20%" height="1.75rem" borderRadius="0.375rem" styleClass="ml-auto" />
-                  </div>
-                }
-              </div>
-            } @else if (pendingActionItems().length) {
-              <div
-                class="bg-white rounded-2xl border border-gray-200 shadow-sm overflow-hidden divide-y divide-gray-200"
-                data-testid="committee-overview-pending-actions-list">
-                @for (item of pendingActionItems(); track item.type + item.text; let idx = $index) {
-                  <div
-                    class="flex flex-col sm:flex-row sm:items-center gap-2 sm:gap-0 px-4 py-3 bg-gradient-to-r from-white to-[rgba(255,251,235,0.8)]"
-                    [attr.data-testid]="'committee-overview-pending-action-' + item.type + '-' + idx">
-                    <div class="shrink-0 sm:w-1/5">
-                      <lfx-tag [value]="item.type" [severity]="item.severity" [icon]="item.icon" styleClass="whitespace-nowrap" />
-                    </div>
-                    <p class="text-sm font-medium text-gray-900 sm:w-3/5 sm:min-w-0 sm:truncate sm:px-4" [attr.title]="item.text">
-                      {{ item.text }}
-                    </p>
-                    <div class="self-start sm:self-auto sm:w-1/5 sm:flex sm:justify-end">
-                      <lfx-button size="small" severity="secondary" [outlined]="true" (onClick)="handlePendingActionClick(item)" [label]="item.buttonText" />
-                    </div>
-                  </div>
-                }
-              </div>
-            } @else {
-              <div class="bg-gray-50 rounded-2xl border border-gray-200 flex items-center justify-center gap-4 px-5 py-8">
-                <i class="fa-light fa-box-check text-3xl text-gray-400 shrink-0"></i>
-                <div>
-                  <p class="text-sm font-medium text-gray-700">Your desk is clear</p>
-                  <p class="text-xs text-gray-400 mt-0.5">No pending actions assigned to you</p>
-                </div>
-              </div>
-            }
-          </div>
-        } @else if (canJoin()) {
-          <!-- Visitor CTA -->
-          <div
-            class="rounded-xl bg-gradient-to-r from-blue-50 to-indigo-50 border border-blue-100 p-6 text-center"
-            data-testid="committee-overview-visitor-cta">
-            <div class="flex flex-col gap-3 items-center">
-              <i [class]="joinCtaIcon() + ' text-2xl text-blue-500'"></i>
-              <h3 class="text-base font-semibold text-gray-900">{{ joinCtaTitle() }}</h3>
-              <p class="text-sm text-gray-600 max-w-md">{{ joinCtaDescription() }}</p>
-              <lfx-button [label]="joinButtonLabel()" severity="info" size="small" [icon]="joinButtonIcon()" (onClick)="onJoinClick()"></lfx-button>
-            </div>
-          </div>
-        }
-      </div>
+        </div>
+      }
     </div>
+  </div>
 </div>
 
 <!-- Vote Results Drawer -->

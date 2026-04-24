@@ -9,7 +9,6 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { createHorizontalBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
 import { formatNumber, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
-import { MarketingActionIconPipe } from '@pipes/marketing-action-icon.pipe';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -18,7 +17,7 @@ import type { BrandReachResponse, EngagedCommunitySizeResponse, MarketingKeyInsi
 @Component({
   selector: 'lfx-engaged-community-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, ChartComponent, TagComponent, MarketingActionIconPipe],
+  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, ChartComponent, TagComponent],
   templateUrl: './engaged-community-drawer.component.html',
   styleUrl: './engaged-community-drawer.component.scss',
 })

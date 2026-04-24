@@ -11,7 +11,6 @@ import { createHorizontalBarChartOptions, createLineChartOptions, DASHBOARD_TOOL
 import { formatNumber, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { AnalyticsService } from '@services/analytics.service';
 import { ProjectContextService } from '@services/project-context.service';
-import { MarketingActionIconPipe } from '@pipes/marketing-action-icon.pipe';
 import { catchError, combineLatest, filter, map, of, switchMap, tap } from 'rxjs';
 import { MessageService } from 'primeng/api';
 import { DrawerModule } from 'primeng/drawer';
@@ -23,7 +22,7 @@ import type { WebActivitiesSummaryResponse, MarketingRecommendedAction, Marketin
 @Component({
   selector: 'lfx-website-visits-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, DrawerModule, ChartComponent, SkeletonModule, TagComponent, MarketingActionIconPipe],
+  imports: [ButtonComponent, CardComponent, DrawerModule, ChartComponent, SkeletonModule, TagComponent],
   templateUrl: './website-visits-drawer.component.html',
   styleUrl: './website-visits-drawer.component.scss',
 })

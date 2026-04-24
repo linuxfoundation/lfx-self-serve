@@ -9,8 +9,6 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { lfxColors } from '@lfx-one/shared/constants';
 import { formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
-import { MarketingActionIconPipe } from '@pipes/marketing-action-icon.pipe';
-
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -19,7 +17,7 @@ import type { EventGrowthResponse, EventGrowthTopEventView, MarketingKeyInsight,
 @Component({
   selector: 'lfx-event-growth-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, ChartComponent, DatePipe, DecimalPipe, DrawerModule, MarketingActionIconPipe, TagComponent],
+  imports: [ButtonComponent, CardComponent, ChartComponent, DatePipe, DecimalPipe, DrawerModule, TagComponent],
   templateUrl: './event-growth-drawer.component.html',
 })
 export class EventGrowthDrawerComponent {

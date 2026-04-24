@@ -8,7 +8,6 @@ import { ChartComponent } from '@components/chart/chart.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
 import { splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
-import { MarketingActionIconPipe } from '@pipes/marketing-action-icon.pipe';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -25,7 +24,7 @@ import type {
 @Component({
   selector: 'lfx-revenue-impact-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, ChartComponent, DecimalPipe, DrawerModule, MarketingActionIconPipe, TagComponent],
+  imports: [ButtonComponent, ChartComponent, DecimalPipe, DrawerModule, TagComponent],
   templateUrl: './revenue-impact-drawer.component.html',
 })
 export class RevenueImpactDrawerComponent {

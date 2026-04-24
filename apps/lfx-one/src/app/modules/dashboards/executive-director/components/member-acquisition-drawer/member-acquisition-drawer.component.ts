@@ -10,7 +10,6 @@ import { TagComponent } from '@components/tag/tag.component';
 import { createBarChartOptions, createLineChartOptions, DASHBOARD_TOOLTIP_CONFIG, lfxColors } from '@lfx-one/shared/constants';
 import { formatCurrency, formatNumber, hexToRgba, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
 import { FormatMoneyPipe } from '@pipes/format-money.pipe';
-import { MarketingActionIconPipe } from '@pipes/marketing-action-icon.pipe';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { ChartData, ChartOptions } from 'chart.js';
@@ -25,7 +24,7 @@ import type {
 @Component({
   selector: 'lfx-member-acquisition-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, ChartComponent, TagComponent, FormatMoneyPipe, MarketingActionIconPipe],
+  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, ChartComponent, TagComponent, FormatMoneyPipe],
   templateUrl: './member-acquisition-drawer.component.html',
   styleUrl: './member-acquisition-drawer.component.scss',
 })

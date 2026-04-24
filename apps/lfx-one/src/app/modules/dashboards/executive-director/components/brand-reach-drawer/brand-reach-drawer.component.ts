@@ -8,7 +8,6 @@ import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { MARKETING_SOCIAL_PLATFORM_MAP } from '@lfx-one/shared/constants';
 import { formatNumber, splitByPriority, type MarketingSplitByPriority } from '@lfx-one/shared/utils';
-import { MarketingActionIconPipe } from '@pipes/marketing-action-icon.pipe';
 import { DrawerModule } from 'primeng/drawer';
 
 import type { BrandReachResponse, BrandReachSocialPlatformView, MarketingKeyInsight, MarketingRecommendedAction } from '@lfx-one/shared/interfaces';
@@ -16,7 +15,7 @@ import type { BrandReachResponse, BrandReachSocialPlatformView, MarketingKeyInsi
 @Component({
   selector: 'lfx-brand-reach-drawer',
   changeDetection: ChangeDetectionStrategy.OnPush,
-  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, MarketingActionIconPipe, TagComponent],
+  imports: [ButtonComponent, CardComponent, DecimalPipe, DrawerModule, TagComponent],
   templateUrl: './brand-reach-drawer.component.html',
 })
 export class BrandReachDrawerComponent {
