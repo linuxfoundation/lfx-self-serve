@@ -360,6 +360,16 @@ export const MEETING_FORM_STEPS = {
 };
 
 /**
+ * Sentinel date used when a recurrence has no explicit end condition.
+ * Zoom's recurrence API requires either end_date_time or end_times; this value
+ * satisfies that requirement without representing a real user-chosen end date.
+ * Both the server write path (normalizeRecurrence) and the client read path
+ * (meeting-manage form population) must agree on this constant so the UI can
+ * distinguish "never ends" from a user-selected date.
+ */
+export const RECURRENCE_NO_END_SENTINEL_DATE = '2999-12-31T23:59:59.000Z';
+
+/**
  * Recurrence type string mappings
  * @description Maps recurrence types to their string identifiers used in forms and API
  * @readonly

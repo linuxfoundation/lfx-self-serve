@@ -1,6 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
+import { RECURRENCE_NO_END_SENTINEL_DATE } from '@lfx-one/shared/constants';
 import { QueryServiceMeetingType } from '@lfx-one/shared/enums';
 import {
   ApiResponse,
@@ -263,7 +264,7 @@ export class MeetingService {
     const createPayload = {
       ...meetingData,
       ...(username && { organizers: [username] }),
-      ...(meetingData.recurrence && { recurrence: this.normalizeRecurrence(meetingData.recurrence) }),
+      ...(meetingData.recurrence?.type && { recurrence: this.normalizeRecurrence(req, meetingData.recurrence) }),
     };
 
     const sanitizedPayload = logger.sanitize({ createPayload });
@@ -327,7 +328,7 @@ export class MeetingService {
     const updatePayload = {
       ...meetingData,
       organizers: Array.from(organizersSet),
-      ...(meetingData.recurrence && { recurrence: this.normalizeRecurrence(meetingData.recurrence) }),
+      ...(meetingData.recurrence?.type && { recurrence: this.normalizeRecurrence(req, meetingData.recurrence) }),
     };
 
     const sanitizedPayload = logger.sanitize({ updatePayload, editType });
@@ -1286,15 +1287,23 @@ export class MeetingService {
 
   /**
    * Ensures a recurrence object always has an end condition.
-   * The upstream meeting service requires either end_date_time or end_times.
-   * Defaults to 100 years from now when neither is specified.
+   * Zoom's recurrence API (via the itx adapter) requires either end_date_time or
+   * end_times; the Goa schema marks both optional but Zoom rejects payloads where
+   * neither is set. When neither is present, we stamp RECURRENCE_NO_END_SENTINEL_DATE
+   * so the upstream call succeeds. The client recognises this sentinel and renders
+   * the meeting as "never ends" rather than showing a specific end date.
    */
-  private normalizeRecurrence(recurrence: MeetingRecurrence): MeetingRecurrence {
-    if (recurrence.end_date_time || recurrence.end_times) {
+  private normalizeRecurrence(req: Request, recurrence: MeetingRecurrence): MeetingRecurrence {
+    const hasValidEndDateTime = typeof recurrence.end_date_time === 'string' && recurrence.end_date_time.trim().length > 0;
+    const hasValidEndTimes = typeof recurrence.end_times === 'number' && recurrence.end_times > 0;
+
+    if (hasValidEndDateTime || hasValidEndTimes) {
       return recurrence;
     }
-    const hundredYearsFromNow = new Date();
-    hundredYearsFromNow.setFullYear(hundredYearsFromNow.getFullYear() + 100);
-    return { ...recurrence, end_date_time: hundredYearsFromNow.toISOString() };
+    logger.debug(req, 'normalize_recurrence', 'Stamping never-end sentinel — recurrence has no end condition', {
+      end_date_time: RECURRENCE_NO_END_SENTINEL_DATE,
+      recurrence_type: recurrence.type,
+    });
+    return { ...recurrence, end_date_time: RECURRENCE_NO_END_SENTINEL_DATE };
   }
 }

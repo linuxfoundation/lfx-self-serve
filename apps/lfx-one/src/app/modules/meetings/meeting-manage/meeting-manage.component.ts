@@ -40,6 +40,7 @@ import {
   generateRecurrenceObject,
   getDefaultStartDateTime,
   getUserTimezone,
+  isRecurrenceNeverEndSentinel,
   mapRecurrenceToFormValue,
 } from '@lfx-one/shared/utils';
 import { editModeDateTimeValidator, futureDateTimeValidator } from '@lfx-one/shared/validators';
@@ -779,7 +780,9 @@ export class MeetingManageComponent {
       else if (meeting.recurrence.monthly_week && meeting.recurrence.monthly_week_day) monthlyTypeUI = 'dayOfWeek';
 
       let endTypeUI = 'never';
-      if (meeting.recurrence.end_date_time) endTypeUI = 'date';
+      const recurrenceEndDateTime = meeting.recurrence.end_date_time;
+      const isSentinel = isRecurrenceNeverEndSentinel(recurrenceEndDateTime);
+      if (recurrenceEndDateTime && !isSentinel) endTypeUI = 'date';
       else if (meeting.recurrence.end_times) endTypeUI = 'occurrences';
 
       // Set the pattern type UI control if this is custom recurrence
@@ -796,7 +799,7 @@ export class MeetingManageComponent {
           monthly_day: meeting.recurrence.monthly_day || null,
           monthly_week: meeting.recurrence.monthly_week || null,
           monthly_week_day: meeting.recurrence.monthly_week_day || null,
-          end_date_time: meeting.recurrence.end_date_time ? new Date(meeting.recurrence.end_date_time) : null,
+          end_date_time: meeting.recurrence.end_date_time && !isSentinel ? new Date(meeting.recurrence.end_date_time) : null,
           end_times: meeting.recurrence.end_times || null,
           // UI helper controls
           monthlyTypeUI: monthlyTypeUI,
@@ -1256,8 +1259,9 @@ export class MeetingManageComponent {
     // Multiple days selected for weekly
     if (recurrence.weekly_days && recurrence.weekly_days.split(',').length > 1) return true;
 
-    // End conditions (end date or occurrence count)
-    if (recurrence.end_date_time || recurrence.end_times) return true;
+    // End conditions (end date or occurrence count) — exclude the sentinel, which means "never ends"
+    if (recurrence.end_date_time && !isRecurrenceNeverEndSentinel(recurrence.end_date_time)) return true;
+    if ((recurrence.end_times ?? 0) > 0) return true;
 
     return false;
   }

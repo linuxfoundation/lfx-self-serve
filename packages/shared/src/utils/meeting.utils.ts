@@ -3,7 +3,7 @@
 
 import { HttpParams } from '@angular/common/http';
 
-import { RECURRENCE_DAYS_OF_WEEK, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
+import { RECURRENCE_DAYS_OF_WEEK, RECURRENCE_NO_END_SENTINEL_DATE, RECURRENCE_WEEKLY_ORDINALS } from '../constants';
 import {
   CustomRecurrencePattern,
   Meeting,
@@ -15,6 +15,18 @@ import {
   V1PastMeetingSummary,
   V1SummaryDetail,
 } from '../interfaces';
+
+/**
+ * Whether the recurrence end_date_time matches the "never ends" sentinel.
+ * Compares via Date.getTime() so equivalent ISO variants (e.g. '...59Z' vs '...59.000Z')
+ * are treated as equal.
+ */
+export function isRecurrenceNeverEndSentinel(endDateTime: string | null | undefined): boolean {
+  if (!endDateTime) return false;
+  const end = new Date(endDateTime).getTime();
+  const sentinel = new Date(RECURRENCE_NO_END_SENTINEL_DATE).getTime();
+  return Number.isFinite(end) && Number.isFinite(sentinel) && end === sentinel;
+}
 
 /**
  * Build a human-readable recurrence summary from custom recurrence pattern
@@ -295,7 +307,7 @@ export function buildJoinUrlWithParams(joinUrl: string, user?: User | null, opti
  * allowing callers to distinguish "no counts provided" from "counts are truly 0".
  */
 export function resolveMeetingBaseCount(
-  meeting: Pick<Meeting, 'individual_registrants_count' | 'committee_members_count' | 'registrant_count'>,
+  meeting: Pick<Meeting, 'individual_registrants_count' | 'committee_members_count' | 'registrant_count'>
 ): number | undefined {
   const hasSplitCounts = meeting.individual_registrants_count != null || meeting.committee_members_count != null;
 
