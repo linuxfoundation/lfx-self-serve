@@ -10,6 +10,7 @@ import { ProjectService } from '@services/project.service';
 import { SkeletonModule } from 'primeng/skeleton';
 import { BehaviorSubject, catchError, of, switchMap } from 'rxjs';
 
+import { DashboardQuicklinksComponent } from '../components/dashboard-quicklinks/dashboard-quicklinks.component';
 import { FoundationHealthComponent } from '../components/foundation-health/foundation-health.component';
 import { MyMeetingsComponent } from '../components/my-meetings/my-meetings.component';
 import { OrganizationInvolvementComponent } from '../components/organization-involvement/organization-involvement.component';
@@ -17,7 +18,7 @@ import { PendingActionsComponent } from '../components/pending-actions/pending-a
 
 @Component({
   selector: 'lfx-board-member-dashboard',
-  imports: [OrganizationInvolvementComponent, PendingActionsComponent, MyMeetingsComponent, FoundationHealthComponent, SkeletonModule],
+  imports: [OrganizationInvolvementComponent, PendingActionsComponent, MyMeetingsComponent, FoundationHealthComponent, SkeletonModule, DashboardQuicklinksComponent],
   templateUrl: './board-member-dashboard.component.html',
   styleUrl: './board-member-dashboard.component.scss',
 })
@@ -61,10 +62,7 @@ export class BoardMemberDashboardComponent {
 
               // Fetch all pending actions from unified backend endpoint
               return this.projectService.getPendingActions(project.slug, project.uid, 'board-member').pipe(
-                catchError((error) => {
-                  console.error('Failed to fetch pending actions:', error);
-                  return of([]);
-                })
+                catchError(() => of([]))
               );
             })
           );

@@ -4,8 +4,9 @@
 <div class="container mx-auto px-4 sm:px-6 lg:px-8" data-testid="dashboard-container">
   <!-- Page Header -->
   @if (selectedFoundation()) {
-    <div class="mb-6" data-testid="foundation-project">
+    <div class="mb-6 flex items-center justify-between gap-4" data-testid="foundation-project">
       <h1 class="font-display font-light text-2xl">{{ selectedFoundation()?.name }} Overview</h1>
+      <lfx-dashboard-quicklinks />
     </div>
   }
 

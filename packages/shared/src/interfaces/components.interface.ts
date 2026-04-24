@@ -576,6 +576,21 @@ export interface DashboardMeetingCardProps {
 }
 
 /**
+ * Dashboard quick link
+ * @description Navigation shortcut displayed in the dashboard header for write-enabled users
+ */
+export interface DashboardQuickLink {
+  /** Display label for the quick link */
+  label: string;
+  /** FontAwesome icon class (e.g. 'fa-light fa-calendar') */
+  icon: string;
+  /** Router link path segments */
+  route: string[];
+  /** Pre-computed data-testid slug (e.g. 'create-meeting') */
+  testId: string;
+}
+
+/**
  * Committee selector option
  * @description Configuration for committee selector component options
  */
