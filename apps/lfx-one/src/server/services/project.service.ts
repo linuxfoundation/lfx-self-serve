@@ -1908,16 +1908,19 @@ export class ProjectService {
       `;
 
       // Query 2: Monthly CTR trend (bar chart, last 6 months) from email_ctr_by_month
+      // Aggregate across LF_SUB_DOMAIN_CLASSIFICATION rows (Corporate, Projects, Training, Events)
+      // so we get one row per month with totals, not 4 rows per month.
       const monthlyQuery = `
         SELECT
           PUBLISHED_MONTH,
           PUBLISHED_MONTH_DATE,
-          MONTHLY_CTR,
-          TOTAL_SENDS,
-          TOTAL_OPENS
+          ROUND(SUM(TOTAL_OPENS) * 100.0 / NULLIF(SUM(TOTAL_SENDS), 0), 1) AS MONTHLY_CTR,
+          SUM(TOTAL_SENDS) AS TOTAL_SENDS,
+          SUM(TOTAL_OPENS) AS TOTAL_OPENS
         FROM ANALYTICS.PLATINUM_LFX_ONE.EMAIL_CTR_BY_MONTH
         WHERE FOUNDATION_SLUG = ?
           AND PUBLISHED_MONTH_DATE >= DATEADD('MONTH', -6, DATE_TRUNC('MONTH', CURRENT_DATE()))
+        GROUP BY PUBLISHED_MONTH, PUBLISHED_MONTH_DATE
         ORDER BY PUBLISHED_MONTH_DATE ASC
       `;
 

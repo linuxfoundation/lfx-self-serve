@@ -10,11 +10,7 @@
  */
 export function formatNumber(num: number): string {
   if (!Number.isFinite(num)) return '0';
-  const abs = Math.abs(num);
-  const sign = num < 0 ? '-' : '';
-  if (abs >= 999_950) return `${sign}${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${sign}${(abs / 1_000).toFixed(1)}K`;
-  return num.toLocaleString();
+  return formatCompact(Math.abs(num), num < 0 ? '-' : '');
 }
 
 /**
@@ -26,11 +22,7 @@ export function formatNumber(num: number): string {
  */
 export function formatCurrency(num: number): string {
   if (!Number.isFinite(num)) return '$0';
-  const abs = Math.abs(num);
-  const sign = num < 0 ? '-' : '';
-  if (abs >= 999_950) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}$${abs.toLocaleString()}`;
+  return formatCompact(Math.abs(num), num < 0 ? '-' : '', '$');
 }
 
 /**
@@ -43,9 +35,17 @@ export function formatCurrency(num: number): string {
  */
 export function formatValueLost(value: number): string {
   if (!Number.isFinite(value)) return '$0';
-  const abs = Math.abs(value);
-  const sign = value < 0 ? '-' : '';
-  if (abs >= 999_950) return `${sign}$${(abs / 1_000_000).toFixed(1)}M`;
-  if (abs >= 1_000) return `${sign}$${(abs / 1_000).toFixed(1)}K`;
-  return `${sign}$${abs.toLocaleString()}`;
+  return formatCompact(Math.abs(value), value < 0 ? '-' : '', '$');
+}
+
+/** Centralized compact formatter — thresholds, scales, and rounding in one place. */
+function formatCompact(abs: number, sign: string, prefix = ''): string {
+  if (abs >= 999_950) return `${sign}${prefix}${stripTrailingZero((abs / 1_000_000).toFixed(1))}M`;
+  if (abs >= 1_000) return `${sign}${prefix}${stripTrailingZero((abs / 1_000).toFixed(1))}K`;
+  return `${sign}${prefix}${abs.toLocaleString()}`;
+}
+
+/** Strip trailing zeros (and a dangling decimal point) from a fixed-decimal string. */
+function stripTrailingZero(s: string): string {
+  return s.includes('.') ? s.replace(/\.?0+$/, '') : s;
 }
