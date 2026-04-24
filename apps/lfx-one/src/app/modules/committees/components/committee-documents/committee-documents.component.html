@@ -1,45 +1,67 @@
 <!-- Copyright The Linux Foundation and each contributor to LFX. -->
 <!-- SPDX-License-Identifier: MIT -->
 
-<lfx-card data-testid="committee-documents-card">
-  <!-- Filters -->
-  <div class="pb-3 mb-3 border-b border-gray-100">
-    <div class="flex flex-wrap items-center gap-2">
-      <!-- Search -->
-      <div class="flex-1 min-w-48">
-        <lfx-input-text
-          [form]="filterForm"
-          control="search"
-          placeholder="Search documents..."
-          icon="fa-light fa-search"
-          styleClass="w-full"
-          size="small"
-          data-testid="committee-documents-search-input">
-        </lfx-input-text>
-      </div>
+<div class="flex flex-col gap-4 pt-2" data-testid="committee-documents-tab">
+  @if (canEdit()) {
+    <div class="flex items-center justify-end gap-2">
+      <lfx-button
+        label="New Folder"
+        icon="fa-light fa-folder-plus"
+        size="small"
+        severity="secondary"
+        [outlined]="true"
+        (onClick)="openNewFolderDialog()"
+        data-testid="committee-documents-new-folder-button"></lfx-button>
+      <lfx-button
+        label="Add Link"
+        icon="fa-light fa-link"
+        severity="info"
+        size="small"
+        (onClick)="openAddLinkDialog()"
+        data-testid="committee-documents-add-link-button"></lfx-button>
+    </div>
+  }
 
-      <!-- Source filter -->
-      <div class="w-36 shrink-0 overflow-hidden">
-        <lfx-select
-          [form]="filterForm"
-          control="source"
-          size="small"
-          [options]="sourceOptions"
-          placeholder="All Sources"
-          [showClear]="true"
-          styleClass="w-full"
-          data-testid="committee-documents-source-filter">
-        </lfx-select>
+  <lfx-card data-testid="committee-documents-card">
+    <!-- Filters -->
+    <div class="pb-3 mb-3 border-b border-gray-100">
+      <div class="flex flex-wrap items-center gap-2">
+        <!-- Search -->
+        <div class="flex-1 min-w-48">
+          <lfx-input-text
+            [form]="filterForm"
+            control="search"
+            placeholder="Search documents..."
+            icon="fa-light fa-search"
+            styleClass="w-full"
+            size="small"
+            data-testid="committee-documents-search-input">
+          </lfx-input-text>
+        </div>
+
+        <!-- Source filter -->
+        <div class="w-36 shrink-0 overflow-hidden">
+          <lfx-select
+            [form]="filterForm"
+            control="source"
+            size="small"
+            [options]="sourceOptions"
+            placeholder="All Sources"
+            [showClear]="true"
+            styleClass="w-full"
+            data-testid="committee-documents-source-filter">
+          </lfx-select>
+        </div>
       </div>
     </div>
-  </div>
 
-  <!-- Table -->
-  <lfx-documents-table
-    [documents]="filteredDocuments()"
-    [loading]="loading()"
-    [showFoundation]="false"
-    testIdPrefix="committee-documents"
-    emptyMessage="No documents found for this group">
-  </lfx-documents-table>
-</lfx-card>
+    <!-- Table -->
+    <lfx-documents-table
+      [documents]="filteredDocuments()"
+      [loading]="loading()"
+      [showFoundation]="false"
+      testIdPrefix="committee-documents"
+      emptyMessage="No documents found for this group">
+    </lfx-documents-table>
+  </lfx-card>
+</div>

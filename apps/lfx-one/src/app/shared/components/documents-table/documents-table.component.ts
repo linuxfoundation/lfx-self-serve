@@ -29,6 +29,7 @@ export class DocumentsTableComponent {
   public readonly emptyMessage = input<string>('No documents found');
 
   protected readonly colSpan = computed(() => (this.showFoundation() ? 6 : 5));
+  protected readonly hasDocuments = computed(() => this.documents().length > 0);
 
   protected openDocument(doc: MyDocumentItem): void {
     if (!doc.url) return;
