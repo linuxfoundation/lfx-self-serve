@@ -9,7 +9,7 @@ import { CardComponent } from '@components/card/card.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { MessageComponent } from '@components/message/message.component';
 import { SelectComponent } from '@components/select/select.component';
-import { COUNTRIES, markFormControlsAsTouched, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared';
+import { COUNTRIES, markFormControlsAsTouched, normalizeTShirtSize, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared';
 import { CombinedProfile, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -229,7 +229,7 @@ export class ProfileManageComponent implements OnInit {
       address: profile.profile?.address || '',
       postal_code: profile.profile?.postal_code || '',
       phone_number: profile.profile?.phone_number || '',
-      t_shirt_size: profile.profile?.t_shirt_size || '',
+      t_shirt_size: normalizeTShirtSize(profile.profile?.t_shirt_size),
     });
 
     // Set the initial country signal value

@@ -8,7 +8,7 @@ import { FormBuilder, FormGroup, ReactiveFormsModule, Validators } from '@angula
 import { ButtonComponent } from '@components/button/button.component';
 import { InputTextComponent } from '@components/input-text/input-text.component';
 import { SelectComponent } from '@components/select/select.component';
-import { COUNTRIES, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared';
+import { COUNTRIES, normalizeTShirtSize, TSHIRT_SIZES, US_STATES } from '@lfx-one/shared';
 import { CombinedProfile, ProfileUpdateRequest, UserEmail, UserMetadata } from '@lfx-one/shared/interfaces';
 import { markFormControlsAsTouched } from '@lfx-one/shared/utils';
 import { UserService } from '@services/user.service';
@@ -228,7 +228,7 @@ export class ProfileEditDialogComponent {
       address: profile.profile?.address || '',
       postal_code: profile.profile?.postal_code || '',
       phone_number: profile.profile?.phone_number || '',
-      t_shirt_size: profile.profile?.t_shirt_size || '',
+      t_shirt_size: normalizeTShirtSize(profile.profile?.t_shirt_size),
       job_title: profile.profile?.job_title || '',
       organization: profile.profile?.organization || '',
     });

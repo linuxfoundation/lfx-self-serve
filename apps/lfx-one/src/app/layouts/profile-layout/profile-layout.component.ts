@@ -7,7 +7,7 @@ import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-i
 import { NonNullableFormBuilder, ReactiveFormsModule } from '@angular/forms';
 import { ActivatedRoute, NavigationEnd, Router, RouterLink, RouterLinkActive, RouterOutlet } from '@angular/router';
 import { SelectComponent } from '@components/select/select.component';
-import { PROFILE_TABS, TSHIRT_SIZES } from '@lfx-one/shared/constants';
+import { normalizeTShirtSize, PROFILE_TABS, TSHIRT_SIZES } from '@lfx-one/shared/constants';
 import { CombinedProfile, ProfileHeaderData, ProfileTab, ProfileUpdateRequest, UserMetadata } from '@lfx-one/shared/interfaces';
 import { UserService } from '@services/user.service';
 import { MessageService } from 'primeng/api';
@@ -304,7 +304,7 @@ export class ProfileLayoutComponent {
       address: profile.profile?.address || '',
       postalCode: profile.profile?.postal_code || '',
       phoneNumber: profile.profile?.phone_number || '',
-      tshirtSize: profile.profile?.t_shirt_size || '',
+      tshirtSize: normalizeTShirtSize(profile.profile?.t_shirt_size),
       avatarUrl: profile.profile?.picture || '',
     };
   }
