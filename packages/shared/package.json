@@ -35,6 +35,12 @@
       "require": "./dist/validators/index.js",
       "default": "./dist/validators/index.js"
     },
+    "./utils": {
+      "types": "./dist/utils/index.d.ts",
+      "import": "./dist/utils/index.js",
+      "require": "./dist/utils/index.js",
+      "default": "./dist/utils/index.js"
+    },
     "./src/*": "./src/*",
     "./package.json": "./package.json"
   },

@@ -2,344 +2,125 @@
 
 ## Overview
 
-The `@lfx-one/shared` package centralizes types, constants, utilities, and validators used across the monorepo. It is the single source of truth for shared contracts between frontend and backend.
+The `@lfx-one/shared` package centralizes types, constants, utilities, enums, and validators used across the monorepo. It is the single source of truth for shared contracts between the Angular app (`apps/lfx-one`) and the Express SSR server.
 
 ## Package Organization
 
 ```text
 packages/shared/src/
-├── interfaces/       # TypeScript interfaces (all .interface.ts suffix)
-├── constants/        # Application constants (colors, font sizes, config)
-├── enums/            # Shared enumerations
-├── utils/            # Utility functions (generic + domain-specific)
-├── validators/       # Angular reactive form validators
+├── interfaces/       # TypeScript interfaces (.interface.ts suffix, one domain per file)
+├── constants/        # Design tokens, API config, domain constants (.constants.ts)
+├── enums/            # Shared string enumerations (.enum.ts)
+├── utils/            # Pure utility functions, generic + domain-specific (.utils.ts / .util.ts)
+├── validators/       # Angular reactive form validators (.validators.ts)
 └── index.ts          # Main barrel export
 ```
 
-Each subdirectory has its own `index.ts` barrel file, enabling granular imports.
-
-## Detailed Directory Structure
-
-```text
-packages/shared/
-├── src/
-│   ├── interfaces/                    # 30 TypeScript interface files
-│   │   ├── access-check.interface.ts  # Permission/access check types
-│   │   ├── account.interface.ts       # Account/organization types
-│   │   ├── ai.interface.ts            # AI service types
-│   │   ├── analytics-data.interface.ts # Analytics data models
-│   │   ├── api.interface.ts           # API request/response types
-│   │   ├── auth.interface.ts          # Authentication types (User, AuthContext, M2M, RouteAuthConfig)
-│   │   ├── calendar.interface.ts      # Calendar/FullCalendar types
-│   │   ├── committee.interface.ts     # Committee data models
-│   │   ├── components.interface.ts    # Component prop interfaces (Avatar, etc.)
-│   │   ├── dashboard-metric.interface.ts # Dashboard metric types
-│   │   ├── filter.interface.ts        # Filter/search filter types
-│   │   ├── mailing-list.interface.ts  # Mailing list data models
-│   │   ├── meeting-attachment.interface.ts # Meeting attachment types
-│   │   ├── meeting.interface.ts       # Meeting data models
-│   │   ├── member.interface.ts        # Member/membership types
-│   │   ├── organization.interface.ts  # Organization data models
-│   │   ├── permissions.interface.ts   # Permission types
-│   │   ├── persona.interface.ts       # User persona types
-│   │   ├── poll.interface.ts          # Poll/voting types
-│   │   ├── profile.interface.ts       # User profile types
-│   │   ├── project.interface.ts       # Project data models
-│   │   ├── runtime-config.interface.ts # Runtime configuration types
-│   │   ├── search.interface.ts        # Search types
-│   │   ├── segment.interface.ts       # Analytics segment types
-│   │   ├── snowflake.interface.ts     # Snowflake query types
-│   │   ├── survey.interface.ts        # Survey data models
-│   │   ├── user-profile.interface.ts  # Extended user profile types
-│   │   ├── user-statistics.interface.ts # User statistics types
-│   │   └── index.ts                   # Interface exports
-│   ├── constants/                     # 30 constant files
-│   │   ├── accounts.constants.ts      # Account-related constants
-│   │   ├── action-items.constants.ts  # Action item constants
-│   │   ├── ai.constants.ts            # AI configuration constants
-│   │   ├── analytics.constants.ts     # Analytics constants
-│   │   ├── api.constants.ts           # API endpoint constants
-│   │   ├── chart-options.constants.ts # Chart.js configuration
-│   │   ├── colors.constants.ts        # LFX brand colors
-│   │   ├── committees.constants.ts    # Committee constants
-│   │   ├── cookie.constants.ts        # Cookie configuration
-│   │   ├── countries.constants.ts     # Country list
-│   │   ├── dashboard-metrics.constants.ts # Dashboard metric definitions
-│   │   ├── file-upload.constants.ts   # File upload constraints
-│   │   ├── font-sizes.constants.ts    # Typography scales
-│   │   ├── mailing-list.constants.ts  # Mailing list constants
-│   │   ├── meeting-templates/         # Meeting template data
-│   │   ├── meeting.constants.ts       # Meeting constants
-│   │   ├── persona.constants.ts       # Persona configuration
-│   │   ├── poll.constants.ts          # Poll/vote constants
-│   │   ├── primeng-theme.constants.ts # PrimeNG theme configuration
-│   │   ├── profile.constants.ts       # Profile constants
-│   │   ├── server.constants.ts        # Server-side constants
-│   │   ├── snowflake.constant.ts      # Snowflake configuration
-│   │   ├── states.constants.ts        # US states list
-│   │   ├── survey.constants.ts        # Survey constants
-│   │   ├── tag.constants.ts           # Tag constants
-│   │   ├── timezones.constants.ts     # Timezone definitions
-│   │   ├── tshirt-sizes.constants.ts  # T-shirt size options
-│   │   ├── typography.constants.ts    # Typography constants
-│   │   ├── validation.constants.ts    # Validation rules
-│   │   └── index.ts                   # Constant exports
-│   ├── enums/                         # 10 shared enumerations
-│   │   ├── committee-member.enum.ts   # Committee member roles
-│   │   ├── committee.enum.ts          # Committee types/categories
-│   │   ├── error.enum.ts              # Error codes
-│   │   ├── mailing-list.enum.ts       # Mailing list types
-│   │   ├── meeting.enum.ts            # Meeting statuses/types
-│   │   ├── nats.enum.ts               # NATS subjects
-│   │   ├── poll.enum.ts               # Poll statuses
-│   │   ├── snowflake.enum.ts          # Snowflake query types
-│   │   ├── survey.enum.ts             # Survey statuses
-│   │   └── index.ts                   # Enum exports
-│   ├── utils/                         # 12 utility modules
-│   │   ├── color.utils.ts             # Color manipulation (hexToRgba, toHslaValue)
-│   │   ├── date-time.utils.ts         # Date formatting, timezone handling
-│   │   ├── file.utils.ts              # File type detection
-│   │   ├── form.utils.ts              # Angular form helpers
-│   │   ├── html-utils.ts              # HTML sanitization
-│   │   ├── meeting.utils.ts           # Meeting data transformations
-│   │   ├── poll.utils.ts              # Poll status utilities
-│   │   ├── rsvp-calculator.util.ts    # RSVP statistics
-│   │   ├── string.utils.ts            # String manipulation
-│   │   ├── survey.utils.ts            # Survey data processing
-│   │   ├── url.utils.ts               # URL parsing and construction
-│   │   ├── vote.utils.ts              # Vote data utilities
-│   │   └── index.ts                   # Utility exports
-│   ├── validators/                    # 3 form validators
-│   │   ├── mailing-list.validators.ts # Mailing list form validators
-│   │   ├── meeting.validators.ts      # Meeting form validators
-│   │   ├── vote.validators.ts         # Vote form validators
-│   │   └── index.ts                   # Validator exports
-│   └── index.ts                       # Main package export
-├── package.json                       # Package configuration
-└── tsconfig.json                      # TypeScript configuration
-```
-
-## Package Configuration
+Each subdirectory has its own `index.ts` barrel so consumers can import from a category path (`@lfx-one/shared/interfaces`, `@lfx-one/shared/utils`, etc.) without reaching into individual files. The canonical listing of what exists lives in the source tree — read `ls packages/shared/src/<dir>/` rather than chasing a doc enumeration.
 
 ## Import Patterns
 
-The package supports category-specific imports:
-
 ```typescript
-// Interfaces
+// Category imports — the default style
 import { User, AuthContext, MeetingResponse } from '@lfx-one/shared/interfaces';
-
-// Constants
 import { lfxColors, lfxFontSizes } from '@lfx-one/shared/constants';
-
-// Enums
 import { MeetingType, VoteStatus } from '@lfx-one/shared/enums';
+import { formatDate, stripHtml, isValidUrl } from '@lfx-one/shared/utils';
+import { futureDateTimeValidator, editModeDateTimeValidator } from '@lfx-one/shared/validators';
 
-// Utilities
-import { formatDateToISOString, isValidUrl, stripHtml } from '@lfx-one/shared/utils';
-
-// Validators
-import { MeetingValidators } from '@lfx-one/shared/validators';
-
-// Direct source imports (for development hot reloading)
-import { User } from '@lfx-one/shared/src/interfaces/auth.interface';
+// Deep imports into a specific file — use only when the category barrel doesn't
+// re-export the symbol you need:
+import { User } from '@lfx-one/shared/interfaces/auth.interface';
 ```
 
-During development, the monorepo uses direct source imports (via TypeScript path mappings) for hot reloading -- no need to rebuild the shared package after changes.
+During development, TypeScript path mappings resolve `@lfx-one/shared/*` directly to `packages/shared/src/*`, so both the category form and the deep form hot-reload without a rebuild. Production builds go through `tsc` (see Build Process below).
 
 ## What Goes Where
 
 ### Interfaces (`interfaces/`)
 
-All TypeScript interfaces live here -- even component-specific ones. This ensures consistent type definitions and makes types discoverable.
+All TypeScript interfaces live in this package — **including component-specific prop interfaces** — so types are discoverable from one place and reusable without refactoring.
 
-**Conventions:**
-
-- File suffix: `.interface.ts` (e.g., `meeting.interface.ts`)
-- One domain per file -- group related interfaces together
-- Export from the barrel `index.ts`
-- Use `interface` over `type` unions for better maintainability
-- Add JSDoc comments for non-obvious properties
-
-### Key Interfaces
-
-#### Authentication (`auth.interface.ts`)
-
-```typescript
-export interface User {
-  sid: string;
-  'https://sso.linuxfoundation.org/claims/username': string;
-  given_name: string;
-  family_name: string;
-  nickname: string;
-  name: string;
-  picture: string;
-  updated_at: string;
-  email: string;
-  email_verified: boolean;
-  sub: string;
-}
-
-export interface AuthContext {
-  authenticated: boolean;
-  user: User | null;
-  persona?: PersonaType | null;
-  organizations?: Account[];
-}
-```
-
-Also includes: `M2MTokenResponse`, `BearerTokenOptions`, `RouteAuthConfig`, `AuthDecision`, `TokenExtractionResult`, `AuthMiddlewareResult`, `AuthConfig`
-
-#### Component Interfaces (`components.interface.ts`)
-
-```typescript
-export interface AvatarProps {
-  label?: string;
-  icon?: string;
-  image?: string;
-  size?: 'large' | 'xlarge' | 'normal';
-  shape?: 'square' | 'circle';
-  style?: Record<string, string | number> | null;
-  styleClass?: string;
-  ariaLabel?: string;
-}
-```
+- File suffix: `.interface.ts`; one domain per file (e.g. `meeting.interface.ts` owns all meeting-shaped types).
+- Prefer `interface` over union types where it makes the shape extensible.
+- Add JSDoc for non-obvious fields (especially ones that mirror upstream Go/Goa API shapes).
 
 ### Constants (`constants/`)
 
-Design tokens (colors, font sizes), configuration values, and static lookup data.
+Design tokens, API endpoint config, and static lookup data (countries, timezones, t-shirt sizes, etc.).
 
-**Conventions:**
-
-- Use `as const` assertions for immutable values
-- Group by domain (e.g., `meeting.constants.ts`, `ai.constants.ts`)
-- Subdirectories are allowed for large groupings (e.g., `meeting-templates/`)
+- Use `as const` assertions for immutable values.
+- Group by domain file. Subdirectories are allowed for large groupings (e.g. `meeting-templates/`).
 
 ### Enums (`enums/`)
 
-Shared enumerations used across frontend and backend.
+Shared enumerations used on both sides of the wire.
 
-**Conventions:**
-
-- File suffix: `.enum.ts`
-- Use string enums for readability in logs and APIs
-- Export from the barrel `index.ts`
+- File suffix: `.enum.ts`.
+- Prefer string enums so values are readable in logs, JSON payloads, and upstream filters.
 
 ### Utilities (`utils/`)
 
-Pure functions for common operations, split into **generic** and **domain-specific** modules:
+Pure functions, split into two groups:
 
-- **Generic**: Color conversion, date formatting, string manipulation, URL validation, file type detection, form helpers, HTML sanitization
-- **Domain-specific**: Meeting recurrence logic, RSVP calculations, vote/survey status derivation, poll utilities
+- **Generic** — domain-free helpers: date/time formatting (timezone-aware via `date-fns-tz`), string manipulation, URL parsing, file type detection, HTML sanitization, Angular form helpers, color math.
+- **Domain-specific** — helpers tied to a feature shape: meeting transformations and RSVP calculations, poll/vote/survey status derivation, project context helpers, committee/badge/reward logic, insights URL builders, marketing/flywheel computations, etc.
 
-**Conventions:**
+Conventions:
 
-- File suffix: `.utils.ts` or `.util.ts`
-- Keep functions pure where possible -- no side effects
-- Security-sensitive utilities (URL validation, file type checking) should block dangerous inputs by default
-- External dependencies are allowed but should be minimal -- currently uses `date-fns-tz` for timezone operations
-
-#### Generic Utilities
-
-| Module               | Description                                                                        |
-| -------------------- | ---------------------------------------------------------------------------------- |
-| `color.utils.ts`     | Color manipulation (`hexToRgba`, `toHslaValue`)                                    |
-| `date-time.utils.ts` | Date formatting, timezone handling (`formatDate`, `formatTime`, `getRelativeDate`) |
-| `file.utils.ts`      | File type detection (`getFileType`, `getFileExtension`)                            |
-| `form.utils.ts`      | Angular form helpers (`markFormControlsAsTouched`)                                 |
-| `html-utils.ts`      | HTML sanitization (`stripHtml`)                                                    |
-| `string.utils.ts`    | String manipulation (`parseToInt`, `truncate`)                                     |
-| `url.utils.ts`       | URL parsing and construction (`buildUrl`, `parseQueryParams`)                      |
-
-#### Domain-Specific Utilities
-
-| Module                    | Description                                                                 |
-| ------------------------- | --------------------------------------------------------------------------- |
-| `meeting.utils.ts`        | Meeting data transformations (`transformV1MeetingToV2`, `getMeetingStatus`) |
-| `poll.utils.ts`           | Poll status utilities (`getPollStatus`)                                     |
-| `rsvp-calculator.util.ts` | RSVP statistics calculation                                                 |
-| `survey.utils.ts`         | Survey data processing (`calculateNpsScore`, `getSurveyStatus`)             |
-| `vote.utils.ts`           | Vote data utilities                                                         |
+- File suffix: `.utils.ts` (or `.util.ts` for older single-purpose files).
+- Keep functions pure — no side effects, no I/O.
+- Security-sensitive utilities (URL validation, file type checking) should block dangerous inputs by default.
+- Keep runtime dependencies minimal. Currently only `date-fns` + `date-fns-tz` are runtime deps.
 
 ### Validators (`validators/`)
 
-Reusable Angular reactive form validators grouped by domain (meetings, mailing lists, votes).
+Reusable Angular reactive form validators, one file per domain.
 
-**Conventions:**
-
-- File suffix: `.validators.ts`
-- Export as a static class (e.g., `MeetingValidators.validTitle`)
-- Import from `@lfx-one/shared/validators`
+- File suffix: `.validators.ts`.
+- Export as standalone `ValidatorFn` functions (one per rule), grouped by domain in the file.
+- Import path: `@lfx-one/shared/validators`.
 
 ```typescript
-import { MeetingValidators } from '@lfx-one/shared/validators';
-import { MailingListValidators } from '@lfx-one/shared/validators';
-import { VoteValidators } from '@lfx-one/shared/validators';
+import { futureDateTimeValidator, editModeDateTimeValidator, voteOptionValidator } from '@lfx-one/shared/validators';
 ```
-
-- **`meeting.validators.ts`** - Meeting form validators (title, duration, time range)
-- **`mailing-list.validators.ts`** - Mailing list form validators (name, email)
-- **`vote.validators.ts`** - Vote form validators (question, options count, deadline)
 
 ## Adding New Items
 
-1. **Create or find the domain file** in the appropriate subdirectory
-2. **Add your interface/constant/enum/utility** following the naming conventions above
-3. **Export from the barrel** -- add to the subdirectory's `index.ts`
-4. **Use in your code** -- import from the category path (e.g., `@lfx-one/shared/interfaces`)
+1. Find or create the right domain file in the appropriate subdirectory (e.g. `interfaces/meeting.interface.ts`).
+2. Add the interface, constant, enum, util, or validator following the conventions above.
+3. Export from that subdirectory's `index.ts` barrel.
+4. Import via the category path (`@lfx-one/shared/interfaces`) from consuming code.
 
-No package rebuild needed during development -- path mappings resolve directly to source.
+No rebuild is needed during development — path mappings resolve directly to source.
 
 ## Build Process
 
-### TypeScript Configuration
-
-```json
-{
-  "compilerOptions": {
-    "target": "ES2022",
-    "module": "ES2022",
-    "moduleResolution": "bundler",
-    "declaration": true,
-    "outDir": "./dist",
-    "rootDir": "./src",
-    "strict": true,
-    "esModuleInterop": true,
-    "skipLibCheck": true,
-    "isolatedModules": true
-  },
-  "include": ["src/**/*"],
-  "exclude": ["dist", "node_modules"]
-}
-```
-
-### Build Commands
+The package is built with plain `tsc` (no bundler). Outputs declarations alongside JS for downstream workspace consumers.
 
 ```bash
-# Build the shared package
-cd packages/shared && yarn build
+# From the repo root
+yarn build           # builds everything including @lfx-one/shared
+yarn check-types     # type-check only, no emit
 
-# Watch for changes
-cd packages/shared && yarn watch
-
-# Type checking only
-cd packages/shared && yarn check-types
+# Or scoped
+yarn workspace @lfx-one/shared build
+yarn workspace @lfx-one/shared check-types
 ```
+
+TypeScript targets ES2022 with strict mode and `moduleResolution: "bundler"`; see `packages/shared/tsconfig.json` for the canonical config.
 
 ## Dependencies
 
-The shared package has minimal runtime dependencies to avoid version conflicts:
+- **Runtime** (within `packages/shared/`): `date-fns`, `date-fns-tz` — the only runtime deps inside the shared package. Other repo-wide runtime deps live in the root `package.json`.
+- **Peer**: `@angular/core`, `@angular/forms`, `rxjs`, `@fullcalendar/core`, `chart.js`, `snowflake-sdk` — see `packages/shared/package.json` for the canonical list and version ranges.
 
-- **`date-fns` / `date-fns-tz`**: Timezone-aware date operations in `date-time.utils.ts`
-- **Peer dependencies**: `@angular/forms` (for validators and form utils), `@fullcalendar/core`, `chart.js`, `snowflake-sdk` (types only)
-
-Keep runtime dependencies minimal. Prefer peer dependencies for framework-specific types.
+Keep runtime deps minimal. Prefer peer dependencies for framework-specific types so consumers control the version.
 
 ## Best Practices
 
-### Interface Design
-
-- **File naming**: Use `.interface.ts` suffix for all interface files
-- **Shared location**: All interfaces go in `@lfx-one/shared/interfaces`, even component-specific ones
-- **Optional properties**: Use `?` for properties that may be undefined
-- **TypeScript interfaces over union types**: Better maintainability
+- **File naming**: Use the canonical suffix (`.interface.ts`, `.constants.ts`, `.enum.ts`, `.utils.ts`, `.validators.ts`) so tooling and grep work consistently.
+- **Interfaces everywhere**: Even component-specific prop types live here — no local `interface Foo {}` declarations inside `apps/lfx-one/`.
+- **Prefer `interface` over union types** for shapes you might extend.
+- **Optional properties**: Use `?` for fields that may be undefined rather than `| undefined` in unions.
+- **Pure utils**: Utilities should not import from `apps/lfx-one/` — the dependency direction is one-way (app depends on shared, not vice versa).
