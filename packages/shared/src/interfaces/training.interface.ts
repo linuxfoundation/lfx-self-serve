@@ -6,6 +6,8 @@
  */
 export type CertificationStatus = 'active' | 'expired';
 
+export type EnrollmentStatus = 'started' | 'completed' | 'not-started' | 'not-completed';
+
 /**
  * A Linux Foundation certification earned by the user
  */
@@ -56,7 +58,6 @@ export interface CertificateRow {
  */
 export interface EnrollmentRow {
   ENROLLMENT_ID: string;
-  ENROLLMENT_TS: string;
   LOGO_URL: string | null;
   COURSE_NAME: string;
   COURSE_GROUP_DESCRIPTION: string | null;
@@ -64,6 +65,10 @@ export interface EnrollmentRow {
   LEVEL: string | null;
   COURSE_SLUG: string | null;
   COURSE_ID: string | null;
+  STATUS: EnrollmentStatus | null;
+  IS_ACTIVE_ENROLLMENT: boolean;
+  ENROLLMENT_TS: string | null;
+  TOTAL_TIME: number | null;
 }
 
 /**
@@ -80,10 +85,16 @@ export interface TrainingEnrollment {
   imageUrl: string;
   /** PROJECT_NAME */
   issuedBy: string;
-  /** ENROLLMENT_TS (ISO string) */
-  enrolledDate: string;
   /** Difficulty level (e.g. Beginner, Intermediate, Advanced) */
   level: string;
   /** URL slug for the specific course page; null if unavailable */
   courseSlug: string | null;
+  /** Enrollment date; null if not available */
+  enrolledDate: string | null;
+  /** Time spent on the course in seconds; null if not available */
+  totalTime: number | null;
+  /** Enrollment progress status from Snowflake */
+  status: EnrollmentStatus | null;
+  /** Whether the enrollment is currently active */
+  isActiveEnrollment: boolean;
 }

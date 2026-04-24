@@ -5,8 +5,9 @@
 
 import { DatePipe, NgClass } from '@angular/common';
 import { ChangeDetectionStrategy, Component, computed, input, Signal } from '@angular/core';
-import { Certification, TrainingEnrollment } from '@lfx-one/shared/interfaces';
-import { CONTINUE_LEARNING_URL, COURSE_URL_PREFIX } from '@lfx-one/shared/constants';
+import { Certification, EnrollmentStatus, TrainingEnrollment } from '@lfx-one/shared/interfaces';
+import { CONTINUE_LEARNING_URL, COURSE_URL_PREFIX, ENROLL_AGAIN_URL, ENROLL_AGAIN_URL_PREFIX } from '@lfx-one/shared/constants';
+import { formatDuration } from '@lfx-one/shared/utils';
 
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
@@ -21,28 +22,23 @@ export class TrainingCardComponent {
   // ─── Inputs ────────────────────────────────────────────────────────────────
   public readonly training = input.required<TrainingEnrollment | Certification>();
   public readonly variant = input<'ongoing' | 'completed'>('ongoing');
+  public readonly showStatus = input<boolean>(true);
 
   // ─── Computed Signals ──────────────────────────────────────────────────────
   protected readonly hasImage = computed(() => !!this.training().imageUrl);
   protected readonly isOngoing = computed(() => this.variant() === 'ongoing');
-  protected readonly dateLabel = computed(() => (this.variant() === 'ongoing' ? 'Enrolled' : 'Completed'));
-  protected readonly date: Signal<string> = this.initDate();
   protected readonly levelClasses: Signal<string> = this.initLevelClasses();
   protected readonly downloadUrl: Signal<string | null> = this.initDownloadUrl();
   protected readonly continueLearningUrl: Signal<string> = this.initContinueLearningUrl();
+  protected readonly enrollAgainUrl: Signal<string> = this.initEnrollAgainUrl();
+  protected readonly isActiveEnrollment: Signal<boolean> = this.initIsActiveEnrollment();
+  protected readonly statusLabel: Signal<string> = this.initStatusLabel();
+  protected readonly statusClasses: Signal<string> = this.initStatusClasses();
+  protected readonly enrolledDate: Signal<string | null> = this.initEnrolledDate();
+  protected readonly timeSpent: Signal<string | null> = this.initTimeSpent();
+  protected readonly completedIssuedDate: Signal<string | null> = this.initCompletedIssuedDate();
 
   // ─── Private Initializers ──────────────────────────────────────────────────
-  private initDate(): Signal<string> {
-    return computed(() => {
-      const t = this.training();
-      // variant='ongoing' → caller passes TrainingEnrollment; variant='completed' → Certification
-      if (this.variant() === 'ongoing') {
-        return (t as TrainingEnrollment).enrolledDate ?? '';
-      }
-      return (t as Certification).issuedDate ?? '';
-    });
-  }
-
   private initLevelClasses(): Signal<string> {
     return computed(() => {
       const level = this.training().level;
@@ -65,6 +61,71 @@ export class TrainingCardComponent {
     return computed(() => {
       const t = this.training() as TrainingEnrollment;
       return t.courseSlug ? `${COURSE_URL_PREFIX}${t.courseSlug}` : CONTINUE_LEARNING_URL;
+    });
+  }
+
+  private initEnrollAgainUrl(): Signal<string> {
+    return computed(() => {
+      const t = this.training() as TrainingEnrollment;
+      return t.courseSlug ? `${ENROLL_AGAIN_URL_PREFIX}${t.courseSlug}` : ENROLL_AGAIN_URL;
+    });
+  }
+
+  private initIsActiveEnrollment(): Signal<boolean> {
+    return computed(() => {
+      if (this.variant() !== 'ongoing') return true;
+      const t = this.training() as TrainingEnrollment;
+      return t.isActiveEnrollment;
+    });
+  }
+
+  private initStatusLabel(): Signal<string> {
+    return computed(() => {
+      if (this.variant() !== 'ongoing') return '';
+      const status = (this.training() as TrainingEnrollment).status as EnrollmentStatus | null;
+      const labels: Record<EnrollmentStatus, string> = {
+        started: 'Started',
+        completed: 'Completed',
+        'not-started': 'Not Started',
+        'not-completed': 'Not Completed',
+      };
+      return status ? (labels[status] ?? '') : '';
+    });
+  }
+
+  private initEnrolledDate(): Signal<string | null> {
+    return computed(() => {
+      if (this.variant() !== 'ongoing') return null;
+      return (this.training() as TrainingEnrollment).enrolledDate ?? null;
+    });
+  }
+
+  private initTimeSpent(): Signal<string | null> {
+    return computed(() => {
+      if (this.variant() !== 'ongoing') return null;
+      const seconds = (this.training() as TrainingEnrollment).totalTime;
+      return seconds != null ? formatDuration(seconds) : null;
+    });
+  }
+
+  private initCompletedIssuedDate(): Signal<string | null> {
+    return computed(() => {
+      if (this.variant() !== 'completed') return null;
+      return (this.training() as Certification).issuedDate ?? null;
+    });
+  }
+
+  private initStatusClasses(): Signal<string> {
+    return computed(() => {
+      if (this.variant() !== 'ongoing') return '';
+      const status = (this.training() as TrainingEnrollment).status as EnrollmentStatus | null;
+      const classes: Record<EnrollmentStatus, string> = {
+        started: 'bg-blue-50 text-blue-700 border border-blue-200',
+        completed: 'bg-green-50 text-green-700 border border-green-200',
+        'not-started': 'bg-gray-50 text-gray-500 border border-gray-200',
+        'not-completed': 'bg-red-50 text-red-600 border border-red-200',
+      };
+      return status ? (classes[status] ?? 'bg-gray-50 text-gray-500 border border-gray-200') : '';
     });
   }
 }

@@ -7,3 +7,5 @@ export type ProductType = typeof TRAINING_PRODUCT_TYPE | typeof CERTIFICATION_PR
 
 export const CONTINUE_LEARNING_URL = 'https://trainingportal.linuxfoundation.org/learn/dashboard';
 export const COURSE_URL_PREFIX = 'https://trainingportal.linuxfoundation.org/learn/course/';
+export const ENROLL_AGAIN_URL = 'https://trainingportal.linuxfoundation.org/courses';
+export const ENROLL_AGAIN_URL_PREFIX = 'https://trainingportal.linuxfoundation.org/courses/';

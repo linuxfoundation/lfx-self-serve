@@ -474,3 +474,16 @@ export function mapRecurrenceToFormValue(recurrence: MeetingRecurrence | null | 
       return 'none';
   }
 }
+
+/**
+ * Formats a duration in seconds into a human-readable string.
+ * Examples: 90s → "1m", 3720s → "1h 2m", 30s → "< 1m"
+ */
+export function formatDuration(seconds: number): string {
+  if (seconds < 60) return '< 1m';
+  const h = Math.floor(seconds / 3600);
+  const m = Math.floor((seconds % 3600) / 60);
+  if (h === 0) return `${m}m`;
+  if (m === 0) return `${h}h`;
+  return `${h}h ${m}m`;
+}

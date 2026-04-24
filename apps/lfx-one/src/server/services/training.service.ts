@@ -27,11 +27,20 @@ const CERTIFICATES_UNFILTERED_QUERY = `${CERTIFICATES_BASE_QUERY}
 `;
 
 const ENROLLMENTS_QUERY = `
-  SELECT ENROLLMENT_ID, ENROLLMENT_TS, COURSE_NAME, COURSE_GROUP_DESCRIPTION,
-         LOGO_URL, PROJECT_NAME, LEVEL, COURSE_SLUG, COURSE_ID
+  SELECT ENROLLMENT_ID, COURSE_NAME, COURSE_GROUP_DESCRIPTION,
+         LOGO_URL, PROJECT_NAME, LEVEL, COURSE_SLUG, COURSE_ID,
+         STATUS, IS_ACTIVE_ENROLLMENT, ENROLLMENT_TS, TOTAL_TIME
   FROM ANALYTICS.PLATINUM_LFX_ONE.USER_COURSE_ENROLLMENTS
   WHERE USER_NAME = ? AND PRODUCT_TYPE = ?
-  ORDER BY ENROLLMENT_TS DESC
+  ORDER BY
+    CASE STATUS
+      WHEN 'started' THEN 1
+      WHEN 'not-started' THEN 2
+      WHEN 'not-completed' THEN 3
+      WHEN 'completed' THEN 4
+      ELSE 5
+    END,
+    COURSE_NAME ASC
 `;
 
 export class TrainingService {
@@ -135,9 +144,12 @@ export class TrainingService {
       description: row.COURSE_GROUP_DESCRIPTION ?? '',
       imageUrl: row.LOGO_URL ?? '',
       issuedBy: row.PROJECT_NAME ?? '',
-      enrolledDate: row.ENROLLMENT_TS,
       level: row.LEVEL ?? '',
       courseSlug: row.COURSE_SLUG ?? null,
+      enrolledDate: row.ENROLLMENT_TS ?? null,
+      totalTime: row.TOTAL_TIME ?? null,
+      status: row.STATUS ?? null,
+      isActiveEnrollment: row.IS_ACTIVE_ENROLLMENT,
     };
   }
 
