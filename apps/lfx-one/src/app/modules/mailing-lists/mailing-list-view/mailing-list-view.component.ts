@@ -5,7 +5,6 @@ import { LowerCasePipe } from '@angular/common';
 import { Component, computed, inject, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
 import { ActivatedRoute, Router, RouterLink } from '@angular/router';
-import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
@@ -22,7 +21,7 @@ import { CommitteeReference, GroupsIOMailingList } from '@lfx-one/shared/interfa
 import { MailingListVisibilitySeverityPipe } from '@pipes/mailing-list-visibility-severity.pipe';
 import { StripHtmlPipe } from '@pipes/strip-html.pipe';
 import { MailingListService } from '@services/mailing-list.service';
-import { MenuItem, MessageService } from 'primeng/api';
+import { MessageService } from 'primeng/api';
 import { TooltipModule } from 'primeng/tooltip';
 import { BehaviorSubject, catchError, combineLatest, of, switchMap } from 'rxjs';
 
@@ -31,7 +30,6 @@ import { MailingListMembersComponent } from '../components/mailing-list-members/
 @Component({
   selector: 'lfx-mailing-list-view',
   imports: [
-    BreadcrumbComponent,
     CardComponent,
     ButtonComponent,
     TagComponent,
@@ -52,6 +50,9 @@ export class MailingListViewComponent {
   private readonly mailingListService = inject(MailingListService);
   private readonly messageService = inject(MessageService);
 
+  // Back-navigation label injected from router state at navigation time
+  private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
+
   // Protected constants
   protected readonly mailingListLabel = MAILING_LIST_LABEL;
   protected readonly memberLabel = MAILING_LIST_MEMBER_LABEL;
@@ -67,7 +68,7 @@ export class MailingListViewComponent {
 
   // Complex computed/toSignal signals
   public readonly mailingList: Signal<GroupsIOMailingList | null> = this.initMailingList();
-  public readonly breadcrumbItems: Signal<MenuItem[]> = this.initBreadcrumbItems();
+  public readonly backLabel: Signal<string> = computed(() => this.navBackLabel ?? this.mailingListLabel.plural);
   public readonly emailAddress: Signal<string> = this.initEmailAddress();
   public readonly memberCount: Signal<number> = this.initMemberCount();
   public readonly linkedCommittees: Signal<CommitteeReference[]> = this.initLinkedCommittees();
@@ -79,6 +80,10 @@ export class MailingListViewComponent {
 
   public refreshData(): void {
     this.refresh.next();
+  }
+
+  public goBack(): void {
+    this.router.navigate(['/', 'mailing-lists']);
   }
 
   // Private initializer functions
@@ -114,10 +119,6 @@ export class MailingListViewComponent {
     );
   }
 
-  private initBreadcrumbItems(): Signal<MenuItem[]> {
-    return computed(() => [{ label: this.mailingListLabel.plural, routerLink: ['/mailing-lists'] }, { label: this.mailingList()?.title || '' }]);
-  }
-
   private initEmailAddress(): Signal<string> {
     return computed(() => {
       const ml = this.mailingList();
@@ -128,10 +129,7 @@ export class MailingListViewComponent {
   }
 
   private initMemberCount(): Signal<number> {
-    return computed(() => {
-      // Placeholder - will be populated from API when available
-      return 0;
-    });
+    return computed(() => this.mailingList()?.subscriber_count ?? 0);
   }
 
   private initLinkedCommittees(): Signal<CommitteeReference[]> {

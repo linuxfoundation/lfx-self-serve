@@ -29,14 +29,34 @@
     @let ml = mailingList()!;
     <div class="flex flex-col gap-6">
       <!-- Header Section -->
-      <div class="flex justify-between items-start">
-        <div class="flex flex-col gap-4" data-testid="mailing-list-view-header">
-          <lfx-breadcrumb [model]="breadcrumbItems()" data-testid="mailing-list-view-breadcrumb"></lfx-breadcrumb>
-          <div class="flex flex-col gap-1">
-            <h1 data-testid="mailing-list-view-title">{{ ml.title }}</h1>
-            @if (ml.description) {
-              <p class="text-gray-500" data-testid="mailing-list-view-description">{{ ml.description | stripHtml }}</p>
-            }
+      <lfx-card styleClass="[&_.p-card-body]:!p-0" data-testid="mailing-list-view-header">
+        <div class="px-6 pt-5 pb-4 flex flex-col gap-4">
+          <button
+            type="button"
+            class="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 transition-colors w-fit"
+            (click)="goBack()"
+            data-testid="mailing-list-view-back-link">
+            <i class="fa-light fa-angle-left text-xs"></i>
+            {{ backLabel() }}
+          </button>
+
+          <!-- Title row + Edit button -->
+          <div class="flex items-start gap-3">
+            <div class="flex flex-col gap-1 flex-1">
+              <h1 class="font-display font-light text-[20px]" data-testid="mailing-list-view-title">{{ ml.title }}</h1>
+              @if (ml.description) {
+                <p class="text-gray-500 text-sm" data-testid="mailing-list-view-description">{{ ml.description | stripHtml }}</p>
+              }
+            </div>
+            <div class="flex items-center gap-3 flex-shrink-0">
+              <lfx-button
+                icon="fa-light fa-edit"
+                label="Edit {{ mailingListLabel.singular }}"
+                size="small"
+                [routerLink]="editRoute()"
+                data-testid="mailing-list-view-edit-button">
+              </lfx-button>
+            </div>
           </div>
 
           <!-- Metadata Row -->
@@ -75,18 +95,7 @@
             }
           </div>
         </div>
-
-        <!-- Action Button -->
-        <div class="flex items-center gap-3">
-          <lfx-button
-            icon="fa-light fa-edit"
-            label="Edit {{ mailingListLabel.singular }}"
-            size="small"
-            [routerLink]="editRoute()"
-            data-testid="mailing-list-view-edit-button">
-          </lfx-button>
-        </div>
-      </div>
+      </lfx-card>
 
       <!-- Two Column Grid -->
       <div class="grid grid-cols-1 lg:grid-cols-3 gap-6 items-stretch">

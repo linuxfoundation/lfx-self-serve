@@ -127,7 +127,9 @@ export class MailingListDashboardComponent {
    * Handle mailing list row click - navigate to detail page
    */
   public onMailingListClick(mailingList: GroupsIOMailingList): void {
-    this.router.navigate(['/mailing-lists', mailingList.uid]);
+    this.router.navigate(['/mailing-lists', mailingList.uid], {
+      state: { backLabel: this.isMeLens() ? `My ${this.mailingListLabelPlural}` : this.mailingListLabelPlural },
+    });
   }
 
   /**
