@@ -14,6 +14,7 @@ import {
   Meeting,
   MeetingAttachment,
   MeetingJoinURL,
+  MeetingRecurrence,
   MeetingRegistrant,
   MeetingRsvp,
   PaginatedResponse,
@@ -262,6 +263,7 @@ export class MeetingService {
     const createPayload = {
       ...meetingData,
       ...(username && { organizers: [username] }),
+      ...(meetingData.recurrence && { recurrence: this.normalizeRecurrence(meetingData.recurrence) }),
     };
 
     const sanitizedPayload = logger.sanitize({ createPayload });
@@ -325,6 +327,7 @@ export class MeetingService {
     const updatePayload = {
       ...meetingData,
       organizers: Array.from(organizersSet),
+      ...(meetingData.recurrence && { recurrence: this.normalizeRecurrence(meetingData.recurrence) }),
     };
 
     const sanitizedPayload = logger.sanitize({ updatePayload, editType });
@@ -1279,5 +1282,19 @@ export class MeetingService {
     }
 
     return nameMap;
+  }
+
+  /**
+   * Ensures a recurrence object always has an end condition.
+   * The upstream meeting service requires either end_date_time or end_times.
+   * Defaults to 100 years from now when neither is specified.
+   */
+  private normalizeRecurrence(recurrence: MeetingRecurrence): MeetingRecurrence {
+    if (recurrence.end_date_time || recurrence.end_times) {
+      return recurrence;
+    }
+    const hundredYearsFromNow = new Date();
+    hundredYearsFromNow.setFullYear(hundredYearsFromNow.getFullYear() + 100);
+    return { ...recurrence, end_date_time: hundredYearsFromNow.toISOString() };
   }
 }
