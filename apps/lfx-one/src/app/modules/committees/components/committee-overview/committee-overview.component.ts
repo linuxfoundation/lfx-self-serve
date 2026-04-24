@@ -148,13 +148,7 @@ export class CommitteeOverviewComponent {
     return `${name} is closed to new members. Contact a group admin for access.`;
   });
 
-  public joinCtaTitle: Signal<string> = computed(() => {
-    const mode = this.committee().join_mode;
-    const name = this.committee().name;
-    if (mode === 'application') return `Apply to join ${name}`;
-    if (mode === 'invite_only') return `Request access to ${name}`;
-    return `Join ${name}`;
-  });
+  public joinCtaTitle: Signal<string> = computed(() => `Interested in ${this.committee().name}?`);
 
   public joinCtaDescription: Signal<string> = computed(() => {
     const mode = this.committee().join_mode;
@@ -384,8 +378,7 @@ export class CommitteeOverviewComponent {
 
   private initPendingActionsViewAllTab(): Signal<'votes' | 'surveys'> {
     return computed(() => {
-      const overflow = this.pendingActionItems().slice(2);
-      const hasVotes = overflow.some((item) => item.type === 'Vote');
+      const hasVotes = this.pendingActionItems().some((item) => item.type === 'Vote');
       return hasVotes ? 'votes' : 'surveys';
     });
   }

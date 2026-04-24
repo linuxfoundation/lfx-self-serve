@@ -1,7 +1,7 @@
 // Copyright The Linux Foundation and each contributor to LFX.
 // SPDX-License-Identifier: MIT
 
-import { Component, computed, inject, linkedSignal, signal, Signal, WritableSignal } from '@angular/core';
+import { Component, computed, inject, linkedSignal, signal, Signal } from '@angular/core';
 import { takeUntilDestroyed, toObservable, toSignal } from '@angular/core/rxjs-interop';
 import { DatePipe, NgClass } from '@angular/common';
 import { HttpErrorResponse } from '@angular/common/http';
@@ -9,8 +9,8 @@ import { ActivatedRoute, Router } from '@angular/router';
 import { DialogService, DynamicDialogRef } from 'primeng/dynamicdialog';
 import { PopoverModule } from 'primeng/popover';
 import { SkeletonModule } from 'primeng/skeleton';
-import { BreadcrumbComponent } from '@components/breadcrumb/breadcrumb.component';
 import { ButtonComponent } from '@components/button/button.component';
+import { CardComponent } from '@components/card/card.component';
 import { TagComponent } from '@components/tag/tag.component';
 import { RouteLoadingComponent } from '@components/loading/route-loading.component';
 import {
@@ -33,7 +33,7 @@ import { InitialsPipe } from '@pipes/initials.pipe';
 import { JoinModeLabelPipe } from '@pipes/join-mode-label.pipe';
 import { SafeUrlPipe } from '@pipes/safe-url.pipe';
 import { DescriptionDialogComponent } from '../components/description-dialog/description-dialog.component';
-import { MenuItem, MessageService } from 'primeng/api';
+import { MessageService } from 'primeng/api';
 import { catchError, combineLatest, EMPTY, filter, finalize, map, of, switchMap, take } from 'rxjs';
 import { getHttpErrorDetail } from '@shared/utils/http-error.utils';
 import { JoinApplicationDialogResult } from '@lfx-one/shared/interfaces';
@@ -51,8 +51,8 @@ import { CommitteeVotesComponent } from '../components/committee-votes/committee
 @Component({
   selector: 'lfx-committee-view',
   imports: [
-    BreadcrumbComponent,
     ButtonComponent,
+    CardComponent,
     TagComponent,
     RouteLoadingComponent,
     DatePipe,
@@ -87,6 +87,8 @@ export class CommitteeViewComponent {
   private readonly dialogService = inject(DialogService);
   private readonly userService = inject(UserService);
 
+  private readonly navBackLabel: string | null = this.router.getCurrentNavigation()?.extras?.state?.['backLabel'] ?? null;
+
   public meetingsTimeFilter = signal<'upcoming' | 'past'>('upcoming');
 
   private readonly committeeId: Signal<string | null> = this.initCommitteeId();
@@ -102,7 +104,6 @@ export class CommitteeViewComponent {
   public membersLoading = signal<boolean>(true);
   public myRoleLoading: Signal<boolean> = computed(() => this.membersLoading());
   public joiningOrLeaving = signal(false);
-  public showSettings = this.initShowSettings();
 
   // -- Computed / toSignal --
   public committee: Signal<Committee | null> = this.initializeCommittee();
@@ -124,7 +125,7 @@ export class CommitteeViewComponent {
     return getCommitteeCategorySeverity(category || '');
   });
 
-  public breadcrumbItems: Signal<MenuItem[]> = computed(() => [{ label: 'Groups', routerLink: ['/groups'] }, { label: this.committee()?.name || '' }]);
+  public backLabel: Signal<string> = computed(() => this.navBackLabel ?? (this.myRole() !== null ? 'My Groups' : 'Groups'));
 
   public canEdit: Signal<boolean> = computed(() => !!this.committee()?.writer);
 
@@ -176,19 +177,23 @@ export class CommitteeViewComponent {
     { key: 'overview', label: 'Overview', icon: 'fa-gauge', visible: () => true },
     {
       key: 'members',
-      label: 'Members',
+      label: () => {
+        const count = this.committee()?.total_members;
+        return count != null ? `Members (${count})` : 'Members';
+      },
       icon: 'fa-users',
       visible: () => this.isMemberOrAdmin() && this.isMembersTabVisible(),
-      badge: () => this.committee()?.total_members ?? null,
     },
     { key: 'votes', label: 'Votes', icon: 'fa-check-to-slot', visible: () => this.isMemberOrAdmin() && this.isVotesTabVisible() },
     { key: 'meetings', label: 'Meetings', icon: 'fa-calendar', visible: () => this.isMemberOrAdmin() },
     { key: 'surveys', label: 'Surveys', icon: 'fa-chart-simple', visible: () => this.isMemberOrAdmin() },
     { key: 'documents', label: 'Documents', icon: 'fa-folder-open', visible: () => this.isMemberOrAdmin() },
-    { key: 'settings', label: 'Settings', icon: 'fa-gear', visible: () => (this.canEdit() || this.canReview()) && this.showSettings() },
+    { key: 'settings', label: 'Settings', icon: 'fa-gear', visible: () => this.canEdit() || this.canReview() },
   ];
 
-  public visibleTabs: Signal<TabConfigEntry[]> = computed(() => this.tabConfig.filter((tab) => tab.visible()));
+  public visibleTabs = computed(() =>
+    this.tabConfig.filter((tab) => tab.visible()).map((tab) => ({ ...tab, label: typeof tab.label === 'function' ? tab.label() : tab.label }))
+  );
 
   // -- Tab state --
   public activeTab = linkedSignal<{ id: string | null; visible: TabConfigEntry[] }, CommitteeTab>({
@@ -212,10 +217,6 @@ export class CommitteeViewComponent {
 
   public refreshCommittee(): void {
     this.refresh.update((v) => v + 1);
-  }
-
-  public toggleSettings(): void {
-    this.showSettings.update((v) => !v);
   }
 
   public refreshMembers(): void {
@@ -417,13 +418,6 @@ export class CommitteeViewComponent {
       ),
       { requireSync: true }
     );
-  }
-
-  private initShowSettings(): WritableSignal<boolean> {
-    return linkedSignal<{ id: string | null; tab: CommitteeTab | null }, boolean>({
-      source: () => ({ id: this.committeeId(), tab: this.initialTab() }),
-      computation: ({ tab }) => tab === 'settings',
-    });
   }
 
   private initAutoSelectInitialTab(): void {

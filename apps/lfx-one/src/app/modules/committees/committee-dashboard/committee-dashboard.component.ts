@@ -158,7 +158,9 @@ export class CommitteeDashboardComponent {
   }
 
   public onCommitteeClick(committee: Committee): void {
-    this.router.navigate(['/groups', committee.uid]);
+    this.router.navigate(['/groups', committee.uid], {
+      state: { backLabel: this.isMeLens() ? 'My Groups' : 'Groups' },
+    });
   }
 
   public onFoundationFilterChange(value: string | null): void {

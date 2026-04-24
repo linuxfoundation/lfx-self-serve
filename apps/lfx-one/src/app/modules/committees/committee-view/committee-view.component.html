@@ -33,374 +33,369 @@
     <!-- Committee Dashboard Content -->
     <div class="flex flex-col gap-6">
       <!-- Header Section -->
-      <div class="flex flex-col gap-3" data-testid="committee-view-header">
-        <lfx-breadcrumb [model]="breadcrumbItems()" data-testid="committee-view-breadcrumb"></lfx-breadcrumb>
-        <div class="flex items-center gap-3">
-          <h1 data-testid="committee-view-name">{{ committee()?.name }}</h1>
-          @if (!committee()?.public) {
-            <i class="fa-light fa-lock w-4 h-4 text-gray-400"></i>
-          }
-          <!-- Join / Request to Join / Contact Admin / Leave actions -->
-          <div class="ml-auto flex items-center gap-2">
-            @if (isVisitor()) {
-              @if (committee()?.join_mode === 'open') {
-                <lfx-button
-                  label="Join Group"
-                  icon="fa-light fa-user-plus"
-                  severity="info"
-                  size="small"
-                  [loading]="joiningOrLeaving()"
-                  (onClick)="handleJoinRequest()"
-                  data-testid="committee-view-join-btn" />
-              } @else if (committee()?.join_mode === 'application') {
-                <lfx-button
-                  label="Request to Join"
-                  icon="fa-light fa-paper-plane"
-                  severity="secondary"
-                  [outlined]="true"
-                  size="small"
-                  [loading]="joiningOrLeaving()"
-                  (onClick)="handleJoinRequest()"
-                  data-testid="committee-view-request-to-join-btn" />
-              } @else if (committee()?.join_mode === 'invite_only') {
-                <lfx-button
-                  label="Request Access"
-                  icon="fa-light fa-paper-plane"
-                  severity="secondary"
-                  [outlined]="true"
-                  size="small"
-                  [loading]="joiningOrLeaving()"
-                  (onClick)="handleJoinRequest()"
-                  data-testid="committee-view-request-access-btn" />
-              } @else {
-                <lfx-button
-                  label="Contact Admin"
-                  icon="fa-light fa-envelope"
-                  severity="secondary"
-                  [outlined]="true"
-                  size="small"
-                  (onClick)="handleJoinRequest()"
-                  data-testid="committee-view-contact-admin-btn" />
-              }
-            } @else if (isMemberOrAdmin() && !canEdit()) {
-              <lfx-button
-                label="Leave Group"
-                icon="fa-light fa-arrow-right-from-bracket"
-                severity="secondary"
-                [outlined]="true"
-                size="small"
-                [loading]="joiningOrLeaving()"
-                (onClick)="handleLeaveRequest()"
-                data-testid="committee-view-leave-btn" />
-            }
-            @if (canEdit() || canReview()) {
-              <lfx-button
-                icon="fa-light fa-gear"
-                [text]="true"
-                [rounded]="true"
-                size="small"
-                [severity]="showSettings() ? 'primary' : 'secondary'"
-                [tooltip]="showSettings() ? 'Hide settings tab' : 'Show settings tab'"
-                [ariaLabel]="showSettings() ? 'Hide settings tab' : 'Show settings tab'"
-                (onClick)="toggleSettings()"
-                data-testid="committee-view-settings-toggle" />
-            }
-          </div>
-        </div>
-        <!-- Description + Channels card side by side -->
-        <div class="flex flex-col lg:flex-row justify-between items-start gap-6">
-          <!-- Left column -->
-          <div class="flex flex-col gap-3 flex-1 min-w-0">
-            @if (committee()?.description || canEdit()) {
-              <div class="flex items-start gap-2 max-w-2xl" data-testid="committee-view-description">
-                @if (committee()?.description) {
-                  <p class="text-gray-500 line-clamp-2 flex-1">{{ committee()?.description }}</p>
-                  <lfx-button
-                    label="more"
-                    [text]="true"
-                    size="small"
-                    severity="info"
-                    styleClass="!text-xs !p-0 whitespace-nowrap"
-                    (onClick)="openDescriptionView()"></lfx-button>
-                } @else if (canEdit()) {
-                  <span class="text-gray-400 text-sm italic flex-1">No description yet.</span>
-                }
-                @if (canEdit()) {
-                  <lfx-button
-                    icon="fa-light fa-pen-to-square"
-                    [text]="true"
-                    [rounded]="true"
-                    size="small"
-                    severity="secondary"
-                    tooltip="Edit description"
-                    (onClick)="openEditDescription()"></lfx-button>
-                }
-              </div>
-            }
-            <div class="flex items-center gap-3 flex-wrap">
-              @if (committee()?.category) {
-                <lfx-tag [value]="committee()!.category" [severity]="categorySeverity()"></lfx-tag>
-              }
-              @if (committee()?.enable_voting) {
-                <lfx-tag value="Voting Enabled" severity="success"></lfx-tag>
-              }
-              @if (committee()?.join_mode) {
-                <lfx-tag [value]="committee()!.join_mode! | joinModeLabel" severity="secondary"></lfx-tag>
-              }
-            </div>
-            <div class="flex items-center gap-4 flex-wrap">
-              @if (committee()?.project_name || committee()?.foundation_name) {
-                <div class="flex items-center gap-1.5">
-                  <span class="text-xs font-medium text-gray-500">Parent Project:</span>
-                  <span class="text-xs text-gray-700">{{ committee()?.project_name || committee()?.foundation_name }}</span>
-                </div>
-              }
-              @if (parentGroup(); as parent) {
-                <button
-                  class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
-                  (click)="navigateToParentGroup()"
-                  data-testid="committee-view-parent-group-link">
-                  <i class="fa-light fa-sitemap text-[11px]"></i>
-                  <span>Parent Group:</span>
-                  <span>{{ parent.name }}</span>
-                  <i class="fa-light fa-chevron-right text-[10px]"></i>
-                </button>
-              }
-              @if (subGroupsLoading()) {
-                <p-skeleton width="120px" height="16px" borderRadius="4px" />
-              } @else if (subGroups().length === 1) {
-                <!-- Single sub-group: inline link, no dropdown -->
-                <button
-                  class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
-                  (click)="navigateToSubGroup(subGroups()[0])"
-                  data-testid="committee-view-sub-group-link">
-                  <i class="fa-light fa-sitemap text-[11px]"></i>
-                  <span>Sub-Group:</span>
-                  <span>{{ subGroups()[0].name }}</span>
-                  <i class="fa-light fa-chevron-right text-[10px]"></i>
-                </button>
-              } @else if (subGroups().length > 1) {
-                <!-- Multiple sub-groups: dropdown popover -->
-                <div class="relative">
-                  <button
-                    class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
-                    (click)="subGroupsPopover.toggle($event)"
-                    data-testid="committee-view-sub-groups-trigger">
-                    <i class="fa-light fa-sitemap text-[11px]"></i>
-                    <span>Sub-Groups</span>
-                    <lfx-tag [value]="'' + subGroups().length" [rounded]="true" severity="info" styleClass="!text-[10px] !px-1.5 !py-0" />
-                    <i class="fa-light fa-chevron-down text-[10px]"></i>
-                  </button>
-                  <p-popover #subGroupsPopover [style]="{ width: '360px' }" data-testid="committee-view-sub-groups-popover">
-                    <div class="flex flex-col">
-                      <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-3 pt-2 pb-1.5">Sub-Groups</div>
-                      @for (sg of subGroups(); track sg.uid) {
-                        <button
-                          class="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors cursor-pointer w-full text-left"
-                          (click)="navigateToSubGroup(sg); subGroupsPopover.hide()"
-                          data-testid="committee-view-sub-group-item">
-                          <div
-                            class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0"
-                            [ngClass]="sg.category | categoryAvatarColor">
-                            {{ sg.name | initials }}
-                          </div>
-                          <div class="flex flex-col gap-0.5 min-w-0 flex-1">
-                            <span class="text-sm font-medium text-gray-900 truncate">{{ sg.name }}</span>
-                            <span class="text-sm text-gray-500">{{ sg.category }} &middot; {{ sg.total_members }} members</span>
-                          </div>
-                          <i class="fa-light fa-chevron-right text-xs text-gray-400 shrink-0"></i>
-                        </button>
-                      }
-                    </div>
-                  </p-popover>
-                </div>
-              }
-            </div>
-            <div class="flex items-center gap-1">
-              <span class="text-xs text-gray-400">Created {{ committee()?.created_at | date: 'MMM d, y' }}</span>
-              @if (committee()?.updated_at) {
-                <span class="text-xs text-gray-400">&middot; Updated {{ committee()?.updated_at | date: 'MMM d, y' }}</span>
-              }
-            </div>
-          </div>
-          <!-- Right: Channels card -->
-          @if (hasChannels()) {
-            <div
-              class="relative bg-gray-50 border border-gray-200 rounded-lg text-[12.5px] text-gray-600 w-full lg:max-w-[380px] flex-shrink-0 self-start"
-              data-testid="committee-view-channels-card"
-              [attr.inert]="isVisitor() || null">
-              <!-- Associated Mailing Lists -->
-              @if (associatedMailingLists().length > 0) {
-                @let firstMl = associatedMailingLists()[0];
-                @let extraCount = extraMailingListCount();
-                <!-- First mailing list row -->
-                <div class="relative flex items-center gap-2.5 px-3.5 py-2.5 border-b border-gray-200" data-testid="committee-view-mailing-list-row">
-                  <div class="w-[30px] h-[30px] rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
-                    <i class="fa-light fa-envelope text-blue-600 text-xs" aria-hidden="true"></i>
-                  </div>
-                  <div class="flex-1 min-w-0">
-                    <div class="flex items-center gap-1.5 flex-wrap">
-                      <a
-                        [href]="'mailto:' + (firstMl | mailingListEmail)"
-                        class="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 transition-colors no-underline"
-                        [title]="firstMl.group_name"
-                        >{{ firstMl.group_name }}</a
-                      >
-                      @if (firstMl.public) {
-                        <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
-                      } @else {
-                        <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
-                      }
-                    </div>
-                    <div class="text-[11px] text-gray-400 mt-0.5 flex items-center min-w-0">
-                      <a
-                        [href]="'mailto:' + (firstMl | mailingListEmail)"
-                        class="text-gray-400 hover:text-blue-600 transition-colors no-underline truncate min-w-0"
-                        [title]="firstMl | mailingListEmail"
-                        >{{ firstMl | mailingListEmail }}</a
-                      >
-                      <span class="shrink-0 ml-1">&middot; {{ firstMl.subscriber_count }} subscribers</span>
-                    </div>
-                  </div>
-                  @if (extraCount > 0) {
-                    <lfx-button
-                      [label]="(mlExpanded() ? '−' : '+') + extraCount"
-                      [text]="true"
-                      size="small"
-                      severity="success"
-                      styleClass="!text-[11px] !font-medium !rounded-full !px-2 !py-0.5 !bg-green-50 hover:!bg-green-100 !text-green-700"
-                      (onClick)="$event.stopPropagation(); mlExpanded.set(!mlExpanded())"
-                      [attr.aria-expanded]="mlExpanded()"
-                      [ariaLabel]="mlExpanded() ? 'Collapse additional mailing lists' : 'Show ' + extraCount + ' more mailing lists'"
-                      data-testid="committee-view-ml-expand-btn"></lfx-button>
-                  }
-                  <!-- Expanded mailing list dropdown (overlay) -->
-                  @if (mlExpanded() && extraCount > 0) {
-                    <div
-                      class="absolute top-full right-0 left-0 z-20 bg-white border border-gray-200 rounded-b-lg shadow-lg"
-                      (click)="$event.stopPropagation()">
-                      @for (ml of extraMailingLists(); track ml.uid) {
-                        <div class="flex items-center gap-2.5 px-3.5 py-2.5" [class.border-b]="!$last" [class.border-gray-200]="!$last">
-                          <div class="w-[30px] h-[30px] rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
-                            <i class="fa-light fa-envelope text-blue-600 text-xs" aria-hidden="true"></i>
-                          </div>
-                          <div class="flex-1 min-w-0">
-                            <div class="flex items-center gap-1.5 flex-wrap">
-                              <a
-                                [href]="'mailto:' + (ml | mailingListEmail)"
-                                class="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 transition-colors no-underline"
-                                [title]="ml.group_name"
-                                >{{ ml.group_name }}</a
-                              >
-                              @if (ml.public) {
-                                <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
-                              } @else {
-                                <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
-                              }
-                            </div>
-                            <div class="text-[11px] text-gray-400 mt-0.5 flex items-center min-w-0">
-                              <a
-                                [href]="'mailto:' + (ml | mailingListEmail)"
-                                class="text-gray-400 hover:text-blue-600 transition-colors no-underline truncate min-w-0"
-                                [title]="ml | mailingListEmail"
-                                >{{ ml | mailingListEmail }}</a
-                              >
-                              <span class="shrink-0 ml-1">&middot; {{ ml.subscriber_count }} subscribers</span>
-                            </div>
-                          </div>
-                        </div>
-                      }
-                    </div>
-                  }
-                </div>
-              }
-
-              <!-- Chat Channel + Website rows -->
-              <div class="flex flex-col divide-y divide-gray-200">
-                @if (committee()?.chat_channel; as chatChannel) {
-                  <div class="flex items-center gap-2.5 px-3.5 py-2.5" data-testid="committee-view-chat-channel-row">
-                    <div class="w-[30px] h-[30px] rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
-                      <i [class]="chatPlatformIcon()" class="text-gray-600 text-xs" aria-hidden="true"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <div class="text-[11px] font-medium text-gray-500">{{ chatPlatformLabel() }}</div>
-                      @if (chatChannel.startsWith('http://') || chatChannel.startsWith('https://')) {
-                        <a
-                          [href]="chatChannel"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="text-[11px] text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block"
-                          [title]="chatChannel"
-                          >{{ chatChannel }}</a
-                        >
-                      } @else {
-                        <span class="text-[11px] text-gray-600 truncate block" [title]="chatChannel">{{ chatChannel }}</span>
-                      }
-                    </div>
-                  </div>
-                }
-                @if (committee()?.website; as website) {
-                  <div class="flex items-center gap-2.5 px-3.5 py-2.5" data-testid="committee-view-website-row">
-                    <div class="w-[30px] h-[30px] rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
-                      <i [class]="repoPlatformIcon()" class="text-gray-600 text-xs" aria-hidden="true"></i>
-                    </div>
-                    <div class="flex-1 min-w-0">
-                      <div class="text-[11px] font-medium text-gray-500">{{ repoPlatformLabel() }}</div>
-                      @if (website | safeUrl; as safeUrl) {
-                        <a
-                          [href]="safeUrl"
-                          target="_blank"
-                          rel="noopener noreferrer"
-                          class="text-[11px] text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block"
-                          [title]="website"
-                          >{{ website }}</a
-                        >
-                      } @else {
-                        <span class="text-[11px] text-gray-600 truncate block" [title]="website">{{ website }}</span>
-                      }
-                    </div>
-                  </div>
-                }
-                @if (associatedMailingLists().length === 0 && !committee()?.chat_channel && !committee()?.website) {
-                  <div class="px-3.5 py-2.5 text-gray-400">No channels configured</div>
-                }
-              </div>
-
-              <!-- Visitor blur mask -->
-              @if (isVisitor()) {
-                <div class="absolute inset-0 bg-gray-50/60 backdrop-blur-sm rounded-lg z-[5] flex items-center justify-center">
-                  <div class="text-center">
-                    <i class="fa-light fa-lock text-gray-400 mb-1"></i>
-                    <div class="text-[11px] font-medium text-gray-500">Join to view channels</div>
-                  </div>
-                </div>
-              }
-            </div>
-          }
-        </div>
-      </div>
-
-      <!-- Tabs -->
-      <div class="flex gap-1 border-b" data-testid="committee-view-tabs">
-        @for (tab of visibleTabs(); track tab.key) {
+      <lfx-card styleClass="[&_.p-card-body]:!p-0" data-testid="committee-view-header">
+        <div class="px-6 pt-5 pb-4 flex flex-col gap-4">
+          <!-- Back link -->
           <button
-            (click)="activeTab.set(tab.key)"
-            class="px-4 py-2 text-sm font-medium transition-colors"
-            [ngClass]="{
-              'border-b-2 border-blue-600 text-blue-600': activeTab() === tab.key,
-              'text-gray-500': activeTab() !== tab.key,
-            }">
-            <i class="fa-light {{ tab.icon }} mr-2"></i>{{ tab.label }}
-            @if (tab.badge && tab.badge() !== null) {
-              <lfx-tag
-                [value]="'' + tab.badge()"
-                [rounded]="true"
-                [severity]="activeTab() === tab.key ? 'info' : 'secondary'"
-                styleClass="ml-1 !text-[10px] !px-1.5 !py-0.5" />
-            }
+            type="button"
+            class="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-800 transition-colors w-fit"
+            (click)="goBack()"
+            data-testid="committee-view-back-link">
+            <i class="fa-light fa-angle-left text-xs"></i>
+            {{ backLabel() ?? 'Groups' }}
           </button>
-        }
-      </div>
+          <div class="flex items-center gap-3">
+            <h1 class="font-display font-light text-[20px]" data-testid="committee-view-name">{{ committee()?.name }}</h1>
+            @if (!committee()?.public) {
+              <i class="fa-light fa-lock w-4 h-4 text-gray-400"></i>
+            }
+            <!-- Join / Request to Join / Contact Admin / Leave actions -->
+            <div class="ml-auto flex items-center gap-2">
+              @if (isVisitor()) {
+                @if (committee()?.join_mode === 'open') {
+                  <lfx-button
+                    label="Join Group"
+                    icon="fa-light fa-user-plus"
+                    severity="info"
+                    size="small"
+                    [loading]="joiningOrLeaving()"
+                    (onClick)="handleJoinRequest()"
+                    data-testid="committee-view-join-btn" />
+                } @else if (committee()?.join_mode === 'application') {
+                  <lfx-button
+                    label="Request to Join"
+                    icon="fa-light fa-paper-plane"
+                    severity="secondary"
+                    [outlined]="true"
+                    size="small"
+                    [loading]="joiningOrLeaving()"
+                    (onClick)="handleJoinRequest()"
+                    data-testid="committee-view-request-to-join-btn" />
+                } @else if (committee()?.join_mode === 'invite_only') {
+                  <lfx-button
+                    label="Request Access"
+                    icon="fa-light fa-paper-plane"
+                    severity="secondary"
+                    [outlined]="true"
+                    size="small"
+                    [loading]="joiningOrLeaving()"
+                    (onClick)="handleJoinRequest()"
+                    data-testid="committee-view-request-access-btn" />
+                } @else {
+                  <lfx-button
+                    label="Contact Admin"
+                    icon="fa-light fa-envelope"
+                    severity="secondary"
+                    [outlined]="true"
+                    size="small"
+                    (onClick)="handleJoinRequest()"
+                    data-testid="committee-view-contact-admin-btn" />
+                }
+              } @else if (isMemberOrAdmin() && !canEdit()) {
+                <lfx-button
+                  label="Leave Group"
+                  icon="fa-light fa-arrow-right-from-bracket"
+                  severity="secondary"
+                  [outlined]="true"
+                  size="small"
+                  [loading]="joiningOrLeaving()"
+                  (onClick)="handleLeaveRequest()"
+                  data-testid="committee-view-leave-btn" />
+              }
+            </div>
+          </div>
+          <!-- Description + Channels card side by side -->
+          <div class="flex flex-col lg:flex-row justify-between items-start gap-6">
+            <!-- Left column -->
+            <div class="flex flex-col gap-3 flex-1 min-w-0">
+              @if (committee()?.description || canEdit()) {
+                <div class="flex items-start gap-2 max-w-2xl" data-testid="committee-view-description">
+                  @if (committee()?.description) {
+                    <p class="text-gray-500 flex-1 text-sm">{{ committee()?.description }}</p>
+                  } @else if (canEdit()) {
+                    <span class="text-gray-400 text-sm italic flex-1">No description yet.</span>
+                  }
+                  @if (canEdit()) {
+                    <lfx-button
+                      icon="fa-light fa-pen-to-square"
+                      [text]="true"
+                      [rounded]="true"
+                      size="small"
+                      severity="secondary"
+                      [ariaLabel]="committee()?.description ? 'Edit description' : 'Add description'"
+                      tooltip="Edit description"
+                      (onClick)="openEditDescription()"></lfx-button>
+                  }
+                </div>
+              }
+              <div class="flex items-center gap-3 flex-wrap">
+                @if (committee()?.category) {
+                  <lfx-tag [value]="committee()!.category" [severity]="categorySeverity()"></lfx-tag>
+                }
+                @if (committee()?.enable_voting) {
+                  <lfx-tag value="Voting Enabled" severity="success"></lfx-tag>
+                }
+                @if (committee()?.join_mode) {
+                  <lfx-tag [value]="committee()!.join_mode! | joinModeLabel" severity="secondary"></lfx-tag>
+                }
+              </div>
+              <div class="flex items-center gap-4 flex-wrap">
+                @if (committee()?.project_name || committee()?.foundation_name) {
+                  <div class="flex items-center gap-1.5">
+                    <span class="text-xs font-medium text-gray-500">Parent Project:</span>
+                    <span class="text-xs text-gray-700">{{ committee()?.project_name || committee()?.foundation_name }}</span>
+                  </div>
+                }
+                @if (parentGroup(); as parent) {
+                  <button
+                    type="button"
+                    class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
+                    (click)="navigateToParentGroup()"
+                    data-testid="committee-view-parent-group-link">
+                    <i class="fa-light fa-sitemap text-[11px]"></i>
+                    <span>Parent Group:</span>
+                    <span>{{ parent.name }}</span>
+                    <i class="fa-light fa-chevron-right text-[10px]"></i>
+                  </button>
+                }
+                @if (subGroupsLoading()) {
+                  <p-skeleton width="120px" height="16px" borderRadius="4px" />
+                } @else if (subGroups().length === 1) {
+                  <!-- Single sub-group: inline link, no dropdown -->
+                  <button
+                    type="button"
+                    class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
+                    (click)="navigateToSubGroup(subGroups()[0])"
+                    data-testid="committee-view-sub-group-link">
+                    <i class="fa-light fa-sitemap text-[11px]"></i>
+                    <span>Sub-Group:</span>
+                    <span>{{ subGroups()[0].name }}</span>
+                    <i class="fa-light fa-chevron-right text-[10px]"></i>
+                  </button>
+                } @else if (subGroups().length > 1) {
+                  <!-- Multiple sub-groups: dropdown popover -->
+                  <div class="relative">
+                    <button
+                      type="button"
+                      class="flex items-center gap-1.5 text-xs font-medium text-blue-600 hover:text-blue-800 transition-colors cursor-pointer"
+                      (click)="subGroupsPopover.toggle($event)"
+                      data-testid="committee-view-sub-groups-trigger">
+                      <i class="fa-light fa-sitemap text-[11px]"></i>
+                      <span>Sub-Groups</span>
+                      <lfx-tag [value]="'' + subGroups().length" [rounded]="true" severity="info" styleClass="!text-[10px] !px-1.5 !py-0" />
+                      <i class="fa-light fa-chevron-down text-[10px]"></i>
+                    </button>
+                    <p-popover #subGroupsPopover [style]="{ width: '360px' }" data-testid="committee-view-sub-groups-popover">
+                      <div class="flex flex-col">
+                        <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-wide px-3 pt-2 pb-1.5">Sub-Groups</div>
+                        @for (sg of subGroups(); track sg.uid) {
+                          <button
+                            type="button"
+                            class="flex items-center gap-3 px-3 py-2.5 hover:bg-gray-50 transition-colors cursor-pointer w-full text-left"
+                            (click)="navigateToSubGroup(sg); subGroupsPopover.hide()"
+                            data-testid="committee-view-sub-group-item">
+                            <div
+                              class="w-10 h-10 rounded-full flex items-center justify-center text-sm font-semibold shrink-0"
+                              [ngClass]="sg.category | categoryAvatarColor">
+                              {{ sg.name | initials }}
+                            </div>
+                            <div class="flex flex-col gap-0.5 min-w-0 flex-1">
+                              <span class="text-sm font-medium text-gray-900 truncate">{{ sg.name }}</span>
+                              <span class="text-sm text-gray-500">{{ sg.category }} &middot; {{ sg.total_members }} members</span>
+                            </div>
+                            <i class="fa-light fa-chevron-right text-xs text-gray-400 shrink-0"></i>
+                          </button>
+                        }
+                      </div>
+                    </p-popover>
+                  </div>
+                }
+              </div>
+              <div class="flex items-center gap-1">
+                <span class="text-xs text-gray-400">Created {{ committee()?.created_at | date: 'MMM d, y' }}</span>
+                @if (committee()?.updated_at) {
+                  <span class="text-xs text-gray-400">&middot; Updated {{ committee()?.updated_at | date: 'MMM d, y' }}</span>
+                }
+              </div>
+            </div>
+            <!-- Right: Channels card -->
+            @if (hasChannels()) {
+              <div
+                class="relative bg-gray-50 border border-gray-200 rounded-lg text-[12.5px] text-gray-600 w-full lg:max-w-[380px] flex-shrink-0 self-start"
+                data-testid="committee-view-channels-card">
+                <div [attr.inert]="isVisitor() || null">
+                <!-- Associated Mailing Lists -->
+                @if (associatedMailingLists().length > 0) {
+                  @let firstMl = associatedMailingLists()[0];
+                  @let extraCount = extraMailingListCount();
+                  <!-- First mailing list row -->
+                  <div class="relative flex items-center gap-2.5 px-3.5 py-2.5 border-b border-gray-200" data-testid="committee-view-mailing-list-row">
+                    <div class="w-[30px] h-[30px] rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
+                      <i class="fa-light fa-envelope text-blue-600 text-xs" aria-hidden="true"></i>
+                    </div>
+                    <div class="flex-1 min-w-0">
+                      <div class="flex items-center gap-1.5 flex-wrap">
+                        <a
+                          [href]="'mailto:' + (firstMl | mailingListEmail)"
+                          class="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 transition-colors no-underline"
+                          [title]="firstMl.group_name"
+                          >{{ firstMl.group_name }}</a
+                        >
+                        @if (firstMl.public) {
+                          <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
+                        } @else {
+                          <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
+                        }
+                      </div>
+                      <div class="text-[11px] text-gray-400 mt-0.5 flex items-center min-w-0">
+                        <a
+                          [href]="'mailto:' + (firstMl | mailingListEmail)"
+                          class="text-gray-400 hover:text-blue-600 transition-colors no-underline truncate min-w-0"
+                          [title]="firstMl | mailingListEmail"
+                          >{{ firstMl | mailingListEmail }}</a
+                        >
+                        <span class="shrink-0 ml-1">&middot; {{ firstMl.subscriber_count }} subscribers</span>
+                      </div>
+                    </div>
+                    @if (extraCount > 0) {
+                      <lfx-button
+                        [label]="(mlExpanded() ? '−' : '+') + extraCount"
+                        [text]="true"
+                        size="small"
+                        severity="success"
+                        styleClass="!text-[11px] !font-medium !rounded-full !px-2 !py-0.5 !bg-green-50 hover:!bg-green-100 !text-green-700"
+                        (onClick)="$event.stopPropagation(); mlExpanded.set(!mlExpanded())"
+                        [attr.aria-expanded]="mlExpanded()"
+                        [ariaLabel]="mlExpanded() ? 'Collapse additional mailing lists' : 'Show ' + extraCount + ' more mailing lists'"
+                        data-testid="committee-view-ml-expand-btn"></lfx-button>
+                    }
+                    <!-- Expanded mailing list dropdown (overlay) -->
+                    @if (mlExpanded() && extraCount > 0) {
+                      <div
+                        class="absolute top-full right-0 left-0 z-20 bg-white border border-gray-200 rounded-b-lg shadow-lg"
+                        (click)="$event.stopPropagation()">
+                        @for (ml of extraMailingLists(); track ml.uid) {
+                          <div class="flex items-center gap-2.5 px-3.5 py-2.5" [class.border-b]="!$last" [class.border-gray-200]="!$last">
+                            <div class="w-[30px] h-[30px] rounded-md bg-blue-50 flex items-center justify-center flex-shrink-0">
+                              <i class="fa-light fa-envelope text-blue-600 text-xs" aria-hidden="true"></i>
+                            </div>
+                            <div class="flex-1 min-w-0">
+                              <div class="flex items-center gap-1.5 flex-wrap">
+                                <a
+                                  [href]="'mailto:' + (ml | mailingListEmail)"
+                                  class="text-[12.5px] font-semibold text-gray-900 hover:text-blue-600 transition-colors no-underline"
+                                  [title]="ml.group_name"
+                                  >{{ ml.group_name }}</a
+                                >
+                                @if (ml.public) {
+                                  <lfx-tag value="Public" severity="success" styleClass="!text-[10px]" />
+                                } @else {
+                                  <lfx-tag value="Private" severity="danger" styleClass="!text-[10px]" />
+                                }
+                              </div>
+                              <div class="text-[11px] text-gray-400 mt-0.5 flex items-center min-w-0">
+                                <a
+                                  [href]="'mailto:' + (ml | mailingListEmail)"
+                                  class="text-gray-400 hover:text-blue-600 transition-colors no-underline truncate min-w-0"
+                                  [title]="ml | mailingListEmail"
+                                  >{{ ml | mailingListEmail }}</a
+                                >
+                                <span class="shrink-0 ml-1">&middot; {{ ml.subscriber_count }} subscribers</span>
+                              </div>
+                            </div>
+                          </div>
+                        }
+                      </div>
+                    }
+                  </div>
+                }
+
+                <!-- Chat Channel + Website rows -->
+                <div class="flex flex-col divide-y divide-gray-200">
+                  @if (committee()?.chat_channel; as chatChannel) {
+                    <div class="flex items-center gap-2.5 px-3.5 py-2.5" data-testid="committee-view-chat-channel-row">
+                      <div class="w-[30px] h-[30px] rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
+                        <i [class]="chatPlatformIcon()" class="text-gray-600 text-xs" aria-hidden="true"></i>
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        <div class="text-[11px] font-medium text-gray-500">{{ chatPlatformLabel() }}</div>
+                        @if (chatChannel.startsWith('http://') || chatChannel.startsWith('https://')) {
+                          <a
+                            [href]="chatChannel"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-[11px] text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block"
+                            [title]="chatChannel"
+                            >{{ chatChannel }}</a
+                          >
+                        } @else {
+                          <span class="text-[11px] text-gray-600 truncate block" [title]="chatChannel">{{ chatChannel }}</span>
+                        }
+                      </div>
+                    </div>
+                  }
+                  @if (committee()?.website; as website) {
+                    <div class="flex items-center gap-2.5 px-3.5 py-2.5" data-testid="committee-view-website-row">
+                      <div class="w-[30px] h-[30px] rounded-md bg-gray-100 flex items-center justify-center flex-shrink-0">
+                        <i [class]="repoPlatformIcon()" class="text-gray-600 text-xs" aria-hidden="true"></i>
+                      </div>
+                      <div class="flex-1 min-w-0">
+                        <div class="text-[11px] font-medium text-gray-500">{{ repoPlatformLabel() }}</div>
+                        @if (website | safeUrl; as safeUrl) {
+                          <a
+                            [href]="safeUrl"
+                            target="_blank"
+                            rel="noopener noreferrer"
+                            class="text-[11px] text-blue-600 hover:text-blue-800 hover:underline no-underline truncate block"
+                            [title]="website"
+                            >{{ website }}</a
+                          >
+                        } @else {
+                          <span class="text-[11px] text-gray-600 truncate block" [title]="website">{{ website }}</span>
+                        }
+                      </div>
+                    </div>
+                  }
+                  @if (associatedMailingLists().length === 0 && !committee()?.chat_channel && !committee()?.website) {
+                    <div class="px-3.5 py-2.5 text-gray-400">No channels configured</div>
+                  }
+                </div>
+
+                </div>
+                <!-- Visitor blur mask (sibling of inert subtree so it's reachable by assistive tech) -->
+                @if (isVisitor()) {
+                  <div class="absolute inset-0 bg-gray-50/60 backdrop-blur-sm rounded-lg z-[5] flex items-center justify-center">
+                    <div class="text-center">
+                      <i class="fa-light fa-lock text-gray-400 mb-1"></i>
+                      <div class="text-[11px] font-medium text-gray-500">Join to view channels</div>
+                    </div>
+                  </div>
+                }
+              </div>
+            }
+          </div>
+        </div>
+
+        <!-- Tabs strip -->
+        <div class="border-t border-gray-200 px-6 py-4 flex gap-2 flex-wrap" data-testid="committee-view-tabs">
+          @for (tab of visibleTabs(); track tab.key) {
+            <button
+              type="button"
+              (click)="activeTab.set(tab.key)"
+              class="flex items-center px-3 py-1.5 rounded-full text-sm font-medium transition-colors"
+              [ngClass]="activeTab() === tab.key ? 'bg-blue-500 text-white' : 'bg-gray-100 text-gray-700 hover:bg-gray-200'">
+              <i class="fa-light {{ tab.icon }} mr-1.5"></i>{{ tab.label }}
+              @if (tab.badge && tab.badge() !== null) {
+                <lfx-tag
+                  [value]="'' + tab.badge()"
+                  [rounded]="true"
+                  [severity]="activeTab() === tab.key ? 'contrast' : 'secondary'"
+                  styleClass="ml-1.5 !text-[10px] !px-1.5 !py-0.5" />
+              }
+            </button>
+          }
+        </div>
+      </lfx-card>
 
       <!-- Tab Panels -->
       @switch (activeTab()) {

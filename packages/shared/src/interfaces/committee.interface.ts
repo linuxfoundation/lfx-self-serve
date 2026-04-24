@@ -648,7 +648,7 @@ export type CommitteeTab = 'overview' | 'members' | 'votes' | 'meetings' | 'surv
 /** Configuration entry for a committee view tab. Visibility and badge are closures so each consumer can wire its own signals/state. */
 export interface TabConfigEntry {
   key: CommitteeTab;
-  label: string;
+  label: string | (() => string);
   icon: string;
   visible: () => boolean;
   badge?: () => number | null;
