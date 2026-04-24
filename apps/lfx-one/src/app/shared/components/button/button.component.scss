@@ -35,6 +35,14 @@
     }
   }
 
+  .p-button.p-button-outlined.p-button-secondary {
+    @apply bg-white border border-gray-300 text-gray-900;
+
+    &:not(:disabled):hover {
+      @apply bg-gray-50 border-gray-400;
+    }
+  }
+
   /* Small button sizing for cards */
   .p-button:not([class*='text-sm']).p-button-sm {
     @apply text-xs tracking-wide px-2.5 py-1.5 gap-2;

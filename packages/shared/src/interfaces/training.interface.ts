@@ -9,6 +9,83 @@ export type CertificationStatus = 'active' | 'expired';
 export type EnrollmentStatus = 'started' | 'completed' | 'not-started' | 'not-completed';
 
 /**
+ * Unified certification state derived from joining USER_COURSE_ENROLLMENTS and USER_CERTIFICATES on COURSE_ID.
+ * Represents where a user is in the certification lifecycle for a given course.
+ */
+export type UnifiedCertState =
+  | 'certified-active' // Has a valid certificate, not expiring soon
+  | 'expiring-soon' // Has a valid certificate expiring within 90 days
+  | 'in-progress' // Active enrollment, no certificate yet
+  | 'enrolled-cert-expired' // Active enrollment but certificate has expired — needs renewal
+  | 'cert-expired' // No active enrollment and certificate has expired
+  | 'cert-only'; // Has certificate, no enrollment record
+
+/**
+ * Unified view of a certification, merging enrollment and certificate data by COURSE_ID.
+ */
+export interface UnifiedCertification {
+  /** COURSE_ID — the join key */
+  courseId: string;
+  /** Course name (from whichever source has it) */
+  name: string;
+  /** Course description */
+  description: string;
+  /** Logo image URL */
+  imageUrl: string;
+  /** Issuing project name */
+  issuedBy: string;
+  /** Difficulty level */
+  level: string;
+  /** Derived lifecycle state */
+  state: UnifiedCertState;
+
+  // ── Enrollment fields (null if no enrollment record) ──────────────────────
+  /** ENROLLMENT_ID; null if no enrollment */
+  enrollmentId: string | null;
+  /** Enrollment status from Snowflake */
+  enrollmentStatus: 'started' | 'completed' | 'not-started' | 'not-completed' | null;
+  /** Whether the enrollment is currently active */
+  isActiveEnrollment: boolean | null;
+  /** URL slug for the exam prep course */
+  courseSlug: string | null;
+
+  // ── Certificate fields (null if no certificate record) ────────────────────
+  /** Certificate record identifier */
+  certId: string | null;
+  /** Certificate identifier (human-readable ID for verification) */
+  certificateId: string | null;
+  /** ISO date string for when the certificate was issued; null if no cert */
+  issuedDate: string | null;
+  /** ISO date string for certificate expiry; null means perpetual or no cert */
+  expiryDate: string | null;
+  /** URL to download the certificate; null if unavailable */
+  downloadUrl: string | null;
+}
+
+/**
+ * Snowflake row shape for the unified certification join query
+ */
+export interface UnifiedCertRow {
+  COURSE_ID: string | null;
+  COURSE_NAME: string;
+  COURSE_GROUP_DESCRIPTION: string | null;
+  LOGO_URL: string | null;
+  PROJECT_NAME: string | null;
+  LEVEL: string | null;
+  // Enrollment columns
+  ENROLLMENT_ID: string | null;
+  ENROLLMENT_STATUS: 'started' | 'completed' | 'not-started' | 'not-completed' | null;
+  IS_ACTIVE_ENROLLMENT: boolean | null;
+  COURSE_SLUG: string | null;
+  // Certificate columns
+  CERT_KEY: string | null;
+  CERT_IDENTIFIER: string | null;
+  ISSUED_TS: string | null;
+  EXPIRATION_DATE: string | null;
+  DOWNLOAD_URL: string | null;
+}
+
+/**
  * A Linux Foundation certification earned by the user
  */
 export interface Certification {

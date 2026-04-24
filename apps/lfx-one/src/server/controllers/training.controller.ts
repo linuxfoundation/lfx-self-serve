@@ -45,6 +45,35 @@ export class TrainingController {
   }
 
   /**
+   * GET /api/training/certifications/unified
+   * Get unified certification view (joined enrollments + certificates) for the authenticated user
+   */
+  public async getUnifiedCertifications(req: Request, res: Response, next: NextFunction): Promise<void> {
+    const startTime = logger.startOperation(req, 'get_unified_certifications');
+
+    try {
+      const rawUsername = await getUsernameFromAuth(req);
+
+      if (!rawUsername) {
+        throw new AuthenticationError('User authentication required', {
+          operation: 'get_unified_certifications',
+        });
+      }
+
+      const username = stripAuthPrefix(rawUsername);
+      const certifications = await this.trainingService.getUnifiedCertifications(req, username);
+
+      logger.success(req, 'get_unified_certifications', startTime, {
+        result_count: certifications.length,
+      });
+
+      res.json(certifications);
+    } catch (error) {
+      next(error);
+    }
+  }
+
+  /**
    * GET /api/training/enrollments
    * Get ongoing training enrollments for the authenticated user
    */

@@ -5,8 +5,8 @@
 
 import { ChangeDetectionStrategy, Component, computed, inject, signal, Signal } from '@angular/core';
 import { toSignal } from '@angular/core/rxjs-interop';
-import { Certification, FilterPillOption, TrainingEnrollment } from '@lfx-one/shared/interfaces';
-import { CERTIFICATION_PRODUCT_TYPE, TRAINING_PRODUCT_TYPE } from '@lfx-one/shared/constants';
+import { Certification, FilterPillOption, TrainingEnrollment, UnifiedCertification } from '@lfx-one/shared/interfaces';
+import { TRAINING_PRODUCT_TYPE } from '@lfx-one/shared/constants';
 
 import { SkeletonModule } from 'primeng/skeleton';
 
@@ -14,9 +14,9 @@ import { ButtonComponent } from '@components/button/button.component';
 import { CardComponent } from '@components/card/card.component';
 import { FilterPillsComponent } from '@components/filter-pills/filter-pills.component';
 import { TrainingService } from '@shared/services/training.service';
-import { CertificationCardComponent } from '../components/certification-card/certification-card.component';
 import { RewardsComponent } from '../components/rewards/rewards.component';
 import { TrainingCardComponent } from '../components/training-card/training-card.component';
+import { UnifiedCertCardComponent } from '../components/unified-cert-card/unified-cert-card.component';
 
 const PAGE_SUBTITLE = 'Track your Linux Foundation learning journey — active certifications, enrolled courses, rewards, and resources all in one place.';
 
@@ -46,7 +46,7 @@ const USEFUL_LINKS = [
 
 @Component({
   selector: 'lfx-trainings-dashboard',
-  imports: [ButtonComponent, CardComponent, CertificationCardComponent, FilterPillsComponent, RewardsComponent, SkeletonModule, TrainingCardComponent],
+  imports: [ButtonComponent, CardComponent, FilterPillsComponent, RewardsComponent, SkeletonModule, TrainingCardComponent, UnifiedCertCardComponent],
   templateUrl: './trainings-dashboard.component.html',
   changeDetection: ChangeDetectionStrategy.OnPush,
 })
@@ -62,20 +62,23 @@ export class TrainingsDashboardComponent {
   // ─── Writable Signals ──────────────────────────────────────────────────────
   protected readonly activeTab = signal<string>('certifications');
 
-  // ─── Computed Signals ──────────────────────────────────────────────────────
-  protected readonly certifications: Signal<Certification[] | undefined> = this.initCertifications();
+  // ─── Data Signals ──────────────────────────────────────────────────────────
+  protected readonly unifiedCerts: Signal<UnifiedCertification[] | undefined> = this.initUnifiedCerts();
   protected readonly enrollments: Signal<TrainingEnrollment[] | undefined> = this.initEnrollments();
   protected readonly completedTrainings: Signal<Certification[] | undefined> = this.initCompletedTrainings();
 
   // ─── Stat Card Signals ─────────────────────────────────────────────────────
   protected readonly trainingsStatsLoading = computed(
-    () => this.certifications() === undefined || this.enrollments() === undefined || this.completedTrainings() === undefined
+    () => this.unifiedCerts() === undefined || this.enrollments() === undefined || this.completedTrainings() === undefined
   );
   protected readonly activeEnrollments = computed(() => this.enrollments()?.filter((e) => e.isActiveEnrollment) ?? []);
   protected readonly expiredEnrollments = computed(() => this.enrollments()?.filter((e) => !e.isActiveEnrollment) ?? []);
   protected readonly enrolledCount = computed(() => this.enrollments()?.length ?? 0);
   protected readonly completedCount = computed(() => this.completedTrainings()?.length ?? 0);
-  protected readonly certificatesCount = computed(() => this.certifications()?.length ?? 0);
+
+  // ─── Certification Section Signals ────────────────────────────────────────
+  protected readonly myCerts = computed(() => this.unifiedCerts()?.filter((c) => c.certId !== null) ?? []);
+  protected readonly certificatesCount = computed(() => this.myCerts().length);
 
   // ─── Protected Methods ─────────────────────────────────────────────────────
   protected onTabChange(tabId: string): void {
@@ -83,8 +86,8 @@ export class TrainingsDashboardComponent {
   }
 
   // ─── Private Initializers ──────────────────────────────────────────────────
-  private initCertifications(): Signal<Certification[] | undefined> {
-    return toSignal(this.trainingService.getCertifications(CERTIFICATION_PRODUCT_TYPE));
+  private initUnifiedCerts(): Signal<UnifiedCertification[] | undefined> {
+    return toSignal(this.trainingService.getUnifiedCertifications());
   }
 
   private initEnrollments(): Signal<TrainingEnrollment[] | undefined> {

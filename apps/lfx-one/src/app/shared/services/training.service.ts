@@ -5,7 +5,7 @@
 
 import { HttpClient, HttpParams } from '@angular/common/http';
 import { inject, Injectable } from '@angular/core';
-import { Certification, TrainingEnrollment } from '@lfx-one/shared/interfaces';
+import { Certification, TrainingEnrollment, UnifiedCertification } from '@lfx-one/shared/interfaces';
 import { catchError, Observable, of } from 'rxjs';
 
 @Injectable({
@@ -24,5 +24,9 @@ export class TrainingService {
 
   public getEnrollments(): Observable<TrainingEnrollment[]> {
     return this.http.get<TrainingEnrollment[]>('/api/training/enrollments').pipe(catchError(() => of([])));
+  }
+
+  public getUnifiedCertifications(): Observable<UnifiedCertification[]> {
+    return this.http.get<UnifiedCertification[]>('/api/training/certifications/unified').pipe(catchError(() => of([])));
   }
 }
