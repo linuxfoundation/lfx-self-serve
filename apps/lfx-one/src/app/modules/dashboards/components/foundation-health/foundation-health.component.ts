@@ -317,8 +317,16 @@ export class FoundationHealthComponent {
   private transformSoftwareValue(metric: DashboardMetricCard): DashboardMetricCard {
     const data = this.softwareValueData();
 
-    // Incremental bucket values: top1, top2-3, top4-5, all others
-    const bucketValues = [data.top1Value, data.top3Value - data.top1Value, data.top5Value - data.top3Value, data.allOtherValue];
+    // Incremental bucket values: top1, top2-3, top4-5, all others.
+    // Clamp to 0 so a non-monotonic API response can't render a negative segment.
+    const bucketLabels = ['Top 1', 'Top 2-3', 'Top 4-5', 'All Others'];
+    const bucketValues = [
+      Math.max(0, data.top1Value),
+      Math.max(0, data.top3Value - data.top1Value),
+      Math.max(0, data.top5Value - data.top3Value),
+      Math.max(0, data.allOtherValue),
+    ];
+    const bucketColors = [lfxColors.emerald[600], lfxColors.emerald[400], lfxColors.emerald[300], lfxColors.emerald[200]];
 
     return {
       ...metric,
@@ -326,31 +334,38 @@ export class FoundationHealthComponent {
       value: `$${this.formatSoftwareValue(data.totalValue)}`,
       subtitle: "Estimated total value of all foundation's projects",
       chartData: {
-        labels: ['Top 1', 'Top 2-3', 'Top 4-5', 'All Others'],
-        datasets: [
-          {
-            data: bucketValues,
-            borderColor: lfxColors.emerald[500],
-            backgroundColor: hexToRgba(lfxColors.emerald[500], 0.1),
-            fill: true,
-            tension: 0.4,
-            borderWidth: 2,
-            pointRadius: 0,
-          },
-        ],
+        labels: [''],
+        datasets: bucketLabels.map((label, i) => ({
+          label,
+          data: [bucketValues[i]],
+          backgroundColor: bucketColors[i],
+        })),
       },
       chartOptions: {
-        ...this.sparklineOptions,
+        ...this.barChartOptions,
+        scales: {
+          ...this.barChartOptions.scales,
+          x: { ...this.barChartOptions.scales?.['x'], display: false, stacked: true },
+          y: { ...this.barChartOptions.scales?.['y'], display: false, stacked: true, min: 0 },
+        },
+        datasets: {
+          bar: {
+            ...this.barChartOptions.datasets?.bar,
+            borderRadius: 0,
+          },
+        },
+        interaction: { mode: 'nearest' as const, intersect: true },
+        hover: { mode: 'nearest' as const, intersect: true },
         plugins: {
-          ...this.sparklineOptions.plugins,
+          ...this.barChartOptions.plugins,
+          legend: { display: false },
           tooltip: {
-            ...(this.sparklineOptions.plugins?.tooltip ?? {}),
+            ...(this.barChartOptions.plugins?.tooltip ?? {}),
+            mode: 'nearest' as const,
+            intersect: true,
             callbacks: {
-              title: (context) => context[0]?.label ?? '',
-              label: (context) => {
-                const value = context.parsed.y ?? 0;
-                return `Value: $${this.formatSoftwareValue(value)}`;
-              },
+              title: (context) => context[0]?.dataset?.label ?? '',
+              label: (context) => `Value: $${this.formatSoftwareValue(context.parsed.y ?? 0)}`,
             },
           },
         },

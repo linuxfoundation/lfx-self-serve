@@ -184,7 +184,7 @@ export const PRIMARY_FOUNDATION_HEALTH_METRICS: DashboardMetricCard[] = [
   {
     title: 'Total Value of Projects',
     icon: 'fa-light fa-chart-column',
-    chartType: 'line',
+    chartType: 'bar',
     category: 'projects',
     testId: 'foundation-health-card-total-value',
     drawerType: DashboardDrawerType.TotalValueOfProjects,
